@@ -1,14 +1,38 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🔐 CLUB ARENA — Authentication Page
+ *  CLUB ARENA - Authentication Page
  * ═══════════════════════════════════════════════════════════════════════════════
  * Login, Signup, and Password Reset flows via Supabase Auth
  *
  * NO DEMO MODE - All authentication is real.
+ *
+ * #ClubArenaConsole (2026-09-14). This is the first surface a new player meets
+ * and it was the generic Facebook-dark card. It is rebuilt on the approved
+ * master: the frame, the two action plates and the flat closing cap are
+ * painted (SpadeConsole), the fields are grooves cut into the glass, the tabs
+ * and the one-action modes are lit words. NOTHING IS DRAWN.
+ *
+ * PAINT ONLY. Every auth handler, guard, validation branch, redirect,
+ * `authError` query, return path, input id and autoComplete token is exactly
+ * what it was; the credential logic was not touched. What DID change besides
+ * the picture, and why:
+ *
+ *   - Every message a player reads is Title Cased (Dan 2026-09-14: "THE FIRST
+ *     LETTER OF EVERY WORD MUST ALWAYS BE CAPITALIZED"). Fourteen of them were
+ *     sentence case. They are literals, but they sit in `setError(...)` rather
+ *     than in JSX text, which is why all four copy gates passed over them.
+ *   - The three messages that come from DATA - whatever Supabase said - go
+ *     through `titleCase()` at the print site, because no gate can see those
+ *     at all.
+ *   - The success box printed a backslash, a u and four digits to the player.
+ *     The mark was written as JSX TEXT, where an escape sequence is not an
+ *     escape sequence - it is six literal characters. It is a lit bullet now.
+ *   - The logo was a bitmap with its own baked metal frame sitting inside the
+ *     card. "FRAMES SHOULD NEVER SIT ON TOP OF FRAMES": the console head and
+ *     its crest are the brand mark now.
  */
 
 import { useState, useEffect } from 'react';
-import { MEDIA_BASE } from '../utils/mediaBase';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { IS_NATIVE_BUILD } from '../lib/appBase';
@@ -18,11 +42,30 @@ import { ageOn, latestAdultBirthday, MINIMUM_AGE } from '../lib/age';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { referralService } from '../services/ReferralService';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+import type { PlateButtonProps } from '../components/console/SpadeConsole';
+import { titleCase } from '../utils/titleCase';
 import styles from './AuthPage.module.css';
 import { reportError } from '../utils/errorReporter';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 type AuthMode = 'login' | 'signup' | 'reset' | 'update';
+
+/**
+ * What the master's painted pill slot says, per mode.
+ *
+ * THE SLOT IS PAINTED WHETHER OR NOT YOU PRINT INTO IT, and an empty one reads
+ * as broken rather than spare - 100 of the 107 console surfaces in this repo
+ * fill it. On the front door the honest word for it is the mode, which is also
+ * the one thing the tabs cannot say in the reset and recovery flows, because
+ * those have no tabs. Short words: the slot is 197 x 54 of a 1000px master.
+ */
+const PILL: Record<AuthMode, string> = {
+  login: 'Sign In',
+  signup: 'Sign Up',
+  reset: 'Reset',
+  update: 'Recovery',
+};
 
 /** What the login page says when it was reached because a session ended. */
 function authErrorMessage(code: string | null): string | null {
@@ -67,7 +110,6 @@ export default function AuthPage() {
     authErrorMessage(searchParams.get('authError'))
   );
   const [success, setSuccess] = useState<string | null>(null);
-  const [cardOpacity, setCardOpacity] = useState(0);
 
   // Redirect already-authenticated users away from auth page
   useEffect(() => {
@@ -103,10 +145,9 @@ export default function AuthPage() {
     return () => data.subscription.unsubscribe();
   }, [isMounted]);
 
-  // Form entrance animation
-  useEffect(() => {
-    setCardOpacity(1);
-  }, []);
+  /* The entrance is `animationsSlideUpIn` on the console itself (see
+     AuthPage.module.css). It used to be a `cardOpacity` state that was set to
+     1 on mount and never read by anything. */
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,7 +172,7 @@ export default function AuthPage() {
     } catch (err: any) {
       reportError(err, 'AuthPage.Login_failed');
       // SECURITY: Generic message to prevent user enumeration
-      if (isMounted.current) setError('Invalid email or password. Please try again.');
+      if (isMounted.current) setError('Invalid Email Or Password. Please Try Again.');
     } finally {
       if (isMounted.current) setIsLoading(false);
     }
@@ -144,25 +185,25 @@ export default function AuthPage() {
 
     // Validation
     if (password !== confirmPassword) {
-      if (isMounted.current) setError('Passwords do not match');
+      if (isMounted.current) setError('Passwords Do Not Match');
       setIsLoading(false);
       return;
     }
 
     if (password.length < 8) {
-      if (isMounted.current) setError('Password must be at least 8 characters');
+      if (isMounted.current) setError('Password Must Be At Least 8 Characters');
       setIsLoading(false);
       return;
     }
     if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
       if (isMounted.current)
-        setError('Password must include at least one uppercase letter and one number');
+        setError('Password Must Include At Least One Uppercase Letter And One Number');
       setIsLoading(false);
       return;
     }
 
     if (!username.trim()) {
-      if (isMounted.current) setError('Username is required');
+      if (isMounted.current) setError('Username Is Required');
       setIsLoading(false);
       return;
     }
@@ -170,12 +211,12 @@ export default function AuthPage() {
     const signupAge = IS_NATIVE_BUILD ? ageOn(birthday, new Date()) : null;
     if (IS_NATIVE_BUILD) {
       if (signupAge === null) {
-        if (isMounted.current) setError('Please enter your date of birth');
+        if (isMounted.current) setError('Please Enter Your Date Of Birth');
         setIsLoading(false);
         return;
       }
       if (signupAge < MINIMUM_AGE) {
-        if (isMounted.current) setError(`You must be ${MINIMUM_AGE} or older to create an account`);
+        if (isMounted.current) setError(`You Must Be ${MINIMUM_AGE} Or Older To Create An Account`);
         setIsLoading(false);
         return;
       }
@@ -183,7 +224,7 @@ export default function AuthPage() {
 
     // Email format validation (beyond HTML type="email")
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      if (isMounted.current) setError('Please enter a valid email address');
+      if (isMounted.current) setError('Please Enter A Valid Email Address');
       setIsLoading(false);
       return;
     }
@@ -209,7 +250,7 @@ export default function AuthPage() {
 
       if (data.user?.id) {
         // ═══════════════════════════════════════════════════════════════════
-        // 🔗 DUPLICATE PREVENTION: Check if a profile with same email exists
+        // DUPLICATE PREVENTION: Check if a profile with same email exists
         // ═══════════════════════════════════════════════════════════════════
         const { data: emailMatch, error: emailCheckError } = await supabase
           .from('profiles')
@@ -251,7 +292,7 @@ export default function AuthPage() {
           if (profileError) {
             // PGRST116 = no rows (ok on upsert), 23505 = unique violation (username taken)
             if (profileError.code === '23505') {
-              throw new Error('Username is already taken. Please choose a different one.');
+              throw new Error('Username Is Already Taken. Please Choose A Different One.');
             }
             console.warn(
               '[AUTH] Profile creation failed (non-critical, may already exist):',
@@ -274,7 +315,7 @@ export default function AuthPage() {
         );
         if (usersErr) {
           reportError(usersErr, 'AuthPage.publicusers_upsert_FAILED');
-          // Don't throw — DB trigger may handle this. But log as error, not warn.
+          // Don't throw - DB trigger may handle this. But log as error, not warn.
         }
 
         // Check if email confirmation is required
@@ -303,13 +344,14 @@ export default function AuthPage() {
           });
           navigate(afterSignIn, { replace: true });
         } else {
-          setSuccess('Account created! Please check your email to verify your account.');
+          setSuccess('Account Created. Please Check Your Email To Verify Your Account.');
           setMode('login');
         }
       }
     } catch (err: any) {
       reportError(err, 'AuthPage.Signup_failed');
-      if (isMounted.current) setError(safeErrorMessage(err, 'Signup failed. Please try again.'));
+      if (isMounted.current)
+        setError(titleCase(safeErrorMessage(err, 'Sign Up Failed. Please Try Again.')));
     } finally {
       if (isMounted.current) setIsLoading(false);
     }
@@ -319,12 +361,12 @@ export default function AuthPage() {
     e.preventDefault();
     if (isMounted.current) setError(null);
     if (newPassword !== newPasswordConfirm) {
-      if (isMounted.current) setError('Passwords do not match');
+      if (isMounted.current) setError('Passwords Do Not Match');
       return;
     }
     if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
       if (isMounted.current)
-        setError('Password must be at least 8 characters with one uppercase letter and one number');
+        setError('Password Must Be At Least 8 Characters With One Uppercase Letter And One Number');
       return;
     }
     setIsLoading(true);
@@ -339,7 +381,8 @@ export default function AuthPage() {
       navigate(afterSignIn, { replace: true });
     } catch (err: any) {
       reportError(err, 'AuthPage.Password_update_failed');
-      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to update password.'));
+      if (isMounted.current)
+        setError(titleCase(safeErrorMessage(err, 'Failed To Update Password.')));
     } finally {
       if (isMounted.current) setIsLoading(false);
     }
@@ -357,371 +400,355 @@ export default function AuthPage() {
 
       // SECURITY: Always show success regardless of whether email exists
       // This prevents user enumeration attacks
-      setSuccess('If an account exists with this email, you will receive a password reset link.');
+      setSuccess('If An Account Exists With This Email, You Will Receive A Password Reset Link.');
     } catch (err: any) {
       reportError(err, 'AuthPage.Password_reset_failed');
-      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to send reset email.'));
+      if (isMounted.current)
+        setError(titleCase(safeErrorMessage(err, 'Failed To Send Reset Email.')));
     } finally {
       if (isMounted.current) setIsLoading(false);
     }
   };
 
+  /* ── THE PICTURE ─────────────────────────────────────────────────────────
+     One form, one console. The fields inside it are the ones the current mode
+     owns, so `required` only ever applies to what is on screen, exactly as it
+     did when each mode carried its own <form>. */
+
+  const goLogin = () => {
+    setMode('login');
+    setError(null);
+    setSuccess(null);
+  };
+
+  const goReset = () => {
+    setMode('reset');
+    setError(null);
+  };
+
+  const onSubmit =
+    mode === 'login'
+      ? handleLogin
+      : mode === 'signup'
+        ? handleSignup
+        : mode === 'reset'
+          ? handlePasswordReset
+          : handlePasswordUpdate;
+
+  /* The busy state is said in the LABEL and moved with an opacity pulse, not
+     drawn as a spinning ring. `LayeredActionButton` prints "Working" for the
+     same reason: the console paints controls, it does not draw them. */
+  const primaryLabel =
+    mode === 'login'
+      ? isLoading
+        ? 'Logging In'
+        : 'Login'
+      : mode === 'signup'
+        ? isLoading
+          ? 'Creating Account'
+          : 'Create Account'
+        : mode === 'reset'
+          ? isLoading
+            ? 'Sending'
+            : 'Send Reset Link'
+          : isLoading
+            ? 'Updating'
+            : 'Update Password';
+
+  const primaryPlate: PlateButtonProps = {
+    label: primaryLabel,
+    ink: 'white',
+    type: 'submit',
+    disabled: isLoading,
+    className: isLoading ? styles.plateBusy : undefined,
+  };
+
+  const secondaryPlate: PlateButtonProps =
+    mode === 'login'
+      ? { label: 'Forgot Password', onClick: goReset }
+      : { label: 'Back To Login', onClick: goLogin };
+
   return (
     <div className={styles.container}>
-      <style>{`
-                @keyframes slideUpIn {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                @keyframes focusGlow {
-                    from { box-shadow: 0 0 0 0 rgba(0, 212, 255, 0.4); }
-                    to { box-shadow: 0 0 0 8px rgba(0, 212, 255, 0); }
-                }
-                .auth-card-animated {
-                    animation: slideUpIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-                }
-                .auth-input-premium:focus {
-                    animation: focusGlow 0.6s ease-out;
-                }
-            `}</style>
-      <div
-        className={styles.authCard}
-        style={{ animation: `animationsSlideUpIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
-      >
-        {/* Logo */}
-        <div className={styles.logo}>
-          <img
-            src={`${MEDIA_BASE}images/smarter-poker-logo.jpg`}
-            alt="Smarter.Poker"
-            className={styles.logoImage}
-          />
-        </div>
-
-        {/* Tab Switcher */}
-        {mode !== 'reset' && mode !== 'update' && (
-          <div className={styles.tabs}>
-            <button
-              className={`${styles.tab} ${mode === 'login' ? styles.tabActive : ''}`}
-              onClick={() => {
-                setMode('login');
-                setError(null);
-                setSuccess(null);
-              }}
-            >
-              Login
-            </button>
-            <button
-              className={`${styles.tab} ${mode === 'signup' ? styles.tabActive : ''}`}
-              onClick={() => {
-                setMode('signup');
-                setError(null);
-                setSuccess(null);
-              }}
-            >
-              Sign Up
-            </button>
-          </div>
-        )}
-
-        {/* Success Message */}
-        {success && (
-          <div className={styles.successMessage}>
-            <span>\u2713</span> {success}
-          </div>
-        )}
-
-        {/* Error Message */}
-        {error && (
-          <div className={styles.errorMessage}>
-            <span>!</span> {error}
-          </div>
-        )}
-
-        {/* Login Form */}
-        {mode === 'login' && (
-          <form onSubmit={handleLogin} className={styles.form}>
-            <div className={styles.inputGroup}>
-              <label htmlFor="email">Email</label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                autoComplete="email"
-              />
+      <form className={styles.form} onSubmit={onSubmit} aria-labelledby="auth-title">
+        <SpadeConsole
+          className={styles.console}
+          /* The brand, then the room, then the mode. This is also what
+             replaced the logo bitmap: it was a JPEG carrying its own baked
+             metal frame, sitting inside the card, and "FRAMES SHOULD NEVER SIT
+             ON TOP OF FRAMES". The console head and its crest are the mark. */
+          eyebrow="Smarter Poker"
+          title="Club Arena"
+          pill={PILL[mode]}
+          titleId="auth-title"
+          /* THE FOOT FOLLOWS WHAT THE MODE ACTUALLY OFFERS (the Club Rules
+             pattern). Both plates are painted, so a mode with one action takes
+             the flat closing cap rather than leaving a plate painted and
+             empty. Only `update`, reached from a recovery email, has one. */
+          foot={mode === 'update' ? 'foot' : 'plates'}
+          plates={
+            mode === 'update' ? undefined : { secondary: secondaryPlate, primary: primaryPlate }
+          }
+        >
+          {/* Two lit words on the glass, closed by an engraved rule. */}
+          {mode !== 'reset' && mode !== 'update' && (
+            <div className={styles.tabs}>
+              <button
+                type="button"
+                className={`${styles.tab} ${mode === 'login' ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                aria-pressed={mode === 'login'}
+                onClick={goLogin}
+              >
+                Login
+              </button>
+              <button
+                type="button"
+                className={`${styles.tab} ${mode === 'signup' ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                aria-pressed={mode === 'signup'}
+                onClick={() => {
+                  setMode('signup');
+                  setError(null);
+                  setSuccess(null);
+                }}
+              >
+                Sign Up
+              </button>
             </div>
+          )}
 
-            <div className={styles.inputGroup}>
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                autoComplete="current-password"
-              />
-            </div>
+          {success && (
+            <p className={`${styles.notice} sc-ink--green`} role="status">
+              <span className={styles.noticeDot} aria-hidden="true">
+                &bull;
+              </span>
+              {success}
+            </p>
+          )}
 
-            <button
-              type="submit"
-              className={styles.submitButton}
-              disabled={isLoading}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-              }}
-            >
-              {isLoading && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '14px',
-                    height: '14px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    borderTop: '2px solid #fff',
-                    borderRadius: '50%',
-                    animation: 'spin 0.8s linear infinite',
-                  }}
-                />
-              )}
-              {isLoading ? 'Logging In...' : 'Login'}
-            </button>
+          {error && (
+            <p className={`${styles.notice} sc-ink--red`} role="alert">
+              <span className={styles.noticeDot} aria-hidden="true">
+                &bull;
+              </span>
+              {error}
+            </p>
+          )}
 
-            <button
-              type="button"
-              className={styles.linkButton}
-              onClick={() => {
-                setMode('reset');
-                setError(null);
-              }}
-            >
-              Forgot Password?
-            </button>
-          </form>
-        )}
-
-        {/* Signup Form */}
-        {mode === 'signup' && (
-          <form onSubmit={handleSignup} className={styles.form}>
-            <div className={styles.inputGroup}>
-              <label htmlFor="username">Username</label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="PokerPro123"
-                required
-                autoComplete="username"
-              />
-            </div>
-
-            {IS_NATIVE_BUILD && (
-              <div className={styles.inputGroup}>
-                <label htmlFor="signup-birthday">Date Of Birth</label>
+          {/* Login */}
+          {mode === 'login' && (
+            <>
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="email">
+                  Email
+                </label>
                 <input
-                  id="signup-birthday"
-                  type="date"
-                  value={birthday}
-                  onChange={(e) => setBirthday(e.target.value)}
-                  max={latestAdultBirthday(new Date())}
+                  id="email"
+                  type="email"
+                  className={styles.input}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Your Email Address"
                   required
-                  autoComplete="bday"
+                  autoComplete="email"
                 />
               </div>
-            )}
 
-            <div className={styles.inputGroup}>
-              <label htmlFor="signup-email">Email</label>
-              <input
-                id="signup-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                autoComplete="email"
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label htmlFor="signup-password">Password</label>
-              <input
-                id="signup-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                minLength={6}
-                autoComplete="new-password"
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label htmlFor="confirm-password">Confirm Password</label>
-              <input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                autoComplete="new-password"
-              />
-            </div>
-
-            <div className={styles.inputGroup}>
-              <label htmlFor="referral-code">
-                Referral Code{' '}
-                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.75rem' }}>
-                  (Optional)
-                </span>
-              </label>
-              <input
-                id="referral-code"
-                type="text"
-                value={referralCode}
-                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                placeholder="E.G. ABCD1234"
-                autoComplete="off"
-                style={{ textTransform: 'uppercase', letterSpacing: '1px' }}
-              />
-            </div>
-
-            <button
-              type="submit"
-              className={styles.submitButton}
-              disabled={isLoading}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-              }}
-            >
-              {isLoading && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '14px',
-                    height: '14px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    borderTop: '2px solid #fff',
-                    borderRadius: '50%',
-                    animation: 'spin 0.8s linear infinite',
-                  }}
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="password">
+                  Password
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  className={styles.input}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Your Password"
+                  required
+                  autoComplete="current-password"
                 />
-              )}
-              {isLoading ? 'Creating Account...' : 'Create Account'}
-            </button>
-          </form>
-        )}
+              </div>
+            </>
+          )}
 
-        {/* Password Reset Form */}
-        {mode === 'reset' && (
-          <form onSubmit={handlePasswordReset} className={styles.form}>
-            <p className={styles.resetText}>
-              Enter Your Email And We'll Send You A Link To Reset Your Password.
-            </p>
-
-            <div className={styles.inputGroup}>
-              <label htmlFor="reset-email">Email</label>
-              <input
-                id="reset-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                autoComplete="email"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className={styles.submitButton}
-              disabled={isLoading}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-              }}
-            >
-              {isLoading && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '14px',
-                    height: '14px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    borderTop: '2px solid #fff',
-                    borderRadius: '50%',
-                    animation: 'spin 0.8s linear infinite',
-                  }}
+          {/* Signup */}
+          {mode === 'signup' && (
+            <>
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="username">
+                  Username
+                </label>
+                <input
+                  id="username"
+                  type="text"
+                  className={styles.input}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="E.G. PokerPro123"
+                  required
+                  autoComplete="username"
                 />
+              </div>
+
+              {IS_NATIVE_BUILD && (
+                <div className={styles.field}>
+                  <label className="sc-label sc-ink--blue" htmlFor="signup-birthday">
+                    Date Of Birth
+                  </label>
+                  <input
+                    id="signup-birthday"
+                    type="date"
+                    className={styles.input}
+                    value={birthday}
+                    onChange={(e) => setBirthday(e.target.value)}
+                    max={latestAdultBirthday(new Date())}
+                    required
+                    autoComplete="bday"
+                  />
+                </div>
               )}
-              {isLoading ? 'Sending...' : 'Send Reset Link'}
-            </button>
 
-            <button
-              type="button"
-              className={styles.linkButton}
-              onClick={() => {
-                setMode('login');
-                setError(null);
-                setSuccess(null);
-              }}
-            >
-              ← Back To Login
-            </button>
-          </form>
-        )}
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="signup-email">
+                  Email
+                </label>
+                <input
+                  id="signup-email"
+                  type="email"
+                  className={styles.input}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Your Email Address"
+                  required
+                  autoComplete="email"
+                />
+              </div>
 
-        {/* New Password Form (after a recovery link) */}
-        {mode === 'update' && (
-          <form onSubmit={handlePasswordUpdate} className={styles.form}>
-            <p className={styles.resetText}>Choose A New Password For Your Account.</p>
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="signup-password">
+                  Password
+                </label>
+                <input
+                  id="signup-password"
+                  type="password"
+                  className={styles.input}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At Least 8 Characters"
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                />
+              </div>
 
-            <div className={styles.inputGroup}>
-              <label htmlFor="new-password">New Password</label>
-              <input
-                id="new-password"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="At Least 8 Characters"
-                required
-                autoComplete="new-password"
-              />
-            </div>
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="confirm-password">
+                  Confirm Password
+                </label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  className={styles.input}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat Your Password"
+                  required
+                  autoComplete="new-password"
+                />
+              </div>
 
-            <div className={styles.inputGroup}>
-              <label htmlFor="new-password-confirm">Confirm New Password</label>
-              <input
-                id="new-password-confirm"
-                type="password"
-                value={newPasswordConfirm}
-                onChange={(e) => setNewPasswordConfirm(e.target.value)}
-                placeholder="Repeat Your New Password"
-                required
-                autoComplete="new-password"
-              />
-            </div>
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="referral-code">
+                  Referral Code{' '}
+                  <span className={`${styles.optional} sc-ink--muted`}>(Optional)</span>
+                </label>
+                <input
+                  id="referral-code"
+                  type="text"
+                  className={`${styles.input} ${styles.code}`}
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                  placeholder="E.G. ABCD1234"
+                  autoComplete="off"
+                />
+              </div>
+            </>
+          )}
 
-            <button type="submit" className={styles.submitButton} disabled={isLoading}>
-              {isLoading ? 'Updating...' : 'Update Password'}
-            </button>
-          </form>
-        )}
-      </div>
+          {/* Password Reset */}
+          {mode === 'reset' && (
+            <>
+              <p className={styles.resetText}>
+                Enter Your Email And We'll Send You A Link To Reset Your Password.
+              </p>
+
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="reset-email">
+                  Email
+                </label>
+                <input
+                  id="reset-email"
+                  type="email"
+                  className={styles.input}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Your Email Address"
+                  required
+                  autoComplete="email"
+                />
+              </div>
+            </>
+          )}
+
+          {/* New Password (after a recovery link). One action, so the console
+              takes the flat cap and the action is a lit word on the glass. */}
+          {mode === 'update' && (
+            <>
+              <p className={styles.resetText}>Choose A New Password For Your Account.</p>
+
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="new-password">
+                  New Password
+                </label>
+                <input
+                  id="new-password"
+                  type="password"
+                  className={styles.input}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At Least 8 Characters"
+                  required
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <div className={styles.field}>
+                <label className="sc-label sc-ink--blue" htmlFor="new-password-confirm">
+                  Confirm New Password
+                </label>
+                <input
+                  id="new-password-confirm"
+                  type="password"
+                  className={styles.input}
+                  value={newPasswordConfirm}
+                  onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                  placeholder="Repeat Your New Password"
+                  required
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className={`${styles.word} ${isLoading ? styles.busy : ''} sc-ink--white`}
+                disabled={isLoading}
+              >
+                {primaryLabel}
+              </button>
+            </>
+          )}
+        </SpadeConsole>
+      </form>
     </div>
   );
 }

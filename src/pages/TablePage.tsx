@@ -1,6 +1,9 @@
 import { uuid } from '../utils/uuid';
 import { isUUID } from '../utils/clubIdResolver';
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
+/* #ClubArenaConsole: the felt's own dialogs print into Dan's approved master
+   rather than drawing a card in CSS. See .claude/skills/club-arena-console. */
+import { SpadeConsole } from '../components/console/SpadeConsole';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -24790,43 +24793,103 @@ function LiveTablePage({
             className="seat-buyin-confirm__backdrop"
             onClick={() => !seatFirstPending && setSeatFirstConfirm(null)}
           />
+          {/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). This card was an
+              18px radius, its own two-stop gradient and two drawn buttons - the
+              exact shape the standard forbids, on the sheet that stands between
+              a tap and a debit. It is the spade console now: the seat and the
+              game are the eyebrow, the countdown is the painted pill, the
+              figures print as rows on the black glass with an engraved rule
+              between them, and Cancel / Buy In are the two plates the foot
+              already paints. Every guard, every disabled branch and every
+              literal below is unchanged. */}
           <div className="seat-buyin-confirm__card">
-            <div className="seat-buyin-confirm__eyebrow">
-              Seat {seatFirstConfirm} · {seatFirstBuyIn.label}
-            </div>
-            <div id="seat-buyin-confirm-title" className="seat-buyin-confirm__title">
-              Buy In
-            </div>
-            <div className="seat-buyin-confirm__amount">{seatFirstBuyIn.cost.toLocaleString()}</div>
-            <div className="seat-buyin-confirm__meta">
-              {/* An unknown balance prints as "—", never as a confident 0
-                  (2026-08-28 audit). `accountBalance` is deliberately left
-                  null when the wallet read fails, and the Buy In button 25
-                  lines below already respects that — so this line was the one
-                  place still telling a funded player "Your Balance 0" beside
-                  an enabled spend button. */}
-              Your Balance{' '}
-              {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
-            </div>
-            <div className="seat-buyin-confirm__note">
-              This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought
-            </div>
-            {/* ROUND 14: the 60-second window, made VISIBLE. It has always
-                applied to this sheet, but nothing on it said so - the player
-                simply vanished to the lobby mid-decision, which is precisely
-                the "it never works" surprise. Counting down is the honest
-                version, and it matters more now that the odds ladder below
-                gives a player something to read. Last ten seconds go amber. */}
-            {buyInSecondsLeft !== null && (
-              <div
-                className="seat-buyin-confirm__meta"
-                style={buyInSecondsLeft <= 10 ? { color: '#fbbf24' } : undefined}
-                aria-live="polite"
-              >
-                Seat Held For {buyInSecondsLeft}s
+            <SpadeConsole
+              as="div"
+              eyebrow={`Seat ${seatFirstConfirm} · ${seatFirstBuyIn.label}`}
+              title="Buy In"
+              titleId="seat-buyin-confirm-title"
+              /* ROUND 14: the 60-second window, made VISIBLE. It has always
+                 applied to this sheet, but nothing on it said so - the player
+                 simply vanished to the lobby mid-decision, which is precisely
+                 the "it never works" surprise. Counting down is the honest
+                 version. Last ten seconds go red. It prints in the header's
+                 PAINTED pill slot now rather than as a coloured line of meta,
+                 and the row below repeats it for a screen reader.
+
+                 "SEC", NOT "S". The pill slot prints in the master's own
+                 condensed CAPS, so a bare unit came out as "8S" - a letter
+                 nobody means, on the one figure the player is racing. The pill
+                 never sits empty either: before the clock is known it names
+                 the state instead, because the slot is PAINTED whether or not
+                 anything is printed into it and an empty one reads as a
+                 control that failed to load. */
+              pill={buyInSecondsLeft !== null ? `${buyInSecondsLeft} Sec` : 'Seat Held'}
+              pillInk={buyInSecondsLeft !== null && buyInSecondsLeft <= 10 ? 'red' : 'gold'}
+              plates={{
+                secondary: {
+                  label: 'Cancel',
+                  disabled: seatFirstPending,
+                  onClick: () => setSeatFirstConfirm(null),
+                },
+                primary: {
+                  ink: 'white',
+                  /* AN UNKNOWN BALANCE IS NOT AN EMPTY ONE (2026-08-28).
+                     `accountBalance` starts at 0 and is only ever written when
+                     the wallet read SUCCEEDS ("keep the last known figure on
+                     unknown") - but on first load the last known figure IS
+                     zero, so one transient read failure left a funded player
+                     staring at a permanently disabled button reading "Not
+                     Enough Chips", on a page with no refresh path. The RPC is
+                     the real authority and refuses an underfunded entry with a
+                     toast, so a known-short balance still blocks the tap while
+                     an unknown one lets them try. */
+                  disabled:
+                    seatFirstPending ||
+                    (accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost),
+                  onClick: () => void commitSeatFirstBuyIn(seatFirstConfirm),
+                  label: seatFirstPending
+                    ? 'Taking Your Chips'
+                    : accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost
+                      ? 'Not Enough Chips'
+                      : `Buy In ${seatFirstBuyIn.cost.toLocaleString()}`,
+                },
+              }}
+            >
+              <div className="seat-buyin-confirm__row">
+                <span className="sc-label sc-ink--blue">Buy In</span>
+                <span className="seat-buyin-confirm__amount sc-ink--silver">
+                  {seatFirstBuyIn.cost.toLocaleString()}
+                </span>
               </div>
-            )}
-            {/* ── NOBODY EVER SEES THE ODDS (Dan 2026-09-05, binding) ──────
+              <div className="seat-buyin-confirm__row">
+                <span className="sc-label sc-ink--blue">Your Balance</span>
+                {/* An unknown balance prints as "Unknown", never as a confident
+                    0 (2026-08-28 audit). `accountBalance` is deliberately left
+                    null when the wallet read fails, and the Buy In plate above
+                    already respects that - so this line was the one place still
+                    telling a funded player "Your Balance 0" beside an enabled
+                    spend button. */}
+                <span className="sc-label sc-ink--silver">
+                  {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
+                </span>
+              </div>
+              {buyInSecondsLeft !== null && (
+                <div className="seat-buyin-confirm__row" aria-live="polite">
+                  <span className="sc-label sc-ink--blue">Seat Held For</span>
+                  {/* "Sec" rather than "s": every label on the glass prints in
+                      the master's condensed caps, and a bare unit rendered as
+                      "8S". */}
+                  <span
+                    className={`sc-label ${buyInSecondsLeft <= 10 ? 'sc-ink--red' : 'sc-ink--gold'}`}
+                  >
+                    {buyInSecondsLeft} Sec
+                  </span>
+                </div>
+              )}
+              <p className="sc-copy sc-copy--center seat-buyin-confirm__note">
+                This {seatFirstBuyIn.label} Starts When All {seatFirstBuyIn.seats} Seats Are Bought
+              </p>
+              {/* ── NOBODY EVER SEES THE ODDS (Dan 2026-09-05, binding) ──────
                 Dan, verbatim: "HIDE THE MULTIPLIER ODDS, GET RIDE OF THAT ALL
                 TOGETHER, NOBODY SHOULD EVER VISIBLY SEE THAT."
 
@@ -24843,41 +24906,7 @@ function LiveTablePage({
                 how the platform checks ITSELF. What it no longer has is a
                 render path, and tests/unit/spinOddsOnBuyInSheet.test.ts is
                 what stops it getting one back. */}
-            <div className="seat-buyin-confirm__actions">
-              <button
-                type="button"
-                className="seat-buyin-confirm__btn seat-buyin-confirm__btn--ghost"
-                disabled={seatFirstPending}
-                onClick={() => setSeatFirstConfirm(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="seat-buyin-confirm__btn seat-buyin-confirm__btn--go"
-                /* AN UNKNOWN BALANCE IS NOT AN EMPTY ONE (2026-08-28).
-                   `accountBalance` starts at 0 and is only ever written when
-                   the wallet read SUCCEEDS ("keep the last known figure on
-                   unknown") — but on first load the last known figure IS
-                   zero, so one transient read failure left a funded player
-                   staring at a permanently disabled button reading "Not
-                   Enough Chips", on a page with no refresh path. The RPC is
-                   the real authority and refuses an underfunded entry with a
-                   toast, so a known-short balance still blocks the tap while
-                   an unknown one lets them try. */
-                disabled={
-                  seatFirstPending ||
-                  (accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost)
-                }
-                onClick={() => void commitSeatFirstBuyIn(seatFirstConfirm)}
-              >
-                {seatFirstPending
-                  ? 'Taking Your Chips'
-                  : accountBalance !== null && Number(accountBalance) < seatFirstBuyIn.cost
-                    ? 'Not Enough Chips'
-                    : `Buy In ${seatFirstBuyIn.cost.toLocaleString()}`}
-              </button>
-            </div>
+            </SpadeConsole>
           </div>
         </div>
       )}
@@ -25586,22 +25615,40 @@ function LiveTablePage({
           ═══════════════════════════════════════════════════════════════════════ */}
       {postOrWaitOpen && userId && tableId && !tableState.isTournament && (
         <div className="post-or-wait__backdrop">
-          <div className="post-or-wait" role="dialog" aria-modal="true">
-            <h3 className="post-or-wait__title">Post Or Wait For The Big Blind?</h3>
-            <p className="post-or-wait__body">
-              Post The Big Blind Now And You Are Dealt Into The Next Hand. Or Wait, And You Are
-              Dealt In When The Big Blind Reaches Your Seat.
-            </p>
-            <div className="post-or-wait__actions">
-              <button
-                type="button"
-                className="post-or-wait__post"
-                disabled={isPostingBB}
-                onClick={async () => {
-                  if (isPostingBB || !tableId) return;
-                  setIsPostingBB(true);
-                  try {
-                    /* POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to
+          {/* ON THE MASTER (#ClubArenaConsole, 2026-09-14). This was a 14px
+              rounded card with its own cyan border and a teal gradient button -
+              a second frame drawn in CSS over a live felt. It is the spade
+              console now: the question is the title, the explanation prints on
+              the black glass between the rails, and the two ways out are the
+              two plates the foot already paints. Every branch of the post
+              handler below is unchanged. */}
+          <div
+            className="post-or-wait"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="post-or-wait-title"
+          >
+            <SpadeConsole
+              as="div"
+              eyebrow="Your Entry"
+              title="Post Or Wait"
+              titleId="post-or-wait-title"
+              pill="Big Blind"
+              pillInk="blue"
+              plates={{
+                secondary: {
+                  label: 'Wait For BB',
+                  onClick: () => setPostOrWaitOpen(false),
+                },
+                primary: {
+                  label: isPostingBB ? 'Posting' : 'Post Big Blind',
+                  ink: 'white',
+                  disabled: isPostingBB,
+                  onClick: async () => {
+                    if (isPostingBB || !tableId) return;
+                    setIsPostingBB(true);
+                    try {
+                      /* POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to
                        get dealt in feature isn't working... you also get a
                        pop up that says you're being dealt in for free...
                        that must be removed. all players must post or wait
@@ -25614,48 +25661,46 @@ function LiveTablePage({
                        over: nobody is ever dealt in free, and the failed
                        post left the player waiting. One call, three honest
                        outcomes. */
-                    const res = await serverPostBBToEnter(tableId);
-                    if (res?.deferred) {
-                      /* Dan 2026-08-29: HELD, NOT REFUSED. They are in
+                      const res = await serverPostBBToEnter(tableId);
+                      if (res?.deferred) {
+                        /* Dan 2026-08-29: HELD, NOT REFUSED. They are in
                          between the blinds. The agreement is kept by the
                          engine and posted for them the moment the button is
                          past, so this says what happens next and never asks
                          again. */
-                      setBBPostAgreed(true);
-                      toast.info(
-                        res?.error ||
-                          'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.'
-                      );
-                    } else if (res?.success) {
-                      toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
-                    } else if (res?.error === 'Player is not waiting for BB') {
-                      // Already known to the engine and not held out: they
-                      // are in the rotation and post blinds like everyone.
-                      toast.info('You Are Already In The Hand Rotation.');
-                    } else {
-                      toast.info(
-                        res?.error || 'Could Not Post The Big Blind. You Will Wait For It Instead.'
-                      );
+                        setBBPostAgreed(true);
+                        toast.info(
+                          res?.error ||
+                            'You Are In Between The Blinds, And Will Be Dealt In When The Button Passes.'
+                        );
+                      } else if (res?.success) {
+                        toast.success('Posting The Big Blind. You Are Dealt Into The Next Hand.');
+                      } else if (res?.error === 'Player is not waiting for BB') {
+                        // Already known to the engine and not held out: they
+                        // are in the rotation and post blinds like everyone.
+                        toast.info('You Are Already In The Hand Rotation.');
+                      } else {
+                        toast.info(
+                          res?.error ||
+                            'Could Not Post The Big Blind. You Will Wait For It Instead.'
+                        );
+                      }
+                      setPostOrWaitOpen(false);
+                    } catch (e) {
+                      reportError(e, 'TablePage.postOrWaitPostBB');
+                      toast.error('Could Not Post The Big Blind.');
+                    } finally {
+                      setIsPostingBB(false);
                     }
-                    setPostOrWaitOpen(false);
-                  } catch (e) {
-                    reportError(e, 'TablePage.postOrWaitPostBB');
-                    toast.error('Could Not Post The Big Blind.');
-                  } finally {
-                    setIsPostingBB(false);
-                  }
-                }}
-              >
-                {isPostingBB ? 'Posting...' : 'Post Big Blind'}
-              </button>
-              <button
-                type="button"
-                className="post-or-wait__wait"
-                onClick={() => setPostOrWaitOpen(false)}
-              >
-                Wait For Big Blind
-              </button>
-            </div>
+                  },
+                },
+              }}
+            >
+              <p className="sc-copy sc-copy--center post-or-wait__body">
+                Post The Big Blind Now And You Are Dealt Into The Next Hand. Or Wait, And You Are
+                Dealt In When The Big Blind Reaches Your Seat.
+              </p>
+            </SpadeConsole>
           </div>
         </div>
       )}

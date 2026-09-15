@@ -134,7 +134,36 @@ describe('the surviving timer governs the seat-first sheet too', () => {
 });
 
 describe('the window is visible on the spin sheet, not a surprise', () => {
+  /**
+   * MOVED, NOT WEAKENED (2026-09-14, #ClubArenaConsole).
+   *
+   * This pinned the single string `Seat Held For {buyInSecondsLeft}s`, which
+   * was one line of `.seat-buyin-confirm__meta`. The sheet is on the spade
+   * console now: the label prints in lit blue on the left of a row and the
+   * figure in its own ink on the right, so the countdown is TWO spans, and it
+   * is also printed into the master's painted pill slot in the header.
+   *
+   * The unit is "Sec" rather than "s" because every label on the glass prints
+   * in the master's condensed CAPS, and a bare unit rendered as "8S" - a
+   * letter nobody means, on the one figure the player is racing.
+   *
+   * What the assertion is for is unchanged and is if anything stricter: the
+   * window must be VISIBLE, it must count the live value, and the last ten
+   * seconds must read as urgent.
+   */
   it('renders a live countdown while the seat is held', () => {
-    expect(CODE).toContain('Seat Held For {buyInSecondsLeft}s');
+    expect(CODE).toContain('Seat Held For');
+    expect(CODE).toContain('{buyInSecondsLeft} Sec');
+  });
+
+  it('prints the same countdown in the header pill, and never an empty pill', () => {
+    expect(CODE).toContain(
+      "pill={buyInSecondsLeft !== null ? `${buyInSecondsLeft} Sec` : 'Seat Held'}"
+    );
+  });
+
+  it('turns the countdown red for the last ten seconds', () => {
+    expect(CODE).toContain("buyInSecondsLeft <= 10 ? 'red' : 'gold'");
+    expect(CODE).toContain("buyInSecondsLeft <= 10 ? 'sc-ink--red' : 'sc-ink--gold'");
   });
 });

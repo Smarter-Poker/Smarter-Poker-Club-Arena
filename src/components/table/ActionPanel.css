@@ -734,19 +734,41 @@
   opacity: 0.6;
   filter: grayscale(0.4);
 }
+/* ── SCHEMA INK (#ClubArenaConsole, 2026-09-14) ────────────────────────────
+   The one piece of generic chrome on this panel, and the only thing in this
+   file the console standard touches: a toast-in-page. It was white type
+   inside a rgba(249, 115, 22) rim - an orange that appears nowhere in the
+   smarter.poker scheme, on the control the player looks at most.
+
+   It is the master's HELD ink now (--accent-gold, the ink the kit already
+   uses for held / pinned / waiting) on black glass, in the master's condensed
+   caps. Nothing else about this bar is chrome: the three action buttons are
+   Dan's own art direction (2026-08-26 item 8) and their ramps are pinned by
+   tests/gameplay-wears-the-house-colours.test.ts, and the sizing overlay's
+   geometry is pinned arithmetic in tests/unit/actionBarSliderAndFooter.
+   Neither is repainted here. */
 .action-panel__stale-note {
   position: absolute;
   left: 50%;
   bottom: 100%;
   transform: translate(-50%, -6px);
-  white-space: nowrap;
-  padding: 4px 10px;
-  border-radius: 999px;
+  /* IT RAN OFF BOTH EDGES OF THE PHONE. `white-space: nowrap` on a
+     62-character sentence, centred on a 393px viewport, clipped the first and
+     last words - so the one line that explains why the buttons look wrong was
+     itself unreadable (measured in the 393px render, 2026-09-14). It wraps and
+     is capped to the viewport now. It is a SENTENCE, so it prints in Inter at
+     sentence weight rather than in the condensed caps a label wears. */
+  max-width: min(340px, calc(100vw - 24px));
+  text-align: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-family: Inter, system-ui, sans-serif;
   font-size: 0.7rem;
-  font-weight: 700;
-  color: #fff;
-  background: rgba(14, 18, 28, 0.92);
-  border: 1px solid rgba(249, 115, 22, 0.55);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--accent-gold, #ffd700);
+  background: rgb(5 6 7 / 94%);
+  border: 1px solid rgb(255 215 0 / 45%);
   pointer-events: none;
 }
 

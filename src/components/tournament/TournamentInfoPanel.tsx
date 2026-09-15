@@ -45,7 +45,13 @@ import { reportError } from '../../utils/errorReporter';
 import { money } from '../../utils/buyIn';
 import { compactChips } from '../../utils/format';
 import { SpadeConsole } from '../console/SpadeConsole';
-import { effectivePlaceLadderPool, placePrize, resolvePayoutStructure } from './details/types';
+import {
+  effectivePlaceLadderPool,
+  placePrize,
+  resolvePayoutStructure,
+  tournamentRowUnitCents,
+  type TournamentArenaEmbed,
+} from './details/types';
 import './TournamentInfoPanel.css';
 
 type TabId = 'ranking' | 'prizes' | 'tables' | 'blinds';
@@ -62,7 +68,7 @@ interface Row {
   table_id: string | null;
 }
 
-interface TournamentRow {
+interface TournamentRow extends TournamentArenaEmbed {
   id: string;
   name: string;
   status: string;
@@ -147,7 +153,10 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, blind_structure, payout_structure, is_bounty, start_time'
+            // `arena` is the three columns fn_ca_tournament_unit_cents tests,
+            // so this panel's ladder is priced in the unit the event actually
+            // pays in rather than in the cent every tournament used to pay in.
+            'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, blind_structure, payout_structure, is_bounty, start_time, arena:clubs!tournaments_club_id_fkey(id, asset, is_platform, union_id)'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -239,6 +248,14 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
       isSatellite
     );
   }, [fieldSize, isSatellite, payouts, t]);
+  /**
+   * The unit this event pays in, from the `arena` the select above embeds.
+   * `compactChips` below already floors to a whole number, so the ladder's
+   * DISPLAY was never the defect here - the arithmetic was, and a cent-grid
+   * share of a Diamond pool floors to a different whole number than a
+   * Diamond-grid one does.
+   */
+  const unitCents = useMemo(() => tournamentRowUnitCents(t), [t]);
   /**
    * LEVEL DISPLAY IS 1-BASED, THE COLUMN IS NOT (2026-08-23).
    *
@@ -412,7 +429,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
                     const amount =
                       placeLadderPool === null
                         ? null
-                        : placePrize(placeLadderPool, payouts, p.place);
+                        : placePrize(placeLadderPool, payouts, p.place, unitCents);
                     return (
                       <tr key={i}>
                         <td>{p.place}</td>

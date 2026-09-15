@@ -150,6 +150,24 @@ const UNIT_BEARING_RULES: Array<{ fn: string; declaredIn: string; arity: number 
   },
   { fn: 'recoveryFeeCents', declaredIn: 'server/src/tournament/recoveryFee.ts', arity: 3 },
   { fn: 'unitFloorCents', declaredIn: 'server/src/tournament/recoveryFee.ts', arity: 2 },
+  /**
+   * ─── AND THE WRAPPER, BECAUSE A CENSUS WITH A HOLE IN IT IS THE DEFECT ────
+   *
+   * `placePrize` is every browser display's door to `computePlacePrize`. Until
+   * 2026-09-15 it answered `UNIT_CENTS_ASSET_NOT_READ` on its callers' behalf,
+   * which satisfied the census below - the wrapper passed a unit, so the rule
+   * underneath it was called correctly - while all five displays remained
+   * unable to say what unit they meant.
+   *
+   * Now it takes the unit from its callers, and it is censused HERE rather
+   * than left to `tsc` alone. CLAUDE.md 10.86 rule 4 is the reason: a fix that
+   * leaves the same trap one level up has not landed. Arity is enforced by the
+   * compiler, but "never a bare literal" is not, and a sixth display added
+   * next month with `placePrize(pool, places, 1, 1)` would compile, print
+   * cents at a Diamond event, and be indistinguishable from the default this
+   * law was written to delete.
+   */
+  { fn: 'placePrize', declaredIn: 'src/components/tournament/details/types.ts', arity: 4 },
 ];
 
 describe('LAW: a tournament prize knows its unit', () => {
@@ -163,6 +181,10 @@ describe('LAW: a tournament prize knows its unit', () => {
       'src/lib/payoutMath.ts',
       'server/src/tournament/recoveryFee.ts',
       'server/src/tournament/mysteryBountyActivation.ts',
+      // The wrapper every display goes through. A default restored here would
+      // put the cent back in front of all five of them at once, and none of
+      // their call sites would change by a character.
+      'src/components/tournament/details/types.ts',
     ]) {
       const code = blankNonCode(read(file));
       expect(code, `${file} gave a unit parameter a default again`).not.toMatch(

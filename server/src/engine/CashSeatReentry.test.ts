@@ -9,6 +9,77 @@ vi.mock('../services/supabase/client.js', () => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('a new cash occupancy between roster reads', () => {
+  it.each(['arrival', 'replacement', 'departure'] as const)(
+    'preserves the %s notification while arrival proof is unavailable',
+    async (mode) => {
+      const engine = new ServerTableEngine('aaaaaaaa-1111-4111-8111-111111111111') as any;
+      const prior = { user_id: 'player', occupancy_id: 'old-stay', seat_number: 1, stack: 100 };
+      const arrival = { ...prior, occupancy_id: 'new-stay', seat_number: 4, entry_hold: 'moved' };
+      const retained = {
+        user_id: 'retained',
+        occupancy_id: 'same-stay',
+        seat_number: 2,
+        stack: 100,
+      };
+      engine.running = true;
+      engine.isCurrentEngine = () => true;
+      engine.lifecycleCanMutate = () => engine.running;
+      engine.tableInfo = {
+        id: engine.tableId,
+        tournament_id: null,
+        game_type: 'NLH',
+        max_players: 6,
+      };
+      engine.seatedPlayers = mode === 'arrival' ? [retained] : [prior, retained];
+      for (const seat of engine.seatedPlayers) engine.knownPlayerIds.add(seat.user_id);
+      engine.dealingLoopFirstIteration = false;
+      engine.prepareNextHand = vi.fn(async () =>
+        mode === 'departure' ? [retained] : [arrival, retained]
+      );
+      engine.adoptMovedPresence = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+      engine.restoreSitOutsFromSeats = vi.fn();
+      engine.evictExpiredSitOuts = vi.fn(async () => {});
+      engine.persistEntryHold = vi.fn();
+      engine.wakeClusterGame = vi.fn();
+      engine.hub = { emitEvent: vi.fn() };
+      engine.adminPauseLock = true;
+      let waits = 0;
+      engine.sleep = vi.fn(async () => {
+        waits++;
+        if (waits === 1) {
+          expect(engine.restoreSitOutsFromSeats).not.toHaveBeenCalled();
+          expect(engine.hub.emitEvent).not.toHaveBeenCalled();
+          expect(engine.wakeClusterGame).not.toHaveBeenCalled();
+        }
+        // One failed proof, one successful observation and one unchanged
+        // observation: the real loop must deliver the diff exactly once.
+        if (waits === 3) engine.running = false;
+      });
+      await engine.dealingLoop();
+      expect(engine.adoptMovedPresence).toHaveBeenCalledTimes(3);
+      expect(engine.restoreSitOutsFromSeats).toHaveBeenCalledTimes(2);
+      const arrivals = engine.hub.emitEvent.mock.calls.filter(
+        ([, event]: [string, { type: string }]) => event.type === 'seat_taken'
+      );
+      expect(arrivals).toEqual(
+        mode === 'departure'
+          ? []
+          : [
+              [
+                engine.tableId,
+                expect.objectContaining({
+                  type: 'seat_taken',
+                  user_id: prior.user_id,
+                  seat: 4,
+                }),
+              ],
+            ]
+      );
+      expect(engine.wakeClusterGame).toHaveBeenCalledTimes(1);
+      expect(engine.wakeClusterGame).toHaveBeenCalledWith('seat_change');
+    }
+  );
+
   it.each(['same', 'replaced', 'empty-between'] as const)(
     'the startup waiting loop retires prior occupancies (%s)',
     async (mode) => {

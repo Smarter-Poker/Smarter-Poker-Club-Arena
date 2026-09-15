@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # PUBLISH CLUB ARENA — the Club Arena-owned Hetzner publisher, isolated on
-# a dedicated local publisher VM that cannot run pull-request jobs.
+# a dedicated local publisher VM reserved for protected-main publication.
 #
 # WHY THIS FILE EXISTS (2026-09-02). build-for-world-hub.yml stopped being
 # scheduled by GitHub at 16:33 UTC. Six runs sat at `queued` with ZERO jobs

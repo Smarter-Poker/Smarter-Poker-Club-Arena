@@ -371,3 +371,22 @@ test('successful current-head shards retain both required passing aggregates', (
     env: { MATRIX_RESULT: 'success' },
   });
 });
+
+// The first local ARM run failed before exercising any journal transaction:
+// its default embedded runtime only exists for Linux x64. Use the same PG17
+// provider as the other real-database jobs without changing the probe itself.
+test('the journal gate uses the installed PostgreSQL 17 provider', () => {
+  const body = job('typecheck_compile');
+  const step = body.split('      - name: Chip journal transactions survive failures and replays\n')[1]?.split(/\n      - /)[0];
+  assert.ok(step);
+  assert.match(step, /^        env:\n          PGBIN: \/usr\/lib\/postgresql\/17\/bin$/m);
+  assert.match(step, /^        run: bash scripts\/ci\/probes\/chip-journal-atomicity\/run-isolated\.sh$/m);
+  assert.doesNotMatch(step, /continue-on-error|if:/);
+});
+
+test('installed dependency caches cannot cross local CPU architectures', () => {
+  const source = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const keys = [...source.matchAll(/^          key: (nm-[^\n]+)$/gm)];
+  assert.ok(keys.length >= 5);
+  for (const [, key] of keys) assert.ok(key.includes('${{ runner.arch }}'), key);
+});

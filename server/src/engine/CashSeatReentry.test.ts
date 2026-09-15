@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
+import * as database from '../services/supabase.js';
 
 vi.mock('../services/supabase/client.js', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -8,6 +9,80 @@ vi.mock('../services/supabase/client.js', () => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('a new cash occupancy between roster reads', () => {
+  it.each(['same', 'replaced', 'empty-between'] as const)(
+    'the startup waiting loop retires prior occupancies (%s)',
+    async (mode) => {
+      const replaced = mode !== 'same';
+      const engine = new ServerTableEngine('aaaaaaaa-1111-4111-8111-111111111111') as any;
+      const prior = { user_id: 'player', occupancy_id: 'old-stay', seat_number: 1, stack: 100 };
+      engine.seatedPlayers = [prior];
+      engine.knownPlayerIds.add(prior.user_id);
+      engine.dealtInUserIds.add(prior.user_id);
+      engine.mustPostBB.add(prior.user_id);
+      engine.horseRebuys.set(prior.user_id, 3);
+      engine.disconnectEngine.registerPlayer(engine.tableId, prior.user_id);
+      engine.timeBankEngine.initializePlayer(engine.tableId, prior.user_id, {
+        remainingSeconds: 11,
+        usesRemaining: 1,
+        unlimitedActivations: false,
+      });
+      engine.timeBankMeta.set(prior.user_id, {
+        initialSeconds: 40,
+        baseSeconds: 30,
+        dbConsumedSeconds: 4,
+      });
+      engine.engineLeaseAuthorityIsCurrent = () => true;
+      engine.claimProcessOwnership = () => true;
+      engine.armEngineLeaseExpiryTimer = vi.fn();
+      engine.lifecycleCanMutate = () => engine.running;
+      engine.applyRunItTwiceConfig = () => ({ insuranceEnabled: false });
+      engine.seedHandCountFromHistory = vi.fn(async () => {});
+      engine.restoreButtonFromHistory = vi.fn(async () => {});
+      engine.checkCrashRecovery = vi.fn(async () => false);
+      engine.processPendingAddOns = vi.fn(async () => {});
+      engine.restoreEntryHoldsFromSeats = vi.fn();
+      engine.evictExpiredSitOuts = vi.fn(async () => {});
+      engine.executeIdleSeatMoves = vi.fn(async () => []);
+      engine.stopIfClusterTableClosed = vi.fn(async () => {});
+      engine.broadcastCurrentState = vi.fn(async () => {});
+      engine.wakeClusterGame = vi.fn();
+      engine.sleep = vi.fn(async () => {});
+      vi.spyOn(database, 'loadTable').mockResolvedValue({
+        id: engine.tableId,
+        tournament_id: null,
+        game_type: 'NLH',
+        max_players: 6,
+      } as any);
+      vi.spyOn(database, 'loadPresenceFromPark').mockResolvedValue(null);
+      const rosterRead = vi.spyOn(database, 'loadSeatedPlayers');
+      if (mode === 'empty-between')
+        rosterRead.mockResolvedValueOnce([prior] as any).mockResolvedValueOnce([]);
+      rosterRead.mockResolvedValue([
+        { ...prior, occupancy_id: replaced ? 'new-stay' : prior.occupancy_id },
+      ] as any);
+      const unregister = vi.spyOn(engine.disconnectEngine, 'unregisterPlayer');
+      let sweeps = 0;
+      engine.restoreSitOutsFromSeats = vi.fn(() => {
+        sweeps++;
+        const retired = replaced && (mode !== 'empty-between' || sweeps > 1);
+        expect(engine.dealtInUserIds.has(prior.user_id)).toBe(!retired);
+        expect(engine.mustPostBB.has(prior.user_id)).toBe(!retired);
+        expect(engine.horseRebuys.has(prior.user_id)).toBe(!retired);
+        expect(engine.timeBankMeta.has(prior.user_id)).toBe(!retired);
+        if (mode !== 'empty-between' || sweeps === 3) engine.running = false;
+      });
+      await engine.start();
+      expect(engine.restoreSitOutsFromSeats).toHaveBeenCalledTimes(
+        mode === 'empty-between' ? 3 : 1
+      );
+      expect(unregister).toHaveBeenCalledTimes(replaced ? 1 : 0);
+      if (mode === 'empty-between') {
+        expect(engine.wakeClusterGame).toHaveBeenCalledTimes(2);
+        expect(engine.wakeClusterGame).toHaveBeenCalledWith('seat_change');
+      }
+    }
+  );
+
   it.each(['waiting', 'moved'] as const)(
     'classifies the replacement stay with %s entry',
     async (hold) => {
@@ -37,7 +112,7 @@ describe('a new cash occupancy between roster reads', () => {
       engine.horseRebuys.set(prior.user_id, 3);
       engine.dealingLoopFirstIteration = false;
       engine.prepareNextHand = vi.fn(async () => [replacement]);
-      engine.adoptMovedPresence = vi.fn();
+      engine.adoptMovedPresence = vi.fn().mockResolvedValue(true);
       engine.restoreSitOutsFromSeats = vi.fn();
       engine.evictExpiredSitOuts = vi.fn(async () => {});
       engine.persistEntryHold = vi.fn();
@@ -76,7 +151,7 @@ describe('a new cash occupancy between roster reads', () => {
     engine.mustPostBB.add(seat.user_id);
     engine.dealingLoopFirstIteration = false;
     engine.prepareNextHand = vi.fn(async () => [{ ...seat }]);
-    engine.adoptMovedPresence = vi.fn();
+    engine.adoptMovedPresence = vi.fn().mockResolvedValue(true);
     engine.restoreSitOutsFromSeats = vi.fn();
     engine.evictExpiredSitOuts = vi.fn(async () => {});
     engine.adminPauseLock = true;
@@ -101,7 +176,7 @@ describe('a new cash occupancy between roster reads', () => {
       current = false;
       return [{ ...seat, occupancy_id: 'new-stay' }];
     });
-    engine.adoptMovedPresence = vi.fn();
+    engine.adoptMovedPresence = vi.fn().mockResolvedValue(true);
     await engine.dealingLoop();
     expect(engine.seatedPlayers).toEqual([seat]);
     expect(engine.adoptMovedPresence).not.toHaveBeenCalled();

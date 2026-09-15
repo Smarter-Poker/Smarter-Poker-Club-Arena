@@ -225,42 +225,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        const previousOccupancies = new Map(
-          this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id])
-        );
         const nextRoster = await this.prepareNextHand();
         if (!this.lifecycleCanMutate()) return;
-        this.seatedPlayers = nextRoster;
         // A leave and rejoin can both commit between reads. User identity is
         // unchanged, but entry debt, button eligibility and presence belonged
         // to the old stay. Retire those mirrors before adopting the new seat.
-        if (!this.isTournamentTable()) {
-          for (const p of this.seatedPlayers) {
-            if (
-              !previousOccupancies.has(p.user_id) ||
-              previousOccupancies.get(p.user_id) === p.occupancy_id
-            )
-              continue;
-            previousSeatedIds.delete(p.user_id);
-            this.knownPlayerIds.delete(p.user_id);
-            this.waitingForBB.delete(p.user_id);
-            this.postingBBToEnter.delete(p.user_id);
-            this.postBBWhenClear.delete(p.user_id);
-            this.pendingPostToEnter.delete(p.user_id);
-            this.mustPostBB.delete(p.user_id);
-            this.returningFromSitout.delete(p.user_id);
-            this.heldForSwap.delete(p.user_id);
-            this.dealtInUserIds.delete(p.user_id);
-            this.pendingSitOut.delete(p.user_id);
-            this.leaveHeldByClock.delete(p.user_id);
-            this.horseRebuys.delete(p.user_id);
-            this.disconnectEngine.unregisterPlayer(this.tableId, p.user_id);
-            this.timeBankEngine.removePlayer(this.tableId, p.user_id);
-            this.straddleEngine.removePlayer(this.tableId, p.user_id);
-            this.preActionEngine.removePlayer(this.tableId, p.user_id);
-            this.chipContinuity.forget(p.user_id);
-          }
-        }
+        for (const userId of this.adoptSeatRoster(nextRoster)) previousSeatedIds.delete(userId);
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player
@@ -271,7 +241,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // adopted BEFORE the sit-out restore, because that restore registers
         // the player and restoreFsmStates never clobbers a live entry. See
         // ServerTableEngineBase.adoptMovedPresence.
-        this.adoptMovedPresence();
+        if (!(await this.adoptMovedPresence())) {
+          if (!this.lifecycleCanMutate()) return;
+          await this.sleep(5000);
+          continue;
+        }
+        if (!this.lifecycleCanMutate()) return;
         this.restoreSitOutsFromSeats();
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
@@ -309,7 +284,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // button eligibility for players who were already playing.
         // A SEAT CHANGED (2026-09-05): an arrival or a departure seen in the
         // rows this iteration wakes the game's ClusterController tick.
-        let rosterChanged = false;
+        let rosterChanged = [...previousSeatedIds].some(
+          (id) => !this.seatedPlayers.some((p) => p.user_id === id)
+        );
         if (this.dealingLoopFirstIteration) {
           // Dan 2026-08-30: BEFORE the veteran seeding below, because that
           // seeding is what used to destroy the hold. Both halves of the fix

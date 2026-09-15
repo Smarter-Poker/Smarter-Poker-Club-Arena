@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # PUBLISH CLUB ARENA — the Club Arena-owned Hetzner publisher, isolated on
-# fresh hosted runners so prior pull-request code cannot reach release secrets.
+# a dedicated local publisher VM that cannot run pull-request jobs.
 #
 # WHY THIS FILE EXISTS (2026-09-02). build-for-world-hub.yml stopped being
 # scheduled by GitHub at 16:33 UTC. Six runs sat at `queued` with ZERO jobs
@@ -75,8 +75,8 @@ jobs:
   # A push is new work, and a recovery event carries one explicit
   # protected-main SHA to publish.
   publish-needed:
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see ci.yml RUNNER ROUTING).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Credential-free checks use only the local CI VM.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -178,7 +178,7 @@ jobs:
       # publish pipeline to ~7. The gate is exactly as strong: publish-to-origin
       # `needs: [build-and-store, client-tests]`, and `needs` on a matrix waits for
       # EVERY shard, so one red shard still stops the bundle. fail-fast cancels the
-      # siblings the moment one fails, which is what a gate wants. Fresh hosted
+      # siblings the moment one fails, which is what a gate wants. Separate local
       # images keep the test and release trust domains isolated.
       # ── HAS THIS EXACT TREE ALREADY PASSED THE CLIENT SUITE? ──────────────
       #
@@ -235,8 +235,8 @@ jobs:
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
     if: needs.publish-needed.outputs.tests_proven != 'true'
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see ci.yml RUNNER ROUTING).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Credential-free checks use only the local CI VM.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 20
     permissions:
       contents: read
@@ -266,7 +266,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-bfwh-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+          key: nm-bfwh-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -278,9 +278,9 @@ jobs:
   build-and-store:
     needs: publish-needed
     # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
-    # vars.PUBLISH_RUNNER (unset today => ubuntu-latest) is the hook for a dedicated,
-    # credential-only runner label later.
-    runs-on: ${{ vars.PUBLISH_RUNNER || 'ubuntu-latest' }}
+    # A dedicated local publisher VM must admit only protected-main workflows.
+    runs-on: [self-hosted, smarter-local-publish]
+    environment: Production
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
@@ -354,13 +354,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+          key: nm-publish-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
 
       - name: Cache Vite Build
         uses: actions/cache@v4
         with:
           path: node_modules/.vite
-          key: vite-publish-${{ runner.os }}-node22-${{ hashFiles('**/package-lock.json') }}
+          key: vite-publish-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -376,10 +376,10 @@ jobs:
         with:
           path: node_modules/.cache/dist-media
           key: >-
-            dist-media-publish-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            dist-media-publish-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('public/**/*.png',
             'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
             'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
-          restore-keys: dist-media-publish-v1-${{ runner.os }}-
+          restore-keys: dist-media-publish-v1-${{ runner.os }}-${{ runner.arch }}-
 
       # This job runs the FULL `npm run build`, `tsc -b` included, while
       # ci.yml's two build jobs run `build:ci` without it. That asymmetry is
@@ -579,9 +579,9 @@ jobs:
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
     # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
-    # vars.PUBLISH_RUNNER (unset today => ubuntu-latest) is the hook for a dedicated,
-    # credential-only runner label later.
-    runs-on: ${{ vars.PUBLISH_RUNNER || 'ubuntu-latest' }}
+    # A dedicated local publisher VM must admit only protected-main workflows.
+    runs-on: [self-hosted, smarter-local-publish]
+    environment: Production
     timeout-minutes: 30
     permissions:
       contents: read
@@ -616,7 +616,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+          key: nm-publish-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -682,9 +682,9 @@ jobs:
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
     # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
-    # vars.PUBLISH_RUNNER (unset today => ubuntu-latest) is the hook for a dedicated,
-    # credential-only runner label later.
-    runs-on: ${{ vars.PUBLISH_RUNNER || 'ubuntu-latest' }}
+    # A dedicated local publisher VM must admit only protected-main workflows.
+    runs-on: [self-hosted, smarter-local-publish]
+    environment: Production
     timeout-minutes: 25
     permissions:
       contents: read

@@ -167,6 +167,7 @@ jobs:
       - name: Engine image request and terminal custody
         run: |
           python3 -B tests/operations/engine-image-ci-bundle.test.py
+          python3 -B tests/operations/local-publishers.test.py
           python3 -B tests/operations/engine-release-image-request.test.py
           python3 -B tests/operations/engine-release-image-result.test.py
           python3 -B tests/operations/engine-release-image-generation.test.py

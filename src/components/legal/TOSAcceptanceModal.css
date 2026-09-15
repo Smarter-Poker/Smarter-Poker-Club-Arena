@@ -272,12 +272,13 @@
   cursor: pointer;
 }
 
+/* The native control keeps the semantics and the label binding; the kit's
+   engraved well (`sc-check__box`) is what it looks like, so `appearance: none`
+   is what lets the groove show instead of the platform's own tick box. */
 .tosc__agree-label input[type='checkbox'] {
-  flex: 0 0 auto;
-  width: 5cqw;
-  height: 5cqw;
+  appearance: none;
+  -webkit-appearance: none;
   margin: 0;
-  accent-color: #1877f2;
   cursor: pointer;
 }
 

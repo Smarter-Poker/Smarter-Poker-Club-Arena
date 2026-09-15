@@ -52,3 +52,29 @@ written into JSX, which is why all four copy gates were green over them for as
 long as they existed. `PushEnableBanner` title-cases what it prints, but the
 source is what every other caller gets, so the source is fixed (Dan
 2026-09-14: "THE FIRST LETTER OF EVERY WORD MUST ALWAYS BE CAPITALIZED").
+
+## A person agreeing to something can see the box
+
+Dan, 2026-09-15: "there needs to be an area for the box check to the 'I Agree'
+part."
+
+The master art paints no tick box, and an earlier pass read that as "draw
+nothing": the welcome door's agreement became a lit word carrying
+`role="checkbox"` and `aria-checked` - correct to a screen reader, invisible
+to everybody else - and the Terms sheet kept the platform's own tick box with
+an `accent-color`, which is the one control on that surface the house did not
+draw.
+
+The kit cuts a tick well into the glass instead (`sc-check`, `sc-check__box`,
+`sc-check--on` in `SpadeConsole.css`): the same black top rule and eight
+percent inner light as every engraved row, closed into a square, with its core
+lit in the master's own green when ticked. No glyph and no tick character, so
+nothing waits on a font to arrive before it reads, and `prefers-reduced-motion`
+drops the fade.
+
+Both agreements wear it. The welcome door keeps `role="checkbox"` and
+`aria-checked` and gains the well beside the words; the Terms sheet keeps its
+native `<input type="checkbox">` - so the label binding and the keyboard path
+are the platform's, not ours - and wears the well through `appearance: none`.
+Verified in a browser at 393px: the box renders at 21px square on both, and
+ticking it adds `sc-check--on` and lights the core.

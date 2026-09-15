@@ -157,7 +157,11 @@
 
 /* Between the shark's rails: glass runs x 60-673 of 733. */
 .sc--family-shark .sc__body {
-  padding: 0 9% 3cqw;
+  /* The shorthand would wipe the pixel the seam overlap pays back as
+     padding (see "THE SEAMS OVERLAP BY A PIXEL" above), leaving the
+     negative margins to shift this family's content up by one row.
+     Restate all three, never a plain `padding`. */
+  padding: 1px 9% calc(3cqw + 1px);
   background-image: url('/assets/club-buttons/console/shark-console-v1/mid.png');
 }
 
@@ -186,7 +190,11 @@
 /* Between the riveted rails: glass runs x 70-660 of 729, and the head prints
    its title from x 88 - the body lines up with it. */
 .sc--family-riveted .sc__body {
-  padding: 0 12% 3cqw;
+  /* The shorthand would wipe the pixel the seam overlap pays back as
+     padding (see "THE SEAMS OVERLAP BY A PIXEL" above), leaving the
+     negative margins to shift this family's content up by one row.
+     Restate all three, never a plain `padding`. */
+  padding: 1px 12% calc(3cqw + 1px);
   background-image: url('/assets/club-buttons/console/riveted-console-v1/mid.png');
 }
 
@@ -404,4 +412,61 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE TICK WELL (Dan 2026-09-15: "there needs to be an area for the box
+   check to the 'I Agree' part").
+
+   The master art paints no tick box, and an earlier pass read that as "draw
+   nothing" - the agreement became a lit word with `role="checkbox"`, correct
+   to a screen reader and invisible to everybody else. A person being asked to
+   agree to something has to SEE the box they are ticking.
+
+   So it is cut into the glass rather than drawn on top of it: the same black
+   top rule and 8% inner light as every engraved row, closed into a square.
+   Ticked, its core lights in the master's own green - no glyph, no tick
+   character, nothing that needs a font to arrive before it reads.
+   ───────────────────────────────────────────────────────────────────────── */
+.sc-check {
+  display: flex;
+  align-items: center;
+  gap: 2.6cqw;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+
+.sc-check__box {
+  position: relative;
+  flex: 0 0 auto;
+  width: 5.4cqw;
+  height: 5.4cqw;
+  min-width: 18px;
+  min-height: 18px;
+  background: #05070b;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    inset 0 0 0 1px rgb(0 0 0 / 88%),
+    inset 0 -1px 0 rgb(255 255 255 / 4%);
+}
+
+/* The lit core. Inset far enough that the groove's own edge still reads. */
+.sc-check__box::after {
+  position: absolute;
+  inset: 26%;
+  content: '';
+  background: transparent;
+  transition: background 120ms linear;
+}
+
+.sc-check--on .sc-check__box::after {
+  background: #c8ffd2;
+  box-shadow: 0 0 6px rgb(53 217 90 / 65%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-check__box::after {
+    transition: none;
+  }
 }

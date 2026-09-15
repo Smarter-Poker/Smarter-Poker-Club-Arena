@@ -168,13 +168,23 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
           </div>
 
           <div className="tosc__agree">
-            <label className="tosc__agree-label sc-copy">
+            {/* The tick well is cut into the glass by the kit (`sc-check`,
+                SpadeConsole.css) and the native input wears it, so the box a
+                person sees is the box the label is bound to. Dan 2026-09-15:
+                "there needs to be an area for the box check to the I Agree
+                part." */}
+            <label
+              className={`tosc__agree-label sc-copy sc-check${
+                hasScrolledToBottom ? ' sc-check--on' : ''
+              }`}
+            >
               <input
                 type="checkbox"
+                className="sc-check__box"
                 checked={hasScrolledToBottom}
                 onChange={() => setHasScrolledToBottom(true)}
               />
-              I Have Read And Agree To The Terms Of Service And Privacy Policy
+              <span>I Have Read And Agree To The Terms Of Service And Privacy Policy</span>
             </label>
 
             {error && (

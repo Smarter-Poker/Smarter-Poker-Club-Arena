@@ -257,14 +257,14 @@ for (const name of [
   'build',
   'css-beats-e2e',
 ]) {
-  test(`${name} admits before dependency setup on a fresh hosted read-only runner`, () => {
+  test(`${name} admits before dependency setup on the local read-only runner`, () => {
     const source = job(name),
       start = source.indexOf('- name: Admit only the current PR head');
     assert.ok(start > source.indexOf('uses: actions/checkout@'));
     assert.ok(start < source.indexOf('- name: Setup Node'));
     assert.match(
       source,
-      /runs-on: (?:ubuntu-latest|\$\{\{ vars\.CI_RUNNER \|\| 'ubuntu-latest' \}\})/
+      /^    runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m
     );
     assert.match(source, /permissions:\n      contents: read\n      pull-requests: read/);
     const gate = source.slice(start, source.indexOf('- name: Setup Node'));
@@ -273,6 +273,34 @@ for (const name of [
     assert.doesNotMatch(gate, /continue-on-error|\bif:|\|\| true|\bwrite\b/);
   });
 }
+test('every required workflow job stays on the local runner without a hosted fallback', () => {
+  for (const name of ['ci', 'silent-revert-guard', 'component-fixture-native-smoke']) {
+    const source = readFileSync(
+      new URL(`../../.github/workflows/${name}.yml`, import.meta.url),
+      'utf8'
+    );
+    const jobs = source.slice(source.indexOf('\njobs:\n') + 7);
+    const entries = [...jobs.matchAll(/^  ([A-Za-z_][A-Za-z_0-9-]*):\s*$/gm)];
+    assert.ok(entries.length > 0, `${name} declares jobs`);
+    for (let i = 0; i < entries.length; i++) {
+      const body = jobs.slice(entries[i].index, entries[i + 1]?.index);
+      if (/^    uses:/m.test(body)) {
+        assert.equal(name, 'ci');
+        assert.equal(entries[i][1], 'fixture_native');
+        assert.match(
+          body,
+          /^    uses: \.\/\.github\/workflows\/component-fixture-native-smoke\.yml$/m
+        );
+      } else {
+        assert.match(
+          body,
+          /^    runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m,
+          `${name}/${entries[i][1]} must wait for the local runner`
+        );
+      }
+    }
+  }
+});
 test('required TypeScript gate still requires the actual compilation result', () => {
   assert.match(job('typecheck'), /needs: \[typecheck_compile, changes, fixture_native\]/);
   assert.match(job('typecheck'), /COMPILE_RESULT: \$\{\{ needs.typecheck_compile.result \}\}/);

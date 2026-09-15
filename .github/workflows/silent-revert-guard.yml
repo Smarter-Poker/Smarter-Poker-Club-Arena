@@ -45,7 +45,7 @@ jobs:
     # Named explicitly because this is a REQUIRED status check and the ruleset
     # matches on the job name. Renaming it silently un-gates main.
     name: Silent Revert Guard
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     steps:
       - name: Checkout with full history
         uses: actions/checkout@v4

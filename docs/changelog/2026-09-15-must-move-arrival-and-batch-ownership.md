@@ -59,3 +59,10 @@ Migration admission/application, deployment identity, clean shutdown,
 post-restart continuity and live client behavior remain separate obligations.
 Prior commits' test results do not validate this candidate. The owner has
 paused push/publication until further notice.
+
+Final source readback also found that a scoped `waiting_partner` payload
+could establish a local swap hold with a missing or malformed `ok` field.
+The hold now requires the executor's explicit `ok: false` status as well as
+its original-occupancy proof. Four additional receipt cases cover missing,
+null, string and numeric status; the valid hold control remains. These
+cases also await protected execution.

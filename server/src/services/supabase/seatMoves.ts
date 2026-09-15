@@ -327,6 +327,7 @@ export async function executePendingSeatMoves(
         });
       } else if (res.reason === 'waiting_partner' && res.held === true) {
         if (
+          res.ok !== false ||
           !scopeMatches ||
           res.to_table_id !== m.to_table_id ||
           !res.partner_id ||

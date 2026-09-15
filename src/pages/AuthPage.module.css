@@ -35,8 +35,10 @@
  * this padding to a rem value that resolves to a fraction. The signup form is
  * taller than the viewport anyway, so it never looked centred there.
  *
- * The junction itself is fragile in the kit, not here: see the note to the
- * console owner in the wave 7c report.
+ * The junction itself was fragile in the kit and is fixed there now: the
+ * body's box overlaps its neighbours by a pixel (SpadeConsole.css, "THE SEAMS
+ * OVERLAP BY A PIXEL"). This whole-pixel anchor stays anyway - it also keeps
+ * the console's own top edge off a fractional row.
  */
 .container {
   min-height: 100vh;

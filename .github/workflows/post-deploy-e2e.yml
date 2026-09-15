@@ -267,7 +267,9 @@ jobs:
             | node scripts/ci/production-e2e-provenance.mjs engine-ready "$EXPECTED_ENGINE_SHA"
 
       - name: Install Chromium and WebKit
-        run: npx playwright install chromium webkit --with-deps
+        # System browser libraries belong to the dedicated VM provisioning.
+        # Release jobs install only their pinned browser payloads, without apt.
+        run: npx playwright install chromium webkit
 
       # Production must be reachable and serving one exact repository commit
       # before any browser assertion can carry a verdict.

@@ -2166,6 +2166,7 @@ if [ "$1" = buildx ] && [ "$2" = build ]; then
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --builder) [ "$2" = club-arena-engine-bounded-v2 ]; shift 2 ;;
+      --platform) [ "$2" = linux/amd64 ]; printf '%s' "$2" > "$STATE_DIR/platform"; shift 2 ;;
       --load) shift ;;
       --progress) [ "$2" = plain ]; shift 2 ;;
       --build-arg) printf '%s' "$2" > "$STATE_DIR/build-arg"; shift 2 ;;
@@ -2253,6 +2254,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       );
       expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
       expect(first.stdout).toContain('ENGINE_IMAGE_REUSED=false');
+      expect(readFileSync(join(dockerState, 'platform'), 'utf8')).toBe('linux/amd64');
       expect(readFileSync(join(dockerState, 'source-tree'), 'utf8').trim()).toBe(serverTree);
       expect(readFileSync(join(dockerState, 'build-contract'), 'utf8').trim()).toBe(
         'clean-server-archive-v1'

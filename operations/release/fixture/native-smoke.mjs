@@ -48,6 +48,7 @@ import {
 import { createFixtureGateway } from './gateway.mjs';
 import {
   nativeFailureDiagnostic,
+  postgrestReadinessDiagnostic,
   NativeDatabaseOwner,
   nativeChildFailure,
   realtimeLogDiagnostic,
@@ -67,6 +68,7 @@ const databaseOwner = new NativeDatabaseOwner();
 let bridgeFailure = null;
 let gatewayFailure = false;
 let realtimeBootstrapOutput = '';
+let postgrestReadiness = null;
 
 async function smokeControl() {
   const control = JSON.parse(await readFile(controls + '/smoke-control.json', 'utf8'));
@@ -91,15 +93,15 @@ async function eventually(check, milliseconds = 60000) {
 }
 
 async function healthy(url, headers = {}) {
+  const signal = AbortSignal.any([databaseOwner.signal, AbortSignal.timeout(1000)]);
   try {
-    return (
-      await fetch(url, {
-        headers,
-        signal: AbortSignal.any([databaseOwner.signal, AbortSignal.timeout(1000)]),
-        redirect: 'error',
-      })
-    ).ok;
-  } catch {
+    const response = await fetch(url, { headers, signal, redirect: 'error' });
+    if (stage === 'postgrest-server-ready')
+      postgrestReadiness = await postgrestReadinessDiagnostic(response, null, signal);
+    return response.ok;
+  } catch (error) {
+    if (stage === 'postgrest-server-ready')
+      postgrestReadiness = await postgrestReadinessDiagnostic(null, error, signal);
     return false;
   }
 }
@@ -1040,7 +1042,8 @@ try {
   // Keep raw service output, SQL, JWTs, session objects, and URLs out of CI logs.
   const diagnostic = nativeFailureDiagnostic(
     databaseOwner.failure ? 'postgresql-client-connection' : stage,
-    databaseOwner.failure ?? error
+    databaseOwner.failure ?? error,
+    postgrestReadiness
   );
   try {
     const events = await readFile('/sys/fs/cgroup/memory.events', 'utf8');

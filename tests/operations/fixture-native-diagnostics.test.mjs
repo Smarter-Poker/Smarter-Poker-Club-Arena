@@ -5,6 +5,9 @@ import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import * as runtimeFiles from '../../operations/release/fixture/runtime-files.mjs';
 import {
   nativeFailureDiagnostic,
   nativeChildFailure,
@@ -12,6 +15,94 @@ import {
   realtimeLogMarkers,
   realtimeDatabaseErrorNames,
 } from '../../operations/release/fixture/runtime-files.mjs';
+
+// Execute the maintained probe and final catch's diagnostic call without
+// starting PostgreSQL, browsers, or the application fixture.
+function postgrestProbe(fetchImpl = fetch) {
+  const source = readFileSync(new URL('../../operations/release/fixture/native-smoke.mjs', import.meta.url), 'utf8');
+  const probe = source.slice(source.indexOf('async function healthy('), source.indexOf('async function start('));
+  const terminal = source.match(/const diagnostic = nativeFailureDiagnostic\([\s\S]*?\n  \);/)[0];
+  return Function('fetch', 'AbortSignal', 'databaseOwner', 'postgrestReadinessDiagnostic', 'nativeFailureDiagnostic', `
+    let stage = 'postgrest-server-ready';
+    let postgrestReadiness = null;
+    ${probe}
+    return { healthy, failure(error) { ${terminal} return diagnostic; } };
+  `)(fetchImpl, AbortSignal, { signal: new AbortController().signal }, runtimeFiles.postgrestReadinessDiagnostic, nativeFailureDiagnostic);
+}
+
+async function postgrestServer(handler, action) {
+  const server = createServer(handler);
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try { await action(`http://127.0.0.1:${server.address().port}/`); }
+  finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+}
+
+test('PostgREST actual readiness probe retains only status and validated code in terminal failure', async () => {
+  await postgrestServer((request, response) => {
+    response.writeHead(503, { 'content-type': 'application/json', 'x-private': 'PRIVATE HEADER' });
+    response.end(JSON.stringify({ code: 'PGRST002', message: 'PRIVATE SQL PASSWORD', details: 'PRIVATE TOKEN' }));
+  }, async (url) => {
+    const probe = postgrestProbe();
+    assert.equal(await probe.healthy(url, { authorization: 'PRIVATE TOKEN' }), false);
+    const actual = probe.failure(new Error('PRIVATE URL AND PASSWORD'));
+    assert.deepEqual(actual, { status: 'failed', stage: 'postgrest-server-ready', error: 'Error',
+      postgrest_http_status: 503, postgrest_code: 'PGRST002' });
+    assert.ok(!JSON.stringify(actual).includes('PRIVATE'));
+  });
+});
+
+test('PostgREST probe bounds non-2xx bodies, validates SQLSTATE and preserves the success predicate', async () => {
+  const responses = [
+    [new Response(JSON.stringify({ code: '42501', message: 'PRIVATE SQL' }), { status: 403 }), { postgrest_http_status: 403, postgrest_code: '42501' }],
+    [new Response(JSON.stringify({ code: 'PGRST002\n' }), { status: 503 }), { postgrest_http_status: 503 }],
+    [new Response(JSON.stringify({ code: 'PRIVATE SECRET' }), { status: 500 }), { postgrest_http_status: 500 }],
+    [new Response(JSON.stringify({ code: 'PGRST002', message: 'x'.repeat(4096) }), { status: 503 }), { postgrest_http_status: 503 }],
+    [new Response('PRIVATE NOT JSON', { status: 500 }), { postgrest_http_status: 500 }],
+  ];
+  const probe = postgrestProbe(async () => responses[0][0]);
+  while (responses.length) {
+    const expected = responses[0][1];
+    assert.equal(await probe.healthy('http://127.0.0.1/'), false);
+    assert.deepEqual(probe.failure(new Error()), { status: 'failed', stage: 'postgrest-server-ready', error: 'Error', ...expected });
+    responses.shift();
+  }
+  const success = postgrestProbe(async () => ({ ok: true, status: 204, get body() { throw new Error('must not read successful body'); } }));
+  assert.equal(await success.healthy('http://127.0.0.1/'), true);
+});
+
+test('PostgREST real fetch refusal and original one-second timeout emit only fixed categories', async () => {
+  let closedUrl;
+  await postgrestServer((_request, response) => response.end(), async (url) => { closedUrl = url; });
+  const probe = postgrestProbe();
+  assert.equal(await probe.healthy(closedUrl), false);
+  assert.equal(probe.failure(new Error()).postgrest_fetch_failure, 'connection-refused');
+  await postgrestServer((_request, _response) => {}, async (url) => {
+    const started = Date.now();
+    assert.equal(await probe.healthy(url), false);
+    assert.equal(probe.failure(new Error()).postgrest_fetch_failure, 'timeout');
+    assert.ok(Date.now() - started >= 900 && Date.now() - started < 3000);
+  });
+  await postgrestServer((_request, response) => {
+    response.writeHead(503); response.write('{"code":"PGRST002","message":"PRIVATE');
+  }, async (url) => {
+    assert.equal(await probe.healthy(url), false);
+    assert.deepEqual(probe.failure(new Error()), { status: 'failed', stage: 'postgrest-server-ready', error: 'Error',
+      postgrest_http_status: 503, postgrest_fetch_failure: 'timeout' });
+  });
+});
+
+test('PostgREST terminal diagnostic rejects forged fields and cannot attach them to another stage', () => {
+  for (const value of [true, null, [], 'PRIVATE', 99, 600, 500.5]) {
+    assert.equal(nativeFailureDiagnostic('postgrest-server-ready', new Error(), { postgrest_http_status: value }).postgrest_http_status, undefined);
+  }
+  for (const value of ['PGRST002\n', '42501\n', 'PRIVATE', [], true, null]) {
+    assert.equal(nativeFailureDiagnostic('postgrest-server-ready', new Error(), { postgrest_http_status: 503, postgrest_code: value }).postgrest_code, undefined);
+    assert.equal(nativeFailureDiagnostic('postgrest-server-ready', new Error(), { postgrest_fetch_failure: value }).postgrest_fetch_failure, undefined);
+  }
+  assert.deepEqual(nativeFailureDiagnostic('gotrue-server-ready', new Error(), { postgrest_http_status: 503, postgrest_code: 'PGRST002' }),
+    { status: 'failed', stage: 'gotrue-server-ready', error: 'Error' });
+});
 
 test('actual preimage entrypoint retains argument and package refusals without private errors', async () => {
   const script = fileURLToPath(

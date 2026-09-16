@@ -1,4 +1,4 @@
-> **Current owner instruction (September 16):** Read [AGENTS.md](AGENTS.md) before this historical playbook. The sole restoration owner controls integration and publication. Original GitHub/Vercel/Hetzner delivery is authorized; later application work and retired local pipelines remain held until a new explicit manual owner prompt after verified restoration. Older automatic-merge/autopilot directions below are inactive during this hold.
+> **Current owner instruction (September 16):** Read [AGENTS.md](AGENTS.md) before this historical playbook. Task `01a0ab39-71ca-7821-825d-4943a0a6a0a3` retains sole integration and publication authority. Use the original GitHub/Vercel/Hetzner paths. After verified and reported restoration, that owner may deliver the six pending workstreams in the exact order recorded there. Retired local/custom pipelines and external error telemetry must not return. Historical autopilot, automatic-merge, watchdog and repair directions below are inactive. Preserve pending application work and use the configured credential store.
 
 # Club Arena -- Agent Instructions
 

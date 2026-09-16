@@ -226,9 +226,10 @@ export function mysteryPoolCents(
    * ═══ 2026-09-12: THE SMALLEST AMOUNT THIS TOURNAMENT CAN PAY ════════════
    *
    * One cent for a chip tournament, which is every tournament that has ever
-   * run: `Math.floor(x / 1) * 1` is `x`, so the chip half is unchanged BY
-   * CONSTRUCTION rather than by inspection, exactly as passing 0 for
-   * alreadyPaidCents above reproduces the older arithmetic.
+   * run, and which is why this defaults to 1: `Math.floor(x / 1) * 1` is `x`,
+   * so the chip half is unchanged BY CONSTRUCTION rather than by inspection,
+   * exactly as passing 0 for alreadyPaidCents above reproduces the older
+   * arithmetic.
    *
    * One hundred for a Diamond tournament, because a Diamond does not divide.
    * The comment below says the regular half keeps the odd cent; at a Diamond
@@ -237,19 +238,11 @@ export function mysteryPoolCents(
    * leaves the event unable to reconcile, and a fraction of a Diamond is not
    * an amount any door in this estate will accept.
    *
-   * ─── IT IS REQUIRED, AND ITS CALLERS NOW SAY SO (2026-09-13) ────────────
-   *
-   * This read "NO CALLER PASSES THIS YET", and that was true because the
-   * parameter defaulted to 1 - so `TournamentManagerBase`'s two seed sites
-   * received a cent without ever having read a club, indistinguishable from
-   * having read one. That is CLAUDE.md 10.86 rule 1 in a parameter default.
-   *
-   * There is no default now. Both callers pass `UNIT_CENTS_ASSET_NOT_READ`
-   * from `tournamentUnit.ts`, which is the same cent and says which of the two
-   * things it means. When the Diamond tournament door opens, the surfaces that
-   * have to learn their asset are found by grepping that name.
+   * NO CALLER PASSES THIS YET. Reading it means the manager knowing its
+   * tournament's unit, which belongs with the work that opens the Diamond
+   * tournament door rather than with the arithmetic.
    */
-  unitCents: number
+  unitCents: number = 1
 ): number {
   if (!Number.isInteger(bountyPoolCents) || bountyPoolCents <= 0) return 0;
   const m = Math.max(0, Number(mysteryPercent ?? 50) || 0);

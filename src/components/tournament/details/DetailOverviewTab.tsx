@@ -57,7 +57,6 @@ import {
   ordinal,
   placePrize,
   resolvePayoutStructure,
-  tournamentRowUnitCents,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
 import { reportError } from '../../../utils/errorReporter';
@@ -551,11 +550,11 @@ export default function DetailOverviewTab({
           prizeValue: Number.isFinite(recorded)
             ? recorded
             : row && pool !== null
-              ? placePrize(pool, payoutStructure, row.place, tournamentRowUnitCents(tournament))
+              ? placePrize(pool, payoutStructure, row.place)
               : 0,
         };
       });
-  }, [isCompleted, entries, payoutStructure, prize.ladder, tournament]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder]);
 
   /**
    * The runners-up list under the podium.

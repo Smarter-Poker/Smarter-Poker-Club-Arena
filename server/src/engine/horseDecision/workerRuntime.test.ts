@@ -11,8 +11,7 @@ import type {
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
-import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
-import { HORSE_REVIEW_SIGNAL_KEYS } from '../HorseReviewSignals.js';
+import { buildHorseDecisionKey } from './protocol.js';
 import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
@@ -319,18 +318,6 @@ describe('Phase 13 cross-board worker boundary', () => {
     request.gameState.communityCards3 = ['8', '9', 'T'].map((r) => card(r, 'hearts')) as any;
     return request;
   };
-  it.each(['PLO4', 'Plo4'])(
-    'rejects noncanonical policy name %s before invoking the brain',
-    async (variant) => {
-      const h = harness();
-      const request = structuredClone(fastRequest());
-      request.gameState.gameVariant = variant as any;
-      h.runtime.receive(rekey(request));
-      await h.runtime.drain();
-      expect(h.messages.at(-1)?.type).toBe('ERROR');
-      expect(h.decisionsAtRng).toHaveLength(0);
-    }
-  );
   it('accepts a complete physical triple-board betting snapshot', async () => {
     const h = harness();
     h.runtime.receive(rekey(multiboard()));
@@ -1257,34 +1244,6 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.stopped()).toBe(1);
   });
 
-  it('drops partial decision effects when the real brain catches an evaluation failure', async () => {
-    const h = harness(true);
-    h.setCapturedEffects([
-      {
-        type: 'raise_plan',
-        handKey: 'table:hand',
-        userId: 'horse-2',
-        street: 'flop',
-        plan: 'foldToRaise',
-      },
-    ]);
-    const failed = vi.spyOn(HorseLogic as any, 'decideInternal').mockImplementation(() => {
-      throw Error('failed policy evaluation');
-    });
-    try {
-      h.runtime.receive(fastRequest(1));
-      await h.runtime.drain();
-      expect(h.messages.at(-1)).toMatchObject({
-        type: 'FAST_RESULT',
-        decision: { action: 'fold', policyFallback: 'brain_exception' },
-        effects: [],
-      });
-      expect(h.appliedEffects).toEqual([]);
-    } finally {
-      failed.mockRestore();
-    }
-  });
-
   it('applies fast decision effects only through an explicit FIFO commit', async () => {
     const h = harness();
     const effects: HorseMindDecisionEffect[] = [
@@ -1441,41 +1400,6 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(balanced.decisionsAtRng[0]).not.toBe(aggressive.decisionsAtRng[0]);
   });
 
-  it('binds historical review evidence without letting it choose the policy RNG stream', async () => {
-    const clean = rekey({ ...fastRequest(), mods: { aggression: 1.1 } });
-    const observed = rekey({
-      ...clean,
-      mods: {
-        ...clean.mods,
-        leaks: { coldcall_stackoff: 50 },
-        leaksHands: 100,
-        leaksHoldem: { river_raise_war: 20 },
-        leaksHandsHoldem: 100,
-        leaksOmaha: { plo_naked_trips_stackoff: 30 },
-        leaksHandsOmaha: 100,
-        leaksTournament: { preflop_stackoff: 40 },
-        leaksHandsTournament: 100,
-      },
-    });
-    expect(observed.decisionKey).not.toBe(clean.decisionKey);
-    const a = harness();
-    const b = harness();
-    a.runtime.receive(clean);
-    b.runtime.receive(observed);
-    await Promise.all([a.runtime.drain(), b.runtime.drain()]);
-    expect(a.decisionsAtRng).toHaveLength(1);
-    expect(b.decisionsAtRng).toEqual(a.decisionsAtRng);
-
-    const tampered = harness();
-    tampered.runtime.receive({ ...observed, decisionKey: clean.decisionKey });
-    await tampered.runtime.drain();
-    expect(tampered.decisionsAtRng).toEqual([]);
-    expect(tampered.messages.at(-1)).toMatchObject({
-      type: 'ERROR',
-      message: 'decisionKey does not bind the canonical decision snapshot',
-    });
-  });
-
   it('binds profile modifiers, live options and the decision-hour input', () => {
     const base = fastRequest(1);
     const baseKey = buildHorseDecisionKey(base);
@@ -1488,68 +1412,6 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(buildHorseDecisionKey({ ...base, decisionTimeMs: base.decisionTimeMs + 1 })).not.toBe(
       baseKey
     );
-  });
-
-  it.each(HORSE_REVIEW_SIGNAL_KEYS)(
-    'excludes only diagnostic %s from sampling, retaining full validation',
-    (key) => {
-      const clean = rekey({ ...fastRequest(), mods: { aggression: 1.1 } });
-      const observed = rekey({
-        ...clean,
-        mods: { ...clean.mods, [key]: key.includes('Hands') ? 100 : { coldcall_stackoff: 40 } },
-      });
-      expect(observed.decisionKey).not.toBe(clean.decisionKey);
-      expect(validatedHorsePolicySamplingKey(observed)).toBe(
-        validatedHorsePolicySamplingKey(clean)
-      );
-    }
-  );
-
-  it('normalizes empty bags and diagnostic options while preserving authored inputs', () => {
-    const clean = rekey({ ...fastRequest(), mods: undefined, opts: undefined });
-    const key = validatedHorsePolicySamplingKey(clean);
-    for (const mods of [undefined, {}, { leaks: {} }, { leaksHands: 0 }, { leaks: undefined }]) {
-      for (const opts of [undefined, {}, { v41Leaks: true }, { v41Leaks: false }]) {
-        expect(validatedHorsePolicySamplingKey(rekey({ ...clean, mods, opts }))).toBe(key);
-      }
-    }
-    for (const mods of [
-      { aggression: 1.2 },
-      { tightness: 1.1 },
-      { sizingMultiplier: 0.9 },
-      { bluffFreq: 1.1 },
-    ]) {
-      expect(validatedHorsePolicySamplingKey(rekey({ ...clean, mods }))).not.toBe(key);
-    }
-    expect(
-      validatedHorsePolicySamplingKey(rekey({ ...clean, opts: { v40Omaha: false } }))
-    ).not.toBe(key);
-    // Invalid diagnostics are still rejected by the full canonicalizer.
-    expect(() => rekey({ ...clean, mods: { leaksHands: Number.NaN } })).toThrow('non-finite');
-  });
-
-  it('replays the projected seed for a deep decision and restores the canonical stream', async () => {
-    const h = harness();
-    const request = rekey({
-      ...fastRequest(),
-      mods: { leaksHands: 100 },
-      opts: { v41Leaks: false },
-    });
-    h.runtime.receive(request);
-    await h.runtime.drain();
-    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
-    if (fast?.type !== 'FAST_RESULT') throw new Error('fast decision missing');
-    h.runtime.receive({
-      ...request,
-      type: 'DECIDE_DEEP',
-      requestId: 2,
-      rngBefore: fast.rngBefore,
-      deepEquity: 2,
-    });
-    await h.runtime.drain();
-    expect(h.messages.at(-1)).toMatchObject({ type: 'DEEP_RESULT' });
-    expect(h.decisionsAtRng).toEqual([fast.rngBefore, fast.rngBefore]);
-    expect(h.rng()).toBe(101);
   });
 
   it('rejects a changed snapshot carrying its old decision key', async () => {
@@ -1628,16 +1490,8 @@ it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundar
   };
   request.gameState.dealerSeat = 2;
   request.decisionKey = buildHorseDecisionKey(request);
-  // This proves execution/wiring, not latency. A shared runner pause cannot
-  // be required to fit the production 4 ms window. Budget refusal is tested
-  // independently by Plo4LivePolicy; no live request clock control is enabled.
-  const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
-  try {
-    h.runtime.receive(request);
-    await h.runtime.drain();
-  } finally {
-    clock.mockRestore();
-  }
+  h.runtime.receive(request);
+  await h.runtime.drain();
   const result = h.messages.find((m) => m.type === 'FAST_RESULT');
   if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
   expect(result.decision.plo4Policy?.mode).toBe('shadow');
@@ -1687,49 +1541,30 @@ it.each(['plo5', 'plo6', 'plo8'] as const)(
 it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
   'Phase 12 %s receipt survives the live worker boundary',
   async (variant) => {
-    // Same clock discipline as the Phase 11 sibling above, and for the same
-    // reason. This fixture proves the receipt reaches the worker result; it is
-    // not a budget test. evaluateRemainingVariantPolicy reads `now()` and marks
-    // the receipt `fired: false, reason: 'work_budget'` once the elapsed live
-    // budget is exceeded (RemainingVariantLivePolicy.ts), so on a contended box
-    // this asserted a timing race rather than the receipt boundary.
-    //
-    // 2026-09-14: observed failing exactly that way on the estate runners,
-    // which pack 12-18 runners per host and are therefore far more contended
-    // than a dedicated hosted VM. short_deck returned fired=false while the
-    // three other variants passed, and it passed on rerun. Phase 11 was already
-    // guarded; this one was written without the guard. The budget itself stays
-    // covered by the dedicated policy-budget tests and the actual-controller
-    // benchmark, which keep their time limits.
-    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
-    try {
-      const { remainingVariantSpot } =
-        await import('../../benchmark/RemainingVariantPolicyEvidence.js');
-      const h = harness(true);
-      const input = remainingVariantSpot(variant, 'preflop');
-      const request = {
-        type: 'DECIDE_FAST' as const,
-        requestId: 512,
-        ...structuredClone(snapshot),
-        style: 'balanced' as const,
-        mods: {},
-        opts: { mind: false, telemetry: false },
-        player: input.hero,
-        gameState: input.state,
-      };
-      request.decisionKey = buildHorseDecisionKey(request);
-      h.runtime.receive(request);
-      await h.runtime.drain();
-      const result = h.messages.find((m) => m.type === 'FAST_RESULT');
-      if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
-      expect(result.decision.remainingVariantPolicy?.mode).toBe('shadow');
-      expect(result.decision.remainingVariantPolicy?.eligible).toBe(true);
-      expect(result.decision.remainingVariantPolicy?.fired).toBe(true);
-      expect(structuredClone(result).decision.remainingVariantPolicy?.finalAction).toBe(
-        result.decision.action
-      );
-    } finally {
-      clock.mockRestore();
-    }
+    const { remainingVariantSpot } =
+      await import('../../benchmark/RemainingVariantPolicyEvidence.js');
+    const h = harness(true);
+    const input = remainingVariantSpot(variant, 'preflop');
+    const request = {
+      type: 'DECIDE_FAST' as const,
+      requestId: 512,
+      ...structuredClone(snapshot),
+      style: 'balanced' as const,
+      mods: {},
+      opts: { mind: false, telemetry: false },
+      player: input.hero,
+      gameState: input.state,
+    };
+    request.decisionKey = buildHorseDecisionKey(request);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+    expect(result.decision.remainingVariantPolicy?.mode).toBe('shadow');
+    expect(result.decision.remainingVariantPolicy?.eligible).toBe(true);
+    expect(result.decision.remainingVariantPolicy?.fired).toBe(true);
+    expect(structuredClone(result).decision.remainingVariantPolicy?.finalAction).toBe(
+      result.decision.action
+    );
   }
 );

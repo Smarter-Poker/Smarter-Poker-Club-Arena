@@ -19,7 +19,6 @@
  * banner is missing, not to wonder.
  */
 
-import { titleCase } from '../../utils/titleCase';
 import { BBJ_QUALIFYING_HANDS, BBJ_RULES } from '../../config/RakeConfig';
 import { getBBJMiniQualifyingInfo } from '../../config/bbjMini';
 import CardImage from '../table/CardImage';
@@ -113,11 +112,7 @@ const MINI_BLOCKS: VariantBlock[] = BLOCKS.map((b) => {
      a kind" note below - one of them would be wrong. The sentence is built
      from the variant's own label so it cannot drift from the bar. */
   if (info.rule === 'ranked_quads') {
-    return {
-      ...b,
-      cards: info.minLosingHandCards,
-      note: titleCase(info.shortLabel + '. ' + info.subLabel),
-    };
+    return { ...b, cards: info.minLosingHandCards, note: info.shortLabel + '. ' + info.subLabel };
   }
   /* Pineapple's MAIN bar is Quad Kings, so `info.rule` is plo_quads and it
      takes the "not only Quad Kings" note below - which is exactly right for

@@ -33,9 +33,8 @@ describe('Table Studio permanent storefront', () => {
 
   it('uses the server feature id and applies the purchased asset immediately', () => {
     expect(modal).toContain('`studio:${TAB_TO_FIELD[tab]}:${assetId}`');
-    expect(modal).toContain("supabase.rpc('fn_purchase_feature_v2'");
+    expect(modal).toContain("supabase.rpc('fn_purchase_feature'");
     expect(modal).toContain('p_feature: pending.feature');
-    expect(modal).toContain('p_request_id: requestId');
     expect(modal).toContain('applyAccessibleAsset(pending.tab, pending.id)');
   });
 

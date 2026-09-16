@@ -44,9 +44,6 @@ import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription'
 import type { BusEventType } from '../../core/MasterBus';
 import { clubDataQueryKey, readClubDataCache, writeClubDataCache } from '../../lib/clubDataCache';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
-import { SpadeConsole } from '../console/SpadeConsole';
-import { titleCase } from '../../utils/titleCase';
-import { compactChips } from '../../utils/format';
 import styles from './RakeSnapshotPanel.module.css';
 
 const NO_VALUE = '-';
@@ -118,7 +115,7 @@ function count(n: number | null | undefined): string {
  *  window ending today. */
 function utcTime(iso: string): string {
   const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return 'Unknown';
+  if (!Number.isFinite(d.getTime())) return 'unknown';
   return `${d.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UTC`;
 }
 
@@ -645,7 +642,7 @@ export default function RakeSnapshotPanel({
     const hasAbs = abs !== null && abs !== undefined && Number.isFinite(Number(abs));
     if (!hasPct && !hasAbs) return null;
     const basis = hasPct ? Number(pct) : Number(abs);
-    const cls = basis > 0 ? 'sc-ink--green' : basis < 0 ? 'sc-ink--red' : 'sc-ink--muted';
+    const cls = basis > 0 ? styles.up : basis < 0 ? styles.down : styles.flat;
     const text = hasPct
       ? `${Number(pct) > 0 ? '+' : ''}${Math.round(Number(pct) * 10) / 10}%`
       : `${Number(abs) > 0 ? '+' : ''}${money(abs)}`;
@@ -815,129 +812,121 @@ export default function RakeSnapshotPanel({
     );
   }, [snapshot, rows]);
 
-  const subject = snapshot
-    ? `${titleCase(snapshot.scope_label)}${
-        snapshot.scope === 'union' && snapshot.club_count
-          ? ` - ${count(snapshot.club_count)} Club${snapshot.club_count === 1 ? '' : 's'}`
-          : ''
-      }`
-    : SCOPE_COPY[scope].note;
-  const seriesUnit = snapshot?.series_bucket ?? 'day';
-  const wordInk = (active: boolean) => (active ? 'sc-ink--white' : 'sc-ink--muted');
-
   return (
-    <SpadeConsole
-      eyebrow="Operator Snapshot"
-      title="Rake Produced"
-      titleId="rake-snapshot-title"
-      subtitle={subject}
-      pill={SCOPE_COPY[scope].label}
-      pillInk="blue"
-      crest="club"
-      foot="foot"
-      className={styles.panel}
-      aria-labelledby="rake-snapshot-title"
-    >
-      <div className={styles.headActions}>
-        {available.length > 1 ? (
-          <div className={styles.scopes} role="group" aria-label="Reporting Scope">
-            {available.map((s) => (
-              <button
-                key={s}
-                type="button"
-                aria-pressed={scope === s}
-                className={`${styles.scope} ${wordInk(scope === s)}`}
-                onClick={() => setScope(s)}
-                title={SCOPE_COPY[s].note}
-              >
-                {SCOPE_COPY[s].label}
-              </button>
-            ))}
+    <section className={styles.panel} aria-labelledby="rake-snapshot-title">
+      <header className={styles.head}>
+        <div className={styles.identity}>
+          <span className={styles.eyebrow}>
+            <span className={styles.light} aria-hidden="true" />
+            Operator Snapshot
+          </span>
+          <h2 id="rake-snapshot-title">Rake Produced</h2>
+          <p className={styles.subject}>
+            {snapshot
+              ? `${snapshot.scope_label}${
+                  snapshot.scope === 'union' && snapshot.club_count
+                    ? ` - ${count(snapshot.club_count)} Club${snapshot.club_count === 1 ? '' : 's'}`
+                    : ''
+                }`
+              : SCOPE_COPY[scope].note}
+          </p>
+        </div>
+
+        <div className={styles.headActions}>
+          {available.length > 1 && (
+            <div className={styles.scopes} role="group" aria-label="Reporting Scope">
+              {available.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={scope === s}
+                  className={`${styles.scope} ${scope === s ? styles.active : ''}`}
+                  onClick={() => setScope(s)}
+                  title={SCOPE_COPY[s].note}
+                >
+                  {SCOPE_COPY[s].label}
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            className={styles.exportBtn}
+            onClick={exportSnapshot}
+            disabled={!snapshot}
+            title="Export This Snapshot As CSV"
+          >
+            Export
+          </button>
+        </div>
+      </header>
+
+      <div className={styles.periodRow}>
+        <div className={styles.periods} role="group" aria-label="Reporting Period">
+          {RAKE_PERIODS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              aria-pressed={period === p.key}
+              className={`${styles.period} ${period === p.key ? styles.active : ''}`}
+              onClick={() => {
+                if (p.key === 'custom' && period !== 'custom') setCustom(range);
+                setPeriod(p.key);
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {period === 'custom' ? (
+          <div className={styles.customRange}>
+            <label>
+              <span className={styles.srOnly}>Range Start</span>
+              <input
+                type="date"
+                value={custom.start}
+                max={custom.end}
+                onChange={(e) => setCustom((c) => ({ ...c, start: e.target.value }))}
+              />
+            </label>
+            <span className={styles.rangeDivider} aria-hidden="true">
+              -
+            </span>
+            <label>
+              <span className={styles.srOnly}>Range End</span>
+              <input
+                type="date"
+                value={custom.end}
+                min={custom.start}
+                onChange={(e) => setCustom((c) => ({ ...c, end: e.target.value }))}
+              />
+            </label>
+            <span className={styles.rangeTz}>UTC</span>
           </div>
         ) : (
-          <span className={`sc-label sc-ink--blue ${styles.scopeNote}`}>
-            {SCOPE_COPY[scope].note}
-          </span>
+          <div className={styles.rangeChip} aria-live="polite">
+            <span>{snapshot?.range.start ?? range.start}</span>
+            <span className={styles.rangeDivider}>-</span>
+            <span>{snapshot?.range.end ?? range.end}</span>
+            <span className={styles.rangeTz}>UTC</span>
+          </div>
         )}
-        <button
-          type="button"
-          className={`${styles.exportBtn} sc-ink--white`}
-          onClick={exportSnapshot}
-          disabled={!snapshot}
-          title="Export This Snapshot As CSV"
-        >
-          Export
-        </button>
       </div>
-
-      <div className={styles.periods} role="group" aria-label="Reporting Period">
-        {RAKE_PERIODS.map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            aria-pressed={period === p.key}
-            className={`${styles.period} ${wordInk(period === p.key)}`}
-            onClick={() => {
-              if (p.key === 'custom' && period !== 'custom') setCustom(range);
-              setPeriod(p.key);
-            }}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      {period === 'custom' ? (
-        <div className={styles.customRange}>
-          <label className={styles.dateField}>
-            <span className={styles.srOnly}>Range Start</span>
-            <input
-              className={`sc-ink--silver ${styles.dateInput}`}
-              type="date"
-              value={custom.start}
-              max={custom.end}
-              onChange={(e) => setCustom((c) => ({ ...c, start: e.target.value }))}
-            />
-          </label>
-          <span className={`sc-ink--muted ${styles.rangeDivider}`} aria-hidden="true">
-            -
-          </span>
-          <label className={styles.dateField}>
-            <span className={styles.srOnly}>Range End</span>
-            <input
-              className={`sc-ink--silver ${styles.dateInput}`}
-              type="date"
-              value={custom.end}
-              min={custom.start}
-              onChange={(e) => setCustom((c) => ({ ...c, end: e.target.value }))}
-            />
-          </label>
-          <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>UTC</span>
-        </div>
-      ) : (
-        <div className={`sc-ink--silver ${styles.rangeChip}`} aria-live="polite">
-          <span>{snapshot?.range.start ?? range.start}</span>
-          <span className={`sc-ink--muted ${styles.rangeDivider}`}>-</span>
-          <span>{snapshot?.range.end ?? range.end}</span>
-          <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>UTC</span>
-        </div>
-      )}
 
       {error && (
-        <p className={`sc-copy sc-ink--red ${styles.error}`} role="status">
-          {titleCase(error)}
+        <p className={styles.error} role="status">
+          {error}
         </p>
       )}
 
-      <dl className={styles.rows} aria-busy={loading} aria-label="Rake Snapshot Totals">
+      <dl className={styles.tiles} aria-busy={loading} aria-label="Rake Snapshot Totals">
         <div className={`${styles.tile} ${styles.headline}`}>
-          <dt className={`sc-label sc-ink--blue ${styles.label}`}>Rake / Fee</dt>
-          <dd className={`sc-ink--silver ${styles.value} ${styles.valueBig}`}>
-            {summary ? money(summary.fee) : NO_VALUE}
-          </dd>
+          <dt>Rake / Fee</dt>
+          <dd className={styles.value}>{summary ? money(summary.fee) : NO_VALUE}</dd>
           <dd className={styles.meta}>
             {summary && !isAgent && summary.cash_fee !== null && summary.mtt_fee !== null ? (
-              <span className={`sc-ink--muted ${styles.split}`}>
+              <span className={styles.split}>
                 {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
               </span>
             ) : null}
@@ -948,44 +937,38 @@ export default function RakeSnapshotPanel({
         {isAgent ? (
           <>
             <div className={styles.tile}>
-              <dt className={`sc-label sc-ink--blue ${styles.label}`}>Est. Commission</dt>
-              <dd className={`sc-ink--silver ${styles.value}`}>
+              <dt>Est. Commission</dt>
+              <dd className={styles.value}>
                 {summary ? money(summary.estimated_commission) : NO_VALUE}
               </dd>
-              <dd className={`sc-ink--muted ${styles.meta}`}>
+              <dd className={styles.meta}>
                 {summary?.commission_rate !== null && summary?.commission_rate !== undefined
                   ? `${(Number(summary.commission_rate) * 100).toFixed(1)}% Rate`
                   : null}
               </dd>
             </div>
             <div className={styles.tile}>
-              <dt className={`sc-label sc-ink--blue ${styles.label}`}>Active Players</dt>
-              <dd className={`sc-ink--silver ${styles.value}`}>
-                {summary ? compactChips(summary.active) : NO_VALUE}
-              </dd>
-              <dd className={`sc-ink--muted ${styles.meta}`}>
-                {summary ? `${compactChips(summary.members)} In Downline` : null}
+              <dt>Active Players</dt>
+              <dd className={styles.value}>{summary ? count(summary.active) : NO_VALUE}</dd>
+              <dd className={styles.meta}>
+                {summary ? `${count(summary.members)} In Downline` : null}
               </dd>
             </div>
             <div className={styles.tile}>
-              <dt className={`sc-label sc-ink--blue ${styles.label}`}>Hands</dt>
-              <dd className={`sc-ink--silver ${styles.value}`}>
-                {summary ? compactChips(summary.hands) : NO_VALUE}
-              </dd>
-              <dd className={`sc-ink--muted ${styles.meta}`}>
-                {snapshot?.top_earner?.username
-                  ? `Top ${titleCase(snapshot.top_earner.username)}`
-                  : null}
+              <dt>Hands</dt>
+              <dd className={styles.value}>{summary ? count(summary.hands) : NO_VALUE}</dd>
+              <dd className={styles.meta}>
+                {snapshot?.top_earner?.username ? `Top ${snapshot.top_earner.username}` : null}
               </dd>
             </div>
           </>
         ) : (
           <>
             <div className={styles.tile}>
-              <dt className={`sc-label sc-ink--blue ${styles.label}`}>Total Winnings</dt>
+              <dt>Total Winnings</dt>
               <dd
                 className={`${styles.value} ${
-                  summary && Number(summary.total_winnings) < 0 ? 'sc-ink--red' : 'sc-ink--green'
+                  summary && Number(summary.total_winnings) < 0 ? styles.neg : styles.pos
                 }`}
               >
                 {summary ? money(summary.total_winnings) : NO_VALUE}
@@ -993,31 +976,25 @@ export default function RakeSnapshotPanel({
               <dd className={styles.meta}>{deltaNote(null, delta?.winnings_abs)}</dd>
             </div>
             <div className={styles.tile}>
-              <dt className={`sc-label sc-ink--blue ${styles.label}`}>MTT Winnings</dt>
+              <dt>MTT Winnings</dt>
               <dd
                 className={`${styles.value} ${
-                  summary && Number(summary.mtt_winnings) < 0 ? 'sc-ink--red' : 'sc-ink--green'
+                  summary && Number(summary.mtt_winnings) < 0 ? styles.neg : styles.pos
                 }`}
               >
                 {summary ? money(summary.mtt_winnings) : NO_VALUE}
               </dd>
-              <dd className={`sc-ink--muted ${styles.meta}`}>
+              <dd className={styles.meta}>
                 {summary && summary.mtt_games !== null && summary.mtt_games !== undefined
-                  ? `${compactChips(summary.mtt_games)} Tournaments`
+                  ? `${count(summary.mtt_games)} Tournaments`
                   : null}
               </dd>
             </div>
             <div className={styles.tile}>
-              <dt className={`sc-label sc-ink--blue ${styles.label}`}>Games</dt>
-              <dd className={`sc-ink--silver ${styles.value}`}>
-                {summary ? compactChips(summary.games) : NO_VALUE}
-              </dd>
+              <dt>Games</dt>
+              <dd className={styles.value}>{summary ? count(summary.games) : NO_VALUE}</dd>
               <dd className={styles.meta}>
-                {summary ? (
-                  <span className={`sc-ink--muted ${styles.split}`}>
-                    {compactChips(summary.hands)} Hands
-                  </span>
-                ) : null}
+                {summary ? `${count(summary.hands)} Hands` : null}
                 {deltaNote(delta?.games_pct, null)}
               </dd>
             </div>
@@ -1027,7 +1004,7 @@ export default function RakeSnapshotPanel({
 
       {series.length > 1 && (
         <figure className={styles.trend}>
-          <figcaption className={`sc-label sc-ink--blue ${styles.trendCaption}`}>
+          <figcaption>
             Rake By{' '}
             {snapshot?.series_bucket === 'month'
               ? 'Month'
@@ -1035,8 +1012,6 @@ export default function RakeSnapshotPanel({
                 ? 'Week'
                 : 'Day'}
           </figcaption>
-          {/* The one thing the art does not paint: a bar per bucket, solid blue
-              ink on the glass, no gradient, no rounding. */}
           <div
             className={styles.bars}
             role="img"
@@ -1050,15 +1025,17 @@ export default function RakeSnapshotPanel({
                   key={p.bucket}
                   className={styles.bar}
                   style={{ height: `${h}%` }}
-                  title={`${bucketLabel(p.bucket, seriesUnit)} - ${money(p.fee)}`}
+                  title={`${bucketLabel(p.bucket, snapshot?.series_bucket ?? 'day')} - ${money(p.fee)}`}
                 />
               );
             })}
           </div>
-          <div className={`sc-ink--muted ${styles.trendAxis}`} aria-hidden="true">
-            <span>{bucketLabel(series[0].bucket, seriesUnit)}</span>
+          <div className={styles.trendAxis} aria-hidden="true">
+            <span>{bucketLabel(series[0].bucket, snapshot?.series_bucket ?? 'day')}</span>
             <span>Peak {money(peak)}</span>
-            <span>{bucketLabel(series[series.length - 1].bucket, seriesUnit)}</span>
+            <span>
+              {bucketLabel(series[series.length - 1].bucket, snapshot?.series_bucket ?? 'day')}
+            </span>
           </div>
         </figure>
       )}
@@ -1081,11 +1058,7 @@ export default function RakeSnapshotPanel({
             />
           </label>
           {search ? (
-            <button
-              type="button"
-              className={`${styles.toolClear} sc-ink--white`}
-              onClick={() => setSearch('')}
-            >
+            <button type="button" className={styles.toolClear} onClick={() => setSearch('')}>
               Clear
             </button>
           ) : null}
@@ -1100,51 +1073,49 @@ export default function RakeSnapshotPanel({
             </select>
           </label>
           {query ? (
-            <p className={`sc-copy ${styles.toolCount}`} aria-live="polite">
+            <p className={styles.toolCount} aria-live="polite">
               {/* The count is of MATCHES. The shares beside each row stay
                   against the whole club, so they mean the same thing whether
                   or not anything is typed. */}
               {count(breakdownCount)} Matching {breakdownCount === 1 ? 'Row' : 'Rows'} For "
-              {titleCase(snapshot?.applied_search ?? query)}"
+              {snapshot?.applied_search ?? query}"
             </p>
           ) : null}
         </div>
       )}
 
       {kind !== 'none' && !!query && rows.length === 0 && !loading && (
-        <p className={`sc-copy ${styles.noMatches}`}>
-          Nothing In This List Matches "{titleCase(query)}". Clear The Search To See Everything
-          Again.
+        <p className={styles.noMatches}>
+          Nothing In This List Matches "{query}". Clear The Search To See Everything Again.
         </p>
       )}
 
       {/* ------------------------------------------------------ by club --- */}
       {kind === 'club' && rows.length > 0 && (
         <div className={styles.breakdown}>
-          <h3 className={`sc-label sc-ink--blue ${styles.breakdownTitle}`}>Rake By Club</h3>
+          <h3>Rake By Club</h3>
           <ul className={styles.listClub}>
             {(rows as RakeClubRow[]).map((r) => {
               const pct = share(r.fee, total ?? summary?.fee);
-              const name = titleCase(r.name);
               return (
                 <li key={r.club_id}>
-                  <span className={styles.rowName} title={name}>
+                  <span className={styles.rowName} title={r.name}>
                     {/* Only rows the server says will open are offered as
                         buttons - can_drill is the same gate the club scope
                         enforces, so this is not a guess. */}
                     {r.can_drill && r.club_id ? (
                       <button
                         type="button"
-                        className={`${styles.drillIn} sc-ink--white`}
+                        className={styles.drillIn}
                         onClick={() => openClub(r.club_id, r.name)}
-                        title={`Open ${name}`}
+                        title={`Open ${r.name}`}
                       >
-                        {name}
+                        {r.name}
                       </button>
                     ) : (
-                      name
+                      r.name
                     )}
-                    {r.code ? <em className={styles.rowEm}>#{r.code}</em> : null}
+                    {r.code ? <em>#{r.code}</em> : null}
                   </span>
                   <span className={styles.rowBar} aria-hidden="true">
                     <span style={{ width: `${Math.max(1, pct)}%` }} />
@@ -1161,29 +1132,18 @@ export default function RakeSnapshotPanel({
       {/* ----------------------------------------------------- by agent --- */}
       {kind === 'agent' && rows.length > 0 && (
         <div className={styles.breakdown}>
-          <h3 className={`sc-label sc-ink--blue ${styles.breakdownTitle}`}>
-            {clubCrumb ? `${titleCase(clubCrumb.name)} - Rake By Agent` : 'Rake By Agent'}
-          </h3>
+          <h3>{clubCrumb ? `${clubCrumb.name} - Rake By Agent` : 'Rake By Agent'}</h3>
           {clubCrumb && (
             <nav className={styles.crumbs} aria-label="Union Trail">
-              <button
-                type="button"
-                className={`${styles.crumb} sc-ink--white`}
-                onClick={leaveDrill}
-              >
+              <button type="button" onClick={leaveDrill}>
                 Back To {SCOPE_COPY.union.label}
               </button>
-              <button
-                type="button"
-                className={`${styles.crumb} sc-ink--muted`}
-                aria-current="true"
-                disabled
-              >
-                {titleCase(clubCrumb.name)}
+              <button type="button" aria-current="true" disabled>
+                {clubCrumb.name}
               </button>
             </nav>
           )}
-          <div className={`sc-label sc-ink--muted ${styles.legend}`} aria-hidden="true">
+          <div className={styles.legend} aria-hidden="true">
             <span>Direct</span>
             <span>Network</span>
             <span>Cost</span>
@@ -1191,7 +1151,6 @@ export default function RakeSnapshotPanel({
           <ul className={styles.listAgent}>
             {(rows as RakeAgentRow[]).map((r) => {
               const pct = share(r.direct_rake, total);
-              const name = titleCase(r.name);
               return (
                 <li
                   // Unassigned and Unlisted Recipients BOTH have a null agent
@@ -1200,23 +1159,23 @@ export default function RakeSnapshotPanel({
                   key={r.agent_user_id ?? r.name}
                   className={r.is_unassigned ? styles.rowMuted : undefined}
                 >
-                  <span className={styles.rowName} title={name}>
+                  <span className={styles.rowName} title={r.name}>
                     {/* Only rows the server says will open are offered as
                         buttons. can_drill is computed from the same conditions
                         the downline gate enforces, so this is not a guess. */}
                     {r.can_drill && r.agent_user_id ? (
                       <button
                         type="button"
-                        className={`${styles.drillIn} sc-ink--white`}
+                        className={styles.drillIn}
                         onClick={() => openAgent(r.agent_user_id as string, r.name)}
-                        title={`Open ${name}'s Downline`}
+                        title={`Open ${r.name}'s Downline`}
                       >
-                        {name}
+                        {r.name}
                       </button>
                     ) : (
-                      name
+                      r.name
                     )}
-                    <em className={styles.rowEm}>{roleLabel(r.role)}</em>
+                    <em>{roleLabel(r.role)}</em>
                   </span>
                   <span className={styles.rowCount}>
                     {count(r.direct_active)}/{count(r.direct_players)}
@@ -1252,7 +1211,7 @@ export default function RakeSnapshotPanel({
               );
             })}
           </ul>
-          <p className={`sc-copy ${styles.rowNote}`}>
+          <p className={styles.rowNote}>
             Direct Is The Rake Of Players Assigned To That Agent, And Sums To {money(total)}.
             Network Adds Everyone Beneath Them, So It Overlaps And Does Not Sum.
             {snapshot?.commission_total !== null && snapshot?.commission_total !== undefined ? (
@@ -1269,11 +1228,7 @@ export default function RakeSnapshotPanel({
       {/* -------------------------------------------------- by downline --- */}
       {kind === 'downline' && (
         <div className={styles.breakdown}>
-          <h3 className={`sc-label sc-ink--blue ${styles.breakdownTitle}`}>
-            {crumbs.length
-              ? `${titleCase(crumbs[crumbs.length - 1].name)}'s Downline`
-              : 'My Downline'}
-          </h3>
+          <h3>{crumbs.length ? `${crumbs[crumbs.length - 1].name}'s Downline` : 'My Downline'}</h3>
 
           {crumbs.length > 0 && (
             <nav className={styles.crumbs} aria-label="Downline Trail">
@@ -1281,13 +1236,9 @@ export default function RakeSnapshotPanel({
                   who opened an agent from the club list has no downline of
                   their own, so "My Downline" would be both wrong and a dead
                   end. */}
-              <button
-                type="button"
-                className={`${styles.crumb} sc-ink--white`}
-                onClick={leaveDrill}
-              >
+              <button type="button" onClick={leaveDrill}>
                 {clubCrumb
-                  ? `Back To ${titleCase(clubCrumb.name)}`
+                  ? `Back To ${clubCrumb.name}`
                   : drillOrigin && drillOrigin !== 'agent'
                     ? `Back To ${SCOPE_COPY[drillOrigin].label}`
                     : 'My Downline'}
@@ -1296,19 +1247,18 @@ export default function RakeSnapshotPanel({
                 <button
                   key={c.userId}
                   type="button"
-                  className={`${styles.crumb} ${i === crumbs.length - 1 ? 'sc-ink--muted' : 'sc-ink--white'}`}
                   onClick={() => setCrumbs((cur) => cur.slice(0, i + 1))}
                   aria-current={i === crumbs.length - 1 ? 'true' : undefined}
                   disabled={i === crumbs.length - 1}
                 >
-                  {titleCase(c.name)}
+                  {c.name}
                 </button>
               ))}
             </nav>
           )}
 
           {rows.length === 0 ? (
-            <p className={`sc-copy ${styles.rowNote}`}>
+            <p className={styles.rowNote}>
               {loading ? 'Reading The Chain' : 'Nobody Beneath You Has Played In This Period.'}
             </p>
           ) : (
@@ -1316,23 +1266,22 @@ export default function RakeSnapshotPanel({
               {(rows as RakeDownlineRow[]).map((r) => {
                 const pct = share(r.rake, total);
                 const opens = r.downline_players > 0 && crumbs.length < MAX_DRILL;
-                const name = titleCase(r.name);
                 return (
                   <li key={r.player_id}>
-                    <span className={styles.rowName} title={name}>
+                    <span className={styles.rowName} title={r.name}>
                       {opens ? (
                         <button
                           type="button"
-                          className={`${styles.drill} sc-ink--white`}
+                          className={styles.drill}
                           onClick={() => drillInto(r.player_id, r.name)}
-                          title={`Open ${name}'s Downline`}
+                          title={`Open ${r.name}'s Downline`}
                         >
-                          {name}
+                          {r.name}
                         </button>
                       ) : (
-                        name
+                        r.name
                       )}
-                      <em className={styles.rowEm}>{roleLabel(r.role)}</em>
+                      <em>{roleLabel(r.role)}</em>
                     </span>
                     <span className={styles.rowCount}>
                       {count(r.hands)} Hands
@@ -1355,7 +1304,7 @@ export default function RakeSnapshotPanel({
 
       {kind !== 'none' && rows.length > 0 && (
         <div className={styles.pager}>
-          <span className={`sc-ink--muted ${styles.pagerCount}`}>
+          <span className={styles.pagerCount}>
             {/* The count is the whole point. A list that stops at fifty and
                 says nothing makes the fifty-first row indistinguishable from
                 a row that does not exist. */}
@@ -1364,7 +1313,7 @@ export default function RakeSnapshotPanel({
           {hasMore && (
             <button
               type="button"
-              className={`${styles.pagerBtn} sc-ink--white`}
+              className={styles.pagerBtn}
               onClick={() => void loadMore()}
               disabled={loadingMore}
             >
@@ -1377,26 +1326,26 @@ export default function RakeSnapshotPanel({
       )}
 
       {pageError && (
-        <p className={`sc-copy sc-ink--red ${styles.error}`} role="status">
-          {titleCase(pageError)}
+        <p className={styles.error} role="status">
+          {pageError}
         </p>
       )}
 
       {liveAhead && (
-        <p className={`sc-copy ${styles.notice}`} role="status">
+        <p className={styles.notice} role="status">
           This Table Is Live To The Second. The Headline Above Is A Rollup Written Hourly
           {liveAhead.at ? `, Last At ${utcTime(liveAhead.at)}` : ''}, So The Two Differ Until It
           Runs Again.
         </p>
       )}
 
-      <p className={`sc-label sc-ink--muted ${styles.foot}`}>
+      <p className={styles.foot}>
         {loading && !snapshot
           ? 'Reading Rollups'
           : snapshot
             ? `Compared Against ${snapshot.previous_range.start} - ${snapshot.previous_range.end} UTC`
             : 'No Snapshot Loaded'}
       </p>
-    </SpadeConsole>
+    </section>
   );
 }

@@ -138,76 +138,8 @@ function titleCase(raw: string): string {
  */
 const apiNote = (s: string) => s.replace(/[;'"\\]/g, '').slice(0, 500);
 
-/**
- * ─────────────────────────────────────────────────────────────────────────────
- * DEFINITIVE MEANS "THE SERVER DECIDED AND NOTHING MOVED"
- * ─────────────────────────────────────────────────────────────────────────────
- *
- * `definitive` is read in exactly one place, the catch at the bottom of
- * `submit`, and its only job is to decide whether the durable operation id may
- * be DELETED. That id is the whole of UnionWalletRecovery: while it survives,
- * the operator's next identical attempt reuses it and the server's `p_op_id`
- * dedupe replays the first result. Delete it and the next attempt mints a new
- * key, which is a SECOND movement of union money.
- *
- * So the flag may only be set when we know the outcome:
- *
- *   definitive  the server answered with a decision - a `{ success: false }`
- *               body, or a terminal Postgres/PostgREST code - or this browser
- *               refused before anything left it. Nothing committed. Retire the
- *               key.
- *   ambiguous   everything else. A 5xx, a 408, a 429, a statement timeout, a
- *               dropped connection, an unreadable answer. The function may
- *               have COMMITTED and lost its response. Keep the key.
- *
- * CORRECTED 2026-09-09. `definitiveRefusal` inspected nothing, and both
- * `supabase.rpc` error branches (member send, club clawback) wrapped every
- * PostgrestError in it - so a timeout after a committed transfer retired the
- * key and the operator's retry moved the money again. The classifier below is
- * the one this feature already uses on its other transport
- * (`UnionApiService.callUnionApi`, which sets `definitive` from the HTTP
- * status and lists 408/409/425/429/5xx as deliberately ambiguous), and the
- * same shape `ClubsService.createClub` uses on a PostgrestError.
- */
 const definitiveRefusal = (message: string): Error & { definitive: true } =>
   Object.assign(new Error(message), { definitive: true as const });
-
-const ambiguousFailure = (message: string): Error & { definitive: false } =>
-  Object.assign(new Error(message), { definitive: false as const });
-
-/**
- * Codes that mean the statement was REFUSED rather than lost.
- *
- *   42501  insufficient_privilege   RLS or a grant said no
- *   22023  invalid_parameter_value  a guard rejected the arguments
- *   23514  check_violation          a constraint rejected the row
- *   P0001  raise_exception          the function's own deliberate refusal
- *
- * Each aborts the function's transaction, so nothing was written. Anything
- * else - including an empty code, which is what a transport failure leaves -
- * is ambiguous, and ambiguous keeps the key.
- */
-const TERMINAL_RPC_CODES: ReadonlySet<string> = new Set(['42501', '22023', '23514', 'P0001']);
-
-const rpcFailure = (
-  error: { message?: string | null; code?: string | null } | null,
-  fallback: string
-): Error & { definitive: boolean } => {
-  const message = error?.message || fallback;
-  return TERMINAL_RPC_CODES.has(error?.code || '')
-    ? definitiveRefusal(message)
-    : ambiguousFailure(message);
-};
-
-/**
- * What the operator is told when we could not tell. It has to be a distinct
- * outcome (CLAUDE.md 10.86) and it has to say what to do, because the correct
- * action is counter-intuitive: press the SAME amount again. The reused key is
- * what makes that safe, and a fresh, different amount is what would not be.
- */
-const UNCONFIRMED_NOTICE =
-  'That Money Move Could Not Be Confirmed. Press Send Again With The Same Amount. ' +
-  'The Safety Key Is Kept, So It Cannot Move Twice.';
 
 /** Ledger money, always to the hundredth: 5,000.00, never 5,000 beside 32,482.58. */
 const money = (n: number | null | undefined) =>
@@ -548,8 +480,7 @@ export function UnionWalletModal({
             wallet_after?: number;
             destination?: string;
           };
-          // The transport error is CLASSIFIED; the answered body is definitive.
-          if (error) throw rpcFailure(error, 'union send failed');
+          if (error) throw definitiveRefusal(error.message || 'union send failed');
           if (!res.success) throw definitiveRefusal(res.error || 'union send failed');
           const who = target.data.display_name || target.data.username;
           const landed =
@@ -567,8 +498,7 @@ export function UnionWalletModal({
           if (res.wallet_after != null) setLiveBalance(res.wallet_after);
         } else {
           const r = clubSendRoute(walletKey, kind);
-          // This browser refused; nothing left it, so the outcome is known.
-          if (r.kind === 'refused') throw definitiveRefusal(r.reason);
+          if (r.kind === 'refused') throw new Error(r.reason);
           if (r.kind === 'promo') {
             /* THE PROMO ROUTE. Union promo wallet -> the club's PROMO WALLET
                (clubs.promo_balance), through fn_union_promo_send. Never the
@@ -614,8 +544,7 @@ export function UnionWalletModal({
              refused above rather than quietly pulling into the bank. Both
              calls carry an op id so a retried tap cannot pull twice. */
           const pr = clubPullRoute(walletKey);
-          // This browser refused; nothing left it, so the outcome is known.
-          if (pr.kind === 'refused') throw definitiveRefusal(pr.reason);
+          if (pr.kind === 'refused') throw new Error(pr.reason);
           const isPromoPull = pr.kind === 'promo';
           const { data: cbRes, error: cbErr } = await supabase.rpc(
             isPromoPull ? 'fn_union_clawback_promo_from_club' : 'fn_union_clawback_from_club',
@@ -629,7 +558,7 @@ export function UnionWalletModal({
               p_op_id: opId,
             }
           );
-          if (cbErr) throw rpcFailure(cbErr, 'Clawback failed');
+          if (cbErr) throw definitiveRefusal(cbErr.message || 'Clawback failed');
           const cb = (cbRes ?? {}) as {
             success?: boolean;
             error?: string;
@@ -682,17 +611,9 @@ export function UnionWalletModal({
         reportError(callbackError, 'UnionWalletModal.on_sent_failed');
       }
     } catch (err: any) {
-      const known = err?.definitive === true;
-      if (known) clearUnionWalletOperation(intentScope, opId);
+      if (err?.definitive === true) clearUnionWalletOperation(intentScope, opId);
       reportError(err, 'UnionWalletModal.action_failed');
-      /* A refusal we can name is shown; an outcome we could not read is NOT
-         dressed up as one. The raw PostgrestError text goes to reportError
-         above, where it belongs, and the operator gets the one instruction
-         that is safe to follow. */
-      setNotice({
-        ok: false,
-        text: known ? err.message || 'The Action Was Refused.' : UNCONFIRMED_NOTICE,
-      });
+      setNotice({ ok: false, text: err.message || 'The Action Was Refused.' });
     } finally {
       busyRef.current = false;
       setBusy(false);

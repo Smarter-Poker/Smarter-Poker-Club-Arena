@@ -1,4 +1,0 @@
-{
-  "_owner": "agent/cw-wallet2/feat/phase-3-sit-down-from-the-wallet (2026-09-14). Applied as 20260914101812. fn_diamond_wallet_summary already declared by cw-wallet-the-wallet-learns-the-diamond-arena.json; this replaces its body.",
-  "functions": ["fn_diamond_wallet_summary"]
-}

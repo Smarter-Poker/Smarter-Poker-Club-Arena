@@ -1087,20 +1087,15 @@ const CLAIM_EVIDENCE: Record<string, { table: string; column: string; dateColumn
   league: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
   league_pm: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
   daily_audit: { table: 'horse_daily_audit', column: 'day', dateColumn: 'day' },
-  self_tuner: {
-    table: 'horse_tuner_study_completions',
-    column: 'run_date',
-    dateColumn: 'run_date',
-  },
+  self_tuner: { table: 'horse_self_tune_log', column: 'id', dateColumn: 'run_date' },
 };
 
 /**
  * Jobs whose output row is PARTIAL progress rather than proof of completion.
  *
  * ── 2026-09-04, found by the daily audit three days running ──
- * Daily audit has one whole-output row. Self-tuner uses a separate completion
- * receipt after every eligible horse is recorded; an individual tune log is
- * partial progress and cannot close the night. A league row is ONE
+ * For `daily_audit` and `self_tuner` one row IS the night's whole output, so
+ * "a row exists" correctly means "this claim delivered". A league row is ONE
  * MATCHUP out of 38. Treating it as delivery meant that the moment the first
  * matchup landed, the claim became permanently untakeable and the night was
  * over - which stopped mattering only in theory until the hourly maintenance
@@ -1254,7 +1249,7 @@ export async function claimNightlyJob(job: string, date: string): Promise<boolea
 
     console.warn(
       `[HorseLeague] ${job} ${date} was claimed by ${prevOwner} ` +
-        `${Math.round(ageMs / 60000)} min ago without completed output or fresh progress - taking it over. ` +
+        `${Math.round(ageMs / 60000)} min ago and wrote NOTHING - taking it over. ` +
         (claimIsFromBeforeBoot
           ? `The claim predates this process's boot, so its owner is gone (a restart inside a run).`
           : `A restart inside a run is the usual cause.`)

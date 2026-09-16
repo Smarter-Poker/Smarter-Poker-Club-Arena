@@ -14,48 +14,27 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
-import { leaveForHub } from '../../lib/openExternal';
 import { startCheckout, uuid, type DiamondPackage, type WalletInfo } from './marketplaceShared';
 import styles from './DiamondsTab.module.css';
 
-const DIAMOND_ICON = `${import.meta.env.BASE_URL}images/diamond-icon.webp`;
-
-/* Navigation destinations stay in the current app page. */
+/* ── Nav-tab destination URLs ────────────────────────────────────────────── */
 const NAV_LINKS = [
-  { label: 'VIP Membership', href: '/marketplace?tab=membership', destination: 'arena' },
-  { label: 'Merch Store', href: '/hub/merch-store', destination: 'hub' },
-  { label: 'Smarter Rewards', href: '/hub/smarter-rewards', destination: 'hub' },
-  { label: 'Club Shop', href: '/marketplace?tab=store', destination: 'arena' },
+  { label: 'VIP Membership', icon: '♛', href: '/marketplace?tab=membership' },
+  { label: 'Merch', icon: '◈', href: 'https://smarter.poker/merch' },
+  { label: 'Smarter Rewards', icon: '★', href: 'https://smarter.poker/rewards' },
+  { label: 'Club Arena', icon: '♠', href: '/marketplace?tab=store' },
 ] as const;
 
 /* ── Tier config: maps package index → visual tier ──────────────────────── */
-const TIER_SIZES = ['sm', 'sm', 'md', 'md', 'lg', 'lg'] as const;
-
-function DiamondGem({ size }: { size: (typeof TIER_SIZES)[number] }) {
-  const px = size === 'lg' ? 72 : size === 'md' ? 56 : 44;
-  return (
-    <img
-      src={DIAMOND_ICON}
-      alt=""
-      width={px}
-      height={px}
-      className={styles.gem}
-      aria-hidden="true"
-      draggable={false}
-      decoding="async"
-    />
-  );
-}
+const TIER_SIZES: Array<'sm' | 'md' | 'lg'> = ['sm', 'sm', 'md', 'md', 'lg', 'lg'];
 
 interface DiamondsTabProps {
   clubId: string;
   wallet: WalletInfo;
   packages: DiamondPackage[];
-  /** Where to offer the player onward after a successful purchase (phase 3). */
-  nextPath?: string | null;
 }
 
-export default function DiamondsTab({ clubId, wallet, packages, nextPath }: DiamondsTabProps) {
+export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabProps) {
   const toast = useToast();
   const [redirecting, setRedirecting] = useState<string | null>(null);
   const checkoutInFlightRef = useRef(false);
@@ -71,7 +50,7 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
       await startCheckout(
         'diamonds',
         [{ packageId: pkg.id, quantity: 1 }],
-        `club=${encodeURIComponent(clubId)}&tab=diamonds${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}`,
+        `club=${encodeURIComponent(clubId)}&tab=diamonds`,
         checkoutKeyRef.current
       );
       // startCheckout navigates away on success — the line below only runs on error.
@@ -81,6 +60,52 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
       checkoutKeyRef.current = null;
       setRedirecting(null);
     }
+  };
+
+  /* ── Diamond SVG gem (inline, no external dep) ─────────────────────────── */
+  const DiamondGem = ({ size }: { size: 'sm' | 'md' | 'lg' }) => {
+    const px = size === 'lg' ? 72 : size === 'md' ? 56 : 44;
+    return (
+      <svg
+        width={px}
+        height={px}
+        viewBox="0 0 100 100"
+        xmlns="http://www.w3.org/2000/svg"
+        className={styles.gem}
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient id="gemTop" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#a8e6ff" />
+            <stop offset="100%" stopColor="#2196f3" />
+          </linearGradient>
+          <linearGradient id="gemLeft" x1="1" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1565c0" />
+            <stop offset="100%" stopColor="#0d2f6e" />
+          </linearGradient>
+          <linearGradient id="gemRight" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#1976d2" />
+            <stop offset="100%" stopColor="#0a1f50" />
+          </linearGradient>
+          <filter id="gemGlow">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        {/* top facet */}
+        <polygon points="50,5 20,38 80,38" fill="url(#gemTop)" filter="url(#gemGlow)" />
+        {/* left facet */}
+        <polygon points="20,38 50,95 50,38" fill="url(#gemLeft)" />
+        {/* right facet */}
+        <polygon points="80,38 50,38 50,95" fill="url(#gemRight)" />
+        {/* sparkle */}
+        <circle cx="35" cy="22" r="4" fill="white" opacity="0.7" />
+        <circle cx="62" cy="18" r="2" fill="white" opacity="0.5" />
+      </svg>
+    );
   };
 
   /* ── Packages to display (prefer server catalog, fall back to prop) ──── */
@@ -100,16 +125,22 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
       {/* ── Navigation tabs ────────────────────────────────────────────── */}
       <nav className={styles.navBar} aria-label="Diamond Store Navigation">
         {NAV_LINKS.map((link) => {
-          const content = <span className={styles.navLabel}>{link.label}</span>;
-          return link.destination === 'hub' ? (
-            <button
-              type="button"
+          const content = (
+            <>
+              <span className={styles.navIcon}>{link.icon}</span>
+              <span className={styles.navLabel}>{link.label}</span>
+            </>
+          );
+          return link.href.startsWith('http') ? (
+            <a
               key={link.href}
+              href={link.href}
               className={styles.navTab}
-              onClick={() => leaveForHub(link.href)}
+              target="_blank"
+              rel="noopener noreferrer"
             >
               {content}
-            </button>
+            </a>
           ) : (
             <Link key={link.href} to={link.href} className={styles.navTab}>
               {content}
@@ -152,7 +183,7 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
               aria-label={`Buy ${totalDiamonds.toLocaleString()} Diamonds For $${pkg.priceUsd.toFixed(2)}`}
               aria-busy={isRedirecting}
             >
-              {pkg.popular && <span className={styles.popularBadge}>Popular</span>}
+              {pkg.popular && <span className={styles.popularBadge}>POPULAR</span>}
               {pkg.bonus > 0 && (
                 <span className={styles.bonusBadge}>+{pkg.bonus.toLocaleString()} Bonus!</span>
               )}
@@ -176,7 +207,7 @@ export default function DiamondsTab({ clubId, wallet, packages, nextPath }: Diam
               {/* Direct, secure checkout CTA */}
               <div className={styles.ctaRow}>
                 <span className={styles.ctaBtn}>
-                  {isRedirecting ? 'Opening Checkout' : 'Buy Securely'}
+                  {isRedirecting ? 'Opening Checkout…' : 'Buy Securely'}
                 </span>
               </div>
             </button>

@@ -304,51 +304,29 @@
    a checked-in pre-fix stylesheet at four viewport widths, and it only stays
    that way while this pile is out of flow. */
 
-/* ── CHIPS LYING IN THE POT, NOT A STACK ──────────────────────────────────
-   Dan 2026-09-14, and this supersedes the tower:
+/* ── ONE TOWER, HIGHEST DENOMINATION ON THE BOTTOM ────────────────────────
+   Dan 2026-08-24: "chips entering the pot should be stacked and slightly
+   offset so you can see them all, (highest denomination on the bottom) but not
+   right next to each other. And all chips should be the same size."
 
-     "CHIPS SHOULD ALWAYS BE LAYING HORIZONTALLY UNDER THE POT, NEVER STACKED
-      VERTICALLY."
-     "AND SHOULDN'T ALWAYS APPEAR IN NUMBER ORDER HIGH TO LOW OR LOW TO HIGH...
-      THEY SHOULD APPEAR 'IN A POT' MIXED TOGETHER."
+   Was a horizontal row of per-denomination columns, at its own 16px chip size
+   while the seat chips arriving from ChipPhysics were 26px. A bet therefore
+   visibly CHANGED SIZE as it swept into the pot it was joining. Both now read
+   --cp-chip-size from ChipPhysics.css, which is the single source for it.
 
-   So: one horizontal spread under the POT pill, each disc overlapping the one
-   before it, denominations JUMBLED rather than sorted. That is what a pot on a
-   real felt looks like - four players' chips pushed into the middle, nobody
-   colours them up until the dealer does.
-
-   What stays from Dan 2026-08-24 is the rest of that ruling: "slightly offset
-   so you can see them all... but not right next to each other. And all chips
-   should be the same size." The offset is derived from --cp-chip-size, the one
-   chip token, so the pot's discs are the same discs the seats bet with.
-
-   The overlap is HALF the chip here rather than the quarter a vertical stack
-   uses (--cp-chip-slice). A stack is read by its rims, where a quarter is
-   plenty; a spread is read by its FACES, and a quarter of a 14px disc on a
-   phone is a 3.5px sliver of colour. Width is the axis with room to spare -
-   ten discs at half-overlap is ~106px against a ~290px felt band - so the
-   spread spends it on being legible. */
+   column-reverse puts the first DOM child at the bottom, and visualChipStacks
+   returns groups highest-denomination first, so the ladder comes out of DOM
+   order for free. */
 .pot-display__pile {
-  /* How much of each disc stays visible past the one lying over it, and the
-     margin that produces it. Derived from the one chip token so the two can
-     never drift apart - the same discipline --cp-chip-overlap has in
-     ChipPhysics.css, at the ratio a horizontal spread needs. */
-  --pd-pile-show: calc(var(--cp-chip-size, 24px) * 0.5);
-  --pd-pile-overlap: calc(var(--pd-pile-show) - var(--cp-chip-size, 24px));
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
+  display: grid;
+  place-items: center;
   pointer-events: none;
 }
 
-/* Groups meet with the same overlap as the chips inside them, so the spread
-   reads as one pot rather than as several piles. (The component renders a
-   single group today - the discs are mixed, so there is nothing to group by -
-   but the rule is what keeps a second one from opening a seam.) */
+/* Groups butt into each other with the same slice as the chips inside them, so
+   two denominations meet with no seam and the pile reads as one tower. */
 .pot-display__pile-stack + .pot-display__pile-stack {
-  margin-left: var(--pd-pile-overlap);
+  margin-top: 0;
 }
 
 /* The collected pot: floats just below the POT pill, centred on it, and out of
@@ -376,13 +354,9 @@
 }
 
 .pot-display__pile-stack {
-  /* relative so a clamped denomination's "x12" badge can hang above the
-     spread without joining the row. */
-  position: relative;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  transform-origin: center center;
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
   animation: pdPileIn 0.3s var(--pd-ease-spring) calc(var(--pile-group, 0) * 45ms) backwards;
 }
 
@@ -403,11 +377,7 @@
      derived and the two can never drift apart. */
   width: var(--cp-chip-size, 24px);
   height: var(--cp-chip-size, 24px);
-  /* Never let the column squash a disc into an oval - Dan 2026-09-04,
-     "chips are circles". */
-  flex: 0 0 auto;
-  /* The "x12" badge for a clamped group hangs off its top chip. */
-  position: relative;
+  grid-area: 1 / 1;
   border-radius: 50%;
   box-sizing: border-box;
   border: 1.5px solid rgba(255, 255, 255, 0.4);
@@ -429,34 +399,7 @@
     inset 0 -2px 3px rgba(0, 0, 0, 0.25);
 }
 
-/* ── THE OVERLAP, ACTUALLY APPLIED (Dan 2026-09-14) ─────────────────
-   "BOMB POTS CHIPS DON'T UPDATE TO DISPLAY THE ACTUAL AMOUNT IN THE POTS...
-    IT SHOULD SHOW MULTIPLE CHIPS AS WELL."
-
-   The pot drew ONE disc for every amount. Not because the breakdown was
-   wrong - chipDenominations.ts had always returned the right ladder, the DOM
-   had always held every disc, and tests/chips-on-the-felt.test.tsx had been
-   green on all of it the whole time - but because every disc was painted in
-   the SAME PLACE. #771 moved this pile from a column to `display: grid` with
-   `grid-area: 1 / 1` on the stack AND on every chip, which is the CSS for
-   "put all of these in one cell", and the only offset left was an inline
-   translateX of at most 1.5px. Ten chips landed inside a 3px band and the
-   player saw the LAST one: the lowest denomination in the pot, alone.
-
-   That is exactly the report. A 30 pot is a green 25 and a red 5, and it
-   showed one red chip. A 74 pot is 2 green, 4 red, 4 white, and it showed
-   one white chip. Nothing about it was specific to bomb pots - a bomb pot is
-   simply the first pot of a hand that is already big and already mixed, so
-   it is where a single wrong-coloured disc is impossible to miss. Every
-   single-denomination pot (three white 1s, three red 5s) had been drawing
-   one disc too, and looked close enough to right to survive.
-
-   A jsdom test cannot see this - there is no layout - so the guard for it
-   reads this stylesheet: see "the pot's chips are not all painted in one
-   place". */
-.pot-display__pile-chip + .pot-display__pile-chip {
-  margin-left: var(--pd-pile-overlap);
-}
+/* .pot-display__pile-chip:first-of-type { margin-top: 0; } */
 
 /* A sub-1 pot that no chip on Dan's ladder can represent (a lone 0.35 of
    blinds before anyone calls). Dan 2026-09-04: chips are circles, on every
@@ -468,23 +411,12 @@
   height: var(--cp-chip-size, 24px);
 }
 
-/* A later sibling lies OVER an earlier one, which is what makes the spread
-   read as chips in a pot - and would bury the count badge of any disc that is
-   not the last one. The disc that carries a count is lifted out of that. */
-.pot-display__pile-chip--counted {
-  z-index: 2;
-}
-
-/* True count for a denomination clamped to fit. The pile is clamped; the value
-   is not. It hangs BELOW its disc: beside it is now occupied by the next chip
-   lying over this one, and above it is the POT pill, five pixels up. Below the
-   spread there is the whole band down to the board - measured at 60.8px on a
-   393px phone against the shipped stylesheets. */
+/* True count for a stack clamped to fit. The pile is clamped; the value is not. */
 .pot-display__pile-multi {
   position: absolute;
-  top: calc(100% + 1px);
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 2px;
+  left: 100%;
+  margin-left: 3px;
   font-size: 0.55rem;
   font-weight: 800;
   line-height: 1;

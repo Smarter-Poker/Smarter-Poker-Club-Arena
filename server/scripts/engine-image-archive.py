@@ -4,7 +4,6 @@
 This binds bytes to independently supplied image/source identities. It does not
 authenticate the producer, qualify host import memory, or authorize deployment.
 """
-import gzip
 import hashlib
 import json
 import io
@@ -59,8 +58,8 @@ class DigestReader:
         self.remaining = remaining
         self.digest = hashlib.sha256()
 
-    def read(self, size=-1):
-        chunk = self.stream.read(self.remaining if size < 0 else min(size, self.remaining))
+    def read(self, size):
+        chunk = self.stream.read(min(size, self.remaining))
         self.remaining -= len(chunk)
         self.digest.update(chunk)
         return chunk
@@ -69,10 +68,9 @@ class DigestReader:
 def normalize_engine_archive(source, destination, *, source_sha, server_tree, image_id):
     """Write one canonical, exact-image Docker archive by atomic no-replace link.
 
-    Legacy config identities retain their original uncompressed Docker graph.
-    OCI manifest identities retain only the proven manifest/config/layer graph,
-    with a canonical single-tag index and equivalent Docker manifest. Unrelated
-    metadata cannot supply a second image or change the authenticated identity.
+    Only config and verified uncompressed layer bytes enter the output. Docker's
+    auxiliary OCI indexes, legacy metadata and foreign layer hints are omitted;
+    no second importer can choose a different graph from auxiliary metadata.
     """
     require(all(isinstance(value, str) and re.fullmatch('[0-9a-f]{40}', value)
                 for value in (source_sha, server_tree)), 'SOURCE_IDENTITY')
@@ -136,56 +134,8 @@ def normalize_engine_archive(source, destination, *, source_sha, server_tree, im
                     'MANIFEST_SHAPE')
             require(item['RepoTags'] == [expected_tag], 'EXACT_SINGLE_TAG')
             config_bytes = metadata(item['Config'])
-            config_id = 'sha256:' + hashlib.sha256(config_bytes).hexdigest()
-            oci_manifest = None
-            if config_id != image_id:
-                # Docker's containerd store identifies an image by its manifest,
-                # while the classic store uses its config. Authenticate the
-                # exact supplied manifest before accepting that distinct case.
-                oci_name = 'blobs/sha256/' + image_id[7:]
-                require(oci_name in members, 'CONFIG_DIGEST')
-                oci_bytes = metadata(oci_name)
-                require('sha256:' + hashlib.sha256(oci_bytes).hexdigest() == image_id,
-                        'OCI_MANIFEST_DIGEST')
-                oci_manifest = decode(oci_bytes)
-                manifest_type = 'application/vnd.oci.image.manifest.v1+json'
-                require(isinstance(oci_manifest, dict)
-                        and set(oci_manifest) == {'schemaVersion', 'mediaType', 'config', 'layers'}
-                        and oci_manifest['schemaVersion'] == 2
-                        and oci_manifest['mediaType'] == manifest_type, 'OCI_MANIFEST')
-
-                def oci_descriptor(value, name, media_types):
-                    require(isinstance(value, dict)
-                            and set(value) == {'mediaType', 'digest', 'size'}
-                            and value['mediaType'] in media_types
-                            and isinstance(value['digest'], str)
-                            and re.fullmatch('sha256:[0-9a-f]{64}', value['digest'])
-                            and name == 'blobs/sha256/' + value['digest'][7:]
-                            and name in members and members[name].isreg()
-                            and type(value['size']) is int
-                            and value['size'] == members[name].size, 'OCI_DESCRIPTOR')
-
-                oci_descriptor(oci_manifest['config'], item['Config'],
-                               {'application/vnd.oci.image.config.v1+json'})
-                require(oci_manifest['config']['digest'] == config_id, 'CONFIG_DIGEST')
-                index = decode(metadata('index.json'))
-                require(isinstance(index, dict) and index.get('schemaVersion') == 2
-                        and index.get('mediaType') == 'application/vnd.oci.image.index.v1+json'
-                        and isinstance(index.get('manifests'), list)
-                        and len(index['manifests']) == 1, 'OCI_SINGLE_IMAGE')
-                selected = index['manifests'][0]
-                require(isinstance(selected, dict)
-                        and set(selected) <= {'mediaType', 'digest', 'size', 'annotations'},
-                        'OCI_INDEX_DESCRIPTOR')
-                oci_descriptor({k: v for k, v in selected.items() if k != 'annotations'},
-                               oci_name, {manifest_type})
-                annotations = selected.get('annotations', {})
-                require(isinstance(annotations, dict)
-                        and annotations.get('io.containerd.image.name', 'docker.io/library/' + expected_tag)
-                            == 'docker.io/library/' + expected_tag
-                        and annotations.get('org.opencontainers.image.ref.name', source_sha) == source_sha,
-                        'EXACT_SINGLE_TAG')
-                require(decode(metadata('oci-layout')) == {'imageLayoutVersion': '1.0.0'}, 'OCI_LAYOUT')
+            require('sha256:' + hashlib.sha256(config_bytes).hexdigest() == image_id,
+                    'CONFIG_DIGEST')
             config = decode(config_bytes)
             require(isinstance(config, dict) and config.get('os') == 'linux'
                     and config.get('architecture') == 'amd64', 'PLATFORM')
@@ -212,73 +162,20 @@ def normalize_engine_archive(source, destination, *, source_sha, server_tree, im
             require(sum(members[name].size for name in layers) + len(config_bytes)
                     + (len(layers) + 4) * 10240 <= ARCHIVE_LIMIT, 'OUTPUT_SIZE')
 
-            if oci_manifest is not None:
-                descriptors = oci_manifest['layers']
-                require(isinstance(descriptors, list) and len(descriptors) == len(layers), 'OCI_LAYERS')
-                expanded_total = 0
-                for name, layer_descriptor, diff_id in zip(layers, descriptors, diff_ids):
-                    oci_descriptor(layer_descriptor, name,
-                                   {'application/vnd.oci.image.layer.v1.tar',
-                                    'application/vnd.oci.image.layer.v1.tar+gzip'})
-                    source_stream.seek(members[name].offset_data)
-                    reader = DigestReader(source_stream, members[name].size)
-                    decoded = (gzip.GzipFile(fileobj=reader, mode='rb')
-                               if layer_descriptor['mediaType'].endswith('+gzip') else reader)
-                    expanded, digest = 0, hashlib.sha256()
-                    try:
-                        while chunk := decoded.read(min(1024 * 1024, MEMBER_LIMIT - expanded + 1,
-                                                        ARCHIVE_LIMIT - expanded_total + 1)):
-                            expanded += len(chunk)
-                            expanded_total += len(chunk)
-                            require(expanded <= MEMBER_LIMIT and expanded_total <= ARCHIVE_LIMIT,
-                                    'LAYER_EXPANSION_LIMIT')
-                            digest.update(chunk)
-                    finally:
-                        if decoded is not reader:
-                            decoded.close()
-                    require(reader.remaining == 0
-                            and 'sha256:' + reader.digest.hexdigest() == layer_descriptor['digest'],
-                            'OCI_LAYER_DIGEST')
-                    require('sha256:' + digest.hexdigest() == diff_id, 'LAYER_DIGEST')
-
             output_names = [f'layers/{index:04d}.tar' for index in range(len(layers))]
             config_name = image_id.removeprefix('sha256:') + '.json'
             normalized_manifest = json.dumps([dict(Config=config_name, RepoTags=[expected_tag],
                                                   Layers=output_names)], separators=(',', ':')).encode()
-            output_metadata = [('manifest.json', normalized_manifest), (config_name, config_bytes)]
-            output_digests = diff_ids
-            if oci_manifest is not None:
-                output_names = layers
-                output_digests = [entry['digest'] for entry in oci_manifest['layers']]
-                canonical_index = dict(schemaVersion=2, mediaType='application/vnd.oci.image.index.v1+json',
-                                       manifests=[dict(mediaType=manifest_type, digest=image_id,
-                                                       size=len(oci_bytes), annotations={
-                                           'io.containerd.image.name': 'docker.io/library/' + expected_tag,
-                                           'org.opencontainers.image.ref.name': source_sha})])
-                docker_manifest = [dict(Config=item['Config'], RepoTags=[expected_tag], Layers=layers)]
-                output_metadata = [
-                    ('manifest.json', json.dumps(docker_manifest, separators=(',', ':')).encode()),
-                    ('index.json', json.dumps(canonical_index, separators=(',', ':')).encode()),
-                    ('oci-layout', b'{"imageLayoutVersion":"1.0.0"}'),
-                    (oci_name, oci_bytes), (item['Config'], config_bytes)]
-                require(sum(len(raw) for _, raw in output_metadata)
-                        + sum(members[name].size for name in layers)
-                        + (len(layers) + len(output_metadata) + 2) * 10240 <= ARCHIVE_LIMIT,
-                        'OUTPUT_SIZE')
             fd, temporary_name = tempfile.mkstemp(prefix='.engine-image-', suffix='.tar',
                                                  dir=destination.parent)
             temporary = Path(temporary_name)
             with os.fdopen(fd, 'w+b') as output:
                 with tarfile.open(fileobj=output, mode='w', format=tarfile.USTAR_FORMAT) as normalized:
-                    for name, raw in output_metadata:
+                    for name, raw in [('manifest.json', normalized_manifest), (config_name, config_bytes)]:
                         member = tarfile.TarInfo(name)
                         member.size, member.mode, member.mtime = len(raw), 0o444, 0
                         normalized.addfile(member, io.BytesIO(raw))
-                    written = set()
-                    for name, output_name, expected_digest in zip(layers, output_names, output_digests):
-                        if output_name in written:
-                            continue
-                        written.add(output_name)
+                    for name, output_name, expected_digest in zip(layers, output_names, diff_ids):
                         member = tarfile.TarInfo(output_name)
                         member.size, member.mode, member.mtime = members[name].size, 0o444, 0
                         source_stream.seek(members[name].offset_data)

@@ -1,8 +1,0 @@
-{
-  "_owner": "fix/mtt-creation-blind-contract-sep14; common new MTT structure validation and clock-derived metadata; existing funded ladders unchanged",
-  "functions": [
-    "fn_ca_blind_contract_number",
-    "fn_ca_mtt_blind_contract",
-    "fn_guard_new_mtt_blind_contract"
-  ]
-}

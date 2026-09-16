@@ -1,15 +1,8 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * ACHIEVEMENT SHARE CARD - Q3 Wave 2 (Block D)
+ * ♠ ACHIEVEMENT SHARE CARD — Q3 Wave 2 (Block D)
  * Generate shareable social media cards for unlocked achievements
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * #ClubArenaConsole (2026-09-14): the dialog is a SpadeConsole - the
- * achievement printed on the black glass between the rails, its rarity in the
- * head's painted pill slot, Close on the steel plate and Share on the blue
- * glass. Nothing is drawn in CSS. The PNG the player actually shares is still
- * painted on the canvas below, in the same inks the console prints in
- * (silver, blue, white, gold - no browns, no pinks, no purples).
  */
 
 import React, { useRef, useCallback, useState } from 'react';
@@ -17,8 +10,6 @@ import { haptic } from '../../services/HapticService';
 import './AchievementShareCard.css';
 import { reportError } from '../../utils/errorReporter';
 import { isNativePlatform } from '../../lib/appBase';
-import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
-import { titleCase } from '../../utils/titleCase';
 
 interface AchievementShareCardProps {
   icon: string;
@@ -29,17 +20,16 @@ interface AchievementShareCardProps {
   onClose: () => void;
 }
 
-/* The rarity inks are the console's own (SpadeConsole.css sc-ink--*): muted
-   silver, lit blue, the white with the blue glow, and brand gold. The glow is
-   the ink's own halo, used by the canvas for the ring behind the emblem. */
-const RARITY_COLORS: Record<
-  string,
-  { ink: string; glow: string; label: string; pill: ConsoleInk }
-> = {
-  common: { ink: '#9aa5b3', glow: 'rgba(154, 165, 179, 0.28)', label: 'Common', pill: 'muted' },
-  rare: { ink: '#45adff', glow: 'rgba(49, 168, 255, 0.4)', label: 'Rare', pill: 'blue' },
-  epic: { ink: '#f4f7fb', glow: 'rgba(140, 210, 255, 0.45)', label: 'Epic', pill: 'white' },
-  legendary: { ink: '#ffd700', glow: 'rgba(255, 215, 0, 0.4)', label: 'Legendary', pill: 'gold' },
+const RARITY_COLORS: Record<string, { bg: string; border: string; glow: string; label: string }> = {
+  common: { bg: '#1a1a2e', border: '#4a4a6a', glow: 'rgba(150, 150, 200, 0.3)', label: 'Common' },
+  rare: { bg: '#0a1628', border: '#2196f3', glow: 'rgba(33, 150, 243, 0.4)', label: 'Rare' },
+  epic: { bg: '#1a0a28', border: '#9c27b0', glow: 'rgba(156, 39, 176, 0.4)', label: 'Epic' },
+  legendary: {
+    bg: '#1a1400',
+    border: '#ff9800',
+    glow: 'rgba(255, 152, 0, 0.4)',
+    label: 'Legendary',
+  },
 };
 
 export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
@@ -64,8 +54,12 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     canvas.width = 600;
     canvas.height = 400;
 
-    // Black glass, the console's own ground.
-    ctx.fillStyle = '#050607';
+    // Premium gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 600, 400);
+    gradient.addColorStop(0, '#050a18');
+    gradient.addColorStop(0.4, colors.bg);
+    gradient.addColorStop(1, '#050a18');
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 600, 400);
 
     // Inner rarity glow circle behind icon
@@ -76,7 +70,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     ctx.fillRect(180, 10, 240, 240);
 
     // Border frame with glow
-    ctx.strokeStyle = colors.ink;
+    ctx.strokeStyle = colors.border;
     ctx.lineWidth = 2;
     ctx.shadowColor = colors.glow;
     ctx.shadowBlur = 20;
@@ -87,10 +81,10 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.font = 'bold 11px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('SMARTER.POKER', 28, 36);
+    ctx.fillText('♠  SMARTER.POKER', 28, 36);
 
     // Top-right rarity badge
-    ctx.fillStyle = colors.ink;
+    ctx.fillStyle = colors.border;
     ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(colors.label.toUpperCase(), 572, 36);
@@ -103,12 +97,12 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     // Achievement name
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 30px system-ui, sans-serif';
-    ctx.fillText(titleCase(name), 300, 220);
+    ctx.fillText(name, 300, 220);
 
     // Description
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText(titleCase(description), 300, 260);
+    ctx.fillText(description, 300, 260);
 
     // Unlocked date
     if (unlockedAt) {
@@ -133,7 +127,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     // Bottom branding
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.font = 'bold 12px system-ui, sans-serif';
-    ctx.fillText('CLUB ARENA - smarter.poker', 300, 370);
+    ctx.fillText('CLUB ARENA · smarter.poker', 300, 370);
 
     return canvas;
   }, [icon, name, description, rarity, unlockedAt, colors]);
@@ -211,65 +205,36 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     setSharing(false);
   };
 
-  const unlockedLabel = unlockedAt
-    ? new Date(unlockedAt).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
-    : null;
-
   return (
     <div className="share-card-overlay" onClick={onClose}>
-      <div
-        className="share-card-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="share-card-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <SpadeConsole
-          eyebrow="Club Arena"
-          title="Share Achievement"
-          titleId="share-card-title"
-          pill={colors.label}
-          pillInk={colors.pill}
-          plates={{
-            secondary: { label: 'Close', onClick: onClose },
-            primary: {
-              label: sharing ? 'Sharing...' : 'Share',
-              ink: 'white',
-              onClick: handleShare,
-              disabled: sharing,
-            },
-          }}
-        >
-          {/* Preview: the achievement printed on the glass */}
-          <div className={`share-card-preview share-rarity-${rarity}`}>
-            <span className="share-card-icon" aria-hidden="true">
-              {icon}
-            </span>
-            <h3 className="share-card-name sc-ink--silver">{titleCase(name)}</h3>
-            <p className="share-card-desc sc-copy sc-copy--center">{titleCase(description)}</p>
-            <div className="share-card-rows">
-              <div className="share-card-row">
-                <span className="share-card-row__label sc-label sc-ink--blue">Rarity</span>
-                <span className={`share-card-row__value sc-ink--${colors.pill}`}>
-                  {colors.label}
-                </span>
-              </div>
-              {unlockedLabel && (
-                <div className="share-card-row">
-                  <span className="share-card-row__label sc-label sc-ink--blue">Unlocked</span>
-                  <span className="share-card-row__value sc-ink--silver">{unlockedLabel}</span>
-                </div>
-              )}
-            </div>
-          </div>
+      <div className="share-card-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="share-card-header">
+          <span>Share Achievement</span>
+          <button className="share-card-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
 
-          {/* Hidden canvas for image generation */}
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-        </SpadeConsole>
+        {/* Preview */}
+        <div
+          className={`share-card-preview share-rarity-${rarity}`}
+          style={{ borderColor: colors.border }}
+        >
+          <span className="share-card-icon">{icon}</span>
+          <h3 className="share-card-name">{name}</h3>
+          <p className="share-card-desc">{description}</p>
+          <span className="share-card-rarity" style={{ color: colors.border }}>
+            {colors.label}
+          </span>
+        </div>
+
+        {/* Hidden canvas for image generation */}
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+        {/* Share Button */}
+        <button className="share-card-btn" onClick={handleShare} disabled={sharing}>
+          {sharing ? 'Sharing...' : 'Share'}
+        </button>
       </div>
     </div>
   );

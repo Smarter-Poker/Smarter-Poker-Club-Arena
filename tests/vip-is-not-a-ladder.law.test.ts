@@ -102,8 +102,6 @@ describe('the VIP resolver is the only answer to "is this player a VIP"', () => 
   it('reads the three real columns and treats lifetime as never expiring', () => {
     expect(resolveVipStatus({ is_vip: false, vip_tier: 'lifetime' })).toBe('none');
     expect(resolveVipStatus({ is_vip: true, vip_tier: 'lifetime' })).toBe('lifetime');
-    expect(resolveVipStatus({ is_vip: true, vip_tier: 'Lifetime' })).toBe('vip');
-    expect(resolveVipStatus({ is_vip: true, vip_tier: 'LIFETIME' })).toBe('vip');
     // Production stores 2099-12-31 on 692 lifetime rows. A sentinel is not an
     // expiry, and reading it as one would strip a paid member of everything.
     expect(
@@ -208,18 +206,9 @@ describe('there is no tier ladder, and no rung of one survives', () => {
     expect(plate).toContain('limits.throwables.used');
   });
 
-  it('reserves unlimited allowance copy for the exact Lifetime membership', () => {
-    // The newer Lifetime contract supersedes the old all-membership ban. The
-    // finite VIP constants stay intact; only `vipGrade === lifetime` branches.
-    expect(VIP_PAGE).toContain("vipGrade === 'lifetime'");
-    expect(VIP_PAGE).toContain("value: isLifetime ? 'Unlimited'");
-    expect(VIP_PAGE).toContain("value: isLifetime ? 'Included'");
-    expect(VIP_PAGE).toContain('loadGenerationRef');
-    expect(VIP_PAGE).toContain('generation === loadGenerationRef.current');
-    expect(VIP_PAGE).toContain('if (!isCurrent()) return');
-    expect(VIP_PAGE).toContain('Unlimited Rabbit Hunts With No Diamond Charge');
-    expect(VIP_PAGE).toContain('Unlimited Standard 20-Second Time Bank Activations');
-    expect(VIP_PAGE).toContain('Unlimited Throwables With No Diamond Charge');
+  it('nothing promises an unlimited allowance', () => {
+    // Dan 2026-09-04: "THERE IS NOTHING UNLIMITED LIKE THROWABLES OR TIME BANKS."
+    expect(VIP_PAGE).not.toContain('Unlimited');
     expect(VIP_PAGE).not.toContain('All Packs');
     expect(VIP_PAGE).not.toContain('500 Free Throws');
   });

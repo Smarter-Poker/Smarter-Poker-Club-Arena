@@ -11,7 +11,7 @@ a measurement taken in the window above unless dated otherwise.
    which holds 0.50.** `fn_horse_fund_from_treasury` (both layers) resolves the treasury as
    `tables.club_id`; every Midway cash table's `club_id` is `fade0000-...` (the union's own club row),
    whose `chip_treasury` is 0.50 (JAQK 937,497.23, SHARK 885,816.01). `chip_ledger category =
-'horse_funding'`: DSS 449 rows / 53,410 chips in 24 h, and 117-4,683 rows every day since 09-01;
+   'horse_funding'`: DSS 449 rows / 53,410 chips in 24 h, and 117-4,683 rows every day since 09-01;
    Midway Union 81 rows / 8,291 chips on 09-02 and NOTHING since (that is the 0.50); JAQK and
    SHARK 0 rows ever. Midway horse cash exits in 24 h: 484 (310 with a zero stack) vs DSS 346 (233) -
    DSS busts reload through the door, Midway busts hit `insufficient club treasury` -> `declined` ->
@@ -66,22 +66,22 @@ add `if (m.includes('PLATFORM_FROZEN')) return 'frozen'` and an `'already_in_gam
 
 **What the door refused in the last 24 h** (postgres_logs, ERROR, grouped, UUIDs/numbers collapsed):
 
-| refusal                                                                                                                                                                                                                                            | n     | notes                                                                                                                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FOUR TABLE LIMIT ... may not ENTER another` (booking cap, `tournament_players`)                                                                                                                                                                   | 4,451 | lane D #9 (30 vs 60 min horizon); engine fix in HEAD                                                                                                                                            |
-| `FOUR TABLE LIMIT ... may not TAKE another` (`fn_enforce_four_table_limit`, all from the buy-in INSERT)                                                                                                                                            | 97    | bursts of 3-5 in one second per horse, see below                                                                                                                                                |
-| `duplicate key ... table_seats_table_id_seat_number_key`                                                                                                                                                                                           | 88    | two seaters chose the same chair; the door deletes only a VACATED row at that number                                                                                                            |
-| `TABLE_SIZE: table is full`                                                                                                                                                                                                                        | 82    | race, same as lane A measured                                                                                                                                                                   |
-| `deadlock detected`                                                                                                                                                                                                                                | 47    | none on the seat door: `fn_project_hand_side_effects` / `ca_hand_player_idx`, `club_wallets` rake, `fn_refresh_player_stats`; one on `fn_seat_horse_in_seat_first_game` vs the booking cap lock |
-| `Player already seated at this table`                                                                                                                                                                                                              | 12    |                                                                                                                                                                                                 |
-| `ALREADY_IN_GAME`                                                                                                                                                                                                                                  | 9     |                                                                                                                                                                                                 |
-| `TABLE_CLOSING`                                                                                                                                                                                                                                    | 7     |                                                                                                                                                                                                 |
-| `TABLE_CAP_REACHED`                                                                                                                                                                                                                                | 5     |                                                                                                                                                                                                 |
-| `SEAT_RESERVED ... moving here`                                                                                                                                                                                                                    | 5     | the 2026-09-10 pending-move reservation                                                                                                                                                         |
-| `VPIP_BARRED`                                                                                                                                                                                                                                      | 2     | 66 horses barred right now (87 rows), 0 humans on the floor                                                                                                                                     |
-| `PLATFORM_FROZEN`                                                                                                                                                                                                                                  | 3     | all inside a break                                                                                                                                                                              |
-| `BUYIN_BELOW_FLOOR`                                                                                                                                                                                                                                | 1     |                                                                                                                                                                                                 |
-| `NIT_GAME`, `Insufficient club chips`, `No club wallet`, `CLOSED_TABLE_REJECTS`, `CASH_PURCHASE_ONLY`, `one_committed_seat`, `SEAT_OCCUPANCY_IMMUTABLE`, `IDEMPOTENCY_*`, `AUTOMATED_PLAYER_HOUSE_BOARD_ONLY`, `PLAYER_RESTRICTED`, `CLUB_RETIRED` | 0     |                                                                                                                                                                                                 |
+| refusal | n | notes |
+| --- | --- | --- |
+| `FOUR TABLE LIMIT ... may not ENTER another` (booking cap, `tournament_players`) | 4,451 | lane D #9 (30 vs 60 min horizon); engine fix in HEAD |
+| `FOUR TABLE LIMIT ... may not TAKE another` (`fn_enforce_four_table_limit`, all from the buy-in INSERT) | 97 | bursts of 3-5 in one second per horse, see below |
+| `duplicate key ... table_seats_table_id_seat_number_key` | 88 | two seaters chose the same chair; the door deletes only a VACATED row at that number |
+| `TABLE_SIZE: table is full` | 82 | race, same as lane A measured |
+| `deadlock detected` | 47 | none on the seat door: `fn_project_hand_side_effects` / `ca_hand_player_idx`, `club_wallets` rake, `fn_refresh_player_stats`; one on `fn_seat_horse_in_seat_first_game` vs the booking cap lock |
+| `Player already seated at this table` | 12 | |
+| `ALREADY_IN_GAME` | 9 | |
+| `TABLE_CLOSING` | 7 | |
+| `TABLE_CAP_REACHED` | 5 | |
+| `SEAT_RESERVED ... moving here` | 5 | the 2026-09-10 pending-move reservation |
+| `VPIP_BARRED` | 2 | 66 horses barred right now (87 rows), 0 humans on the floor |
+| `PLATFORM_FROZEN` | 3 | all inside a break |
+| `BUYIN_BELOW_FLOOR` | 1 | |
+| `NIT_GAME`, `Insufficient club chips`, `No club wallet`, `CLOSED_TABLE_REJECTS`, `CASH_PURCHASE_ONLY`, `one_committed_seat`, `SEAT_OCCUPANCY_IMMUTABLE`, `IDEMPOTENCY_*`, `AUTOMATED_PLAYER_HOUSE_BOARD_ONLY`, `PLAYER_RESTRICTED`, `CLUB_RETIRED` | 0 | |
 
 The 97 seat-side FOUR TABLE LIMITs are a race the DB is right about, not a rule disagreement:
 horse `4845cbbb` at 14:06:21 held a tournament seat (14:03:12), a seat-first seat + its booking
@@ -221,11 +221,12 @@ All 163 RPC names the engine calls (`rpc('...')`, single and multi-line, non-tes
 `atomic_table_buyin` (svc + authenticated), `fn_register_horse_for_tournament` x2, `fn_seat_horse_in_
 seat_first_game`, `fn_horse_fund_from_treasury`, `fn_cash_cluster(s)_tick(_all)`, `fn_ca_fleet_*`,
 `fn_assign_horse_*`, `fn_raise_server_financial_alert`, `fn_cashout_seat_occupancy`, `fn_offer_open_seat`,
-`fn_cash_seat_*`, `fn_nit_*`, `cash_tables_needing_engine`: service*role EXECUTE true, all
+`fn_cash_seat_*`, `fn_nit_*`, `cash_tables_needing_engine`: service_role EXECUTE true, all
 SECURITY DEFINER owned by postgres. Every REVOKE in the 09-04..09-11 migrations that names a horse RPC
 revokes PUBLIC/anon/authenticated and re-grants service_role; none touched service_role on a function
-the engine uses. Log: 0 `permission denied for function fn*<horse>`in 24 h (the 37x3 challenge
-functions and 20x`fn_generate_all_credit_invoices`are browser-role calls, not horse paths).`fn_caller_is_engine()`=`coalesce(auth.role(), 'service_role') = 'service_role'` - the engine passes
+the engine uses. Log: 0 `permission denied for function fn_<horse>` in 24 h (the 37x3 challenge
+functions and 20x `fn_generate_all_credit_invoices` are browser-role calls, not horse paths).
+`fn_caller_is_engine()` = `coalesce(auth.role(), 'service_role') = 'service_role'` - the engine passes
 every "engine only" gate in the doors above.
 
 ## 8. Stale data
@@ -307,7 +308,7 @@ every "engine only" gate in the doors above.
   unique violations in the log.
 - `atomic_seat_cashout_locked` -> `atomic_credit_wallet_and_log` credits `table_seats.club_id` (the
   seat's wallet), never the table's club; tournament stacks never credit; `CLUB_CREDIT_DESTINATION_
-MISSING` aborts rather than minting. `fn_cash_session_open` / `_add_baseline`: no RAISE.
+  MISSING` aborts rather than minting. `fn_cash_session_open` / `_add_baseline`: no RAISE.
 - `fn_cash_clusters_tick_all`: frozen short-circuit, oldest-ticked-first, 5.5 s budget with deferred
   games answering identity, 2 s lock_timeout per game, error rows in `cash_cluster_events`.
 - `fn_ca_fleet_state_upsert` signature `(p_rows jsonb, p_beat jsonb)`; `fn_ca_fleet_seat_touch`,

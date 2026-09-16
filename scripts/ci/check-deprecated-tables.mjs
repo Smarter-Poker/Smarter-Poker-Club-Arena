@@ -40,14 +40,6 @@ const EXTS = new Set(['.ts', '.tsx', '.js', '.jsx']);
 
 /** table -> what to use instead. Mirrors public.deprecated_tables. */
 const DEPRECATED = {
-  // Added 2026-09-11. The daily free spin was replaced by the one-time welcome
-  // spin (Dan 2026-09-10), which is the REAL wheel and lives in wheel_spins
-  // with is_welcome set. Its two readers were dropped in
-  // 20260911052216_the_daily_free_spin_leaves_the_building. The rows stay; the
-  // point is that nothing reads them again and renders the empty result as a
-  // legitimate zero.
-  wheel_free_spins: 'wheel_spins WHERE is_welcome',
-  wheel_free_segments: 'wheel_segments',
   rake_history: 'rake_records',
   hand_players: 'hand_history (or the ca_player_stats_full RPC for aggregates)',
   // rake_attributions: NO LONGER DEPRECATED (Dan 2026-08-29/30). It was

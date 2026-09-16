@@ -31,11 +31,13 @@
 //        -> 200, readable with the same token, and it is the same data the
 //        Checks tab renders. Its /jobs child names the failing JOB and STEP.
 //
-// AGENT-PLAYBOOK.md names the Actions API and the configured GitHub CLI.
-// On this Mac gh is installed at /opt/homebrew/bin/gh, which can be absent
-// from a non-interactive PATH. This reader supports that path and uses the
-// configured client when no environment token is supplied. An unavailable or
-// unauthenticated client is UNKNOWN; it never falls back to legacy /status.
+// AGENT-PLAYBOOK.md already documented the 403 and already named the Actions
+// API as the answer. It did not help, because all four commands it offered
+// were `gh` commands and `gh` IS NOT INSTALLED ON THIS MAC (CLAUDE.md 1.2.5).
+// So an agent following the playbook got `command not found` four times, fell
+// back to curl, hit the 403, fell back again to /status, and got a well-formed
+// 200 saying `pending`. Every step of that is reasonable. The outcome is a
+// false all-clear that outlived three pushes.
 //
 // THE RULE THIS FILE ENCODES: a fallback that cannot tell you the answer must
 // SAY SO. "Pending" is a claim about the world, and this tool only makes it
@@ -51,11 +53,9 @@
 //   node scripts/ci/pr-status.mjs --all           # every open PR, ranked
 //
 // EXIT CODES (branch on these, do not parse the prose)
-//   0  GREEN    every required job context reported success
-//   0  CHECKS_ACCEPTED  required conclusions accepted, some execution unverified
-//      Neither exit 0 state authorizes a merge or deployment.
+//   0  GREEN    every required check passed; autopilot will merge it
 //   1  RED      at least one check failed - the job and step are named
-//   2  RUNNING  something is genuinely active, no required failure observed
+//   2  RUNNING  something is genuinely still in progress, nothing failed yet
 //   3  UNKNOWN  could not determine. NOT a synonym for pending. Read the note.
 //   4  DIRTY    the branch conflicts with main; CI state is moot until resolved
 //
@@ -68,7 +68,6 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { createGitHubReader, GitHubReadError } from './pr-status-http.mjs';
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -111,52 +110,30 @@ function repoFromGitRemote() {
 }
 
 const REPO = argOf('--repo', process.env.REPO || repoFromGitRemote());
-const readGitHub = createGitHubReader();
+const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 
 // A conclusion that is not one of these is a failure. Listing the GOOD ones
 // rather than the bad ones means a conclusion GitHub adds later defaults to
 // "tell the human" instead of "silently pass".
 const GOOD = new Set(['success', 'skipped', 'neutral']);
 
-const EXIT = {
-  GREEN: 0,
-  CHECKS_ACCEPTED: 0,
-  RED: 1,
-  RED_NON_BLOCKING: 1,
-  RUNNING: 2,
-  UNKNOWN: 3,
-  DIRTY: 4,
-};
-let approvingReviewMinimum = null;
-
-function reviewMinimumText() {
-  const value =
-    approvingReviewMinimum === null
-      ? 'UNKNOWN (rules unreadable or malformed)'
-      : String(approvingReviewMinimum);
-  return `Approving-review minimum (main branch rules): ${value}. Review satisfaction not evaluated.`;
-}
+const EXIT = { GREEN: 0, RED: 1, RED_NON_BLOCKING: 1, RUNNING: 2, UNKNOWN: 3, DIRTY: 4 };
 
 function die(msg, code = EXIT.UNKNOWN) {
-  if (JSON_OUT)
-    console.log(
-      JSON.stringify(
-        {
-          state: 'UNKNOWN',
-          reason: msg,
-          approvingReviewMinimum,
-          requiredCheckStatus: 'UNKNOWN',
-          requiredExecutionStatus: 'UNKNOWN',
-        },
-        null,
-        2
-      )
-    );
-  else console.error(`\n  UNKNOWN - ${msg}\n  ${reviewMinimumText()}\n`);
+  if (JSON_OUT) console.log(JSON.stringify({ state: 'UNKNOWN', reason: msg }, null, 2));
+  else console.error(`\n  UNKNOWN - ${msg}\n`);
   process.exit(code);
 }
 
 function assertConfigured() {
+  if (!TOKEN) {
+    die(
+      'no GH_TOKEN / GITHUB_TOKEN in the environment.\n' +
+        '  Use the GitHub client or credential store configured for this environment.\n' +
+        '  Never scrape a token from a repository-adjacent .env file.'
+    );
+  }
+
   if (!REPO) {
     die(
       'could not tell which repository to ask about.\n' +
@@ -210,7 +187,13 @@ function rateLimitOf(res) {
 
 async function gh(path, { allow404 = false } = {}) {
   const url = path.startsWith('http') ? path : `https://api.github.com/repos/${REPO}${path}`;
-  const res = await readGitHub(url);
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
   rateLimitOf(res); // record quota even on success
   if (res.status === 404 && allow404) return null;
   if (!res.ok) {
@@ -229,10 +212,15 @@ async function gh(path, { allow404 = false } = {}) {
           '  To read a failing job once, cheaply: node scripts/ci/pr-status.mjs <pr> --log'
       );
     }
-    // Status and quota are enough to name the failure. Do not echo an API
-    // error body or child-process diagnostics into agent output.
+    const body = await res.text().catch(() => '');
+    let detail = '';
+    try {
+      detail = JSON.parse(body).message || '';
+    } catch {
+      detail = body.slice(0, 200);
+    }
     die(
-      `GitHub answered ${res.status} for ${url}\n\n` +
+      `GitHub answered ${res.status} for ${url}\n  ${detail}\n\n` +
         (res.status === 403
           ? '  A 403 with quota remaining means the token lacks a scope. This tool\n' +
             '  needs actions:read and pull_requests:read. Do NOT "work around" it\n' +
@@ -252,7 +240,9 @@ async function gh(path, { allow404 = false } = {}) {
 async function jobLog(jobId) {
   const cache = `${tmpdir()}/ca-joblog-${jobId}.txt`;
   if (existsSync(cache)) return readFileSync(cache, 'utf8');
-  const res = await readGitHub(`https://api.github.com/repos/${REPO}/actions/jobs/${jobId}/logs`);
+  const res = await fetch(`https://api.github.com/repos/${REPO}/actions/jobs/${jobId}/logs`, {
+    headers: { Authorization: `Bearer ${TOKEN}`, Accept: 'application/vnd.github+json' },
+  });
   const rl = rateLimitOf(res);
   if (rl)
     die(`RATE LIMITED fetching the log for job ${jobId}; resets in ${rl.waitMin?.toFixed(1)} min.`);
@@ -295,8 +285,13 @@ function failureLines(log) {
 // A read whose absence is survivable: returns null instead of exiting.
 async function ghSoft(path) {
   try {
-    const res = await readGitHub(`https://api.github.com/repos/${REPO}${path}`);
-    rateLimitOf(res);
+    const res = await fetch(`https://api.github.com/repos/${REPO}${path}`, {
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -324,25 +319,8 @@ function mergeLabel(pr) {
 // If the token cannot read rulesets there is no honest green answer: the tool
 // cannot prove which contexts GitHub requires.
 // ---------------------------------------------------------------------------
-/** null means unreadable/invalid, never an assumed zero-review requirement. */
-export function approvingReviewMinimumFromRules(rules) {
-  if (!Array.isArray(rules) || rules.some((rule) => !rule || typeof rule.type !== 'string'))
-    return null;
-  const reviewRules = rules.filter((rule) => rule.type === 'pull_request');
-  // No PR rule in a readable response has no configured approval minimum.
-  // This does not evaluate other policies (such as code owners) or PR reviews.
-  let minimum = 0;
-  for (const rule of reviewRules) {
-    const count = rule.parameters?.required_approving_review_count;
-    if (!Number.isSafeInteger(count) || count < 0) return null;
-    minimum = Math.max(minimum, count);
-  }
-  return minimum;
-}
-
 async function requiredChecks() {
   const rules = await ghSoft('/rules/branches/main');
-  approvingReviewMinimum = approvingReviewMinimumFromRules(rules);
   if (!Array.isArray(rules)) return null;
   const list = rules
     .filter((rule) => rule.type === 'required_status_checks')
@@ -354,9 +332,9 @@ async function requiredChecks() {
 
 /**
  * Name every required context for which this commit lacks a completed success.
- * These are execution gaps, not automatically merge blockers: GitHub accepts
- * observed skipped/neutral conclusions, but neither proves successful execution.
- * An absent job is different from an observed skipped job.
+ * A workflow-level success is not enough: a required job can be absent because
+ * a path or job condition prevented it from being created, and GitHub will keep
+ * the pull request blocked in exactly that state.
  */
 export function requiredContextProblems(required, jobs) {
   if (!(required instanceof Set)) return null;
@@ -381,69 +359,15 @@ export function requiredContextProblems(required, jobs) {
   return problems;
 }
 
-/** GitHub accepts these observed conclusions; they are not execution proof. */
-function acceptedWithoutSuccess(problem) {
-  return (
-    problem.state === 'not_successful' &&
-    problem.conclusions.length > 0 &&
-    problem.conclusions.every((conclusion) => conclusion === 'skipped' || conclusion === 'neutral')
-  );
-}
-
-/** Conclusions observed through Actions, not a grant of merge/deploy authority. */
-export function requiredCheckEvidence({ failures, activeRuns, requiredProblems }) {
-  const failed =
-    failures.some((failure) => failure.required) ||
-    requiredProblems?.some(
-      (problem) => problem.state === 'not_successful' && !acceptedWithoutSuccess(problem)
-    );
-  const unresolved = requiredProblems?.some(
-    (problem) => problem.state === 'missing' || problem.state === 'running'
-  );
-  return {
-    requiredCheckStatus: failed
-      ? 'UNSATISFIED'
-      : requiredProblems === null
-        ? 'UNKNOWN'
-        : unresolved
-          ? activeRuns.length
-            ? 'RUNNING'
-            : 'UNKNOWN'
-          : 'SATISFIED',
-    requiredExecutionStatus:
-      requiredProblems === null
-        ? 'UNKNOWN'
-        : failed || requiredProblems.length
-          ? 'NOT_PROVEN'
-          : 'SUCCESSFUL',
-  };
-}
-
-/** GREEN requires successful required jobs; accepted skips have a distinct state. */
-export function stateForChecks(input) {
-  const { failures, activeRuns } = input;
-  const evidence = requiredCheckEvidence(input);
-  if (evidence.requiredCheckStatus === 'UNSATISFIED') return 'RED';
+/** A green verdict is possible only with readable rules and zero context gaps. */
+export function stateForChecks({ failures, activeRuns, requiredProblems }) {
+  if (failures.some((failure) => failure.required)) return 'RED';
+  if (requiredProblems?.some((problem) => problem.state === 'not_successful')) return 'RED';
   if (activeRuns.length) return 'RUNNING';
-  if (evidence.requiredCheckStatus === 'UNKNOWN') return 'UNKNOWN';
+  if (requiredProblems === null) return 'UNKNOWN';
+  if (requiredProblems.length) return 'RED';
   if (failures.length) return 'RED_NON_BLOCKING';
-  if (evidence.requiredExecutionStatus === 'NOT_PROVEN') return 'CHECKS_ACCEPTED';
   return 'GREEN';
-}
-
-function requiredProblemText(problem) {
-  const detail =
-    problem.state === 'missing'
-      ? 'not observed'
-      : problem.state === 'running'
-        ? 'still running'
-        : `completed as ${problem.conclusions.join(', ') || 'unknown'}`;
-  const tag = acceptedWithoutSuccess(problem)
-    ? 'ACCEPTED, EXECUTION NOT PROVEN'
-    : problem.state === 'not_successful'
-      ? 'NOT ACCEPTED'
-      : 'UNRESOLVED';
-  return `[${tag}] ${problem.context} - ${detail}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,8 +389,6 @@ async function commitState(sha, required) {
       runs: [],
       failures: [],
       activeRuns: [],
-      requiredCheckStatus: 'UNKNOWN',
-      requiredExecutionStatus: 'UNKNOWN',
     };
   }
 
@@ -479,6 +401,7 @@ async function commitState(sha, required) {
   }
   const list = [...latest.values()];
 
+  const failedRuns = list.filter((r) => r.conclusion && !GOOD.has(r.conclusion));
   const activeRuns = list.filter((r) => r.status !== 'completed');
 
   // Required status checks are JOB contexts, not workflow names. Read every
@@ -498,12 +421,10 @@ async function commitState(sha, required) {
   // Name the job and the step. This is the part an agent actually needs, and
   // the part /commits/:sha/status could never give even if it worked.
   const failures = [];
-  // A completed failed job is already evidence while sibling jobs keep its run active.
-  for (const run of list) {
+  for (const run of failedRuns) {
     const runJobs = jobsByRun.get(run.id);
     const badJobs = runJobs.filter((j) => j.conclusion && !GOOD.has(j.conclusion));
     if (badJobs.length === 0) {
-      if (!run.conclusion || GOOD.has(run.conclusion)) continue;
       failures.push({
         workflow: run.name,
         job: '(run failed before any job started)',
@@ -534,25 +455,13 @@ async function commitState(sha, required) {
   }
 
   const requiredProblems = requiredContextProblems(required, allJobs);
-  const evidence = requiredCheckEvidence({ failures, activeRuns, requiredProblems });
   const state = stateForChecks({ failures, activeRuns, requiredProblems });
   const reason =
     state === 'UNKNOWN'
-      ? requiredProblems === null
-        ? 'required status-check rules were unreadable or named no contexts; refusing to call this commit green.'
-        : 'required contexts remain unproduced or unfinished with no observed active workflow; execution and required-check satisfaction are unknown.'
+      ? 'required status-check rules were unreadable or named no contexts; refusing to call this commit green.'
       : null;
 
-  return {
-    state,
-    runs: list,
-    failures,
-    activeRuns,
-    required,
-    requiredProblems,
-    ...evidence,
-    reason,
-  };
+  return { state, runs: list, failures, activeRuns, required, requiredProblems, reason };
 }
 
 /**
@@ -585,7 +494,6 @@ function render(pr, st) {
   line('  ' + head);
   if (pr) line(`  ${pr.html_url}`);
   line('  ' + '-'.repeat(Math.max(20, head.length)));
-  line('  ' + reviewMinimumText());
 
   if (pr && mergeLabel(pr) === 'DIRTY') {
     line('  DIRTY - this branch conflicts with main. Resolve the conflict first;');
@@ -593,6 +501,12 @@ function render(pr, st) {
     line('  (Merge main in - do NOT rebase: CLAUDE.md 12 and a ref-guard hook.)');
     line('');
     return EXIT.DIRTY;
+  }
+
+  if (st.state === 'UNKNOWN') {
+    line('  UNKNOWN - ' + st.reason.split('\n').join('\n  '));
+    line('');
+    return EXIT.UNKNOWN;
   }
 
   for (const r of st.runs) {
@@ -625,54 +539,46 @@ function render(pr, st) {
     line('');
     line('  REQUIRED CHECKS NOT PROVEN SUCCESSFUL:');
     for (const problem of st.requiredProblems) {
-      line('    ' + requiredProblemText(problem));
+      const detail =
+        problem.state === 'missing'
+          ? 'not observed'
+          : problem.state === 'running'
+            ? 'still running'
+            : `completed as ${problem.conclusions.join(', ') || 'unknown'}`;
+      line(`    [BLOCKS MERGE] ${problem.context} - ${detail}`);
     }
   }
 
-  line('');
-  line(`  Required-check conclusions (Actions): ${st.requiredCheckStatus}.`);
-  line(`  Required-job successful execution: ${st.requiredExecutionStatus}.`);
-  line('  These observations do not authorize a merge or deployment.');
   quotaWarning(line);
   line('');
-  if (st.state === 'UNKNOWN') {
-    line('  UNKNOWN - ' + st.reason.split('\n').join('\n  '));
-    line('');
-    return EXIT.UNKNOWN;
-  }
-
   if (st.state === 'RED') {
-    line('  RED - a required job has an unaccepted conclusion.');
+    line('  RED - one or more required checks are not proven successful. This will not merge.');
     line('');
     return EXIT.RED;
   }
   if (st.state === 'RED_NON_BLOCKING') {
     line('  RED (non-blocking) - a check failed but the ruleset does not require it.');
-    line('  Other merge requirements still apply; this observation does not authorize a merge.');
+    line('  Autopilot can still merge this. Fix it anyway: CLAUDE.md 10.83 - a red');
+    line('  nobody is required to look at is how a gate rots for two days.');
     line('');
     return EXIT.RED;
   }
   if (st.state === 'RUNNING') {
-    line(`  RUNNING - ${st.activeRuns.length} run(s) in progress, no required failure observed.`);
-    line('  agent-open-pr.yml creates the pull request; Autopilot queues protected auto-merge.');
-    line('  Branch freshness and other GitHub merge requirements still apply.');
+    line(`  RUNNING - ${st.activeRuns.length} run(s) in progress, nothing has failed yet.`);
+    line('  Stop here. agent-open-pr.yml and Autopilot own pull-request creation and merge');
+    line('  automatically (AGENT-PLAYBOOK 7b / CLAUDE.md 10.8.3).');
     line('');
     return EXIT.RUNNING;
   }
-  if (st.state === 'CHECKS_ACCEPTED') {
-    line('  CHECKS_ACCEPTED - required conclusions satisfy GitHub status-check rules.');
-    line('  Some required jobs were skipped or neutral; successful execution was not verified.');
-  } else {
-    line('  GREEN - every required job context reported success.');
-  }
+  line('  GREEN - every required check passed.');
   if (pr && mergeLabel(pr) === 'BLOCKED')
-    line('  (GitHub still says "blocked". Auto-merge does not satisfy other merge requirements.)');
+    line('  (GitHub still says "blocked" - that clears when autopilot enables auto-merge.)');
   if (pr && mergeLabel(pr) === 'UNCOMPUTED')
     line(
       '  (GitHub has not computed mergeability yet - that is not a problem, just not an answer.)'
     );
   line('');
-  return EXIT[st.state];
+  return EXIT.GREEN;
 }
 
 // ---------------------------------------------------------------------------
@@ -694,15 +600,7 @@ async function main() {
       const st = await commitState(pr.head.sha, required);
       rows.push({ pr, st, merge: mergeLabel(pr) });
     }
-    const rank = {
-      DIRTY: -1,
-      RED: 0,
-      RED_NON_BLOCKING: 1,
-      UNKNOWN: 2,
-      RUNNING: 3,
-      CHECKS_ACCEPTED: 4,
-      GREEN: 5,
-    };
+    const rank = { DIRTY: -1, RED: 0, RED_NON_BLOCKING: 1, UNKNOWN: 2, RUNNING: 3, GREEN: 4 };
     const stateOf = (r) => (r.merge === 'DIRTY' ? 'DIRTY' : r.st.state);
     rows.sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)] || a.pr.number - b.pr.number);
     const states = rows.map(stateOf);
@@ -723,11 +621,8 @@ async function main() {
             branch: pr.head.ref,
             state: stateOf({ st, merge }),
             mergeable_state: merge,
-            approvingReviewMinimum,
             failures: st.failures,
             requiredProblems: st.requiredProblems,
-            requiredCheckStatus: st.requiredCheckStatus,
-            requiredExecutionStatus: st.requiredExecutionStatus,
           })),
           null,
           2
@@ -736,7 +631,6 @@ async function main() {
       return aggregateExit;
     }
     console.log('');
-    console.log('  ' + reviewMinimumText());
     for (const row of rows) {
       const { pr, st, merge } = row;
       const state = stateOf(row);
@@ -749,12 +643,8 @@ async function main() {
       for (const f of st.failures)
         console.log(`       ${f.required ? 'X' : '-'} ${f.job}${f.step ? ` :: ${f.step}` : ''}`);
       for (const problem of st.requiredProblems ?? [])
-        console.log('       ' + requiredProblemText(problem));
-      console.log(
-        `       Required-check conclusions: ${st.requiredCheckStatus}; required-job successful execution: ${st.requiredExecutionStatus}.`
-      );
+        console.log(`       X ${problem.context} :: ${problem.state}`);
     }
-    console.log('  These observations do not authorize a merge or deployment.');
     console.log('');
     const dirty = rows.filter((r) => stateOf(r) === 'DIRTY').length;
     const red = rows.filter((r) => stateOf(r) === 'RED').length;
@@ -827,11 +717,8 @@ async function main() {
           sha,
           state: pr && mergeLabel(pr) === 'DIRTY' ? 'DIRTY' : st.state,
           mergeable_state: pr ? mergeLabel(pr) : null,
-          approvingReviewMinimum,
           failures: st.failures,
           requiredProblems: st.requiredProblems,
-          requiredCheckStatus: st.requiredCheckStatus,
-          requiredExecutionStatus: st.requiredExecutionStatus,
           reason: st.reason ?? null,
         },
         null,
@@ -847,11 +734,5 @@ async function main() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main()
     .then((code) => process.exit(code))
-    .catch((err) =>
-      die(
-        err instanceof GitHubReadError
-          ? err.message
-          : 'could not read a valid GitHub status response.'
-      )
-    );
+    .catch((err) => die(`unexpected: ${err?.stack || err}`));
 }

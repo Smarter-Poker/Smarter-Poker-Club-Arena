@@ -44,7 +44,6 @@ function manager(
       'supabase',
       'tableStateHub',
       'reportError',
-      'isMaintenanceFrozen',
       runtime
     )(
       acceleratedLevelMs,
@@ -55,8 +54,7 @@ function manager(
       spinBlindsForLevel,
       dependencies.supabase,
       dependencies.tableStateHub,
-      dependencies.reportError,
-      () => false
+      dependencies.reportError
     ),
     tournamentCache: { accelerated_mtt: accelerated, variant: spin ? 'spin' : 'mtt' },
     isLateRegClosed: () => closed,

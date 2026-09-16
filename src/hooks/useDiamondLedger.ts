@@ -56,13 +56,6 @@ export interface DiamondLedgerRow {
   description: string;
   amount: number;
   createdAt: string;
-  /**
-   * The other player in a gift, when the row names one:
-   * `metadata.recipient_id` on a send, `metadata.sender_id` on a receipt
-   * (both written by `send_wallet_diamond_transfer`). Null for a claim, a
-   * purchase or a reconciliation, which have no counterparty.
-   */
-  counterpartyId: string | null;
 }
 
 /**
@@ -124,7 +117,7 @@ export function useDiamondLedger(
           /* `type` AND `transaction_type`: the older rows carry their kind in
              `type` (signup_bonus, reconciliation), the newer in
              `transaction_type`. Reading one column blanks half the ledger. */
-          .select('id, type, transaction_type, amount, description, created_at, metadata')
+          .select('id, type, transaction_type, amount, description, created_at')
           .eq('user_id', userId);
 
         if (direction === 'in') {
@@ -143,18 +136,12 @@ export function useDiamondLedger(
 
         const page: DiamondLedgerRow[] = (data || []).map((tx) => {
           const kind = (tx.transaction_type as string | null) || (tx.type as string | null);
-          const meta = (tx.metadata && typeof tx.metadata === 'object' ? tx.metadata : {}) as {
-            recipient_id?: unknown;
-            sender_id?: unknown;
-          };
-          const other = direction === 'out' ? meta.recipient_id : meta.sender_id;
           return {
             id: String(tx.id),
             label: diamondTxLabel(kind),
             description: String(tx.description || ''),
             amount: Number(tx.amount) || 0,
             createdAt: String(tx.created_at),
-            counterpartyId: typeof other === 'string' && other ? other : null,
           };
         });
 

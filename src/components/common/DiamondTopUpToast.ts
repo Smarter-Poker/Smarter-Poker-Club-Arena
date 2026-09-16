@@ -9,11 +9,6 @@
  * Usage:
  *   import { showDiamondTopUp } from '../components/common/DiamondTopUpToast';
  *   showDiamondTopUp(toast, navigate, { feature: 'Throwable', cost: 1 });
- *
- * The toast is TAPPABLE and opens the diamond store. It does not navigate on
- * its own: this fires at a table, mid-hand, and yanking a player off the felt
- * because they could not afford a throwable would be worse than the dead end
- * it replaces.
  */
 
 import type { useNavigate } from 'react-router-dom';
@@ -25,8 +20,8 @@ interface TopUpOptions {
 }
 
 type ToastLike = {
-  error: (msg: string, duration?: number, onClick?: () => void) => void;
-  info: (msg: string, duration?: number, onClick?: () => void) => void;
+  error: (msg: string) => void;
+  info: (msg: string) => void;
 };
 
 type NavigateFn = ReturnType<typeof useNavigate>;
@@ -41,17 +36,10 @@ export function showDiamondTopUp(
 ): void {
   const { feature, cost, currentBalance } = options;
 
-  const balanceMsg = currentBalance !== undefined ? `, You Have ${currentBalance}` : '';
+  const balanceMsg = currentBalance !== undefined ? ` (You have ${currentBalance})` : '';
 
-  // THE NAVIGATE ARGUMENT NOW DOES SOMETHING (2026-09-11). This has taken a
-  // navigate since it was written and never called it, so the "universal"
-  // top-up path went nowhere: the message named a store it could not open. The
-  // toast carries an onClick, so the message IS the door. Nobody is navigated
-  // away on their own, which matters at a table where this fires mid-hand.
   toast.error(
-    `Not Enough Diamonds For ${feature}, ${cost} Needed${balanceMsg}. Tap To Get Diamonds`,
-    undefined,
-    () => navigate('/marketplace?tab=diamonds')
+    `Not enough diamonds for ${feature} (${cost} needed)${balanceMsg}. Top up in the Diamond Store!`
   );
 }
 

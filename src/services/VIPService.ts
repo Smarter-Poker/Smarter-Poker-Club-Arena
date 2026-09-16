@@ -4,45 +4,15 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * VIP Model:
- * - VIP = Included with Club Arena monthly membership (external)
+ * - Gold VIP = Included with Club Arena monthly membership (external)
  * - Non-VIP = Pay diamonds per-use for each feature
  * - VIP users can buy more if they run out of monthly limits
- * - Lifetime VIP = Unlimited digital gameplay entitlements without quota spend
  */
 
 import { supabase } from '../lib/supabase';
 import { resolveVipStatus, type VipStatus } from '../utils/vipStatus';
 import { retryAsync } from '../utils/retryAsync';
 import { reportError } from '../utils/errorReporter';
-import {
-  clearSessionPurchaseRequestId,
-  readOrCreateSessionPurchaseRequestId,
-} from '../utils/sessionPurchaseRequest';
-
-/**
- * Database and transport errors are not display copy. Keep internal details
- * out of the page, map known refusals precisely, and make every returned
- * player-facing message obey the Title Case and no-em-dash house rule.
- */
-export function normalizeVIPPurchaseError(value: unknown): string {
-  const raw = String(value ?? '').trim();
-  const normalized = raw.toLowerCase().replace(/[_-]+/g, ' ');
-  if (!normalized) return 'Purchase Failed';
-  if (normalized.includes('insufficient') && normalized.includes('diamond')) {
-    return 'Insufficient Diamonds';
-  }
-  if (normalized.includes('authentication') || normalized.includes('not authenticated')) {
-    return 'Authentication Required';
-  }
-  if (normalized.includes('already owned')) return 'Already Owned';
-  if (normalized.includes('unknown feature') || normalized.includes('feature not found')) {
-    return 'Feature Is Not Available';
-  }
-  if (normalized.includes('rate limit') || normalized.includes('too many')) {
-    return 'Please Wait Before Trying Again';
-  }
-  return 'Purchase Failed';
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -77,8 +47,6 @@ export interface VIPMonthlyLimits {
 export interface FeatureAccess {
   hasAccess: boolean;
   isVIP: boolean;
-  /** True only for the exact non-expiring Lifetime VIP membership. */
-  isLifetime?: boolean;
   needsPurchase: boolean;
   diamondCost?: number;
   usageType?: 'per_use' | 'per_session' | 'permanent';
@@ -95,22 +63,6 @@ export type VIPFeature =
   | 'club_creation'
   | 'emoji_pack'
   | 'tag_pack';
-
-/**
- * Lifetime includes digital table play and cosmetic entitlements only.
- * Club creation changes ownership and platform capacity, so it deliberately
- * stays on its existing separately priced path.
- */
-const LIFETIME_INCLUDED_FEATURES = new Set<VIPFeature>([
-  'rabbit_hunt',
-  'show_stack_bb',
-  'offline_protection',
-  'auto_time_bank',
-  'time_bank_seconds',
-  'throwable',
-  'emoji_pack',
-  'tag_pack',
-]);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WHAT A VIP ACTUALLY GETS (MONTHLY)
@@ -157,10 +109,9 @@ const LIFETIME_INCLUDED_FEATURES = new Set<VIPFeature>([
  *                        along. 95 throws by 5 players, every one of them free.
  *
  * The three booleans are features a non-VIP pays for per session or per use
- * (5, 10 and 5 diamonds) and a VIP does not. The finite figures remain the
- * ordinary VIP contract. Lifetime VIP is resolved separately at runtime and
- * receives the newer unlimited digital gameplay entitlement without changing
- * any ordinary VIP cap.
+ * (5, 10 and 5 diamonds) and a VIP does not. "Included" - never "Unlimited",
+ * which is the word Dan struck: "THERE IS NOTHING UNLIMITED LIKE THROWABLES OR
+ * TIME BANKS."
  */
 export const VIP_MONTHLY_ALLOWANCES = {
   rabbitHunts: 100,
@@ -179,8 +130,8 @@ export const VIP_MONTHLY_ALLOWANCES = {
 //
 // THE SERVER IS THE PRICE. THIS TABLE IS A CACHE OF IT.
 //
-// `fn_purchase_feature_v2(p_user_id, p_feature, p_request_id)` never accepts a
-// client price and charges `feature_pricing.diamond_cost` instead. So every
+// `fn_purchase_feature(p_user_id, p_feature, p_cost)` IGNORES the cost the
+// client passes and charges `feature_pricing.diamond_cost` instead. So every
 // number printed from this table is a CLAIM about a charge decided elsewhere,
 // and on 2026-08-25 four of the ten were false against production:
 //
@@ -435,39 +386,18 @@ class VIPServiceClass {
     const status = await this.checkVIPStatus(userId);
     const pricing = FEATURE_PRICING[feature];
 
-    if (status.status === 'lifetime' && LIFETIME_INCLUDED_FEATURES.has(feature)) {
-      return {
-        hasAccess: true,
-        isVIP: true,
-        isLifetime: true,
-        needsPurchase: false,
-      };
-    }
-
-    if (status.status === 'lifetime') {
-      return {
-        hasAccess: false,
-        isVIP: true,
-        isLifetime: true,
-        needsPurchase: true,
-        diamondCost: pricing.cost,
-        usageType: pricing.usageType,
-      };
-    }
-
     if (status.isVIP) {
       // VIP user - check if they have remaining quota
       const hasQuota = await this.checkVIPQuota(userId, feature);
 
       if (hasQuota) {
-        return { hasAccess: true, isVIP: true, isLifetime: false, needsPurchase: false };
+        return { hasAccess: true, isVIP: true, needsPurchase: false };
       }
 
       // VIP but out of quota - can top up with diamonds
       return {
         hasAccess: false,
         isVIP: true,
-        isLifetime: false,
         needsPurchase: true,
         diamondCost: pricing.cost,
         usageType: pricing.usageType,
@@ -478,14 +408,13 @@ class VIPServiceClass {
     const hasPurchase = await this.checkExistingPurchase(userId, feature);
 
     if (hasPurchase) {
-      return { hasAccess: true, isVIP: false, isLifetime: false, needsPurchase: false };
+      return { hasAccess: true, isVIP: false, needsPurchase: false };
     }
 
     // Needs to buy
     return {
       hasAccess: false,
       isVIP: false,
-      isLifetime: false,
       needsPurchase: true,
       diamondCost: pricing.cost,
       usageType: pricing.usageType,
@@ -503,11 +432,7 @@ class VIPServiceClass {
     const access = await this.checkFeatureAccess(userId, feature);
 
     if (access.hasAccess) {
-      // Lifetime access is not a giant synthetic quota and must never touch a
-      // stored pack. Ordinary VIP and purchased paths keep their own ledgers.
-      if (access.isLifetime) {
-        return { success: true, charged: 0 };
-      }
+      // Free access - consume quota if VIP
       if (access.isVIP) {
         await this.consumeVIPQuota(userId, feature);
       } else {
@@ -527,18 +452,11 @@ class VIPServiceClass {
     userId: string,
     feature: VIPFeature,
     quantity: number = 1
-  ): Promise<{
-    success: boolean;
-    charged: number;
-    error?: string;
-    alreadyOwned?: boolean;
-    idempotent?: boolean;
-    granted?: boolean;
-  }> {
-    // Prod sig: (p_user_id, p_feature, p_request_id). The client never names a
-    // price: the function prices the purchase from `feature_pricing`. The UUID
-    // survives an ambiguous transport error, so retrying cannot become another
-    // Diamond debit or per-use grant.
+  ): Promise<{ success: boolean; charged: number; error?: string; alreadyOwned?: boolean }> {
+    // Prod sig: (p_user_id, p_feature, p_cost integer DEFAULT 0). p_cost is
+    // deliberately NOT sent — the function ignores it and prices the purchase
+    // from `feature_pricing`, which is the only safe design: a client that can
+    // name its own price can buy a 300-diamond card back for nothing.
     //
     // REFUSALS ARRIVE AS DATA, NOT AS `error`. fn_purchase_feature answers
     // "authentication required", "unknown feature", "already_owned" and
@@ -546,23 +464,15 @@ class VIPServiceClass {
     // caller that inspects only `error` reports a green purchase with no debit
     // and no feature. Both are checked below, and the order matters: `error`
     // first (transport/permission), then the payload.
-    const requestScope = `feature:${userId}:${feature}`;
-    const requestId = readOrCreateSessionPurchaseRequestId(requestScope);
-
-    const { data, error } = await supabase.rpc('fn_purchase_feature_v2', {
+    const { data, error } = await supabase.rpc('fn_purchase_feature', {
       p_user_id: userId,
       p_feature: feature,
-      p_request_id: requestId,
     });
     void quantity; // explicitly acknowledge unused param at FE layer
 
     if (error) {
-      // The server may have committed before the response was lost. Retain the
-      // exact UUID so the next tap resolves the receipt instead of rebuying.
-      return { success: false, charged: 0, error: normalizeVIPPurchaseError(error.message) };
+      return { success: false, charged: 0, error: error.message };
     }
-
-    clearSessionPurchaseRequestId(requestScope);
 
     if (!data || !data.success) {
       // `already_owned` is a REFUSAL, not a failure: the player has the thing
@@ -572,19 +482,12 @@ class VIPServiceClass {
       return {
         success: false,
         charged: 0,
-        error: normalizeVIPPurchaseError(reason),
+        error: reason || 'Purchase failed',
         alreadyOwned: reason === 'already_owned' || !!data?.already_owned,
       };
     }
 
-    const idempotent = data.idempotent === true;
-    const granted = data.granted !== false;
-    return {
-      success: true,
-      charged: idempotent ? 0 : Number(data.cost) || 0,
-      idempotent,
-      granted,
-    };
+    return { success: true, charged: Number(data.cost) || 0 };
   }
 
   /**
@@ -667,10 +570,10 @@ class VIPServiceClass {
    * Check if VIP user has remaining quota for feature
    */
   private async checkVIPQuota(userId: string, feature: VIPFeature): Promise<boolean> {
-    // These session features are included for ordinary VIP. Its gameplay
-    // consumables remain finite here; the exact Lifetime bypass is resolved
-    // before this method is reached, while the authoritative decision still
-    // lives in each server function.
+    // Some features are unlimited for VIP. Rabbit hunt is NOT one of them any
+    // more (Dan 2026-08-25: 100/month, then 5 diamonds) — but this method is
+    // only consulted for display, and the authoritative decision is made by
+    // fn_consume_rabbit_hunt on the server when the reveal is actually bought.
     if (['show_stack_bb', 'offline_protection', 'auto_time_bank'].includes(feature)) {
       return true;
     }

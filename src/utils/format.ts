@@ -88,52 +88,6 @@ export const formatTableChips = (n: number | null | undefined): string => {
 };
 
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- *  A PRIZE PRINTED AT THE UNIT ITS TOURNAMENT PAYS IN (2026-09-15)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * `formatTableChips` is the CHIP contract and it is right for chips: a chip
- * divides into cents, so an amount under one chip shows two places and 7.5
- * reads "7.50". Applied to a Diamond prize that contract prints a quantity
- * that cannot exist - a Diamond does not divide, the custody reserve floors
- * it, the hand settler refuses it and the wallet stores diamonds as an integer
- * column - so "0.50" beside a Diamond is not a small imprecision, it is an
- * amount no door in this estate will accept.
- *
- * The ladder arithmetic already snaps every Diamond share to a whole Diamond
- * (`computePlacePrize` rounds each share to the unit and hands the remainder,
- * itself a whole Diamond by induction, to the last paid place). So this is not
- * a second rounding and must never become one: at a Diamond unit the number
- * arriving here is already whole, and this only chooses how to SAY it.
- *
- * `Math.round` on that already-whole number is there to absorb binary float
- * noise from the `/ 100` that ends `computePlacePrize` - 17 arriving as
- * 16.999999999999996 would otherwise print "17" from toLocaleString anyway,
- * but would print "16.999999999999996" the day someone widens the digit cap.
- * It is a statement that a Diamond amount is an integer, not arithmetic.
- *
- * The chip path is `formatTableChips` unchanged, by construction rather than
- * by inspection: a unit of 1 takes the first branch and nothing else in this
- * function runs.
- *
- * @example formatPrizeAtUnit(17.5,  1)   -> "17.50"   (chips keep their cents)
- * @example formatPrizeAtUnit(0.5,   1)   -> "0.50"
- * @example formatPrizeAtUnit(17,    100) -> "17"      (whole Diamonds)
- * @example formatPrizeAtUnit(1250,  100) -> "1,250"
- * @example formatPrizeAtUnit(0,     100) -> "0"
- */
-export const formatPrizeAtUnit = (amount: number | null | undefined, unitCents: number): string => {
-  const unit = Number.isSafeInteger(unitCents) && unitCents >= 1 ? unitCents : 1;
-  if (unit === 1) return formatTableChips(amount);
-  const v = Number(amount ?? 0);
-  if (!Number.isFinite(v)) return '0';
-  const whole = Math.round(v);
-  if (whole === 0) return '0';
-  const sign = whole < 0 ? '-' : '';
-  return `${sign}${Math.abs(whole).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-};
-
-/**
  * THE "+N" THAT RIDES WITH MONEY ARRIVING AT A SEAT (pot push, bounty,
  * insurance). Dan 2026-08-29, binding: "THERE CAN NEVER BE 'ROUNDING' IT MUST
  * ALWAYS BE DOWN TO THE CENT."

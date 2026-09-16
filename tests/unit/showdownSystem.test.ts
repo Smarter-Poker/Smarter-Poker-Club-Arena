@@ -46,12 +46,7 @@ describe('the engine PUBLISHES the showdown sequence and muck ruling', () => {
 
   it('a mucked hand is excluded from showdown_cards_revealed', () => {
     // The reveals list is filtered by the muck ruling before the emit.
-    // 2026-09-09: 3 -> 4 levels. The emit gained a `try { ... } catch` (a throw
-    // out of hub.emitEvent used to abandon the pot-shipping block that follows
-    // it), which puts one more brace between the payload and the `const
-    // reveals = ...` filter this asserts on. Same property, one level further
-    // out; nothing about the muck ruling changed.
-    const emit = sliceEnclosingBlock(EVENTS, "type: 'showdown_cards_revealed'", 0, 4);
+    const emit = sliceEnclosingBlock(EVENTS, "type: 'showdown_cards_revealed'", 0, 3);
     expect(emit).toMatch(/isMuckedAtShowdown/);
   });
 

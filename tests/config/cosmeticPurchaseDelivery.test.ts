@@ -66,8 +66,7 @@ describe('canonical cosmetic SKUs', () => {
 describe('checkout and delivery contract', () => {
   it('prices from feature_pricing, latches duplicate taps and auto-equips on success', () => {
     expect(MODAL).toContain(".from('feature_pricing')");
-    expect(MODAL).toContain("supabase.rpc('fn_purchase_feature_v2'");
-    expect(MODAL).toContain('p_request_id: requestId');
+    expect(MODAL).toContain("supabase.rpc('fn_purchase_feature'");
     expect(MODAL).toContain('purchaseBusyRef.current');
     expect(MODAL).toMatch(/if \(!pending \|\| !userId \|\| purchaseBusyRef\.current\) return/);
     expect(MODAL).toContain('applyAccessibleAsset(pending.tab, pending.id)');

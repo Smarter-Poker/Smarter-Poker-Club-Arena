@@ -2,7 +2,7 @@
  *  VIP PAGE — VIP Tier Progression, Benefits, and Rewards Marketplace
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { MEDIA_BASE } from '../utils/mediaBase';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -11,7 +11,6 @@ import {
   vipService,
   VIP_MONTHLY_ALLOWANCES,
   FEATURE_PRICING,
-  normalizeVIPPurchaseError,
   type VIPFeature,
   type VIPMonthlyLimits,
 } from '../services/VIPService';
@@ -30,22 +29,12 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
-const FEATURE_ACRONYMS: Record<string, string> = {
-  ai: 'AI',
-  bb: 'BB',
-  gto: 'GTO',
-  vip: 'VIP',
-};
-
-const formatFeatureName = (feature: string) =>
-  feature
-    .split('_')
-    .map((word) => FEATURE_ACRONYMS[word] ?? `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-    .join(' ');
-
 export default function VIPPage() {
   const { user } = useAuthUser();
   const toast = useToast();
+  useVisibilityRefresh(() => {
+    if (user?.id) loadVIPStatus();
+  });
 
   const [isVIP, setIsVIP] = useState(false);
   /* Which membership, not which rung. Dan 2026-09-04: "THERE IS NO SUCH THING
@@ -65,18 +54,11 @@ export default function VIPPage() {
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [showDiamondHistory, setShowDiamondHistory] = useState(false);
   const [purchasing, setPurchasing] = useState<string | null>(null);
-  const [stateUserId, setStateUserId] = useState<string | undefined>();
   // React state is not synchronous: two taps in the same frame can both see
   // `purchasing === null`. This ref closes that mobile double-tap window before
   // the first network request leaves the device.
   const purchaseInFlightRef = useRef(false);
-  const purchaseRequestRef = useRef(0);
-  const activeUserIdRef = useRef(user?.id);
   const [vipEntranceComplete, setVIPEntranceComplete] = useState(false);
-
-  // Promise continuations can run before an account-change effect. Update the
-  // identity ref during render so an old response cannot paint a new account.
-  activeUserIdRef.current = user?.id;
 
   // VIP Points System
   const [vipPoints, setVipPoints] = useState({
@@ -87,106 +69,7 @@ export default function VIPPage() {
   });
 
   const [recentActivities, setRecentActivities] = useState<VIPActivity[]>([]);
-
-  const membershipPerks = useMemo(() => {
-    const isLifetime = vipGrade === 'lifetime';
-    const perks = [
-      {
-        id: 'rabbit',
-        icon: '\u25C6',
-        title: 'Rabbit Hunt',
-        description: isLifetime
-          ? 'Unlimited Rabbit Hunts With No Diamond Charge'
-          : 'See Undealt Cards',
-        value: isLifetime ? 'Unlimited' : `${VIP_MONTHLY_ALLOWANCES.rabbitHunts} / Month`,
-      },
-      {
-        id: 'timebank',
-        icon: '\u25F7',
-        title: 'Time Bank',
-        description: isLifetime
-          ? 'Unlimited Standard 20-Second Time Bank Activations'
-          : `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s Free Per Month`,
-        value: isLifetime ? 'Unlimited' : `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s`,
-      },
-      {
-        id: 'emojis',
-        icon: '\u25C6',
-        title: 'Emojis',
-        description: isLifetime
-          ? 'Every Digital Emoji Pack Included'
-          : `${VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()} Free Per Month`,
-        value: isLifetime ? 'Included' : VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString(),
-      },
-      {
-        id: 'tags',
-        icon: '\u25C6',
-        title: 'Player Tags',
-        description: isLifetime
-          ? 'Every Digital Player Tag Included'
-          : `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} Free Per Month`,
-        value: isLifetime ? 'Included' : VIP_MONTHLY_ALLOWANCES.tags.toLocaleString(),
-      },
-      {
-        id: 'throwable',
-        icon: '\u25C6',
-        title: 'Throwables',
-        description: isLifetime
-          ? 'Unlimited Throwables With No Diamond Charge'
-          : `${VIP_MONTHLY_ALLOWANCES.throwables} Free Per Month`,
-        value: isLifetime ? 'Unlimited' : `${VIP_MONTHLY_ALLOWANCES.throwables}`,
-      },
-      {
-        id: 'stack',
-        icon: '\u25A6',
-        title: 'Show Stack In Big Blinds',
-        description: 'Otherwise 5 Diamonds Per Session',
-        value: 'Included',
-      },
-      {
-        id: 'offline',
-        icon: '\u25C8',
-        title: 'Offline Protection',
-        description: 'Otherwise 10 Diamonds Per Session',
-        value: 'Included',
-      },
-      {
-        id: 'autobank',
-        icon: '\u25F7',
-        title: 'Auto Time Bank',
-        description: 'Otherwise 5 Diamonds Per Activation',
-        value: 'Included',
-      },
-    ];
-
-    if (isLifetime) {
-      perks.push(
-        {
-          id: 'table-cosmetics',
-          icon: '\u25C8',
-          title: 'Table Skins And Backgrounds',
-          description: 'All Cataloged Digital Options Included',
-          value: 'Included',
-        },
-        {
-          id: 'card-cosmetics',
-          icon: '\u25A6',
-          title: 'Card Backs And Dealer Buttons',
-          description: 'All Cataloged Digital Options Included',
-          value: 'Included',
-        },
-        {
-          id: 'avatar-cosmetics',
-          icon: '\u25C6',
-          title: 'VIP Avatars, Frames, And Auras',
-          description: 'All VIP-Only Digital Options Included',
-          value: 'Included',
-        }
-      );
-    }
-
-    return perks;
-  }, [vipGrade]);
+  const [daysSinceReview, setDaysSinceReview] = useState(0);
 
   // VIP entrance animation
   useEffect(() => {
@@ -195,6 +78,29 @@ export default function VIPPage() {
       return () => clearTimeout(timer);
     }
   }, [loading]);
+
+  useEffect(() => {
+    let isMounted = true;
+    loadVIPStatus(() => isMounted);
+
+    // Real-time profile updates (diamonds, VIP status): NOT subscribed here.
+    //
+    // 2026-08-24: a `vip-status` channel used to live here carrying a single
+    // `profiles` (id=eq.<uid>) listener that did setDiamonds(payload.new.diamonds).
+    // PostgresSyncHooks' `global_db_sync:<userId>` channel already carries that
+    // exact listener - same table, same filter - created once at sign-in and
+    // never torn down by navigation. When profiles.diamonds changes it emits
+    // DIAMOND_BALANCE_CHANGED carrying { newBalance }, and the bus subscriber
+    // further down this file already does setDiamonds(newBalance) from exactly
+    // that payload.
+    //
+    // The whole channel is removed rather than just the listener: it had no
+    // other `.on()`, so keeping it would have left a Realtime subscription that
+    // listens to nothing, reconnects on error, and reports status for no reason.
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
 
   // Bus listener: update diamond balance when changed from other pages (debounced)
   useEffect(() => {
@@ -218,154 +124,123 @@ export default function VIPPage() {
   // subscribeDebounced. If live points are wanted, they need a server->client
   // bridge (tournamentEventBridge pattern), not a dead subscription.
 
-  // Every account or visibility refresh gets a generation. Late responses
-  // from account A cannot paint account B or leave it stuck in loading state.
-  const loadGenerationRef = useRef(0);
+  const loadingRef = useRef(false);
 
-  const loadVIPStatus = useCallback(
-    async (getIsMounted?: () => boolean) => {
-      const requestedUserId = user?.id;
-      const generation = ++loadGenerationRef.current;
-      const isCurrent = () =>
-        generation === loadGenerationRef.current &&
-        activeUserIdRef.current === requestedUserId &&
-        (!getIsMounted || getIsMounted());
+  const loadVIPStatus = async (getIsMounted?: () => boolean) => {
+    if (!user?.id) {
+      if (!getIsMounted || getIsMounted()) setLoading(false);
+      return;
+    }
+    if (loadingRef.current) return;
+    loadingRef.current = true;
 
-      if (!requestedUserId) {
-        if (isCurrent()) {
-          setStateUserId(undefined);
-          setLoading(false);
-        }
-        return;
+    if (!getIsMounted || getIsMounted()) setLoading(true);
+    try {
+      const vipStatus = await vipService.checkVIPStatus(user.id);
+      if (getIsMounted && !getIsMounted()) return;
+      setIsVIP(vipStatus.isVIP);
+      setVipGrade(vipStatus.status);
+      setVipExpiresAt(vipStatus.expiresAt);
+      setMonthlyLimits(vipStatus.monthlyLimits);
+
+      const { data: profData } = await supabase
+        .from('profiles')
+        .select('diamonds, created_at')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (getIsMounted && !getIsMounted()) return;
+      setDiamonds(profData?.diamonds || 0);
+
+      // Real VIP points (accrued from rake generated). vip_points is per-user,
+      // RLS-scoped to the owner.
+      const { data: vp } = await supabase
+        .from('vip_points')
+        .select('current_points, lifetime_points')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setVipPoints((prev) => ({
+        ...prev,
+        current: Number(vp?.current_points || 0),
+        lifetime: Number(vp?.lifetime_points || 0),
+      }));
+
+      if (profData?.created_at) {
+        const joinDate = new Date(profData.created_at).getTime();
+        const daysSinceJoined = Math.floor((Date.now() - joinDate) / (1000 * 60 * 60 * 24));
+        setDaysSinceReview(daysSinceJoined % 30);
       }
 
-      if (isCurrent()) setLoading(true);
-      try {
-        const vipStatus = await vipService.checkVIPStatus(requestedUserId);
-        if (!isCurrent()) return;
-        setIsVIP(vipStatus.isVIP);
-        setVipGrade(vipStatus.status);
-        setVipExpiresAt(vipStatus.expiresAt);
-        setMonthlyLimits(vipStatus.monthlyLimits);
+      /* ── RECENT ACTIVITY READ A TABLE THAT HAS NEVER HELD A ROW ───────────
+         This queried `diamond_ledger`. In production that table has **0 rows**
+         and always has; the live diamond ledger is `diamond_transactions`
+         (1,432 rows, written today). So this list was unconditionally empty
+         for every player on the platform, and the emptiness was invisible
+         because the query itself succeeded — the 2026-04-16 note above fixed
+         the COLUMN names on the wrong TABLE and reported success.
 
-        const { data: profData } = await supabase
-          .from('profiles')
-          .select('diamonds')
-          .eq('id', requestedUserId)
-          .maybeSingle();
+         `DiamondWalletModal` already resolved this ("Diamonds live in
+         `diamond_transactions`. One source, one currency."), so this mirrors
+         that component rather than inventing a second dialect of the same
+         read — including its two hard-won details:
 
-        if (!isCurrent()) return;
-        setDiamonds(profData?.diamonds || 0);
+         1. `type` is selected ALONGSIDE `transaction_type`, because
+            `transaction_type` is NULL on 774 of ~1,540 rows (reconciliation
+            and signup_bonus rows carry their kind in the older `type`
+            column). Reading only `transaction_type` renders a player's
+            Welcome Bonus — the first diamond movement on every account — as
+            a blank adjustment.
+         2. The error is no longer discarded. supabase-js RESOLVES with
+            `{ data: null, error }`, so an RLS denial or a dropped connection
+            previously produced an empty list and told the player "nothing
+            happened" — a false statement about their own money, with nothing
+            in Sentry. */
+      const { data: ledgerData, error: ledgerError } = await supabase
+        .from('diamond_transactions')
+        .select('id, type, transaction_type, amount, description, balance_after, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-        const { data: vp } = await supabase
-          .from('vip_points')
-          .select('current_points, lifetime_points')
-          .eq('user_id', requestedUserId)
-          .maybeSingle();
-        if (!isCurrent()) return;
-        setVipPoints((prev) => ({
-          ...prev,
-          current: Number(vp?.current_points || 0),
-          lifetime: Number(vp?.lifetime_points || 0),
-        }));
-
-        /* Diamonds live in diamond_transactions. Read both transaction type
-           columns because older rows use `type`, and report a failed money
-           read instead of presenting an empty history as fact. */
-        const { data: ledgerData, error: ledgerError } = await supabase
-          .from('diamond_transactions')
-          .select('id, type, transaction_type, amount, description, balance_after, created_at')
-          .eq('user_id', requestedUserId)
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (!isCurrent()) return;
-        if (ledgerError) {
-          reportError(ledgerError, 'VIPPage.Diamond_activity_load_failed', {
-            userId: requestedUserId,
-          });
-        } else if (ledgerData) {
-          const mapped = ledgerData.map((entry) => {
-            const amount = Number(entry.amount ?? 0);
-            const kind = entry.transaction_type || entry.type || '';
-            return {
-              id: entry.id,
-              date: new Date(entry.created_at),
-              action: amount > 0 ? 'earned' : 'spent',
-              description:
-                entry.description || kind || (amount > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
-              points: Math.abs(amount),
-              balanceAfter: Number(entry.balance_after ?? 0),
-              icon: amount > 0 ? '▲' : '▼',
-            } as VIPActivity;
-          });
-          setRecentActivities(mapped);
-        }
-      } catch {
-        if (isCurrent()) toast.error('Failed To Load VIP Status');
-      } finally {
-        if (isCurrent()) {
-          setStateUserId(requestedUserId);
-          setLoading(false);
-        }
+      if (getIsMounted && !getIsMounted()) return;
+      if (ledgerError) {
+        reportError(ledgerError, 'VIPPage.Diamond_activity_load_failed', { userId: user.id });
+      } else if (ledgerData) {
+        const mapped = ledgerData.map((entry) => {
+          const amount = Number(entry.amount ?? 0);
+          const kind = entry.transaction_type || entry.type || '';
+          return {
+            id: entry.id,
+            date: new Date(entry.created_at),
+            action: amount > 0 ? 'earned' : 'spent',
+            description:
+              entry.description || kind || (amount > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
+            points: Math.abs(amount),
+            balanceAfter: Number(entry.balance_after ?? 0),
+            // Unicode triangles (allowed per CLAUDE.md §8) instead of the previous emojis
+            icon: amount > 0 ? '▲' : '▼',
+          } as VIPActivity;
+        });
+        setRecentActivities(mapped);
       }
-    },
-    [toast, user?.id]
-  );
-
-  useVisibilityRefresh(() => {
-    if (user?.id) return loadVIPStatus();
-  });
-
-  useEffect(() => {
-    loadGenerationRef.current += 1;
-    purchaseRequestRef.current += 1;
-    purchaseInFlightRef.current = false;
-    setPurchasing(null);
-    setIsVIP(false);
-    setVipGrade('none');
-    setVipExpiresAt(null);
-    setMonthlyLimits({
-      rabbitHunts: { used: 0, limit: 0 },
-      timeBankSeconds: { used: 0, limit: 0 },
-      emojis: { used: 0, limit: 0 },
-      tags: { used: 0, limit: 0 },
-      throwables: { used: 0, limit: 0 },
-    });
-    setDiamonds(0);
-    setVipPoints({ current: 0, lifetime: 0, monthly: 0, activeStreak: 0 });
-    setRecentActivities([]);
-    setStateUserId(undefined);
-    setLoading(true);
-
-    let isMounted = true;
-    void loadVIPStatus(() => isMounted);
-    return () => {
-      isMounted = false;
-      loadGenerationRef.current += 1;
-    };
-  }, [loadVIPStatus]);
+    } catch (error) {
+      if (!getIsMounted || getIsMounted()) toast.error('Failed to load VIP status');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
+    }
+  };
 
   const handlePurchase = async (feature: VIPFeature) => {
     if (!user?.id || purchaseInFlightRef.current) return;
 
-    const requestedUserId = user.id;
-    const request = ++purchaseRequestRef.current;
-    const isCurrent = () =>
-      request === purchaseRequestRef.current && activeUserIdRef.current === requestedUserId;
     purchaseInFlightRef.current = true;
     setPurchasing(feature);
     try {
-      const featureLabel = formatFeatureName(feature);
-      const result = await vipService.purchaseFeature(requestedUserId, feature);
-      if (!isCurrent()) return;
+      const result = await vipService.purchaseFeature(user.id, feature);
       if (result.success) {
-        if (result.idempotent && result.granted === false) {
-          toast.success(`${featureLabel} Purchase Already Processed`);
-          return;
-        }
         const nextBalance = Math.max(0, diamonds - result.charged);
-        toast.success(`Purchased ${featureLabel} For ${result.charged} Diamonds`);
+        toast.success(`Purchased ${feature.replace(/_/g, ' ')} for ${result.charged} Diamonds`);
         setDiamonds(nextBalance);
         masterBus.emit('DIAMOND_BALANCE_CHANGED', {
           newBalance: nextBalance,
@@ -383,7 +258,7 @@ export default function VIPPage() {
                 : null;
         if (category) {
           masterBus.emit('ENTITLEMENTS_CHANGED', {
-            userId: requestedUserId,
+            userId: user.id,
             category,
             assetId: feature,
             quantity: 1,
@@ -391,35 +266,33 @@ export default function VIPPage() {
           });
         }
       } else if (result.alreadyOwned) {
-        toast.success(`You Already Own ${featureLabel}`);
+        toast.success(`You already own ${feature.replace(/_/g, ' ')}`);
         if (feature === 'emoji_pack') {
           masterBus.emit('ENTITLEMENTS_CHANGED', {
-            userId: requestedUserId,
+            userId: user.id,
             category: 'emote_pack',
             assetId: feature,
             source: 'vip-purchase',
           });
         }
       } else {
-        toast.error(normalizeVIPPurchaseError(result.error));
+        toast.error(result.error || 'Purchase failed');
       }
-    } catch {
-      if (isCurrent()) toast.error('Purchase Failed');
+    } catch (error) {
+      toast.error('Purchase failed');
     } finally {
-      if (isCurrent()) {
-        purchaseInFlightRef.current = false;
-        setPurchasing(null);
-      }
+      purchaseInFlightRef.current = false;
+      setPurchasing(null);
     }
   };
 
-  if (loading || stateUserId !== user?.id) {
+  if (loading) {
     return (
       <div className="vip-page">
         <RewardsSurfaceHeader
           eyebrow="Rewards Circuit / VIP"
           title="VIP Command Deck"
-          description="Track Live Membership Status, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
+          description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
           art="vip"
           status="VIP TELEMETRY // SYNCING"
           crest="vip"
@@ -441,14 +314,14 @@ export default function VIPPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / VIP"
         title="VIP Command Deck"
-        description="Track Live Membership Status, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
+        description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
         art="vip"
         status="VIP TELEMETRY // LIVE"
         crest="vip"
         metrics={[
           { label: 'Current Points', value: vipPoints.current.toLocaleString(), tone: 'attention' },
           { label: 'Monthly', value: vipPoints.monthly.toLocaleString(), tone: 'live' },
-          { label: 'Active Streak', value: `${vipPoints.activeStreak} Days` },
+          { label: 'Active Streak', value: `${vipPoints.activeStreak} days` },
         ]}
       />
       {/* MEMBERSHIP, ALLOWANCES, POINTS.
@@ -554,9 +427,9 @@ export default function VIPPage() {
           asserted here. The lesson is in the law: an empty column is not an
           absent feature, and the enforcement is whatever the function does.
 
-          Ordinary VIP remains metered at those server-backed caps. The exact
-          Lifetime membership branches to its separately enforced unlimited
-          gameplay and cataloged digital-cosmetic contract. */}
+          What is left is what the server meters, and it now comes from the same
+          VIPMembershipPlate above rather than a second hand-written list that
+          could drift from it. */}
       {isVIP && (
         <section
           className="vip-section vip-card-section"
@@ -605,7 +478,75 @@ export default function VIPPage() {
             </button>
           </div>
 
-          <VIPPerksGrid currentTier="vip" perks={membershipPerks} />
+          <VIPPerksGrid
+            currentTier="vip"
+            perks={[
+              {
+                id: 'rabbit',
+                icon: '\u25C6',
+                title: 'Rabbit Hunt',
+                description: 'See Undealt Cards',
+                // Dan 2026-08-25: 100 a month, then diamonds. This said
+                // "Unlimited" while the server charged from the 101st. The cap
+                // lives in fn_consume_rabbit_hunt and this is the only place
+                // that quotes it to a customer.
+                value: `${VIP_MONTHLY_ALLOWANCES.rabbitHunts} / month`,
+              },
+              {
+                id: 'timebank',
+                icon: '\u25F7',
+                title: 'Time Bank',
+                description: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s Free Per Month`,
+                value: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s`,
+              },
+              {
+                id: 'emojis',
+                icon: '\u25C6',
+                title: 'Emojis',
+                // Was "All Packs". fn_increment_vip_usage counts 'emoji_pack'
+                // against exactly this number.
+                description: `${VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()} Free Per Month`,
+                value: VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString(),
+              },
+              {
+                id: 'tags',
+                icon: '\u25C6',
+                title: 'Player Tags',
+                description: `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} Free Per Month`,
+                value: VIP_MONTHLY_ALLOWANCES.tags.toLocaleString(),
+              },
+              {
+                id: 'throwable',
+                icon: '\u25C6',
+                title: 'Throwables',
+                /* fn_use_throwable: 500 free per calendar month, counted in
+                   throw_usage, 1 diamond from the 501st. */
+                description: `${VIP_MONTHLY_ALLOWANCES.throwables} Free Per Month`,
+                value: `${VIP_MONTHLY_ALLOWANCES.throwables}`,
+              },
+              {
+                id: 'stack',
+                icon: '\u25A6',
+                title: 'Show Stack In Big Blinds',
+                description: 'Otherwise 5 Diamonds Per Session',
+                value: 'Included',
+              },
+              {
+                id: 'offline',
+                icon: '\u25C8',
+                title: 'Offline Protection',
+                description: 'Otherwise 10 Diamonds Per Session',
+                value: 'Included',
+              },
+              {
+                id: 'autobank',
+                icon: '\u25F7',
+                title: 'Auto Time Bank',
+                description: 'Otherwise 5 Diamonds Per Activation',
+                value: 'Included',
+              },
+            ]}
+          />
         </section>
       )}
 
@@ -654,7 +595,7 @@ export default function VIPPage() {
               .map(([feature, pricing]) => (
                 <div key={feature} className="purchase-card">
                   <div className="purchase-info">
-                    <span className="purchase-name">{formatFeatureName(feature)}</span>
+                    <span className="purchase-name">{feature.replace(/_/g, ' ')}</span>
                     <span className="purchase-desc">{pricing.description}</span>
                   </div>
                   <div className="purchase-action">
@@ -674,11 +615,7 @@ export default function VIPPage() {
       )}
 
       {/* Info Modal */}
-      <VIPCardsModal
-        isOpen={showInfoModal}
-        onClose={() => setShowInfoModal(false)}
-        vipStatus={vipGrade}
-      />
+      <VIPCardsModal isOpen={showInfoModal} onClose={() => setShowInfoModal(false)} />
 
       {/* Diamond Top-Up Modal */}
       <DiamondTopUpModal

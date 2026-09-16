@@ -19,30 +19,6 @@ import { ServerTableEngineSettlement } from './ServerTableEngineSettlement.js';
 
 export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettlement {
   /**
-   * DELIVERY IS BEST-EFFORT; THE HAND IS NOT (2026-09-09).
-   *
-   * `TableStateHub.emitEvent` is not a fire-and-forget send. It runs
-   * captureAllInEquity, captureRitEvent, retainIfReplayable and the room
-   * broadcast BEFORE any per-socket try/catch, so a throw from any of them
-   * propagates out of the call and abandons whatever came after it in the
-   * caller - a state commit, a hand_history row, the next event in the same
-   * case. This file's own TURN_CHANGE note diagnosed exactly that in
-   * 2026-08-15 and then guarded only that one site, while every equivalent in
-   * ServerTableEngineTurns.ts carried the guard.
-   *
-   * All hand-event deliveries use this guard. The original inline guards
-   * remain around payload preparation as well; an existing local guard must
-   * not lose its protection when the delivery call is shared.
-   */
-  protected safeEmitEvent(payload: Record<string, unknown>): void {
-    try {
-      this.hub?.emitEvent(this.tableId, payload);
-    } catch {
-      /* broadcast failure is non-fatal */
-    }
-  }
-
-  /**
    * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): fold the unmerged per-pot
    * awards into ORDERED display groups for pot_win — board 1 before board 2,
    * main pot before side pots, the high half before the low half. Each group
@@ -127,100 +103,6 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       return [];
     }
   }
-
-  /**
-   * ── WHO GOT EACH POT, EXACTLY (2026-09-14) ───────────────────────────────
-   *
-   * `pot_distributed` names every pot, what it held, and who received it.
-   * The per-winner share used to be an ESTIMATE: each eligible winner's
-   * whole-hand total, scaled proportionally into the pot. On a single-board
-   * hand with one pot that is exact. On a three-way all-in that runs it
-   * twice it is not: A and B split the main pot on board one, C takes the
-   * side pot on both boards, and the estimate hands C a slice of the main
-   * pot he never won because his total is the largest. The event was
-   * inventing a payout that the ledger did not make.
-   *
-   * The exact answer already exists in the per-pot award groups: one slice
-   * per (board, pot, half, winner). Summing a pot's slices by winner across
-   * boards and halves gives that pot's true split. The slices are post-rake
-   * display shares while `amount` here is the pot as it stood before rake,
-   * so the split is applied as PROPORTIONS of the pot (the shape the event
-   * has always had), in cents, with the rounding remainder folded into the
-   * largest share so the shares sum to the pot exactly. The estimate stays as
-   * the fallback for a pot with no award slices, and is now cent-exact too.
-   */
-  protected buildPotDistribution(
-    pots: ReadonlyArray<{ amount: number; eligiblePlayers?: string[]; eligible?: string[] }>,
-    winners: ReadonlyArray<{ userId: string; amount: number }>,
-    potAwards: ReadonlyArray<{
-      pot_index: number;
-      winners: ReadonlyArray<{ user_id: string; amount: number }>;
-    }>
-  ): Array<{
-    pot_index: number;
-    amount: number;
-    winner_user_ids: string[];
-    per_winner_share: Array<{ user_id: string; share: number }>;
-  }> {
-    const exactByPot = new Map<number, Map<string, number>>();
-    for (const g of potAwards) {
-      const idx = Number(g.pot_index) || 0;
-      let byUser = exactByPot.get(idx);
-      if (!byUser) {
-        byUser = new Map();
-        exactByPot.set(idx, byUser);
-      }
-      for (const w of g.winners) {
-        const amount = Number(w.amount) || 0;
-        if (amount <= 0) continue;
-        byUser.set(w.user_id, (byUser.get(w.user_id) ?? 0) + amount);
-      }
-    }
-    /** Split `total` across `weights` in cents, exactly, largest share takes the remainder. */
-    const splitExact = (total: number, weights: Array<[string, number]>) => {
-      const totalCents = Math.round(total * 100);
-      const weightSum = weights.reduce((s, [, w]) => s + w, 0);
-      if (weightSum <= 0 || weights.length === 0) return weights.map(([id]) => [id, 0] as const);
-      const cents = weights.map(
-        ([id, w]) => [id, Math.floor((w / weightSum) * totalCents)] as [string, number]
-      );
-      let remainder = totalCents - cents.reduce((s, [, c]) => s + c, 0);
-      // Largest weight first; each takes one cent of the remainder in turn.
-      const order = [...cents.keys()].sort((a, b) => weights[b][1] - weights[a][1]);
-      for (let i = 0; remainder > 0 && i < order.length * 2; i++) {
-        cents[order[i % order.length]][1] += 1;
-        remainder -= 1;
-      }
-      return cents.map(([id, c]) => [id, c / 100] as const);
-    };
-    return pots.map((p, idx) => {
-      const amount = Number(p.amount) || 0;
-      const exact = exactByPot.get(idx);
-      if (exact && exact.size > 0) {
-        const shares = splitExact(amount, [...exact.entries()]);
-        return {
-          pot_index: idx,
-          amount,
-          winner_user_ids: shares.map(([id]) => id),
-          per_winner_share: shares.map(([id, share]) => ({ user_id: id, share })),
-        };
-      }
-      const eligibleIds = p.eligiblePlayers ?? p.eligible ?? [];
-      const eligibleWinners = winners.filter(
-        (w) => eligibleIds.length === 0 || eligibleIds.includes(w.userId)
-      );
-      const shares = splitExact(
-        amount,
-        eligibleWinners.map((w) => [w.userId, w.amount] as [string, number])
-      );
-      return {
-        pot_index: idx,
-        amount,
-        winner_user_ids: shares.map(([id]) => id),
-        per_winner_share: shares.map(([id, share]) => ({ user_id: id, share })),
-      };
-    });
-  }
   protected async handleHandEvent(
     event: HandEvent,
     players: SeatedPlayer[],
@@ -242,22 +124,13 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // so the client can immediately reset visual state (clear last action
         // badges, clear community cards, trigger the deal animation) without
         // waiting for the snapshot to arrive and diff-detect.
-        /* WRAPPED 2026-09-09 - see the note under BLINDS_POSTED/antes_posted
-           below for the whole argument. TableStateHub.emitEvent does real work
-           (captureAllInEquity, captureRitEvent, retainIfReplayable, broadcast)
-           BEFORE any per-socket try/catch, so a throw here aborts the rest of
-           this case - here, the broadcast that follows it. */
-        try {
-          this.safeEmitEvent({
-            type: 'hand_started',
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            dealer_seat: this.handController?.getState().dealerSeat ?? 0,
-            timestamp: Date.now(),
-          });
-        } catch {
-          /* broadcast failure is non-fatal */
-        }
+        this.hub?.emitEvent(this.tableId, {
+          type: 'hand_started',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          dealer_seat: this.handController?.getState().dealerSeat ?? 0,
+          timestamp: Date.now(),
+        });
         this.broadcastCurrentState();
         break;
 
@@ -276,32 +149,25 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // is being played as — clients label the intro ("PLO4 DOUBLE BOARD")
         // and adjust villain card-backs from it.
         const bpVariant = this.handController?.getGameVariant?.() ?? this.dealtGameVariant();
-        // Wrapped 2026-09-09: a throw here skipped `currentHandBombPot` below,
-        // so hand_history.bomb_pot lost the trigger reason, the ante and the
-        // board count for the hand.
-        try {
-          this.safeEmitEvent({
-            type: 'bomb_pot_triggered',
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            ante_amount: (event as any).anteAmount,
-            bb_multiplier: (event as any).bbMultiplier,
-            // DOUBLE-BOARD BOMB POT 2026-08-20: whether this hand runs two
-            // boards, plus per-seat postings for the ante-chip presentation.
-            double_board: (event as any).doubleBoard ?? false,
-            // TRIPLE-BOARD 2026-08-27: the actual board count (1-3, after any
-            // deck-feasibility downgrade) — the overlay badges from this.
-            board_count: bpBoardCount,
-            // VARIANT OVERRIDE (spec §10.1): the hand's variant, always sent —
-            // clients compare it to the table's own game to decide whether to
-            // badge the override.
-            variant: bpVariant,
-            postings: (event as any).postings ?? [],
-            timestamp: Date.now(),
-          });
-        } catch {
-          /* broadcast failure is non-fatal */
-        }
+        this.hub?.emitEvent(this.tableId, {
+          type: 'bomb_pot_triggered',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          ante_amount: (event as any).anteAmount,
+          bb_multiplier: (event as any).bbMultiplier,
+          // DOUBLE-BOARD BOMB POT 2026-08-20: whether this hand runs two
+          // boards, plus per-seat postings for the ante-chip presentation.
+          double_board: (event as any).doubleBoard ?? false,
+          // TRIPLE-BOARD 2026-08-27: the actual board count (1-3, after any
+          // deck-feasibility downgrade) — the overlay badges from this.
+          board_count: bpBoardCount,
+          // VARIANT OVERRIDE (spec §10.1): the hand's variant, always sent —
+          // clients compare it to the table's own game to decide whether to
+          // badge the override.
+          variant: bpVariant,
+          postings: (event as any).postings ?? [],
+          timestamp: Date.now(),
+        });
         // BOMB POT STANDARDIZATION 2026-08-27 (spec §20): freeze the bomb
         // facts for hand_history.bomb_pot — trigger reason, the equal forced
         // ante, and the boards actually dealt.
@@ -317,16 +183,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       case 'BOMB_POT_COMPLETED' as any: {
         // DOUBLE-BOARD BOMB POT 2026-08-20: tell the table the bomb-pot hand
         // is settled so BombPotOverlay dismisses with the hand.
-        try {
-          this.safeEmitEvent({
-            type: 'bomb_pot_completed',
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            timestamp: Date.now(),
-          });
-        } catch {
-          /* broadcast failure is non-fatal */
-        }
+        this.hub?.emitEvent(this.tableId, {
+          type: 'bomb_pot_completed',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          timestamp: Date.now(),
+        });
         break;
       }
 
@@ -338,21 +200,13 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           | Array<{ seat: number; type: string; amount: number }>
           | undefined;
         if (postings && postings.length > 0) {
-          // Wrapped 2026-09-09: a throw here skipped the shadow recorder below
-          // AND `lastHandStartAtMs`, so the first TURN_CHANGE of the hand lost
-          // its settle stretch and the first player went on the clock while the
-          // deal was still in the air.
-          try {
-            this.safeEmitEvent({
-              type: 'blinds_posted',
-              table_id: this.tableId,
-              hand_number: this.handCount,
-              postings,
-              timestamp: Date.now(),
-            });
-          } catch {
-            /* broadcast failure is non-fatal */
-          }
+          this.hub?.emitEvent(this.tableId, {
+            type: 'blinds_posted',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            postings,
+            timestamp: Date.now(),
+          });
         }
         // ── ADDITIVE event-sourcing shadow (#1): record BlindsPosted ──
         if (this.shadowRecorder && postings && postings.length > 0) {
@@ -417,31 +271,13 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             .filter((p) => p && p.kind === 'ante' && p.amount > 0)
             .map((p) => ({ seat: p.seat, amount: p.amount }));
           if (antePostings.length > 0) {
-            /* AN EMIT MUST NOT BE ABLE TO EAT THE STATE COMMIT BESIDE IT
-               (2026-09-09). `TableStateHub.emitEvent` runs captureAllInEquity,
-               captureRitEvent, retainIfReplayable and broadcast BEFORE any
-               per-socket try/catch, so a throw from any of them propagates out
-               of this call and abandons the rest of the case. Here that is the
-               loop below - every blind, ante, straddle and dead-blind row that
-               `hand_history.actions` is built from, on precisely the hands the
-               FORCED_BETS_POSTED note above says were missing that money.
-
-               Every equivalent emit in ServerTableEngineTurns.ts already
-               carries this guard; this file diagnosed the problem in its
-               TURN_CHANGE note (2026-08-15) and wrapped only that one site. All
-               of them are wrapped now. Delivery is best-effort; the record is
-               not. */
-            try {
-              this.safeEmitEvent({
-                type: 'antes_posted',
-                table_id: this.tableId,
-                hand_number: this.handCount,
-                postings: antePostings,
-                timestamp: Date.now(),
-              });
-            } catch {
-              /* broadcast failure is non-fatal */
-            }
+            this.hub?.emitEvent(this.tableId, {
+              type: 'antes_posted',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              postings: antePostings,
+              timestamp: Date.now(),
+            });
           }
           for (const p of postings) {
             if (!p || !(p.amount > 0)) continue;
@@ -696,7 +532,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // Bible V8 §1.16 (Real-Time Law): discrete turn_change event. Now
         // carries the correct absolute deadline for the CURRENT player.
         try {
-          this.safeEmitEvent({
+          this.hub?.emitEvent(this.tableId, {
             type: 'turn_change',
             action_context: decisionContext,
             table_id: this.tableId,
@@ -802,26 +638,17 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // client used to update pot only — chip animations + action labels
           // never fired because their handler was on the deleted Supabase
           // Realtime channel. The full state broadcast still follows below.
-          // Wrapped 2026-09-09: a throw here skipped the state broadcast that
-          // follows, so the felt kept the previous snapshot for this action.
-          // The payload itself is main's (#4459/#4467): `actorId` and the
-          // record's own timestamp, so a delayed horse action keeps the facts
-          // it was accepted with rather than the facts at emit time.
-          try {
-            this.safeEmitEvent({
-              type: 'player_action',
-              table_id: this.tableId,
-              hand_number: this.handCount,
-              seat: event.seat,
-              user_id: actorId,
-              action: event.action,
-              amount: event.amount ?? 0,
-              stage,
-              timestamp: event.record?.timestamp ?? Date.now(),
-            });
-          } catch {
-            /* broadcast failure is non-fatal */
-          }
+          this.hub?.emitEvent(this.tableId, {
+            type: 'player_action',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            seat: event.seat,
+            user_id: actorId,
+            action: event.action,
+            amount: event.amount ?? 0,
+            stage,
+            timestamp: event.record?.timestamp ?? Date.now(),
+          });
         }
         this.broadcastCurrentState();
         break;
@@ -894,34 +721,26 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // so the client slides the flop/turn/river cards onto the board with
           // the spec animation (§6 community cards dealing) the millisecond the
           // engine flips them — not whenever the next snapshot arrives.
-          // Wrapped 2026-09-09: a throw here skipped the shadow recorder and
-          // the per-street chip-conservation verification below - the check the
-          // A7 note beneath it says is the only one that can see chips minted
-          // inside a street.
-          try {
-            this.safeEmitEvent({
-              type: 'community_cards_dealt',
-              table_id: this.tableId,
-              hand_number: this.handCount,
-              stage: event.stage,
-              // Send only the NEW cards for this stage so the client can animate
-              // just the additions (3 for flop, 1 each for turn/river).
-              new_cards: event.cards ?? [],
-              // Full board too, for clients that want to render the complete
-              // state without diffing.
-              board: this.currentHandCommunityCards,
-              // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (both empty arrays
-              // and the fields absent mean "single board" to the client).
-              new_cards2: evCards2 ?? [],
-              board2: this.currentHandCommunityCards2,
-              // TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same contract.
-              new_cards3: evCards3 ?? [],
-              board3: this.currentHandCommunityCards3,
-              timestamp: Date.now(),
-            });
-          } catch {
-            /* broadcast failure is non-fatal */
-          }
+          this.hub?.emitEvent(this.tableId, {
+            type: 'community_cards_dealt',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            stage: event.stage,
+            // Send only the NEW cards for this stage so the client can animate
+            // just the additions (3 for flop, 1 each for turn/river).
+            new_cards: event.cards ?? [],
+            // Full board too, for clients that want to render the complete
+            // state without diffing.
+            board: this.currentHandCommunityCards,
+            // DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (both empty arrays
+            // and the fields absent mean "single board" to the client).
+            new_cards2: evCards2 ?? [],
+            board2: this.currentHandCommunityCards2,
+            // TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same contract.
+            new_cards3: evCards3 ?? [],
+            board3: this.currentHandCommunityCards3,
+            timestamp: Date.now(),
+          });
           // ── ADDITIVE event-sourcing shadow (#1): record StreetAdvanced ──
           if (this.shadowRecorder && event.stage) {
             this.shadowRecorder.recordStreetAdvanced(event.stage as ShadowStreet);
@@ -1012,30 +831,23 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // snapshot's showCards rising edge, reading the order this event
         // delivered — sent after the snapshot, the order routinely lost the
         // race and every reveal degraded to a simultaneous flip.
-        // Wrapped 2026-09-09: a throw here skipped the revealing snapshot below
-        // and every later step of this case, so the hand showed down with no
-        // cards turned over.
-        try {
-          this.safeEmitEvent({
-            type: 'showdown',
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            results: this.currentHandShowdownResults.map((r) => {
-              const mucked = this.isMuckedAtShowdown(r.userId);
-              return {
-                user_id: r.userId,
-                seat: r.seat ?? -1,
-                reveal_order: r.revealOrder ?? 0,
-                mucked,
-                hand_name: mucked ? '' : r.handName,
-                hand_ranking: mucked ? 0 : r.handRanking,
-                hand_description: mucked ? '' : (r.handDescription ?? ''),
-              };
-            }),
-          });
-        } catch {
-          /* broadcast failure is non-fatal */
-        }
+        this.hub?.emitEvent(this.tableId, {
+          type: 'showdown',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          results: this.currentHandShowdownResults.map((r) => {
+            const mucked = this.isMuckedAtShowdown(r.userId);
+            return {
+              user_id: r.userId,
+              seat: r.seat ?? -1,
+              reveal_order: r.revealOrder ?? 0,
+              mucked,
+              hand_name: mucked ? '' : r.handName,
+              hand_ranking: mucked ? 0 : r.handRanking,
+              hand_description: mucked ? '' : (r.handDescription ?? ''),
+            };
+          }),
+        });
         this.broadcastCurrentState();
         // ── ADDITIVE event-sourcing shadow (#1): record ShowdownRevealed ──
         if (this.shadowRecorder && this.handController) {
@@ -1272,23 +1084,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             .filter((r) => this.isMuckedAtShowdown(r.userId))
             .map((r) => ({ user_id: r.userId, seat: r.seat ?? -1 }));
           if (reveals.length > 0 || muckedPlayers.length > 0) {
-            // Wrapped 2026-09-09: a throw here skipped the whole pot-shipping
-            // block below - `pot_win` AND `pot_distributed` - so the hand
-            // revealed nothing, shipped no chips on the felt, and published no
-            // pot breakdown, on exactly the contested showdowns those events
-            // exist for.
-            try {
-              this.safeEmitEvent({
-                type: 'showdown_cards_revealed',
-                table_id: this.tableId,
-                hand_number: this.handCount,
-                reveals,
-                mucked_players: muckedPlayers,
-                timestamp: Date.now(),
-              });
-            } catch {
-              /* broadcast failure is non-fatal */
-            }
+            this.hub?.emitEvent(this.tableId, {
+              type: 'showdown_cards_revealed',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              reveals,
+              mucked_players: muckedPlayers,
+              timestamp: Date.now(),
+            });
           }
         }
         // Phase 2 T1-05 (spec §6 Pot Shipping Animation): emit a discrete
@@ -1424,9 +1227,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             }
           })();
 
-          // safeEmitEvent (2026-09-09): a throw here skipped `pot_distributed`
-          // below, so the per-pot breakdown was lost on the hands that have one.
-          this.safeEmitEvent({
+          this.hub?.emitEvent(this.tableId, {
             type: 'pot_win',
             table_id: this.tableId,
             hand_number: emitHandNumber,
@@ -1479,12 +1280,6 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               user_id: w.userId,
               amount: w.amount,
               hand_name: w.handName,
-              /* 2026-09-13: the half and the per-pot slices ride the wire
-                 too, so the felt and the record read the same row. */
-              ...(w.low ? { low: true } : {}),
-              ...(w.pots
-                ? { pots: w.pots.map((p) => ({ index: p.index, amount: p.amount })) }
-                : {}),
             })),
             // SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the UNMERGED award
             // groups, one per (board, pot, hi/lo half), in award order — main
@@ -1513,12 +1308,23 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // controller is legitimately null by the time the hold ends (see the
           // capture note above), and reading it here returned an empty
           // breakdown on every contested showdown.
-          const potBreakdown = this.buildPotDistribution(
-            capturedPots,
-            capturedWinners,
-            capturedPotAwards
-          );
-          this.safeEmitEvent({
+          const potBreakdown = capturedPots.map((p, idx) => {
+            const eligibleIds = p.eligiblePlayers ?? p.eligible ?? [];
+            const eligibleWinners = capturedWinners.filter(
+              (w) => eligibleIds.length === 0 || eligibleIds.includes(w.userId)
+            );
+            const totalEligibleAmount = eligibleWinners.reduce((s, w) => s + w.amount, 0) || 1;
+            return {
+              pot_index: idx,
+              amount: p.amount,
+              winner_user_ids: eligibleWinners.map((w) => w.userId),
+              per_winner_share: eligibleWinners.map((w) => ({
+                user_id: w.userId,
+                share: (w.amount / totalEligibleAmount) * p.amount,
+              })),
+            };
+          });
+          this.hub?.emitEvent(this.tableId, {
             type: 'pot_distributed',
             table_id: this.tableId,
             hand_number: emitHandNumber,

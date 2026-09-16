@@ -18,9 +18,6 @@ export const CASINO_CONTROL_ICON_VARIANTS = [
   'sign-in',
   'continue',
   'sync',
-  'cycle-daily',
-  'cycle-weekly',
-  'cycle-monthly',
 ] as const;
 
 export type CasinoControlIconVariant = (typeof CASINO_CONTROL_ICON_VARIANTS)[number];
@@ -228,41 +225,6 @@ function Mechanism({ variant }: { variant: CasinoControlIconVariant }): ReactNod
           />
           <path className={styles.signalLine} d="m27.9 11.3.4 4-4 .4M12.1 28.7l-.4-4 4-.4" />
           <path className={styles.pulse} d="M16.1 20h2.1l1.2-3.1 2 6.2 1.2-3.1h2.1" />
-        </g>
-      );
-    case 'cycle-daily':
-      return (
-        <g className={styles.cycleDial} data-cycle-mechanism="daily">
-          <circle className={styles.chromeLine} cx="20" cy="20" r="9" />
-          <circle className={styles.signalFill} cx="20" cy="20" r="1.55" />
-          <path className={styles.signalLine} d="M20 20V14.2M20 20l4.2 2.6" />
-          <path className={styles.railLine} d="M20 8.4v2.2M20 29.4v2.2M8.4 20h2.2M29.4 20h2.2" />
-          <path className={styles.pulse} d="M12.2 11.9 13.8 13.5M26.2 26.5l1.6 1.6" />
-        </g>
-      );
-    case 'cycle-weekly':
-      return (
-        <g className={styles.cycleWheel} data-cycle-mechanism="weekly">
-          <path
-            className={styles.chromeLine}
-            d="M20 9.2 27.7 13l1.9 8.4-5.3 6.7h-8.6l-5.3-6.7 1.9-8.4Z"
-          />
-          <circle className={styles.signalLine} cx="20" cy="20" r="5.2" />
-          <path
-            className={styles.railLine}
-            d="M20 9.2v5.6M27.7 13l-4.4 3.5M29.6 21.4l-5.4-1.2M24.3 28.1l-2.4-5.1M15.7 28.1l2.4-5.1M10.4 21.4l5.4-1.2M12.3 13l4.4 3.5"
-          />
-          <circle className={styles.signalFill} cx="20" cy="20" r="2" />
-        </g>
-      );
-    case 'cycle-monthly':
-      return (
-        <g className={styles.cycleSeal} data-cycle-mechanism="monthly">
-          <path className={styles.chromeFill} d="M11.2 13.2h17.6v16H11.2Z" />
-          <path className={styles.chromeLine} d="M11.2 17.2h17.6M15 10.5v5.2M25 10.5v5.2" />
-          <path className={styles.signalLine} d="m20 19.2 4.1 4.1L20 28l-4.1-4.7Z" />
-          <path className={styles.signalLine} d="m15.9 23.3 4.1 1.2 4.1-1.2M20 19.2V28" />
-          <path className={styles.pulse} d="M8.8 24.5h2.4M28.8 24.5h2.4" />
         </g>
       );
     default: {

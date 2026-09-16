@@ -27,21 +27,8 @@
  *   an operational message    thirty minutes - tables open and close all night
  *   an operator's own notice  twelve hours - a club says it once and means it
  *
- * ── AND IT FOLLOWS THE PLAYER BETWEEN TABS (2026-09-14) ────────────────────
- *
- * This was `sessionStorage`, which is per-TAB. Club Arena ships a multi-table
- * layer and players use it: closing "Sunday Slam starts in 2:14" on one table
- * left it on every other tab, and the player had to dismiss the same
- * announcement once per tab and again tomorrow in each of them.
- *
- * `localStorage` is shared across tabs of the same origin, and the TTL above is
- * what sessionStorage used to provide - an entry expires on its own terms
- * rather than surviving until the tab closes. A dismissal is "not now" for as
- * long as the kind deserves, wherever the player is sitting.
- *
- * The native `storage` event makes it LIVE: a dismissal in one tab reaches the
- * others immediately rather than at their next poll. Same-tab writes do not
- * fire it, which is why `dismissItem` returns the new set for its own caller.
+ * `sessionStorage`, like the keys it replaces, so nothing follows a player into
+ * tomorrow and a fresh tab is a fresh start.
  *
  * ── THE LEGACY KEYS ARE IMPORTED, NOT ORPHANED ──────────────────────────────
  *
@@ -52,11 +39,7 @@
 
 import type { TickerKind } from './tickerMessages';
 
-/* v3: the store moved from sessionStorage to localStorage, and a v2 key left
-   in the old bucket is not readable from the new one. The version bump keeps
-   the two from being confused by a reader that looks in both. */
-const STORE_KEY = 'ca_ticker_dismissed_v3';
-const LEGACY_SESSION_KEY = 'ca_ticker_dismissed_v2';
+const STORE_KEY = 'ca_ticker_dismissed_v2';
 const LEGACY_STARTING_KEY = 'ca_mtt_ticker_dismissed';
 const LEGACY_OVERLAY_KEY = 'ca_overlay_ticker_dismissed';
 
@@ -78,20 +61,10 @@ type Store = Record<string, number>;
 
 function storage(): Storage | null {
   try {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage;
-  } catch {
-    /* a disabled or partitioned localStorage must not break the rail */
-    return null;
-  }
-}
-
-/** The per-tab bucket the two earlier stores lived in. Read once, then dropped. */
-function legacySession(): Storage | null {
-  try {
     if (typeof sessionStorage === 'undefined') return null;
     return sessionStorage;
   } catch {
+    /* a disabled or partitioned sessionStorage must not break the rail */
     return null;
   }
 }
@@ -133,7 +106,7 @@ function writeRaw(next: Store): void {
  * the next six hours anyway.
  */
 function importLegacy(now: number, into: Store): boolean {
-  const store = legacySession();
+  const store = storage();
   if (!store) return false;
   let changed = false;
   const migrate = (key: string, prefixes: string[]) => {
@@ -169,28 +142,6 @@ function importLegacy(now: number, into: Store): boolean {
   };
   migrate(LEGACY_STARTING_KEY, ['soon-']);
   migrate(LEGACY_OVERLAY_KEY, ['overlay-']);
-
-  /* The v2 store itself, which was a per-tab map rather than a list. A player
-     who dismissed something in this tab five minutes before the deploy keeps
-     it dismissed. */
-  try {
-    const raw = store.getItem(LEGACY_SESSION_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        for (const [id, until] of Object.entries(parsed as Record<string, unknown>)) {
-          const at = Number(until);
-          if (Number.isFinite(at) && at > now && into[id] === undefined) {
-            into[id] = at;
-            changed = true;
-          }
-        }
-      }
-      store.removeItem(LEGACY_SESSION_KEY);
-    }
-  } catch {
-    /* an unreadable legacy store is simply dropped */
-  }
   return changed;
 }
 
@@ -230,34 +181,14 @@ export function dismissItem(id: string, kind: TickerKind, now: number = Date.now
   return new Set(Object.keys(live));
 }
 
-/**
- * A dismissal in another tab, as it happens.
- *
- * The native `storage` event fires in every OTHER tab of the origin, which is
- * exactly the audience that needs to know. Same-tab writes do not fire it -
- * `dismissItem` returns the new set for its own caller.
- *
- * @returns an unsubscribe function
- */
-export function onDismissedElsewhere(listener: (ids: Set<string>) => void): () => void {
-  if (typeof window === 'undefined') return () => {};
-  const onStorage = (event: StorageEvent) => {
-    if (event.key !== null && event.key !== STORE_KEY) return;
-    listener(readDismissed());
-  };
-  window.addEventListener('storage', onStorage);
-  return () => window.removeEventListener('storage', onStorage);
-}
-
 /** Test seam: forget that the legacy keys were already imported this session. */
 export function resetDismissalsForTests(): void {
   legacyImported = false;
+  const store = storage();
   try {
-    storage()?.removeItem(STORE_KEY);
-    const session = legacySession();
-    session?.removeItem(LEGACY_SESSION_KEY);
-    session?.removeItem(LEGACY_STARTING_KEY);
-    session?.removeItem(LEGACY_OVERLAY_KEY);
+    store?.removeItem(STORE_KEY);
+    store?.removeItem(LEGACY_STARTING_KEY);
+    store?.removeItem(LEGACY_OVERLAY_KEY);
   } catch {
     /* best effort */
   }

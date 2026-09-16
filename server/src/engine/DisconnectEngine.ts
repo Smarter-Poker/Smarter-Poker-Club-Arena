@@ -366,27 +366,10 @@ export class DisconnectEngine {
 
     if (wasDisconnected) {
       state.disconnectedAt = undefined;
-      /* A HEARTBEAT IS PROOF OF A SOCKET, NOT PROOF OF A PLAYER (2026-09-09).
-
-         This branch used to clear `consecutiveTimeouts` and both
-         `awayBlind*Charged` flags on every reconnect EDGE, on the reasoning
-         that "the blind cap is a budget for ONE absence - they came back".
-
-         A backgrounded mobile client produces one of those edges per orbit.
-         The socket dies when the tab is frozen, a beat lands when the OS wakes
-         it, and neither event involves the person: the ladder was zeroed
-         several times an hour, `maxConsecutiveTimeouts = 3` was never reached,
-         and `awayBlindSbCharged && awayBlindBbCharged` - the away-blind
-         eviction budget - could never both be true at once. The seat was
-         auto-folded every single hand, for ever, was never sat out, never
-         evicted, and kept posting blinds while every other seat waited out the
-         full clock. That is precisely the symptom the AUDIT FIX 2026-07-19
-         note under recordConnectedTimeout says was closed, re-opened by the
-         one path that resets the counter it depends on.
-
-         Both budgets are spent by ABSENCE and refunded by PRESENCE, and only a
-         voluntary action proves presence. `recordPlayerActed` clears all three
-         (and says why), and so does `sitBack`. Nothing here does any more. */
+      state.consecutiveTimeouts = 0;
+      // The blind cap is a budget for ONE absence. They came back — refund it.
+      state.awayBlindSbCharged = false;
+      state.awayBlindBbCharged = false;
       // Bible V8 §6.3: Track reconnect time for grace period (5s before auto-action)
       state.reconnectedAt = Date.now();
 
@@ -590,30 +573,6 @@ export class DisconnectEngine {
     for (const [key, state] of this.playerStates) {
       if (!key.startsWith(`${tableId}:`)) continue;
       this.preciseTimer.cancelTimer(tableId, `disconnect:${state.playerId}`);
-      /* THE PROTECTION DEADLINE IS SPENT ON THE HAND IT WAS GRANTED FOR
-         (2026-09-09). `reconnectDeadlineMs` is an ABSOLUTE instant, granted
-         once by markDisconnected and - until today - cleared in exactly one
-         place, recordPlayerActed. heartbeat() does not clear it, and
-         markDisconnected refuses to re-grant while it is set, so a player who
-         dropped and came back WITHOUT taking a voluntary action (they returned
-         between hands, or the seat folded/checked automatically while they were
-         away) carried the already-expired instant into every later hand.
-
-         ServerTableEngineTurns then reads it on the reconnect path, sees
-         `protection <= Date.now()`, and force-resolves the seat the moment the
-         socket comes back - a fold, on a hand the player is present for, with
-         the full action clock unspent. The absence was over hands ago; the
-         paperwork was not.
-
-         A completed hand ends the decision the grant was protecting, so the
-         grant ends with it - but only for a seat that is actually BACK. A
-         player still disconnected at the hand boundary is mid-absence and must
-         keep counting down the window they were given, or the ladder restarts
-         from zero every hand and the seat is protected for ever. */
-      if (state.isConnected === true) {
-        state.reconnectDeadlineMs = undefined;
-        state.reconnectGrantedAtMs = undefined;
-      }
     }
   }
 

@@ -73,7 +73,6 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
     boardLength: 0,
     eligible: new Set([HERO, VILLAIN]),
     revealed: new Set<string>(),
-    purchaseRequestIds: new Map<string, string>(),
     offeredAt: Date.now(),
   };
   const engine = Object.create(ServerTableEngineSettlement.prototype) as Record<string, unknown>;
@@ -303,42 +302,6 @@ describe('paying twice for one reveal is impossible', () => {
       error: null,
     });
     expect((await reveal()).success).toBe(true);
-  });
-
-  it('reuses the same purchase identity after a committed response is lost', async () => {
-    const committedReceipts = new Map<string, Record<string, unknown>>();
-    rpc.mockImplementation(
-      async (_functionName: string, args: { p_user_id: string; p_request_id: string }) => {
-        const existing = committedReceipts.get(args.p_request_id);
-        if (existing) {
-          return { data: { ...existing, idempotent: true }, error: null };
-        }
-
-        committedReceipts.set(args.p_request_id, {
-          success: true,
-          source: 'diamonds',
-          diamonds_spent: 5,
-          diamonds_remaining: 120,
-        });
-        // This is the ambiguous window: the database mutation committed, but
-        // the engine never received its response and therefore did not mark the
-        // cards revealed in memory.
-        throw new Error('response lost after commit');
-      }
-    );
-
-    const { offer, reveal } = makeEngine();
-    const first = await reveal();
-    expect(first.success).toBe(false);
-    expect(first.cards).toBeUndefined();
-    expect(offer.revealed.has(HERO)).toBe(false);
-
-    const second = await reveal();
-    expect(second.success).toBe(true);
-    expect(second.cards).toHaveLength(5);
-    expect(rpc).toHaveBeenCalledTimes(2);
-    expect(rpc.mock.calls[0]?.[1]?.p_request_id).toBe(rpc.mock.calls[1]?.[1]?.p_request_id);
-    expect(committedReceipts.size).toBe(1);
   });
 });
 

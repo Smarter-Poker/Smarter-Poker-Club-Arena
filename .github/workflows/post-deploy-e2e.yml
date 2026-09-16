@@ -43,8 +43,6 @@ on:
     # refuses any workflow_run listener whose name no workflow carries.
     workflows: ['Publish Club Arena']
     types: [completed]
-  schedule:
-    - cron: '35 6 * * *'
   repository_dispatch:
     types: [run-post-deploy-e2e]
 
@@ -80,10 +78,6 @@ jobs:
             exit 0
           fi
           echo 'engine_trigger_sha=' >> "$GITHUB_OUTPUT"
-          if [ "$EVENT_NAME" = schedule ]; then
-            echo 'should_run=true' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           [ "$EVENT_NAME" = workflow_run ] \
             || { echo "::error::Unsupported production certification event: $EVENT_NAME"; exit 1; }
           [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] \

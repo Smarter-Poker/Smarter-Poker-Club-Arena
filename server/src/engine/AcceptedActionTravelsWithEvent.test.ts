@@ -51,6 +51,8 @@ async function drain(
     preActionEngine: { onBetPlaced: vi.fn() },
     hub: { emitEvent: vi.fn() },
   };
+  // Exercise the real shared delivery guard as well as the original handler.
+  Object.setPrototypeOf(owner, ServerTableEngineHandEvents.prototype);
   const handler = (
     ServerTableEngineHandEvents.prototype as unknown as {
       handleHandEvent(event: HandEvent, roster: unknown[]): Promise<void>;

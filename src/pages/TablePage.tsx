@@ -3718,10 +3718,10 @@ function LiveTablePage({
         // the round trip cannot queue three more of these.
         tableClosedToastShownRef.current = true;
         void (async () => {
-          await refreshMaintenanceBreak();
-          if (maintenanceBreakRef.current.active) {
-            // It was a break after all. Release the slot so a genuine closure
-            // later in this session can still be announced.
+          const verdict = await refreshMaintenanceBreak();
+          if (verdict !== 'idle' || maintenanceBreakRef.current.active) {
+            // An active break or an unconfirmed read cannot prove closure.
+            // Release the slot so a later confirmed idle verdict can announce it.
             tableClosedToastShownRef.current = false;
             return;
           }

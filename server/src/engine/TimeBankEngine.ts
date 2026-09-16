@@ -269,15 +269,34 @@ export class TimeBankEngine {
    *     because a bank is only ever granted from a standing start. The
    *     parameter survives as the exhaustion CHECK.
    */
-  tryActivate(
+  /**
+   * WOULD A BANK BE GRANTED RIGHT NOW? THE ONE ANSWER (2026-09-09).
+   *
+   * Returns the exact refusal `tryActivate` would return, or null when it would
+   * grant. `tryActivate` calls this, so a caller that asks first and a caller
+   * that just tries cannot disagree.
+   *
+   * It exists because a caller that has to PLAN around a bank - the horse
+   * cadence in ServerTableEngineTurns, which schedules an action past the turn
+   * clock only when a bank is certain to catch it - was re-deriving the rules
+   * by hand from `getPlayerBank()`. That copy read `time_bank_enabled`,
+   * `usesRemaining` and `remainingSeconds` and MISSED the per-street cap
+   * entirely, so a third bank-mode draw for one seat on one street scheduled
+   * past the clock, `tryActivate` answered 'street_limit', and the seat was
+   * auto-folded with a real decision already computed and about to be
+   * discarded. That is the V28 failure the note at the call site says it closed,
+   * re-opened by the one rule the hand-written copy did not carry.
+   *
+   * `extraCountdownSeconds` defaults to 0 - the standing-start case, which is
+   * what a planner is asking about. Table-level `time_bank_enabled` is the
+   * engine's own switch and stays with the caller.
+   */
+  activationRefusal(
     tableId: string,
     playerId: string,
-    onExpire: () => void,
     extraCountdownSeconds = 0
-  ): TimeBankActivationResult {
-    const key = `${tableId}:${playerId}`;
-    const bank = this.playerBanks.get(key);
-    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+  ): Exclude<TimeBankActivationResult, 'activated'> | null {
+    const bank = this.playerBanks.get(`${tableId}:${playerId}`);
 
     if (!bank) return 'not_initialized';
     if (bank.isActive) return 'already_active';
@@ -294,6 +313,22 @@ export class TimeBankEngine {
     if (extraCountdownSeconds > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
       return 'clock_not_exhausted';
     }
+    return null;
+  }
+
+  tryActivate(
+    tableId: string,
+    playerId: string,
+    onExpire: () => void,
+    extraCountdownSeconds = 0
+  ): TimeBankActivationResult {
+    const key = `${tableId}:${playerId}`;
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+
+    const refusal = this.activationRefusal(tableId, playerId, extraCountdownSeconds);
+    if (refusal !== null) return refusal;
+    // activationRefusal proved the bank exists and is grantable.
+    const bank = this.playerBanks.get(key)!;
 
     /*
      * Lifetime VIP is explicit state, not a giant synthetic balance. Refill

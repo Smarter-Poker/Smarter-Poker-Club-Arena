@@ -33,7 +33,7 @@
  *   6. An engine that does not send the field leaves the ladder exactly as it
  *      was. The frame is additive.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RESTART_POLL_MS, RESTART_WINDOW_GRACE_MS } from '../src/services/EngineStateClient';
@@ -225,5 +225,113 @@ describe('LAW 7 - a player who joins after the announcement is covered too', () 
       code.indexOf('useMaintenanceBreak()'),
       'the break must be read before the socket that consumes it'
     ).toBeLessThan(code.indexOf('useEngineTableState('));
+  });
+});
+
+describe('the original 4404 callback confirms closure before announcing it', () => {
+  // Execute the owning effect body, not a reimplementation of its decisions.
+  // React refs and the RPC promise are the only boundaries supplied here.
+  const body = sliceEnclosingBlock(TABLE_PAGE, 'if (!engineLastError) return;');
+  const invoke = new Function(
+    'engineLastError',
+    'seatFirstOpenRef',
+    'maintenanceBreakRef',
+    'notFoundCountRef',
+    'tableClosedToastShownRef',
+    'refreshMaintenanceBreak',
+    'heartbeatToastRef',
+    body.slice(1, -1)
+  );
+
+  function fixture() {
+    type Verdict = 'active' | 'idle' | 'unknown';
+    const pending: { promise: Promise<Verdict>; resolve: (v: Verdict) => void }[] = [];
+    const refresh = vi.fn(() => {
+      let resolve!: (v: Verdict) => void;
+      const promise = new Promise<Verdict>((r) => {
+        resolve = r;
+      });
+      pending.push({ promise, resolve });
+      return promise;
+    });
+    const seatFirst = { current: false };
+    const maintenance = { current: { active: false } };
+    const count = { current: 0 };
+    const claimed = { current: false };
+    const info = vi.fn();
+    const fire = () =>
+      invoke({ code: 4404 }, seatFirst, maintenance, count, claimed, refresh, {
+        current: { info },
+      });
+    const settle = async (index: number, verdict: Verdict) => {
+      pending[index].resolve(verdict);
+      await pending[index].promise;
+    };
+    return { fire, settle, refresh, maintenance, seatFirst, claimed, info };
+  }
+
+  it('an unknown read releases the slot; a later confirmed idle result announces once', async () => {
+    const f = fixture();
+    f.fire();
+    f.fire();
+    f.fire();
+    expect(f.refresh).toHaveBeenCalledTimes(1);
+    expect(f.claimed.current).toBe(true);
+    await f.settle(0, 'unknown');
+    expect(f.info).not.toHaveBeenCalled();
+    expect(f.claimed.current).toBe(false);
+    f.fire();
+    expect(f.refresh).toHaveBeenCalledTimes(2);
+    await f.settle(1, 'idle');
+    expect(f.info).toHaveBeenCalledExactlyOnceWith('This Table Is No Longer Running');
+    expect(f.claimed.current).toBe(true);
+    f.fire();
+    expect(f.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('an active RPC verdict suppresses closure before the React ref catches up', async () => {
+    const f = fixture();
+    f.fire();
+    f.fire();
+    f.fire();
+    await f.settle(0, 'active');
+    expect(f.maintenance.current.active).toBe(false);
+    expect(f.info).not.toHaveBeenCalled();
+    expect(f.claimed.current).toBe(false);
+  });
+
+  it('a live break arriving during an idle read still wins', async () => {
+    const f = fixture();
+    f.fire();
+    f.fire();
+    f.fire();
+    f.maintenance.current.active = true;
+    await f.settle(0, 'idle');
+    expect(f.info).not.toHaveBeenCalled();
+    expect(f.claimed.current).toBe(false);
+  });
+
+  it('concurrent errors share the claimed slot and keep pre-start/active guards', async () => {
+    const f = fixture();
+    f.seatFirst.current = true;
+    f.fire();
+    f.fire();
+    f.fire();
+    f.seatFirst.current = false;
+    f.maintenance.current.active = true;
+    f.fire();
+    f.fire();
+    f.fire();
+    expect(f.refresh).not.toHaveBeenCalled();
+    f.maintenance.current.active = false;
+    f.fire();
+    f.fire();
+    expect(f.refresh).not.toHaveBeenCalled();
+    f.fire();
+    f.fire();
+    f.fire();
+    expect(f.refresh).toHaveBeenCalledTimes(1);
+    await f.settle(0, 'idle');
+    expect(f.info).toHaveBeenCalledExactlyOnceWith('This Table Is No Longer Running');
   });
 });

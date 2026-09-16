@@ -220,6 +220,77 @@ describe('UnionWalletModal', () => {
     );
   });
 
+  /**
+   * ADDED 2026-09-09 with the classifier. Until then `definitiveRefusal`
+   * inspected nothing and EVERY rpc error retired the key, so a statement
+   * timeout after a committed transfer sent the operator back to a fresh key
+   * and a second movement of union money.
+   */
+  it('keeps the operation id when an rpc error does not say what happened', async () => {
+    let sendAttempt = 0;
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_send_to_member') {
+        sendAttempt += 1;
+        return sendAttempt === 1
+          ? Promise.resolve({
+              data: null,
+              error: { message: 'canceling statement due to statement timeout', code: '57014' },
+            })
+          : Promise.resolve({ data: { success: true }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} />);
+    await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+    fireEvent.click(screen.getByText('Fish'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+
+    // The operator is told the outcome is unknown, not that it was refused.
+    expect((await screen.findByRole('alert')).textContent).toMatch(/could not be confirmed/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+    await screen.findByRole('status');
+
+    const sends = rpc.mock.calls.filter(([fn]) => fn === 'fn_union_send_to_member');
+    expect((sends[1][1] as { p_op_id: string }).p_op_id).toBe(
+      (sends[0][1] as { p_op_id: string }).p_op_id
+    );
+  });
+
+  it('retires the key when the rpc error carries a terminal refusal code', async () => {
+    let sendAttempt = 0;
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_send_to_member') {
+        sendAttempt += 1;
+        return sendAttempt === 1
+          ? Promise.resolve({
+              data: null,
+              error: { message: 'Insufficient wallet balance.', code: 'P0001' },
+            })
+          : Promise.resolve({ data: { success: true }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} />);
+    await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+    fireEvent.click(screen.getByText('Fish'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/insufficient wallet balance/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+    await screen.findByRole('status');
+
+    const sends = rpc.mock.calls.filter(([fn]) => fn === 'fn_union_send_to_member');
+    expect((sends[1][1] as { p_op_id: string }).p_op_id).not.toBe(
+      (sends[0][1] as { p_op_id: string }).p_op_id
+    );
+  });
+
   it('reuses the member-send operation id after a lost response and a remount', async () => {
     let sendAttempt = 0;
     rpc.mockImplementation((fn: string) => {

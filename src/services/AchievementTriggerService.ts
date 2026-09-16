@@ -125,13 +125,21 @@ class AchievementTriggerServiceClass {
         description: ach.description,
       });
       // MilestoneToast is the app-wide surface; it reads title/description/icon.
+      //
+      // NO `reward` FIELD (2026-09-09). This spread `{ reward: { chips } }`
+      // whenever the achievement carried one, so the toast announced a credit
+      // that `AchievementService.awardRewards` could not make: its door,
+      // `add_to_promo_wallet`, has raised unconditionally since 2026-09-03 and
+      // the unlock fires once ever, so the chips were lost the instant they
+      // were advertised. Nothing is announced before a credit lands. If a
+      // funded door is ever added, the emit carries what that door actually
+      // paid - never what the catalog hoped it would.
       masterBus.emit('MILESTONE_UNLOCKED', {
         milestoneId: ach.id,
         userId,
         milestoneName: ach.name,
         description: ach.description,
         icon: ach.icon,
-        ...(ach.chipReward ? { reward: { chips: ach.chipReward } } : {}),
       });
       /* THE PUSH IS RAISED SERVER-SIDE NOW (2026-08-30, issue #1498).
        *
@@ -242,8 +250,10 @@ class AchievementTriggerServiceClass {
    * serially, EVERY time Supabase raised an auth event. Supabase raises one
    * on INITIAL_SESSION, on SIGNED_IN and on TOKEN_REFRESHED, so a player
    * reloading the page advanced "Log in 7 days in a row" seven times in an
-   * afternoon and collected its reward. `streak_30` pays 100 chips and
-   * `streak_100` pays 500, through `add_to_promo_wallet`. Production showed
+   * afternoon and collected its reward. `streak_30` then carried 100 chips and
+   * `streak_100` 500, through `add_to_promo_wallet` - CORRECTED 2026-09-09:
+   * both are 0 now and that door raises, see `AchievementService.awardRewards`;
+   * the streak fix below stands on its own. Production showed
    * the tell plainly: 3 of 5 `streak_7` unlocks and 1 of 2 `streak_30`
    * unlocks carried `unlocked_at` on the SAME DAY the row was created, which
    * a consecutive-day achievement cannot legitimately do.

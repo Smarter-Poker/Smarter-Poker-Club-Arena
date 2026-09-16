@@ -33,7 +33,9 @@ async function callUnionApi<T = Record<string, unknown>>(
     data: { session },
   } = await supabase.auth.getSession();
   const token = session?.access_token;
-  if (!token) throw new Error('Not authenticated');
+  // Nothing has been sent, so the outcome is known: definitive, and callers
+  // may retire the idempotency key they were holding for this attempt.
+  if (!token) throw Object.assign(new Error('Not authenticated'), { definitive: true });
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,

@@ -157,11 +157,27 @@ describe('AchievementService', () => {
       expect(achievementService.getById('nonexistent')).toBeUndefined();
     });
 
-    it('should find royal_flush with chipReward', () => {
+    /**
+     * UPDATED 2026-09-09. This pinned `chipReward` at 500, which is the figure
+     * the catalog advertised and the platform could not pay: the door
+     * `awardRewards` used, `add_to_promo_wallet`, has raised unconditionally
+     * since 2026-09-03 and an achievement unlocks once ever, so the credit was
+     * lost the moment the toast announced it. No achievement carries a chip
+     * reward now (Dan, 2026-09-05: "NOTHING EVER 'EARNS CHIPS' ONLY EVER
+     * DIAMONDS"), so the pin moves to that: royal_flush still exists, is still
+     * legendary, and promises nobody any money.
+     */
+    it('finds royal_flush, and it promises no chips', () => {
       const a = achievementService.getById('royal_flush');
       expect(a).toBeDefined();
-      expect(a!.chipReward).toBe(500);
+      expect(a!.chipReward).toBe(0);
       expect(a!.rarity).toBe('legendary');
+    });
+
+    it('no achievement in the catalog advertises a chip reward', () => {
+      for (const a of ACHIEVEMENTS) {
+        expect(a.chipReward ?? 0, `"${a.id}" still advertises chips`).toBe(0);
+      }
     });
   });
 });

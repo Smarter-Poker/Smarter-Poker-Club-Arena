@@ -123,6 +123,23 @@ describe('verified original seat move outcomes', () => {
     });
     await expect(run()).rejects.toThrow();
   });
+  it.each([undefined, null, 'false', 0])(
+    'rejects a swap hold with unconfirmed status %#',
+    async (ok) => {
+      mock.rpc.mockResolvedValue({
+        data: {
+          ...receipt,
+          ok,
+          reason: 'waiting_partner',
+          held: true,
+          partner_id: destinationOccupancy,
+        },
+        error: null,
+      });
+      await expect(run()).rejects.toThrow('Seat swap hold does not prove the original occupancy');
+      expect(mock.rpc).toHaveBeenCalledTimes(1);
+    }
+  );
   it('does not convert unavailable or malformed enumeration to an empty table', async () => {
     mock.rpc.mockResolvedValue({ data: null, error: { message: 'read failed' } });
     await expect(pendingSeatMoves(table)).rejects.toThrow('read failed');

@@ -3,7 +3,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -623,6 +626,94 @@ class AttachedAuthReceiptTests(unittest.TestCase):
                                      (ROLE_ALIGNMENT, dict(PROVIDER_SEMANTICS, catalog_sha256='a'*64))]:
             with self.assertRaises(RuntimeError):
                 self.check(json.dumps(POST_ALIGNMENT_AUTH), alignment, providers)
+
+class WorkflowEvidenceTests(unittest.TestCase):
+    def emission_step(self):
+        workflow = (ROOT / '.github/workflows/component-fixture-native-smoke.yml').read_text()
+        name = '      - name: Print retained native diagnostics before artifact upload\n'
+        self.assertIn(name, workflow)
+        step = workflow.split(name, 1)[1].split('      - name:', 1)[0]
+        self.assertIn('        if: always()\n', step)
+        self.assertLess(workflow.index(name), workflow.index('      - name: Preserve sanitized native smoke'))
+        self.assertIn('echo "native_verified=true" >> "$GITHUB_OUTPUT"', workflow)
+        return textwrap.dedent(step.split('        run: |\n', 1)[1])
+
+    def emit(self, root):
+        return subprocess.run(['bash', '-e', '-c', self.emission_step()],
+            env={'PATH': str(Path(sys.executable).parent) + os.pathsep + os.environ['PATH'],
+                 'RUNNER_TEMP': str(root), 'GITHUB_OUTPUT': str(root / 'github-output')},
+            text=True, capture_output=True, timeout=10)
+
+    def test_failed_receipt_and_build_log_survive_unavailable_upload(self):
+        code, receipt, _ = RunnerTests().exercise('native-stage')
+        self.assertEqual(code, 1)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'fixture-smoke-evidence'
+            evidence.mkdir()
+            (evidence / 'native-smoke-receipt.json').write_text(json.dumps(receipt))
+            script = root / m.PREFIX / 'build-image.sh'
+            script.parent.mkdir(parents=True)
+            script.write_text("printf 'Reviewed build diagnostic\\n::error::literal build text\\n' >&2\nexit 7\n")
+            with self.assertRaises(RuntimeError):
+                m.command(['bash', m.PREFIX + 'build-image.sh'], root,
+                    {'PATH': os.environ['PATH'], 'FIXTURE_SMOKE_BUILD_LOG': str(evidence / 'native-build.log')})
+            (evidence / 'native-service-output.log').write_text('PRIVATE RUNTIME TOKEN')
+            (evidence / 'native-service-preimage.json').write_text('PRIVATE UNSELECTED CONTENT')
+            result = self.emit(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('"status": "failed"', result.stdout)
+            self.assertIn('"native_command_exit_code": 7', result.stdout)
+            self.assertIn('Reviewed build diagnostic', result.stdout)
+            self.assertNotIn('PRIVATE', result.stdout + result.stderr)
+            self.assertFalse((root / 'github-output').exists())
+            marker = result.stdout.split('::stop-commands::', 1)[1].splitlines()[0]
+            self.assertIn('\n::' + marker + '::\n', result.stdout)
+            self.assertLess(result.stdout.index('::stop-commands::'), result.stdout.index('::error::literal'))
+            # Upload is unavailable; the preceding actual step already retained
+            # diagnostics in its stdout without changing the original failure.
+            uploader = subprocess.run(['bash', '-c', 'exit 41'])
+            self.assertEqual(uploader.returncode, 41)
+            self.assertIn('"status": "failed"', result.stdout)
+
+    def test_missing_receipt_remains_explicit_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = self.emit(Path(temporary))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('native-smoke-receipt.json: unavailable', result.stdout)
+            self.assertNotIn('"status": "passed"', result.stdout)
+
+    def test_symlink_and_oversize_are_not_printed(self):
+        for case in ('symlink', 'oversize'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                evidence = root / 'fixture-smoke-evidence'
+                evidence.mkdir()
+                receipt = evidence / 'native-smoke-receipt.json'
+                if case == 'symlink':
+                    private = root / 'private-runtime'
+                    private.write_text('PRIVATE RUNTIME TOKEN')
+                    receipt.symlink_to(private)
+                else:
+                    receipt.write_text('PRIVATE' + 'x' * (1024 * 1024))
+                result = self.emit(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('PRIVATE', result.stdout + result.stderr)
+
+    def test_unrecognized_build_log_is_not_printed(self):
+        _, receipt, _ = RunnerTests().exercise('native-stage')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'fixture-smoke-evidence'
+            evidence.mkdir()
+            (evidence / 'native-smoke-receipt.json').write_text(json.dumps(receipt))
+            (evidence / 'native-build.log').write_text('PRIVATE RUNTIME TOKEN')
+            result = self.emit(root)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('"status": "failed"', result.stdout)
+            self.assertIn('native-build.log: refused', result.stdout)
+            self.assertNotIn('PRIVATE', result.stdout + result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

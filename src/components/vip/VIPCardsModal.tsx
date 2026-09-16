@@ -16,17 +16,14 @@ import {
   isPurchasable,
   loadFeaturePricing,
 } from '../../services/VIPService';
-import { useVIPStatus } from '../../hooks/useVIP';
-import { openInBrowser } from '../../lib/openExternal';
+import type { VipStatus } from '../../utils/vipStatus';
 import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
 import './VIPCardsModal.css';
-
-/** Where a membership is bought. Opened in a new tab, never a redirect away from a table. */
-const MEMBERSHIP_URL = 'https://smarter.poker/subscribe';
 
 interface VIPInfoModalProps {
   isOpen: boolean;
   onClose: () => void;
+  vipStatus: VipStatus;
 }
 
 /**
@@ -44,31 +41,57 @@ interface VIPInfoModalProps {
 const FEATURES = [
   {
     key: 'rabbit_hunt',
-    label: 'Rabbit Hunting',
-    vipValue: `${VIP_MONTHLY_ALLOWANCES.rabbitHunts} / mo`,
+    label: 'Rabbit Hunts',
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.rabbitHunts} / Mo`,
+    lifetimeValue: 'Unlimited',
   },
-  { key: 'show_stack_bb', label: 'Show Stack In BBs', vipFree: true },
-  { key: 'offline_protection', label: 'Offline Protection', vipFree: true },
-  { key: 'auto_time_bank', label: 'Auto Time Bank', vipFree: true },
+  {
+    key: 'show_stack_bb',
+    label: 'Show Stack In BBs',
+    vipFree: true,
+    lifetimeValue: 'Included',
+  },
+  {
+    key: 'offline_protection',
+    label: 'Offline Protection',
+    vipFree: true,
+    lifetimeValue: 'Included',
+  },
+  {
+    key: 'auto_time_bank',
+    label: 'Auto Time Bank',
+    vipFree: true,
+    lifetimeValue: 'Included',
+  },
   {
     key: 'time_bank_seconds',
     label: 'Free Time Bank',
-    vipValue: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s / mo`,
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s / Mo`,
+    lifetimeValue: 'Unlimited Standard 20-Second Activations',
   },
   {
     key: 'emoji_pack',
     label: 'Free Emojis',
-    vipValue: `${VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()} / mo`,
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()} / Mo`,
+    lifetimeValue: 'All Digital Packs',
   },
   {
     key: 'tag_pack',
     label: 'Player Tags',
-    vipValue: `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} / mo`,
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} / Mo`,
+    lifetimeValue: 'All Digital Packs',
+  },
+  {
+    key: 'throwable',
+    label: 'Throwables',
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.throwables.toLocaleString()} / Mo`,
+    lifetimeValue: 'Unlimited',
   },
 ] as const;
 
-export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
-  const { isVIP, isLoading } = useVIPStatus();
+export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps) {
+  const isVIP = vipStatus !== 'none';
+  const isLifetime = vipStatus === 'lifetime';
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   /**
@@ -111,8 +134,8 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
 
   if (!isOpen) return null;
 
-  const pill = isLoading ? 'Checking' : isVIP ? 'Active' : 'Pay Per Use';
-  const pillInk: ConsoleInk = isLoading ? 'muted' : isVIP ? 'green' : 'blue';
+  const pill = isLifetime ? 'Lifetime' : isVIP ? 'Active' : 'Pay Per Use';
+  const pillInk: ConsoleInk = isLifetime ? 'gold' : 'blue';
 
   /* ONE CONSOLE, ONE CREST (#ClubArenaConsole). The chassis is the spade
      master wearing the VIP crest; every word on it is printed on the black
@@ -132,34 +155,24 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
         <SpadeConsole
           crest="vip"
           eyebrow="Club Arena Membership"
-          title="VIP"
+          title={isLifetime ? 'Lifetime VIP' : 'VIP'}
           titleId="vip-modal-title"
           pill={pill}
           pillInk={pillInk}
-          foot={isVIP ? 'foot' : 'plates'}
-          plates={
-            isVIP
-              ? undefined
-              : {
-                  secondary: { label: 'Close', ink: 'silver', onClick: onClose },
-                  primary: {
-                    label: 'Join Membership',
-                    ink: 'white',
-                    onClick: () => openInBrowser(MEMBERSHIP_URL),
-                  },
-                }
-          }
+          foot="foot"
           className="vipc__console"
         >
           {/* Status */}
-          {isLoading ? (
-            <p className="sc-copy sc-copy--center vipc__status" role="status">
-              Checking Status
-            </p>
-          ) : isVIP ? (
+          {isVIP ? (
             <div className="vipc__status">
-              <p className="vipc__status-line sc-ink--green">Membership Active</p>
-              <p className="sc-copy sc-copy--center">Included With Club Arena Membership</p>
+              <p className={`vipc__status-line sc-ink--${isLifetime ? 'gold' : 'blue'}`}>
+                {isLifetime ? 'Lifetime Membership Active' : 'Membership Active'}
+              </p>
+              <p className="sc-copy sc-copy--center">
+                {isLifetime
+                  ? 'Unlimited Digital Club Arena Benefits Active'
+                  : 'Included With Club Arena Membership'}
+              </p>
             </div>
           ) : (
             <div className="vipc__status">
@@ -185,6 +198,7 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
               const pricing = FEATURE_PRICING[feature.key as keyof typeof FEATURE_PRICING];
               const vipFree = 'vipFree' in feature && feature.vipFree;
               const vipValue = 'vipValue' in feature ? feature.vipValue : null;
+              const lifetimeValue = feature.lifetimeValue;
               /**
                * A price is a promise. Print one only for something the server
                * has a price row for; otherwise say so. `auto_time_bank` was
@@ -208,10 +222,10 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                     {feature.label}
                   </span>
                   <span
-                    className={`vipc__value vipc__cell--end ${vipFree ? 'sc-ink--green' : 'sc-ink--blue'}`}
+                    className={`vipc__value vipc__cell--end ${isLifetime ? 'sc-ink--gold' : 'sc-ink--blue'}`}
                     role="cell"
                   >
-                    {vipFree ? 'Free' : vipValue || ''}
+                    {isLifetime ? lifetimeValue : vipFree ? 'Free' : vipValue || ''}
                   </span>
                   <span
                     className="vipc__value vipc__cell--end sc-ink--muted"
@@ -222,20 +236,40 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                       ? '-'
                       : !sellable
                         ? 'Not For Sale'
-                        : `${pricing.cost.toLocaleString()}/${pricing.usageType.replace('per_', '').replace('_', ' ')}`}
+                        : `${pricing.cost.toLocaleString()} / ${pricing.usageType
+                            .split('_')
+                            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                            .join(' ')}`}
                   </span>
                 </div>
               );
             })}
           </div>
 
-          {isVIP && (
-            <div className="vipc__actions">
-              <button type="button" className="vipc-word sc-ink--white" onClick={onClose}>
-                Close
-              </button>
-            </div>
+          {isLifetime && (
+            <section className="vipc__collection" aria-label="Lifetime Digital Collection">
+              <strong className="sc-label sc-ink--gold">Lifetime Digital Collection</strong>
+              <span className="sc-copy">All Cataloged Table Skins And Backgrounds</span>
+              <span className="sc-copy">All Cataloged Card Backs And Dealer Buttons</span>
+              <span className="sc-copy">All VIP Avatars, Frames, And Auras</span>
+            </section>
           )}
+
+          <div className="vipc__actions">
+            <button
+              type="button"
+              className="vipc-word sc-ink--silver"
+              onClick={onClose}
+              aria-label="Close VIP Benefits"
+            >
+              Close
+            </button>
+            {!isVIP && (
+              <a href="/hub/vip-membership" className="vipc-word sc-ink--white">
+                Join Club Arena For A Membership
+              </a>
+            )}
+          </div>
         </SpadeConsole>
       </div>
     </div>

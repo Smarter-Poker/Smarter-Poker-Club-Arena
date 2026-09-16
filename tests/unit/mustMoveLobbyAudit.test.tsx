@@ -549,19 +549,27 @@ describe('the lobby on a read that fails', () => {
   });
 
   it('keeps the last read on screen under the notice for a passing failure', async () => {
-    mocks.rpc.mockResolvedValueOnce({ data: lobby(), error: null });
-    const { rerender } = render(
-      <MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
-    );
-    await screen.findByText('NLH 1/2 Madness');
-    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'PGRST002: schema cache' } });
-    rerender(
-      <MustMoveLobbyModal isOpen={false} gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
-    );
-    rerender(<MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />);
-    await screen.findByText(LOBBY_READ_FALLBACK);
-    expect(screen.getByText('NLH 1/2 Madness')).toBeTruthy();
-    expect(screen.queryByText(/PGRST002/)).toBeNull();
+    vi.useFakeTimers();
+    try {
+      mocks.rpc.mockResolvedValueOnce({ data: lobby(), error: null });
+      const { unmount } = render(
+        <MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
+      );
+      await flush();
+      expect(screen.getByText('NLH 1/2 Madness')).toBeTruthy();
+      mocks.rpc.mockResolvedValue({ data: null, error: { message: 'PGRST002: schema cache' } });
+      // A failed poll retains this opening; close/reopen deliberately starts a new one.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MUST_MOVE_LOBBY_POLL_MS);
+      });
+      expect(mocks.rpc).toHaveBeenCalledTimes(2);
+      expect(screen.getByText(LOBBY_READ_FALLBACK)).toBeTruthy();
+      expect(screen.getByText('NLH 1/2 Madness')).toBeTruthy();
+      expect(screen.queryByText(/PGRST002/)).toBeNull();
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

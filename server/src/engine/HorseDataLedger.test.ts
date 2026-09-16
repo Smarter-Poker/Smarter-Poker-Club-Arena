@@ -65,6 +65,9 @@ const BRAIN_FILES = [
   // V50: live decisions and their deep replay run in the sole worker. Its
   // injected noteFeature is BrainTelemetry.noteFire in production.
   'engine/horseDecision/workerRuntime.ts',
+  // Phase 15 final outcomes are emitted by the shared private witness owner.
+  'engine/HorseExecutionWitness.ts',
+  'services/BrainTelemetryFlush.ts',
   // V48: the voluntary straddle is decided at the deal, which is the only
   // place that knows the hand number and the seat order.
   'engine/ServerTableEngineDealing.ts',

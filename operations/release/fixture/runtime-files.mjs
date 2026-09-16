@@ -96,7 +96,58 @@ export function nativeChildFailure(children) {
 
 // Native smoke diagnostics must not serialize database messages, queries, or
 // service output: bootstrap queries contain fixture-only credentials.
-export function nativeFailureDiagnostic(stage, error) {
+const postgrestFetchFailures = new Set([
+  'timeout', 'aborted', 'connection-refused', 'connection-reset', 'dns', 'socket', 'other',
+]);
+function postgrestFetchFailure(error) {
+  if (error?.name === 'TimeoutError') return 'timeout';
+  if (error?.name === 'AbortError') return 'aborted';
+  const code = error?.cause?.code;
+  if (code === 'ECONNREFUSED') return 'connection-refused';
+  if (code === 'ECONNRESET') return 'connection-reset';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'dns';
+  if (code === 'UND_ERR_SOCKET') return 'socket';
+  if (new Set(['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']).has(code)) return 'timeout';
+  return 'other';
+}
+function postgrestCode(value) {
+  return typeof value === 'string' &&
+    ((value.length === 8 && /^PGRST[0-9]{3}$/.test(value)) ||
+     (value.length === 5 && /^[0-9A-Z]{5}$/.test(value)));
+}
+
+// Read at most 4 KiB under the probe's existing one-second abort signal.
+// Only a validated code survives; body, headers and error messages never do.
+export async function postgrestReadinessDiagnostic(response, error, signal) {
+  const failure = (caught) => postgrestFetchFailure(signal?.aborted ? signal.reason : caught);
+  if (!response) return { postgrest_fetch_failure: failure(error) };
+  const record = { postgrest_http_status: response.status };
+  if (response.ok || !response.body) return record;
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 4096) return record;
+      chunks.push(value);
+    }
+  } catch (caught) {
+    record.postgrest_fetch_failure = failure(caught);
+    return record;
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  try {
+    const body = JSON.parse(Buffer.concat(chunks, size).toString('utf8'));
+    if (postgrestCode(body?.code)) record.postgrest_code = body.code;
+  } catch { /* Malformed/private bodies are not diagnostics. */ }
+  return record;
+}
+
+export function nativeFailureDiagnostic(stage, error, postgrestReadiness) {
   const names = new Set([
     'Error',
     'AssertionError',
@@ -108,6 +159,16 @@ export function nativeFailureDiagnostic(stage, error) {
     'error',
   ]);
   const record = { status: 'failed', stage, error: names.has(error?.name) ? error.name : 'Error' };
+  if (stage === 'postgrest-server-ready') {
+    const status = postgrestReadiness?.postgrest_http_status;
+    if (Number.isInteger(status) && status >= 100 && status <= 599) {
+      record.postgrest_http_status = status;
+      if ((status < 200 || status >= 300) && postgrestCode(postgrestReadiness.postgrest_code))
+        record.postgrest_code = postgrestReadiness.postgrest_code;
+    }
+    if (postgrestFetchFailures.has(postgrestReadiness?.postgrest_fetch_failure))
+      record.postgrest_fetch_failure = postgrestReadiness.postgrest_fetch_failure;
+  }
   if (new Set(['postgres', 'auth', 'postgrest', 'realtime']).has(error?.native_service))
     record.native_service = error.native_service;
   if (

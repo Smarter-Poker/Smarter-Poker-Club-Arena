@@ -18,7 +18,7 @@
   --market-brass: #d6ad5b;
   --market-ivory: #f3ead8;
   --market-red: #d6454f;
-  --market-green: #49c879;
+  --market-positive: #36b9ff;
   --market-radius: 6px;
   position: relative;
   z-index: 1;
@@ -96,20 +96,6 @@
     inset 3px 0 var(--market-blue),
     inset 0 1px rgba(255, 255, 255, 0.08),
     0 18px 50px rgba(0, 0, 0, 0.42);
-}
-
-.header::after {
-  content: '♠  ♥  ♦  ♣';
-  position: absolute;
-  right: -14px;
-  bottom: -20px;
-  color: rgba(214, 173, 91, 0.075);
-  font:
-    900 70px/1 Georgia,
-    serif;
-  letter-spacing: -0.15em;
-  transform: rotate(-5deg);
-  pointer-events: none;
 }
 
 .headerLeft {
@@ -194,7 +180,7 @@
 .vipPill {
   color: #1d1406;
   border-color: #efd58d;
-  background: linear-gradient(145deg, #f1d58e, #ffa500);
+  background: linear-gradient(145deg, #f1d58e, #b9852f);
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.45);
 }
 
@@ -322,7 +308,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #aee7c2;
+  color: #bfe8fb;
   font:
     800 9px/1 'JetBrains Mono',
     ui-monospace,
@@ -335,8 +321,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--market-green);
-  box-shadow: 0 0 9px rgba(73, 200, 121, 0.8);
+  background: var(--market-blue);
+  box-shadow: 0 0 9px rgba(54, 185, 255, 0.8);
 }
 
 /* Discovery controls. */
@@ -383,30 +369,6 @@
 .searchWrap {
   position: relative;
   min-width: 0;
-}
-
-.searchIcon {
-  position: absolute;
-  z-index: 2;
-  top: 50%;
-  left: 14px;
-  width: 14px;
-  height: 14px;
-  border: 2px solid #6f818e;
-  border-radius: 50%;
-  transform: translateY(-58%);
-  pointer-events: none;
-}
-
-.searchIcon::after {
-  content: '';
-  position: absolute;
-  right: -5px;
-  bottom: -3px;
-  width: 6px;
-  height: 2px;
-  background: #6f818e;
-  transform: rotate(45deg);
 }
 
 .searchInput,
@@ -495,8 +457,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--market-line);
-  border-radius: var(--market-radius);
+  border: 10px solid transparent;
+  border-image: url('/assets/club-buttons/club-utility-shell.webp') 130 / 10px stretch;
+  border-radius: 0;
   background: linear-gradient(150deg, var(--market-panel-raised), #090d11 72%);
   box-shadow:
     inset 0 1px rgba(255, 255, 255, 0.055),
@@ -661,10 +624,10 @@
   align-self: flex-start;
   margin-top: 11px;
   padding: 6px 8px;
-  border: 1px solid rgba(73, 200, 121, 0.3);
+  border: 1px solid rgba(54, 185, 255, 0.3);
   border-radius: 2px;
-  color: #a7e8bf;
-  background: rgba(73, 200, 121, 0.08);
+  color: #bfe8fb;
+  background: rgba(54, 185, 255, 0.09);
 }
 
 .itemFooter {
@@ -736,12 +699,13 @@
 
 .btnPrimary,
 .pkgBuy {
-  border: 1px solid #8bdcff;
-  color: #061019;
-  background: linear-gradient(180deg, #6bd0ff, #2197cf);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.52),
-    0 0 16px rgba(54, 185, 255, 0.14);
+  border: 0;
+  border-radius: 0;
+  color: #f4fbff;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') center / 100% 100%
+    no-repeat;
+  box-shadow: none;
+  text-shadow: 0 2px 3px #000;
 }
 
 .btnGhost,
@@ -749,9 +713,12 @@
 .emptyButton,
 .historyToggle,
 .rangeBtn {
-  border: 1px solid var(--market-line-strong);
-  color: #b8c4cb;
-  background: linear-gradient(180deg, #18222b, #0b1015);
+  border: 0;
+  border-radius: 0;
+  color: #d9e4ea;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
+    100% no-repeat;
+  text-shadow: 0 2px 3px #000;
 }
 
 .btnGhostWide,
@@ -760,9 +727,9 @@
 }
 
 .btnOwned {
-  border: 1px solid rgba(73, 200, 121, 0.34);
-  color: #a7e8bf;
-  background: rgba(73, 200, 121, 0.08);
+  border: 1px solid rgba(54, 185, 255, 0.34);
+  color: #bfe8fb;
+  background: rgba(54, 185, 255, 0.09);
   cursor: default;
 }
 
@@ -908,7 +875,7 @@
   text-transform: uppercase;
 }
 .priceValueRed,
-.priceValueGreen {
+.priceValueBalance {
   display: block;
   overflow-wrap: anywhere;
   font:
@@ -919,8 +886,8 @@
 .priceValueRed {
   color: #ffd0d3;
 }
-.priceValueGreen {
-  color: #a7e8bf;
+.priceValueBalance {
+  color: #bfe8fb;
 }
 
 .insufficientFunds,
@@ -977,8 +944,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--market-line);
-  border-radius: var(--market-radius);
+  border: 10px solid transparent;
+  border-image: url('/assets/club-buttons/club-utility-shell.webp') 130 / 10px stretch;
+  border-radius: 0;
   background: linear-gradient(150deg, var(--market-panel-raised), #090d11 72%);
   box-shadow:
     inset 0 1px rgba(255, 255, 255, 0.055),
@@ -1004,7 +972,7 @@
   margin: -16px 0 13px;
   padding: 6px 9px;
   color: #1d1406;
-  background: linear-gradient(145deg, #efd38b, #ffa500);
+  background: linear-gradient(145deg, #efd38b, #b9852f);
   font:
     800 9px/1 'JetBrains Mono',
     ui-monospace,
@@ -1033,6 +1001,12 @@
   width: 100%;
   aspect-ratio: 16 / 7;
   margin: 10px 0 14px;
+}
+.planArtImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .pkgArt {
   width: 100%;
@@ -1097,7 +1071,7 @@
   content: '✓';
   position: absolute;
   left: 0;
-  color: var(--market-green);
+  color: var(--market-blue);
   font-weight: 900;
 }
 .planCard .btnPrimary,
@@ -1127,7 +1101,7 @@
 
 .vipStatusActive,
 .entitlementStrip {
-  border-left-color: var(--market-green);
+  border-left-color: var(--market-blue);
 }
 .infoNote,
 .crossSell {
@@ -1136,10 +1110,10 @@
 .vipStatusBadge,
 .entitlementChip {
   padding: 5px 8px;
-  border: 1px solid rgba(73, 200, 121, 0.34);
+  border: 1px solid rgba(54, 185, 255, 0.34);
   border-radius: 2px;
-  color: #a8e8bf;
-  background: rgba(73, 200, 121, 0.08);
+  color: #bfe8fb;
+  background: rgba(54, 185, 255, 0.09);
   font:
     800 9px/1 'JetBrains Mono',
     ui-monospace,
@@ -1199,6 +1173,35 @@
   border-radius: 3px;
   background: #05080b;
 }
+
+.dataItemName {
+  color: #e4edf2;
+  font-weight: 700;
+}
+
+.dataValuePrice {
+  color: var(--market-blue);
+  font-weight: 800;
+}
+
+.dataValueMuted {
+  color: #91a0aa;
+  font-size: 12px;
+}
+
+.inventoryStatus {
+  color: #bfe8fb;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inventoryStatusActive {
+  color: var(--market-blue);
+}
+
+.inventoryStatusMuted {
+  color: #91a0aa;
+}
 .historyBlock {
   margin-top: 16px;
 }
@@ -1252,9 +1255,9 @@
   gap: 6px;
 }
 .btnActiveToggle {
-  border: 1px solid rgba(73, 200, 121, 0.34);
-  color: #a8e8bf;
-  background: rgba(73, 200, 121, 0.08);
+  border: 1px solid rgba(54, 185, 255, 0.34);
+  color: #bfe8fb;
+  background: rgba(54, 185, 255, 0.09);
 }
 .btnInactiveToggle {
   border: 1px solid var(--market-line-strong);
@@ -1393,7 +1396,7 @@
 }
 .balanceBadge,
 .successFlash {
-  color: #a8e8bf;
+  color: #bfe8fb;
 }
 
 /* Light mode is brushed casino hardware, never a flat white admin theme. */
@@ -1411,7 +1414,7 @@
   --market-blue-deep: #045b84;
   --market-brass: #d6ad52;
   --market-red: #a62933;
-  --market-green: #197d46;
+  --market-positive: #087caf;
   color: var(--market-copy);
 }
 
@@ -1498,9 +1501,9 @@
   color: #8f2630;
 }
 
-:global([data-theme='light']) .priceValueGreen,
+:global([data-theme='light']) .priceValueBalance,
 :global([data-theme='light']) .deliveryStatus {
-  color: #176c3d;
+  color: #087caf;
 }
 :global([data-theme='light']) .itemImageArea,
 :global([data-theme='light']) .purchaseImage,
@@ -1512,6 +1515,71 @@
 :global([data-theme='light']) .dataTable th {
   color: #4c616e;
   background: #cbd5db;
+}
+
+/* On phones each ledger row becomes its own readable, engraved record. */
+@media (max-width: 519px) {
+  .tableScroll {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .dataTable,
+  .dataTable tbody,
+  .dataTable tr,
+  .dataTable td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dataTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .dataTable tr {
+    margin-bottom: 14px;
+    border: 8px solid transparent;
+    border-image: url('/assets/club-buttons/club-utility-shell.webp') 130 / 8px stretch;
+    background: #05080b;
+  }
+
+  .dataTable td {
+    display: grid;
+    grid-template-columns: minmax(82px, 0.34fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 10px 8px;
+    border-top: 1px solid rgba(198, 211, 221, 0.11);
+    overflow-wrap: anywhere;
+  }
+
+  .dataTable td:first-child {
+    border-top: 0;
+  }
+
+  .dataTable td::before {
+    content: attr(data-label);
+    color: #91a0aa;
+    font:
+      700 10px/1.2 'Roboto Condensed',
+      Inter,
+      sans-serif;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .rowWithArt {
+    min-width: 0;
+  }
 }
 
 /* Larger phones and tablets. */

@@ -8,6 +8,7 @@ import {
   settleHorseExecutionWitness,
 } from './HorseExecutionWitness.js';
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
+import { horsePolicyOwnership } from './HorsePolicyRegistry.js';
 
 const input = {
   decisionKey: `phase5-v1:${'1'.repeat(64)}`,
@@ -38,6 +39,14 @@ beforeEach(() => {
 });
 
 describe('private execution witness', () => {
+  it('copies immutable policy ownership independently of the returned decision', () => {
+    const decision: HorseDecision = { action: 'check', thinkTime: 0 };
+    decision.policyOwnership = horsePolicyOwnership('plo4', decision, false);
+    const witness = make(decision);
+    decision.policyOwnership.outcome = 'computed';
+    expect(witness.policyOwnership?.outcome).toBe('disabled');
+    expect(Object.isFrozen(witness.policyOwnership)).toBe(true);
+  });
   it('does not infer execution from a boolean without the controller record', () => {
     const witness = make();
     settleHorseExecutionWitness(witness, { applied: true, acceptedActions: [] });
@@ -137,6 +146,19 @@ describe('private execution witness', () => {
     });
     expect(witness.executionStatus).toBe('fallback');
     expect(witness.policyGraph).toBeNull();
+  });
+
+  it('counts an accepted brain-exception decision as fallback instead of normal policy intent', () => {
+    const witness = make({ action: 'fold', thinkTime: 1500, policyFallback: 'brain_exception' });
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: accepted('fold', null),
+    });
+    expect(witness).toMatchObject({
+      executionStatus: 'fallback',
+      policyFallback: 'brain_exception',
+      executedAction: 'fold',
+    });
   });
 
   it('leaves no executed action when every attempted action was rejected', () => {

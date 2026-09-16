@@ -138,6 +138,22 @@ def native_failures(output):
         if ('auth_http_status' in auth and (type(auth['auth_http_status']) is not int
                 or not 100 <= auth['auth_http_status'] <= 599)):
             continue
+        postgrest = {key: row.pop(key) for key in ('postgrest_http_status', 'postgrest_code',
+                     'postgrest_fetch_failure') if key in row}
+        if postgrest and (row['stage'] != 'postgrest-server-ready'
+                or ('postgrest_http_status' in postgrest and
+                    (type(postgrest['postgrest_http_status']) is not int
+                     or not 100 <= postgrest['postgrest_http_status'] <= 599))
+                or ('postgrest_code' in postgrest and
+                    ('postgrest_http_status' not in postgrest
+                     or 200 <= postgrest['postgrest_http_status'] < 300
+                     or not isinstance(postgrest['postgrest_code'], str)
+                     or not re.fullmatch(r'(?:PGRST[0-9]{3}|[0-9A-Z]{5})', postgrest['postgrest_code'])))
+                or ('postgrest_fetch_failure' in postgrest and
+                    (not isinstance(postgrest['postgrest_fetch_failure'], str)
+                     or postgrest['postgrest_fetch_failure'] not in
+                     {'timeout', 'aborted', 'connection-refused', 'connection-reset', 'dns', 'socket', 'other'}))):
+            continue
         if (set(row) == {'status', 'stage', 'error'} and isinstance(row['error'], str)
                 and row['error'] in NATIVE_ERROR_NAMES):
             record = {'stage': row['stage'], 'category': row['error']}
@@ -180,6 +196,7 @@ def native_failures(output):
         if native_line is not None:
             record['native_line'] = native_line
         record.update(auth)
+        record.update(postgrest)
         record.update(listener)
         record.update(service)
         record.update(realtime)

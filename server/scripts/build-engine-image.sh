@@ -9,16 +9,18 @@ set +m
 REPO_DIR="${1:-}"
 TARGET_SHA="${2:-}"
 IMAGE_REF="${3:-}"
+MODE="${4:-build}"
+[ "$MODE" = build ] || [ "$MODE" = --require-prebuilt ] || { echo "invalid image mode" >&2; exit 1; }
 BUILD_CONTEXT_ROOT="${ENGINE_BUILD_CONTEXT_ROOT:-/var/lib/club-arena/engine-build-contexts}"
 BUILD_LOCK="${ENGINE_BUILD_LOCK_FILE:-/var/lock/club-arena-engine-build.lock}"
 BUILD_CONTRACT='clean-server-archive-v1'
 # The default Docker builder shares the daemon's unbounded memory budget. On
 # 2026-09-12 a concurrent TypeScript build outlived a global OOM kill of the
 # production engine. Every uncached build now runs inside this owned cgroup.
-BUILDER='club-arena-engine-bounded-v2'
+BUILDER='club-arena-engine-bounded-v3'
 BUILDER_CONTAINER="buildx_buildkit_${BUILDER}0"
 BUILDKIT_IMAGE='moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
-BUILD_MEMORY_BYTES=939524096
+BUILD_MEMORY_BYTES=4294967296
 BUILD_RESERVE_KIB=262144
 
 die() {
@@ -62,6 +64,40 @@ image_label() {
   docker image inspect -f "{{index .Config.Labels \"$key\"}}" "$reference" 2>/dev/null || true
 }
 
+if [ "$MODE" = --require-prebuilt ]; then
+  # The original host transaction may consume only the exact locally built
+  # image whose root-owned receipt was published after bounded import.
+  EXPECTED_IMAGE_ID="$(python3 - "$TARGET_SHA" "$SERVER_TREE" <<'PY_PREBUILT'
+import json, os, pathlib, re, stat, sys
+path = pathlib.Path('/var/lib/club-arena/engine-prebuilt') / (sys.argv[1] + '.json')
+for parent in path.parents:
+    info = parent.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
+        raise SystemExit('prebuilt receipt parent is not protected')
+fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+with os.fdopen(fd, 'rb') as stream:
+    st = os.fstat(stream.fileno())
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or stat.S_IMODE(st.st_mode) != 0o400 or not 0 < st.st_size <= 4096:
+        raise SystemExit('prebuilt receipt is not a protected bounded regular file')
+    raw = stream.read(4097)
+    v = json.loads(raw)
+    if (json.dumps(v, sort_keys=True, separators=(',', ':')) + '\n').encode() != raw:
+        raise SystemExit('prebuilt receipt is not canonical')
+if v.get('source_sha') != sys.argv[1] or v.get('server_tree') != sys.argv[2] or v.get('platform') != 'linux/amd64' or v.get('build_contract') != 'clean-server-archive-v1':
+    raise SystemExit('prebuilt receipt source differs')
+image = v.get('image_id')
+if not isinstance(image, str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+    raise SystemExit('prebuilt receipt image differs')
+print(image)
+PY_PREBUILT
+  )" || die 'required locally built image receipt is absent or invalid'
+  ACTUAL_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE_REF")" \
+    || die 'required locally built image is absent'
+  [ "$ACTUAL_IMAGE_ID" = "$EXPECTED_IMAGE_ID" ] || die 'locally built image ID changed'
+  [ "$(docker image inspect -f '{{.Os}}/{{.Architecture}}' "$IMAGE_REF")" = linux/amd64 ] \
+    || die 'locally built image architecture differs'
+fi
+
 if docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
   EXISTING_REVISION="$(image_label "$IMAGE_REF" 'org.opencontainers.image.revision')"
   EXISTING_TREE="$(image_label "$IMAGE_REF" 'com.smarterpoker.engine.source-tree')"
@@ -77,6 +113,8 @@ if docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
   fi
   echo "existing image is unproven (revision=${EXISTING_REVISION:-missing}, tree=${EXISTING_TREE:-missing}, contract=${EXISTING_CONTRACT:-missing}); rebuilding from committed objects" >&2
 fi
+
+[ "$MODE" != --require-prebuilt ] || die 'prebuilt image labels differ; host compilation is forbidden'
 
 case "$BUILD_CONTEXT_ROOT" in
   /*) ;;
@@ -196,7 +234,7 @@ CANDIDATE_TAGGED=1
 (
   cd "$BUILD_CONTEXT"
   exec setsid timeout --signal=TERM --kill-after=15s 1500s docker buildx build \
-    --builder "$BUILDER" --load --progress plain \
+    --builder "$BUILDER" --platform linux/amd64 --load --progress plain \
     --build-arg "GIT_COMMIT_SHA=$TARGET_SHA" \
     --label "org.opencontainers.image.revision=$TARGET_SHA" \
     --label "com.smarterpoker.engine.source-tree=$SERVER_TREE" \

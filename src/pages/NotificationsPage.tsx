@@ -80,7 +80,8 @@ const DEFAULT_AVATAR = `${import.meta.env.BASE_URL || '/hub/club-arena/'}default
  * account provenance, so it is intentionally not imported or overwritten.
  * Element 0 carries the cache timestamp; only confirmed feed reads persist.
  */
-const CACHE_KEY = 'ca-notif-cache:v1:';
+// Retire feeds captured before operational alerts had a separate destination.
+const CACHE_KEY = 'ca-notif-cache:v2:';
 const CACHE_TTL_MS = 300_000; // 5 minutes, matching the hub page.
 const CACHE_MAX = 30;
 

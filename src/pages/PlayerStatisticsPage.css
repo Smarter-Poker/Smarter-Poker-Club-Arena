@@ -216,6 +216,18 @@
   cursor: pointer;
 }
 
+/* Confirm and Try Again are lit words on the existing console glass.
+   Keep the native button face from sitting behind the console's blue ink. */
+.ps-word {
+  appearance: none;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
 .ps-range__confirm {
   flex: 0 0 auto;
   padding: 0.55rem 1rem;

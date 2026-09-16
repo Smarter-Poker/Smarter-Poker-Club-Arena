@@ -91,10 +91,19 @@ describe('submitAction — a 429 never reaches the player', () => {
   });
 
   it('spaces two actions at the SAME table so the engine window is respected', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok()));
-    await submitAction('table-1', 'u1', 'call');
-    const startedAt = Date.now();
-    await submitAction('table-1', 'u1', 'fold');
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(200);
+    const sentAt: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      sentAt.push(Date.now());
+      // The first response consumes part of the request-spacing window.
+      if (sentAt.length === 1) await new Promise((resolve) => setTimeout(resolve, 120));
+      return ok();
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect((await submitAction('table-1', 'u1', 'call')).success).toBe(true);
+    expect((await submitAction('table-1', 'u1', 'fold')).success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The engine sees dispatches, not the previous response's completion.
+    expect(sentAt[1] - sentAt[0]).toBeGreaterThanOrEqual(200);
   }, 15000);
 });

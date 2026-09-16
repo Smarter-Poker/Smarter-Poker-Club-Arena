@@ -171,6 +171,20 @@ describe('engine deployment reports what actually happened', () => {
 });
 
 describe('the Club Arena bundle publishes directly to its Hetzner origin', () => {
+  it('can read the source PR and CI proof before repeating identical client tests', () => {
+    const resolver = uncommented(job(publish, 'publish-needed'));
+    const permissions = resolver.match(/^ {4}permissions:\n((?:^ {6}.+\n?)+)/m)?.[1];
+    expect(permissions).toMatch(/^ {6}contents: read$/m);
+    expect(permissions).toMatch(/^ {6}pull-requests: read$/m);
+    expect(permissions).toMatch(/^ {6}checks: read$/m);
+    expect(permissions).not.toMatch(/:\s*write\b/);
+    expect(resolver).toContain('[ "$TREE" != "$HEAD_TREE" ]');
+    expect(resolver).toContain('.name=="Client Unit Tests (vitest)" and .conclusion=="success"');
+    expect(uncommented(job(publish, 'client-tests'))).toContain(
+      "if: needs.publish-needed.outputs.tests_proven != 'true'"
+    );
+  });
+
   it('a recovery event can publish only the exact current protected-main SHA', () => {
     const resolver = publish.slice(
       publish.indexOf('- name: Resolve the tip of main'),

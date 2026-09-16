@@ -1,3 +1,24 @@
+<!-- BEGIN CURRENT OWNER CATEGORY GUIDE 2026-09-16 -->
+# Current owner instructions — all agent vendors
+
+At task start or resume, and before claiming readiness, read the latest
+[/Users/smarter.poker/Documents/AGENTS.md](/Users/smarter.poker/Documents/AGENTS.md)
+and
+[/Users/smarter.poker/Documents/PIPELINE-PRE-SUBMISSION.md](/Users/smarter.poker/Documents/PIPELINE-PRE-SUBMISSION.md)
+before the older repository instructions below. This applies to Codex, Claude,
+Gemini, Antigravity and their delegated agents in every checkout or alias.
+The current owner policy takes precedence where older instructions conflict.
+
+Use only the guide's relevant change-category profile and existing verification
+path; do not rerun the whole historical blocker list. Preserve required checks
+and distinguish source review, tests, merge, publication and actual live proof.
+Before claiming ready after a new failure, retain its exact source/run evidence,
+repair its cause with the relevant regression, and update its existing shared
+row (add one only for a new cause). Coordinate with the shared guide's current
+writer; do not copy its registry into this repository or treat an unrun check
+as passed. Use its small readiness template in the existing PR or handoff.
+<!-- END CURRENT OWNER CATEGORY GUIDE 2026-09-16 -->
+
 # Club Arena -- Agent Instructions
 
 ## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`

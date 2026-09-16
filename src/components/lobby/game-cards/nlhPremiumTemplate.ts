@@ -19,7 +19,7 @@ export const NLH_PREMIUM_ASSETS = {
      so the label the card prints is the action it performs: a full table
      used to read JOIN TABLE while the action was Join Waitlist, and a seat
      of your own read JOIN TABLE while it was Return To Game. */
-  viewPlate: `${assetRoot}/buttons/view-plate.png`,
+  viewPlate: `${assetRoot}/buttons/view-plate-10e21c24e5d6.png`,
   joinPlate: `${assetRoot}/buttons/join-plate.png`,
 } as const;
 

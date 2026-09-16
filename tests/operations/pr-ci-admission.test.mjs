@@ -305,6 +305,36 @@ test('required TypeScript gate still requires the actual compilation result', ()
   assert.match(job('typecheck'), /COMPILE_RESULT: \$\{\{ needs.typecheck_compile.result \}\}/);
   assert.match(job('typecheck'), /run: node scripts\/ci\/fixture-native-gate.mjs/);
 });
+test('shard one owns repeated server checks while every full partition remains required', () => {
+  const source = job('server_shards');
+  const steps = source.split(/^ {6}- name: /m).slice(1);
+  const step = (name) => {
+    const found = steps.find((body) => body.startsWith(`${name}\n`));
+    assert.ok(found, name);
+    return found;
+  };
+  for (const [name, command] of [
+    ['TypeScript Check (server)', 'npx tsc --noEmit'],
+    [
+      'Freeze + watchdog + restart-gate regression suite',
+      'npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose',
+    ],
+  ]) {
+    const body = step(name);
+    assert.match(body, /^        if: matrix\.shard == 1$/m);
+    assert.ok(body.includes(`        run: ${command}\n`));
+  }
+  assert.match(source, /^        shard: \[1, 2, 3, 4\]$/m);
+  assert.match(source, /^      fail-fast: false$/m);
+  assert.doesNotMatch(source, /^\s*(?:include|exclude|continue-on-error):/m);
+  const full = step('Full server test suite');
+  assert.doesNotMatch(full, /^        if:/m);
+  assert.match(full, /^          SERVER_TEST_SHARD: \$\{\{ matrix\.shard \}\}$/m);
+  assert.match(full, /^          npm test -- --shard="\$SERVER_TEST_SHARD\/4"$/m);
+  assert.match(job('server'), /^    needs: \[changes, server_shards\]$/m);
+  assert.match(job('server'), /^    if: always\(\)$/m);
+  assert.match(job('server'), /MATRIX_RESULT: \$\{\{ needs\.server_shards\.result \}\}/);
+});
 test('admission refusal cannot trigger fail-fast cancellation of running siblings', () => {
   assert.match(job('unit_shards'), /fail-fast: false/);
   assert.match(job('server_shards'), /fail-fast: false/);

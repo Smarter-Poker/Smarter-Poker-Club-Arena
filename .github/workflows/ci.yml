@@ -1427,6 +1427,7 @@ jobs:
       # server/ is a separate package with its own tsconfig; the root typecheck
       # job never compiles it, so a type error here used to ship to production.
       - name: TypeScript Check (server)
+        if: matrix.shard == 1
         run: npx tsc --noEmit
 
       # BLOCKING. Named explicitly so it is obvious in the job log which
@@ -1435,6 +1436,7 @@ jobs:
       # step, not only the full suite, so a #2537-class regression that outdates
       # them is a named red line on a required check.
       - name: Freeze + watchdog + restart-gate regression suite
+        if: matrix.shard == 1
         run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
       - name: Full server test suite

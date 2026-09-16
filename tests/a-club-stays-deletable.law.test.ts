@@ -36,8 +36,8 @@
  * The rules this pins:
  *
  *   - every single-column foreign key into clubs has an index that can answer it,
- *     and trusted default-branch code asks production after every successful
- *     publish rather than handing production credentials to pull-request code;
+ *     and trusted protected-main code asks production before either publish
+ *     path, then again before live fixtures, without credentials in PR code;
  *   - "has an index" means valid, non-partial, and leading on the referencing
  *     column, because the other definition is the one that was already wrong;
  *   - the question is a read-only RPC, service_role only, that nothing schedules;
@@ -46,8 +46,12 @@
  *     game_management_events blocks writes for 25 seconds.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
-import { resolve } from 'path';
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { resolve, join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import { parse } from 'yaml';
 
 const DIR = resolve(__dirname, '..', 'supabase/migrations');
 function read(fragment: string): string {
@@ -65,6 +69,34 @@ const POST_DEPLOY = readFileSync(
   resolve(__dirname, '..', '.github/workflows/post-deploy-e2e.yml'),
   'utf8'
 );
+const ENGINE = parse(
+  readFileSync(resolve(__dirname, '..', '.github/workflows/auto-deploy-hetzner.yml'), 'utf8')
+);
+const CLIENT = parse(
+  readFileSync(resolve(__dirname, '..', '.github/workflows/publish-club-arena.yml'), 'utf8')
+);
+const STRICT_GATE = 'node scripts/ci/check-club-fk-indexes.mjs';
+const prepublishGate = (job: any) => {
+  const gates = job.steps.filter((step: any) => step.run?.includes(STRICT_GATE));
+  expect(gates).toHaveLength(1);
+  const gate = gates[0];
+  expect(gate.run.trim()).toBe(STRICT_GATE);
+  expect(gate.if).toBeUndefined();
+  expect(gate['continue-on-error']).toBeUndefined();
+  expect(gate['timeout-minutes']).toBe(2);
+  expect(
+    job.steps
+      .slice(0, job.steps.indexOf(gate))
+      .some(
+        (step: any) => step.uses === 'actions/setup-node@v4' && step.with?.['node-version'] === 22
+      )
+  ).toBe(true);
+  expect(gate.env).toEqual({
+    SUPABASE_URL: '${{ secrets.SUPABASE_URL }}',
+    SUPABASE_SERVICE_ROLE_KEY: '${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}',
+  });
+  return gate;
+};
 
 const CLOSED: Array<[string, string]> = [
   ['idx_game_management_events_club_id', 'public.game_management_events'],
@@ -160,4 +192,144 @@ describe('a club stays deletable', () => {
     expect(GATE).toContain('Array.isArray(answer.gaps)');
     expect(GATE).not.toContain('answer.gaps || []');
   });
+
+  it('requires the strict catalog gate before the engine deployment dependency can succeed', () => {
+    expect(Object.keys(ENGINE.on)).toEqual(['repository_dispatch']);
+    expect(ENGINE.on.repository_dispatch.types).toEqual(['deploy-club-arena-engine']);
+    const doors = ENGINE.jobs['engine-doors'];
+    expect(doors.needs).toBe('preflight');
+    expect(doors.if).toBeUndefined();
+    expect(doors['continue-on-error']).toBeUndefined();
+    expect(doors.environment).toBe('Production');
+    expect(doors['runs-on']).toEqual(['self-hosted', 'smarter-local-publish']);
+    const gate = prepublishGate(doors);
+    const checkout = doors.steps.find((step: any) => step.uses === 'actions/checkout@v4');
+    expect(checkout.with.ref).toBe('${{ needs.preflight.outputs.target_sha }}');
+    expect(doors.steps.indexOf(checkout)).toBeLessThan(doors.steps.indexOf(gate));
+    const proof = ENGINE.jobs.preflight.steps.find((step: any) => step.id === 'target').run;
+    expect(proof).toContain('git merge-base --is-ancestor "$RESOLVED_SHA" "$MAIN_SHA"');
+    expect(proof.indexOf('git merge-base --is-ancestor')).toBeLessThan(proof.indexOf('echo "sha='));
+    expect(JSON.stringify(ENGINE.jobs.preflight)).not.toContain('secrets.');
+    expect(ENGINE.jobs.deploy.needs).toContain('engine-doors');
+    expect(ENGINE.jobs.deploy.if).toBeUndefined();
+    expect(ENGINE.jobs.deploy['continue-on-error']).toBeUndefined();
+  });
+
+  it('requires the strict catalog gate before origin credentials or any remote mutation', () => {
+    expect(Object.keys(CLIENT.on).sort()).toEqual(['push', 'repository_dispatch']);
+    expect(CLIENT.on.push.branches).toEqual(['main']);
+    const publish = CLIENT.jobs['publish-to-origin'];
+    expect(publish.needs).toContain('publish-needed');
+    expect(publish.environment).toBe('Production');
+    expect(publish['runs-on']).toEqual(['self-hosted', 'smarter-local-publish']);
+    expect(publish['continue-on-error']).toBeUndefined();
+    const gate = prepublishGate(publish);
+    const gateIndex = publish.steps.indexOf(gate);
+    const checkout = publish.steps.find((step: any) => step.uses === 'actions/checkout@v4');
+    expect(checkout.with.ref).toBe('${{ needs.publish-needed.outputs.target_sha }}');
+    expect(checkout.with['persist-credentials']).toBe(false);
+    expect(publish.steps.indexOf(checkout)).toBeLessThan(gateIndex);
+    const proof = CLIENT.jobs['publish-needed'].steps.find((step: any) => step.id === 'target').run;
+    expect(proof).toContain('commits/main');
+    expect(proof).toContain('[ "$REQUESTED_SHA" = "$TIP" ]');
+    expect(JSON.stringify(publish.steps.slice(0, gateIndex))).not.toMatch(
+      /CA_ORIGIN_(SSH_KEY|HOST_KEY)|\bssh\b|\brsync\b/
+    );
+    const key = publish.steps.find(
+      (step: any) => step.env?.KEY === '${{ secrets.CA_ORIGIN_SSH_KEY }}'
+    );
+    expect(publish.steps.indexOf(key)).toBeGreaterThan(gateIndex);
+    expect(key.if).toBeUndefined();
+    const verdict = publish.steps.find((step: any) => step.id === 'verdict');
+    expect(publish.steps.indexOf(verdict)).toBeGreaterThan(gateIndex);
+    expect(verdict.if).toBeUndefined();
+    for (const step of publish.steps.filter((step: any) =>
+      /\b(?:ssh|rsync)\s/.test(step.run ?? '')
+    )) {
+      expect(publish.steps.indexOf(step)).toBeGreaterThan(gateIndex);
+      expect(step['continue-on-error']).toBeUndefined();
+      // Failure/always cleanup can only touch a remote path after a successful
+      // verdict. A failed prepublication gate never creates that verdict.
+      if (/always\(\)|failure\(\)/.test(step.if ?? '')) {
+        expect(step.if).toContain("steps.verdict.outputs.verdict == 'publish'");
+      }
+    }
+  });
+
+  for (const [name, job] of [
+    ['engine', ENGINE.jobs['engine-doors']],
+    ['client', CLIENT.jobs['publish-to-origin']],
+  ] as const) {
+    for (const [label, reply, status] of [
+      [
+        'indexed catalog',
+        { parent: 'public.clubs', checked_at: '2026-09-16T00:00:00Z', gaps: [] },
+        0,
+      ],
+      [
+        'missing index',
+        {
+          parent: 'public.clubs',
+          checked_at: '2026-09-16T00:00:00Z',
+          gaps: [
+            {
+              child_table: 'public.fixture',
+              child_column: 'club_id',
+              constraint: 'fixture_club_fkey',
+              est_rows: 1,
+            },
+          ],
+        },
+        1,
+      ],
+      ['malformed catalog', {}, 2],
+      ['unreadable catalog', null, 2],
+    ] as const) {
+      it(`${name} ${label} ${status ? 'blocks' : 'permits'} the downstream publish boundary`, () => {
+        const gate = prepublishGate(job);
+        const temp = mkdtempSync(join(tmpdir(), 'club-catalog-gate-'));
+        try {
+          const stub = join(temp, 'catalog.mjs');
+          const marker = join(temp, 'publish-reached');
+          writeFileSync(
+            stub,
+            `
+            import assert from 'node:assert/strict';
+            globalThis.fetch = async (url, options) => {
+              assert.equal(url, 'https://catalog.invalid/rest/v1/rpc/fn_ca_fk_index_gaps');
+              assert.equal(options.method, 'POST');
+              assert.equal(options.body, JSON.stringify({p_parent: 'public.clubs'}));
+              assert.equal(options.headers.apikey, 'sb_secret_fixture_only');
+              return {ok: ${reply !== null}, status: ${reply === null ? 503 : 200},
+                json: async () => (${JSON.stringify(reply)}), text: async () => 'fixture unavailable'};
+            };
+          `
+          );
+          // Execute the exact workflow command using its normal fail-fast shell.
+          // No production connection or credential enters this child process.
+          const run = spawnSync(
+            'bash',
+            ['-e', '-c', `${gate.run}\nprintf reached > "$PUBLISH_MARKER"`],
+            {
+              cwd: resolve(__dirname, '..'),
+              encoding: 'utf8',
+              timeout: 5000,
+              env: {
+                PATH: `${dirname(process.execPath)}:${process.env.PATH}`,
+                NODE_OPTIONS: `--import=${pathToFileURL(stub).href}`,
+                SUPABASE_URL: 'https://catalog.invalid',
+                SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_fixture_only',
+                PUBLISH_MARKER: marker,
+              },
+            }
+          );
+          expect(run.error).toBeUndefined();
+          expect(run.status, run.stdout + run.stderr).toBe(status);
+          expect(existsSync(marker)).toBe(status === 0);
+        } finally {
+          rmSync(temp, { recursive: true, force: true });
+        }
+      });
+    }
+  }
 });

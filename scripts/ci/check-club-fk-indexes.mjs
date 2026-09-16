@@ -29,10 +29,10 @@
  * Migration 20260904001605 closed all thirteen gaps and 20260904001715 gave the
  * database fn_ca_fk_index_gaps() so the question can be asked from outside.
  *
- * This gate is not a watchdog. It runs on a pull request, against production's
- * live catalogue, and it fails the branch that would make a club undeletable -
- * before that branch is main, and long before a certification run strands
- * another fixture and its chips in Club Arena.
+ * Protected-main publication runs this strict live-catalogue check before
+ * either engine or client publication can mutate its production target. PR
+ * code never receives these credentials. The post-deploy fixture gate asks
+ * again because the database may change between publication and cleanup.
  *
  * Usage:
  *   node scripts/ci/check-club-fk-indexes.mjs           # strict (exit 1 on a gap)

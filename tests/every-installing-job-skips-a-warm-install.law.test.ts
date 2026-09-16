@@ -55,7 +55,7 @@ function jobs(text: string): Array<{ name: string; body: string }> {
 describe('every job that restores node_modules skips the install on a hit', () => {
   it('finds the jobs to check', () => {
     const found = WORKFLOWS.flatMap((w) => jobs(read(w))).filter(
-      (j) => /path:\s*node_modules\s*$/m.test(j.body) && /npm ci/.test(j.body)
+      (j) => /path:\s*(?:server\/)?node_modules\s*$/m.test(j.body) && /npm ci/.test(j.body)
     );
     // If this ever hits zero the sweep below is asserting nothing at all -
     // the shape of guard this estate has shipped before (sixteen invariants
@@ -68,12 +68,14 @@ describe('every job that restores node_modules skips the install on a hit', () =
     for (const workflow of WORKFLOWS) {
       const text = read(workflow);
       for (const job of jobs(text)) {
-        if (!/path:\s*node_modules\s*$/m.test(job.body)) continue;
+        if (!/path:\s*(?:server\/)?node_modules\s*$/m.test(job.body)) continue;
         if (!/run:\s*npm ci/.test(job.body)) continue;
 
         // The restore step must be identifiable...
         const hasId =
-          /uses:\s*actions\/cache@[^\n]*\n(?:[^\n]*\n)*?[^\n]*path:\s*node_modules/.test(job.body);
+          /uses:\s*actions\/cache@[^\n]*\n(?:[^\n]*\n)*?[^\n]*path:\s*(?:server\/)?node_modules/.test(
+            job.body
+          );
         // ...and the install must be gated on its result.
         const guarded =
           /if:\s*steps\.[a-z0-9_-]+\.outputs\.cache-hit != 'true'\s*\n\s*run:\s*npm ci/.test(
@@ -101,4 +103,63 @@ describe('every job that restores node_modules skips the install on a hit', () =
       /if: steps\.nm-cache\.outputs\.cache-hit != 'true'\s*\n\s*run: npm ci --ignore-scripts/
     );
   });
+});
+
+describe('an installed dependency cache hit needs no npm archive transfer', () => {
+  const installedJobs = WORKFLOWS.flatMap((workflow) =>
+    jobs(read(workflow))
+      .filter((job) => /path:\s*(?:server\/)?node_modules\s*$/m.test(job.body))
+      .map((job) => ({ ...job, workflow }))
+  );
+
+  it('covers every existing installed-cache job in CI and the publisher', () => {
+    expect(installedJobs.map(({ name }) => name).sort()).toEqual(
+      [
+        'typecheck_compile',
+        'unit_shards',
+        'server_shards',
+        'build',
+        'css-beats-e2e',
+        'client-tests',
+        'build-and-store',
+        'publish-to-app',
+      ].sort()
+    );
+  });
+
+  for (const job of installedJobs) {
+    it(`${job.workflow}: ${job.name} restores npm only when installation is needed`, () => {
+      const steps = job.body.split(/^ {6}- /m).slice(1);
+      const installed = steps.findIndex((step) =>
+        /path:\s*(?:server\/)?node_modules\s*$/m.test(step)
+      );
+      const setup = steps.findIndex((step) => /uses:\s*actions\/setup-node@/.test(step));
+      const install = steps.findIndex((step) => /^\s*run:\s*npm ci(?:\s|$)/m.test(step));
+      expect(installed).toBeGreaterThanOrEqual(0);
+      expect(setup).toBeGreaterThan(installed);
+      expect(install).toBeGreaterThan(setup);
+      expect(steps[installed]).toMatch(/^\s*id: nm-cache$/m);
+      const input = steps[setup].match(/^\s*cache:\s*(.+)$/m)?.[1];
+      expect(input).toBe("${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}");
+      expect(steps[install]).toMatch(/^\s*if: steps\.nm-cache\.outputs\.cache-hit != 'true'$/m);
+
+      // Evaluate the actual restricted predicate above. Empty/partial restores
+      // still select npm and npm ci; only an exact hit skips npm restoration
+      // and installation.
+      const expression = input!
+        .slice(3, -2)
+        .replace('steps.nm-cache.outputs.cache-hit', 'cacheHit');
+      const npmCache = new Function('cacheHit', `return (${expression});`) as (
+        cacheHit: string | undefined
+      ) => string;
+      for (const [hit, expected] of [
+        ['true', ''],
+        ['false', 'npm'],
+        ['', 'npm'],
+        [undefined, 'npm'],
+      ] as const) {
+        expect(npmCache(hit)).toBe(expected);
+      }
+    });
+  }
 });

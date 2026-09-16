@@ -74,12 +74,18 @@ import {
   pendingSeatMoves,
   seatMoveCancelledNotice,
   seatMoveNotice,
+  SeatMoveBatchError,
   type PendingSeatMove,
+  type SeatMoveOutcome,
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
-import { claimMovedPresence, depositMovedPresence } from './SeatMovePresence.js';
+import { claimMovedPresence, depositMovedPresence, hasMovedPresence } from './SeatMovePresence.js';
+import {
+  readCashMoveArrivals,
+  type CashMoveArrival,
+} from '../services/supabase/cashMovePresence.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
   SeatPlayer,
@@ -2757,8 +2763,9 @@ export abstract class ServerTableEngineBase {
         }
         const idsBeforeSweep = new Set(this.seatedPlayers.map((p) => p.user_id));
         try {
-          this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+          const nextRoster = await loadSeatedPlayers(this.tableId);
           if (!this.lifecycleCanMutate()) return;
+          for (const userId of this.adoptSeatRoster(nextRoster)) idsBeforeSweep.delete(userId);
         } catch (err) {
           // This is a POLL. It already runs every 5s, so a failed sweep costs
           // one sweep — while letting it escape aborted start() entirely and
@@ -2795,7 +2802,12 @@ export abstract class ServerTableEngineBase {
         }
         // BEFORE the sit-out restore, always: registering a player first would
         // block the adoption (restoreFsmStates never clobbers a live entry).
-        this.adoptMovedPresence();
+        if (!(await this.adoptMovedPresence())) {
+          if (!this.lifecycleCanMutate()) return;
+          await this.sleep(5000);
+          continue;
+        }
+        if (!this.lifecycleCanMutate()) return;
         this.restoreSitOutsFromSeats();
         // Dan 2026-08-30: and the cash entry holds, for the same reason the
         // sit-out restore is here rather than only in the dealing loop — a
@@ -3342,7 +3354,7 @@ export abstract class ServerTableEngineBase {
          transaction, so the partner's own engine never runs an executor and
          this is its only chance to hand its player's presence over. Harmless
          for a move that never lands: an unclaimed deposit expires. */
-      this.depositPresenceForMove(m.player_id, m.to_table_id);
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
       if (m.announced_at == null) fresh.push(m.move_id);
       if (this.announcedSeatMoves.has(m.move_id)) continue;
       this.announcedSeatMoves.add(m.move_id);
@@ -3453,7 +3465,30 @@ export abstract class ServerTableEngineBase {
     if (!this.lifecycleCanMutate()) return [];
     if (pending === null) return [];
     this.reconcileSeatMoveHolds(pending);
-    const { done, held, refused } = await executePendingSeatMoves(this.tableId, opts, pending);
+    // Stage the hand-boundary state BEFORE the transaction. The destination
+    // may observe its committed seat before this RPC response returns, including
+    // idle moves that never passed through a hand-start announcement.
+    for (const m of pending) {
+      if (opts.announcedOnly && m.announced_at == null) continue;
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
+    }
+    let outcome: SeatMoveOutcome;
+    let incomplete: SeatMoveBatchError | null = null;
+    try {
+      outcome = await executePendingSeatMoves(
+        this.tableId,
+        {
+          ...opts,
+          shouldContinue: () => this.lifecycleCanMutate(),
+        },
+        pending
+      );
+    } catch (error) {
+      if (!(error instanceof SeatMoveBatchError)) throw error;
+      outcome = error.outcome;
+      incomplete = error;
+    }
+    const { done, held, refused } = outcome;
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     if (!this.lifecycleCanMutate()) return [];
@@ -3488,7 +3523,7 @@ export abstract class ServerTableEngineBase {
       // A held side is still seated HERE and will be moved by the other
       // table's transaction: refresh its deposit while this engine still has
       // its presence to give.
-      this.depositPresenceForMove(h.player_id, h.to_table_id);
+      this.depositPresenceForMove(h.player_id, h.to_table_id, h.move_id, h.source_occupancy_id);
       if (this.heldForSwap.has(h.player_id)) continue;
       this.heldForSwap.add(h.player_id);
       this.hub?.emitEvent(this.tableId, {
@@ -3512,7 +3547,7 @@ export abstract class ServerTableEngineBase {
          immediately before this engine forgets them, so the destination
          adopts what they were half a second ago rather than what they were at
          the start of the hand. */
-      this.depositPresenceForMove(m.player_id, m.to_table_id);
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
       this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
@@ -3573,6 +3608,9 @@ export abstract class ServerTableEngineBase {
       // The game's seats changed at two tables at once; one wake covers both.
       this.wakeClusterGame('seat_move');
     }
+    // Keep the original failure visible after reflecting only confirmed outcomes.
+    // The uncertain move and every unattempted move remain outside this cleanup.
+    if (incomplete) throw incomplete;
     return movedIds;
   }
 
@@ -3588,13 +3626,23 @@ export abstract class ServerTableEngineBase {
    * registers them the ordinary way, which is what happened before any of
    * this existed.
    */
-  protected depositPresenceForMove(playerId: string, toTableId: string): void {
+  protected depositPresenceForMove(
+    playerId: string,
+    toTableId: string,
+    moveId: string,
+    sourceOccupancyId: string
+  ): void {
     if (!playerId || !toTableId || toTableId === this.tableId) return;
+    if (!moveId || !sourceOccupancyId) return;
+    const seated = this.seatedPlayers.find((p) => p.user_id === playerId);
+    if (!seated || seated.occupancy_id !== sourceOccupancyId) return;
     const fsm = this.disconnectEngine.getFsmState(this.tableId, playerId);
     if (!fsm) return;
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, playerId);
     const meta = this.timeBankMeta.get(playerId);
     depositMovedPresence(playerId, toTableId, {
+      moveId,
+      sourceOccupancyId,
       fsm,
       fromTableId: this.tableId,
       timeBank: bank
@@ -3629,9 +3677,46 @@ export abstract class ServerTableEngineBase {
    * seeding is guarded on `!getPlayerBank(...)`, so a bank adopted now is the
    * one the player keeps and the free refill never happens for a mover.
    */
-  protected adoptMovedPresence(): void {
-    for (const p of this.seatedPlayers) {
-      const carried = claimMovedPresence(p.user_id, this.tableId);
+  protected async adoptMovedPresence(): Promise<boolean> {
+    if (!this.lifecycleCanMutate()) return false;
+    const candidates = this.seatedPlayers
+      .filter((p) => hasMovedPresence(p.user_id, this.tableId))
+      .map((p) => ({ userId: p.user_id, occupancyId: p.occupancy_id }));
+    if (candidates.length === 0) return true;
+    let arrivals: CashMoveArrival[];
+    try {
+      arrivals = await readCashMoveArrivals(
+        this.tableId,
+        candidates.map((p) => p.occupancyId ?? '')
+      );
+    } catch (error) {
+      reportError(error, 'ServerTableEngine.seat_move_arrival_unreadable', {
+        tableId: this.tableId,
+      });
+      return false;
+    }
+    if (!this.lifecycleCanMutate()) return false;
+    for (const arrival of arrivals) {
+      if (
+        !candidates.some(
+          (candidate) =>
+            candidate.userId === arrival.player_id &&
+            candidate.occupancyId === arrival.destination_occupancy_id
+        )
+      )
+        continue;
+      const p = this.seatedPlayers.find(
+        (seat) =>
+          seat.user_id === arrival.player_id &&
+          seat.occupancy_id === arrival.destination_occupancy_id
+      );
+      if (!p) continue;
+      const carried = claimMovedPresence(p.user_id, this.tableId, {
+        moveId: arrival.move_id,
+        fromTableId: arrival.from_table_id,
+        sourceOccupancyId: arrival.source_occupancy_id,
+        destinationOccupancyId: arrival.destination_occupancy_id,
+      });
       if (!carried) continue;
       const restored = this.disconnectEngine.restoreFsmStates(this.tableId, {
         [p.user_id]: carried.fsm,
@@ -3655,6 +3740,40 @@ export abstract class ServerTableEngineBase {
           (restored ? '' : ' (a live observation already won)')
       );
     }
+    return true;
+  }
+
+  /** Retire departed/replaced cash stays; return only replacements for arrival detection. */
+  protected adoptSeatRoster(nextRoster: SeatedPlayer[]): string[] {
+    if (!this.lifecycleCanMutate()) return [];
+    const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
+    this.seatedPlayers = nextRoster;
+    if (this.isTournamentTable()) return [];
+    const replaced: string[] = [];
+    for (const [userId, occupancyId] of previous) {
+      const current = nextRoster.find((p) => p.user_id === userId);
+      if (current && current.occupancy_id === occupancyId) continue;
+      if (current) replaced.push(userId);
+      this.knownPlayerIds.delete(userId);
+      this.waitingForBB.delete(userId);
+      this.postingBBToEnter.delete(userId);
+      this.postBBWhenClear.delete(userId);
+      this.pendingPostToEnter.delete(userId);
+      this.mustPostBB.delete(userId);
+      this.returningFromSitout.delete(userId);
+      this.heldForSwap.delete(userId);
+      this.dealtInUserIds.delete(userId);
+      this.pendingSitOut.delete(userId);
+      this.leaveHeldByClock.delete(userId);
+      this.horseRebuys.delete(userId);
+      this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+      this.timeBankEngine.removePlayer(this.tableId, userId);
+      this.timeBankMeta.delete(userId);
+      this.straddleEngine.removePlayer(this.tableId, userId);
+      this.preActionEngine.removePlayer(this.tableId, userId);
+      this.chipContinuity.forget(userId);
+    }
+    return replaced;
   }
 
   /** Last time the empty-cluster-table check read the row. See below. */

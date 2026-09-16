@@ -7,7 +7,7 @@
  * Runs AFTER `vite build`, operates on dist/ ONLY - the committed source
  * assets and the developer working tree are never touched.
  *
- * PART 1 - Public, nonhashed media optimization (same format, fewer bytes).
+ * PART 1 - Non-pooled public media optimization (same format, fewer bytes).
  * Imported rasters are optimized by viteMediaIdentity BEFORE URL selection;
  * this post-build pass must never rewrite their immutable hashed URLs.
  * The audit found ~20MB of media the app actually references at sizes far
@@ -132,7 +132,7 @@ const DIR_RULES = [
   { prefix: 'cards/backs/', maxDim: 512 },
   { prefix: 'cards/', maxDim: 512 }, // full-size card faces (root + 2color/4color PNGs)
   { prefix: 'images/', maxDim: 1280 },
-  { prefix: 'assets/', maxDim: 1280 }, // public/assets media (metal-ui frames etc.)
+  { prefix: 'assets/', maxDim: 1280 }, // Vite imports only; public assets pass through below
   // The PWA/apple-touch icon. manifest.json declares it "sizes": "512x512"
   // and the file was 1024x1024, so this makes the asset match its own
   // declaration as well as shrinking it. It is fetched on every iOS
@@ -231,8 +231,13 @@ async function optimizeMedia(sharp, sharpVersion) {
   for (const file of walk(DIST)) {
     const rel = path.relative(DIST, file.path).split(path.sep).join('/');
     if (!RASTER_RE.test(rel)) continue;
-    // Vite owns these immutable URLs. Their bytes were finalized before naming.
-    if (/^assets\/.*-[A-Za-z0-9_-]+-v\d+\.(png|jpe?g|webp)$/i.test(rel)) continue;
+    // Imported assets were encoded before Vite chose their names. Public
+    // assets use permanent URLs and are committed as their sealed final bytes.
+    // Neither may depend on this machine's encoder or disposable cache.
+    if (rel.startsWith('assets/')) {
+      skipped++;
+      continue;
+    }
     if (file.size < MIN_BYTES) continue;
     const rule = ruleFor(rel);
     if (!rule || rule.maxDim === 0) {

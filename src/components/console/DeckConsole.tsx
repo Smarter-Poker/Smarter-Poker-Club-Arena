@@ -5,7 +5,7 @@
  *
  * The chassis for "four figures and two actions" (#ClubArenaConsole §4): the
  * console's own head (top.png), a body on the rails, and the master's deck
- * (popups/buy-in-v1/deck.png: rows 350-1135 of the approved PLO master, the
+ * (popups/buy-in-v1/deck-d5664b815000.png: rows 350-1135 of the approved PLO master, the
  * four bays with their labels lifted, the steel and blue-glass plates, the
  * flat cap). Nothing is drawn. Every word lands in a zone measured in pixels
  * on that master; a bay that is also a control paints nothing and changes

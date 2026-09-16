@@ -270,7 +270,7 @@ for (const name of [
     assert.doesNotMatch(gate, /continue-on-error|\bif:|\|\| true|\bwrite\b/);
   });
 }
-test('every required workflow job uses its exact local architecture without a hosted fallback', () => {
+test('required jobs stay local except the owner-approved native Intel fixture', () => {
   for (const name of ['ci', 'silent-revert-guard', 'component-fixture-native-smoke']) {
     const source = readFileSync(
       new URL(`../../.github/workflows/${name}.yml`, import.meta.url),
@@ -292,9 +292,9 @@ test('every required workflow job uses its exact local architecture without a ho
         assert.match(
           body,
           name === 'component-fixture-native-smoke'
-            ? /^    runs-on: \[self-hosted, smarter-local-linux-amd64\]$/m
+            ? /^    runs-on: ubuntu-24\.04$/m
             : /^    runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m,
-          `${name}/${entries[i][1]} must wait for the matching local architecture`
+          `${name}/${entries[i][1]} must use its approved architecture and executor`
         );
       }
     }

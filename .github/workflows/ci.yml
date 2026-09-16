@@ -279,7 +279,10 @@ jobs:
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
-    if: github.event_name == 'pull_request'
+    # Classification controls only the isolated journal step. A failed diff
+    # still compiles; a superseded cancelled workflow starts no new compiler.
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     name: TypeScript compilation and repository checks
     # Wait for the approved local runner; no hosted or estate fallback.
     runs-on: [self-hosted, smarter-local-linux-arm64]
@@ -305,11 +308,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/admit-current-pr-ci.mjs
 
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
+      # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
+      # jobs: this install runs --ignore-scripts, and a scripts-less tree must
+      # never be restored into a job that relies on postinstall artifacts.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-lite-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
 
       - name: PR head admission preserves required-check truth
         run: node --test tests/operations/pr-ci-admission.test.mjs
@@ -326,17 +340,6 @@ jobs:
       - name: Post-deploy verdict distinguishes an unstarted publisher
         run: node --test tests/operations/post-deploy-origin-verdict.test.mjs
 
-      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
-      # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
-      # jobs: this install runs --ignore-scripts, and a scripts-less tree must
-      # never be restored into a job that relies on postinstall artifacts.
-      - name: Restore node_modules
-        id: nm-cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-lite-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
-
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
@@ -346,6 +349,7 @@ jobs:
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
       - name: Chip journal transactions survive failures and replays
+        if: needs.changes.result != 'success' || needs.changes.outputs.server != 'false'
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
@@ -1061,14 +1065,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/admit-current-pr-ci.mjs
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
       # 2026-09-01 (cost audit): caches the INSTALLED node_modules tree, not
-      # just the npm tarballs that `cache: npm` above keeps. Measured on this
+      # just the npm tarballs restored below on a miss. Measured on this
       # job: `npm ci` is 1-2 minutes of the 12; on a cache hit it is skipped
       # entirely. The key includes the lockfile hash, so any dependency change
       # misses and installs fresh - identical behaviour, minus the wait.
@@ -1078,6 +1076,12 @@ jobs:
         with:
           path: node_modules
           key: nm-full-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -1401,13 +1405,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/admit-current-pr-ci.mjs
 
-      - name: Setup Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a hit.
       - name: Restore node_modules
         id: nm-cache
@@ -1416,6 +1413,13 @@ jobs:
           path: server/node_modules
           key: nm-server-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('server/package-lock.json') }}
 
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
+          cache-dependency-path: server/package-lock.json
+
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
@@ -1423,6 +1427,7 @@ jobs:
       # server/ is a separate package with its own tsconfig; the root typecheck
       # job never compiles it, so a type error here used to ship to production.
       - name: TypeScript Check (server)
+        if: matrix.shard == 1
         run: npx tsc --noEmit
 
       # BLOCKING. Named explicitly so it is obvious in the job log which
@@ -1431,6 +1436,7 @@ jobs:
       # step, not only the full suite, so a #2537-class regression that outdates
       # them is a named red line on a required check.
       - name: Freeze + watchdog + restart-gate regression suite
+        if: matrix.shard == 1
         run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
       - name: Full server test suite
@@ -1603,12 +1609,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/admit-current-pr-ci.mjs
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
       - name: Cache Vite Build
         uses: actions/cache@v4
         with:
@@ -1624,6 +1624,12 @@ jobs:
         with:
           path: node_modules
           key: nm-full-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -2083,12 +2089,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/admit-current-pr-ci.mjs
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
       # This job had NO cache of any kind, alone among the jobs that build.
       # It therefore paid a cold `npm ci` (45s) and a fully cold build (235s on
       # 2026-09-04) on every run. node_modules carries `node_modules/.vite` and
@@ -2110,6 +2110,12 @@ jobs:
         with:
           path: node_modules
           key: nm-beats-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
 
       # THE GUARD BELOW IS THE POINT OF THE CACHE ABOVE (added 2026-09-04).
       #

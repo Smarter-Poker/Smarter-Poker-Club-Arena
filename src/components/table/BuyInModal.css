@@ -4,7 +4,7 @@
    The sheet is Dan's spade PLO master cut into three: the console's own head
    (console/spade-console-v1/top.png: crest, header well, pill slot), a stage
    on the repeated rails (mid.png), and the master's deck
-   (popups/buy-in-v1/deck.png: the four bays with their labels lifted, the
+   (popups/buy-in-v1/deck-d5664b815000.png: the four bays with their labels lifted, the
    two plates, the chip). Every zone is measured on that master and printed
    in its own ink (SpadeConsole.css). The one control the master does not
    paint is the slider, on the stage, and it goes UP AND DOWN.
@@ -89,7 +89,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 627;
-  background: url('/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100% auto no-repeat;
+  background: url('/assets/club-buttons/popups/buy-in-v1/deck-d5664b815000.png') top center / 100% auto no-repeat;
 }
 
 /* ── Stage: the slider beside the amount, inside the rails ───────────── */

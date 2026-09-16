@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import path from 'path';
 import { writeFileSync } from 'fs';
+import { viteMediaIdentity } from './scripts/optimize-dist-media.mjs';
 import { resolveSentryUpload } from './scripts/sentry-upload-policy';
 
 /**
@@ -32,6 +33,7 @@ const maxParallelFileOps = process.env.ROLLUP_MAX_FILE_OPS
 if (!Number.isSafeInteger(maxParallelFileOps) || maxParallelFileOps <= 0) {
   throw new Error('ROLLUP_MAX_FILE_OPS must be a positive safe integer.');
 }
+const mediaIdentity = viteMediaIdentity();
 const sentryUpload = resolveSentryUpload(process.env);
 if (process.env.CA_SENTRY_UPLOAD === '1' && !sentryUpload.enabled) {
   console.warn('[sentry-upload] Upload Disabled:', sentryUpload.reason);
@@ -42,6 +44,7 @@ export default defineConfig({
   base: NATIVE ? '/' : WEB_BASE,
   plugins: [
     react(),
+    mediaIdentity.plugin,
 
     /**
      * ENTRY MODULE MANIFEST — what every player downloads before first paint.
@@ -212,7 +215,7 @@ export default defineConfig({
         // brand-new URL even when content hash would otherwise match.
         entryFileNames: 'assets/[name]-[hash]-v6.js',
         chunkFileNames: 'assets/[name]-[hash]-v6.js',
-        assetFileNames: 'assets/[name]-[hash]-v6[extname]',
+        assetFileNames: mediaIdentity.assetFileNames,
         manualChunks(id: string) {
           // ── Vendor Splits (safe — no circular dependencies) ──
           if (id.includes('node_modules/react-dom')) return 'vendor-react';

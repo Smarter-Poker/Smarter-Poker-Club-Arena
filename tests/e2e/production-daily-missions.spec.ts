@@ -665,9 +665,14 @@ test.describe('production Daily Missions certification', () => {
         await waitForCycle('weekly');
         await expect(page).toHaveURL(weeklyURL.toString());
 
+        // Switching cycles preserves the current deep link's query and fragment.
+        // A direct bare monthly load above still has its separate exact assertion.
+        const monthlyFromWeeklyURL = new URL(monthlyURL);
+        monthlyFromWeeklyURL.search = weeklyURL.search;
+        monthlyFromWeeklyURL.hash = weeklyURL.hash;
         await missions.chooseTier('Monthly');
         await waitForCycle('monthly');
-        await expect(page).toHaveURL(monthlyURL.toString());
+        await expect(page).toHaveURL(monthlyFromWeeklyURL.toString());
         await page.goBack();
         await waitForCycle('weekly');
         await expect(page).toHaveURL(weeklyURL.toString());

@@ -3587,8 +3587,14 @@ export class GameServer {
        fault must not put the old 1,363-sample bill back on the event loop at
        the very moment the loop is the thing that is wrong. Sorted worst-first,
        so a truncated list is still the list you wanted. */
+    /* A table below its deal minimum is waiting, not stalled: since 2026-09-16
+       a quiet tournament table reads its roster on a growing pause of up to a
+       minute (ServerTableEngineBase.WAIT_FOR_PLAYERS_MAX_POLL_MS), so its
+       progress clock is expected to show tens of seconds. Only a table that
+       could deal and did not is a stall, which is the definition the liveness
+       verdict and the alerts already use. */
     const stalledSamples = liveness
-      .filter((t) => t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS)
+      .filter((t) => t.dealable >= 2 && t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS)
       .sort((a, b) => b.msSinceProgress - a.msSinceProgress)
       .slice(0, PER_TABLE_LIVENESS_SAMPLE_CAP);
     const undealableSamples = liveness
@@ -3727,9 +3733,9 @@ export class GameServer {
       '# HELP poker_fleet_table_stall_max_ms Milliseconds since the least-recently-progressed table made progress',
       '# TYPE poker_fleet_table_stall_max_ms gauge',
       `poker_fleet_table_stall_max_ms ${liveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0)}`,
-      '# HELP poker_fleet_tables_stalled Tables that have made no observable progress for at least 30s',
+      '# HELP poker_fleet_tables_stalled Dealable tables (two or more seats that can be dealt) that have made no observable progress for at least 30s; a table below its deal minimum is waiting, not stalled',
       '# TYPE poker_fleet_tables_stalled gauge',
-      `poker_fleet_tables_stalled ${liveness.filter((t) => t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS).length}`,
+      `poker_fleet_tables_stalled ${liveness.filter((t) => t.dealable >= 2 && t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS).length}`,
       '# HELP poker_fleet_dealable_seats Seats able to be dealt into, summed across every table',
       '# TYPE poker_fleet_dealable_seats gauge',
       `poker_fleet_dealable_seats ${liveness.reduce((sum, t) => sum + t.dealable, 0)}`,

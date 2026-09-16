@@ -31,48 +31,74 @@ beforeEach(async () => {
 });
 
 describe.each([0, 1, 2])('client %i independently owns its response deadline', (clientIndex) => {
-  it.each([200, 503])('rejects an uncooperative fetch and never replays its late %i', async (status) => {
-    let release!: (response: Response) => void;
-    let signal!: AbortSignal;
-    const transport = vi.fn((_input: unknown, init: RequestInit) => {
-      signal = init.signal!;
-      return new Promise<Response>((resolve) => { release = resolve; });
-    });
-    vi.stubGlobal('fetch', transport);
-    const caller = new AbortController();
-    const remove = vi.spyOn(caller.signal, 'removeEventListener');
-    let outcome = 'pending';
-    const pending = captured.fetches[clientIndex]('https://example.test/rpc', {
-      method: 'POST', signal: caller.signal,
-    }).then(() => { outcome = 'success'; }, (error: Error) => { outcome = error.message; });
-    try {
-      await vi.advanceTimersByTimeAsync(101);
+  it.each([200, 503])(
+    'rejects an uncooperative fetch and never replays its late %i',
+    async (status) => {
+      let release!: (response: Response) => void;
+      let signal!: AbortSignal;
+      const transport = vi.fn((_input: unknown, init: RequestInit) => {
+        signal = init.signal!;
+        return new Promise<Response>((resolve) => {
+          release = resolve;
+        });
+      });
+      vi.stubGlobal('fetch', transport);
+      const caller = new AbortController();
+      const remove = vi.spyOn(caller.signal, 'removeEventListener');
+      let outcome = 'pending';
+      const pending = captured.fetches[clientIndex]('https://example.test/rpc', {
+        method: 'POST',
+        signal: caller.signal,
+      }).then(
+        () => {
+          outcome = 'success';
+        },
+        (error: Error) => {
+          outcome = error.message;
+        }
+      );
+      try {
+        await vi.advanceTimersByTimeAsync(101);
+        expect(outcome).toBe('supabase_timeout');
+        expect(signal.aborted).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+        expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
+      } finally {
+        release(new Response(status === 503 ? '{"code":"PGRST002"}' : '{}', { status }));
+        await pending;
+        await vi.advanceTimersByTimeAsync(1600);
+      }
       expect(outcome).toBe('supabase_timeout');
-      expect(signal.aborted).toBe(true);
-      expect(vi.getTimerCount()).toBe(0);
-      expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
-    } finally {
-      release(new Response(status === 503 ? '{"code":"PGRST002"}' : '{}', { status }));
-      await pending;
-      await vi.advanceTimersByTimeAsync(1600);
+      expect(transport).toHaveBeenCalledTimes(1);
     }
-    expect(outcome).toBe('supabase_timeout');
-    expect(transport).toHaveBeenCalledTimes(1);
-  });
+  );
 
   it('rejects a real response stream even when it ignores abort', async () => {
     let body!: ReadableStreamDefaultController<Uint8Array>;
     let signal!: AbortSignal;
     const transport = vi.fn(async (_input: unknown, init: RequestInit) => {
       signal = init.signal!;
-      return new Response(new ReadableStream<Uint8Array>({
-        start(controller) { body = controller; controller.enqueue(new TextEncoder().encode('{')); },
-      }));
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            body = controller;
+            controller.enqueue(new TextEncoder().encode('{'));
+          },
+        })
+      );
     });
     vi.stubGlobal('fetch', transport);
     let outcome = 'pending';
-    const pending = captured.fetches[clientIndex]('https://example.test/rpc', { method: 'POST' })
-      .then(() => { outcome = 'success'; }, (error: Error) => { outcome = error.message; });
+    const pending = captured.fetches[clientIndex]('https://example.test/rpc', {
+      method: 'POST',
+    }).then(
+      () => {
+        outcome = 'success';
+      },
+      (error: Error) => {
+        outcome = error.message;
+      }
+    );
     try {
       await vi.advanceTimersByTimeAsync(101);
       expect(outcome).toBe('supabase_timeout');
@@ -88,13 +114,21 @@ describe.each([0, 1, 2])('client %i independently owns its response deadline', (
 
   it('honours caller cancellation even when fetch ignores its signal', async () => {
     let release!: (response: Response) => void;
-    const transport = vi.fn(() => new Promise<Response>((resolve) => { release = resolve; }));
+    const transport = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        })
+    );
     vi.stubGlobal('fetch', transport);
     const caller = new AbortController();
     const reason = new Error('owner_cancelled');
     let observed: unknown;
-    const pending = captured.fetches[clientIndex]('https://example.test/rpc', { signal: caller.signal })
-      .catch((error: unknown) => { observed = error; });
+    const pending = captured.fetches[clientIndex]('https://example.test/rpc', {
+      signal: caller.signal,
+    }).catch((error: unknown) => {
+      observed = error;
+    });
     try {
       caller.abort(reason);
       await vi.advanceTimersByTimeAsync(0);
@@ -111,17 +145,26 @@ describe.each([0, 1, 2])('client %i independently owns its response deadline', (
 describe('SDK response consumption stays inside the transport boundary', () => {
   it('gives the actual SDK buffered bytes and preserves its response metadata', async () => {
     const original = new Response('[{"id":1}]', {
-      status: 200, statusText: 'OK', headers: { 'content-range': '0-0/1' },
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-range': '0-0/1' },
     });
     const originalText = vi.spyOn(original, 'text').mockImplementation(() => new Promise(() => {}));
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(original));
-    const actual = await vi.importActual<typeof import('@supabase/supabase-js')>('@supabase/supabase-js');
+    const actual =
+      await vi.importActual<typeof import('@supabase/supabase-js')>('@supabase/supabase-js');
     const client = actual.createClient('https://example.test', 'test-key', {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { fetch: captured.fetches[0] },
     });
     const result = await client.from('deadline_probe').select('id', { count: 'exact' });
-    expect(result).toMatchObject({ data: [{ id: 1 }], count: 1, status: 200, statusText: 'OK', error: null });
+    expect(result).toMatchObject({
+      data: [{ id: 1 }],
+      count: 1,
+      status: 200,
+      statusText: 'OK',
+      error: null,
+    });
     expect(originalText).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -129,7 +172,9 @@ describe('SDK response consumption stays inside the transport boundary', () => {
   it('preserves URL, redirect and type metadata through readable clones', async () => {
     const original = new Response('{"ok":true}', { headers: { 'x-test': 'preserved' } });
     Object.defineProperties(original, {
-      url: { value: 'https://example.test/final' }, redirected: { value: true }, type: { value: 'basic' },
+      url: { value: 'https://example.test/final' },
+      redirected: { value: true },
+      type: { value: 'basic' },
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(original));
     const response = await captured.fetches[0]('https://example.test/start');
@@ -181,6 +226,28 @@ describe('database deadline includes response body and caller cancellation', () 
       (error: Error) => error.message
     );
     await vi.advanceTimersByTimeAsync(101);
+    expect(await outcome).toBe('supabase_timeout');
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('ends at the deadline even when the transport ignores its abort', async () => {
+    /* THE DEADLINE IS THE DEADLINE (2026-09-16). The abort is cooperative;
+       the boundary promise is what makes the deadline real. Production
+       170e6a2a, on a build whose wrapper relied on the abort alone: an rpc for
+       a hand the database had committed at 14:43:58Z stayed unsettled for
+       three hours and forty minutes, holding that table's settlement
+       barrier, its manager's stop() and a tournament scheduler slot. A
+       transport that never settles must not be able to do that again. */
+    const transport = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal('fetch', transport);
+    const outcome = ordinaryDatabaseFetch()('https://example.test/rpc', { method: 'POST' }).then(
+      () => 'unexpected success',
+      (error: Error) => error.message
+    );
+    await vi.advanceTimersByTimeAsync(99);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2);
     expect(await outcome).toBe('supabase_timeout');
     expect(transport).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);

@@ -42,7 +42,8 @@ const ROOT = join(__dirname, '..');
 const SCRIPT = join(ROOT, 'scripts', 'optimize-dist-media.mjs');
 
 // Permanent public URLs: sealed 29aa/run34836323037 bytes, with five new
-// assets from sealed 5305/run35070339226. New artwork must use a new URL.
+// assets from sealed 5305/run35070339226. Two raw 29aa/5305 matte-clean inputs
+// use new hash-versioned URLs. New artwork must use a new URL.
 const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
   'assets/ads/bbj-running-hub-promotions-v1.webp':
     '76323b90264ca9f7687caad16f6d2a6bbffb735e66f295d67e61c55939974441',
@@ -100,8 +101,8 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
     '11602fd1e8a45c11b1a68efde076bc28bc9f1e6c0d32d3555fc7956b470e90bc',
   'assets/club-buttons/bbj/bbj-dynamic-plaque-v1.webp':
     '02fb6266aeff4347eadfa69959d7aada3411c0fb5591f7934683e39eb58a7aff',
-  'assets/club-buttons/club-nav-shell.png':
-    'fc0e28e4b302d98f0fac738fbf2e36f92c80f1fe569128673b0d540af05b1b09',
+  'assets/club-buttons/club-nav-shell-d45f56465bad.png':
+    'd45f56465badd7ba00f565383424f7a7b22bf142d8201602fc1353e94bafd0a3',
   'assets/club-buttons/club-nav-shell.webp':
     '2f32f48b45c83374777c2658086dbd671e117fbb37ca1c7acd448ac9d580dbcd',
   'assets/club-buttons/club-utility-shell.png':
@@ -328,8 +329,8 @@ const SEALED_PUBLIC_ASSET_BYTES: Readonly<Record<string, string>> = {
     '28f6ea07b14e0ae51ed224feb9fa2d0e67d227ceb21fd5f73cece80ab6944a17',
   'assets/club-buttons/wallet-row-shell.png':
     'eda8a07f19b2bbb0a9e53058c0465b4912ea2d58145733324f531ab06c3f70d1',
-  'assets/club-buttons/wallet-row-shell.webp':
-    '90193a0474792ac3329057c780a9d346bc9fef7053d1015baa5fa09838342124',
+  'assets/club-buttons/wallet-row-shell-e7964bb1791f.webp':
+    'e7964bb1791f5584f39b798419a3c4dd86903218761d80f3d23c559e1630f2c1',
   'assets/club-buttons/wallets/desktop/wallet-agent-wallet-v1.webp':
     '5f65106b4d0e9b6887787deabaeaecd11dcbc78f6c97b0e7770c2370e4a16f76',
   'assets/club-buttons/wallets/desktop/wallet-backup-bbj-wallet-v1.webp':

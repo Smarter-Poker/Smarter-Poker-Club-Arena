@@ -407,7 +407,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
+          # The ingestion key was revoked; explicit empty prevents dotenv fallback.
+          VITE_SENTRY_DSN: ''
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
           # Only this verified web release may upload source maps.
@@ -633,7 +634,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
+          # The ingestion key was revoked; explicit empty prevents dotenv fallback.
+          VITE_SENTRY_DSN: ''
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
           VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}

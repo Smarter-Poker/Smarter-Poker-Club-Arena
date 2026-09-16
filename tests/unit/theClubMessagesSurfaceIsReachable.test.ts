@@ -34,6 +34,23 @@ const MIGRATION = read(
 const SERVICE = read('src/services/ClubMessageManagementService.ts');
 
 describe('the club messages surface can actually be reached', () => {
+  it('binds announcement authors to the named profile relationship when duplicate keys exist', () => {
+    // Production has two validated author_id -> profiles(id) keys. A hint-less
+    // embed returns PGRST201 even when both keys point to the same author.
+    const banner = read('src/components/club/ClubAnnouncementBanner.tsx');
+    const select = banner.match(/\.from\('club_announcements'\)\s*\.select\(\s*`([^`]+)`/);
+    expect(select?.[1]).toContain(
+      'profiles!club_announcements_profiles_fkey(${PLAYER_NAME_COLUMNS})'
+    );
+    expect(read('supabase/migrations/20260124980_profile_fk.sql')).toMatch(
+      /ADD CONSTRAINT club_announcements_profiles_fkey\s+FOREIGN KEY \(author_id\) REFERENCES profiles\(id\)/
+    );
+    expect(banner).toContain('createdByName: playerDisplayName(a.profiles)');
+    expect(banner).toContain(
+      "if (error) reportError(error, 'ClubAnnouncementBanner.loadAnnouncements')"
+    );
+  });
+
   it('adds the column both functions were already written against', () => {
     expect(MIGRATION).toMatch(
       /ALTER TABLE public\.club_announcements\s+ADD COLUMN IF NOT EXISTS updated_at timestamptz/

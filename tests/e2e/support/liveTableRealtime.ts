@@ -41,6 +41,7 @@ interface EngineSocketRecord {
   discoveredAt: number;
   closedAt: number | null;
   socketError: string | null;
+  socketErrorAt: number | null;
   socket: WebSocket;
 }
 
@@ -222,6 +223,7 @@ export class EngineSocketJournal {
         discoveredAt: Date.now(),
         closedAt: null,
         socketError: null,
+        socketErrorAt: null,
         socket,
       };
       this.sockets.push(record);
@@ -230,6 +232,7 @@ export class EngineSocketJournal {
       socket.on('framereceived', ({ payload }) => this.recordFrame(record.id, 'received', payload));
       socket.on('socketerror', (error) => {
         record.socketError = String(error);
+        record.socketErrorAt = Date.now();
       });
       socket.on('close', () => {
         record.closedAt = Date.now();
@@ -379,32 +382,100 @@ export class EngineSocketJournal {
     );
   }
 
+  /** The Playwright discovery event is not proof of the server's upgrade or
+   * table authorization. The client sends bearer credentials in subprotocols,
+   * which this API does not expose: authPresent must remain unknown.
+   */
+  private connectionDiagnostics(): Record<string, unknown> {
+    const socketLimit = 16;
+    const frameLimit = 128;
+    const codes = new Set([
+      'SUB_LIMIT',
+      'TABLE_NOT_FOUND',
+      'ACCESS_CHECK_FAILED',
+      'OBSERVERS_RESTRICTED',
+      'CLUB_MEMBERSHIP_REQUIRED',
+      'BANNED',
+      'IP_RESTRICTED',
+      'SUB_FAILED',
+    ]);
+    const controlFrames = this.frames.filter(
+      ({ direction, message }) =>
+        (direction === 'sent' && message.type === 'SUBSCRIBE') ||
+        (direction === 'received' &&
+          (message.type === 'ERROR' ||
+            message.type === 'SUBSCRIBED' ||
+            message.type === 'SNAPSHOT'))
+    );
+    return {
+      sockets: this.sockets.slice(0, socketLimit).map((record) => ({
+        socketId: record.id,
+        path: new URL(record.url).pathname,
+        socketObservedAt: record.discoveredAt,
+        authPresent: null,
+        authObservation: 'subprotocol-not-exposed-by-playwright',
+        closedAt: record.closedAt,
+        socketErrorObserved: record.socketError !== null,
+        socketErrorAt: record.socketErrorAt,
+      })),
+      frames: controlFrames.slice(0, frameLimit).map(({ at, direction, socketId, message }) => ({
+        at,
+        direction,
+        socketId,
+        type: message.type,
+        tableId:
+          typeof message.tableId === 'string' &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.tableId)
+            ? message.tableId
+            : null,
+        ...(message.type === 'ERROR'
+          ? {
+              code:
+                typeof message.code === 'string' && codes.has(message.code)
+                  ? message.code
+                  : 'UNKNOWN',
+            }
+          : {}),
+      })),
+      omittedSockets: Math.max(0, this.sockets.length - socketLimit),
+      omittedFrames: Math.max(0, controlFrames.length - frameLimit),
+    };
+  }
+
   /** Sanitized diagnostic summary: no auth subprotocol and no state payloads. */
   summary(tableId: string): Record<string, unknown> {
     const relevant = this.frames.filter((frame) => tableIdOf(frame.message) === tableId);
+    const sent = relevant.filter((frame) => frame.direction === 'sent');
+    const received = relevant.filter((frame) => frame.direction === 'received');
     return {
       tableId,
-      sockets: this.sockets.map(({ id, url, discoveredAt, closedAt, socketError, socket }) => ({
-        id,
-        path: new URL(url).pathname,
-        discoveredAt,
-        closedAt,
-        isClosed: socket.isClosed(),
-        socketError,
-      })),
-      sent: relevant
-        .filter((frame) => frame.direction === 'sent')
-        .map((frame) => ({ at: frame.at, socketId: frame.socketId, type: frame.message.type })),
-      received: relevant
-        .filter((frame) => frame.direction === 'received')
-        .map((frame) => ({
-          at: frame.at,
-          socketId: frame.socketId,
-          type: frame.message.type,
-          seq: frame.message.seq,
-          eventType: eventPayload(frame.message)?.type,
-          eventTimestamp: eventTimestamp(frame.message),
+      connectionDiagnostics: this.connectionDiagnostics(),
+      sockets: this.sockets
+        .slice(0, 16)
+        .map(({ id, url, discoveredAt, closedAt, socketError, socket }) => ({
+          id,
+          path: new URL(url).pathname,
+          discoveredAt,
+          closedAt,
+          isClosed: socket.isClosed(),
+          socketError: socketError === null ? null : 'socket-error-observed',
         })),
+      sent: sent
+        .slice(0, 128)
+        .map((frame) => ({ at: frame.at, socketId: frame.socketId, type: frame.message.type })),
+      received: received.slice(0, 128).map((frame) => ({
+        at: frame.at,
+        socketId: frame.socketId,
+        type: frame.message.type,
+        seq: frame.message.seq,
+        eventType: eventPayload(frame.message)?.type,
+        eventTimestamp: eventTimestamp(frame.message),
+      })),
+      omitted: {
+        sockets: Math.max(0, this.sockets.length - 16),
+        sent: Math.max(0, sent.length - 128),
+        received: Math.max(0, received.length - 128),
+      },
     };
   }
 }

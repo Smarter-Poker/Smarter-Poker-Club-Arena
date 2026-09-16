@@ -1,5 +1,4 @@
 import { act, renderHook } from '@testing-library/react';
-import { StrictMode, type PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ rpc: vi.fn(), viewer: 'player-a' as string | null }));
@@ -192,8 +191,10 @@ describe('lobby observations belong to one viewer and one opening', () => {
   it('starts one live poll loop after Strict Mode effect replay', async () => {
     const old = deferred();
     state.rpc.mockReturnValueOnce(old.promise).mockResolvedValue(response(snapshot()));
-    const wrapper = ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode>;
-    const { result, unmount } = renderHook(() => useCashGameLobby('game', true, 5000), { wrapper });
+    // React 19 replays initial effects for root Strict Mode, not a nested wrapper.
+    const { result, unmount } = renderHook(() => useCashGameLobby('game', true, 5000), {
+      reactStrictMode: true,
+    });
     await flush();
     expect(state.rpc).toHaveBeenCalledTimes(2);
     await act(async () => old.resolve(response(snapshot('game', 'old'))));

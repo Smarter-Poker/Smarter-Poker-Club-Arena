@@ -5,6 +5,29 @@
 **What changed:** execute the actual tracked preimage, guarded retry restoration and current insertion in an isolated PostgreSQL17 cluster. Real deadlock and timeout boundaries prove retry, one settlement credit, failed-attempt rollback, bounded exhaustion, permanent refusal, exact replay and service-only access. Financial callees are explicit local transaction recorders; accounting formulas and Diamond behavior remain outside this narrow fixture.
 **Verified:** current body matches production0e7baa1bfeb2a2d0fed749a52f32d520; historical24-chip settlement has all3players attributed. No production writes or new migration. Protected CI and publication remain separate.
 
+## 2026-09-14: Terminal bounty residual requires complete candidate coverage
+
+**Files:** migration20260914135625; terminal-bounty-candidate-coverage native fixture/runner; accounting CI step; bountyPoolConservation.guard.test.ts.
+**What existed:** ordinary/mystery finalizers only inspected existing obligations/awards, allowing an accepted missing head to be absorbed by the champion. The structural lock test required an inline lock although the installed root delegates to the canonical global lane helper.
+**What changed:** private complete candidate/obligation anti-join and exact accepted witness before any new residual/reveal/pay/void, after immutable replay and existing locks. Missing/unknown debt refuses; common unsettled predicate and all payer bodies remain. The lock test verifies the actual helper's two canonical locks and their order before event read.
+**Verified:**100 private native assertions plus source/metadata/role/replay guards;2209 tournament tests/164files and app/server TypeScript pass. Exact original roots, claim/collector/marker and documented wallet stand-in. Installed history20260914140327; three postimages plus five unchanged dependency definitions/metadata verified14:03:40UTC. R37 explicit ACL contract installed history20260914140322. Full provider, Diamond/rebuy, top-level native terminal and protected release remain open. See docs/changelog/2026-09-14-terminal-bounty-candidate-coverage.md.
+
+## 2026-09-14: PKO heads follow accepted knockout dependencies
+
+**Explicit privilege contract:** migration20260914135834 repeats the already-verified private claim and service-only collector REVOKEs, guarded by exact installed body/ACL/owner/path/security preconditions and postconditions. The applied20260914133503 bytes remain unchanged. The unchanged four source authorization checks now recognize the same privileges across the two migrations; native qualification also proves all five original caller-role refusals. This follow-up has no financial writes and no new grant. Installation of the explicit contract is recorded separately.
+
+**Files:** migration20260914133503; private causal-PKO runner/fixtures; required accounting CI step.
+**What existed:** an accepted but unclaimed earlier knockout could be omitted from a later head; reserved hand numbers could also discard correctly ordered payments after a move.
+**What changed:** private accepted-evidence and causal-dependency proofs run before new head capture and pending collection, after immutable replay; complete markers discharge exact ancestors. Independent pending heads commute; shared larger-numbered heads require strictly earlier accepted chronology. No historical resnapshot or compensation.
+**Verified:** 111 private PG17 assertions, source/metadata/private-role guards and migration replay. Captured actual claim/collector/marker with a documented wallet stand-in. Installed history20260914134657; all five exact postimages/metadata read back13:47:07UTC. A read-only check of38 current PLO8 candidates found26 clear and12 correctly waiting for incoming heads, with zero unknown proofs. Full provider, legal-hand, rebuy/Diamond and deployment acceptance remain separate. See docs/changelog/2026-09-14-pko-accepted-predecessor-order.md.
+
+## 2026-09-14: Independent PKO tables preserve head order
+
+**Files:** migration20260914123818; captured independent-PKO native fixture/runner; associated changelog.
+**What existed:** the global deal-number cutoff rejected independent tables' valid bounty claims and pending collections.24of43 measured historical order refusals have no later shared table/player at claim time.
+**What changed:** both original authorities require an exact private disjointness proof before admitting a lower hand. Shared or unknown dependencies retain order refusal; all original financial and generation rules remain. No historical row repair.
+**Verified:** 97 native assertions plus three source guards, predicate ACL/private-access checks and migration replay;664engine accounting cases/38files; server TypeScript/build pass. Installed history20260914124651; exact three-function postimages and metadata verified12:47:13UTC. Source CI and actual live execution remain separate. See docs/changelog/2026-09-14-independent-pko-tables.md for scope and limits.
+
 ## 2026-09-14: Settled bounty replay precedes pending payment order
 
 **Files:** migration20260914122903; captured native replay fixture and runner; bounty recipient/order audit.

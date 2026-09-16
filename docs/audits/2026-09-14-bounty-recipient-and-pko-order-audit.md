@@ -20,7 +20,7 @@ The historical cleanup migration `20260910160413_a_finished_event_holds_no_pendi
 
 ## Confirmed ordering defects
 
-The current claim and collection authorities impose a tournament-wide deal-number watermark. Across separate tables, deal order and hand completion order can differ. Observed blocked examples committed after a higher-numbered hand had already settled, including candidate `08192d3c-88dd-4c85-9bf5-aea1b11ba9f7`: hand 9623574 committed at September 11 15:24:29.118374 UTC, while a higher-numbered payout settled at 15:24:24.441601 UTC. The exact current reader identifies the knocker. A global numeric cutoff alone does not prove a dependent head transfer was missed.
+The claim and collection authorities inspected before R35 impose a tournament-wide deal-number watermark. Across separate tables, deal order and hand completion order can differ. Observed blocked examples committed after a higher-numbered hand had already settled, including candidate `08192d3c-88dd-4c85-9bf5-aea1b11ba9f7`: hand 9623574 committed at September 11 15:24:29.118374 UTC, while a higher-numbered payout settled at 15:24:24.441601 UTC. The exact current reader identifies the knocker. A global numeric cutoff alone does not prove a dependent head transfer was missed.
 
 R34 repairs the independent settled-replay defect: `fn_collect_bounty` previously rejected already-paid receipts before reaching marker verification. Read-only preflight found 1,129 affected complete receipts. See the September 14 settled-bounty-replay changelog for native, source and installation evidence.
 
@@ -33,3 +33,7 @@ PokerStars assigns a bounty to the winner of the pot containing the eliminated p
 GGPoker describes PKO payments as half immediate cash to the knocker and half added to that player's head. [GGPoker tournament types](https://legal.ggpoker.com/tournaments/tournament-types/).
 
 These sources support payment to the entitled knocker; they do not establish that assigning an unattributed bounty to the eventual champion satisfies that entitlement. The current Club Arena exact claimant reader considers every distinct recipient of the relevant pot, including both hi/lo halves, while the marker uses user-id order for remainder assignment. Those are explicit comparison gaps requiring a published, versioned policy and actual format tests; they must not be presented as universal industry parity or changed retroactively without reviewing existing contracts.
+
+## R35 installation update
+
+At 12:36:52 UTC, 24 of the 43 explicit order conflicts were independently classified as disjoint from all later recorded head obligations at claim time, with no already-busted claimant. R35 installs a private exact disjointness proof in both existing authorities, retaining shared-player and unknown-evidence refusals. The migration is installed as history20260914124651 with exact source/privilege readback at12:47:13UTC;97native assertions and664engine cases/38files pass. This repairs the independent-table admission defect. Natural live acceptance, the remaining shared-player dependencies and historical compensation are still open. See the independent-PKO changelog and fixture limitations.

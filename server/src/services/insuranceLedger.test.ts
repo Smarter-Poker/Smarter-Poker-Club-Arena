@@ -56,9 +56,6 @@ vi.mock('@supabase/supabase-js', () => ({
 vi.mock('./errorReporter.js', () => ({
   reportError: (...args: unknown[]) => mockReportError(...args),
   reportWarning: vi.fn(),
-  initSentry: vi.fn(),
-  flushSentry: vi.fn(),
-  setServerContext: vi.fn(),
 }));
 
 // supabase.ts reaches for this with a dynamic import inside the failure branch

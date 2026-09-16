@@ -1,3 +1,5 @@
+> **Historical record only, retired September 15, 2026.** The owner removed external error telemetry. Do not execute the provider setup, upload, SDK, capture, or expansion instructions below. Retained for incident and migration evidence. Current local diagnostics and existing realtime alerts are described in [the operational runbook](runbooks/engine-and-realtime-diagnostics.md).
+
 # The Sentry And Realtime Programme
 
 **One register.** The two agent handoffs of 2026-09-04 — "Sentry completion + realtime

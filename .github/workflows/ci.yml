@@ -1680,17 +1680,6 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          # SENTRY_AUTH_TOKEN DELIBERATELY ABSENT (moved 2026-09-04 to
-          # publish-club-arena.yml). It used to live here, which meant the
-          # sentry-vite-plugin gate
-          # (`NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`) was true for
-          # THIS build - a pull-request artifact that is inspected and thrown
-          # away - and false for the publisher's, the only bundle a player
-          # ever loads. Sentry was therefore holding maps for code nobody runs
-          # and none for the code everybody runs. Do not put it back: uploading
-          # from here would re-create that, and the upload is pure latency on
-          # the critical path. It belongs to whoever ships the bundle.
-
       - name: Report Build Time
         if: always()
         run: |

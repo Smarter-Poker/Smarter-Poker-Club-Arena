@@ -206,8 +206,7 @@ permission is a new binary.
 
 Apple's Privacy Nutrition Labels and Play's Data Safety form are answered from
 what the app actually collects after phase 3: account data (email, username,
-avatar), gameplay data, device identifiers for push, crash data (Sentry,
-without email), and product analytics only after in-app consent (PostHog).
+avatar), gameplay data, device identifiers for push, first-party crash diagnostics, and product analytics only after in-app consent (PostHog).
 The privacy policy URL is `https://smarter.poker/privacy` once the World Hub
 serves it as a page (phase 3b); today `/privacy` redirects to `/terms`, whose
 privacy tab is client-rendered and not what a store crawler reads.

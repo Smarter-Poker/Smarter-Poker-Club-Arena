@@ -60,14 +60,6 @@ Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
 });
 
-// Mock Sentry
-vi.mock('@sentry/react', () => ({
-  captureException: vi.fn(),
-  withErrorBoundary: (component: any) => component,
-  withScope: vi.fn((callback) => callback({ setContext: vi.fn() })),
-  showReportDialog: vi.fn(),
-}));
-
 // Mock Supabase
 //
 // TEST-INFRA FIX 2026-08-15: `from: vi.fn()` returns UNDEFINED, so the very

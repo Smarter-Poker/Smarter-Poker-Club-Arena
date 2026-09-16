@@ -3,7 +3,7 @@
  *  UNIT TESTS — SupabaseIntegration
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
@@ -14,13 +14,6 @@ vi.mock('../../src/lib/supabase', () => ({
     }),
     rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
   },
-}));
-
-vi.mock('@sentry/react', () => ({
-  startSpan: vi.fn((_opts: any, fn: any) => fn()),
-  setMeasurement: vi.fn(),
-  captureException: vi.fn(),
-  captureMessage: vi.fn(),
 }));
 
 import { trackSupabaseOperation, trackSupabaseQuery } from '../../src/core/SupabaseIntegration';
@@ -45,5 +38,41 @@ describe('trackSupabaseQuery', () => {
     const mockResult = { data: [1, 2, 3], error: null };
     const result = await trackSupabaseQuery('test-table', 'select', Promise.resolve(mockResult));
     expect(result).toEqual(mockResult);
+  });
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('local database failure visibility', () => {
+  it('returns the same failed result and reports RLS failures locally', async () => {
+    const error = Object.freeze({ code: '42501', message: 'permission denied' });
+    const result = { data: null, error };
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(trackSupabaseQuery('wallet', 'select', Promise.resolve(result))).resolves.toBe(
+      result
+    );
+    expect(log).toHaveBeenCalledWith(
+      '[Supabase.wallet.select]',
+      expect.objectContaining({ message: '[Supabase.wallet.select] permission denied' }),
+      undefined
+    );
+    expect(warn).toHaveBeenCalledWith('[Supabase.wallet.select] RLS Policy Violation', {
+      code: '42501',
+    });
+    expect(error.message).toBe('permission denied');
+  });
+  it('preserves the exact rejection even if the console sink fails', async () => {
+    const error = Object.freeze(new Error('transport unavailable'));
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      throw new Error('log sink failed');
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {
+      throw new Error('log sink failed');
+    });
+    await expect(trackSupabaseOperation('wallet', 'read', Promise.reject(error))).rejects.toBe(
+      error
+    );
+    expect(error.message).toBe('transport unavailable');
   });
 });

@@ -97,7 +97,7 @@ Smarter.Poker account.
 | Gameplay and club activity                                            | yes       | yes                | app functionality, reports          |
 | Purchase history                                                      | yes       | yes                | entitlements (via RevenueCat)       |
 | Push token / device id                                                | yes       | yes                | notifications, only if turned on    |
-| Crash data                                                            | yes       | no (no email)      | diagnostics (Sentry)                |
+| Crash data                                                            | yes       | no (no email)      | first-party diagnostics                |
 | Product analytics                                                     | optional  | yes                | only after in-app consent (PostHog) |
 | Precise location, contacts, photos, health, financial account numbers | no        |                    |                                     |
 

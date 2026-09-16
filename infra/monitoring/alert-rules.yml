@@ -280,7 +280,7 @@ groups:
         annotations:
           summary: 'Slot {{ $labels.slot }} is pinning {{ $value | humanize1024 }}B of WAL on disk'
           description: "Postgres cannot recycle WAL behind a slot's restart_lsn. This is the number that fills the volume, and it runs well ahead of the flush lag."
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       # The engine and the database disagreeing about the time silently breaks
       # every deadline, timer and retention window on the platform.
@@ -400,7 +400,7 @@ groups:
         annotations:
           summary: 'Realtime slot {{ $labels.slot }} is >256MB behind'
           description: 'Logical decoding is not keeping up with WAL. This compounds: a lagging slot reads WAL from disk rather than memory. Players see it as stale lobbies and late seat updates.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       - alert: ReplicationSlotCriticallyBehind
         expr: |
@@ -412,7 +412,7 @@ groups:
         annotations:
           summary: 'Realtime slot {{ $labels.slot }} is >1GB behind'
           description: 'At this point the slot is pinning WAL on disk and the instance is at risk of filling it. Do not restart the consumer blind - read the runbook.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       # An inactive slot advances not at all and pins every WAL segment behind
       # it. Guarded, because the engine's own restart inside the :55 break can
@@ -428,7 +428,7 @@ groups:
         annotations:
           summary: 'Replication slot {{ $labels.slot }} has no consumer'
           description: 'A slot with no consumer never advances and holds every WAL segment after it on disk.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       # The collector itself. A gauge that stopped being collected reads as a
       # perfectly healthy slot, which is the failure this whole family exists
@@ -444,7 +444,7 @@ groups:
         annotations:
           summary: 'Replication gauges are stale ({{ $value }}s)'
           description: 'fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       # Zero slots is not a quiet database - this database has two logical
       # slots. Zero means the collector cannot see pg_replication_slots.
@@ -459,7 +459,7 @@ groups:
         annotations:
           summary: 'No replication slots visible'
           description: 'The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
   # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
   # poker_act_to_broadcast_ms is the time from a player's action being
@@ -719,7 +719,7 @@ groups:
           component: hand-projection
         annotations:
           summary: 'Oldest unprojected hand has waited {{ $value | humanizeDuration }}'
-          description: 'Half an hour of hands have not reached club stats, player stats or their rake/BBJ bookings. The durable rows are safe; do not delete or hand-mark them. Find the reason in poker_hand_projection_drain_results_total{result="failed"} and Sentry HandProjection.rpc_failed / semantic_refusal before changing anything.'
+          description: 'Half an hour of hands have not reached club stats, player stats or their rake/BBJ bookings. The durable rows are safe; do not delete or hand-mark them. Find the reason in poker_hand_projection_drain_results_total{result="failed"} and engine logs for HandProjection.rpc_failed / semantic_refusal before changing anything.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
       # Zero progress can mean an inactive worker, a still-pending drain,
@@ -749,7 +749,7 @@ groups:
           component: hand-projection
         annotations:
           summary: 'Outbox backlog gauges are stale ({{ $value }}s)'
-          description: 'HandOutboxMetrics has not refreshed in ten minutes (Sentry HandOutboxMetrics.refresh_failed). The backlog alerts above cannot fire while this is true, and unknown is what five hours of a 100k-row backlog looked like.'
+          description: 'HandOutboxMetrics has not refreshed in ten minutes (engine logs: HandOutboxMetrics.refresh_failed). The backlog alerts above cannot fire while this is true, and unknown is what five hours of a 100k-row backlog looked like.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
   # ── MONEY HEALTH (2026-09-04) ───────────────────────────────────────────
@@ -1430,7 +1430,7 @@ groups:
           summary: 'Cluster controller released a stuck pass latch ({{ $value }} in 30 min)'
           description: |
             A pass was still open after CLUSTER_TICK_STALL_MS and was reported
-            as ClusterController.tick_stalled. Sentry has the stack. Every
+            as ClusterController.tick_stalled. The engine log has the stack. Every
             await inside a pass is supposed to be bounded (15 s client
             deadline, the wake never awaited); one that is not is a defect.
 
@@ -1449,7 +1449,7 @@ groups:
           summary: '{{ $value }} cluster tick errors in 15 min'
           description: |
             fn_cash_clusters_to_tick or fn_cash_cluster_tick is failing.
-            Sentry: ClusterController.worklist_failed / tick_rpc_failed /
+            Engine logs: ClusterController.worklist_failed / tick_rpc_failed /
             game_tick_error, with the game_id. A single game failing every
             pass reaches this in under a minute of passes; check that game's
             cash_cluster_events for the last thing it did.

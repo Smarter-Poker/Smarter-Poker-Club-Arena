@@ -321,7 +321,7 @@ Each canonical repo has pre-push hooks that block pushes if any of these fail:
 ### smarter-poker-workers
 
 - TypeScript strict-mode compile
-- No raw `console.log` outside startup (Sentry only)
+- No raw `console.log` outside startup; failures use the local error reporter.
 
 ### smarter-poker-commander
 

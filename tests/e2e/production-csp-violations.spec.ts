@@ -134,10 +134,8 @@ test.describe('the content security policy', () => {
     ]) {
       expect(policy, `the policy dropped: ${directive}`).toContain(directive);
     }
-    // Sentry, because losing error reporting at the moment a security header
-    // changes is the single worst thing to lose. next.config.js says exactly
-    // this; nothing was checking it.
-    expect(policy, 'Sentry ingest is not in connect-src').toContain('ingest');
+    // A retired telemetry provider must not remain an allowed network destination.
+    expect(policy, 'Retired telemetry must not remain in connect-src').not.toMatch(/sentry\.io/i);
     // upgrade-insecure-requests is ignored inside a report-only policy, so it
     // lives in the enforced header and must stay there.
     expect(enforced, 'upgrade-insecure-requests left the enforced header').toContain(

@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 // Import the inner ErrorBoundary class directly for testing
-// The default export is Sentry-wrapped, which intercepts our test errors
+// The default export is the actual application boundary.
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 
 // Component that throws an error
@@ -117,17 +117,13 @@ describe('ErrorBoundary Component', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText(/We've been notified and are working on a fix/i)).toBeInTheDocument();
+    expect(screen.getByText(/Please Reload The Page.*Contact Support/i)).toBeInTheDocument();
 
     consoleErrorSpy.mockRestore();
   });
 
-  it('captures exception with Sentry', () => {
+  it('reports the exception to the local console', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    // A require() used to sit here, pulling in @sentry/react and then never
-    // using the binding: a lint error (no-require-imports) plus an unused
-    // variable, in a file nothing had touched in long enough for lint-staged
-    // never to see it. The assertion below never depended on it.
 
     render(
       <ErrorBoundary>
@@ -160,7 +156,7 @@ describe('ErrorBoundary Component', () => {
     consoleWarnSpy.mockRestore();
   });
 
-  it('displays error ID when eventId is available', () => {
+  it('keeps the error state visible without a remote event identifier', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     render(
@@ -169,17 +165,13 @@ describe('ErrorBoundary Component', () => {
       </ErrorBoundary>
     );
 
-    // Error ID is only rendered when Sentry.captureException returns a non-null eventId.
-    // In test environment with mocked Sentry, eventId starts as null and may not be set.
-    // Verify the error UI is shown (Error ID text appears only with a valid eventId)
-    // Either it shows (Sentry mock returned an eventId) or it doesn't (null eventId)
-    // Both are valid — the key is the component rendered the error state
+    // The component must render the error state
     expect(screen.getByText(/Something went wrong/i)).toBeInTheDocument();
 
     consoleErrorSpy.mockRestore();
   });
 
-  it('provides report feedback button when error ID exists', async () => {
+  it('does not offer a retired external feedback dialog', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     render(
@@ -188,11 +180,8 @@ describe('ErrorBoundary Component', () => {
       </ErrorBoundary>
     );
 
-    // Look for feedback button
-    const feedbackButton = screen.queryByText(/📝 Report Feedback/i);
-    if (feedbackButton) {
-      expect(feedbackButton).toBeInTheDocument();
-    }
+    expect(screen.queryByRole('button', { name: /Report Feedback/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Error ID:/i)).not.toBeInTheDocument();
 
     consoleErrorSpy.mockRestore();
   });

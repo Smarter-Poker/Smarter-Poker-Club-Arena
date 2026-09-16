@@ -1,3 +1,5 @@
+> **Current owner instruction (September 16):** Read [AGENTS.md](AGENTS.md) before this historical playbook. The sole restoration owner controls integration and publication. Original GitHub/Vercel/Hetzner delivery is authorized; later application work and retired local pipelines remain held until a new explicit manual owner prompt after verified restoration. Older automatic-merge/autopilot directions below are inactive during this hold.
+
 # RULE 0 — "EM BARS" MEANS EM DASHES (—), NOT HAMBURGER BARS
 
 Dan, 2026-08-20: **"forbid the use of em bars anywhere."** He means the

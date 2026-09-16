@@ -481,10 +481,19 @@ describe('producer shutdown source contract', () => {
 
     const controller = source('../cluster/ClusterController.ts');
     expect(controller).toMatch(
-      /await rpc\('fn_cash_clusters_tick_all'[\s\S]{0,160}!this\.lifecycleIsCurrent\(generation\)/
+      /const passIsCurrent = \(\) =>\s*this\.tickSerial === mySerial &&\s*\(generation === null \|\| this\.lifecycleIsCurrent\(generation\)\);/
     );
     expect(controller).toMatch(
-      /await this\.deps\.seatedCount\(g\.main1_table_id\);\s*if \(generation !== null && !this\.lifecycleIsCurrent\(generation\)\) return;/
+      /await rpc\('fn_cash_clusters_tick_all', \{ p_eligible: eligible \}\);\s*if \(!passIsCurrent\(\)\) return summary;/
+    );
+    expect(controller).toMatch(
+      /await this\.afterGameTick\(\s*row,\s*\(entry\.result \?\? \{\}\) as ClusterTickResult,\s*summary,\s*'pass',\s*generation,\s*passIsCurrent\s*\);\s*if \(!passIsCurrent\(\)\) return summary;/
+    );
+    expect(controller).toMatch(
+      /stillCurrent: \(\) => boolean = \(\) => generation === null \|\| this\.lifecycleIsCurrent\(generation\)/
+    );
+    expect(controller).toMatch(
+      /await this\.deps\.seatedCount\(g\.main1_table_id\);\s*if \(!stillCurrent\(\)\) return;/
     );
 
     const rakeback = source('RakebackSettlerService.ts');

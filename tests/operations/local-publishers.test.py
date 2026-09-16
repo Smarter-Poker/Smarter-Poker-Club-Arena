@@ -31,6 +31,22 @@ PUBLISHERS = ('publish-club-arena', 'stage-engine-release', 'auto-deploy-hetzner
               'deploy-monitoring', 'post-deploy-e2e')
 
 class RoutingTests(unittest.TestCase):
+    def test_money_trigger_recovery_uses_only_the_trusted_local_lane(self):
+        source = (ROOT / '.github/workflows/money-trigger-recovery.yml').read_text()
+        self.assertEqual(re.findall(r'^    runs-on: (.+)$', source, re.M),
+                         ['[self-hosted, smarter-local-publish]'])
+        self.assertIn('\n    environment: money-trigger-recovery-trusted\n', source)
+        self.assertIn("github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'", source)
+        self.assertIn("github.event.pull_request.base.ref == 'main' && vars.MONEY_TRIGGER_REPORTER_APP_ID != ''", source)
+        self.assertIn('ref: ${{ github.event.repository.default_branch }}', source)
+        self.assertIn('persist-credentials: false', source)
+        self.assertIn('app-id: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}', source)
+        self.assertIn('private-key: ${{ secrets.MONEY_TRIGGER_REPORTER_PRIVATE_KEY }}', source)
+        self.assertIn('permission-checks: write', source)
+        self.assertIn('VERIFY_OUTCOME: ${{ steps.proof.outcome }}', source)
+        self.assertIn('run: node scripts/ci/produce-money-trigger-recovery.mjs', source)
+        self.assertIn('run: node scripts/ci/money-trigger-check-report.mjs finish', source)
+
     def test_publishers_have_only_fixed_local_routes_and_protected_environment(self):
         for name in PUBLISHERS:
             source = (ROOT / f'.github/workflows/{name}.yml').read_text()

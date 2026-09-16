@@ -101,7 +101,7 @@ class UnionServiceClass {
 
     if (error) throw error;
 
-    return (data || []).map(this.mapUnion);
+    return this.enrichWithRealtimeCounts((data || []).map(this.mapUnion));
   }
 
   /**
@@ -202,62 +202,66 @@ class UnionServiceClass {
     }
 
     const unions = Array.from(unionMap.values()).map(this.mapUnion);
+    return this.enrichWithRealtimeCounts(unions);
+  }
 
-    // ── Enrich with LIVE clubCount + memberCount (unions.member_count / club_count can be stale) ──
-    if (unions.length > 0) {
-      try {
-        const unionIds = unions.map((u) => u.id);
-        // Single batch: get all union_clubs rows for these unions
-        const { data: ucRows } = await supabase
-          .from('union_clubs')
-          .select('union_id, club_id')
-          .in('union_id', unionIds);
+  /**
+   * Dan 2026-09-03: "harden this for all clubs and unions globally."
+   *
+   * Every union the app hands out passes through here, so every surface shows
+   * the same two numbers the union card on the home carousel shows:
+   *
+   *   memberCount / totalPlayers  = fn_batch_union_realtime_member_counts
+   *                                 (sum of each member club's members)
+   *   onlineCount                 = fn_batch_union_realtime_active_counts
+   *                                 (sum of each member club's seated players)
+   *
+   * Both RPCs return a row per requested union, zero included, so a brand-new
+   * union with no clubs reads 0 rather than keeping a stale column. The old
+   * enrichment used fn_batch_club_member_counts (no row for an empty club)
+   * and then took Math.max against unions.total_players, so a union could
+   * never show a decrease; and `unions.online_count`, which mapUnion used to
+   * read, is not a column that exists. It was always 0.
+   */
+  private async enrichWithRealtimeCounts(unions: Union[]): Promise<Union[]> {
+    if (unions.length === 0) return unions;
+    const unionIds = unions.map((u) => u.id);
+    try {
+      const [membersResult, activeResult, ucResult] = await Promise.all([
+        supabase.rpc('fn_batch_union_realtime_member_counts', { p_union_ids: unionIds }),
+        supabase.rpc('fn_batch_union_realtime_active_counts', { p_union_ids: unionIds }),
+        supabase.from('union_clubs').select('union_id').in('union_id', unionIds),
+      ]);
 
-        if (ucRows && ucRows.length > 0) {
-          // Live club counts per union
-          const clubCountMap = new Map<string, number>();
-          const allClubIds: string[] = [];
-          const clubToUnionMap = new Map<string, string>();
-          for (const row of ucRows) {
-            clubCountMap.set(row.union_id, (clubCountMap.get(row.union_id) || 0) + 1);
-            allClubIds.push(row.club_id);
-            clubToUnionMap.set(row.club_id, row.union_id);
-          }
-
-          // Live member counts: use SECURITY DEFINER RPC (bypasses RLS for accurate cross-club totals)
-          if (allClubIds.length > 0) {
-            const { data: counts } = await supabase.rpc('fn_batch_club_member_counts', {
-              p_club_ids: allClubIds,
-            });
-
-            const memberCountMap = new Map<string, number>();
-            for (const row of counts || []) {
-              const uid = clubToUnionMap.get(row.club_id);
-              if (uid) {
-                memberCountMap.set(uid, (memberCountMap.get(uid) || 0) + Number(row.member_count));
-              }
-            }
-
-            for (const union of unions) {
-              if (clubCountMap.has(union.id)) union.clubCount = clubCountMap.get(union.id)!;
-              if (memberCountMap.has(union.id)) {
-                // Use the higher of live count vs authoritative totalPlayers (prevents regression)
-                const liveCount = memberCountMap.get(union.id)!;
-                union.memberCount = Math.max(liveCount, union.totalPlayers || 0);
-              }
-            }
-          } else {
-            // No clubs in any union — zero out counts
-            for (const union of unions) {
-              if (clubCountMap.has(union.id)) union.clubCount = clubCountMap.get(union.id)!;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[UnionService] Live union count enrichment failed (using stale counts):', e);
+      const memberMap = new Map<string, number>();
+      for (const row of (membersResult.data as any[]) || []) {
+        memberMap.set(row.union_id, Number(row.member_count) || 0);
       }
-    }
+      const activeMap = new Map<string, number>();
+      for (const row of (activeResult.data as any[]) || []) {
+        activeMap.set(row.union_id, Number(row.active_count) || 0);
+      }
+      const clubCountMap = new Map<string, number>();
+      for (const row of (ucResult.data as any[]) || []) {
+        clubCountMap.set(row.union_id, (clubCountMap.get(row.union_id) || 0) + 1);
+      }
 
+      for (const union of unions) {
+        if (!membersResult.error && memberMap.has(union.id)) {
+          const live = memberMap.get(union.id)!;
+          union.memberCount = live;
+          union.totalPlayers = live;
+        }
+        if (!activeResult.error && activeMap.has(union.id)) {
+          union.onlineCount = activeMap.get(union.id)!;
+        }
+        if (!ucResult.error) {
+          union.clubCount = clubCountMap.get(union.id) || 0;
+        }
+      }
+    } catch (e) {
+      console.warn('[UnionService] Realtime union count enrichment failed:', e);
+    }
     return unions;
   }
 
@@ -276,7 +280,8 @@ class UnionServiceClass {
     if (error && error.code !== 'PGRST116') throw error;
     if (!data) return null;
 
-    return this.mapUnion(data);
+    const [union] = await this.enrichWithRealtimeCounts([this.mapUnion(data)]);
+    return union;
   }
 
   /**
@@ -505,9 +510,10 @@ class UnionServiceClass {
     const ownerNames = new Map<string, string | undefined>();
 
     if (clubIds.length > 0) {
-      // Member counts — one grouped RPC (status filter matches the old per-club query).
+      // Member counts: the realtime RPC returns a row per requested club, zero
+      // included, so an empty or brand-new club reads 0 rather than "missing".
       try {
-        const { data: counts } = await supabase.rpc('fn_batch_club_member_counts', {
+        const { data: counts } = await supabase.rpc('fn_batch_club_realtime_member_counts', {
           p_club_ids: clubIds,
         });
         for (const row of counts || []) memberCounts.set(row.club_id, Number(row.member_count));
@@ -704,34 +710,24 @@ class UnionServiceClass {
   }> {
     const clubs = await this.getUnionClubs(unionId);
 
-    // Get member counts for all clubs
-    const clubIds = clubs.map((c) => c.clubId);
-
-    /* Summed from the SECURITY DEFINER batch RPC, not counted off the table.
-       A direct count here is RLS-filtered, and the filter does not drop a CLUB
-       from the sum - it drops ROWS - so the union total silently became "members
-       of this union that I may personally enumerate". Measured for a real admin
-       of one of the two clubs: 593 against a true 1,172. Identical defect to the
-       one fixed in ClubHomePage (#875); this was the second copy.
-
-       Summed without de-duplication, matching unions.member_count: the RPC
-       returns one row per club and a player in two clubs is two memberships. */
-    const { data: perClubCounts } = await supabase.rpc('fn_batch_club_member_counts', {
-      p_club_ids: clubIds,
-    });
-    const totalPlayers = Array.isArray(perClubCounts)
-      ? perClubCounts.reduce(
-          (sum: number, row: { member_count: number | string }) =>
-            sum + Number(row.member_count ?? 0),
-          0
-        )
-      : 0;
+    /* Both totals come from the same SECURITY DEFINER union RPCs the home
+       carousel card uses (a direct count here would be RLS-filtered to "members
+       I may personally enumerate" - measured 593 against a true 1,172). Members
+       are summed across clubs without de-duplication; active players are the
+       sum of each club's seated players. `onlinePlayers` used to be a flat
+       twenty percent of the member total - an invented number. */
+    const [membersResult, activeResult] = await Promise.all([
+      supabase.rpc('fn_batch_union_realtime_member_counts', { p_union_ids: [unionId] }),
+      supabase.rpc('fn_batch_union_realtime_active_counts', { p_union_ids: [unionId] }),
+    ]);
+    const totalPlayers = Number((membersResult.data as any[])?.[0]?.member_count) || 0;
+    const onlinePlayers = Number((activeResult.data as any[])?.[0]?.active_count) || 0;
 
     return {
-      totalPlayers: totalPlayers || 0,
+      totalPlayers,
       totalClubs: clubs.length,
       weeklyRake: clubs.reduce((sum, c) => sum + c.weeklyRake, 0),
-      onlinePlayers: Math.floor((totalPlayers || 0) * 0.2), // Estimate 20% online
+      onlinePlayers,
     };
   }
 
@@ -753,8 +749,12 @@ class UnionServiceClass {
       ownerId: u.owner_id,
       avatarUrl: u.avatar_url,
       isPublic: u.is_public ?? true,
-      memberCount: Math.max(u.member_count || 0, u.total_players || 0),
-      onlineCount: u.online_count || 0,
+      // Trigger-maintained by fn_apply_union_ladder; overwritten with the live
+      // RPC value in enrichWithRealtimeCounts before any caller sees it.
+      memberCount: u.member_count || 0,
+      // There is no unions.online_count column. Live value is filled in by
+      // enrichWithRealtimeCounts from fn_batch_union_realtime_active_counts.
+      onlineCount: 0,
       clubCount: u.club_count || 0,
       totalRake: Number(u.total_rake) || 0,
       level: u.level || 1,

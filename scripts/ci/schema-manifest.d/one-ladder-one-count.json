@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/union-active-players-sum-and-one-ladder",
+  "tables": ["club_level_thresholds"],
+  "functions": [
+    "fn_club_level_min_members",
+    "fn_apply_club_ladder",
+    "fn_apply_union_ladder",
+    "fn_new_club_gets_the_ladder",
+    "fn_new_union_gets_the_ladder"
+  ]
+}

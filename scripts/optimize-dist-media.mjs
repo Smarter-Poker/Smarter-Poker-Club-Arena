@@ -7,7 +7,9 @@
  * Runs AFTER `vite build`, operates on dist/ ONLY - the committed source
  * assets and the developer working tree are never touched.
  *
- * PART 1 - In-place media optimization (same URL, same format, fewer bytes).
+ * PART 1 - Public, nonhashed media optimization (same format, fewer bytes).
+ * Imported rasters are optimized by viteMediaIdentity BEFORE URL selection;
+ * this post-build pass must never rewrite their immutable hashed URLs.
  * The audit found ~20MB of media the app actually references at sizes far
  * beyond their render size: 51 lobby game-card emblems at ~150KB each
  * (7.9MB), 25 club-logo presets at 100-260KB, card-back art up to 1.2MB
@@ -78,7 +80,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSharp } from './lib/sharp-loader.mjs';
 
-const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const DIRECT = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const ROOT =
+  (DIRECT && process.argv[2]) || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // CA_DIST: the native build (npm run build:native) writes dist-native/ so the
 // two bundles can never be confused. Unset means 'dist', exactly as before.
 const DIST = path.join(ROOT, process.env.CA_DIST || 'dist');
@@ -227,6 +231,8 @@ async function optimizeMedia(sharp, sharpVersion) {
   for (const file of walk(DIST)) {
     const rel = path.relative(DIST, file.path).split(path.sep).join('/');
     if (!RASTER_RE.test(rel)) continue;
+    // Vite owns these immutable URLs. Their bytes were finalized before naming.
+    if (/^assets\/.*-[A-Za-z0-9_-]+-v\d+\.(png|jpe?g|webp)$/i.test(rel)) continue;
     if (file.size < MIN_BYTES) continue;
     const rule = ruleFor(rel);
     if (!rule || rule.maxDim === 0) {
@@ -406,6 +412,88 @@ async function main() {
   await optimizeMedia(sharp, sharpVersion);
 }
 
-main().catch((err) => {
-  console.warn('[dist-media] Unexpected error (non-fatal):', err?.message || err);
-});
+if (DIRECT) {
+  main().catch((err) => {
+    console.warn('[dist-media] Unexpected error (non-fatal):', err?.message || err);
+  });
+}
+
+/**
+ * Prepare imported rasters before Rollup chooses names (including CSS url()).
+ * Filename hashes cover the actual encoded bytes, not the original source or
+ * the encoder version. Different cache/platform output therefore gets a new
+ * URL. generateBundle only installs the exact bytes selected by that name.
+ * Public media keeps the existing post-build optimizer and its directory rules.
+ */
+export function viteMediaIdentity() {
+  const prepared = new Map();
+  let root;
+  const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+  const keyFor = (bytes, name) => `${digest(bytes)}:${path.extname(name).toLowerCase()}`;
+  return {
+    assetFileNames(asset) {
+      const name = asset.names?.[0] || asset.name || '';
+      if (!RASTER_RE.test(name)) return 'assets/[name]-[hash]-v6[extname]';
+      const bytes = prepared.get(keyFor(asset.source, name)) || asset.source;
+      return `assets/[name]-${digest(bytes)}-v6[extname]`;
+    },
+    plugin: {
+      name: 'ca-final-media-identity',
+      apply: 'build',
+      configResolved(config) {
+        root = config.root;
+      },
+      async buildStart() {
+        prepared.clear();
+        const sourceRoot = path.join(root, 'src');
+        if (!existsSync(sourceRoot)) return;
+        // Use the declared build dependency; no package installation fallback.
+        const sharp = (await import('sharp')).default;
+        sharp.concurrency(1);
+        sharp.cache(false);
+        const sharpVersion = sharp.versions.sharp;
+        const cache =
+          process.env.CA_DIST_MEDIA_CACHE || path.join(root, 'node_modules/.cache/dist-media');
+        mkdirSync(cache, { recursive: true });
+        const files = [...walk(sourceRoot)].filter((file) => RASTER_RE.test(file.path));
+        let next = 0;
+        const worker = async () => {
+          for (;;) {
+            const file = files[next++];
+            if (!file) return;
+            const input = readFileSync(file.path);
+            const ext = path.extname(file.path).slice(1).toLowerCase();
+            const rule = { maxDim: 1280 }; // same assets/ policy as the former dist pass
+            const key = cacheKey(digest(input), rule, ext, sharpVersion);
+            const bin = path.join(cache, `${key}.bin`);
+            let bytes = input;
+            if (file.size >= MIN_BYTES && !existsSync(path.join(cache, `${key}.skip`))) {
+              if (existsSync(bin)) bytes = readFileSync(bin);
+              else {
+                const encoded = await encodeFor(sharp, input, rule, ext).toBuffer();
+                if (encoded.length < input.length * 0.9) {
+                  bytes = encoded;
+                  const tmp = `${bin}.${process.pid}.${next}.tmp`;
+                  writeFileSync(tmp, bytes);
+                  renameSync(tmp, bin);
+                }
+              }
+            }
+            prepared.set(keyFor(input, file.path), bytes);
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(POOL_WIDTH, files.length) }, worker));
+      },
+      generateBundle(_options, bundle) {
+        for (const asset of Object.values(bundle)) {
+          if (asset.type !== 'asset' || !RASTER_RE.test(asset.fileName)) continue;
+          const bytes = prepared.get(keyFor(asset.source, asset.fileName)) || asset.source;
+          if (!asset.fileName.endsWith(`-${digest(bytes)}-v6${path.extname(asset.fileName)}`)) {
+            this.error(`Raster filename does not identify its final bytes: ${asset.fileName}`);
+          }
+          asset.source = bytes;
+        }
+      },
+    },
+  };
+}

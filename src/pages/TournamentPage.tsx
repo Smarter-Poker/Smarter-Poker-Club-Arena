@@ -6,7 +6,11 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { isClubStaff } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
+import {
+  tournamentService,
+  tournamentUnregisterSuccessText,
+  type TournamentWithArena,
+} from '../services/TournamentService';
 import type { Tournament } from '../types/database.types';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import './TournamentPage.css';
@@ -39,6 +43,7 @@ import {
   effectivePlaceLadderPool,
   placePrize,
   resolvePayoutStructure,
+  tournamentRowUnitCents,
   type NormalisedBlindLevel,
   type TournamentTable,
 } from '../components/tournament/details/types';
@@ -124,7 +129,7 @@ export default function TournamentPage() {
   const currentUser = user || GUEST_USER;
 
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [selectedTournament, setSelectedTournament] = useState<TournamentWithArena | null>(null);
   /** Tables in the selected RUNNING tournament (see the live pane below). */
   const [tourneyTables, setTourneyTables] = useState<
     Array<{
@@ -158,7 +163,7 @@ export default function TournamentPage() {
   const endRebuyPrompt = useCallback(() => {
     rebuyPromptTokenRef.current = null;
   }, []);
-  const selectedTournamentRef = useRef<Tournament | null>(null);
+  const selectedTournamentRef = useRef<TournamentWithArena | null>(null);
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
 
   /**
@@ -1094,6 +1099,17 @@ export default function TournamentPage() {
     selectedTournament,
   ]);
 
+  /**
+   * The unit the selected event pays in, read off the `arena` embed that
+   * `getTournaments`/`getTournament` now carry. Both ladders on this page price
+   * through it, so the projection a player browses is on the same grid as the
+   * settlement they are eventually paid on.
+   */
+  const selectedUnitCents = useMemo(
+    () => tournamentRowUnitCents(selectedTournament),
+    [selectedTournament]
+  );
+
   const rankingTables = useMemo<TournamentTable[]>(
     () =>
       tourneyTables.map((t) => ({
@@ -1684,7 +1700,7 @@ export default function TournamentPage() {
               const amount =
                 selectedPlaceLadderPool === null
                   ? null
-                  : placePrize(selectedPlaceLadderPool, selectedPayouts, pos);
+                  : placePrize(selectedPlaceLadderPool, selectedPayouts, pos, selectedUnitCents);
               return (
                 <div key={i} className="tourn-row tourn-row--triple">
                   {/* The top three used to print NOTHING: an emoji had been
@@ -1728,7 +1744,12 @@ export default function TournamentPage() {
                       ? recorded
                       : selectedPlaceLadderPool === null
                         ? null
-                        : placePrize(selectedPlaceLadderPool, selectedPayouts, p.place);
+                        : placePrize(
+                            selectedPlaceLadderPool,
+                            selectedPayouts,
+                            p.place,
+                            selectedUnitCents
+                          );
                   return (
                     <div key={i} className="tourn-row">
                       <span className="sc-label sc-ink--blue">{ordinal(p.place)}</span>

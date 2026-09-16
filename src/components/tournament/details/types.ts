@@ -25,7 +25,10 @@ import { compactChips } from '../../../utils/format';
 import type { Tournament } from '../../../types/database.types';
 import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
 import { computePlacePrize, prizePoolAvailableToPlaces } from '../../../lib/payoutMath';
-import { UNIT_CENTS_ASSET_NOT_READ } from '../../../../server/src/tournament/tournamentUnit';
+import {
+  tournamentUnitCents,
+  type TournamentUnitClubRow,
+} from '../../../../server/src/tournament/tournamentUnit';
 import { parsePayoutStructure } from '../../../lib/payoutStructure';
 
 export { parsePayoutStructure } from '../../../lib/payoutStructure';
@@ -152,7 +155,13 @@ export interface NormalisedBlindLevel {
  * does not render a tab until its first load has settled.
  */
 export interface TournamentTabProps {
-  tournament: Tournament;
+  /**
+   * The row as `TournamentService.getTournament` reads it, which since
+   * 2026-09-15 carries the `arena` embed. A tab that prices a place reads its
+   * unit off this with `tournamentRowUnitCents` rather than taking a separate
+   * prop: one row, one asset, no way for the two to arrive disagreeing.
+   */
+  tournament: Tournament & TournamentArenaEmbed;
   entries: TournamentEntry[];
   tables: TournamentTable[];
   blindLevels: NormalisedBlindLevel[];
@@ -340,18 +349,76 @@ export function lastPaidPlace(raw: unknown): number {
  * 10.86 rule 1 is about exactly this: a signal that answers confidently when it
  * cannot tell. The parameter is required now and this wrapper names its answer.
  *
- * It is the chip unit because this is a projection drawn from a tournament row
- * and a payout structure; none of the five callers has read the club's asset,
- * and every tournament that can currently exist is a chip tournament. When
- * Diamond tournaments open, this wrapper takes the unit from its callers -
- * `UNIT_CENTS_ASSET_NOT_READ` is what finds them.
+ * ─── AND NOW IT TAKES IT FROM ITS CALLERS (2026-09-15) ──────────────────────
+ *
+ * The paragraph that used to sit here said the wrapper answered
+ * `UNIT_CENTS_ASSET_NOT_READ` because "none of the five callers has read the
+ * club's asset", and that "when Diamond tournaments open, this wrapper takes
+ * the unit from its callers". This is that commit. The five callers read the
+ * arena the tournament belongs to and state its unit, so the wrapper no longer
+ * answers on their behalf.
+ *
+ * WHY THE PARAMETER IS REQUIRED RATHER THAN DEFAULTED TO THE OLD ANSWER. A
+ * default here would be the identical defect one level up from the one this
+ * whole phase removed from `computePlacePrize`: every caller would keep
+ * compiling, the ladder would keep printing cents, and the omission would be
+ * invisible at the call. Required means `tsc` names every surface that has not
+ * learned, and `a-tournament-prize-knows-its-unit.law.test.ts` censuses this
+ * wrapper alongside the four rules underneath it, so a bare `1` cannot be
+ * written back in either.
+ *
+ * A caller that genuinely has no arena row still says so by name - it passes
+ * `UNIT_CENTS_ASSET_NOT_READ` - because "I did not look" and "I looked and it
+ * was chips" must stay distinguishable. That is the same rule, applied to the
+ * only honest answer left.
  */
 export function placePrize(
   pool: number,
   structure: Array<{ place?: number; percentage?: number }>,
-  place: number
+  place: number,
+  unitCents: number
 ): number {
-  return computePlacePrize(Number(pool), structure, Number(place), UNIT_CENTS_ASSET_NOT_READ);
+  return computePlacePrize(Number(pool), structure, Number(place), unitCents);
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE ARENA A TOURNAMENT ROW WAS READ WITH, AND THE UNIT THAT FOLLOWS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `TournamentService.getTournament` and `getTournaments` embed the club the
+ * tournament belongs to as `arena`, selecting exactly the three columns
+ * `fn_ca_tournament_unit_cents` joins and tests. This turns that embed into
+ * the unit, using `tournamentUnitCents` so the browser, the engine and SQL
+ * remain one rule rather than three readings of it.
+ *
+ * WHY IT ACCEPTS AN ARRAY AS WELL AS AN OBJECT, which looks like defensive
+ * clutter and is not. PostgREST returns a to-one embed as an object, but the
+ * shape that actually arrives depends on how the relationship is resolved, and
+ * the generated types model some embeds as arrays. If an array ever reached
+ * the object branch, `row.asset` would be `undefined`, `tournamentUnitCents`
+ * would answer CHIP_UNIT_CENTS, and a Diamond ladder would print cents again -
+ * with no error anywhere, because "chips" is a perfectly well-formed answer.
+ * That is CLAUDE.md 10.86 rule 2 exactly: an unreadable answer coerced into an
+ * empty one. Both shapes are read deliberately so neither can be mistaken for
+ * an absent club.
+ *
+ * `null` - no embed, or an embed that resolved to nothing - is the SQL's own
+ * `EXISTS = false` branch and its answer is a cent. That is a read, not a
+ * fallback: a tournament with no club is a chip tournament by the same rule.
+ * A caller that never asked for the embed at all must not reach this function;
+ * it says `UNIT_CENTS_ASSET_NOT_READ` at its call instead, so that "I did not
+ * look" stays a different sentence from "I looked and it was chips".
+ */
+export interface TournamentArenaEmbed {
+  arena?: TournamentUnitClubRow | TournamentUnitClubRow[] | null;
+}
+
+export function tournamentRowUnitCents(row: TournamentArenaEmbed | null | undefined): number {
+  const embed = row?.arena;
+  if (embed == null) return tournamentUnitCents(null);
+  const club = Array.isArray(embed) ? (embed[0] ?? null) : embed;
+  return tournamentUnitCents(club);
 }
 
 /**

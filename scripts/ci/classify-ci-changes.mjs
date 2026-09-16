@@ -3,11 +3,20 @@ import { appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const all = () => ({ src: true, server: true, tests: true, phase4: true, fixture: true });
+const all = () => ({
+  src: true,
+  server: true,
+  tests: true,
+  phase4: true,
+  fifo5: true,
+  fixture: true,
+});
 const wide =
   /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate)\.mjs)/;
 const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/classify-ci-changes\.mjs|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/20260909(165541|170039|170749|171644|172537|175000|180000)_|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31)|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
+const fifo5 =
+  /^(scripts\/qualification\/spin-expiry-[^/]+\.(?:sql|py|json)|supabase\/components\/spin-expiry-lock-order(?:\.rollback)?\.sql|scripts\/ci\/(?:test-spin-expiry-postgres\.py|test_spin_expiry_wrapper\.py|classify-ci-changes\.mjs)|tests\/unit\/fixtureNativeCi\.test\.ts|\.github\/workflows\/ci\.yml)$/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
@@ -17,6 +26,9 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  // Python runners and authority JSON are financial inputs too. They must
+  // admit the existing accounting job even when no SQL file changed.
+  const fifo5Inputs = matches(fifo5);
   // The loaded-rule comparator and the server Spin law read this rule file.
   // A rule-only edit must not skip their existing directly triggered suites.
   const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
@@ -33,6 +45,7 @@ export function classifyChangedPaths(paths) {
     server:
       broad ||
       spinRules ||
+      fifo5Inputs ||
       journalInputs ||
       matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
     tests:
@@ -41,6 +54,7 @@ export function classifyChangedPaths(paths) {
       spinComparator ||
       matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
     phase4: matches(phase4),
+    fifo5: fifo5Inputs,
     fixture: matches(fixture),
   };
 }

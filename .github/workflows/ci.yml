@@ -115,6 +115,7 @@ jobs:
       server: ${{ steps.f.outputs.server }}
       tests: ${{ steps.f.outputs.tests }}
       phase4: ${{ steps.f.outputs.phase4 }}
+      fifo5: ${{ steps.f.outputs.fifo5 }}
       fixture: ${{ steps.f.outputs.fixture }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -1331,6 +1332,19 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-rake-attribution-alert.py --output artifacts/rake-attribution-alert
+
+      - name: FIFO5 Spin expiry PostgreSQL 17 qualification
+        if: >-
+          github.event_name == 'schedule' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.fifo5 != 'false'
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          FIFO5_PG17_PROVIDER_DIR: ${{ vars.FIFO5_PG17_PROVIDER_DIR }}
+          FIFO5_PG17_PROVIDER_SHA256: ${{ vars.FIFO5_PG17_PROVIDER_SHA256 }}
+        run: |
+          python3 scripts/ci/test-spin-expiry-postgres.py --self-test
+          python3 scripts/ci/test-spin-expiry-postgres.py
 
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-

@@ -279,7 +279,10 @@ jobs:
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
-    if: github.event_name == 'pull_request'
+    # Classification controls only the isolated journal step. A failed diff
+    # still compiles; a superseded cancelled workflow starts no new compiler.
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     name: TypeScript compilation and repository checks
     # Wait for the approved local runner; no hosted or estate fallback.
     runs-on: [self-hosted, smarter-local-linux-arm64]
@@ -346,6 +349,7 @@ jobs:
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
       - name: Chip journal transactions survive failures and replays
+        if: needs.changes.result != 'success' || needs.changes.outputs.server != 'false'
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh

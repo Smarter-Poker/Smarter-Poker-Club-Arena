@@ -146,6 +146,12 @@ export async function fetchAllRows<T extends Record<string, unknown>>(
     let error: unknown = null;
     for (let attempt = 1; attempt <= attempts; attempt++) {
       ({ data, error } = await makeQuery(cursor, want));
+      // A successful SELECT returns an array, including [] for no rows.
+      // Null or malformed data proves neither emptiness nor the end of an
+      // earlier page. Retry the same read, retaining the original error.
+      if (!error && !Array.isArray(data)) {
+        error = new Error(`[${opts.label}] page response did not contain an array`);
+      }
       if (!error) break;
       if (attempt < attempts) {
         await sleep(

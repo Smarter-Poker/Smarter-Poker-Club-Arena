@@ -116,13 +116,24 @@ class Session:
         os.set_blocking(self.process.stdout.fileno(), False)
         self.selector.register(self.process.stdout, selectors.EVENT_READ)
 
-    def begin(self):
-        result = self.command("BEGIN; SET LOCAL statement_timeout='8s'; "
-            "SET LOCAL lock_timeout='4s'; SET LOCAL idle_in_transaction_session_timeout='12s'; "
-            "SET LOCAL timezone='UTC'; SET LOCAL search_path=public,pg_temp; "
-            "SET LOCAL request.jwt.claims='{}'; SET LOCAL request.jwt.claim.role=''; "
-            "SET LOCAL request.jwt.claim.sub='';")
+    def begin(self, *, service_role=False):
+        setup = "BEGIN; SET LOCAL statement_timeout='8s'; " \
+            "SET LOCAL lock_timeout='4s'; SET LOCAL idle_in_transaction_session_timeout='12s'; " \
+            "SET LOCAL timezone='UTC'; SET LOCAL search_path=public,pg_temp; " \
+            "SET LOCAL request.jwt.claims='{}'; SET LOCAL request.jwt.claim.role=''; " \
+            "SET LOCAL request.jwt.claim.sub='';"
+        if service_role:
+            # Match the real engine RPC caller, including EXECUTE privileges.
+            # Observers and the parent-lock-only control keep postgres authority.
+            setup += " SET LOCAL ROLE service_role; " \
+                "SET LOCAL request.jwt.claims='{\"role\":\"service_role\"}'; " \
+                "SET LOCAL request.jwt.claim.role='service_role';"
+        result = self.command(setup)
         self.no_errors(result)
+        if service_role:
+            require(self.json("SELECT jsonb_build_object('user',current_user,'role',auth.role(),'uid',auth.uid());")
+                    == {'user': 'service_role', 'role': 'service_role', 'uid': None},
+                    'business request must match the engine service role without a user')
 
     @staticmethod
     def no_errors(result):
@@ -284,7 +295,7 @@ def run(args, events, sessions, deadline):
     before = observer.json('SELECT pg_temp.spin_expiry_business_state();')
     events['selected_before'] = before
     a, b = open_session('expiry'), open_session('terminal_order')
-    a.begin(); b.begin()
+    a.begin(service_role=True); b.begin()
     b.no_errors(b.command('SELECT public.fn_ca_lock_settlement_lane_global();'))
     a.start(expiry_sql())
     samples = []

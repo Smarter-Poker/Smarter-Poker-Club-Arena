@@ -193,6 +193,49 @@ class SessionEnvironmentTests(unittest.TestCase):
                 self.assertRaisesRegex(RuntimeError, 'unexpected SQL failure'):
             session.json('SELECT original_observation;')
 
+    def test_begin_requires_observed_service_role_without_a_user_identity(self):
+        session = object.__new__(self.lib.Session)
+        original_transaction = ("BEGIN; SET LOCAL statement_timeout='8s'; "
+            "SET LOCAL lock_timeout='4s'; SET LOCAL idle_in_transaction_session_timeout='12s'; "
+            "SET LOCAL timezone='UTC'; SET LOCAL search_path=public,pg_temp; "
+            "SET LOCAL request.jwt.claims='{}'; SET LOCAL request.jwt.claim.role=''; "
+            "SET LOCAL request.jwt.claim.sub='';")
+        with patch.object(session, 'command', return_value='') as command:
+            session.begin()
+        command.assert_called_once_with(original_transaction)
+        self.assertNotIn('SET LOCAL ROLE', command.call_args.args[0])
+        accepted = {'user': 'service_role', 'role': 'service_role', 'uid': None}
+        with patch.object(session, 'command', side_effect=['', json.dumps(accepted)]) as command:
+            session.begin(service_role=True)
+        self.assertEqual(command.call_count, 2)
+        transaction_sql = command.call_args_list[0].args[0]
+        self.assertTrue(transaction_sql.startswith(original_transaction))
+        for statement in ("SET LOCAL ROLE service_role;",
+                          "SET LOCAL request.jwt.claims='{\"role\":\"service_role\"}';",
+                          "SET LOCAL request.jwt.claim.role='service_role';",
+                          "SET LOCAL request.jwt.claim.sub='';"):
+            self.assertIn(statement, transaction_sql)
+        observation_sql = ''.join(command.call_args_list[1].args[0].split())
+        self.assertEqual(observation_sql,
+                         "SELECTjsonb_build_object('user',current_user,'role',auth.role(),'uid',auth.uid());")
+        invalid = [None, {}, [], {'role': 'service_role', 'uid': None}]
+        for key, value in (('user', None), ('user', 'postgres'), ('user', 'authenticated'),
+                           ('role', None), ('role', 'authenticated'), ('role', 'anon'),
+                           ('uid', ORDINARY), ('uid', '')):
+            invalid.append(dict(accepted, **{key: value}))
+        for key in accepted:
+            invalid.append({name: value for name, value in accepted.items() if name != key})
+        for observed in invalid:
+            with self.subTest(observed=observed), \
+                    patch.object(session, 'command', side_effect=['', json.dumps(observed)]) as command, \
+                    self.assertRaises(RuntimeError):
+                session.begin(service_role=True)
+            self.assertEqual(command.call_count, 2)
+        with patch.object(session, 'command', return_value='ERROR: role setup refused') as command, \
+                self.assertRaisesRegex(RuntimeError, 'unexpected SQL failure'):
+            session.begin(service_role=True)
+        command.assert_called_once()
+
     def test_refund_runner_binds_the_exact_session_implementation(self):
         spec = importlib.util.spec_from_file_location(
             'spin_expiry_refund_pin_control', self.runners / 'spin-expiry-committed-refund.py')

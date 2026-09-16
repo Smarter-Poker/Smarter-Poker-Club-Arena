@@ -22,7 +22,7 @@ R2_SQL = DIRECTORY/'spin-expiry-committed-refund-state.sql'
 ORACLE = DIRECTORY/'spin-expiry-committed-refund-oracle.py'
 AUTHORITY = DIRECTORY/'spin-expiry-committed-refund.authority.json'
 FROZEN = {
-    R1:'6d4d96c0aeafed18e133d2cfafd349a68ead01f4cb90aa6cee13346f2dadd0a0',
+    R1:'f2634dd0fab034137ba3d9c356b31ea1715645be21c073f1453322bc8497b391',
     R1_SQL:'eb052a103771b40e473a34b8b730e3126db7d9a9cbe18ece152b7a0afeab588a',
     DIRECTORY/'spin-expiry-lock-order.authority.json':
         '204c8528c4963c723139a2636fe7482abbad6ebcf3a247ec8a2f1de5fbccc09c',
@@ -171,7 +171,7 @@ def main():
         basis=oracle.initial(before,args.tournament)
         journal.append('paid_fixture_oracle',basis=basis)
         a,b=open_session('expiry'),open_session('cancel')
-        a.begin(); b.begin()
+        a.begin(service_role=True); b.begin(service_role=True)
         b.no_errors(b.command('SELECT public.fn_ca_lock_settlement_lane_global();'))
         a.start('SELECT public.fn_spin_expire_unfilled(1)::text;')
         while time.monotonic()<deadline:
@@ -211,7 +211,7 @@ def main():
         lib.require(after_a==committed_state,'waiting expiry committed additional selected changes')
         commits['waiting_expiry']='independently_observed_no_selected_change'
         journal.append('expiry_no_second_refund',state=commits['waiting_expiry'])
-        replay=open_session('replay'); replay.begin()
+        replay=open_session('replay'); replay.begin(service_role=True)
         replayed=replay.json(f"SELECT public.atomic_cancel_tournament('{args.tournament}'::uuid,NULL);")
         lib.require(replayed==reader,'canonical replay altered original receipt')
         replay.no_errors(replay.command('SET CONSTRAINTS ALL IMMEDIATE;'))

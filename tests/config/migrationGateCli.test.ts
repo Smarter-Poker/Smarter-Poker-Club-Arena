@@ -326,3 +326,57 @@ for (const c of cases)
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+test('pre-push checks earlier branch migrations on a follow-up push', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'migration-hook-cli-'));
+  try {
+    const hook = fs.readFileSync(path.resolve(__dirname, '../../.husky/pre-push'), 'utf8');
+    const start = hook.indexOf('  # Migration presence uses Git');
+    const end = hook.indexOf('  # 0. Repo-wide invariants.', start);
+    expect(start, 'the existing migration gate must run in pre-push').toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    for (const name of [
+      'check-migrations-applied.mjs',
+      'schema-manifest.mjs',
+      'sql-manifest-identifiers.mjs',
+    ]) {
+      put(path.join(dir, 'scripts/ci', name), fs.readFileSync(path.join(path.dirname(gate), name), 'utf8'));
+    }
+    put(path.join(dir, 'scripts/ci/supabase-schema-manifest.json'), '{"tables":[],"functions":[]}');
+    git(dir, ['init', '-q', '-b', 'fixture']);
+    const commit = (message: string) => {
+      git(dir, ['add', '.']);
+      git(dir, ['-c', 'user.name=Gate Test', '-c', 'user.email=test@example.invalid',
+        '-c', 'commit.gpgsign=false', 'commit', '-qm', message]);
+      return git(dir, ['rev-parse', 'HEAD']);
+    };
+    const base = commit('baseline');
+    git(dir, ['update-ref', 'refs/remotes/origin/main', base]);
+    put(path.join(dir, 'supabase/migrations/20260916000000_probe.sql'),
+      'CREATE FUNCTION public.prior_branch_game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;');
+    const priorPush = commit('migration');
+    git(dir, ['update-ref', 'refs/remotes/origin/feature', priorPush]);
+    put(path.join(dir, 'README.md'), 'Follow-up without migration changes.\n');
+    commit('follow-up');
+
+    // Looking only at the latest commit misses the earlier branch migration.
+    expect(cli(dir, process.execPath, [gate, 'HEAD~1']).status).toBe(0);
+    const runHookGate = () => cli(dir, 'bash', ['-c',
+      'set -e\nREMOTE=origin\nLOCAL_SHA=$(git rev-parse HEAD)\nFAIL=0\n' +
+      hook.slice(start, end) + '\nexit "$FAIL"\n']);
+    const missing = runHookGate();
+    expect(missing.status, missing.stdout + missing.stderr).toBe(1);
+    expect(missing.stdout + missing.stderr).toContain('prior_branch_game');
+    put(path.join(dir, 'scripts/ci/schema-manifest.d/probe.json'),
+      '{"functions":["prior_branch_game"]}');
+    const declared = runHookGate();
+    expect(declared.status, declared.stdout + declared.stderr).toBe(0);
+    expect(declared.stdout).toContain('1 changed migration(s)');
+    git(dir, ['update-ref', '-d', 'refs/remotes/origin/main']);
+    const unknownBase = runHookGate();
+    expect(unknownBase.status, unknownBase.stdout + unknownBase.stderr).toBe(1);
+    expect(unknownBase.stdout).toContain('cannot establish the migration branch base');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

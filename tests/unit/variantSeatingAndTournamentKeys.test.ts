@@ -150,7 +150,7 @@ describe('2b. a tournament is bound by the DECK, never by the cash seat cap', ()
       startingChips: 5000,
       blindStructure: 'turbo',
       blindsUpMinutes: 5,
-      payoutStructure: 'standard',
+      payoutStructure: 'payout3',
       sngPlayerCount: 9,
       isSpins: false,
       minPlayers: 2,

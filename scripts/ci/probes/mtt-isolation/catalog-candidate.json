@@ -1,0 +1,158 @@
+{
+  "kind": "R46_MTT_ISOLATION_ASSET_CANDIDATE",
+  "status": "SOURCE_WIRED_NATIVE_EXECUTION_UNVERIFIED",
+  "installed_catalog_schema": false,
+  "admission_or_execution_authority": false,
+  "complete_R46_catalog": false,
+  "source_base": "9fa0cbad3d71d24ded5f6107aaa72438c7d4253e",
+  "source_branch": "fix/mtt-unlimited-entries-sep15",
+  "migration": {
+    "path": "supabase/migrations/20260915150000_mtts_have_no_entry_cap.sql",
+    "sha256": "f54d55bf8fae09f312dede7a9db0ce76e0edc250c4e5bf65370ce154464a24b8"
+  },
+  "fixture": {
+    "path": "scripts/ci/probes/mtt-isolation/fixture.sql",
+    "sha256": "1ddc599d8fdf2aaaee1ee4212fda6e19ccf6d98763ed2f6fecfd8ba4590d5b13"
+  },
+  "readme": {
+    "path": "scripts/ci/probes/mtt-isolation/README.md",
+    "sha256": "a59f920e7aea2ee1aae8dd7b50062a58fa20aee28081066831cc5dd27bc131bc"
+  },
+  "required_cases": [
+    {
+      "path": "scripts/ci/probes/mtt-isolation/creation-commit.spec",
+      "sha256": "bf19570cefe5e90d5ec9802c1610cb6e2fab26420f8bc75483c65ef59ea6e2e6",
+      "case": "creation_commit",
+      "permutations": 1,
+      "expected_outcomes": {
+        "a": "created",
+        "b": "existing_active"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: creation_commit"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/creation-rollback.spec",
+      "sha256": "e4fea41c3d0e53e0ef119ad16afadf17f71ea22175d111290b4b028002a72836",
+      "case": "creation_rollback",
+      "permutations": 1,
+      "expected_outcomes": {
+        "b": "created"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: creation_rollback"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/edit-after-creation.spec",
+      "sha256": "311de607a8cec2462c98d0303359cfc675c0cae49932fd7a22d6421e465c539e",
+      "case": "edit_after_creation",
+      "permutations": 1,
+      "expected_outcomes": {
+        "a": "created",
+        "b": "edit_refused"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: edit_after_creation"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/edit-before-creation.spec",
+      "sha256": "b48554f058ee8e501d35f8bcb8b741d5866fca353231a84f86e6fa61ed28f310",
+      "case": "edit_before_creation",
+      "permutations": 1,
+      "expected_outcomes": {
+        "a": "target_unsupported",
+        "b": "edited"
+      },
+      "committed_new_tournaments": 0,
+      "registered_blocker": "b",
+      "registered_waiter": "a",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: edit_before_creation"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/restart-commit.spec",
+      "sha256": "5317d7928bd18873c3a42a38a3cf95009fc4343dc2fb1117d7b5f6973700e4de",
+      "case": "restart_commit",
+      "permutations": 1,
+      "expected_outcomes": {
+        "a": "created",
+        "b": "duplicate_refused"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: restart_commit"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-isolation/restart-rollback.spec",
+      "sha256": "2016c17bf9232bf44b5f2b8bc607ae9868f29095d1e19602418161fd98022100",
+      "case": "restart_rollback",
+      "permutations": 1,
+      "expected_outcomes": {
+        "b": "created"
+      },
+      "committed_new_tournaments": 1,
+      "registered_blocker": "a",
+      "registered_waiter": "b",
+      "final_marker": "R46 ISOLATION ASSERTIONS COMPLETE: restart_rollback"
+    }
+  ],
+  "protected_integration_requirements": {
+    "invocation": "Source wired into the existing self-hosted accounting_postgres job through scripts/ci/test-mtt-unlimited.py; actual CI/native execution is unverified.",
+    "providers": "Qualify and bind the exact PostgreSQL server, client, stock isolationtester and result-consumer versions and bytes before execution.",
+    "composition": "A fresh disposable local database per spec with the complete current migrated Club Arena schema; bind real function bodies, metadata, ACLs, enabled triggers and constraints.",
+    "setup": "Admitted stop-on-error fixture loader. Only synthetic seeds suppress triggers; origin guards execute for all actual races. Synthetic completed source is not a funded journey.",
+    "outer_deadline": "Require an approved finite wall deadline and resource reservation for each operation; statement limits alone are insufficient.",
+    "identity": "Capture exact candidate, catalog, provider and operation identities, every actor/session result, registered backend PIDs and authoritative lock observation.",
+    "errors": "Any uncaught SQL error, failure, timeout, cancellation, deadlock, unexpected warning, transport error or setup/teardown failure rejects, even when process exit is zero.",
+    "known_teardown_warning": "Only the exact PostgreSQL warning there is no transaction in progress may be accepted at the two actor teardown ROLLBACKs. Validate this placement against the admitted provider.",
+    "completion": "Require all six cases, all permutation steps completed, executed lock assertions, exact committed final assertions and matching final markers. Printed step labels or process exit alone are insufficient.",
+    "consumer_negative_cases": [
+      "Missing final assertion rejects",
+      "Unexpected SQL error rejects despite zero process exit"
+    ],
+    "disposal": "Independently prove stopped workers and connections and destruction of each owned disposable database; retain original failures. Never disable immutable restart history for cleanup.",
+    "enforcement": "Demonstrate actual invocation for relevant source/shared dependency changes and rejection of missing, stale, failed or skipped required evidence."
+  },
+  "not_qualified": [
+    "full current schema composition",
+    "SQL/spec parsing",
+    "case execution",
+    "required catalog enforcement",
+    "worker termination and database disposal",
+    "R46 overall acceptance",
+    "publication or live behavior"
+  ],
+  "native_probes": [
+    {
+      "path": "scripts/ci/probes/mtt-unlimited-entry-cap-native.sql",
+      "sha256": "23d5a9a024aeb541d84ac3938c122c7f5b3bce927cea36a2d5cb896f03941839"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-unlimited-ticket-redemption-native.sql",
+      "sha256": "7a58b20f3c775c24b686ed7fbaded40e9ffdf8c4d675078df0db0519d1ac1697"
+    },
+    {
+      "path": "scripts/ci/probes/mtt-satellite-creation-native.sql",
+      "sha256": "02238b0f381a7951abb10df536f1b5afef97c41b41448ff1149a19bb2b0865a7"
+    }
+  ],
+  "included_probes": [
+    {
+      "path": "scripts/ci/probes/existing-ticket-current-redemption-native.sql",
+      "sha256": "310c305187de2baf87ceff6836d2acf04cb5237b939d96dfd59823ff0e583588"
+    }
+  ],
+  "direct_caller": "scripts/ci/test-mtt-unlimited.py",
+  "qualified_source_only": [
+    "Installed PostgreSQL17.11 and stock isolationtester read-only inspection",
+    "Strict result-consumer positive/negative Python regressions",
+    "Runner cancellation and source-binding Python regressions",
+    "CI change classification red-to-green regression"
+  ]
+}

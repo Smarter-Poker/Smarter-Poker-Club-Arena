@@ -1,0 +1,17 @@
+{
+  "_owner": "agent/codex/ca-mtt-release-20260916",
+  "_comment": "Pending declarations from unapplied migration 20260915150000_mtts_have_no_entry_cap.sql. These names describe candidate source, not installed database or live verification. Native qualification, authorized application and exact catalog readback remain required.",
+  "functions": [
+    "fn_ca_is_unlimited_mtt",
+    "fn_ca_tournament_is_unlimited",
+    "fn_ca_satellite_target_accepts_new_feeder",
+    "fn_ca_guard_new_satellite_target",
+    "fn_ca_normalize_mtt_entry_capacity",
+    "fn_ca_fixed_tournament_waitlist_only",
+    "fn_ca_guard_tournament_restart_source",
+    "fn_ensure_scheduled_mtt_satellite"
+  ],
+  "columns": {
+    "tournaments": ["restart_source_id"]
+  }
+}

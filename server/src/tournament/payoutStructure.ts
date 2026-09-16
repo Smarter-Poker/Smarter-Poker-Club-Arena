@@ -1,3 +1,4 @@
+import { isUnlimitedMtt, type TournamentEntryCapacitySubject } from './tournamentEntryCapacity.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PAYOUT STRUCTURE RESOLUTION — what to split the pool by
@@ -52,7 +53,7 @@ export interface PayoutPlace {
   percentage: number;
 }
 
-export interface PayoutSubject {
+export interface PayoutSubject extends TournamentEntryCapacitySubject {
   payout_structure?: unknown;
   variant?: string | null;
   tournament_type?: string | null;
@@ -67,7 +68,7 @@ function numericJsonScalar(value: unknown): number {
 
 /** Is this a Spin? Either column may carry it, in either case. */
 export function isSpinTournament(t: PayoutSubject | null | undefined): boolean {
-  if (!t) return false;
+  if (!t || isUnlimitedMtt(t)) return false;
   return (
     String(t.variant ?? '').toLowerCase() === 'spin' ||
     String(t.tournament_type ?? '').toUpperCase() === 'SPIN'

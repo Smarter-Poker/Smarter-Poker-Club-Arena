@@ -179,6 +179,21 @@ export const BLIND_STRUCTURES = {
   ]),
 };
 
+/** The manual form's existing ramp keys. Both its setup presets and its
+ * submitted ladder must resolve the same opening blind. */
+export function manualTournamentBlindPreset(key: string): BlindLevel[] {
+  switch (key) {
+    case 'slow':
+      return BLIND_STRUCTURES.deepStack;
+    case 'turbo':
+      return BLIND_STRUCTURES.turbo;
+    case 'hyper_turbo':
+      return BLIND_STRUCTURES.hyperTurbo;
+    default:
+      return BLIND_STRUCTURES.regular;
+  }
+}
+
 /**
  * SPIN ladder — DERIVED from the canonical spinSpec (2026-08-30 audit fix).
  * There used to be a hand-typed 15-level ladder here that diverged from

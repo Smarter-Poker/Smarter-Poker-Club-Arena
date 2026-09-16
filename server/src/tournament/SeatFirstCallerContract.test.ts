@@ -33,7 +33,7 @@ afterAll(() => {
     );
     const normalize = (rows: typeof captured) =>
       rows.map((row) => ({ ...row, config: { ...row.config, start_time: '<runtime>' } }));
-    expect(normalize(captured)).toEqual(normalize(native));
+    expect(normalize(captured)).toEqual(normalize(native.filter((row: { label: string }) => !row.label.includes('createSatelliteHeadsUp'))));
   }
 });
 afterEach(() => vi.restoreAllMocks());
@@ -63,7 +63,8 @@ function fixture() {
     });
   return { service, rpc };
 }
-const cases = ['createSNG', 'createSatelliteHeadsUp', 'createSpin'].flatMap((method) =>
+// Satellite creators now use unlimited MTT registration; the retained native capture is historical.
+const cases = ['createSNG', 'createSpin'].flatMap((method) =>
   [false, true].flatMap((union) => [300, 1000].map((stack) => ({ method, union, stack })))
 );
 describe('actual seat-first callers match the installed atomic creator contract', () => {
@@ -108,12 +109,6 @@ describe('actual seat-first callers match the installed atomic creator contract'
       starting_chips: stack,
     });
     expect(args.p_config).not.toHaveProperty('payout_percent');
-    if (method === 'createSatelliteHeadsUp')
-      expect(args.p_config).toMatchObject({
-        satellite_target_id: target,
-        satellite_seats: 1,
-        payout_structure: HEADS_UP_PAYOUTS,
-      });
     if (method === 'createSpin')
       expect(args.p_config).toMatchObject({
         spin_multiplier: null,

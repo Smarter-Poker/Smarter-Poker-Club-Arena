@@ -106,7 +106,7 @@ describe('mttPrestartHorseTarget - the curve', () => {
 });
 
 describe('mttPrestartHorseTarget - safety', () => {
-  it('ALWAYS leaves a seat, so it can never trip the maxReached start gate', () => {
+  it('ignores obsolete caps while preserving the per-tick funding limit', () => {
     for (const seats of [3, 4, 6, 9, 18, 60, 200]) {
       for (let m = 60; m >= 0; m--) {
         const target = mttPrestartHorseTarget({
@@ -114,7 +114,8 @@ describe('mttPrestartHorseTarget - safety', () => {
           maxPlayers: seats,
           variant: 'freezeout',
         });
-        expect(target).toBeLessThanOrEqual(seats - 1);
+        expect(target).toBeLessThanOrEqual(MTT_PRESTART_MAX_STEP);
+        expect(target).toBe(mttPrestartHorseTarget({ msUntilStart: m * MIN, maxPlayers: null, variant: 'freezeout' }));
       }
     }
   });
@@ -141,13 +142,13 @@ describe('mttPrestartHorseTarget - safety', () => {
     );
   });
 
-  it('does nothing for a field too small to leave a seat in', () => {
+  it('ignores obsolete zero or one-entry caps for actual MTTs', () => {
     expect(
       mttPrestartHorseTarget({ msUntilStart: 5 * MIN, maxPlayers: 1, variant: 'freezeout' })
-    ).toBe(0);
+    ).toBeGreaterThan(0);
     expect(
       mttPrestartHorseTarget({ msUntilStart: 5 * MIN, maxPlayers: 0, variant: 'freezeout' })
-    ).toBe(0);
+    ).toBeGreaterThan(0);
   });
 
   it('fills the bounty formats too, not just plain freezeouts', () => {
@@ -316,22 +317,20 @@ describe('a GUARANTEE decides the field, not the default cap', () => {
     expect(ask).toBeLessThanOrEqual(MTT_PRESTART_MAX_HORSES);
   });
 
-  it('STILL leaves a seat for a human, whatever the guarantee asks for', () => {
-    /* Safety property 1, and the one a guarantee must never be allowed to
-       override: a 40-seat event with an enormous guarantee fills to 39, not
-       40. A full field is a table no human can join. */
+  it('retains the per-tick budget for a guarantee beyond an obsolete cap', () => {
+    // Unlimited entries cannot consume the per-tick funding safety budget.
     const ask = mttPrestartHorseTarget(
       deepStack({ maxPlayers: 40, currentPlayers: 0, guaranteedPrize: 1_000_000 })
     );
-    expect(ask).toBeLessThanOrEqual(39);
+    expect(ask).toBeLessThanOrEqual(MTT_PRESTART_MAX_STEP);
   });
 
-  it('never asks for more than the event can seat', () => {
+  it('retains the same funding step across obsolete field capacities', () => {
     for (const seats of [10, 50, 200, 1000]) {
       const ask = mttPrestartHorseTarget(
         deepStack({ maxPlayers: seats, currentPlayers: 0, guaranteedPrize: 5_000_000 })
       );
-      expect(ask).toBeLessThanOrEqual(seats - 1);
+      expect(ask).toBeLessThanOrEqual(MTT_PRESTART_MAX_STEP);
     }
   });
 

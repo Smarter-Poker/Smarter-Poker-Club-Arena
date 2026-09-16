@@ -1,3 +1,4 @@
+import { isUnlimitedMtt, isTournamentEntryFull, type TournamentEntryCapacitySubject } from '../tournament/tournamentEntryCapacity.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * TOURNAMENT BRAIN CONTEXT — Real ICM Inputs for the Horses (V12 — 2026-08-22)
@@ -491,11 +492,12 @@ export function deriveBlindClock(
  *
  * Only when the row asserts nothing usable does it fall back to 9.
  */
-export function seatsAtOneTable(row: {
+export function seatsAtOneTable(row: TournamentEntryCapacitySubject & {
   table_size?: number | null;
   max_players?: number | null;
 }): number {
-  const asserted = [row?.table_size, row?.max_players]
+  // An MTT entry field is unlimited; only table_size can describe its seats.
+  const asserted = (isUnlimitedMtt(row) ? [row?.table_size] : [row?.table_size, row?.max_players])
     .map((n) => Number(n))
     .filter((n) => Number.isFinite(n) && n > 0);
   return asserted.length > 0 ? Math.min(...asserted) : 9;
@@ -606,7 +608,7 @@ export function deriveContext(
   // worker's canonical ruleset check (for example freezeout !== nlh).
   const gameVariant = (row.game_type || '').toLowerCase();
   const tournamentVariant = (row.variant || '').toLowerCase();
-  const format: TournamentFormat =
+  const format: TournamentFormat = isUnlimitedMtt(row) ? 'mtt' :
     type === 'SPIN' || tournamentVariant === 'spin'
       ? 'spin'
       : seatsAtOneTable(row) <= 2
@@ -759,7 +761,7 @@ export function deriveContext(
     nonNegativeIntegerOrNull(row.late_reg_levels) &&
     nonNegativeIntegerOrNull(row.rebuy_levels) &&
     nonNegativeNumberOrNull(row.late_reg_mins) &&
-    nonNegativeIntegerOrNull(row.max_players);
+    (isUnlimitedMtt(row) || nonNegativeIntegerOrNull(row.max_players));
   // Match fn_tournament_late_registration_open literally: a non-null
   // late_reg_levels value wins (including zero), then rebuy_levels.
   const lateRegLevelCap = Number(row.late_reg_levels ?? row.rebuy_levels ?? 0);
@@ -772,8 +774,7 @@ export function deriveContext(
   // the minute deadline is only the legacy fallback when no level cap exists.
   // Both windows close at their exact boundary and once the pool is final.
   const prizePoolFinalized = row.prize_pool_finalized === true;
-  const entryCapacity = Number(row.max_players ?? 0);
-  const hasEntryCapacity = entryCapacity <= 0 || entrants < entryCapacity;
+  const hasEntryCapacity = !isTournamentEntryFull(row, entrants);
   const lateRegistrationOpen =
     entryTermsValid &&
     status === 'RUNNING' &&

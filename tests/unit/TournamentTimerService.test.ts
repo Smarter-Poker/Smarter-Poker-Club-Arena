@@ -14,8 +14,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Records every `.update()` payload so the level actually written to
 // `tournaments.current_level` can be asserted, not just inferred.
-const { writes } = vi.hoisted(() => ({
+const { writes, rows } = vi.hoisted(() => ({
   writes: [] as { table: string; payload: Record<string, unknown> }[],
+  rows: { players: null as unknown, tournament: null as unknown,
+    playerError: null as unknown, tournamentError: null as unknown },
 }));
 
 // ─── Mock dependencies ────────────────────────────────────────────────────
@@ -25,9 +27,12 @@ vi.mock('../../src/lib/supabase', () => {
     const handler: ProxyHandler<any> = {
       get: (_target, prop) => {
         if (prop === 'maybeSingle' || prop === 'single')
-          return () => Promise.resolve({ data: null, error: null });
+          return () => Promise.resolve({ data: rows.tournament, error: rows.tournamentError });
         if (prop === 'then')
-          return (resolve: (v: any) => void) => resolve({ data: null, error: null });
+          return (resolve: (v: any) => void) => resolve({
+            data: table === 'tournament_players' ? rows.players : rows.tournament,
+            error: table === 'tournament_players' ? rows.playerError : rows.tournamentError,
+          });
         if (prop === 'update')
           return (payload: Record<string, unknown>) => {
             writes.push({ table, payload });
@@ -59,6 +64,8 @@ vi.mock('../../src/core/MasterBus', () => ({
   },
 }));
 
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+
 const { mockGetTournament, mockGetCurrentLevelState } = vi.hoisted(() => ({
   mockGetTournament: vi.fn(),
   mockGetCurrentLevelState: vi.fn(),
@@ -74,12 +81,18 @@ vi.mock('../../src/services/TournamentService', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { tournamentTimerService } from '../../src/services/TournamentTimerService';
+import { masterBus } from '../../src/core/MasterBus';
+import { reportError } from '../../src/utils/errorReporter';
 
 describe('TournamentTimerService', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     writes.length = 0;
+    rows.players = null;
+    rows.tournament = null;
+    rows.playerError = null;
+    rows.tournamentError = null;
     // Default: no tournament, so a tick stops the timer without writing.
     mockGetTournament.mockResolvedValue(null);
     mockGetCurrentLevelState.mockReturnValue({
@@ -246,6 +259,39 @@ describe('TournamentTimerService', () => {
       expect(tournamentTimerService.getTimerState('t1')).toBeNull();
       expect(tournamentTimerService.getTimerState('t2')).toBeNull();
       expect(tournamentTimerService.getTimerState('t3')).toBeNull();
+    });
+  });
+
+  describe('final table follows engine confirmation, not a maximum entry count', () => {
+    it.each(['playerError', 'tournamentError'] as const)('reports an unknown %s observation', async (key) => {
+      rows.players = Array.from({ length: 5 }, (_, i) => ({ user_id: `p${i}`, chips: 1000 }));
+      rows.tournament = { id: 'mtt', max_players: null, final_table_triggered: true };
+      const error = new Error('Observation Unavailable');
+      rows[key] = error;
+      await tournamentTimerService.checkTableSize('mtt');
+      expect(reportError).toHaveBeenCalledWith(error, 'TournamentTimerService.checkTableSize_error');
+      expect(masterBus.emit).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+    });
+
+    it('does not declare consolidation from a small field or mutate its contract', async () => {
+      rows.players = Array.from({ length: 5 }, (_, i) => ({ user_id: `p${i}`, chips: 1000 }));
+      rows.tournament = { id: 'mtt', max_players: 100, final_table_triggered: false };
+      await tournamentTimerService.checkTableSize('mtt');
+      expect(writes).toEqual([]);
+      expect(masterBus.emit).not.toHaveBeenCalledWith('FINAL_TABLE_REACHED', expect.anything());
+    });
+
+    it('observes a confirmed unlimited-field final table exactly once', async () => {
+      rows.players = Array.from({ length: 5 }, (_, i) => ({ user_id: `p${i}`, chips: 1000 }));
+      rows.tournament = { id: 'mtt', name: 'Final Table', max_players: null,
+        final_table_triggered: true, prize_pool: 100 };
+      await tournamentTimerService.checkTableSize('mtt');
+      await tournamentTimerService.checkTableSize('mtt');
+      const calls = vi.mocked(masterBus.emit).mock.calls.filter(([type]) => type === 'FINAL_TABLE_REACHED');
+      expect(calls).toHaveLength(1);
+      expect(calls[0][1]).toMatchObject({ tournamentId: 'mtt', prizePool: 100 });
+      expect(writes).toEqual([]);
     });
   });
 });

@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * Tournament lobby filters
@@ -31,7 +32,10 @@ export interface FilterableTournament {
   variant?: string | null;
   status?: string | null;
   start_time: string;
-  max_players: number;
+  max_players: number | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
+  type?: string | null;
   late_reg_mins?: number | null;
   late_reg_levels?: number | null;
   started_at?: string | null;
@@ -66,6 +70,10 @@ export function isRunning(status?: string | null): boolean {
  * it would turn a wrong tab into an empty one, which is worse.
  */
 export function tournamentVariant(t: FilterableTournament): 'MTT' | 'SN' | 'Spin-It' {
+  if (isUnlimitedMtt(t)) return 'MTT';
+  const type = String(t.tournament_type ?? t.type ?? '').toLowerCase();
+  if (type === 'spin') return 'Spin-It';
+  if (type === 'sng') return 'SN';
   const v = (t.variant || '').toLowerCase();
   if (v === 'spin') return 'Spin-It';
   if (v === 'sng') return 'SN';
@@ -75,11 +83,11 @@ export function tournamentVariant(t: FilterableTournament): 'MTT' | 'SN' | 'Spin
   // the name heuristic free to overrule it -- a "Spinnaker Special" with
   // variant 'freezeout' still filed under Spins. Seat count still separates a
   // small field from a big one, which the column does not describe.
-  if (v) return t.max_players <= 10 ? 'SN' : 'MTT';
+  if (v) return t.max_players != null && t.max_players > 0 && t.max_players <= 10 ? 'SN' : 'MTT';
 
   const name = (t.name || '').toLowerCase();
   if (name.includes('spin')) return 'Spin-It';
-  if (name.includes('sng') || t.max_players <= 10) return 'SN';
+  if (name.includes('sng') || (t.max_players != null && t.max_players > 0 && t.max_players <= 10)) return 'SN';
   return 'MTT';
 }
 

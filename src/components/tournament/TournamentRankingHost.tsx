@@ -1,3 +1,4 @@
+import { isUnlimitedMtt, isTournamentEntryFull } from '../../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT RANKING HOST — app-root owner of the bust card (2026-08-20)
@@ -231,14 +232,14 @@ export function TournamentRankingHost() {
       try {
         const { data: origin, error: originErr } = await supabase
           .from('tournaments')
-          .select('club_id, buy_in_amount, game_type, variant, max_players')
+          .select('club_id, buy_in_amount, game_type, variant, tournament_type, satellite_target_id, satellite_target, max_players')
           .eq('id', tournamentId)
           .maybeSingle();
         if (originErr) throw originErr;
 
         /* Seat-first games only: an MTT's "again" genuinely is the list. */
         const seatFirst =
-          origin &&
+          origin && !isUnlimitedMtt(origin) &&
           (String(origin.variant) === 'spin' ||
             (Number(origin.max_players) > 0 && Number(origin.max_players) <= 2));
         if (!origin || !seatFirst) {
@@ -252,7 +253,7 @@ export function TournamentRankingHost() {
            own primary-table election bias. */
         let q = supabase
           .from('tournaments')
-          .select('id, current_players, max_players')
+          .select('id, current_players, max_players, variant, tournament_type, satellite_target_id')
           .eq('status', 'REGISTERING')
           .eq('buy_in_amount', origin.buy_in_amount)
           .eq('game_type', origin.game_type)
@@ -268,7 +269,7 @@ export function TournamentRankingHost() {
         if (siblingErr) throw siblingErr;
 
         const sibling = siblings?.find(
-          (candidate) => Number(candidate.current_players ?? 0) < Number(candidate.max_players ?? 0)
+          (candidate) => !isUnlimitedMtt(candidate) && !isTournamentEntryFull(candidate, Number(candidate.current_players ?? 0))
         );
         if (!sibling) {
           fallback();

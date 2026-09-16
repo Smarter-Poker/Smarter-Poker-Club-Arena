@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from '../../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ARENA - Tournament Lobby (PLAY CHIPS ONLY)
@@ -1399,10 +1400,11 @@ export default function TournamentDetails({
    */
   const seatIntentDoneRef = useRef(false);
   const isSeatFirstTournament = useMemo(() => {
+    if (!tournament || isUnlimitedMtt(tournament)) return false;
     const v = String(tournament?.variant ?? '').toLowerCase();
     const seats = Number(tournament?.max_players ?? 0);
     return v === 'spin' || (seats > 0 && seats <= 2);
-  }, [tournament?.variant, tournament?.max_players]);
+  }, [tournament]);
 
   useEffect(() => {
     if (!snapshotReady || tournament?.id !== tournamentId || seatIntentDoneRef.current) return;

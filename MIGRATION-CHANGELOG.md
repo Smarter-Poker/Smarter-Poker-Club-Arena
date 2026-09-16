@@ -1,9 +1,80 @@
+## 2026-09-15: Remove MTT entry limits and repair recurring satellite creation
+
+**Source only; not executed or installed.** All MTTs and satellites use unlimited entry capacity, with fixed SNG/Spin and physical table seats preserved. The engine, creators, client projections and 39 pinned database functions adopt the same classification. Recurring satellites use a serialized owner/target creator; source review also repaired same-name/budget starvation, re-entry economics and unsupported target admission. New regression sources are unexecuted because protected pipeline admission is pending. Publication remains on the owner's hold. See [R46 changes](docs/changelog/2026-09-15-unlimited-mtt-entries.md) and [required qualification](docs/audits/2026-09-15-mtt-unlimited-qualification.md).
+
+The follow-up restart review adds exact target preservation and a durable, unique source-event identity enforced by database guards. A shared new-target guard protects all creators. The [change hardening standard](docs/operations/change-hardening-standard.md) records the broader owner requirement; operational enforcement remains unqualified.
+
 ## 2026-09-14: Rake attribution retries survive current-source lock failures
 
 **Files:** scripts/ci/test-rake-attribution-alert.py, required accounting CI step, docs/changelog/2026-09-14-rake-alert-native-lock-regression.md.
 **What existed:** received deadlock alert6548 was repaired by a later attribution sweep. Published retry restoration had a 35-assertion native proof with injected SQLSTATEs but no required real two-session deadlock regression of the current Diamond-composed authority.
 **What changed:** execute the actual tracked preimage, guarded retry restoration and current insertion in an isolated PostgreSQL17 cluster. Real deadlock and timeout boundaries prove retry, one settlement credit, failed-attempt rollback, bounded exhaustion, permanent refusal, exact replay and service-only access. Financial callees are explicit local transaction recorders; accounting formulas and Diamond behavior remain outside this narrow fixture.
 **Verified:** current body matches production0e7baa1bfeb2a2d0fed749a52f32d520; historical24-chip settlement has all3players attributed. No production writes or new migration. Protected CI and publication remain separate.
+
+## 2026-09-14: Apply coherent engine-owned MTT setup presets
+
+**Files:** server/src/tournament/mttCreationProfiles.ts; manual ramp lookup, profile mapper and selector; TableConfigPage (former blind controls at1289); existing structure preview formatting; integration/engine tests.
+**What existed:** separate blind ramp, stack and clock controls offered no single action for the researched setup ranges. Restored and initial custom settings were disclosed by R41.
+**What changed:** explicit Regular150BB/10min, Deep300BB/15min, Turbo100BB/5min and Hyper50BB/2min presets from engine policy, scaled to the actual mapper opening blind. Custom/restored inputs never change on mount; economic settings remain intact. Existing preview uses compact chip formatting.
+**Verified:** re-read changed source; 134 client tests/11 files,158 engine tests/4 files, app/server TypeScript, lint and four UI-copy gates pass. Actual selector/preview rendered in the existing console at393px, custom plus four profiles, no page error or document overflow. Isolated render and local source only; other creator integration and live acceptance remain open. Details: docs/changelog/2026-09-14-mtt-engine-setup-presets.md.
+
+## 2026-09-14: MTT capacity does not become a provisional prize promise
+
+**Files:** server/src/tournament/mttPayoutDepth.ts, src/lib/tournamentFromTableConfig.ts (former lines 170-198), CreateTournamentModal, mapper/payload/schedule regression tests.
+**What existed:** the table-config MTT mapper allocated a payout ladder from maximum capacity using legacy SNG rounding and weights; the other manual creator already used a bounded provisional shape.
+**What changed:** both manual creators use one engine-owned provisional constructor, retaining the selected final-field depth and all SNG/Spin/satellite terms. The database still owns final prizes. No existing row or financial change.
+**Verified:** re-read diff; three regressions failed before the fix; 119 client tests/6 files and 111 related engine tests/2 files pass. App and server TypeScript and focused lint pass. GitHub publication is disabled by current owner policy; source-only completion, live acceptance remains open. Details: docs/changelog/2026-09-14-mtt-provisional-capacity-payouts.md.
+
+## 2026-09-14: Manual MTT paid depth reaches the durable contract
+
+**Files:** engine mttPayoutDepth/mttStructurePolicy, tournamentFromTableConfig, manual selector/preview, PayoutEngine, actual mapper/RPC/schedule tests, current creator native fixture/probe and accounting CI step.
+**What existed:** the manual mapper emitted a provisional payout ladder but no payoutPercent; the database defaulted to 10% at closure even for the selected 15% option. The form also offered unsupported 12.5%. An existing test hid malformed non-MTT input behind an unsafe cast.
+**What changed:** one engine-owned supported 10/15/20 catalogue, explicit depth in one-off and schedule payloads, visible refusal of unsupported restored choices, and a supported 20% provisional ladder. New MTT-only choices cannot silently carry into SNG. No existing event or financial rewrite.
+**Verified:** re-read diff; 141 client tests across eight files, 63 engine policy tests across two files, app and server TypeScript pass; focused lint passes. Native wrapper probe passes 44 groups, 13 against the exact current installed source. Native provider/authorization are stand-ins. Full bundle, protected CI and live adoption remain unqualified. Details: docs/changelog/2026-09-14-mtt-manual-payout-depth.md.
+
+## 2026-09-14: Recovery preserves committed MTT payout terms
+
+**Files:** 20260914143521_preserve_committed_tournament_payout_terms_on_recovery.sql, private PG17 fixtures/probe, native accounting CI step.
+**What existed:** overlay trigger payout block (captured lines 20-57) and entry finalizer (20260908042200, lines 441-462) independently regenerated a finalized paid event's ladder on recovery. Breakfast Turbo's five-place paid contract became four places; the paid-prize guard correctly refused later changes.
+**What changed:** both existing engine database authorities consult one private committed-terms predicate; preserve finalized/prepared terms, refuse inconsistent financial commitments, retain new-event generation and overlay rollback, preserve all Spin aliases. No historical row or payment correction.
+**Verified:** re-read source; 57 native PG17 groups, including both old defects, real launch trigger/current amount and acceptance authorities, concurrent lock handoff, receipt/wake replay, rollback and source/role guards. 82 related engine tests across five files and app TypeScript pass. Installed history 20260914144117, exact body/security readback 14:41:34 UTC. Full provider, CI, served journey and historical reconciliation remain open. Details: docs/changelog/2026-09-14-mtt-committed-payout-terms.md.
+
+## 2026-09-14: Preview actual MTT rules before Save or Start
+
+**Files:** TableConfigPage, MttCreationStructurePreview and rendered preview tests.
+**What existed:** the form selected a Standard/Slow ramp independently from its three-minute clock and1000-chip stack without showing the effective50-BB Turbo structure.
+**What changed:** preview the actual creation mapper payload through the engine structure description; live speed, clock and BB depth remain independent, including satellite and restored drafts. No new request, timer or rule mutation.
+**Verified:**53client cases/3files and appTypeScript pass. Fullbrowser, protectedCI and serving remain open. See docs/changelog/2026-09-14-mtt-creation-structure-preview.md.
+
+## 2026-09-14: MTT clock speed and starting depth share engine facts
+
+**Files:** server tournament mttStructureDescription/mttStructurePolicy; overview, satellite mapper, tournament lobby page/card and main lobby entries; their focused tests and card clock wrapping.
+**What existed:** conflicting speed labels, long clocks called deep stacks, 180 stored seconds read as 180 minutes, name-derived guesses, and stack/name-derived MTT Format sorting.
+**What changed:** pure engine-owned actual clock and independent BB depth facts, normalized stored units, explicit unknowns and taper disclosure. Creation thresholds and funded rules stay unchanged; manual 1000-chip/3-minute overrides are verified.
+**Verified:** 562 client tests/30 files;126 engine tests/2 files;app and server TypeScript pass. Standalone pure browser helper 1752 bytes, one input/no runtime imports. Full production bundle, protected CI, merge and live UI remain unqualified. No SQL, payment or production change. See docs/changelog/2026-09-14-mtt-structure-facts.md.
+
+## 2026-09-14: Terminal bounty residual requires complete candidate coverage
+
+**Files:** migration20260914135625; terminal-bounty-candidate-coverage native fixture/runner; accounting CI step; bountyPoolConservation.guard.test.ts.
+**What existed:** ordinary/mystery finalizers only inspected existing obligations/awards, allowing an accepted missing head to be absorbed by the champion. The structural lock test required an inline lock although the installed root delegates to the canonical global lane helper.
+**What changed:** private complete candidate/obligation anti-join and exact accepted witness before any new residual/reveal/pay/void, after immutable replay and existing locks. Missing/unknown debt refuses; common unsettled predicate and all payer bodies remain. The lock test verifies the actual helper's two canonical locks and their order before event read.
+**Verified:**100 private native assertions plus source/metadata/role/replay guards;2209 tournament tests/164files and app/server TypeScript pass. Exact original roots, claim/collector/marker and documented wallet stand-in. Installed history20260914140327; three postimages plus five unchanged dependency definitions/metadata verified14:03:40UTC. R37 explicit ACL contract installed history20260914140322. Full provider, Diamond/rebuy, top-level native terminal and protected release remain open. See docs/changelog/2026-09-14-terminal-bounty-candidate-coverage.md.
+
+## 2026-09-14: PKO heads follow accepted knockout dependencies
+
+**Explicit privilege contract:** migration20260914135834 repeats the already-verified private claim and service-only collector REVOKEs, guarded by exact installed body/ACL/owner/path/security preconditions and postconditions. The applied20260914133503 bytes remain unchanged. The unchanged four source authorization checks now recognize the same privileges across the two migrations; native qualification also proves all five original caller-role refusals. This follow-up has no financial writes and no new grant. Installation of the explicit contract is recorded separately.
+
+**Files:** migration20260914133503; private causal-PKO runner/fixtures; required accounting CI step.
+**What existed:** an accepted but unclaimed earlier knockout could be omitted from a later head; reserved hand numbers could also discard correctly ordered payments after a move.
+**What changed:** private accepted-evidence and causal-dependency proofs run before new head capture and pending collection, after immutable replay; complete markers discharge exact ancestors. Independent pending heads commute; shared larger-numbered heads require strictly earlier accepted chronology. No historical resnapshot or compensation.
+**Verified:** 111 private PG17 assertions, source/metadata/private-role guards and migration replay. Captured actual claim/collector/marker with a documented wallet stand-in. Installed history20260914134657; all five exact postimages/metadata read back13:47:07UTC. A read-only check of38 current PLO8 candidates found26 clear and12 correctly waiting for incoming heads, with zero unknown proofs. Full provider, legal-hand, rebuy/Diamond and deployment acceptance remain separate. See docs/changelog/2026-09-14-pko-accepted-predecessor-order.md.
+
+## 2026-09-14: Independent PKO tables preserve head order
+
+**Files:** migration20260914123818; captured independent-PKO native fixture/runner; associated changelog.
+**What existed:** the global deal-number cutoff rejected independent tables' valid bounty claims and pending collections.24of43 measured historical order refusals have no later shared table/player at claim time.
+**What changed:** both original authorities require an exact private disjointness proof before admitting a lower hand. Shared or unknown dependencies retain order refusal; all original financial and generation rules remain. No historical row repair.
+**Verified:** 97 native assertions plus three source guards, predicate ACL/private-access checks and migration replay;664engine accounting cases/38files; server TypeScript/build pass. Installed history20260914124651; exact three-function postimages and metadata verified12:47:13UTC. Source CI and actual live execution remain separate. See docs/changelog/2026-09-14-independent-pko-tables.md for scope and limits.
 
 ## 2026-09-14: Settled bounty replay precedes pending payment order
 

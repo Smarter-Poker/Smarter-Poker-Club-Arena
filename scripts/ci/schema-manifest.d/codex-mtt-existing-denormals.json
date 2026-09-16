@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex/ca-mtt-release-20260916",
+  "_comment": "Existing function confirmed by the read-only September 16 capture retained in scripts/ci/fixtures/mtt-unlimited/function-capture-20260916.json (source MD5 88897bba83dd2194f4d7b009b8b5b0c1). This refreshes a stale schema name only; it does not claim installation of the pending R46 replacement.",
+  "functions": ["fn_reconcile_tournament_denormals"]
+}

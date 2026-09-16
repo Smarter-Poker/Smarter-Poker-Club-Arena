@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
 import { uuid } from '../utils/uuid';
 import { isUUID } from '../utils/clubIdResolver';
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
@@ -12452,7 +12453,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -12579,24 +12580,12 @@ function LiveTablePage({
                 durationSec: durSec,
               });
             }
-            /* THE VARIANT DECIDES A SIT-AND-GO, NOT ONLY THE TYPE (2026-09-03).
-               The spin arm reads BOTH columns; the sng arm read only
-               tournament_type, and every ordinary duel carries 'SNG' there so
-               nothing showed. The satellite heads-up added today carries
-               tournament_type 'SATELLITE' (its finish awards a seat) with
-               variant 'sng' and two seats - and fell through to 'mtt', which
-               is not cosmetic: it picks the player's MTT felt, deck and button
-               art instead of their Heads Up set, prints "Poker Tournament" on
-               the masthead, labels the tab MTT, and arms the FINAL TABLE
-               announcement on a two-handed game.
-
-               Seat count is the last word: a table with two seats is a duel
-               whatever its columns say, which is the same rule buyIn.ts
-               rakeRateFor and the seat-first gates already use. */
+            // Entry-field identity wins over obsolete caps and subtype projections.
             const maxSeatsForFmt = Number(tournData.max_players ?? 0);
-            const fmt =
-              String(tournData.variant ?? '').toLowerCase() === 'spin' ||
-              String(tournData.tournament_type ?? '').toUpperCase() === 'SPIN'
+            const fmt = isUnlimitedMtt(tournData)
+              ? ('mtt' as const)
+              : String(tournData.variant ?? '').toLowerCase() === 'spin' ||
+                  String(tournData.tournament_type ?? '').toUpperCase() === 'SPIN'
                 ? ('spin' as const)
                 : String(tournData.variant ?? '').toLowerCase() === 'sng' ||
                     String(tournData.tournament_type ?? '').toUpperCase() === 'SNG' ||
@@ -12619,7 +12608,8 @@ function LiveTablePage({
                  small field"), which then offered seat-first buy-ins on a
                  table whose RPC answers not_a_seat_first_game. A cap only
                  means something when it is a real number. */
-              const isSeatFirst = fmt === 'spin' || (maxP > 0 && maxP <= 2);
+              const isSeatFirst =
+                !isUnlimitedMtt(tournData) && (fmt === 'spin' || (maxP > 0 && maxP <= 2));
               if (isSeatFirst && openForSeats) {
                 const cost =
                   Number(tournData.buy_in_amount ?? 0) + Number(tournData.buy_in_fee ?? 0);
@@ -19827,7 +19817,7 @@ function LiveTablePage({
       const { data, error } = await supabase
         .from('tournaments')
         .select(
-          'status, variant, tournament_type, max_players, buy_in_amount, buy_in_fee, starting_chips'
+          'status, variant, tournament_type, satellite_target_id, satellite_target, max_players, buy_in_amount, buy_in_fee, starting_chips'
         )
         .eq('id', tournId)
         .maybeSingle();
@@ -19847,6 +19837,8 @@ function LiveTablePage({
         status?: string;
         variant?: string;
         tournament_type?: string;
+        satellite_target_id?: string | null;
+        satellite_target?: string | null;
         max_players?: number;
         buy_in_amount?: number;
         buy_in_fee?: number;
@@ -19867,7 +19859,7 @@ function LiveTablePage({
         String(row.tournament_type ?? '').toUpperCase() === 'SPIN';
       const maxP = Number(row.max_players ?? 0);
       // Same seat-first test as fn_take_seat_and_buy_in and the engine's gate.
-      const isSeatFirst = isSpin || (maxP > 0 && maxP <= 2);
+      const isSeatFirst = !isUnlimitedMtt(row) && (isSpin || (maxP > 0 && maxP <= 2));
       if (!isSeatFirst) {
         seatFirstRecoveryDoneRef.current = tournId;
         return;

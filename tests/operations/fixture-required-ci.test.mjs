@@ -1,6 +1,53 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { requireFixtureNativeResult } from '../../scripts/ci/fixture-native-gate.mjs';
+import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
+
+test('R46 native callers, fixture inputs and result consumers require accounting execution', () => {
+  for (const path of [
+    'scripts/ci/test-mtt-unlimited.py',
+    'scripts/ci/mtt_unlimited_fixture.py',
+    'scripts/ci/mtt_isolation_results.py',
+    'scripts/ci/fixtures/mtt-unlimited/schema.sql',
+    'scripts/ci/fixtures/mtt-unlimited/source-binding.json',
+    'scripts/ci/probes/mtt-unlimited-entry-cap-native.sql',
+    'scripts/ci/probes/mtt-unlimited-ticket-redemption-native.sql',
+    'scripts/ci/probes/mtt-satellite-creation-native.sql',
+    'scripts/ci/probes/existing-ticket-current-redemption-native.sql',
+    'scripts/ci/probes/mtt-isolation/fixture.sql',
+    'scripts/ci/probes/mtt-isolation/creation-commit.spec',
+    'scripts/ci/probes/mtt-isolation/creation-rollback.spec',
+    'scripts/ci/probes/mtt-isolation/edit-after-creation.spec',
+    'scripts/ci/probes/mtt-isolation/edit-before-creation.spec',
+    'scripts/ci/probes/mtt-isolation/restart-commit.spec',
+    'scripts/ci/probes/mtt-isolation/restart-rollback.spec',
+    'scripts/ci/probes/mtt-isolation/catalog-candidate.json',
+    'tests/operations/mtt-isolation-results.test.py',
+    'tests/operations/mtt-unlimited-runner.test.py',
+    'tests/operations/fixture-required-ci.test.mjs',
+  ]) {
+    const flags = classifyChangedPaths([path]);
+    assert.equal(flags.server, true, `${path} must select the existing accounting job`);
+    assert.equal(flags.tests, true, `${path} must retain regression execution`);
+    assert.equal(flags.src, false, `${path} does not require a browser build`);
+    assert.equal(flags.phase4, false, `${path} does not affect the solver`);
+  }
+});
+
+test('MTT routing preserves ordinary server gates and excludes unrelated lookalike paths', () => {
+  for (const path of ['server/src/GameServer.ts', 'supabase/migrations/change.sql', 'scripts/dev/probe-pko.sh']) {
+    assert.equal(classifyChangedPaths([path]).server, true, path);
+  }
+  for (const path of [
+    'docs/mtt-unlimited.md',
+    'scripts/ci/test-mtt-unlimited.py.backup',
+    'scripts/ci/probes/other-native.sql',
+    'scripts/ci/fixtures/mtt-unlimited-other/schema.sql',
+    'tests/operations/unrelated.test.py',
+  ]) {
+    assert.equal(classifyChangedPaths([path]).server, false, path);
+  }
+});
 
 const verified = {
   eventName: 'pull_request',

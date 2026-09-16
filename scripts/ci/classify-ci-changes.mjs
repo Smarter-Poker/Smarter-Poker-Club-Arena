@@ -10,6 +10,10 @@ const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/classify-ci-changes\.mjs|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/20260909(165541|170039|170749|171644|172537|175000|180000)_|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31)|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
+// The existing accounting_postgres job owns these real MTT fixtures. A
+// caller-only, included-probe, or consumer-only edit must not skip that job.
+const mttAccounting =
+  /^(scripts\/ci\/(test-mtt-unlimited\.py$|mtt_unlimited_fixture\.py$|mtt_isolation_results\.py$|fixtures\/mtt-unlimited\/|probes\/(mtt-unlimited-[^/]+$|mtt-satellite-creation-native\.sql$|existing-ticket-current-redemption-native\.sql$|mtt-isolation\/))|tests\/operations\/(mtt-isolation-results\.test\.py|mtt-unlimited-runner\.test\.py|fixture-required-ci\.test\.mjs)$)/;
 
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
@@ -21,12 +25,13 @@ export function classifyChangedPaths(paths) {
   // A rule-only edit must not skip their existing directly triggered suites.
   const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
   const spinComparator = matches(/^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/);
+  const mttAccountingChanged = matches(mttAccounting);
   return {
     // Browser specifications, their shared fixtures and runner configuration
     // can break shipped-CSS qualification without changing application source.
     src: broad || matches(/^(src\/|tests\/e2e\/|playwright\.config\.)/),
-    server: broad || spinRules || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
-    tests: broad || spinRules || spinComparator || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
+    server: broad || spinRules || mttAccountingChanged || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
+    tests: broad || spinRules || spinComparator || mttAccountingChanged || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
     phase4: matches(phase4),
     fixture: matches(fixture),
   };

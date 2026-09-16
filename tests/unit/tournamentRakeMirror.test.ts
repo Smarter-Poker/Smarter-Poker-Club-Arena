@@ -47,10 +47,12 @@ describe('server buyIn mirrors client buyIn', () => {
     });
   });
 
-  it('rakeRateFor answers the same in both copies, and keys on SEATS', () => {
+  it('rakeRateFor agrees and only fixed formats use heads-up seats', () => {
     const subjects = [
       { tournamentType: 'SNG', maxPlayers: 2 },
       { tournamentType: 'MTT', maxPlayers: 2 },
+      { tournamentType: 'SATELLITE', variant: 'sng', maxPlayers: 2 },
+      { tournamentType: 'SNG', variant: 'sng', maxPlayers: 2, satellite_target_id: 'target' },
       { tournamentType: 'sng', maxPlayers: 9 },
       { tournamentType: 'MTT', maxPlayers: 180 },
       { tournamentType: 'SPIN', maxPlayers: 3 },
@@ -66,7 +68,7 @@ describe('server buyIn mirrors client buyIn', () => {
     for (const s of subjects) {
       expect(client.rakeRateFor(s), JSON.stringify(s)).toBe(server.rakeRateFor(s));
     }
-    expect(server.rakeRateFor({ tournamentType: 'MTT', maxPlayers: 2 })).toBe(0.05);
+    expect(server.rakeRateFor({ tournamentType: 'MTT', maxPlayers: 2 })).toBe(0.1);
     expect(server.rakeRateFor({ variant: 'Heads-Up', maxPlayers: 9 })).toBe(0.1);
     expect(server.rakeRateFor({ tournamentType: 'SNG' })).toBe(0.1);
     expect(server.rakeRateFor({ tournamentType: 'MTT', maxPlayers: 0 })).toBe(0.1);

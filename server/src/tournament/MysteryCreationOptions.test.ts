@@ -106,6 +106,8 @@ it('restarts a completed manual event with the same published mystery terms', as
     ended_at: new Date(Date.now() - 3_600_000).toISOString(),
     restart_every_minutes: 5,
     max_players: 100,
+    starting_chips: 10000,
+    blind_structure: MTT_BLIND_PRESETS.TURBO,
     buy_in_amount: 4.5,
     buy_in_fee: 0.5,
     guaranteed_prize: 0,

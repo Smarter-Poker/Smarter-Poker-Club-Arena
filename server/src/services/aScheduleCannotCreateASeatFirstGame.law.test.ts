@@ -65,7 +65,7 @@ describe('a schedule cannot produce a game that has no schedule', () => {
     expect(body).toContain('clonedSeats');
     expect(body).toContain('HEADS_UP_SEATS');
     // It must bail out, not merely notice.
-    expect(body).toMatch(/if\s*\(\s*clonedVariant[\s\S]{0,120}\)\s*return;/);
+    expect(body).toMatch(/if\s*\(\s*!isUnlimitedMtt\(old\)\s*&&[\s\S]{0,160}clonedVariant[\s\S]{0,120}\)\s*return;/);
   });
 });
 

@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import hashlib
 
 repo = Path(__file__).resolve().parents[2]
 fixtures = repo / 'scripts/dev/fixtures/tournament-create-payout-depth'
@@ -152,6 +153,28 @@ with (root / 'results.log').open('w') as log:
         q(actual.replace('  v_saved_pct smallint;', '  v_saved_pct integer;'))
         q(migration.read_text(),'Unreviewed tournament creator source')
         ok('unreviewed source is refused without replacement')
+        # R43: qualify the currently installed wrapper, whose later mystery
+        # configuration additions are outside this non-mystery creator scope.
+        current = json.loads((fixtures / 'current-sep14.json').read_text())
+        assert hashlib.md5(current['definition'].split('$function$')[1].encode()).hexdigest() == current['body_md5']
+        q(current['definition'] + ';')
+        for kind in ['mtt', 'bounty', 'satellite']:
+            for depth in [10, 15, 20]:
+                reset()
+                receipt = json.loads(call({'type':kind,'payoutPercent':depth}))
+                assert receipt['success'] is True
+                assert q('SELECT payout_percent FROM tournaments;') == str(depth)
+                assert receipt['buy_in']==100 and receipt['buy_in_fee']==10
+                ok(f'current installed wrapper persists manual {kind} depth {depth}')
+        reset()
+        assert json.loads(call({'type':'mtt'}))['success'] is True
+        assert q('SELECT payout_percent FROM tournaments;') == '10'
+        ok('current wrapper reproduces missing manual depth defaulting to10')
+        for mode,error in [('write_failure','fixture contract failed'),('write_skipped','does not identify'),('write_replaced','not persisted')]:
+            reset()
+            call({'type':'mtt','payoutPercent':20},mode=mode,error=error)
+            no_effects()
+            ok('current wrapper preserves atomic rollback: '+mode)
     finally:
         if started:
             subprocess.run([str(pg / 'pg_ctl'), '-D', str(cluster), '-m', 'fast', '-w', 'stop'],stdout=log,stderr=log,check=True,timeout=30)

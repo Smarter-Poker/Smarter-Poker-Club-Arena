@@ -1,3 +1,4 @@
+import { isUnlimitedMtt, type TournamentEntryCapacitySubject } from '../tournament/tournamentEntryCapacity.js';
 /**
  * Public, non-sensitive format labels for per-table liveness.
  *
@@ -8,7 +9,7 @@
  */
 export type PublicLiveTableFormat = 'cash' | 'mtt' | 'spin' | 'sng';
 
-export interface PublicTournamentFormatRow {
+export interface PublicTournamentFormatRow extends TournamentEntryCapacitySubject {
   tournament_type?: unknown;
   variant?: unknown;
   max_players?: unknown;
@@ -17,9 +18,8 @@ export interface PublicTournamentFormatRow {
 /**
  * Normalize the two format columns that coexist in historical data.
  *
- * Either SPIN marker wins. SNG markers and two-seat tournaments are Sit & Go;
- * the latter covers old heads-up rows whose type was left as MTT. Every other
- * tournament is the MTT lane, including multi-table satellites.
+ * Explicit MTT/satellite type wins over historical numeric field caps. Fixed
+ * Spin and SNG markers retain their lanes; physical table size is not a format.
  */
 export function publicTournamentTableFormat(
   row: PublicTournamentFormatRow
@@ -30,13 +30,12 @@ export function publicTournamentTableFormat(
   const variant = String(row.variant ?? '')
     .trim()
     .toLowerCase();
-  const maxPlayers = Number(row.max_players);
+  if (isUnlimitedMtt(row)) return 'mtt';
 
   if (tournamentType === 'SPIN' || variant === 'spin') return 'spin';
   if (
     tournamentType === 'SNG' ||
-    variant === 'sng' ||
-    (Number.isFinite(maxPlayers) && maxPlayers > 0 && maxPlayers <= 2)
+    variant === 'sng'
   ) {
     return 'sng';
   }

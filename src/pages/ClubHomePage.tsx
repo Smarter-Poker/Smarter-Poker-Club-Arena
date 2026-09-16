@@ -1,3 +1,4 @@
+import { normalizeTournamentMaxPlayers } from '../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * CLUB HOME PAGE — Premium-Style Club Dashboard
@@ -58,6 +59,7 @@ import {
   isHiddenClusterMember,
   tournamentEntry,
   classifyTournament,
+  isSeatFirstTournament,
   type LobbyEntry,
   type LobbyTableRow,
   type LobbyTournamentRow,
@@ -335,7 +337,9 @@ interface TournamentData {
   start_time: string;
   status: string;
   current_players: number;
-  max_players: number;
+  max_players: number | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
   starting_chips: number;
   /**
    * Dan 2026-08-19: late-registration state is derived from these, not from a
@@ -2793,7 +2797,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -3352,7 +3356,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           !rowPassesFilter(advSpec, advValue, {
             variant: t.game_type,
             price: total,
-            seats: Number(t.max_players) || 0,
+            seats: normalizeTournamentMaxPlayers(t) ?? 0,
             // The "Table Size" slider filters on seats at a TABLE, not on the
             // size of the field. Null when the row does not carry it, which
             // skips the range rather than measuring an MTT against 2-9.
@@ -3890,9 +3894,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          charge. Same definition as fn_take_seat_and_buy_in: variant spin,
          or a 2-seat sng. */
       const variantWord = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
-      const seatFirst =
-        variantWord === 'spin' ||
-        (variantWord === 'sng' && Number(t.max_players) > 0 && Number(t.max_players) <= 2);
+      const seatFirst = isSeatFirstTournament(t);
       if (seatFirst) {
         spinQuickJoin(
           { id: t.id, name: t.name, buy_in_amount: Number(t.buy_in_amount) || 0 },

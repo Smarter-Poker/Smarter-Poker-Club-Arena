@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from './tournamentEntryCapacity.js';
 import { LifecycleDiagnostics } from '../services/LifecycleDiagnostics.js';
 import {
   continueBookedSpinBlinds,
@@ -58,7 +59,7 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
 import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
-import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
+import { mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
   escalatedBlindLevel,
@@ -2163,7 +2164,7 @@ export abstract class TournamentManagerBase {
     if (this.tournamentCache) return mayTakeSynchronizedBreak(this.tournamentCache);
     const { data } = await supabase
       .from('tournaments')
-      .select('tournament_type, variant, synchronized_breaks')
+      .select('tournament_type, variant, satellite_target_id, satellite_target, synchronized_breaks')
       .eq('id', this.tournamentId)
       .maybeSingle();
     return mayTakeSynchronizedBreak(data);
@@ -2694,7 +2695,7 @@ export abstract class TournamentManagerBase {
    * drift apart.
    */
   isMttOrXmtt(): boolean {
-    return !isShortFormat(this.tournamentCache?.tournament_type, this.tournamentCache?.variant);
+    return !!this.tournamentCache && isUnlimitedMtt(this.tournamentCache);
   }
 
   /**
@@ -3047,10 +3048,9 @@ export abstract class TournamentManagerBase {
       return refuse(`the tournament status is ${String(tournamentProof.status ?? 'missing')}`);
     }
 
-    const spinLaunch =
-      String(tournament.variant ?? '').toLowerCase() === 'spin' ||
-      String(tournament.tournament_type ?? '').toUpperCase() === 'SPIN';
-    const seatFirstLaunch = spinLaunch || Number(tournament.max_players) <= 2;
+    const spinLaunch = isSpinTournament(tournament);
+    const seatFirstLaunch = !isUnlimitedMtt(tournament) &&
+      (spinLaunch || (Number(tournament.max_players) > 0 && Number(tournament.max_players) <= 2));
     const startingChips = Number(tournament.starting_chips);
     if (!Number.isInteger(startingChips) || startingChips <= 0) {
       return refuse('the tournament has no valid integer starting stack contract');
@@ -3378,8 +3378,7 @@ export abstract class TournamentManagerBase {
     if (
       tournament.status !== 'REGISTERING' ||
       tournament.prize_pool_finalized !== true ||
-      !['MTT', 'SATELLITE'].includes(String(tournament.tournament_type).toUpperCase()) ||
-      !(Number(tournament.max_players) > 2) ||
+      !isUnlimitedMtt(tournament) ||
       isSpinTournament(tournament)
     )
       return false;
@@ -3530,7 +3529,7 @@ export abstract class TournamentManagerBase {
        * trade made backwards.
        */
       const spinPaidGateWillRun =
-        (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') &&
+        isSpinTournament(tournament) &&
         Number(tournament.buy_in_amount || 0) > 0;
 
       let regCount: number | null = null;
@@ -3579,7 +3578,7 @@ export abstract class TournamentManagerBase {
        * one is not a game. `max_players` is read defensively because a null
        * or 0 here must not silently lower the Spin floor.
        */
-      const seatsAvailable = Number(tournament.max_players) || 0;
+      const seatsAvailable = isUnlimitedMtt(tournament) ? 0 : Number(tournament.max_players) || 0;
       let requiredField = seatsAvailable > 0 ? Math.max(2, Math.min(3, seatsAvailable)) : 3;
 
       /**
@@ -3673,7 +3672,7 @@ export abstract class TournamentManagerBase {
       // gate demands. A mismatch is quarantined for operator review. The
       // launch path never deletes a roster, vacates a seat or reconciles a
       // counter in separate requests.
-      if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
+      if (isSpinTournament(tournament)) {
         const buyIn = Number(tournament.buy_in_amount || 0);
         if (buyIn > 0) {
           /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28).
@@ -3836,7 +3835,7 @@ export abstract class TournamentManagerBase {
       //   house_rake = rake_rate x collected, FIXED, to rake_records
       //   reserve_in = the remainder, into the pool
       //   prize_pool = buy_in x multiplier, drawn FROM the pool
-      if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
+      if (isSpinTournament(tournament)) {
         const buyIn = Number(tournament.buy_in_amount) || 0;
         const ruleManifest = spinRuleManifest(buyIn, Number(tournament.starting_chips) || 0);
 
@@ -5692,9 +5691,9 @@ export abstract class TournamentManagerBase {
     let maxPerTable = tournament.max_players || 9;
     const tType = (tournament.tournament_type || '').toUpperCase();
     const variant = (tournament.variant || '').toLowerCase();
-    if (variant === 'spin' || tType === 'SPIN') {
+    if (!isUnlimitedMtt(tournament) && (variant === 'spin' || tType === 'SPIN')) {
       maxPerTable = 3;
-    } else if (variant === 'sng' || tType === 'SNG') {
+    } else if (!isUnlimitedMtt(tournament) && (variant === 'sng' || tType === 'SNG')) {
       maxPerTable = Math.min(tournament.max_players || 6, 9);
     } else {
       // table_size (2026-08-22 parity): seats per table INSIDE the MTT.

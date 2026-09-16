@@ -1,3 +1,4 @@
+import { isUnlimitedMtt, normalizeTournamentMaxPlayers } from '../../../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DETAIL / OVERVIEW TAB — everything about the event, on one screen
@@ -72,6 +73,10 @@ import {
   topBountyCents,
 } from '../../../services/MysteryBountyService';
 import { useSatellites } from './useSatellites';
+import {
+  describeMttStructure,
+  mttClockDescription,
+} from '../../../../server/src/tournament/mttStructureDescription';
 import '../../../styles/tournament-lobby-3d.css';
 import './DetailOverviewTab.css';
 
@@ -331,13 +336,13 @@ export default function DetailOverviewTab({
 
   /* ── The nine stat tiles. ── */
   const stats = useMemo<StatTile[]>(() => {
-    const maxPlayers = Number(tournament?.max_players) || 0;
+    const maxPlayers = tournament ? normalizeTournamentMaxPlayers(tournament) : null;
     return [
       {
         key: 'remaining',
         label: 'Remaining',
         value: chips(field.alive),
-        sub: maxPlayers > 0 ? `of ${chips(maxPlayers)} max` : `of ${chips(field.entries)} entries`,
+        sub: maxPlayers !== null ? `of ${chips(maxPlayers)} max` : `of ${chips(field.entries)} entries`,
         tone: 'accent',
       },
       {
@@ -382,8 +387,7 @@ export default function DetailOverviewTab({
     isCompleted,
     lateRegText,
     prize,
-    tournament?.max_players,
-    tournament?.starting_chips,
+    tournament,
   ]);
 
   /* ── Rule tags. One wrapping row; these were six separate paragraphs. ── */
@@ -422,15 +426,16 @@ export default function DetailOverviewTab({
     const rebuyThrough = Number(t.late_reg_levels ?? t.rebuy_levels ?? 8) || 8;
     const addonFrom = rebuyThrough;
     const addonTo = rebuyThrough + (Number(t.addon_levels ?? 1) || 1);
-    const firstDuration = Number(blindLevels?.[0]?.duration) || 0;
-    const speed =
-      firstDuration === 0
-        ? 'Standard'
-        : firstDuration <= 5
-          ? 'Turbo'
-          : firstDuration <= 10
-            ? 'Regular'
-            : 'Deep Stack';
+    const structure = describeMttStructure(
+      (blindLevels || []).map((row) => ({
+        durationMinutes: row.duration,
+        bigBlind: row.bigBlind,
+        isBreak: row.isBreak,
+      })),
+      Number(t.starting_chips)
+    );
+    const depth = structure.startingDepthBB;
+    const clockVaries = structure.minimumMinutes !== structure.maximumMinutes;
 
     const rows: InfoItem[] = [
       {
@@ -446,12 +451,17 @@ export default function DetailOverviewTab({
         label: 'Buy-In',
         value: formatBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0),
       },
-      { key: 'stack', label: 'Starting Stack', value: chips(t.starting_chips) },
-      { key: 'speed', label: 'Structure', value: speed },
+      {
+        key: 'stack',
+        label: 'Starting Stack',
+        value: `${chips(t.starting_chips)}${depth === null ? '' : ` · ${depth.toLocaleString('en-US', { maximumFractionDigits: 2 })} BB`}`,
+      },
+      { key: 'speed', label: 'Structure', value: structure.speedLabel ?? 'Unconfirmed' },
       {
         key: 'levels',
         label: 'Levels',
-        value: firstDuration ? `${firstDuration} Min` : 'Standard',
+        value: mttClockDescription(structure),
+        wide: clockVaries,
       },
       {
         key: 'rebuy',
@@ -512,7 +522,7 @@ export default function DetailOverviewTab({
         value: activationStatusLine(mysteryBounty?.inventory ?? null),
       });
     }
-    if (t.variant === 'spin' || t.tournament_type === 'SPIN') {
+    if (!isUnlimitedMtt(t) && (t.variant === 'spin' || t.tournament_type === 'SPIN')) {
       rows.push({
         key: 'spin',
         label: 'Spin Multiplier',

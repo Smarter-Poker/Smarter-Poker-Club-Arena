@@ -138,20 +138,33 @@ describe('5. the Midway ladder runs to 25/50 and no higher', () => {
 });
 
 describe('6. satellite heads-ups pay a seat into a bigger event', () => {
-  it('prices two entries to cover one ticket after the heads-up rake, with no overlay', () => {
-    const rate = rakeRateFor({ tournamentType: 'SNG', maxPlayers: HEADS_UP_SEATS });
+  it('prices the minimum three-entry field to fund its promised ticket at standard MTT rake', () => {
+    const rate = rakeRateFor({ tournamentType: 'SATELLITE' });
     for (const ticket of [20, 33, 44, 109, 200]) {
       const buyIn = satelliteHeadsUpBuyIn(ticket);
       expect(buyIn).toBeGreaterThan(0);
-      expect(buyInFor(buyIn, rate).prize * HEADS_UP_SEATS).toBeGreaterThanOrEqual(ticket);
+      expect(buyInFor(buyIn, rate).prize * 3).toBeGreaterThanOrEqual(ticket);
     }
     expect(satelliteHeadsUpBuyIn(0)).toBe(0);
     expect(satelliteHeadsUpBuyIn(1_000_000)).toBe(0);
   });
   it('names the feeder after its target', () => {
     expect(satelliteHeadsUpName('Sunday $200 Deep Stack')).toBe(
-      'Sunday $200 Deep Stack Satellite Heads-Up'
+      'Sunday $200 Deep Stack Satellite'
     );
+  });
+  it('does not open an unlimited feeder into the old thirty-minute target window', () => {
+    const now = Date.parse('2026-09-15T12:00:00Z');
+    const target: SatelliteTargetRow = {
+      id: 'main', name: 'Main Event', start_time: new Date(now + 30 * 60_000).toISOString(),
+      buy_in_amount: 180, buy_in_fee: 20, variant: 'freezeout', tournament_type: 'MTT',
+      max_players: null, is_bounty: false, is_pko: false, is_mystery_bounty: false,
+      is_premium_spin: false,
+    };
+    expect(pickSatelliteTargets([target], now)).toEqual([]);
+    expect(pickSatelliteTargets([{
+      ...target, start_time: new Date(now + SATELLITE_HU_TARGET_LEAD_MS + 60_000).toISOString(),
+    }], now)).toEqual([expect.objectContaining({ id: 'main' })]);
   });
   it('picks the dearest open events inside the window, one per name, never a seat-first game', () => {
     const now = Date.parse('2026-09-03T18:00:00Z');
@@ -269,7 +282,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
     expect(picked.map((r) => r.id)).toEqual(['a', 'c', 'd']);
     expect(picked.length).toBe(SATELLITE_HU_TARGETS_PER_OWNER);
     expect(SATELLITE_HU_MIN_TICKET).toBe(20);
-    expect(SATELLITE_HU_TARGET_LEAD_MS).toBe(30 * 60_000);
+    expect(SATELLITE_HU_TARGET_LEAD_MS).toBe(3 * 60 * 60_000);
     expect(SATELLITE_HU_TARGET_HORIZON_MS).toBe(7 * 24 * 3_600_000);
   });
   it('never feeds an event the satellite finish refuses: bounty, PKO, mystery, Spin or unknown', () => {
@@ -316,6 +329,10 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
       { ...main, id: 'premium', name: 'Premium Spin', is_premium_spin: true },
       { ...main, id: 'spin-type', name: 'Spin Type', tournament_type: 'SPIN' },
       { ...main, id: 'bounty-variant', name: 'Bounty Variant', variant: 'bounty' },
+      ...['bounty', 'progressive', 'progressive_bounty', 'pko', 'mystery', 'mystery_bounty'].flatMap((label) => [
+        { ...main, id: `variant-${label}`, name: `Variant ${label}`, variant: ` ${label.toUpperCase()} ` },
+        { ...main, id: `type-${label}`, name: `Type ${label}`, tournament_type: ` ${label.toUpperCase()} ` },
+      ]),
       { ...main, id: 'unknown', name: 'Unknown Flags', is_pko: null },
       { ...main, id: 'unread', name: 'Unread Flags', is_bounty: undefined },
     ];
@@ -354,14 +371,14 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
       expect(read).toContain(column);
     }
   });
-  it('the row is a heads-up SNG to every seat-first reader and a satellite to the finish', () => {
+  it('the row is an unlimited scheduled satellite with its target settlement contract', () => {
     const src = RECURRING.slice(RECURRING.indexOf('private async createSatelliteHeadsUp('));
-    const insert = src.slice(0, src.indexOf('.select()'));
-    expect(insert).toMatch(/variant: 'sng',/);
+    const insert = src.slice(0, src.indexOf(".select('id')"));
+    expect(insert).toMatch(/variant: 'satellite',/);
     expect(insert).toMatch(/tournament_type: 'SATELLITE',/);
     expect(insert).toMatch(/satellite_target_id: config\.targetId,/);
     expect(insert).toMatch(/satellite_seats: 1,/);
-    expect(insert).toMatch(/max_players: config\.maxPlayers,/);
+    expect(insert).toMatch(/max_players: null,/);
   });
   it('the feeders ride the heads-up tick for the house and every activated owner', () => {
     expect(RECURRING).toMatch(

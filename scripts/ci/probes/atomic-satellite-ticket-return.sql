@@ -528,7 +528,8 @@ END;
 $direct_wrong_target_refused$;
 
 SET LOCAL session_replication_role=replica;
-UPDATE public.tournaments SET max_players=3,current_players=3
+-- Only fixed formats have a full field. Never use an MTT as the cap fixture.
+UPDATE public.tournaments SET tournament_type='SNG',variant='sng',max_players=3,current_players=3
  WHERE id='45444444-4444-4444-8444-444444444444';
 SET LOCAL session_replication_role=origin;
 INSERT INTO probe_results VALUES(
@@ -538,7 +539,7 @@ INSERT INTO probe_results VALUES(
     '56555555-5555-4555-8555-555555555555')
 );
 SET LOCAL session_replication_role=replica;
-UPDATE public.tournaments SET max_players=100,current_players=0
+UPDATE public.tournaments SET tournament_type='MTT',variant='freezeout',max_players=100,current_players=0
  WHERE id='45444444-4444-4444-8444-444444444444';
 SET LOCAL session_replication_role=origin;
 

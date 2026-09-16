@@ -96,6 +96,10 @@ describe('overlay top-up target', () => {
     expect(t).toBe(34);
   });
 
+  it('keeps the funding step bounded when the RPC projects an unlimited MTT', () => {
+    expect(topUpTargetFor(risk({ entries_needed: 500, max_players: null, current_players: 200 }))).toBe(240);
+  });
+
   it('points at Midway Union by default', () => {
     expect(MIDWAY_UNION_ID).toBe('fade0000-0000-0000-0000-000000000001');
   });
@@ -132,6 +136,10 @@ describe('freerolls fill from every lane', () => {
     const t = fr({ current_players: 50, max_players: 50 });
     expect(freerollTargetFor(t)).toBe(50);
     expect(freerollTargetFor(t) - t.current_players).toBe(0);
+  });
+
+  it('continues unlimited freerolls without an artificial field maximum', () => {
+    expect(freerollTargetFor(fr({ max_players: null, current_players: 10000 }))).toBe(10040);
   });
 
   it('a capacity-less row is ignored rather than treated as infinite', () => {

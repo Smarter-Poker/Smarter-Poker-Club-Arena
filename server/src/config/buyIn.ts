@@ -1,3 +1,4 @@
+import { isUnlimitedMtt, type TournamentEntryCapacitySubject } from '../tournament/tournamentEntryCapacity.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT BUY-INS (server mirror of src/utils/buyIn.ts)
@@ -41,7 +42,7 @@ export const HEADS_UP_RAKE_RATE = 0.05;
 export const SPIN_RAKE_RATE = 0;
 
 /** Mirror of RakeSubject in src/utils/buyIn.ts. */
-export interface RakeSubject {
+export interface RakeSubject extends TournamentEntryCapacitySubject {
   /** tournaments.tournament_type — 'MTT' | 'SNG' | 'SPIN'. Any case. */
   tournamentType?: string | null;
   /** tournaments.variant, or a creation form's format string. Any case. */
@@ -65,6 +66,7 @@ export interface RakeSubject {
  * tests/unit/tournamentRakeMirror.test.ts pins them together.
  */
 export function rakeRateFor(subject: RakeSubject): number {
+  if (isUnlimitedMtt(subject)) return DEFAULT_RAKE_RATE;
   const type = String(subject?.tournamentType ?? '').toUpperCase();
   const variant = String(subject?.variant ?? '').toLowerCase();
   if (type === 'SPIN' || variant === 'spin') return SPIN_RAKE_RATE;

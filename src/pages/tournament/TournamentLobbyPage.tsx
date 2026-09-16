@@ -1,3 +1,7 @@
+import {
+  isUnlimitedMtt,
+  normalizeTournamentMaxPlayers,
+} from '../../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY PAGE — Browse & Register for Tournaments
@@ -16,6 +20,10 @@ import {
   tournamentUnregisterSuccessText,
 } from '../../services/TournamentService';
 import TournamentLobbyCard from '../../components/tournament/TournamentLobbyCard';
+import {
+  describeStoredMttStructure,
+  type MttStructureDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
 import { useToast } from '../../components/common/Toast';
 
@@ -49,15 +57,16 @@ interface Tournament {
   startTime: string;
   status: 'ANNOUNCED' | 'REGISTERING' | 'RUNNING' | 'COMPLETED' | 'CANCELLED';
   currentPlayers: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
   startingChips: number;
-  blindsUp: number;
+  structureFacts: MttStructureDescription;
   isRegistered: boolean;
   gameType: string;
   lateRegMins: number;
   isRebuy: boolean;
   variant: string;
   tournamentType: string;
+  satellite_target_id?: string | null;
   isBounty: boolean;
   isPko: boolean;
   isMysteryBounty: boolean;
@@ -318,6 +327,7 @@ export default function TournamentLobbyPage() {
                     game_type,
                     variant,
                     tournament_type,
+                    satellite_target_id,
                     late_reg_mins,
                     late_reg_levels,
                     current_level,
@@ -504,31 +514,10 @@ export default function TournamentLobbyPage() {
           startTime: t.start_time,
           status: t.status,
           currentPlayers: t.current_players || 0,
-          maxPlayers: t.max_players || 0, // 0 = unlimited (only SNG/Spin have caps)
+          maxPlayers: normalizeTournamentMaxPlayers(t),
+          satellite_target_id: t.satellite_target_id,
           startingChips: t.starting_chips || 0,
-          blindsUp: (() => {
-            // Extract blind level duration from structure
-            let blinds: any[] = [];
-            if (Array.isArray(t.blind_structure)) blinds = t.blind_structure;
-            else if (typeof t.blind_structure === 'string') {
-              try {
-                const parsed = JSON.parse(t.blind_structure);
-                if (Array.isArray(parsed)) blinds = parsed;
-              } catch {
-                /* noop — fall through to named structure check */
-              }
-              if (blinds.length === 0) {
-                // Named structure — estimate duration
-                const key = (t.blind_structure || '').toLowerCase();
-                if (key.includes('turbo')) return 3;
-                if (key.includes('deep')) return 15;
-                return 8; // regular
-              }
-            }
-            return blinds.length > 0 && blinds[0]
-              ? blinds[0].durationMinutes || blinds[0].duration || 8
-              : 8;
-          })(),
+          structureFacts: describeStoredMttStructure(t.blind_structure, t.starting_chips),
           isRegistered: registrations.includes(t.id),
           gameType: t.game_type || 'NLH',
           lateRegMins: t.late_reg_mins || 0,
@@ -539,7 +528,7 @@ export default function TournamentLobbyPage() {
           isRebuy: t.is_rebuy || false,
           guaranteedPrize: t.guaranteed_prize || 0,
           variant: t.variant || 'freezeout',
-          tournamentType: t.tournament_type || 'MTT',
+          tournamentType: t.tournament_type || '',
           isBounty: t.is_bounty || t.bounty_amount > 0 || /bounty/i.test(t.name) || false,
           isPko: t.is_pko || /\bpko\b/i.test(t.name) || /progressive\s*k/i.test(t.name) || false,
           isMysteryBounty: t.is_mystery_bounty || /mystery/i.test(t.name) || false,
@@ -634,15 +623,15 @@ export default function TournamentLobbyPage() {
         switch (typeFilter) {
           case 'mtt':
             return (
-              (t.variant === 'freezeout' || t.tournamentType === 'MTT') &&
+              isUnlimitedMtt(t) &&
               !t.isBounty &&
               !t.isPko &&
               !t.isMysteryBounty
             );
           case 'sng':
-            return t.variant === 'sng';
+            return !isUnlimitedMtt(t) && t.variant === 'sng';
           case 'spin':
-            return t.variant === 'spin';
+            return !isUnlimitedMtt(t) && t.variant === 'spin';
           case 'bounty':
             return t.isBounty && !t.isPko && !t.isMysteryBounty;
           case 'pko':
@@ -854,9 +843,9 @@ export default function TournamentLobbyPage() {
                       id: tournament.id,
                       name: tournament.name,
                       type:
-                        tournament.variant === 'sng'
+                        !isUnlimitedMtt(tournament) && tournament.variant === 'sng'
                           ? 'sng'
-                          : tournament.variant === 'spin'
+                          : !isUnlimitedMtt(tournament) && tournament.variant === 'spin'
                             ? 'spin'
                             : tournament.isMysteryBounty
                               ? 'mystery'
@@ -880,7 +869,8 @@ export default function TournamentLobbyPage() {
                               : tournament.status === 'RUNNING'
                                 ? 'running'
                                 : 'cancelled',
-                      blindStructure: `${tournament.blindsUp}m`,
+                      blindStructure: tournament.structureFacts.speedLabel ?? 'Unconfirmed',
+                      structureFacts: tournament.structureFacts,
                       gameType: tournament.gameType,
                       startingChips: tournament.startingChips,
                       lateRegMins: tournament.lateRegMins,

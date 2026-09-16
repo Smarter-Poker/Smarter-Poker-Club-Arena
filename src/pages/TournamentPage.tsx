@@ -1,3 +1,4 @@
+import { normalizeTournamentMaxPlayers } from '../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ♠ CLUB ARENA — Tournament Lobby Page
  * Register and view upcoming tournaments
@@ -1373,7 +1374,7 @@ export default function TournamentPage() {
                   <span className="sc-label sc-ink--blue">Entries</span>
                   <span className="tourn-value sc-ink--silver">
                     {tourn.current_players}
-                    {tourn.max_players ? `/${tourn.max_players}` : ''}
+                    {normalizeTournamentMaxPlayers(tourn) !== null ? `/${tourn.max_players}` : ''}
                   </span>
                 </div>
                 <div className="tourn-row">
@@ -1438,7 +1439,7 @@ export default function TournamentPage() {
               <span className="sc-label sc-ink--blue">Entries</span>
               <span className="tourn-value sc-ink--silver">
                 {selectedTournament.current_players}
-                {selectedTournament.max_players ? `/${selectedTournament.max_players}` : ''}
+                {normalizeTournamentMaxPlayers(selectedTournament) !== null ? `/${selectedTournament.max_players}` : ''}
               </span>
             </div>
             <div className="tourn-row">

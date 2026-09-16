@@ -1,6 +1,8 @@
 # Club Arena MTT engine audit and acceptance blueprint
 
-As of September 13, 2026. This is a working audit with implementation evidence, not a declaration that every feature has passed production certification.
+Updated September 15, 2026. This is a working audit with implementation evidence, not a declaration that every feature has passed production certification. Observations below retain their original dates; they do not describe current live health.
+
+R46 source now applies the owner's unlimited-entry rule to every MTT and satellite across engine, database and UI paths. Legacy heads-up satellite creation is replaced by scheduled uncapped MTT creation; fixed SNG/Spin remain distinct. Independent source review found and corrected additional duplicate/starvation, re-entry-price and unsupported-target paths. No R46 tests, builds, migration execution or publication have run. See [R46 root causes and source scope](../changelog/2026-09-15-unlimited-mtt-entries.md) and [the required protected qualification catalog](2026-09-15-mtt-unlimited-qualification.md). Full audit completion, all-format parity and live acceptance remain open.
 
 ## Immediate incident and release facts
 
@@ -57,7 +59,7 @@ Across the published inventory, 195 ordinary non-rebuy MTT rows ranged from 2,00
 | Turbo MTT                |                                        75–150 BB | 5 minutes, or explicitly disclosed 3–4-minute speed | Names, speed flags, previews and engine rows must agree.                              |
 | Hyper MTT                |                                         25–75 BB | 2 minutes or explicitly disclosed faster ladder     | Separate timebank/entry window constraints.                                           |
 | MTT satellite            |                 Explicit target-linked structure | Regular/turbo as advertised                         | Stop at the qualification threshold; never run an equal-seat satellite to one winner. |
-| Heads-up short satellite |                 Preserve existing 15 BB contract | Existing 3-minute product                           | Separate from deep MTT defaults.                                                      |
+| Recurring satellite      |               200 BB (10,000 chips at 25/50)      | Engine TURBO ladder, 4→2 minutes                     | Uncapped field, minimum three, synchronized breaks, target at least three hours away. Historical two-player financial contracts remain immutable. |
 | Bounty / PKO / mystery   |             Select depth and speed independently | Same canonical structure policy                     | Bounty funding and activation cannot silently alter the ordinary prize pool.          |
 
 Required engine normalization: explicit speed and depth metadata, one canonical validator, immutable configuration once funded, identical creation/preview/runtime projections, and rejection of impossible or contradictory structures. Do not infer economic rules from display names. Change incorrect named schedules deliberately and only for future eligible events.

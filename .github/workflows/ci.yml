@@ -1327,6 +1327,51 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-rake-attribution-alert.py --output artifacts/rake-attribution-alert
 
+      - name: PKO heads follow exact accepted knockout dependencies
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B tests/operations/pko-probe-cleanup.test.py
+          bash scripts/dev/probe-causal-pko-predecessors-pg17.sh
+
+      - name: Tournament residuals require complete bounty candidate coverage
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh
+
+      - name: Tournament recovery preserves committed payout terms
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-committed-payout-terms-pg17.py
+
+      - name: Manual tournament depth reaches the current creation authority
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-tournament-create-payout-depth-pg17.py
+
+      - name: Unlimited MTT entry and satellite races use real database authorities
+        id: mtt_unlimited
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B tests/operations/mtt-isolation-results.test.py
+          python3 -B tests/operations/mtt-unlimited-runner.test.py
+          python3 -B scripts/ci/test-mtt-unlimited.py --output artifacts/mtt-unlimited --work-parent "$RUNNER_TEMP"
+
+      - name: Retain exact MTT database results and original failures
+        if: always() && steps.mtt_unlimited.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtt-unlimited-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            artifacts/mtt-unlimited/result.json
+            artifacts/mtt-unlimited/*.stdout
+            artifacts/mtt-unlimited/*.stderr
+            artifacts/mtt-unlimited/postgres.log
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

@@ -511,17 +511,21 @@ describe('the row a Free Buy is created as', () => {
   });
 });
 
-describe('the field is sized to cover its own guarantee', () => {
+describe('guarantee funding targets are independent from unlimited entry fields', () => {
   it('a full standard field breaks even on add-ons and one rebuy each', () => {
-    expect(freeBuyBreakEvenEntrants(std)).toBeLessThanOrEqual(std.maxPlayers);
+    expect(std.maxPlayers).toBeNull();
+    expect(freeBuyBreakEvenEntrants(std)).toBeGreaterThan(0);
+    expect(Number.isFinite(freeBuyBreakEvenEntrants(std))).toBe(true);
   });
 
   it('a full feature field does too', () => {
-    expect(freeBuyBreakEvenEntrants(feat)).toBeLessThanOrEqual(feat.maxPlayers);
+    expect(feat.maxPlayers).toBeNull();
+    expect(freeBuyBreakEvenEntrants(feat)).toBeGreaterThan(0);
+    expect(Number.isFinite(freeBuyBreakEvenEntrants(feat))).toBe(true);
   });
 
   it('add-ons alone do not cover it, which is why rebuys are priced at all', () => {
-    expect(freeBuyBreakEvenEntrants(std, 0)).toBeGreaterThan(std.maxPlayers);
+    expect(freeBuyBreakEvenEntrants(std, 0)).toBeGreaterThan(freeBuyBreakEvenEntrants(std));
   });
 });
 

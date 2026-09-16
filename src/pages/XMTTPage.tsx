@@ -82,7 +82,7 @@ interface Tournament {
   /** The PRIZE half of the split. Never render it alone - see totalBuyIn. */
   buy_in: number;
   buy_in_fee?: number | null;
-  max_players: number;
+  max_players: number | null;
   registered_count?: number;
   start_time?: string;
   created_at: string;
@@ -328,15 +328,11 @@ export default function XMTTPage() {
   const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number | null>>({});
   const [waitlistProcessing, setWaitlistProcessing] = useState<string | null>(null);
 
-  // Load existing waitlist positions on mount for full-capacity tournaments
+  // Load legacy waitlist positions so their owners can leave.
   useEffect(() => {
     if (!user || tournaments.length === 0) return;
-    const fullTournaments = tournaments.filter(
-      (t) => t.max_players && (t.registered_count || 0) >= t.max_players
-    );
-    if (fullTournaments.length === 0) return;
-
-    fullTournaments.forEach(async (t) => {
+    // Keep legacy queue exits available while registration stays unlimited.
+    tournaments.forEach(async (t) => {
       try {
         const result = await tournamentService.getTournamentWaitlistPosition(t.id, user.id);
         if (result) {
@@ -348,21 +344,6 @@ export default function XMTTPage() {
       }
     });
   }, [user?.id, tournaments.length]);
-
-  const handleJoinWaitlist = async (tournamentId: string) => {
-    if (!user) return;
-    setWaitlistProcessing(tournamentId);
-    try {
-      const { position } = await tournamentService.joinTournamentWaitlist(tournamentId, user.id);
-      setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: position }));
-    } catch (err: any) {
-      setActionError(safeErrorMessage(err));
-      clearTimeout(errorTimerRef.current);
-      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
-    } finally {
-      setWaitlistProcessing(null);
-    }
-  };
 
   const handleLeaveWaitlist = async (tournamentId: string) => {
     if (!user) return;
@@ -388,8 +369,6 @@ export default function XMTTPage() {
 
   /** The two plates a listed tournament offers. Both, or neither. */
   const platesFor = (t: Tournament): { secondary: PlateButtonProps; primary: PlateButtonProps } => {
-    const atCapacity = (t.registered_count || 0) >= (t.max_players || Infinity) && !!t.max_players;
-
     if (t.status !== 'registering') {
       return {
         secondary: {
@@ -404,46 +383,15 @@ export default function XMTTPage() {
       };
     }
 
-    if (atCapacity) {
-      const inLine = waitlistPositions[t.id];
-      return {
-        secondary: {
-          label: 'Details',
-          onClick: (e) => {
-            e.stopPropagation();
-            setSelectedTournament(t.id);
-            loadDetail(t.id);
-          },
-        },
-        primary: inLine
-          ? {
-              label: waitlistProcessing === t.id ? 'Working...' : 'Leave Waitlist',
-              ink: 'red',
-              disabled: waitlistProcessing === t.id,
-              onClick: (e) => {
-                e.stopPropagation();
-                handleLeaveWaitlist(t.id);
-              },
-            }
-          : {
-              label: waitlistProcessing === t.id ? 'Joining...' : 'Join Waitlist',
-              ink: 'white',
-              disabled: waitlistProcessing === t.id,
-              onClick: (e) => {
-                e.stopPropagation();
-                handleJoinWaitlist(t.id);
-              },
-            },
-      };
-    }
-
     return {
       secondary: {
-        label: 'Unregister',
+        label: waitlistPositions[t.id] ? 'Leave Waitlist' : 'Unregister',
         ink: 'red',
+        disabled: waitlistProcessing === t.id,
         onClick: (e) => {
           e.stopPropagation();
-          handleUnregister(t.id);
+          if (waitlistPositions[t.id]) handleLeaveWaitlist(t.id);
+          else handleUnregister(t.id);
         },
       },
       primary: {
@@ -561,7 +509,6 @@ export default function XMTTPage() {
                   <span className="sc-label sc-ink--blue">Entries</span>
                   <span className={`${styles.value} sc-ink--silver`}>
                     {(t.registered_count || 0).toLocaleString()}
-                    {t.max_players ? ` / ${t.max_players.toLocaleString()}` : ' / Open'}
                   </span>
                 </div>
                 <div className={styles.row}>

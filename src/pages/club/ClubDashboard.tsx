@@ -1,3 +1,4 @@
+import { normalizeTournamentMaxPlayers } from '../../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB DASHBOARD — Comprehensive Club Analytics
@@ -207,7 +208,9 @@ interface TournamentData {
     buy_in: number;
     prize_pool: number;
     players: number;
-    max_players: number;
+    max_players: number | null;
+    tournament_type?: string | null;
+    satellite_target_id?: string | null;
     start_time: string;
   }>;
   recent: Array<{
@@ -1985,7 +1988,7 @@ export default function ClubDashboard() {
                           <span className={styles.playerStats}>
                             {(t.variant || 'NLH').toUpperCase()} {'•'} Buy-In{' '}
                             {formatChips(t.buy_in)} {'•'} {formatInt(t.players)}
-                            {t.max_players ? `/${formatInt(t.max_players)}` : ''} Entered
+                            {normalizeTournamentMaxPlayers(t) !== null ? `/${formatInt(t.max_players ?? 0)}` : ''} Entered
                           </span>
                         </div>
                         <span

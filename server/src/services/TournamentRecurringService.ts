@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from '../tournament/tournamentEntryCapacity.js';
 import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -113,7 +114,7 @@ interface TournamentConfig extends MysteryBountyCreationInput {
   rake: number;
   guarantee: number;
   startingStack: number;
-  maxPlayers: number;
+  maxPlayers: null;
   minPlayers: number;
   horsesToRegister: number;
   blindStructure: any[];
@@ -184,7 +185,7 @@ interface XMTTConfig extends MysteryBountyCreationInput {
   rake: number;
   guarantee: number;
   startingStack: number;
-  maxPlayers: number;
+  maxPlayers: null;
   minPlayers: number;
   horsesToRegister: number;
   blindStructure: any[];
@@ -483,7 +484,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 0.5,
         guarantee: 100,
         startingStack: 3000,
-        maxPlayers: 50,
+        maxPlayers: null,
         minPlayers: 8,
         horsesToRegister: 12,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -498,7 +499,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 0.3,
         guarantee: 50,
         startingStack: 2000,
-        maxPlayers: 30,
+        maxPlayers: null,
         minPlayers: 6,
         horsesToRegister: 10,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -517,7 +518,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 0,
         guarantee: 75,
         startingStack: 2500,
-        maxPlayers: 100,
+        maxPlayers: null,
         minPlayers: 10,
         horsesToRegister: 20,
         blindStructure: BLIND_STRUCTURES.HYPER_TURBO,
@@ -531,7 +532,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 0.7,
         guarantee: 80,
         startingStack: 3500,
-        maxPlayers: 50,
+        maxPlayers: null,
         minPlayers: 10,
         horsesToRegister: 15,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -551,7 +552,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 0.4,
         guarantee: 120,
         startingStack: 3000,
-        maxPlayers: 50,
+        maxPlayers: null,
         minPlayers: 8,
         horsesToRegister: 14,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -567,7 +568,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 0.6,
         guarantee: 90,
         startingStack: 3500,
-        maxPlayers: 60,
+        maxPlayers: null,
         minPlayers: 10,
         horsesToRegister: 16,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -587,7 +588,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 0.8,
         guarantee: 150,
         startingStack: 4000,
-        maxPlayers: 36,
+        maxPlayers: null,
         minPlayers: 6,
         horsesToRegister: 12,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -603,7 +604,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 1.0,
         guarantee: 180,
         startingStack: 4500,
-        maxPlayers: 50,
+        maxPlayers: null,
         minPlayers: 10,
         horsesToRegister: 15,
         blindStructure: BLIND_STRUCTURES.STANDARD,
@@ -623,7 +624,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 1.2,
         guarantee: 300,
         startingStack: 6000,
-        maxPlayers: 100,
+        maxPlayers: null,
         minPlayers: 12,
         horsesToRegister: 20,
         blindStructure: BLIND_STRUCTURES.STANDARD,
@@ -644,7 +645,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 1.0,
         guarantee: 200,
         startingStack: 4500,
-        maxPlayers: 75,
+        maxPlayers: null,
         minPlayers: 10,
         horsesToRegister: 18,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -659,7 +660,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 0,
         guarantee: 80,
         startingStack: 3000,
-        maxPlayers: 50,
+        maxPlayers: null,
         minPlayers: 8,
         horsesToRegister: 14,
         blindStructure: BLIND_STRUCTURES.HYPER_TURBO,
@@ -678,7 +679,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 2.5,
         guarantee: 1000,
         startingStack: 10000,
-        maxPlayers: 150,
+        maxPlayers: null,
         minPlayers: 20,
         horsesToRegister: 30,
         blindStructure: BLIND_STRUCTURES.STANDARD,
@@ -694,7 +695,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 1.5,
         guarantee: 400,
         startingStack: 5000,
-        maxPlayers: 60,
+        maxPlayers: null,
         minPlayers: 12,
         horsesToRegister: 18,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -714,7 +715,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 2.0,
         guarantee: 600,
         startingStack: 8000,
-        maxPlayers: 100,
+        maxPlayers: null,
         minPlayers: 15,
         horsesToRegister: 25,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -729,7 +730,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         rake: 1.8,
         guarantee: 450,
         startingStack: 7500,
-        maxPlayers: 70,
+        maxPlayers: null,
         minPlayers: 12,
         horsesToRegister: 20,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -1057,8 +1058,16 @@ export function isJoinableTableRow(row: TournamentTableJoinability | null | unde
   return String(row.status ?? '').toLowerCase() !== 'closed';
 }
 
-export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean {
-  return String(variant).toLowerCase() === 'spin' || maxPlayers <= 2;
+export function isSeatFirstFormat(
+  variant: string,
+  maxPlayers: number | null,
+  tournamentType?: unknown,
+  satelliteTargetId?: unknown
+): boolean {
+  if (isUnlimitedMtt({ variant, tournamentType, satellite_target_id: satelliteTargetId })) return false;
+  const type = String(tournamentType ?? variant).toLowerCase();
+  const seats = Number(maxPlayers);
+  return type === 'spin' || ((type === 'sng' || type === 'hu_sng' || type === 'heads_up') && seats > 0 && seats <= 2);
 }
 
 /**
@@ -1147,15 +1156,15 @@ export function automatedRegistrationIsPermitted(
  * product goal here - not the final count.
  *
  * THREE SAFETY PROPERTIES, ALL DELIBERATE
- *  1. It never targets more than `maxPlayers - 1`, so the ramp can NEVER trip
- *     the `maxReached` start gate in discoverTournaments and begin an event
- *     ahead of its own clock. There is always a seat for a human.
+ *  1. MTT discovery starts on the scheduled clock and never on field capacity.
+ *     A funded ramp target is a spending decision, not a registration limit;
+ *     human entries remain available throughout the registration window.
  *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size,
  *     UNLESS the event carries a guarantee - see the guarantee block in the
  *     function. Every registration is a REAL funded entry through
  *     fn_register_horse_for_tournament (an exact returned ticket first, or a
  *     real wallet debit; both write real rake and prize-pool contribution),
- *     so an uncapped ramp on a 1,000-seat event
+ *     so an unbounded funding ramp
  *     would spend the club's chips on a field nobody asked for. A guarantee
  *     is the one case where the club has ALREADY promised that money, so
  *     covering it with entries is strictly better than paying it as overlay.
@@ -1514,9 +1523,15 @@ export function buildHorseLoadMap(
   return load;
 }
 
-export function startsOnBoughtSeats(variant: string, maxPlayers: number): boolean {
-  const v = String(variant ?? '').toLowerCase();
-  return v === 'sng' || v === 'spin' || (Number(maxPlayers) || 0) <= 2;
+export function startsOnBoughtSeats(
+  variant: string,
+  maxPlayers: number | null,
+  tournamentType?: unknown,
+  satelliteTargetId?: unknown
+): boolean {
+  if (isUnlimitedMtt({ variant, tournamentType, satellite_target_id: satelliteTargetId })) return false;
+  const type = String(tournamentType ?? variant).toLowerCase();
+  return type === 'sng' || type === 'spin' || type === 'hu_sng' || type === 'heads_up';
 }
 
 /**
@@ -1888,8 +1903,10 @@ export function seatFirstStartStalled(opts: {
 export function mttPrestartHorseTarget(opts: {
   /** Milliseconds until the scheduled start. Negative means already past. */
   msUntilStart: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
   variant: string;
+  tournamentType?: unknown;
+  satelliteTargetId?: unknown;
   /** Entrants already registered. Bounds how far one tick may jump. */
   currentPlayers?: number;
   /**
@@ -1906,7 +1923,7 @@ export function mttPrestartHorseTarget(opts: {
    */
   buyInPrizeShare?: number;
 }): number {
-  const { msUntilStart, maxPlayers, variant } = opts;
+  const { msUntilStart, variant } = opts;
   const current = Math.max(0, Number(opts.currentPlayers) || 0);
 
   // Past start, or not started ramping yet. Past start belongs to the existing
@@ -1915,9 +1932,7 @@ export function mttPrestartHorseTarget(opts: {
   if (msUntilStart <= 0 || msUntilStart > MTT_PRESTART_RAMP_MS) return 0;
 
   // Spins, heads-up and any-size SNGs start on bought seats. Not our business.
-  if (startsOnBoughtSeats(variant, maxPlayers)) return 0;
-
-  const seats = Number(maxPlayers) || 0;
+  if (!isUnlimitedMtt({ variant, tournamentType: opts.tournamentType, satellite_target_id: opts.satelliteTargetId })) return 0;
 
   /* ── THE GUARANTEE DECIDES THE FIELD (Dan 2026-08-26) ──────────────────────
      "the horses should fill any and all seats to insure that the guarantee is
@@ -1939,11 +1954,8 @@ export function mttPrestartHorseTarget(opts: {
      horses filling seats does not paper over the shortfall, it genuinely funds
      it, and the guarantee stops being an overlay at all.
 
-     THE CAP IS STILL A CAP. `seats - 1` is untouched (safety property 1: the
-     table always leaves a chair for a human), and a guarantee can never ask
-     for more than the event's own field. What changes is only the FLOOR: an
-     event carrying a guarantee ramps to whatever covers it, an event without
-     one keeps the 24 it always had. */
+     An MTT has no entry cap. The funding target remains bounded by the
+     guarantee or configured default, with the existing per-tick limit. */
   const guarantee = Math.max(0, Number(opts.guaranteedPrize) || 0);
   const pool = Math.max(0, Number(opts.prizePool) || 0);
   const prizeShare = Math.max(0, Number(opts.buyInPrizeShare) || 0);
@@ -1956,8 +1968,8 @@ export function mttPrestartHorseTarget(opts: {
      over-fill the event. */
   const guaranteeGoal = entriesToCover > 0 ? current + entriesToCover : 0;
 
-  // Always leave a seat: see safety property 1.
-  const fieldGoal = Math.min(seats - 1, Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal));
+  // Funding targets and the per-tick budget are independent of an MTT's unlimited entry field.
+  const fieldGoal = Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal);
   if (fieldGoal < 1) return 0;
 
   const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0
@@ -2180,66 +2192,42 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
  *  HEADS UP AREA, WHERE PLAYERS CAN WIN A TICKET INTO BIGGER BUY IN MTT'S."
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * A satellite heads-up is a two-seat game on the ordinary heads-up board whose
- * winner does not take chips: they take a SEAT in a bigger scheduled event.
- * Everything below it is machinery that already exists and is reused, not
- * copied:
- *
- *   - it is SEAT-FIRST like every heads-up (isSeatFirstFormat: two seats), so
- *     it opens with one horse, holds the second seat for a human for the
- *     60-150 second window, and the past-start top-up seats the second horse
- *     if nobody comes;
- *   - it carries tournament_type 'SATELLITE' (variant stays 'sng' so every
- *     seat-first reader still recognises a two-seat SNG) with
- *     satellite_target_id and satellite_seats = 1, so TournamentManager's
- *     finish path (isSatelliteFinish -> processSatelliteAwards) registers the winner into
- *     the target through the same money-correct path the scheduled satellite
- *     MTTs use, and pays whatever the pool holds beyond the seat to the
- *     single next finisher as the atomic settlement remainder;
- *   - the lobby classifies a two-seat game as heads-up whatever its variant
- *     (classifyTournament: a cap of 2 is an 'sng'), and lobbyEntries puts the
- *     SATELLITE badge on anything whose name says so. So it appears in the
- *     Heads Up tab with no client change.
- *
- * WHAT IS A TARGET. Any scheduled MTT in the owner's own scope (the union for
- * the house board, the club for a standalone club) that is open for
- * registration, starts at least SATELLITE_HU_TARGET_LEAD_MS from now and no
- * more than SATELLITE_HU_TARGET_HORIZON_MS away, costs at least
- * SATELLITE_HU_MIN_TICKET to enter, and whose entry the satellite finish can
- * deliver (satelliteTargetIsDeliverable: never a bounty, PKO, mystery-bounty
- * or Spin event, whose seat the settlement authority refuses). "Bigger buy-in" is that floor: nobody
- * needs a satellite into a 5-chip turbo. The board keeps one satellite per
- * target for the SATELLITE_HU_TARGETS_PER_OWNER dearest targets, so the
- * biggest events of the week always have a feeder running.
- *
- * WHAT IT COSTS. Two entries must fund one seat with no overlay, and buy-ins
- * snap to BUY_IN_LADDER, so the price is the smallest ladder step whose two
- * prize shares (after the heads-up rake) cover the ticket. The remainder is
- * real money the runner-up gets back, which is the honest shape of a two-man
- * satellite on a ladder that has no exact halves.
+ * The September 15 unlimited-MTT policy supersedes the old two-seat shape.
+ * New feeders are scheduled satellites with unlimited entries, an MTT turbo
+ * ladder, standard MTT entry fees and finite table seats. Legacy method and
+ * constant names remain stable for callers. The minimum three-entry field
+ * funds one target ticket; the existing settlement authority owns tickets
+ * and any cash remainder. Existing paid event terms are not rewritten here.
+ * Target selection remains owner-scoped, bounded and limited to event types
+ * the satellite settlement authority can actually deliver.
  */
 export const SATELLITE_HU_MIN_TICKET = 20;
 export const SATELLITE_HU_TARGETS_PER_OWNER = 3;
-export const SATELLITE_HU_TARGET_LEAD_MS = 30 * 60 * 1000;
+// The old 30-minute window belonged to a two-player feeder. New open-field
+// satellites reserve three hours before the target starts: time for the full
+// 24-level turbo ladder, synchronized breaks and admission overhead. This is
+// scheduling headroom, never a promise that an unlimited field finishes by it;
+// settlement still checks the target's actual admission window.
+export const SATELLITE_HU_TARGET_LEAD_MS = 3 * 60 * 60 * 1000;
 export const SATELLITE_HU_TARGET_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
-export const SATELLITE_HU_NAME_SUFFIX = 'Satellite Heads-Up';
+export const SATELLITE_HU_NAME_SUFFIX = 'Satellite';
 
 export function satelliteHeadsUpName(targetName: string): string {
   return `${String(targetName).trim()} ${SATELLITE_HU_NAME_SUFFIX}`;
 }
 
 /**
- * The smallest BUY_IN_LADDER step whose two prize shares, after the heads-up
- * rake, cover one ticket into the target. 0 when no step on the ladder can
- * (a ticket dearer than twice the top rung), which means "no satellite".
+ * The smallest BUY_IN_LADDER step whose three minimum-field contributions
+ * cover one target ticket after standard MTT rake. Zero means no supported
+ * price funds the ticket; it never authorizes a guarantee shortfall.
  */
 export function satelliteHeadsUpBuyIn(ticketCost: number): number {
   const ticket = Number(ticketCost);
   if (!Number.isFinite(ticket) || ticket <= 0) return 0;
-  const rate = rakeRateFor({ tournamentType: 'SNG', maxPlayers: HEADS_UP_SEATS });
+  const rate = rakeRateFor({ tournamentType: 'SATELLITE' });
   for (const step of BUY_IN_LADDER) {
     const { prize } = buyInFor(step, rate);
-    if (prize * HEADS_UP_SEATS >= ticket) return step;
+    if (prize * 3 >= ticket) return step;
   }
   return 0;
 }
@@ -2254,6 +2242,8 @@ export interface SatelliteTargetRow {
   max_players: number | null;
   game_type?: string | null;
   tournament_type?: string | null;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
   is_bounty?: boolean | null;
   is_pko?: boolean | null;
   is_mystery_bounty?: boolean | null;
@@ -2280,16 +2270,12 @@ export interface SatelliteTargetRow {
 export function satelliteTargetIsDeliverable(row: SatelliteTargetRow): boolean {
   const flags = [row.is_bounty, row.is_pko, row.is_mystery_bounty, row.is_premium_spin];
   if (flags.some((flag) => flag !== false)) return false;
-  const variant = String(row.variant ?? '').toLowerCase();
-  if (
-    variant === 'spin' ||
-    variant === 'bounty' ||
-    variant === 'progressive_bounty' ||
-    variant === 'mystery_bounty' ||
-    variant === 'pko'
-  )
-    return false;
-  if (String(row.tournament_type ?? '').toUpperCase() === 'SPIN') return false;
+  // New feeder creation must not trust false flags over an advertised bounty
+  // format. Mirrors fn_ensure_scheduled_mtt_satellite without reinterpreting
+  // the economic contract or receipts of already funded historical events.
+  const unsupported = new Set(['spin', 'bounty', 'progressive', 'progressive_bounty', 'pko', 'mystery', 'mystery_bounty']);
+  if ([row.variant, row.tournament_type].some((value) =>
+    unsupported.has(String(value ?? '').trim().toLowerCase()))) return false;
   return true;
 }
 
@@ -2310,10 +2296,9 @@ export function pickSatelliteTargets(
   const eligible = rows
     .filter((r) => {
       const v = String(r.variant ?? '').toLowerCase();
-      if (v === 'spin' || v === 'sng' || v === 'satellite') return false;
+      if (!isUnlimitedMtt(r) || r.satellite_target_id || r.satellite_target ||
+        v === 'satellite' || String(r.tournament_type ?? '').toUpperCase() === 'SATELLITE') return false;
       if (!satelliteTargetIsDeliverable(r)) return false;
-      const seats = Number(r.max_players);
-      if (Number.isFinite(seats) && seats > 0 && seats <= 2) return false;
       const start = r.start_time ? Date.parse(r.start_time) : NaN;
       if (!Number.isFinite(start)) return false;
       const until = start - nowMs;
@@ -2338,8 +2323,9 @@ export function pickSatelliteTargets(
   return out;
 }
 
-interface SatelliteHeadsUpConfig extends Omit<SNGConfig, 'type'> {
+interface SatelliteHeadsUpConfig extends Omit<SNGConfig, 'type' | 'maxPlayers'> {
   type: 'satellite';
+  maxPlayers: null;
   targetId: string;
   targetName: string;
   ticketCost: number;
@@ -2359,11 +2345,11 @@ function satelliteHeadsUpConfigFor(target: SatelliteTargetRow): SatelliteHeadsUp
     gameVariant,
     buyIn,
     rake: 0,
-    startingStack: HEADS_UP_STACKS.turbo,
-    maxPlayers: HEADS_UP_SEATS,
-    minPlayers: HEADS_UP_SEATS,
-    horsesToRegister: HEADS_UP_SEATS - 1,
-    blindStructure: BLIND_STRUCTURES.HEADS_UP_3MIN,
+    startingStack: 10000,
+    maxPlayers: null,
+    minPlayers: 3,
+    horsesToRegister: 1,
+    blindStructure: MTT_BLIND_PRESETS.TURBO,
     payoutStructure: HEADS_UP_PAYOUTS,
     targetId: target.id,
     targetName: target.name,
@@ -2433,7 +2419,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         rake: 1.5,
         guarantee: 500,
         startingStack: 5000,
-        maxPlayers: 100,
+        maxPlayers: null,
         minPlayers: 10,
         horsesToRegister: 20,
         blindStructure: BLIND_STRUCTURES.STANDARD,
@@ -2452,7 +2438,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         rake: 2.0,
         guarantee: 600,
         startingStack: 6000,
-        maxPlayers: 80,
+        maxPlayers: null,
         minPlayers: 12,
         horsesToRegister: 18,
         blindStructure: BLIND_STRUCTURES.STANDARD,
@@ -2472,7 +2458,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         rake: 5.0,
         guarantee: 2500,
         startingStack: 15000,
-        maxPlayers: 200,
+        maxPlayers: null,
         minPlayers: 20,
         horsesToRegister: 30,
         blindStructure: BLIND_STRUCTURES.STANDARD,
@@ -2487,7 +2473,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         rake: 2.5,
         guarantee: 800,
         startingStack: 8000,
-        maxPlayers: 100,
+        maxPlayers: null,
         minPlayers: 15,
         horsesToRegister: 22,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -2507,7 +2493,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         rake: 1.0,
         guarantee: 300,
         startingStack: 4000,
-        maxPlayers: 75,
+        maxPlayers: null,
         minPlayers: 8,
         horsesToRegister: 16,
         blindStructure: BLIND_STRUCTURES.TURBO,
@@ -3298,7 +3284,7 @@ export class TournamentRecurringService {
       let q = supabase
         .from('tournaments')
         .select(
-          'id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type, tournament_type, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
+          'id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type, tournament_type, satellite_target_id, satellite_target, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
         )
         .eq('status', 'REGISTERING')
         .gt('start_time', new Date(Date.now() + SATELLITE_HU_TARGET_LEAD_MS).toISOString())
@@ -3325,15 +3311,16 @@ export class TournamentRecurringService {
         .filter((c): c is SatelliteHeadsUpConfig => c !== null)
         .filter((c) => c.buyIn <= owner.maxStake);
       if (configs.length === 0) return;
-      // The 'sng' board: a satellite heads-up IS a heads-up (variant 'sng'),
-      // matched to its own config names, so the board read is the same one.
-      await this.ensureBoardOpen(
-        'sng',
-        configs,
-        (c, o) => this.createSatelliteHeadsUp(c, o),
-        owner,
-        { left: budgetLeft }
-      );
+      // Satellite identity is the owner/target pair, never the display name:
+      // yesterday's feeder must not suppress today's same-named target. The
+      // authority recognizes both target spellings and all nonterminal states.
+      // Existing feeders do not spend creation budget or starve later targets.
+      // Attempts remain bounded independently, including unknown RPC outcomes.
+      for (const config of configs.slice(0, SATELLITE_HU_TARGETS_PER_OWNER)) {
+        if (budgetLeft <= 0) break;
+        const result = await this.createSatelliteHeadsUp(config, owner);
+        if (result.created !== false) budgetLeft--;
+      }
     } catch (err: any) {
       reportError(
         new Error(`[TournamentRecurring] satellite heads-up board error: ${err?.message}`),
@@ -3342,66 +3329,55 @@ export class TournamentRecurringService {
     }
   }
 
-  /**
-   * A satellite heads-up is created exactly as a heads-up SNG is, with three
-   * differences on the row: tournament_type 'SATELLITE' (so the finish awards
-   * a seat, never cash), the target it feeds, and the one seat it guarantees.
-   */
+  /** Legacy method name retained; every new satellite uses the scheduled MTT path. */
   private async createSatelliteHeadsUp(
     config: SatelliteHeadsUpConfig,
     owner: BoardOwner = this.houseOwner
-  ): Promise<{ tournamentId: string | null; registered: number }> {
+  ): Promise<{ tournamentId: string | null; registered: number; created?: boolean }> {
     try {
-      const startTime = new Date(Date.now() + seatFirstHumanWindowMs());
+      const startTime = new Date(Date.now() + 5 * 60_000);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createSatelliteHeadsUp');
-
-      const satelliteRow = {
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
+      const { data, error } = await supabase.rpc('fn_ensure_scheduled_mtt_satellite', { p_config: {
         club_id: owner.clubId,
         union_id: owner.unionId,
         name: config.name,
         game_type: dbGameType,
-        /* variant 'sng' + tournament_type 'SATELLITE', deliberately. Every
-             seat-first reader (GameServer's fast start, fn_take_seat_and_buy_in,
-             the stuck-finish sweep, the table sizing in TournamentManager) knows
-             a heads-up as `variant === 'sng' && max_players <= 2`, and the
-             finish path knows a satellite as `variant === 'satellite' ||
-             tournament_type === 'SATELLITE'` (TournamentManagerEliminations,
-             fn_tournament_payout_reconcile). This row satisfies both without
-             teaching either side a new spelling. */
-        variant: 'sng',
+        variant: 'satellite',
         tournament_type: 'SATELLITE',
-        ...buyInColumns(
-          config.buyIn,
-          rakeRateFor({ tournamentType: 'SNG', maxPlayers: config.maxPlayers })
-        ),
+        ...buyInColumns(config.buyIn, rakeRateFor({ tournamentType: 'SATELLITE' })),
         guaranteed_prize: 0,
         starting_chips: config.startingStack,
-        max_players: config.maxPlayers,
+        max_players: null,
         min_players: config.minPlayers,
-        table_size: config.maxPlayers,
+        table_size: clampSeatsForVariant(config.gameVariant, 9),
         current_players: 0,
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
+        ...mttSpeedColumns(config.blindStructure),
         payout_structure: config.payoutStructure,
-        // Satellite qualification uses its seat contract, not MTT paid depth.
-        // The atomic seat-first creator deliberately rejects unknown fields.
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
+        synchronized_breaks: true,
         satellite_target_id: config.targetId,
         satellite_seats: 1,
         short_description: `Win A Seat In ${config.targetName}. 1 Seat Guaranteed.`,
-      };
-      const created = await this.createSeatFirstGameAtomic(satelliteRow, 'satellite');
-      if (!created) {
-        return { tournamentId: null, registered: 0 };
+      } });
+      const result = data as {
+        ok?: boolean; outcome?: string; tournament_id?: string; target_id?: string;
+        club_id?: string; union_id?: string | null; reason?: string;
+      } | null;
+      if (error || result?.ok !== true ||
+        !['created', 'existing_active'].includes(String(result.outcome)) ||
+        typeof result.tournament_id !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.tournament_id) ||
+        result.target_id !== config.targetId || result.club_id !== owner.clubId ||
+        result.union_id !== owner.unionId) {
+        throw new Error(error?.message ?? result?.reason ?? 'Invalid satellite creation receipt');
       }
-      const sat = created.tournament;
-      await this.seedOpenSeatTable(sat, config.maxPlayers, created.tableId);
-      console.log(
-        `[TournamentRecurring] satellite heads-up "${config.name}" opened for ${owner.kind} ${owner.clubId.slice(0, 8)}: ${config.buyIn} chips a seat, ticket ${config.ticketCost}`
-      );
-      return { tournamentId: sat.id, registered: 0 };
+      // Entrants register through the MTT path; the manager allocates physical tables at launch.
+      return { tournamentId: result.tournament_id, registered: 0, created: result.outcome === 'created' };
     } catch (err: any) {
       reportError(
         new Error(`[TournamentRecurring] createSatelliteHeadsUp error: ${err.message}`),
@@ -3593,7 +3569,7 @@ export class TournamentRecurringService {
         // id and max_players as well as the name: a seat-first game only
         // COVERS its price point if it can actually be joined, and that means
         // owning a table. See the joinability filter below.
-        .select('id, name, max_players')
+        .select('id, name, max_players, tournament_type, satellite_target_id, satellite_target')
         .eq('variant', variant)
         // REGISTERING only. ANNOUNCED is not joinable and RUNNING is too late;
         // counting either is what let a board of live games starve the lobby.
@@ -3638,9 +3614,9 @@ export class TournamentRecurringService {
        * the same evening) - but the board must not be able to absorb husks
        * whatever creates them, so the test is now joinability, not existence.
        */
-      const rows = (openRows ?? []) as { id: string; name: string; max_players: number }[];
+      const rows = (openRows ?? []) as { id: string; name: string; max_players: number | null; tournament_type: string | null; satellite_target_id: string | null; satellite_target: string | null }[];
       const seatFirstIds = rows
-        .filter((r) => isSeatFirstFormat(variant, Number(r.max_players) || 0))
+        .filter((r) => isSeatFirstFormat(variant, r.max_players, r.tournament_type, r.satellite_target_id ?? r.satellite_target))
         .map((r) => r.id);
 
       let withJoinableTable = new Set<string>();
@@ -3673,7 +3649,7 @@ export class TournamentRecurringService {
         rows
           .filter(
             (r) =>
-              !isSeatFirstFormat(variant, Number(r.max_players) || 0) || withJoinableTable.has(r.id)
+              !isSeatFirstFormat(variant, r.max_players, r.tournament_type, r.satellite_target_id ?? r.satellite_target) || withJoinableTable.has(r.id)
           )
           .map((r) => String(r.name))
       );
@@ -3845,7 +3821,7 @@ export class TournamentRecurringService {
             ...buyInColumns(config.buyIn),
             guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
-            max_players: config.maxPlayers,
+            max_players: null,
             /**
              * SEATS AT THE TABLE (2026-08-31 audit). Neither the MTT nor the
              * XMTT insert wrote this column, and it is `NOT NULL DEFAULT 9` —
@@ -3935,14 +3911,8 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      // Dan 2026-08-19: MTTs seed a FULL field too, not just horsesToRegister.
-      // registerHorses only ever returns horses that are genuinely free (not in
-      // another tournament and not sitting at an open table), so asking for
-      // maxPlayers fills the event as far as the pool allows and no further —
-      // it cannot starve cash games or other tournaments.
-      const horseTarget = HOLD_SEAT_FOR_HUMAN
-        ? config.horsesToRegister
-        : Math.max(config.horsesToRegister, config.maxPlayers);
+      // The configured funding batch stays finite; it is not an MTT entry limit.
+      const horseTarget = config.horsesToRegister;
       const registered = await this.registerHorses(tournament.id, horseTarget);
       // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
       // (each entry adds its exact prize share - fee and bounty excluded), so
@@ -4083,7 +4053,7 @@ export class TournamentRecurringService {
             ...buyInColumns(config.buyIn),
             guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
-            max_players: config.maxPlayers,
+            max_players: null,
             /**
              * SEATS AT THE TABLE (2026-08-31 audit). Neither the MTT nor the
              * XMTT insert wrote this column, and it is `NOT NULL DEFAULT 9` —
@@ -4175,14 +4145,8 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      // Dan 2026-08-19: MTTs seed a FULL field too, not just horsesToRegister.
-      // registerHorses only ever returns horses that are genuinely free (not in
-      // another tournament and not sitting at an open table), so asking for
-      // maxPlayers fills the event as far as the pool allows and no further —
-      // it cannot starve cash games or other tournaments.
-      const horseTarget = HOLD_SEAT_FOR_HUMAN
-        ? config.horsesToRegister
-        : Math.max(config.horsesToRegister, config.maxPlayers);
+      // The configured funding batch stays finite; it is not an MTT entry limit.
+      const horseTarget = config.horsesToRegister;
       const registered = await this.registerHorses(tournament.id, horseTarget);
       // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
       // (each entry adds its exact prize share - fee and bounty excluded), so
@@ -5418,7 +5382,7 @@ export class TournamentRecurringService {
          */
         const { data: tRow, error: tErr } = await supabase
           .from('tournaments')
-          .select('variant, max_players, club_id, start_time, prize_pool_finalized')
+          .select('variant, tournament_type, satellite_target_id, satellite_target, max_players, club_id, start_time, prize_pool_finalized')
           .eq('id', tournamentId)
           .maybeSingle();
         if (tErr || !tRow) {
@@ -5432,7 +5396,9 @@ export class TournamentRecurringService {
         }
         const seatFirst = isSeatFirstFormat(
           String((tRow as { variant?: string } | null)?.variant ?? ''),
-          Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
+          tRow.max_players,
+          tRow.tournament_type,
+          tRow.satellite_target_id ?? tRow.satellite_target
         );
 
         /* A FINALIZED POOL TAKES NO ENTRANT (2026-09-11). Both doors refuse it -
@@ -5616,7 +5582,7 @@ export class TournamentRecurringService {
           humanWindowOpen &&
           seatFirstHeldEmpty(
             tournamentId,
-            Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
+            Number(tRow.max_players) || 0
           )
         ) {
           // With no seat mutation there is nothing to reconcile. The stored

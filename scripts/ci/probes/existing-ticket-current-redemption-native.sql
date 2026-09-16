@@ -6,6 +6,8 @@
 -- Prestart target admission is exercised; late table creation and source terminal
 -- completion are separate acceptance cases.
 -- No production function is replaced; compose current dependencies beforehand.
+-- The R46 wrapper explicitly enables uncapped-MTT cases against a complete
+-- migrated fixture. The older bounded composer alone is historical evidence.
 \set ON_ERROR_STOP on
 BEGIN;
 SET LOCAL lock_timeout='8s';
@@ -258,11 +260,94 @@ BEGIN
 END;
 $wrong_target_unchanged$;
 
+\if :{?r46_unlimited_mtt}
+DO $r46_schema$
+BEGIN
+  IF to_regprocedure('public.fn_ca_is_unlimited_mtt(jsonb)') IS NULL
+     OR to_regprocedure('public.fn_ca_tournament_is_unlimited(uuid)') IS NULL
+     OR NOT EXISTS(SELECT 1 FROM pg_trigger
+          WHERE tgrelid='public.tournaments'::regclass
+            AND tgname='a0_tournaments_unlimited_entry_capacity' AND tgenabled='O')
+     OR EXISTS(SELECT 1 FROM pg_attribute
+          WHERE attrelid='public.tournaments'::regclass
+            AND attname='max_players' AND attnotnull) THEN
+    RAISE EXCEPTION 'R46 requires its migrated schema and complete current authority graph';
+  END IF;
+END $r46_schema$;
+-- R46: execute the current authenticated ticket authority past a legacy MTT
+-- field cap, including the old numeric-two seat-first misclassification.
+-- Savepoint restores the issued liability for the existing refusal/failure tests.
+SAVEPOINT r46_legacy_mtt_capacity;
+SET LOCAL session_replication_role=replica;
+INSERT INTO public.tournament_players(tournament_id,user_id,username,chips,status,club_id)
+SELECT 'e4100000-0000-4000-8000-000000000004',('e4200000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+ 'Uncapped MTT Fixture '||n,0,'registered','e4100000-0000-4000-8000-000000000002' FROM generate_series(1,3) n;
+UPDATE public.tournaments SET tournament_type='MTT',variant='freezeout',max_players=2,current_players=3
+ WHERE id='e4100000-0000-4000-8000-000000000004';
+SET LOCAL session_replication_role=origin;
+SET LOCAL ROLE authenticated;
+INSERT INTO existing_ticket_results VALUES('r46_legacy_cap',public.fn_register_for_tournament_with_ticket(
+ 'e4100000-0000-4000-8000-000000000004','e4100000-0000-4000-8000-000000000008'));
+RESET ROLE;
+SET CONSTRAINTS ALL IMMEDIATE;
+DO $r46_past_cap$
+DECLARE r jsonb:=(SELECT value FROM existing_ticket_results WHERE name='r46_legacy_cap');
+BEGIN
+  IF (r->>'ok')::boolean IS DISTINCT FROM true
+     OR (r->>'replayed')::boolean IS DISTINCT FROM false
+     OR (r->>'wallet_chips_credited')::numeric IS DISTINCT FROM 0::numeric
+     OR (r->>'prize_contribution')::numeric IS DISTINCT FROM 180::numeric
+     OR (r->>'fee_contribution')::numeric IS DISTINCT FROM 20::numeric
+     OR (SELECT count(*) FROM public.tournament_players
+          WHERE tournament_id='e4100000-0000-4000-8000-000000000004')<>4
+     OR NOT EXISTS(SELECT 1 FROM public.tournaments
+          WHERE id='e4100000-0000-4000-8000-000000000004'
+            AND current_players=4 AND prize_pool=180 AND total_rake=20)
+     OR NOT EXISTS(SELECT 1 FROM public.tournament_escrow
+          WHERE tournament_id='e4100000-0000-4000-8000-000000000004'
+            AND prize_balance=180 AND bounty_balance=0 AND fee_balance=20)
+     OR (SELECT count(*) FROM public.chip_ledger WHERE from_type='escrow'
+          AND from_entity_id='e4100000-0000-4000-8000-000000000008'
+          AND category='ticket_redeem' AND amount=200)<>1
+     OR (SELECT count(*) FROM public.tournament_refund_entitlements
+          WHERE source_ticket_id='e4100000-0000-4000-8000-000000000008'
+            AND gross=200 AND refund_prize=180 AND refund_bounty=0 AND refund_fee=20)<>1
+     OR (SELECT chip_balance FROM public.club_members
+          WHERE club_id='e4100000-0000-4000-8000-000000000002'
+            AND user_id='e4100000-0000-4000-8000-000000000001') IS DISTINCT FROM 0::numeric THEN
+    RAISE EXCEPTION 'FAIL R46 legacy numeric-two MTT ticket admission or funding: %',r;
+  END IF;
+  RAISE NOTICE 'AUDIT_TEST_PASS: MTT fourth entry ignores legacy maximum two and preserves exact 200=180+20 ticket funding';
+END $r46_past_cap$;
+UPDATE existing_ticket_before SET fingerprint=pg_temp.existing_ticket_state();
+SET LOCAL ROLE authenticated;
+INSERT INTO existing_ticket_results VALUES('r46_legacy_replay',public.fn_register_for_tournament_with_ticket(
+ 'e4100000-0000-4000-8000-000000000004','e4100000-0000-4000-8000-000000000008'));
+RESET ROLE;
+DO $r46_replay$
+DECLARE a jsonb:=(SELECT value FROM existing_ticket_results WHERE name='r46_legacy_cap');
+        b jsonb:=(SELECT value FROM existing_ticket_results WHERE name='r46_legacy_replay');
+BEGIN
+  IF (b->>'ok')::boolean IS DISTINCT FROM true
+     OR (b->>'replayed')::boolean IS DISTINCT FROM true
+     OR b->>'registration_id' IS DISTINCT FROM a->>'registration_id'
+     OR b->>'entitlement_id' IS DISTINCT FROM a->>'entitlement_id'
+     OR pg_temp.existing_ticket_state() IS DISTINCT FROM
+          (SELECT fingerprint FROM existing_ticket_before) THEN
+    RAISE EXCEPTION 'FAIL R46 uncapped ticket retry changed funding or identity: %',b;
+  END IF;
+  RAISE NOTICE 'AUDIT_TEST_PASS: uncapped ticket admission replay retains exact funding and registration';
+END $r46_replay$;
+ROLLBACK TO SAVEPOINT r46_legacy_mtt_capacity;
+RELEASE SAVEPOINT r46_legacy_mtt_capacity;
+\endif
+
 SET LOCAL session_replication_role=replica;
 INSERT INTO public.tournament_players(tournament_id,user_id,username,chips,status,club_id)
 SELECT 'e4100000-0000-4000-8000-000000000004',('e4200000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
  'Capacity Fixture '||n,0,'registered','e4100000-0000-4000-8000-000000000002' FROM generate_series(1,3) n;
-UPDATE public.tournaments SET max_players=3,current_players=3 WHERE id='e4100000-0000-4000-8000-000000000004';
+-- A real SNG remains bounded; MTTs are never used as a full-target fixture.
+UPDATE public.tournaments SET tournament_type='SNG',variant='sng',max_players=3,current_players=3 WHERE id='e4100000-0000-4000-8000-000000000004';
 SET LOCAL session_replication_role=origin;
 UPDATE existing_ticket_before SET fingerprint=pg_temp.existing_ticket_state();
 SET LOCAL ROLE authenticated;
@@ -280,7 +365,7 @@ END;
 $capacity$;
 SET LOCAL session_replication_role=replica;
 DELETE FROM public.tournament_players WHERE tournament_id='e4100000-0000-4000-8000-000000000004';
-UPDATE public.tournaments SET max_players=100,current_players=0 WHERE id='e4100000-0000-4000-8000-000000000004';
+UPDATE public.tournaments SET tournament_type='MTT',variant='freezeout',max_players=100,current_players=0 WHERE id='e4100000-0000-4000-8000-000000000004';
 SET LOCAL session_replication_role=origin;
 UPDATE existing_ticket_before SET fingerprint=pg_temp.existing_ticket_state();
 

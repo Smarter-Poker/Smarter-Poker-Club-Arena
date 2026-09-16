@@ -55,8 +55,8 @@ describe('a seat-first game starts on seats, not on a clock', () => {
     // A Spin is seat-first at any seat count; a duel is seat-first because it
     // is two-handed. Neither has a scheduled start.
     expect(isSeatFirstFormat('spin', SPIN_SEATS)).toBe(true);
-    expect(isSeatFirstFormat('nlh', HEADS_UP_SEATS)).toBe(true);
-    expect(isSeatFirstFormat('plo4', HEADS_UP_SEATS)).toBe(true);
+    expect(isSeatFirstFormat('nlh', HEADS_UP_SEATS, 'SNG')).toBe(true);
+    expect(isSeatFirstFormat('plo4', HEADS_UP_SEATS, 'SNG')).toBe(true);
 
     // A full-ring SNG and an MTT are not seat-first and are not covered here.
     expect(isSeatFirstFormat('nlh', 9)).toBe(false);

@@ -41,7 +41,7 @@ describe('TournamentBrainContext V12 - derivation', () => {
     expect(deriveContext(row({ tournament_type: 'SPIN' }) as never, 3, 3, 3000).format).toBe(
       'spin'
     );
-    expect(deriveContext(row({ variant: 'spin' }) as never, 3, 3, 3000).format).toBe('spin');
+    expect(deriveContext(row({ variant: 'spin' }) as never, 3, 3, 3000).format).toBe('mtt');
     expect(
       deriveContext(
         row({ tournament_type: 'SNG', variant: 'sng', table_size: 6, max_players: 6 }) as never,
@@ -58,7 +58,7 @@ describe('TournamentBrainContext V12 - derivation', () => {
         3000
       ).format
     ).toBe('hu_sng');
-    expect(deriveContext(row({ table_size: 2 }) as never, 2, 2, 3000).format).toBe('hu_sng');
+    expect(deriveContext(row({ table_size: 2 }) as never, 2, 2, 3000).format).toBe('mtt');
     expect(deriveContext(row() as never, 40, 60, 100000).format).toBe('mtt');
   });
 

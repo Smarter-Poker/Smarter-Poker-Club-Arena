@@ -46,9 +46,8 @@ export interface FreeBuyConfig {
    * BLIND_STRUCTURES.FREE_BUY for the measured comparison.
    */
   blindStructure: 'FREE_BUY';
-  /** Seats on the board. Sized so the field's own rebuys and add-ons cover the
-   *  guarantee without help: see freeBuyBreakEvenEntrants. */
-  maxPlayers: number;
+  /** Unlimited MTT entries. Funding break-even counts are separate from admission. */
+  maxPlayers: null;
   minPlayers: number;
 }
 
@@ -68,7 +67,7 @@ export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
     addOnChips: 10000,
     lateRegMinutes: 60,
     blindStructure: 'FREE_BUY',
-    maxPlayers: 200,
+    maxPlayers: null,
     minPlayers: 10,
   },
   feature: {
@@ -82,7 +81,7 @@ export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
     addOnChips: 10000,
     lateRegMinutes: 60,
     blindStructure: 'FREE_BUY',
-    maxPlayers: 300,
+    maxPlayers: null,
     minPlayers: 10,
   },
 };
@@ -508,7 +507,7 @@ export function freeBuyTournamentRow(opts: {
     free_buy: true,
     guaranteed_prize: cfg.guarantee,
     starting_chips: cfg.startingChips,
-    max_players: cfg.maxPlayers,
+    max_players: null,
     min_players: cfg.minPlayers,
     table_size: opts.tableSize,
     current_players: 0,

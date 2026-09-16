@@ -1,0 +1,53 @@
+{
+  "status": "source_composition_unexecuted",
+  "accounting_capture": {
+    "repository_relative_source": "tests/fixtures/full-weekly-accounting",
+    "capture_date": "2026-09-14",
+    "schema_tables": 255,
+    "schema_functions": 741,
+    "schema_triggers": 537,
+    "schema_policies": 226
+  },
+  "files": {
+    "accounting-schema.sql": {
+      "sha256": "db0f5a5ea4a884b3715620c925ae7bb19b1a53c9c6716e97b769f42712674fd9",
+      "source": "tests/fixtures/full-weekly-accounting/schema.sql",
+      "capture_date": "2026-09-14"
+    },
+    "accounting-access.sql": {
+      "sha256": "ad2cb0ddc955bd97c9ef719e9106aad9f55be5cf034e014d04c90b3a1667c541",
+      "source": "tests/fixtures/full-weekly-accounting/access.sql",
+      "capture_date": "2026-09-14"
+    },
+    "accounting-policies.sql": {
+      "sha256": "075254070c905c0bac70a9bc5a0b3e938b5262f0e1a186ee2a56127da0f77698",
+      "source": "tests/fixtures/full-weekly-accounting/policies.sql",
+      "capture_date": "2026-09-14"
+    },
+    "accounting-seed-registry.sql": {
+      "sha256": "5056b51adb198a3f80b614ee59583a36bab901347e0b30edc6854310e7508ddd",
+      "source": "tests/fixtures/full-weekly-accounting/seed-registry.sql",
+      "capture_date": "2026-09-14"
+    },
+    "accounting-catalog-contract.json": {
+      "sha256": "0cf2fda926114034a636d946424bd3aa079f88ad495885f985158d9493f0f548"
+    },
+    "r46-preimages.json": {
+      "sha256": "c0be57af4a6085bdaffa0bffd6595918eeb154d621768cb1b0835afc82922752"
+    },
+    "function-capture-20260916.json": {
+      "sha256": "3b4b505c21c3ae48061aea765dd3b312a68d27875d079aa3f6dc97c19365d4d8"
+    },
+    "function-dependencies-20260916.json": {
+      "sha256": "b754e8303394d664b5052c257f0082308a2b48ccb7f6553b1624e69f95634d67"
+    },
+    "table-capture-20260916.json": {
+      "sha256": "38b9c4c93f2bfd86832c41292f1d83fd9621866e3273a4cc7553053503f9efe3"
+    }
+  },
+  "limits": [
+    "The reused capture is the actual retained accounting catalog, not a whole production dump.",
+    "R46 missing functions and their ACLs were captured read-only on 2026-09-16; all 24 rewritten bodies match the pinned migration.",
+    "No database execution or native acceptance is established by source composition."
+  ]
+}

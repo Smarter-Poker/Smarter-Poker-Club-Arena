@@ -1,3 +1,4 @@
+import { isUnlimitedMtt, type TournamentEntryCapacitySubject } from './tournamentEntryCapacity.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  BREAK ELIGIBILITY — which formats may ever take the platform :55 break
@@ -20,7 +21,7 @@
  * wrong thing is one forgotten `&&` away from breaking a hyper, and that is
  * exactly what the production data shows happened.
  *
- * So the rule is stated ONCE, here, as a pure predicate with no imports (same
+ * So the rule is stated ONCE, here, as a pure predicate with only pure imports (same
  * reasoning as payoutStructure.ts and startRules.ts: it feeds a lifecycle
  * branch inside TournamentManagerBase and must be unit-testable without
  * booting supabase). `pauseForBreak` itself now refuses, so no caller can get
@@ -42,7 +43,8 @@
  * `variant = 'spin'`, but scheduler-spawned rows have carried one without the
  * other. Either is sufficient evidence.
  */
-export function isShortFormat(tournamentType: unknown, variant: unknown): boolean {
+export function isShortFormat(tournamentType: unknown, variant: unknown, satelliteTargetId?: unknown): boolean {
+  if (isUnlimitedMtt({ tournament_type: tournamentType, variant, satellite_target_id: satelliteTargetId })) return false;
   const type = String(tournamentType ?? '').toUpperCase();
   const v = String(variant ?? '').toLowerCase();
   return type === 'SPIN' || type === 'SNG' || v === 'spin' || v === 'sng';
@@ -64,14 +66,15 @@ export function isShortFormat(tournamentType: unknown, variant: unknown): boolea
  */
 export function mayTakeSynchronizedBreak(
   row:
-    | {
+    | (TournamentEntryCapacitySubject & {
         tournament_type?: unknown;
         variant?: unknown;
         synchronized_breaks?: unknown;
-      }
+      })
     | null
     | undefined
 ): boolean {
+  if (row && isUnlimitedMtt(row)) return row.synchronized_breaks !== false;
   if (isShortFormat(row?.tournament_type, row?.variant)) return false;
   return row?.synchronized_breaks !== false;
 }

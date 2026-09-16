@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from './tournament/tournamentEntryCapacity.js';
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 /**
@@ -5599,9 +5600,11 @@ export class GameServer {
           start_time: string | null;
           current_players: number;
           min_players: number | null;
-          max_players: number;
+          max_players: number | null;
           variant: string | null;
           tournament_type: string | null;
+          satellite_target_id: string | null;
+          satellite_target: string | null;
           buy_in_amount: number | null;
           buy_in_fee: number | null;
           guaranteed_prize: number | null;
@@ -5612,7 +5615,7 @@ export class GameServer {
             let q = supabase
               .from('tournaments')
               .select(
-                'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
+                'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, satellite_target_id, satellite_target, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
               )
               .eq('status', 'REGISTERING')
               .order('id', { ascending: true })
@@ -5656,7 +5659,7 @@ export class GameServer {
         // 3+ seat SNG a structural deadlock: the RPC refused its seat sales
         // (not_a_seat_first_game) while this gate waited for seats forever.
         const seatFirstRows = (registering || []).filter(
-          (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
+          (t) => !isUnlimitedMtt(t) && (t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) > 0 && Number(t.max_players) <= 2))
         );
         const paidSeatsByTournament = await this.readSeatFirstPaidSeats(seatFirstRows);
 
@@ -5693,7 +5696,7 @@ export class GameServer {
             continue;
           }
           const now = Date.now();
-          const minPlayers = tournament.min_players || 3;
+          const minPlayers = Math.max(isUnlimitedMtt(tournament) ? 3 : 2, tournament.min_players || 3);
 
           /**
            * A FINALIZED POOL IS NOT A REGISTERING EVENT (2026-09-11).
@@ -5773,10 +5776,9 @@ export class GameServer {
            * it was created, without each creator having to remember.
            *
            * The target curve and its safety properties are documented on
-           * mttPrestartHorseTarget. The two that matter here: it never exceeds
-           * max_players - 1, so it cannot trip the `maxReached` gate below and
-           * start an event early; and it returns 0 for seat-first games, whose
-           * rule is bought seats, not registrations.
+           * mttPrestartHorseTarget: the funding step is bounded and fixed-format
+           * games are excluded. MTTs have unlimited entries and cannot use the
+           * maxReached gate to start ahead of their scheduled clock.
            */
           const msUntilStart = startTime - now;
           if (!poolFinalized && msUntilStart > 0 && msUntilStart <= MTT_PRESTART_RAMP_MS) {
@@ -5788,7 +5790,9 @@ export class GameServer {
               // drift from it.
               const rampTarget = mttPrestartHorseTarget({
                 msUntilStart,
-                maxPlayers: tournament.max_players ?? 0,
+                maxPlayers: tournament.max_players,
+                tournamentType: tournament.tournament_type,
+                satelliteTargetId: tournament.satellite_target_id ?? tournament.satellite_target,
                 variant: String(tournament.variant ?? ''),
                 currentPlayers: tournament.current_players ?? 0,
                 /* A GUARANTEED event ramps to whatever covers it, not to the
@@ -5819,20 +5823,10 @@ export class GameServer {
 
           const isPastStart = startTime <= now;
           if (!poolFinalized && isPastStart && tournament.current_players < minPlayers) {
-            /**
-             * Dan 2026-08-19: fill to a FULL FIELD, every format.
-             *
-             * "ALLOW HORSES TO FILL ALL SEATS FOR SIT N GO'S AND MTT AND SPINS"
-             *
-             * SNG/Spin only ever start when full, so max_players was always the
-             * right target for them. MTTs used to be topped up to min_players
-             * only — enough to start, but a 50-seat event running 6-handed.
-             * They now aim for a full field too. topUpWithHorses can only seat
-             * horses that are genuinely free (not in another tournament, not
-             * sitting at an open table), so asking for max_players fills the
-             * event as far as the pool allows and never starves cash games.
-             */
-            const target = tournament.max_players > 0 ? tournament.max_players : minPlayers;
+            // Fixed games fill their finite field. An overdue MTT requests
+            // its launch minimum; guarantee funding uses the separate bounded ramp.
+            const target = !isUnlimitedMtt(tournament) && Number(tournament.max_players) > 0
+              ? Number(tournament.max_players) : minPlayers;
 
             /* At most every 45 s (the ramp's MTT_PRESTART_TICK_MS), and an event
                that keeps coming back empty is asked half as often each time, up
@@ -5888,9 +5882,9 @@ export class GameServer {
           // MTT / Bounty / PKO / Mystery: start at scheduled time if min_players met
           // Seat-first = spin or heads-up (2-seat SNG). Must agree with
           // fn_take_seat_and_buy_in / isSeatFirstFormat — see 2026-08-24 audit.
-          const isSngOrSpin =
+          const isSngOrSpin = !isUnlimitedMtt(tournament) && (
             tournament.variant === 'spin' ||
-            (tournament.variant === 'sng' && Number(tournament.max_players) <= 2);
+            (tournament.variant === 'sng' && Number(tournament.max_players) > 0 && Number(tournament.max_players) <= 2));
 
           /**
            * PAID SEATS, NOT REGISTRATIONS (Dan 2026-08-23, verbatim: "spins can
@@ -5910,10 +5904,10 @@ export class GameServer {
            */
           const paidSeats = paidSeatsByTournament.get(tournament.id) ?? 0;
           const seatFirstReady =
-            isSngOrSpin && tournament.max_players > 0 && paidSeats >= tournament.max_players;
+            isSngOrSpin && Number(tournament.max_players) > 0 && paidSeats >= Number(tournament.max_players);
 
           const maxReached =
-            tournament.max_players > 0 && tournament.current_players >= tournament.max_players;
+            !isUnlimitedMtt(tournament) && Number(tournament.max_players) > 0 && tournament.current_players >= Number(tournament.max_players);
           /**
            * ONE MINUTE EARLY, ON PURPOSE — see TOURNAMENT_PRESEAT_LEAD_MS.
            *
@@ -7723,6 +7717,8 @@ export class GameServer {
             start_time: string | null;
             variant: string | null;
             tournament_type: string | null;
+            satellite_target_id: string | null;
+            satellite_target: string | null;
             current_players: number | null;
             min_players: number | null;
             max_players: number | null;
@@ -7732,11 +7728,9 @@ export class GameServer {
               let query = supabase
                 .from('tournaments')
                 .select(
-                  'id, name, start_time, variant, tournament_type, current_players, min_players, max_players, prize_pool_finalized'
+                  'id, name, start_time, variant, tournament_type, satellite_target_id, satellite_target, current_players, min_players, max_players, prize_pool_finalized'
                 )
                 .eq('status', 'REGISTERING')
-                .eq('tournament_type', 'MTT')
-                .gt('max_players', 2)
                 .lte('start_time', dueBefore)
                 .order('id', { ascending: true })
                 .limit(want);
@@ -7759,26 +7753,20 @@ export class GameServer {
           for (const tournament of due) {
             if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) break;
             if (
-              tournament.tournament_type !== 'MTT' ||
-              tournament.variant === 'spin' ||
-              tournament.variant === 'sng' ||
+              !isUnlimitedMtt(tournament) ||
               tournament.prize_pool_finalized === true
             )
               continue;
             const startsAt = Date.parse(String(tournament.start_time));
             const players = Number(tournament.current_players);
-            const maximum = Number(tournament.max_players);
-            const minimum = Number(tournament.min_players) || 3;
+            const minimum = Math.max(3, Number(tournament.min_players) || 3);
             if (
               !Number.isFinite(startsAt) ||
               startsAt > Date.now() + TOURNAMENT_PRESEAT_LEAD_MS ||
               !Number.isSafeInteger(players) ||
-              !Number.isSafeInteger(maximum) ||
               !Number.isSafeInteger(minimum) ||
               minimum < 2 ||
-              maximum <= 2 ||
-              players < minimum ||
-              minimum > maximum
+              players < minimum
             )
               continue;
             const id = tournament.id;
@@ -7850,7 +7838,7 @@ export class GameServer {
           .from('tournaments')
           // prize_pool_finalized: a board whose pool is finalized has left
           // registration (see the fill gate below), whatever its status says.
-          .select('id, name, max_players, variant, start_time, prize_pool_finalized')
+          .select('id, name, max_players, variant, tournament_type, satellite_target_id, satellite_target, start_time, prize_pool_finalized')
           .eq('status', 'REGISTERING')
           .in('variant', ['spin', 'sng']);
         if (registeringErr) {
@@ -7864,7 +7852,7 @@ export class GameServer {
           // Same seat-first definition as discoverTournaments and
           // fn_take_seat_and_buy_in: spin, or a 2-seat SNG (heads-up).
           const seatFirstRows = (registering || []).filter(
-            (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
+            (t) => !isUnlimitedMtt(t) && (t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) > 0 && Number(t.max_players) <= 2))
           );
           const paidSeats = await this.readSeatFirstPaidSeats(seatFirstRows);
           for (const t of seatFirstRows) {
@@ -8187,7 +8175,7 @@ export class GameServer {
 
     const { data: running, error: runningErr } = await supabase
       .from('tournaments')
-      .select('id, name, variant, max_players, started_at')
+      .select('id, name, variant, tournament_type, satellite_target_id, satellite_target, max_players, started_at')
       .eq('status', 'RUNNING')
       .in('variant', ['spin', 'sng'])
       .lt('started_at', new Date(now - STUCK_MIN_AGE_MS).toISOString());
@@ -8200,7 +8188,7 @@ export class GameServer {
     }
 
     const candidates = (running || []).filter(
-      (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
+      (t) => !isUnlimitedMtt(t) && (t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) > 0 && Number(t.max_players) <= 2))
     );
     if (candidates.length === 0) return;
 

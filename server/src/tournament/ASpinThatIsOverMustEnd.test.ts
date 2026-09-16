@@ -102,7 +102,7 @@ describe('it is scoped and bounded', () => {
   it('only seat-first games: spins, and heads-up SNGs', () => {
     expect(SWEEP).toMatch(/\.in\('variant', \['spin', 'sng'\]\)/);
     expect(SWEEP).toMatch(
-      /t\.variant === 'spin' \|\| \(t\.variant === 'sng' && Number\(t\.max_players\) <= 2\)/
+      /!isUnlimitedMtt\(t\)/
     );
   });
 

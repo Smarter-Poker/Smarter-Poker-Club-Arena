@@ -187,7 +187,7 @@ export function overlayFor(
   if (!running) return null;
 
   // The registration door must still be open, or there is nothing to sell.
-  if (!isInLateRegistration({ ...t, name: t.name || '', max_players: t.max_players ?? 0 }, now)) {
+  if (!isInLateRegistration({ ...t, name: t.name || '', max_players: t.max_players ?? null }, now)) {
     return null;
   }
 

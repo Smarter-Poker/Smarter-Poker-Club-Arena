@@ -1,3 +1,4 @@
+import { normalizeTournamentMaxPlayers } from '../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  COMMUNITY SEARCH — /search
@@ -100,6 +101,7 @@ export interface TournamentHit {
   name: string;
   status: string;
   tournament_type: string | null;
+  satellite_target_id?: string | null;
   variant: string | null;
   buy_in_amount: number;
   buy_in_fee: number;
@@ -1270,7 +1272,7 @@ export default function SearchPage() {
                               <span>
                                 <strong>
                                   {formatCount(tournament.current_players)}
-                                  {tournament.max_players
+                                  {normalizeTournamentMaxPlayers(tournament) !== null
                                     ? `/${formatCount(tournament.max_players)}`
                                     : ''}
                                 </strong>{' '}

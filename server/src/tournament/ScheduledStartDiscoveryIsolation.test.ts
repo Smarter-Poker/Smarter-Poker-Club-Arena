@@ -153,9 +153,9 @@ describe('scheduled starts have an independent bounded discovery path', () => {
     const { server } = harness([
       row('future', { start_time: new Date(Date.now() + 61000).toISOString() }),
       row('short', { current_players: 3 }),
-      row('spin', { variant: 'spin' }),
-      row('sng', { variant: 'sng' }),
-      row('hu', { max_players: 2 }),
+      row('spin', { tournament_type: 'SPIN', variant: 'spin' }),
+      row('sng', { tournament_type: 'SNG', variant: 'sng' }),
+      row('hu', { tournament_type: 'SNG', max_players: 2 }),
       row('paid', { prize_pool_finalized: true }),
       row('invalid', { current_players: null }),
       row('owned'),
@@ -163,6 +163,34 @@ describe('scheduled starts have an independent bounded discovery path', () => {
     ]);
     server.tournamentEngines.set('owned', {});
     server.tournamentManagerAdmissionRetryTimers.set('retry', {});
+    await server.discoverScheduledMttStarts();
+    expect(server.ensureTournamentManagerAdmission).not.toHaveBeenCalled();
+  });
+  it.each([null, 2, 200])('discovers an MTT past its obsolete cap %j', async (max_players) => {
+    const { server, query } = harness([row('unlimited', { max_players, current_players: 201 })]);
+    await server.discoverScheduledMttStarts();
+    expect(server.ensureTournamentManagerAdmission).toHaveBeenCalledWith('unlimited', 'start', expect.any(String), 1);
+    expect(query.gt).not.toHaveBeenCalledWith('max_players', expect.anything());
+  });
+  it('discovers a satellite with the historical SNG shape', async () => {
+    const { server } = harness([row('satellite', { tournament_type: 'SATELLITE', variant: 'sng', max_players: 2 })]);
+    await server.discoverScheduledMttStarts();
+    expect(server.ensureTournamentManagerAdmission).toHaveBeenCalledWith('satellite', 'start', expect.any(String), 1);
+  });
+  it.each(['satellite_target_id', 'satellite_target'])(
+    'discovers a linked satellite through %s despite an old fixed-format label', async (targetKey) => {
+      const { server, query } = harness([row('linked-satellite', {
+        tournament_type: 'SNG', variant: 'sng', max_players: 2, [targetKey]: 'target',
+      })]);
+      await server.discoverScheduledMttStarts();
+      expect(query.select).toHaveBeenCalledWith(expect.stringContaining(targetKey));
+      expect(server.ensureTournamentManagerAdmission).toHaveBeenCalledWith(
+        'linked-satellite', 'start', expect.any(String), 1
+      );
+    }
+  );
+  it('does not lower the MTT launch minimum to the old two-entry cap', async () => {
+    const { server } = harness([row('too-small', { max_players: 2, min_players: 2, current_players: 2 })]);
     await server.discoverScheduledMttStarts();
     expect(server.ensureTournamentManagerAdmission).not.toHaveBeenCalled();
   });

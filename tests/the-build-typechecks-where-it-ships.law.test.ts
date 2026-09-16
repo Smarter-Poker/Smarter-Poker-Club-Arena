@@ -79,27 +79,29 @@ describe('the build typechecks where it ships', () => {
 
   it('TypeScript compilation still runs on every pull request and no diff filter can skip it', () => {
     const ci = read('.github/workflows/ci.yml');
-    const start = ci.indexOf('\n  typecheck_compile:');
-    expect(start, 'the typecheck job disappeared').toBeGreaterThan(-1);
-    // Up to the next top-level job key (two-space indent, then a name+colon).
-    const rest = ci.slice(start + 1);
-    const nextJob = rest.slice(1).search(/\n {2}[a-z_][a-z0-9_-]*:\n/i);
-    const job = nextJob === -1 ? rest : rest.slice(0, nextJob + 1);
-    expect(job, 'the typecheck job disappeared').toContain(
-      'TypeScript compilation and repository checks'
-    );
-    expect(job).toMatch(/tsc --noEmit/);
-    const step = parse(ci).jobs.typecheck_compile.steps.find(
+    const job = parse(ci).jobs.typecheck_compile;
+    expect(job.name).toBe('TypeScript compilation and repository checks');
+    expect(job.needs).toBe('changes');
+    // Classification failure still compiles; only workflow cancellation stops it.
+    expect(job.if).toBe("${{ !cancelled() && github.event_name == 'pull_request' }}");
+    const step = job.steps.find(
       (step: { name?: string }) => step.name === 'TypeScript Check'
     );
+    expect(step.if).toBeUndefined();
     expect(step.run.trim().split('\n')).toEqual([
       'npx tsc --noEmit',
       'npx tsc -p tsconfig.node.json --noEmit',
     ]);
-    // It must not be gated on the `changes` job. A skipped required check
-    // counts as SATISFIED by the ruleset, so a filter here is how the whole
-    // typecheck quietly stops happening.
-    expect(job).not.toMatch(/needs\.changes/);
+    // Only the journal step may use classification; never the compiler above.
+    const classifiedSteps = job.steps.filter((step: { if?: string }) =>
+      /needs\.changes/.test(step.if ?? '')
+    );
+    expect(classifiedSteps.map((step: { name: string }) => step.name)).toEqual([
+      'Chip journal transactions survive failures and replays',
+    ]);
+    expect(classifiedSteps[0].if).toBe(
+      "needs.changes.result != 'success' || needs.changes.outputs.server != 'false'"
+    );
   });
 
   it('tsc -b emits nothing on this repo, which is why dropping it changes no byte', () => {

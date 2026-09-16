@@ -68,6 +68,28 @@ describe('database deadline includes response body and caller cancellation', () 
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('settles an attempt whose transport ignores its abort', async () => {
+    /* THE DEADLINE IS THE DEADLINE (2026-09-16). Production 170e6a2a: an
+       rpc for a hand the database had committed stayed unsettled for three
+       hours and forty minutes with the abort long fired, holding a settlement
+       barrier, a manager stop and a scheduler slot. Whatever kept that promise
+       open, the wrapper now ends the wait itself one second after the abort. */
+    const transport = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal('fetch', transport);
+    const outcome = ordinaryDatabaseFetch()('https://example.test/rpc', { method: 'POST' }).then(
+      () => 'unexpected success',
+      (error: Error) => error.message
+    );
+    await vi.advanceTimersByTimeAsync(1_099);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(await outcome).toMatch(
+      /^supabase_timeout: the request did not settle 1000ms after its 100ms abort/
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('does not send an already cancelled request', async () => {
     const transport = vi.fn().mockResolvedValue(new Response('{}'));
     vi.stubGlobal('fetch', transport);

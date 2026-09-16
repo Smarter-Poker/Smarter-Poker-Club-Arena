@@ -1,0 +1,80 @@
+# Horses are not playing: the poll that starved the sweeps
+
+Club Arena engine, 2026-09-16. Dan's report: horses are not playing, only a
+handful, almost none on more than one table.
+
+## What was measured before anything was changed
+
+- 2,529 horses seated, but 2,069 of 2,162 occupied tables had exactly one
+  live seat, every one of them a RUNNING or REGISTERING tournament table.
+- 1,638 RUNNING tournaments older than thirty minutes; 804 of them (554
+  Spins, 238 SNGs, 12 Satellites) had one player left with every elimination
+  already recorded, waiting only for `finishTournament`; another 556 Spins
+  had one or two busts still unrecorded.
+- The one process-wide elimination scheduler had 1,612 managers registered,
+  1,609 queued, four slots in flight and THREE of them stalled (promises
+  unresolved since 05:30, 07:33 and 15:17 UTC). The remaining slot completed
+  242 sweeps an hour at a mean of 12 seconds each, so the oldest queued
+  tournament had waited 3.4 hours and the recovery pass that asks decided
+  events to finish fired 6,061 times an hour for about ten finishes.
+- In one 45-second sample the engine made 22,018 PostgREST requests; 18,205
+  of them were the wait-for-players loop reading `table_seats` for those
+  2,069 idle tables, every five seconds each. The process's HTTPS pool
+  (128 connections per origin) was fully busy with 250 to 720 requests
+  queued behind it; a one-row read timed from inside the process cost 350 to
+  1,400 ms; event-loop delay was 274 ms at p50. Database time for the same
+  read: 0.2 ms.
+- The main thread's CPU profile was flat: 15% idle, 10.6% garbage collector,
+  the rest fetch, streams, headers, async_hooks propagation, JSON and
+  console writes, i.e. the cost of the request volume, not of any one
+  function. The wait loop itself was 11% inclusive.
+- Table 170e6a2a's settlement had been in flight for 3 hours 40 minutes at
+  `hand_history_write` / `rpc_request:1`, for a hand the database had
+  committed at 14:43:58Z. The fetch wrapper's 15-second abort had fired and
+  the promise had not settled. That barrier held the table, its manager's
+  `stop()`, and a scheduler slot that joined that stop.
+
+The chain: hung tournaments keep single-seat tables alive; those tables poll
+the database until the pool is full; every sweep's reads wait in that queue;
+the sweeps that would finish the tournaments run one at a time on the one
+slot the stalls left, twelve seconds each; nothing finishes; horses stay
+booked into events that will never end, so the cash fleet has nobody to seat.
+
+## What changed
+
+1. **The quiet tournament table backs off** (`ServerTableEngineBase`). A
+   tournament table below its deal minimum doubles its roster poll while
+   nothing changes, 5, 10, 20, 40, then 60 seconds; any change resets it; a
+   cash table keeps its five seconds; the manager wakes the destination
+   table the moment a seat move is certified; a stop or kill ends the pause
+   at once. Progress is still marked every pass and the cap sits well under
+   the 180-second zombie rebuild. Law:
+   `server/src/engine/theQuietTournamentTableBacksOff.law.test.ts`.
+   `poker_fleet_tables_stalled` and the per-table stall samples now count
+   only tables that could deal, which is the definition the liveness verdict
+   and the alerts already used.
+
+2. **The deadline is the deadline** (`services/supabase/client.ts`). An
+   attempt that has not settled one second after its abort is settled by
+   the wrapper with the same rejection the abort would have produced. The
+   hand-commit loop, the settlement barrier and every `stop()` that joins
+   them now have the bound the wrapper always promised.
+
+3. **A stalled scheduler slot is replaced, not released**
+   (`TournamentEliminationScheduler`). A promise unresolved past the warning
+   budget keeps its slot and its tournament stays excluded, but one
+   compensating slot opens beside it, never more than the cap: real
+   concurrency is bounded at twice `maxConcurrent` and can never again fall
+   to one because three promises hung. A wake no longer rescans every
+   registered entry, and the gauges refresh at most four times a second from
+   event paths (the one-second timer is unchanged).
+
+## What was not changed
+
+- No repair job finishes the 804 decided tournaments by hand; the sweeps
+  finish them once they can run, which is the point of 1 to 3.
+- The elimination RPC's database-side mean (3.4 s, capped by the 8 s
+  statement timeout on `service_role`) and the lock scope of
+  `fn_sync_seat_first_player_count` are unchanged and remain on Dan's list.
+- Why the one production fetch promise stayed open past its abort is not
+  known; the wrapper no longer needs to know.

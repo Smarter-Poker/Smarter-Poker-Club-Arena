@@ -1,0 +1,7 @@
+{
+  "_owner": "g8/roster-retirement-release-20260916",
+  "_comment": "public.tables.f06_lifecycle was installed by migration 20260912100322_tournament_break_original_custody_and_hand_authority. Fresh catalog observation on kuklfnapbkmacvwxktbh at 2026-09-16T05:52:25.929994Z confirms bigint NOT NULL with default smarter_private.f06_new_lifecycle(). This fragment records the installed column omitted from the base snapshot; it requests no DDL and makes no runtime or lifecycle qualification claim.",
+  "columns": {
+    "tables": ["f06_lifecycle"]
+  }
+}

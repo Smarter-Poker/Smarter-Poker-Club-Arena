@@ -82,7 +82,7 @@ export function completeOriginalRosterObservation(
       )
       .eq('id', identity.table_id)
       .eq('tournament_id', identity.tournament_id)
-      .single();
+      .single(); // single-allow: Missing original table is rejected below.
     check();
     if (tableReply.error) fail('table_read');
     const table = record(tableReply.data);
@@ -105,7 +105,7 @@ export function completeOriginalRosterObservation(
       .from('tournaments')
       .select('id,tournament_type')
       .eq('id', identity.tournament_id)
-      .single();
+      .single(); // single-allow: Missing original tournament is rejected below.
     check();
     if (tournamentReply.error) fail('tournament_read');
     const tournament = record(tournamentReply.data);

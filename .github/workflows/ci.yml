@@ -71,25 +71,11 @@ concurrency:
   cancel-in-progress: true
 
 # ───────────────────────────────────────────────────────────────────────────
-# RUNNER ROUTING (restored 2026-09-14)
-#
-# 2026-09-01/02 cost audit: every credential-free job reads vars.CI_RUNNER
-# (repo variable, = estate-linux) and runs on the 33 self-hosted Hetzner
-# runners for free; unset, it is ubuntu-latest exactly as before.
-#
-# PR #4189 (2026-09-11) hard-coded ubuntu-latest on all of them, citing
-# untrusted PR input on persistent hosts. Effect, measured from the billing
-# API: ~3 billed minutes per CI run became ~70 (15 hosted jobs), $31/day
-# became $121/day (2026-09-12), while every estate runner sat online and idle.
-#
-# The concern #4189 raised is handled by SEPARATION, not by paying GitHub:
-#   - ci.yml references no secrets at all, so nothing on the estate-linux pool
-#     can be exfiltrated by pull-request code beyond a read-only GITHUB_TOKEN.
-#   - Credential-bearing publish jobs (publish-club-arena.yml build-and-store,
-#     publish-to-app, publish-to-origin) read vars.PUBLISH_RUNNER instead and
-#     do NOT share the pool with pull-request code (unset => ubuntu-latest).
-# Do not hard-code ubuntu-latest on a credential-free job again without
-# re-reading the September billing numbers.
+# RUNNER ROUTING (owner recovery authorization, 2026-09-15)
+# Required checks run only on the Mac's Linux VM through its existing
+# self-hosted runner. Both labels must match. If it is offline, jobs wait;
+# there is no hosted, Hetzner, or repository-variable fallback.
+# Credential-bearing publication workflows remain a separate release lane.
 # ───────────────────────────────────────────────────────────────────────────
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
@@ -118,8 +104,8 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
@@ -169,8 +155,8 @@ jobs:
   # it to be behind a gate that can hide it.
   source_windows:
     name: Source Windows Are Structural
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 6
     steps:
       - name: Checkout
@@ -181,6 +167,7 @@ jobs:
       - name: Engine image request and terminal custody
         run: |
           python3 -B tests/operations/engine-image-ci-bundle.test.py
+          python3 -B tests/operations/local-publishers.test.py
           python3 -B tests/operations/engine-release-image-request.test.py
           python3 -B tests/operations/engine-release-image-result.test.py
           python3 -B tests/operations/engine-release-image-generation.test.py
@@ -225,8 +212,8 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -263,8 +250,8 @@ jobs:
     name: TypeScript Check
     needs: [typecheck_compile, changes, fixture_native]
     if: always() && github.event_name == 'pull_request'
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 2
     permissions:
       contents: read
@@ -293,8 +280,8 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 15
 
     permissions:
@@ -347,7 +334,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-lite-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+          key: nm-lite-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -358,6 +345,8 @@ jobs:
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
       - name: Chip journal transactions survive failures and replays
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
 
       - name: TypeScript Check
@@ -1040,8 +1029,8 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
     # critical path by a distance - p50 264s, max 779s, against 236s for the
@@ -1087,7 +1076,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+          key: nm-full-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -1125,8 +1114,8 @@ jobs:
     needs: unit_shards
     if: always()
     name: Client Unit Tests (vitest)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 5
     steps:
       - name: Every shard passed
@@ -1158,7 +1147,7 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1377,8 +1366,8 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -1424,7 +1413,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: server/node_modules
-          key: nm-server-${{ runner.os }}-node22-${{ hashFiles('server/package-lock.json') }}
+          key: nm-server-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('server/package-lock.json') }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -1465,8 +1454,8 @@ jobs:
     needs: [changes, server_shards]
     if: always()
     name: Server Engine (typecheck + tests)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 2
     steps:
       - name: Every shard passed
@@ -1508,8 +1497,8 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
@@ -1589,8 +1578,8 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 15
 
     permissions:
@@ -1623,8 +1612,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules/.vite
-          key: vite-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: vite-${{ runner.os }}-
+          key: vite-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: vite-${{ runner.os }}-${{ runner.arch }}-
 
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. Shares `nm-full` with the unit job - both run a full npm ci.
@@ -1633,7 +1622,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+          key: nm-full-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -1653,10 +1642,10 @@ jobs:
         with:
           path: node_modules/.cache/dist-media
           key: >-
-            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            dist-media-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('public/**/*.png',
             'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
             'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
-          restore-keys: dist-media-v1-${{ runner.os }}-
+          restore-keys: dist-media-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Record Build Start
         id: build-timer
@@ -1813,8 +1802,8 @@ jobs:
     # that is the "is main actually green" net (see the schedule note).
     if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 25
 
     steps:
@@ -1963,8 +1952,8 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 5
 
     steps:
@@ -2069,8 +2058,8 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Wait for the approved local runner; no hosted or estate fallback.
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 20
 
     permissions:
@@ -2119,7 +2108,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-beats-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+          key: nm-beats-${{ runner.os }}-${{ runner.arch }}-node20-${{ hashFiles('package-lock.json') }}
 
       # THE GUARD BELOW IS THE POINT OF THE CACHE ABOVE (added 2026-09-04).
       #
@@ -2163,10 +2152,10 @@ jobs:
         with:
           path: node_modules/.cache/dist-media
           key: >-
-            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            dist-media-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('public/**/*.png',
             'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
             'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
-          restore-keys: dist-media-v1-${{ runner.os }}-
+          restore-keys: dist-media-v1-${{ runner.os }}-${{ runner.arch }}-
 
       # `build:ci` - see the long note on the Production Build step for why
       # dropping `tsc -b` here checks nothing less than before. This job is the

@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('fixture_smoke', ROOT / 'operations/release/ci/fixture-smoke.py')
@@ -13,6 +14,68 @@ spec.loader.exec_module(m)
 
 
 class NativeDiagnosticsTests(unittest.TestCase):
+    def test_postgrest_readiness_fields_are_strict_and_stage_bound(self):
+        row = dict(status='failed', stage='postgrest-server-ready', error='AssertionError',
+                   postgrest_http_status=503, postgrest_code='PGRST002', postgrest_fetch_failure='timeout')
+        self.assertEqual(m.native_failures(json.dumps(row)), [dict(stage=row['stage'], category='AssertionError',
+            postgrest_http_status=503, postgrest_code='PGRST002', postgrest_fetch_failure='timeout')])
+        for key, values in {
+            'postgrest_http_status': [True, None, [], '503', 99, 600, 500.5, 200],
+            'postgrest_code': [True, None, [], 'PRIVATE TOKEN', 'PGRST002\n', '42501\n'],
+            'postgrest_fetch_failure': [True, None, [], 'PRIVATE URL', 'timeout\n'],
+            'stage': ['gotrue-server-ready'], 'body': ['PRIVATE SQL'], 'headers': [{'authorization': 'PRIVATE TOKEN'}],
+        }.items():
+            for value in values:
+                with self.subTest(key=key, value=value):
+                    self.assertEqual(m.native_failures(json.dumps({**row, key: value})), [])
+        del row['postgrest_http_status']
+        self.assertEqual(m.native_failures(json.dumps(row)), [])
+        del row['postgrest_code']
+        self.assertEqual(m.native_failures(json.dumps(row)), [dict(stage=row['stage'], category='AssertionError',
+            postgrest_fetch_failure='timeout')])
+
+    def test_postgrest_actual_node_capture_reaches_original_driver_terminal_receipt(self):
+        # Reuse the original runner's source/image/cleanup fixture. Only its
+        # mocked smoke command is replaced by an actual failing Node child.
+        fixture_spec = importlib.util.spec_from_file_location('fixture_runner_tests',
+            ROOT / 'tests/operations/fixture-smoke-runner.test.py')
+        fixture = importlib.util.module_from_spec(fixture_spec)
+        fixture_spec.loader.exec_module(fixture)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / m.PREFIX / 'smoke-image.sh'
+            script.parent.mkdir(parents=True)
+            module = (ROOT / 'operations/release/fixture/runtime-files.mjs').as_uri()
+            (root / 'diagnostic.mjs').write_text(
+                'import {nativeFailureDiagnostic,postgrestReadinessDiagnostic} from ' + json.dumps(module) + ';\n'
+                'const response=new Response(JSON.stringify({code:"PGRST002",message:"PRIVATE PASSWORD"}),{status:503});\n'
+                'const safe=await postgrestReadinessDiagnostic(response);\n'
+                'console.error("PRIVATE SERVICE CREDENTIAL");\n'
+                'console.error(JSON.stringify(nativeFailureDiagnostic("postgrest-server-ready",'
+                '{name:"AssertionError",message:"PRIVATE URL",stack:"PRIVATE STACK"},safe)));\n'
+                'process.exitCode=1;\n')
+            script.write_text('exec node diagnostic.mjs\n')
+
+            def execute(repo, output, expected, run):
+                def connected(args, cwd, env, timeout=120):
+                    if args[:2] == ['bash', m.PREFIX + 'smoke-image.sh']:
+                        return m.command(args, root, env, timeout)
+                    return run(args, cwd, env, timeout)
+                return m.execute(repo, output, expected, connected)
+
+            with patch.object(fixture.m, 'execute', execute):
+                code, receipt, _ = fixture.RunnerTests().exercise()
+            self.assertEqual(code, 1)
+            self.assertEqual(receipt['status'], 'failed')
+            self.assertEqual(receipt['stage'], 'native-services-and-browser')
+            self.assertEqual(receipt['native_command_exit_code'], 1)
+            self.assertEqual(receipt['native_failures'], [dict(stage='postgrest-server-ready', category='AssertionError',
+                postgrest_http_status=503, postgrest_code='PGRST002')])
+            self.assertFalse(receipt['product_certificate'])
+            self.assertNotIn('observations', receipt)
+            self.assertNotIn('PRIVATE', json.dumps(receipt))
+            self.assertTrue(all(receipt['cleanup'].values()))
+
     def test_shell_and_preimage_steps_accept_only_fixed_categories(self):
         for stage in ['smoke-shell-preimage-copy', 'fixture-preimage-package']:
             row = dict(status='failed', stage=stage, error='Error', exit_code=7)

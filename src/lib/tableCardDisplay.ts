@@ -304,7 +304,7 @@ export function heroHoleCardsAreForThisHand(args: {
      ahead of the queued SNAPSHOT that carries the new hand's empty board - so
      at the moment this runs, `boards` is very often the PREVIOUS hand's, and
      a fresh holding that happens to share a card with it (about one deal in
-     five at hold'em, one in three at PLO) was refused, reported to Sentry and
+     five at hold'em, one in three at PLO) was refused, reported to error reporting and
      sent round the recovery poll. A hand that has not been dealt yet cannot
      collide with a board that is already finished; the hand check above
      already fails open on exactly this comparison, so the two now agree. */

@@ -2284,7 +2284,7 @@ class TournamentService {
     /* The browser-side "broadcast rebuy event" that used to sit here was
        removed in the final sweep of 2026-09-08: /channels/tournament/:id/event
        accepts only INTERNAL_API_KEY, the browser sent a player JWT, and every
-       rebuy ended with a guaranteed 401 reported to Sentry. Nothing consumed
+       rebuy ended with a guaranteed 401 reported to error reporting. Nothing consumed
        the event. The engine's own tournament manager announces what a table
        needs to know. */
 

@@ -625,7 +625,7 @@ leaseRenewalLoopRunning.set(0);
  * This counter is that fault. Zero is the normal reading for the life of a
  * process; ANY movement means the loop left while its admission generation was
  * still current, and `GameServer.ownership_lease_renewal_loop_left_early` in
- * Sentry carries the reason.
+ * error reporting carries the reason.
  *
  * No alert rule reads it yet, deliberately: section 10.84 says derive a
  * threshold and write the measurement beside it, and there is no measured

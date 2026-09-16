@@ -1317,9 +1317,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             ? err.message
             : (err as any)?.message ||
               (typeof err === 'object' ? JSON.stringify(err) : String(err));
-        // BUG-SENTRY-7463185461 FIX: 'fetch failed' is the Node.js wording for
+        // BUG-error reporting-7463185461 FIX: 'fetch failed' is the Node.js wording for
         // a transient Supabase network blip — same as browser's 'Failed to fetch'.
-        // Both must be listed or they increment consecutiveErrors and fire Sentry.
+        // Both must be listed or they increment consecutiveErrors and fire error reporting.
         // The list this used to carry inline now lives on the base, because
         // `start()` needs the same answer and a second copy is how the two
         // paths came to disagree — survivable here, fatal there.
@@ -1613,9 +1613,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async refreshBlinds(): Promise<void> {
     if (!this.tableInfo || !this.isTournamentTable()) return;
-    // BUG-SENTRY-7463185461 FIX: retry up to 3x on transient fetch failures.
+    // BUG-error reporting-7463185461 FIX: retry up to 3x on transient fetch failures.
     // A single Node.js 'TypeError: fetch failed' (Supabase network blip) was
-    // bubbling through to dealingLoop, triggering the Sentry error reporter
+    // bubbling through to dealingLoop, triggering the error reporting error reporter
     // and incrementing consecutiveErrors toward the 10-error shutdown threshold.
     // Retrying here absorbs one-off network hiccups before they reach the loop.
     const MAX_ATTEMPTS = 3;

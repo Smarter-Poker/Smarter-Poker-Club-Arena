@@ -3505,7 +3505,7 @@ export class GameServer {
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
-      // Delivery failures remain inspectable even when the receiver or Sentry is unavailable.
+      // Delivery failures remain inspectable even when the receiver or error reporting is unavailable.
       alertDelivery: engineAlertDeliveryHealth(),
       // THE CLUSTER CONTROLLER'S LAST PASS (2026-09-05). On 2026-09-04 its
       // latch stalled for eleven minutes with no log line; the only witness
@@ -6059,7 +6059,7 @@ export class GameServer {
             /* A parked launch is not a stall this watchdog can cure: the
                front door would refuse the force-start anyway, and reporting
                "force-starting" every stall window for a game the authority
-               has refused would be a lie in Sentry. The clock is left
+               has refused would be a lie in error reporting. The clock is left
                running, so the pass after the park ends acts at once. */
             if (spinLaunchParks.isParked(id, stallNow)) continue;
 

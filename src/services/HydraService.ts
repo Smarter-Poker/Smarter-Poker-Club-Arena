@@ -28,7 +28,7 @@ import { reportError } from '../utils/errorReporter';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MODULE-LEVEL CIRCUIT BREAKERS — prevent Sentry flood on persistent DB errors
+// MODULE-LEVEL CIRCUIT BREAKERS — prevent error reporting flood on persistent DB errors
 // These reset after a cooldown so transient errors still get reported.
 // ═══════════════════════════════════════════════════════════════════════════════
 function makeCircuitBreaker(threshold = 3, cooldownMs = 5 * 60_000, label = 'circuit') {

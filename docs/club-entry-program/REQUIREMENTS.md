@@ -5,7 +5,7 @@
 - CE-S1: Preserve all routes, permissions, handlers, deep links, and Master Bus contracts.
 - CE-S2: Provide loading, success, empty, offline, retry, and recoverable-error states.
 - CE-S3: Support keyboard-only use, focus trapping, reduced motion, 200% zoom, and mobile safe areas.
-- CE-S4: Emit privacy-safe analytics and Sentry breadcrumbs for each workflow stage.
+- CE-S4: Emit privacy-safe analytics and first-party diagnostic events for each workflow stage.
 - CE-S5: Rate-limit abuse-prone operations and retain immutable audit events.
 - CE-S6: Meet explicit bundle and image budgets.
 

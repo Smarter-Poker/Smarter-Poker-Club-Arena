@@ -1946,7 +1946,7 @@ export abstract class ServerTableEngineBase {
       // dealing-integrity failures. A verifier that fires but will not say what
       // it found cannot be triaged, so in practice it was ignored.
       //
-      // The Sentry fingerprint is now per violation TYPE rather than one bucket
+      // The error reporting fingerprint is now per violation TYPE rather than one bucket
       // for everything, so a rare DUPLICATE_CARD cannot stay buried under
       // thousands of routine events. It is also greppable per class:
       //   grep 'STATE INTEGRITY' | grep CHIP_CONSERVATION
@@ -4988,7 +4988,7 @@ export abstract class ServerTableEngineBase {
     // Bible V8 §3.1: Table FSM — running → paused. GUARDED: the FSM has no
     // waiting → paused edge, and this gate is now reachable from the idle
     // branches where the table sits in 'waiting'. An unguarded transition
-    // logged a false "Invalid transition" to Sentry on every idle park.
+    // logged a false "Invalid transition" to error reporting on every idle park.
     if (this.tableFSM.state === 'running') {
       this.tableFSM.transition('paused');
     }

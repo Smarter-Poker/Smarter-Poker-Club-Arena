@@ -21,7 +21,7 @@
  *   - The RPC returns a uuid on success.
  *   - It returns NULL when throttled (60/min/source).
  *   - Either "no id came back" or "the RPC errored" means the alarm is NOT
- *     durably recorded, so a CRITICAL escalates to reportError (Sentry). A
+ *     durably recorded, so a CRITICAL escalates to reportError (error reporting). A
  *     WARNING or INFO does not — that would just move the noise, not reduce it.
  */
 

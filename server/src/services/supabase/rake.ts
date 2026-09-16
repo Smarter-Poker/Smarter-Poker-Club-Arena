@@ -251,7 +251,7 @@ async function confirmInsuranceTx(params: InsuranceSettlementParams): Promise<st
  *     read-back rather than a guess, and a definitive failure is re-checked
  *     against the row before we declare the write lost (it may have landed);
  *   - DURABLE on failure — a lost write raises a CRITICAL financial_alert (a
- *     reconcilable DB row, not just Sentry) carrying the player id and the net
+ *     reconcilable DB row, not just error reporting) carrying the player id and the net
  *     chip delta an operator needs to settle by hand;
  *   - TOTAL — it never rejects, so the settlement loop cannot be aborted by it.
  *

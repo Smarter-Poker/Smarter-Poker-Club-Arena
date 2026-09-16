@@ -291,7 +291,7 @@ function parsePolicy(raw: unknown): FleetPolicy {
 const POLICY_TTL_MS = 60_000;
 
 /** One report per scope per five minutes. The engine can deploy before the */
-/** World Hub migration lands, and a missing RPC would otherwise file a Sentry */
+/** World Hub migration lands, and a missing RPC would otherwise file a error reporting */
 /** event every cycle for ever - which is how a real signal becomes noise. */
 const REPORT_EVERY_MS = 5 * 60_000;
 

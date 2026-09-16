@@ -35,7 +35,7 @@ class BusEventLoggerService {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private unsubscribes: (() => void)[] = [];
   private started = false;
-  // Rate-limit flush error reporting — max 1 Sentry event per 5 min window
+  // Rate-limit flush error reporting — max 1 error reporting event per 5 min window
   private _lastFlushErrorAt = 0;
   private readonly _FLUSH_ERROR_COOLDOWN_MS = 5 * 60_000;
 
@@ -80,8 +80,8 @@ class BusEventLoggerService {
       const { error } = await supabase.from('bus_event_log').insert(toFlush);
 
       if (error) {
-        // Rate-limit Sentry reporting for flush failures — transient network timeouts
-        // (TypeError: Load failed) can recur every 10s and would flood Sentry.
+        // Rate-limit error reporting reporting for flush failures — transient network timeouts
+        // (TypeError: Load failed) can recur every 10s and would flood error reporting.
         const now = Date.now();
         if (now - this._lastFlushErrorAt > this._FLUSH_ERROR_COOLDOWN_MS) {
           this._lastFlushErrorAt = now;

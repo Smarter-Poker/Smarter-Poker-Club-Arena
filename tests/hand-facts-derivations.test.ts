@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 
-// The module imports a live Supabase client and the Sentry-backed error
+// The module imports a live Supabase client and the error reporting-backed error
 // reporter at load. Neither is needed to exercise the pure helpers, and both
 // would demand env vars that a clean CI checkout does not have.
 vi.mock('../server/src/services/supabase/client.js', () => ({

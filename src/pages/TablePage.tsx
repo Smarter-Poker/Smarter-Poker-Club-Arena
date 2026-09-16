@@ -8951,7 +8951,7 @@ function LiveTablePage({
      * zero — and this watcher reads zero as BUSTED. It found no rebuy on offer
      * (a Spin has none), released the hold, and `exitIfBusted` threw the
      * player off a table they had just paid for. Silently, by construction:
-     * this is an ordinary path, so nothing was reported, which is why Sentry
+     * this is an ordinary path, so nothing was reported, which is why error reporting
      * showed zero events for the incident.
      *
      * Verified against production, tournament c53bd1f6 ("1 Chip Spin PLO6"):
@@ -9239,7 +9239,7 @@ function LiveTablePage({
           } else {
             /* Dan 2026-08-26: a failed rebuy used to be invisible — the raw
                Postgres error went to a toast and nowhere else, so "rebuy
-               silently fails, then boots you" shipped without a single Sentry
+               silently fails, then boots you" shipped without a single error reporting
                event. Report it, and show a message a player can act on. */
             reportError(failure, 'TablePage.confirmBustRebuy', { tableId, amount });
             toast?.error('Rebuy Not Confirmed. Retry The Same Purchase.');
@@ -9327,7 +9327,7 @@ function LiveTablePage({
      * That is this effect, and the bug was mine (round 14). Production shows
      * the seat was BOUGHT — `tournament_players.registered_at` 07:33:41.366Z,
      * seat 3 of "20 Chip Spin PLO4", stack still on the felt, the game still
-     * running without him. And Sentry has ZERO client events in that window,
+     * running without him. And error reporting has ZERO client events in that window,
      * which is the tell: nothing threw. A deliberate code path decided to
      * leave, and this is the only one that closes the tab and navigates with
      * no error of any kind.
@@ -9744,7 +9744,7 @@ function LiveTablePage({
         }
       } else {
         // Non-success leave is expected when: player is mid-hand (leave_pending is set),
-        // seat already cleared, or double-tap. Not a Sentry-worthy production bug.
+        // seat already cleared, or double-tap. Not a error reporting-worthy production bug.
         // With the user_id-based seat resolution in leaveTable, success:false now
         // means the player genuinely holds no active seat (already left / double-tap),
         // NOT "mid-hand" (that path returns success:true with leave_pending set). So
@@ -11984,7 +11984,7 @@ function LiveTablePage({
            - a clean "no such row" (`!res.error && !table`) breaks immediately
              and matched NEITHER the reportError above nor the branch below,
              so absolutely nothing happened;
-           - five exhausted retries reported to Sentry and then also fell
+           - five exhausted retries reported to error reporting and then also fell
              through.
 
          Either way the player sat on a felt frozen in its initial state —
@@ -15049,7 +15049,7 @@ function LiveTablePage({
            It stays non-fatal — a failed yield must never take the felt down,
            and the next tick retries anyway — but it is now REPORTED, and
            reported once per table per mount so a persistently broken RPC does
-           not bury Sentry under four-per-minute duplicates. */
+           not bury error reporting under four-per-minute duplicates. */
         if (!horseYieldReportedRef.current) {
           horseYieldReportedRef.current = true;
           reportError(err, 'TablePage.horse_yield_failed', {

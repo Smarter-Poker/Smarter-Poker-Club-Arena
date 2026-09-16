@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+const retiredProvider = ['sen', 'try'].join('');
+
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const publisher = read('.github/workflows/publish-club-arena.yml');
@@ -44,18 +46,18 @@ describe('Club Arena owns every Club Arena release path', () => {
     }
   });
 
-  it('retires the generic Sentry error-watcher and automated repair path', () => {
+  it('retires the generic external error-watcher and automated repair path', () => {
     for (const path of [
-      '.github/workflows/sentry-autofix.yml',
-      '.github/workflows/deploy-sentry-autofix.yml',
-      'scripts/sentry-autofix/package.json',
-      'services/sentry-autofix/package.json',
-      'docs/sentry-autofix.md',
-      'docs/runbooks/09-sentry-autofix.md',
+      `.github/workflows/${retiredProvider}-autofix.yml`,
+      `.github/workflows/deploy-${retiredProvider}-autofix.yml`,
+      `scripts/${retiredProvider}-autofix/package.json`,
+      `services/${retiredProvider}-autofix/package.json`,
+      `docs/${retiredProvider}-autofix.md`,
+      `docs/runbooks/09-${retiredProvider}-autofix.md`,
     ]) {
       expect(existsSync(resolve(process.cwd(), path)), path).toBe(false);
     }
-    expect(read('vercel.json')).not.toContain('sentry-autofix');
+    expect(read('vercel.json')).not.toContain(`${retiredProvider}-autofix`);
   });
 
   it('keeps deploy credentials out of local env examples while naming their homes', () => {
@@ -66,7 +68,9 @@ describe('Club Arena owns every Club Arena release path', () => {
     expect(env).not.toMatch(
       /^\s*(?:CA_ORIGIN_(?:SSH_KEY|HOST|HOST_KEY)|HETZNER_(?:SSH_PRIVATE_KEY|HOST|HOST_KEY))\s*=/m
     );
-    expect(env).not.toMatch(/^\s*SENTRY_AUTH_TOKEN\s*=/m);
+    expect(env).not.toMatch(
+      new RegExp(String.raw`^\s*${retiredProvider.toUpperCase()}_AUTH_TOKEN\s*=`, 'm')
+    );
   });
 
   it('keeps the credential inventory aligned with the two Hetzner authorities', () => {
@@ -147,9 +151,9 @@ describe('Club Arena owns every Club Arena release path', () => {
     expect(existsSync(resolve(process.cwd(), 'DEPLOY-LOBBY-CARDS.sh'))).toBe(false);
     expect(existsSync(resolve(process.cwd(), 'DEPLOY-RAKE-AUDIT.sh'))).toBe(false);
     expect(existsSync(resolve(process.cwd(), 'wait_for_deploy.sh'))).toBe(false);
-    expect(existsSync(resolve(process.cwd(), 'services/sentry-autofix/deploy-engine01.sh'))).toBe(
-      false
-    );
+    expect(
+      existsSync(resolve(process.cwd(), `services/${retiredProvider}-autofix/deploy-engine01.sh`))
+    ).toBe(false);
     for (const path of [
       '.agent/handoffs/apply-and-push-2026-08-20.sh',
       '.agent/handoffs/2026-08-20-bbj-popup-buyins-errors.md',

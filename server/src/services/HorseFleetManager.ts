@@ -601,7 +601,7 @@ export class HorseFleetManager {
   private lastEligibleBuiltAt = 0;
   /* Last time a failed fleet-state publish was reported. The engine can ship
      before the World Hub migration that creates fn_ca_fleet_state_upsert, and
-     an unthrottled report would file one Sentry event and one console line
+     an unthrottled report would file one error reporting event and one console line
      every 30 seconds for ever, which is how a real signal becomes noise. */
   private lastStatePublishReportAt = 0;
   /**
@@ -3846,7 +3846,7 @@ export class HorseFleetManager {
              that a bad counter write can never take the floor down with it -
              which is right, and which is also why nobody saw 23502 repeating
              every cycle from 08:42 to 23:07 on 2026-09-04. reportError was not
-             the backstop it looked like: Sentry's own budget was dropping
+             the backstop it looked like: error reporting own budget was dropping
              hundreds of events an hour that day. So the zero is raised HERE,
              where it is a fact about the platform rather than a log line, and
              throttled to once an hour so it stays readable. */

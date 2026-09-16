@@ -1802,7 +1802,7 @@ export default function CashierTradePage() {
         batchFailureReason ||= 'item_refused';
         // Diagnostics receive counts and a bounded reason code only. Player
         // UUIDs, names and raw database messages remain in the operator UI and
-        // must not be copied into console/Sentry payloads.
+        // must not be copied into console/error reporting payloads.
         reportError(
           new Error(
             `${kind} batch: ${failed.length}/${targets.length} failed; reason=${batchFailureReason}`

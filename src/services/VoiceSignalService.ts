@@ -532,7 +532,7 @@ export async function fetchVoiceIceConfig(): Promise<VoiceIceConfig> {
       return parsed;
     } catch (e) {
       // Deliberately quiet about the shape of the failure: this runs on every
-      // join, and an engine mid-deploy would otherwise fill Sentry with noise
+      // join, and an engine mid-deploy would otherwise fill error reporting with noise
       // describing a case that is fully handled.
       reportError(e, 'VoiceSignalService.fetchVoiceIceConfig');
       return VOICE_ICE_FALLBACK;

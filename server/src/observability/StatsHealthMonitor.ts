@@ -26,7 +26,7 @@
  *
  * The monitor raises through the same engine alert path as clock skew
  * (raiseEngineAlert / resolveEngineAlert), so a lagging index or a witness
- * disagreement lands in Sentry and Alertmanager within a minute of the read
+ * disagreement lands in error reporting and Alertmanager within a minute of the read
  * that saw it, and resolves itself on the next healthy read.
  *
  * TWO THINGS IT MUST NEVER DO

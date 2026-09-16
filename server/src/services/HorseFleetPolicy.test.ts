@@ -579,7 +579,7 @@ describe('reading the policy', () => {
 
   it('reports a repeated failure once, not once every thirty seconds', async () => {
     /* The engine can ship before the migration that creates the RPC. An
-       unthrottled report would file a Sentry event every cycle for ever,
+       unthrottled report would file a error reporting event every cycle for ever,
        which is how a real signal becomes noise. */
     h.rpc.mockResolvedValue({ data: null, error: { message: 'PGRST202' } });
     await getFleetPolicy(null);

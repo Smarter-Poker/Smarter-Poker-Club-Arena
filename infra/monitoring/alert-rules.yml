@@ -1911,7 +1911,7 @@ groups:
 
       - alert: HorseDecisionFallbacks
         # The worker failed or expired a job and the seat took the legal
-        # check/fold. The path reported to Sentry only before this release, so
+        # check/fold. The path reported to external telemetry only before this release, so
         # the baseline is the worker's own expired-job count, which read 0 on
         # the live scrape. 5/min over 10 m is fifty seats folded blind.
         expr: sum(rate(poker_horse_decision_fallbacks_total[10m])) * 60 > 5

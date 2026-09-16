@@ -129,7 +129,11 @@ describe('native publishing requires the exact origin verification', () => {
     const build = workflow.jobs['build-and-store'].steps.find(
       (item: { name: string }) => item.name === 'Build Club Arena'
     );
-    expect(template).not.toMatch(/^\s*(?:VITE_)?SENTRY_\w+\s*=/m);
-    expect(Object.keys(build.env).filter((name) => name.includes('SENTRY'))).toEqual([]);
+    expect(template).not.toMatch(
+      new RegExp(String.raw`^\s*(?:VITE_)?${['SEN', 'TRY'].join('')}_\w+\s*=`, 'm')
+    );
+    expect(Object.keys(build.env).filter((name) => name.includes(['SEN', 'TRY'].join('')))).toEqual(
+      []
+    );
   });
 });

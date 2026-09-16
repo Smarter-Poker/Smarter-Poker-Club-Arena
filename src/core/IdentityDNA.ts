@@ -427,7 +427,7 @@ class IdentityDNACore {
     if (error) {
       // PGRST116 = row not found (new user, profile not yet created)
       // 42501 = permission denied — expected when anon/unauthenticated session hits RLS
-      // Both are non-actionable — do not report to Sentry
+      // Both are non-actionable — do not report to error reporting
       const isBenign =
         error.code === 'PGRST116' ||
         error.code === '42501' ||

@@ -179,7 +179,7 @@ export default function MarketplacePage() {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Failed to load shop';
         // Always report. Silent refreshes previously failed with no toast, no
-        // Sentry event and no state change -- the shop just went quietly stale.
+        // error reporting event and no state change -- the shop just went quietly stale.
         reportError(err, 'MarketplacePage.loadShop');
         if (mountedRef.current && myReq === reqRef.current) {
           setShopError(msg);

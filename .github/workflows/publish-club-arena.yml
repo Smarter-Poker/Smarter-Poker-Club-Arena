@@ -708,6 +708,22 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Use Node for the read-only publication prerequisite
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # publish-needed proved this exact target is protected main. A failed
+      # catalog check stops before origin keys, SSH or any remote mutation.
+      # The later post-deploy check protects fresh fixture cleanup against
+      # database changes after this publication boundary.
+      - name: Prove every club foreign key is indexed before client publication
+        timeout-minutes: 2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/check-club-fk-indexes.mjs
+
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4
         with:

@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex/ca-mtt-release-20260916",
+  "_comment": "Existing public.fn_tournament_payout_terms_committed_v1(uuid) confirmed by read-only catalog query on 2026-09-16 at 06:02:06 UTC: owner postgres, prosrc MD5 5c31fe20d25154e0c70a976b38bb88c3, definition MD5 918c62cbcc182d43a6a27edeb2c1c107, postgres-only execute. The body matches migration 20260914143521. Metadata correction only; no DDL or broader R46 installation claim.",
+  "functions": ["fn_tournament_payout_terms_committed_v1"]
+}

@@ -3,11 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { evaluateAcrossDocumentReplacement } from '../e2e/support/evaluateAcrossDocumentReplacement';
-import {
-  ensureClubMembership,
-  handleDiamondBustPrompt,
-  dismissClubEntryMessage,
-} from '../e2e/support/ensureClubMembership';
+import { ensureClubMembership } from '../e2e/support/ensureClubMembership';
 import { ensureAcceptedTerms } from '../e2e/support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from '../e2e/support/ensurePlayableProfile';
 
@@ -98,31 +94,6 @@ function termsPage(statuses: Array<'accepted' | 'not_accepted' | 'unknown'>, res
   return { page, decision, acceptedMarker, heading, agreement, accept };
 }
 
-function clubMessagePage(responseStatus = 200, result: unknown = { ok: true }) {
-  const dialog = { waitFor: vi.fn().mockResolvedValue(undefined) };
-  const dismiss = {
-    waitFor: vi.fn().mockResolvedValue(undefined),
-    click: vi.fn().mockResolvedValue(undefined),
-  };
-  const response = {
-    request: () => ({ method: () => 'POST' }),
-    url: () => 'https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message',
-    ok: () => responseStatus >= 200 && responseStatus < 300,
-    status: () => responseStatus,
-    json: async () => result,
-  };
-  const page = {
-    getByRole: vi.fn((role: string) => (role === 'dialog' ? dialog : dismiss)),
-    waitForResponse: vi.fn(async (predicate: (candidate: typeof response) => boolean) => {
-      expect(predicate(response)).toBe(true);
-      expect(predicate({ ...response, request: () => ({ method: () => 'GET' }) })).toBe(false);
-      expect(predicate({ ...response, url: () => 'https://fixture.invalid/other' })).toBe(false);
-      return response;
-    }),
-  };
-  return { page, dialog, dismiss, response };
-}
-
 describe('authenticated production account preflight', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -130,97 +101,6 @@ describe('authenticated production account preflight', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  it('handles a late Diamond offer through only its real Not Now control in each context', async () => {
-    for (let context = 0; context < 2; context++) {
-      const decline = { click: vi.fn().mockResolvedValue(undefined) };
-      const dialog = { getByRole: vi.fn(() => decline) };
-      const page = {
-        getByRole: vi.fn(() => dialog),
-        addLocatorHandler: vi.fn().mockResolvedValue(undefined),
-      };
-      await handleDiamondBustPrompt(page as unknown as Page);
-      await handleDiamondBustPrompt(page as unknown as Page);
-      expect(page.getByRole).toHaveBeenCalledWith('dialog', { name: 'Diamond Spins', exact: true });
-      expect(page.addLocatorHandler).toHaveBeenCalledOnce();
-      expect(page.addLocatorHandler).toHaveBeenCalledWith(dialog, expect.any(Function));
-      expect(decline.click).not.toHaveBeenCalled();
-
-      // The overlay may arrive after navigation; Playwright invokes this only
-      // at an action/assertion, then waits for this exact dialog to disappear.
-      const handler = page.addLocatorHandler.mock.calls[0][1];
-      await handler();
-      expect(dialog.getByRole).toHaveBeenCalledWith('button', { name: 'Not Now', exact: true });
-      expect(decline.click).toHaveBeenCalledWith();
-      const clickFailure = new Error('Not Now remains blocked');
-      decline.click.mockRejectedValueOnce(clickFailure);
-      await expect(handler()).rejects.toBe(clickFailure);
-    }
-  });
-
-  it('registers the real prompt handler in setup and fresh lobby/route contexts', () => {
-    const setup = source('tests/e2e/global-setup.ts');
-    expect(setup.indexOf('await handleDiamondBustPrompt(page)')).toBeLessThan(
-      setup.indexOf('await ensureClubMembership(page,')
-    );
-    const routes = source('tests/e2e/routes/utils.ts');
-    expect(routes.indexOf('await handleDiamondBustPrompt(page)')).toBeLessThan(
-      routes.indexOf('await page.goto(path)')
-    );
-    expect(routes.slice(routes.indexOf('export async function assertRendered'))).toContain(
-      'await handleDiamondBustPrompt(page)'
-    );
-    expect(source('tests/e2e/club-lobby.spec.ts')).toContain('await expectRoute(page, LOBBY)');
-    const mobile = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
-    expect(mobile.indexOf('await handleDiamondBustPrompt(page)')).toBeLessThan(
-      mobile.indexOf('await page.goto(')
-    );
-  });
-
-  it('persists the club message only after its exact RPC and hidden dialog succeed', async () => {
-    const fixture = clubMessagePage();
-    await expect(dismissClubEntryMessage(fixture.page as unknown as Page)).resolves.toBe(true);
-    expect(fixture.page.waitForResponse).toHaveBeenCalledWith(expect.any(Function), {
-      timeout: 15_000,
-    });
-    expect(fixture.dismiss.click).toHaveBeenCalledWith({ timeout: 10_000 });
-    expect(fixture.dialog.waitFor).toHaveBeenCalledWith({ state: 'hidden', timeout: 10_000 });
-  });
-
-  it.each([
-    [500, { ok: true }],
-    [200, { ok: false }],
-  ])('rejects a club-message write with HTTP %s and result %j', async (status, result) => {
-    const fixture = clubMessagePage(status, result);
-    await expect(dismissClubEntryMessage(fixture.page as unknown as Page)).rejects.toThrow(
-      'Club entry message dismissal did not persist'
-    );
-    expect(fixture.dialog.waitFor).not.toHaveBeenCalled();
-  });
-
-  it('preserves the click error and already owns the response rejection when the browser closes', async () => {
-    const fixture = clubMessagePage();
-    const clickFailure = new Error('Club Message is intercepted by an overlay');
-    fixture.dismiss.click.mockRejectedValueOnce(clickFailure);
-    let rejectResponse!: (reason: Error) => void;
-    const pendingResponse = new Promise<typeof fixture.response>((_resolve, reject) => {
-      rejectResponse = reject;
-    });
-    const subscribe = vi.spyOn(pendingResponse, 'then');
-    // A plain function is essential here: vi.fn itself subscribes to returned
-    // promises to record settled results, which would hide the missing owner.
-    const page = { ...fixture.page, waitForResponse: () => pendingResponse };
-    try {
-      await expect(dismissClubEntryMessage(page as unknown as Page)).rejects.toBe(clickFailure);
-      // This fails under the former sequential awaits without itself producing
-      // an unhandled rejection in the negative regression run.
-      expect(subscribe).toHaveBeenCalledWith(expect.any(Function), expect.any(Function));
-    } finally {
-      const cleanup = pendingResponse.catch(() => undefined);
-      rejectResponse(new Error('Target page, context or browser has been closed'));
-      await cleanup;
-    }
   });
 
   it('leaves an account with durably accepted Terms untouched', async () => {
@@ -349,9 +229,9 @@ describe('authenticated production account preflight', () => {
     const setup = source('tests/e2e/global-setup.ts');
     expect(setup).toContain('ensureClubMembership(');
     expect(setup).toContain('dismissClubEntryMessage(page)');
+    expect(setup).toContain('/rest/v1/rpc/fn_dismiss_club_message');
+    expect(setup).toContain("name: 'Do Not Show Me This Message Again'");
     const helper = source('tests/e2e/support/ensureClubMembership.ts');
-    expect(helper).toContain('/rest/v1/rpc/fn_dismiss_club_message');
-    expect(helper).toContain("name: 'Do Not Show Me This Message Again'");
     expect(helper).toContain("getByRole('button', { name: 'Join Club', exact: true })");
     expect(helper).toContain("locator('.club-home')");
     expect(helper).toContain("locator('.invite-pending')");

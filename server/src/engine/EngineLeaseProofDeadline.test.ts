@@ -33,20 +33,6 @@ afterEach(() => {
 });
 
 describe('table-engine distributed lease proof deadline', () => {
-  it('refuses a late renewal before an overdue expiry timer has run', () => {
-    vi.useFakeTimers();
-    let now = 0;
-    _setEngineLeaseMonotonicNowForTests(() => now);
-    const engine = new ServerTableEngine(TABLE, verifiedCash(20_000));
-    activate(engine);
-    now = 20_001;
-    // Promise continuations can run before an overdue timer after an event
-    // loop stall. A fresh answer must not revive this expired incarnation.
-    expect(engine.renewEngineLeaseProof(verifiedCash(25_000))).toBe(false);
-    expect(engine.hasCurrentEngineLeaseAuthority()).toBe(false);
-    expect(engine.isRunning()).toBe(false);
-  });
-
   it('fail-stops a verified dealer before the 30-second database takeover boundary', async () => {
     vi.useFakeTimers();
     let now = 0;

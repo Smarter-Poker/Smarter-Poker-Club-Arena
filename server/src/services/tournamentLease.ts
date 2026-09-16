@@ -47,7 +47,6 @@ import { supabase } from './supabase/client.js';
 import { leaseHeartbeatOutcomesTotal } from '../observability/engineInstruments.js';
 import { INSTANCE_ID, INSTANCE_VERSION } from './tableLease.js';
 import { throttledLeaseWarning } from './leaseWarningThrottle.js';
-import { mapLeaseHeartbeatBatches } from './leaseHeartbeatBatches.js';
 
 /** Matches the table lease, and the RPC default. */
 export const TOURNAMENT_LEASE_STALE_SECONDS = 30;
@@ -293,62 +292,8 @@ export async function heartbeatTournaments(
   if (claims.length === 0) {
     return { status: 'answered', proofs: [], lostTournamentIds: [] };
   }
-  // Validate the entire snapshot before splitting it: the database can only
-  // reject duplicates within one request, including differently cased UUIDs.
-  if (
-    claims.some(
-      (claim) => !UUID_PATTERN.test(claim.tournamentId) || !UUID_PATTERN.test(claim.leaseGeneration)
-    ) ||
-    new Set(claims.map((claim) => claim.tournamentId.toLowerCase())).size !== claims.length
-  ) {
-    heartbeatErrors++;
-    warnTournamentLease(
-      'malformed_claims',
-      '[tournament-lease] heartbeat refused malformed or duplicate generation claims'
-    );
-    try {
-      leaseHeartbeatOutcomesTotal.inc(claims.length, { scope: 'tournament', state: 'malformed' });
-    } catch {
-      /* metrics must never affect a lease decision */
-    }
-    return {
-      status: 'answered',
-      proofs: [],
-      lostTournamentIds: claims.map((claim) => claim.tournamentId),
-    };
-  }
-  const capturedClaims = claims.map((claim) => ({ ...claim }));
-  const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
-  const outcomes = await mapLeaseHeartbeatBatches(capturedClaims, (batch) =>
-    heartbeatTournamentBatch(batch, proofDeadlineMonotonicMs)
-  );
-  const proofs: TournamentLeaseHeartbeatProof[] = [];
-  const lostTournamentIds: string[] = [];
-  let answered = false;
-  for (const outcome of outcomes) {
-    if (outcome.status !== 'answered') continue;
-    answered = true;
-    for (const proof of outcome.proofs) {
-      if (tournamentLeaseMonotonicNow() < proof.proofDeadlineMonotonicMs) proofs.push(proof);
-      else lostTournamentIds.push(proof.tournamentId);
-    }
-    lostTournamentIds.push(...outcome.lostTournamentIds);
-  }
-  // Failed requests extend nothing. A separate complete batch still proves
-  // only its exact claims; GameServer checks prior authority for every other
-  // captured manager and refuses a proof that arrives after local expiry.
-  return answered ? { status: 'answered', proofs, lostTournamentIds } : outcomes[0];
-}
-
-async function heartbeatTournamentBatch(
-  claims: TournamentLeaseHeartbeatClaim[],
-  proofDeadlineMonotonicMs: number
-): Promise<TournamentLeaseHeartbeatOutcome> {
   const tournamentIds = claims.map((claim) => claim.tournamentId);
-  // A queue must never turn an expired pass into a fresh ownership window.
-  if (tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
-    return { status: 'answered', proofs: [], lostTournamentIds: tournamentIds };
-  }
+  const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
   try {
     const { data, error } = await supabase.rpc('heartbeat_tournament_leases_v4', {
       p_instance_id: INSTANCE_ID,
@@ -403,8 +348,7 @@ async function heartbeatTournamentBatch(
       heartbeatErrors++;
       warnTournamentLease(
         'malformed_response',
-        `[tournament-lease] heartbeat returned an incomplete or malformed generation proof ` +
-          `(requested=${claims.length}, received=${rawRows?.length ?? 'non-array'})`
+        '[tournament-lease] heartbeat returned an incomplete or malformed generation proof'
       );
       /* EVERY CLAIM IS ACCOUNTED FOR, ESPECIALLY THE UNREADABLE ONES (2026-09-12)
          `state=malformed` has been declared and zero-seeded in engineInstruments

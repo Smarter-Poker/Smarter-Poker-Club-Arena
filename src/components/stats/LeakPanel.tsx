@@ -13,7 +13,6 @@ import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { findLeaks, LEAK_MIN_HANDS, type LeakOverall, type LeakPosition } from './findLeaks';
 import { staggerContainer, fadeUp } from './statsMotion';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './LeakPanel.css';
 
 interface Props {
@@ -40,55 +39,39 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
 
   if (!analysed) {
     return (
-      <SpadeConsole
-        className="leak-card"
-        eyebrow="Analysis"
-        title="What To Work On"
-        pill="Not Yet"
-        pillInk="muted"
-        foot="foot"
-      >
-        <p className="sc-copy leak-empty-text">
+      <div className="leak-card">
+        <h3 className="leak-title">What To Work On</h3>
+        <p className="leak-empty-text">
           {handsShort >= LEAK_MIN_HANDS
             ? 'Play Some Hands And This Will Tell You What To Work On First.'
             : `About ${handsShort.toLocaleString()} More Hands And There Will Be Enough Here To Point At Something Real. Naming A Leak Off A Smaller Sample Would Mostly Be Describing Variance.`}
         </p>
-      </SpadeConsole>
+      </div>
     );
   }
 
   if (leaks.length === 0) {
     return (
-      <SpadeConsole
-        className="leak-card"
-        eyebrow="Analysis"
-        title="What To Work On"
-        pill="Clear"
-        pillInk="green"
-        foot="foot"
-      >
-        <p className="sc-copy leak-empty-text">
+      <div className="leak-card">
+        <h3 className="leak-title">What To Work On</h3>
+        <p className="leak-empty-text">
           Nothing Stands Out As A Clear Leak In Your Numbers Right Now. That Does Not Mean The Game
           Is Solved, Only That The Obvious Structural Problems Are Not There - The Next Gains Are In
           Hand-By-Hand Decisions Rather Than In Your Overall Frequencies.
         </p>
-      </SpadeConsole>
+      </div>
     );
   }
 
   return (
-    <SpadeConsole
-      className="leak-card"
-      eyebrow="Analysis"
-      title="What To Work On"
-      pill={`${leaks.length.toLocaleString()} ${leaks.length === 1 ? 'Leak' : 'Leaks'}`}
-      pillInk="red"
-      foot="foot"
-    >
-      <p className="sc-copy leak-sub">
-        Ranked By What Is Costing The Most. Worked Out From Your Own Frequencies, Not From A
-        Template.
-      </p>
+    <div className="leak-card">
+      <div className="leak-head">
+        <h3 className="leak-title">What To Work On</h3>
+        <p className="leak-sub">
+          Ranked By What Is Costing The Most. Worked Out From Your Own Frequencies, Not From A
+          Template.
+        </p>
+      </div>
 
       {/* Plain list semantics with the animation on a motion.div: motion.div
           and motion.button are the only wrappers this codebase uses in
@@ -112,18 +95,18 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
               <span className={`leak-sev sev-${leak.severity}`}>
                 {SEVERITY_LABEL[leak.severity] ?? leak.severity}
               </span>
-              <h4 className="leak-item-title sc-ink--silver">{leak.title}</h4>
+              <h4 className="leak-item-title">{leak.title}</h4>
             </div>
-            <p className="sc-copy leak-evidence sc-ink--muted">{leak.evidence}</p>
-            <p className="sc-copy leak-action">{leak.action}</p>
+            <p className="leak-evidence">{leak.evidence}</p>
+            <p className="leak-action">{leak.action}</p>
           </motion.div>
         ))}
       </motion.div>
 
-      <p className="sc-copy leak-note sc-ink--muted">
+      <p className="leak-note">
         These Are Frequency-Level Findings. They Cannot See How You Played Any Individual Hand, So
         Treat Them As Where To Look Rather Than As A Verdict.
       </p>
-    </SpadeConsole>
+    </div>
   );
 }

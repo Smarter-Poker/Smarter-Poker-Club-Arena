@@ -8,19 +8,6 @@ import {
 } from './EngineWebSocketServer.js';
 import { TableStateHub } from './TableStateHub.js';
 
-const audit = vi.hoisted(() => ({ insert: vi.fn(async () => ({ error: null })) }));
-// Socket ownership is real below, including the paused loopback peer. The
-// unrelated connection audit must not contact a database or carry a request
-// deadline from one fake-clock case into the next.
-vi.mock('../services/supabase.js', () => ({
-  supabase: {
-    from: (table: string) => {
-      if (table !== 'action_audit_logs') throw new Error(`Unexpected database table: ${table}`);
-      return { insert: audit.insert };
-    },
-  },
-}));
-
 const HARD = 4 * 1024 * 1024;
 const TABLE_A = '11111111-1111-4111-8111-111111111111';
 const TABLE_B = '22222222-2222-4222-8222-222222222222';
@@ -100,23 +87,13 @@ function deferred<T>() {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  audit.insert.mockClear();
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(() => Promise.reject(new Error('Unexpected network request')))
-  );
   sockets = [];
 });
 afterEach(() => {
   for (const ws of sockets) ws.terminate();
   vi.clearAllTimers();
   vi.useRealTimers();
-  try {
-    expect(fetch).not.toHaveBeenCalled();
-  } finally {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  }
+  vi.restoreAllMocks();
 });
 
 describe('the physical socket owns its hard backpressure fence', () => {
@@ -146,13 +123,6 @@ describe('the physical socket owns its hard backpressure fence', () => {
     await flush();
     expect(f.hub.subscriberCount(TABLE_A)).toBe(2);
     expect(f.hub.subscriberCount(TABLE_B)).toBe(1);
-    expect(audit.insert).toHaveBeenCalledTimes(3);
-    expect(audit.insert).toHaveBeenCalledWith({
-      action_type: 'engine_ws_connect',
-      user_id: 'hero',
-      ip_address: '192.0.2.1',
-      details: { table_id: TABLE_B },
-    });
     slow.bufferedAmount = HARD + 1;
     subscribe(slow);
     await flush();

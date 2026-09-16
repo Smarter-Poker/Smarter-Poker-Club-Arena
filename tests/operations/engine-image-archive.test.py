@@ -1,6 +1,5 @@
 """Exercise real tar bytes and atomic output; no Docker or host import."""
 import copy
-import gzip
 import hashlib
 import importlib.util
 import io
@@ -32,8 +31,8 @@ def layer(content):
     return result.getvalue()
 
 
-def fixture(modern=True, contents=(b'first', b'second')):
-    layers = [layer(content) for content in contents]
+def fixture(modern=True):
+    layers = [layer(b'first'), layer(b'second')]
     config = dict(os='linux', architecture='amd64',
                   config=dict(Env=['PATH=/usr/bin', 'GIT_COMMIT_SHA=' + SHA], Labels={
                       'org.opencontainers.image.revision': SHA,
@@ -49,45 +48,6 @@ def fixture(modern=True, contents=(b'first', b'second')):
     # An alternative OCI graph and legacy hints must never reach the importer.
     entries += [('index.json', b'{"unreviewed":"graph"}'), ('oci-layout', b'{}'), ('repositories', b'{}')]
     return entries, 'sha256:' + digest(raw)
-
-
-
-def oci_fixture(contents=(b'first', b'second')):
-    entries, config_id = fixture(contents=contents)
-    docker_manifest = json.loads(entries[0][1])
-    descriptors, blobs = [], []
-    for index, (name, raw) in enumerate(entries[2:4]):
-        stored = gzip.compress(raw, mtime=0) if index == 0 else raw
-        media = 'application/vnd.oci.image.layer.v1.tar' + ('+gzip' if index == 0 else '')
-        name = 'blobs/sha256/' + digest(stored)
-        descriptors.append(dict(mediaType=media, digest='sha256:' + digest(stored), size=len(stored)))
-        blobs.append((name, stored))
-    docker_manifest[0]['Layers'] = [name for name, _ in blobs]
-    manifest = dict(schemaVersion=2, mediaType='application/vnd.oci.image.manifest.v1+json',
-                    config=dict(mediaType='application/vnd.oci.image.config.v1+json',
-                                digest=config_id, size=len(entries[1][1])), layers=descriptors)
-    raw = json.dumps(manifest, separators=(',', ':')).encode()
-    image = 'sha256:' + digest(raw)
-    index = dict(schemaVersion=2, mediaType='application/vnd.oci.image.index.v1+json', manifests=[
-        dict(mediaType=manifest['mediaType'], digest=image, size=len(raw), annotations={
-            'io.containerd.image.name': 'docker.io/library/club-arena-engine:' + SHA,
-            'org.opencontainers.image.ref.name': SHA, 'unrelated-note': 'discard'})])
-    return [('manifest.json', json.dumps(docker_manifest).encode()), entries[1], *blobs,
-            ('blobs/sha256/' + image[7:], raw), ('index.json', json.dumps(index).encode()),
-            ('oci-layout', b'{"imageLayoutVersion":"1.0.0"}'), ('unused.json', b'{}')], image
-
-
-def change_oci_manifest(entries, image, edit):
-    entries = list(entries)
-    position = next(i for i, (name, _) in enumerate(entries) if name == 'blobs/sha256/' + image[7:])
-    manifest = json.loads(entries[position][1]); edit(manifest)
-    raw = json.dumps(manifest, separators=(',', ':')).encode()
-    new_image = 'sha256:' + digest(raw)
-    entries[position] = ('blobs/sha256/' + new_image[7:], raw)
-    position = next(i for i, (name, _) in enumerate(entries) if name == 'index.json')
-    index = json.loads(entries[position][1]);index['manifests'][0].update(digest=new_image, size=len(raw))
-    entries[position] = ('index.json', json.dumps(index).encode())
-    return entries, new_image
 
 
 def write_tar(path, entries, *, extended=False):
@@ -144,130 +104,6 @@ class ArchiveTests(unittest.TestCase):
                 digests.append(receipt['archive_sha256'])
                 self.output.unlink()
         self.assertEqual(digests[0], digests[1])
-
-    def test_oci_manifest_identity_and_both_layer_formats_roundtrip_unchanged(self):
-        self.entries, self.image = oci_fixture()
-        write_tar(self.source, self.entries)
-        first = self.normalize()
-        canonical = self.output.read_bytes()
-        self.assertEqual(first['image_id'], self.image)
-        self.assertEqual(set(first), {'version', 'scope', 'image_id', 'source_sha', 'server_tree',
-                                     'build_contract', 'input_sha256', 'archive_sha256', 'archive_bytes',
-                                     'layers', 'platform', 'producer_authenticated', 'host_import_qualified'})
-        with tarfile.open(self.output) as tar:
-            names = tar.getnames()
-            self.assertNotIn('unused.json', names)
-            self.assertEqual(len(names), len(set(names)))
-            manifest_bytes = tar.extractfile('blobs/sha256/' + self.image[7:]).read()
-            self.assertEqual('sha256:' + digest(manifest_bytes), self.image)
-            manifest = json.loads(manifest_bytes)
-            index = json.loads(tar.extractfile('index.json').read())
-            self.assertEqual(index['manifests'][0]['digest'], self.image)
-            self.assertEqual(set(index['manifests'][0]['annotations']),
-                             {'io.containerd.image.name', 'org.opencontainers.image.ref.name'})
-            config = json.loads(tar.extractfile('blobs/sha256/' + manifest['config']['digest'][7:]).read())
-            docker = json.loads(tar.extractfile('manifest.json').read())[0]
-            for descriptor, diff_id, name in zip(manifest['layers'], config['rootfs']['diff_ids'], docker['Layers']):
-                raw = tar.extractfile(name).read()
-                self.assertEqual('sha256:' + digest(raw), descriptor['digest'])
-                decoded = gzip.decompress(raw) if descriptor['mediaType'].endswith('+gzip') else raw
-                self.assertEqual('sha256:' + digest(decoded), diff_id)
-        self.source.write_bytes(canonical);self.output.unlink()
-        second = self.normalize()
-        self.assertEqual(second['archive_sha256'], first['archive_sha256'])
-        self.assertEqual(self.output.read_bytes(), canonical)
-
-    def test_oci_manifest_digest_and_config_descriptor_cannot_be_substituted(self):
-        entries, self.image = oci_fixture()
-        name = 'blobs/sha256/' + self.image[7:]
-        write_tar(self.source, [(n, raw + b' ' if n == name else raw) for n, raw in entries])
-        self.refused('OCI_MANIFEST_DIGEST')
-        for edit in [lambda m: m['config'].update(digest='sha256:'+'f'*64),
-                     lambda m: m['config'].update(size=m['config']['size']+1),
-                     lambda m: m['config'].update(mediaType='application/octet-stream')]:
-            entries, image = oci_fixture()
-            entries, self.image = change_oci_manifest(entries, image, edit)
-            write_tar(self.source, entries);self.refused('OCI_DESCRIPTOR')
-
-    def test_oci_index_must_bind_one_exact_manifest_and_tag(self):
-        edits = [lambda i: i['manifests'].append(copy.deepcopy(i['manifests'][0])),
-                 lambda i: i['manifests'][0].update(digest='sha256:'+'f'*64),
-                 lambda i: i['manifests'][0].update(size=1),
-                 lambda i: i['manifests'][0]['annotations'].update({'io.containerd.image.name':'elsewhere'}),
-                 lambda i: i['manifests'][0]['annotations'].update({'org.opencontainers.image.ref.name':'wrong'})]
-        for edit in edits:
-            entries, self.image = oci_fixture();index=json.loads(dict(entries)['index.json']);edit(index)
-            write_tar(self.source, [(n, json.dumps(index).encode() if n=='index.json' else raw) for n,raw in entries])
-            self.refused()
-
-    def test_oci_layer_descriptors_bind_exact_order_size_and_encoding(self):
-        edits = [lambda m: m['layers'].reverse(), lambda m: m['layers'].pop(),
-                 lambda m: m['layers'][0].update(size=1),
-                 lambda m: m['layers'][0].update(digest='sha256:'+'f'*64),
-                 lambda m: m['layers'][0].update(mediaType='application/vnd.oci.image.layer.v1.tar+zstd'),
-                 lambda m: m['layers'][0].update(urls=['https://untrusted.invalid'])]
-        for edit in edits:
-            entries, image = oci_fixture();entries, self.image = change_oci_manifest(entries,image,edit)
-            write_tar(self.source,entries);self.refused()
-
-    def test_oci_compressed_blob_and_uncompressed_diff_id_both_verified(self):
-        entries, self.image = oci_fixture()
-        name, raw = entries[2]
-        changed = bytearray(raw);changed[4] ^= 1  # valid gzip, identical decoded content, wrong blob digest
-        write_tar(self.source,[(n,bytes(changed) if n==name else b) for n,b in entries])
-        self.refused('OCI_LAYER_DIGEST')
-        write_tar(self.source,[(n,raw[:-1] if n==name else b) for n,b in entries])
-        self.refused()
-        entries, image = oci_fixture()
-        config_name, raw = entries[1];config=json.loads(raw);config['rootfs']['diff_ids'][0]='sha256:'+'f'*64
-        raw=json.dumps(config).encode();config_id='sha256:'+digest(raw);new_name='blobs/sha256/'+config_id[7:]
-        entries[1]=(new_name,raw)
-        docker=json.loads(entries[0][1]);docker[0]['Config']=new_name;entries[0]=('manifest.json',json.dumps(docker).encode())
-        entries,self.image=change_oci_manifest(entries,image,lambda m:m['config'].update(digest=config_id,size=len(raw)))
-        write_tar(self.source,entries);self.refused('LAYER_DIGEST')
-
-    def test_oci_gzip_expansion_is_bounded_before_output(self):
-        entries, self.image = oci_fixture()
-        # Both layer blobs are gzip, so an input bound cannot substitute for a decoded bound.
-        raw = dict(entries)[entries[3][0]];compressed=gzip.compress(raw,mtime=0)
-        old_name=entries[3][0];new_name='blobs/sha256/'+digest(compressed)
-        entries[3]=(new_name,compressed)
-        docker=json.loads(entries[0][1]);docker[0]['Layers'][1]=new_name;entries[0]=('manifest.json',json.dumps(docker).encode())
-        entries,self.image=change_oci_manifest(entries,self.image,lambda m:m['layers'][1].update(
-            mediaType='application/vnd.oci.image.layer.v1.tar+gzip',digest='sha256:'+digest(compressed),size=len(compressed)))
-        write_tar(self.source,entries)
-        with patch.object(m,'MEMBER_LIMIT',5000):self.refused('LAYER_EXPANSION_LIMIT')
-        entries,self.image=oci_fixture((b'x'*500000,b'y'*500000))
-        write_tar(self.source,entries)
-        with patch.object(m,'ARCHIVE_LIMIT',800000):self.refused('LAYER_EXPANSION_LIMIT')
-
-    def test_oci_truncated_gzip_refuses_without_partial_output(self):
-        entries,image=oci_fixture();name,raw=entries[2];raw=raw[:-8]
-        new_name='blobs/sha256/'+digest(raw);entries[2]=(new_name,raw)
-        docker=json.loads(entries[0][1]);docker[0]['Layers'][0]=new_name
-        entries[0]=('manifest.json',json.dumps(docker).encode())
-        entries,self.image=change_oci_manifest(entries,image,lambda manifest:manifest['layers'][0].update(
-            digest='sha256:'+digest(raw),size=len(raw)))
-        write_tar(self.source,entries)
-        with self.assertRaises(EOFError):self.normalize()
-        self.assertFalse(self.output.exists())
-        self.assertFalse(list(self.root.glob('.engine-image-*')))
-
-    def test_oci_repeated_layer_reference_emits_one_blob(self):
-        entries,image=oci_fixture();config_name,raw=entries[1];config=json.loads(raw)
-        config['rootfs']['diff_ids'][1]=config['rootfs']['diff_ids'][0]
-        raw=json.dumps(config).encode();config_id='sha256:'+digest(raw);new_name='blobs/sha256/'+config_id[7:]
-        entries[1]=(new_name,raw)
-        docker=json.loads(entries[0][1]);docker[0]['Config']=new_name;docker[0]['Layers'][1]=docker[0]['Layers'][0]
-        entries[0]=('manifest.json',json.dumps(docker).encode())
-        def edit(manifest):
-            manifest['config'].update(digest=config_id,size=len(raw))
-            manifest['layers'][1]=copy.deepcopy(manifest['layers'][0])
-        entries,self.image=change_oci_manifest(entries,image,edit)
-        write_tar(self.source,entries);self.normalize()
-        with tarfile.open(self.output) as tar:
-            self.assertEqual(len(tar.getnames()),len(set(tar.getnames())))
-            self.assertEqual(tar.getnames().count(docker[0]['Layers'][0]),1)
 
     def test_directories_are_accepted_but_not_copied(self):
         directory = tarfile.TarInfo('blobs/')

@@ -19,8 +19,6 @@ import { wakeHandProjection } from './handProjection.js';
 import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
 
 export interface AtomicHandCommitInput {
-  /** Local diagnostics only; excluded from the immutable database payload. */
-  observeCommitProgress?: (detail: string) => void;
   stacks: Array<{
     user_id: string;
     stack: number;
@@ -241,8 +239,6 @@ export async function logHandHistory(params: {
     handName?: string;
     /** HI-LO: the entry for the low half. See HandEvent WINNERS.winnersByBoard. */
     low?: boolean;
-    /** Per-pot slices of this share (2026-09-13). See HandEvent WINNERS.winnersByBoard. */
-    pots?: Array<{ index: number; amount: number }>;
   }[];
   /**
    * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
@@ -733,13 +729,6 @@ async function insertHandHistoryRow(
       : {}),
   });
   let lastError = 'no response';
-  const observe = (detail: string) => {
-    try {
-      atomicCommit.observeCommitProgress?.(detail);
-    } catch {
-      /* Diagnostic failure cannot alter an accepted hand or its retry budget. */
-    }
-  };
 
   // Every retry is the same idempotent transaction.  This loop exists only
   // for the ambiguous transport case: a lost HTTP response may follow a
@@ -747,9 +736,7 @@ async function insertHandHistoryRow(
   for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
     try {
       atomicCommit.assertLeaseAuthority?.();
-      observe('rpc_request:' + (attempt + 1));
       const { data, error } = await supabase.rpc('fn_ca_commit_hand_settlement', payload);
-      observe('rpc_response:' + (attempt + 1));
       const result = (data ?? {}) as AtomicCommitResult;
       if (!error && result.success === true && result.atomic_hand_commit === true) {
         if (hasPostCommitObligations && result.post_commit_obligations !== true) {
@@ -787,7 +774,6 @@ async function insertHandHistoryRow(
             handNumber: row.hand_number,
           })
         );
-        observe('receipt_accepted:' + (attempt + 1));
         return {
           id: historyId,
           settlementCommitted: true,
@@ -809,7 +795,6 @@ async function insertHandHistoryRow(
 
     const delayMs = HAND_COMMIT_RETRY_DELAYS_MS[attempt];
     if (delayMs !== undefined) {
-      observe('retry_wait:' + (attempt + 1));
       await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
     }
   }

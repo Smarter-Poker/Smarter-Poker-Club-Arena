@@ -363,40 +363,6 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   #    is ACTIVE on main with `bypass_actors: []` and six required checks. It
   #    enforces. These two guards run here because catching them in 100ms beats
   #    catching them in a three-minute CI cycle, not because nothing else will.
-  # ── THE GATES CI RUNS AND THIS HOOK DID NOT (2026-09-11) ──────────────────
-  #
-  # On 2026-09-11 a push went out green from this hook and CI turned red on
-  # check-route-targets: a console plate navigated to `/clubs/${id}/${game}`,
-  # a template the checker cannot resolve, so nobody could prove the button
-  # went anywhere. It was found only because the gates were finally run by
-  # hand. That is a three-minute CI cycle and a red main to learn something a
-  # local half-second knew.
-  #
-  # These are every gate ci.yml runs that this hook did not, minus three that
-  # cannot run here: check-club-fk-indexes and check-migrations-applied need
-  # SUPABASE_URL and a service role key, and check-phantom-tables is currently
-  # RED on nine tournament-deal RPCs that predate this work - adding it would
-  # block every push in the repo for a fault the pusher did not cause. It is
-  # written down rather than wired in, which is the honest way to leave it.
-  #
-  # Total added cost measured at ~9 seconds against a hook that already runs
-  # tsc and a vitest sweep.
-  for GATE in check-route-targets check-css-modules check-no-emoji \
-              check-maybe-single check-deprecated-tables check-phantom-columns \
-              check-esm-require check-horses-are-players check-bus-wiring \
-              check-stranded-writers check-discarded-read-then-write \
-              check-embed-relationships check-no-vercel-deploy \
-              check-new-migration-version-collisions check-rake-schedule-parity \
-              check-rakeconfig-parity check-rake-bbj-collection-law \
-              check-seat-law-parity; do
-    if [ -f "scripts/ci/$GATE.mjs" ]; then
-      if ! node "scripts/ci/$GATE.mjs"; then
-        echo "[club-arena pre-push] BLOCKED by $GATE (CI runs this too)"
-        FAIL=1
-      fi
-    fi
-  done
-
   if [ -f scripts/ci/check-allin-pointer-events.mjs ]; then
     if ! node scripts/ci/check-allin-pointer-events.mjs; then
       echo "[club-arena pre-push] BLOCKED: all-in action panel would lose pointer events"

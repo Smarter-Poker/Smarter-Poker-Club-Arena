@@ -22,19 +22,6 @@
  * list itself are on the watchlist, baselined through the declaration door in
  * the same transaction that widened the list, and nothing that was watched
  * before is watched less. The watcher is not touched.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * TWO PINS MOVED 2026-09-13, in the commit that widened the list to 44
- * (`the_diamond_seat_guards_know_a_tournament_seat`). They asserted that THIS
- * migration is the newest definition of the watchlist, and that the newest
- * definition holds exactly 41 names. Both were true and both were pins that
- * could only ever be broken by the list GROWING - which is the one thing this
- * law exists to encourage. The rule they were reaching for is monotonicity, so
- * that is what is pinned now: every definition of the list, in order, keeps
- * every name the one before it carried, and the newest still names every
- * Diamond door and unit rule. That is strictly stronger than a count, and it
- * cannot go stale. The "expected 41" assertion stays where it belongs - inside
- * THIS migration's own text, which is what it was always about.
  */
 import { describe, expect, it } from 'vitest';
 import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
@@ -82,36 +69,31 @@ const UNIT_RULES = [
 ];
 
 describe('LAW: the Diamond guards are watched', () => {
-  it('names every Diamond door and unit rule on the newest definition of the list', () => {
-    // "Newest", not "this one". A later migration is allowed - encouraged - to
-    // widen the list further; what it may never do is drop one of these.
+  it('is the newest definition of the watchlist, and names every Diamond door and unit rule', () => {
+    const defs = migrationsMentioning('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist')
+      .map((m) => m.name)
+      .sort();
+    expect(defs[defs.length - 1]).toBe(migration().name);
     const list = newestWatchlist();
     for (const g of [...DIAMOND_DOORS, ...UNIT_RULES, 'fn_ca_guard_watchlist']) {
       expect(list, `${g} must be watched`).toContain(g);
     }
-    expect(list.length).toBeGreaterThanOrEqual(41);
   });
 
-  it('widens the list and never narrows it, at every step', () => {
-    // Every definition in order keeps every name the one before it carried, so
-    // a name cannot be lost by the newest migration OR by any one between.
+  it('widens the list and never narrows it', () => {
+    // every name the previous definition carried is still on the newest one
     const defs = migrationsMentioning(
       'CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist'
     ).sort((a, b) => a.name.localeCompare(b.name));
     expect(defs.length).toBeGreaterThanOrEqual(2);
-    const namesOf = (m: (typeof defs)[number]): string[] => {
-      const start = m.sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist');
-      const body = m.sql.slice(start, m.sql.indexOf('$function$;', start));
-      return [...new Set([...body.matchAll(/'(fn_[a-z0-9_]+)'/g)].map((x) => x[1]!))];
-    };
-    for (let i = 1; i < defs.length; i += 1) {
-      const before = namesOf(defs[i - 1]!);
-      const after = namesOf(defs[i]!);
-      for (const g of before) {
-        expect(after, `${g} was dropped from the watchlist by ${defs[i]!.name}`).toContain(g);
-      }
-    }
-    // and this migration refuses to apply if the database disagrees
+    const previous = defs[defs.length - 2]!;
+    const start = previous.sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist');
+    const body = previous.sql.slice(start, previous.sql.indexOf('$function$;', start));
+    const before = [...new Set([...body.matchAll(/'(fn_[a-z0-9_]+)'/g)].map((m) => m[1]!))];
+    const after = newestWatchlist();
+    for (const g of before) expect(after, `${g} was dropped from the watchlist`).toContain(g);
+    expect(after.length).toBe(41);
+    // and the migration refuses to apply if the database disagrees
     expect(executable()).toContain('widening the watchlist dropped:');
     expect(executable()).toContain('expected 41');
   });

@@ -41,7 +41,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mapLeaseHeartbeatBatches } from './leaseHeartbeatBatches.js';
 import { warnThrottled, _resetLeaseWarnThrottleForTests } from './leaseWarningThrottle.js';
 // Straight from the client module, never the `supabase.js` barrel: the barrel
 // re-exports every submodule, so importing it from here would pull the whole
@@ -375,12 +374,10 @@ export async function heartbeatTables(
     return { status: 'answered', proofs: [], lostTableIds: [] };
   }
   const tableIds = claims.map((claim) => claim.tableId);
-  const uniqueTableIds = new Set(tableIds.map((tableId) => tableId.toLowerCase()));
+  const uniqueTableIds = new Set(tableIds);
   if (
     uniqueTableIds.size !== claims.length ||
-    claims.some(
-      (claim) => !UUID_PATTERN.test(claim.tableId) || !UUID_PATTERN.test(claim.leaseGeneration)
-    )
+    claims.some((claim) => !UUID_PATTERN.test(claim.leaseGeneration))
   ) {
     heartbeatErrors++;
     warnThrottled(
@@ -405,36 +402,7 @@ export async function heartbeatTables(
     }
     return { status: 'answered', proofs: [], lostTableIds: tableIds };
   }
-  const capturedClaims = claims.map((claim) => ({ ...claim }));
   const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
-  const outcomes = await mapLeaseHeartbeatBatches(capturedClaims, (batch) =>
-    heartbeatTableBatch(batch, proofDeadlineMonotonicMs)
-  );
-  const proofs: TableLeaseHeartbeatProof[] = [];
-  const lostTableIds: string[] = [];
-  let answered = false;
-  for (const outcome of outcomes) {
-    if (outcome.status !== 'answered') continue;
-    answered = true;
-    for (const proof of outcome.proofs) {
-      if (tableLeaseMonotonicNow() < proof.proofDeadlineMonotonicMs) proofs.push(proof);
-      else lostTableIds.push(proof.tableId);
-    }
-    lostTableIds.push(...outcome.lostTableIds);
-  }
-  // Unknown batches extend no authority; GameServer checks every captured
-  // dealer's old deadline even when a separate batch returned exact proofs.
-  return answered ? { status: 'answered', proofs, lostTableIds } : outcomes[0];
-}
-
-async function heartbeatTableBatch(
-  claims: TableLeaseHeartbeatClaim[],
-  proofDeadlineMonotonicMs: number
-): Promise<TableLeaseHeartbeatOutcome> {
-  const tableIds = claims.map((claim) => claim.tableId);
-  if (tableLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
-    return { status: 'answered', proofs: [], lostTableIds: tableIds };
-  }
   try {
     const { data, error } = await supabase.rpc('heartbeat_table_leases_v4', {
       p_instance_id: INSTANCE_ID,
@@ -486,8 +454,7 @@ async function heartbeatTableBatch(
       heartbeatErrors++;
       warnThrottled(
         'malformed_response',
-        `[lease] heartbeat returned an incomplete or malformed ownership proof ` +
-          `(requested=${claims.length}, received=${rawRows?.length ?? 'non-array'})`
+        '[lease] heartbeat returned an incomplete or malformed ownership proof'
       );
       /* See the note on the first whole-answer refusal above. */
       try {

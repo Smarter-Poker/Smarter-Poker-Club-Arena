@@ -1,5 +1,4 @@
 import { test, expect, devices, type Page } from '@playwright/test';
-import { handleDiamondBustPrompt } from './support/ensureClubMembership';
 
 /**
  * THE THREE THINGS DAN PHOTOGRAPHED, ON THE LIVE LOBBY (2026-09-10).
@@ -28,7 +27,6 @@ const TITLE_CENTRE_PCT = 54.65;
 test.use({ ...devices['iPhone 13'] });
 
 async function openLobby(page: Page) {
-  await handleDiamondBustPrompt(page);
   await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(500);
   test.skip(/\/auth(?:\/|$|\?)/.test(page.url()), 'signed out: the club lobby is behind a login');

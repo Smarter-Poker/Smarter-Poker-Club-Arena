@@ -222,15 +222,8 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
        * makes the duplicate delivery a no-op instead of a small backwards jump
        * in the break clock. A payload that carries a real end time is idempotent
        * anyway; this only matters for the fallback.
-       *
-       * KEEP THE FIRST *ANSWER*, NOT THE FIRST *DELIVERY* (2026-09-09). A break
-       * arrives as two different events and the FIRST of them, the :55 last-hand
-       * announcement, deliberately carries no end time at all - so a plain
-       * `prev ?? ...` latched "unknown" and then refused the real end that
-       * `tournament_break_started` brings a minute or two later. An entry with
-       * no end is not an answer; it is a placeholder waiting for one.
        */
-      setBusBreak((prev) => (prev?.endsAtMs != null ? prev : { endsAtMs }));
+      setBusBreak((prev) => prev ?? { endsAtMs });
     },
     [tournament.id]
   );
@@ -372,12 +365,7 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
   const rowOnBreak = Boolean(row.on_break) || (rowBreakEndsMs !== null && rowBreakEndsMs > nowMs);
   const onBreak = hasStarted && (structureBreak || rowOnBreak || busBreak !== null);
 
-  /* `??`, not a ternary on `busBreak` itself: during the :55 last-hand window
-     the bus says a break is on and honestly does not yet know when it ends, and
-     a ternary let that null MASK `tournaments.break_ends_at` even after
-     beginBreakCountdown had persisted the real one. An unknown end falls
-     through to the column; a known one still wins. */
-  const breakEndsAtMs = busBreak?.endsAtMs ?? rowBreakEndsMs;
+  const breakEndsAtMs = busBreak ? busBreak.endsAtMs : rowBreakEndsMs;
   const breakRemainingSec: number | null = structureBreak
     ? remainingSec
     : breakEndsAtMs === null

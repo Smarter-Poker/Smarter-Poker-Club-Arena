@@ -28,25 +28,6 @@
  *
  *   Section 38: nothing here touches a chip stack. These are wallet payouts and
  *   the panel is read-only.
- *
- * ─── THE CONSOLE (#ClubArenaConsole, 2026-09-08) ─────────────────────────────
- *
- * The panel was a stack of rounded cards with a four-tile pool grid, a colour
- * swatch per tier and coloured tier names. It is Dan's approved spade master
- * now: MYSTERY BOUNTY is engraved in the header well, the stage sits in the
- * well's painted pill slot, and every figure prints as a row on the black glass
- * between the rails - label in the master's lit blue on the left, value in
- * silver on the right, an engraved rule between rows. The swatches are gone
- * (an emblem is part of the render or it is not there), and the tier colours
- * with them: the classifier's palette carries purples and cyans, and Dan's rule
- * is the house colours only. A headline tier reads in gold, an exhausted one in
- * muted ink, and nothing is drawn.
- *
- * MONEY STAYS EXACT HERE. `formatCents` is the panel's only money formatter and
- * tests/components/MysteryBountyPanel.test.tsx pins its output string for
- * string ("5,000 x1", "36 Mystery Bounties Drawn From A 13,000 Chip Pool"): a
- * bounty ladder is a list of prizes a player is being promised, so it is not a
- * browsing figure to abbreviate.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -64,8 +45,11 @@ import {
   playerTotalsFromAwards,
   type MysteryBountyAward,
 } from '../../services/MysteryBountyService';
-import { isHeadlineTier, mysteryBountyTierLabel } from '../../config/mysteryBountyTiers';
-import { SpadeConsole } from '../console/SpadeConsole';
+import {
+  isHeadlineTier,
+  mysteryBountyTierColor,
+  mysteryBountyTierLabel,
+} from '../../config/mysteryBountyTiers';
 import styles from './MysteryBountyPanel.module.css';
 
 export interface MysteryBountyPanelProps {
@@ -207,11 +191,12 @@ export default function MysteryBountyPanel({
 
   const visibleAwards = showAllAwards ? awards : awards.slice(0, COLLAPSED_AWARD_LIMIT);
 
-  /* The stage, printed into the master's painted pill slot. Green while the
-     chests are live, muted before they are drawn, blue once they are all out. */
-  const stagePill = stage === 'active' ? 'Live' : stage === 'complete' ? 'Closed' : 'Pending';
-  const stagePillInk: 'green' | 'blue' | 'muted' =
-    stage === 'active' ? 'green' : stage === 'complete' ? 'blue' : 'muted';
+  const statusClass =
+    stage === 'active'
+      ? styles.statusActive
+      : stage === 'complete'
+        ? styles.statusComplete
+        : styles.statusPending;
 
   const selectedTotals = selectedUserId ? perPlayer.get(selectedUserId) : undefined;
   const selectedBoardRow = selectedUserId
@@ -223,22 +208,12 @@ export default function MysteryBountyPanel({
   const selectedEarnings = selectedBoardRow?.earningsCents ?? selectedTotals?.earningsCents ?? 0;
 
   return (
-    <SpadeConsole
-      as="div"
-      className={styles.panel}
-      eyebrow="Mystery Bounty"
-      title="Bounties"
-      pill={stagePill}
-      pillInk={stagePillInk}
-      foot="foot"
-    >
+    <div className={styles.panel}>
       {/* ── Section 10: the advertised top bounty, derived from real chests ── */}
       {top > 0 && (
         <div className={styles.headline}>
-          <span className={`${styles.headlineLabel} sc-label sc-ink--blue`}>
-            Top Mystery Bounty
-          </span>
-          <span className={`${styles.headlineValue} sc-ink--gold`}>{formatCents(top)}</span>
+          <span className={styles.headlineLabel}>Top Mystery Bounty</span>
+          <span className={styles.headlineValue}>{formatCents(top)}</span>
           <span className={styles.headlineSub}>
             {counts.original.toLocaleString('en-US')} Mystery Bounties Drawn From A{' '}
             {formatCents(inventory?.poolCents ?? 0)} Chip Pool
@@ -247,7 +222,7 @@ export default function MysteryBountyPanel({
       )}
 
       {/* ── Section 73: before it opens, say why ── */}
-      <div className={styles.status}>
+      <div className={`${styles.status} ${statusClass}`}>
         {stage === 'active' && <span className={styles.livePulse} aria-hidden="true" />}
         <span>{activationStatusLine(inventory)}</span>
       </div>
@@ -258,7 +233,7 @@ export default function MysteryBountyPanel({
           that must move on a reveal without a refresh. Derived from the award
           rows, so a reload rebuilds it exactly. */}
       {biggest && (
-        <div className={styles.status}>
+        <div className={`${styles.status} ${styles.statusComplete}`}>
           <span>
             Largest Mystery Bounty Won: {formatCents(biggest.amountCents)} By{' '}
             {winnerNames(biggest.award)}
@@ -267,28 +242,22 @@ export default function MysteryBountyPanel({
       )}
 
       {inventory && (
-        <div className={styles.rows}>
-          <div className={styles.figure}>
-            <span className="sc-label sc-ink--blue">Bounty Pool</span>
-            <span className={`${styles.figureValue} sc-ink--silver`}>
-              {formatCents(inventory.poolCents)}
-            </span>
+        <div className={styles.poolGrid}>
+          <div className={styles.poolCell}>
+            <span className={styles.poolCellLabel}>Bounty Pool</span>
+            <span className={styles.poolCellValue}>{formatCents(inventory.poolCents)}</span>
           </div>
-          <div className={styles.figure}>
-            <span className="sc-label sc-ink--blue">Awarded</span>
-            <span className={`${styles.figureValue} sc-ink--silver`}>
-              {formatCents(awardedCents(inventory))}
-            </span>
+          <div className={styles.poolCell}>
+            <span className={styles.poolCellLabel}>Awarded</span>
+            <span className={styles.poolCellValue}>{formatCents(awardedCents(inventory))}</span>
           </div>
-          <div className={styles.figure}>
-            <span className="sc-label sc-ink--blue">Still In Play</span>
-            <span className={`${styles.figureValue} sc-ink--silver`}>
-              {formatCents(remainingCents(inventory))}
-            </span>
+          <div className={styles.poolCell}>
+            <span className={styles.poolCellLabel}>Still In Play</span>
+            <span className={styles.poolCellValue}>{formatCents(remainingCents(inventory))}</span>
           </div>
-          <div className={styles.figure}>
-            <span className="sc-label sc-ink--blue">Chests Left</span>
-            <span className={`${styles.figureValue} sc-ink--silver`}>
+          <div className={styles.poolCell}>
+            <span className={styles.poolCellLabel}>Chests Left</span>
+            <span className={styles.poolCellValue}>
               {counts.remaining.toLocaleString('en-US')} Of{' '}
               {counts.original.toLocaleString('en-US')}
             </span>
@@ -299,14 +268,12 @@ export default function MysteryBountyPanel({
       {/* ══ A. PRIZES (sections 31, 32, 33, 47) ══ */}
       <section className={styles.section}>
         <div className={styles.sectionHead}>
-          <h4 className={`${styles.sectionTitle} sc-ink--silver`}>Mystery Bounty Prizes</h4>
-          {pendingReveals > 0 && (
-            <span className={`${styles.sectionNote} sc-ink--blue`}>Updating</span>
-          )}
+          <h4 className={styles.sectionTitle}>Mystery Bounty Prizes</h4>
+          {pendingReveals > 0 && <span className={styles.sectionNote}>Updating</span>}
         </div>
         <div className={styles.rows}>
           {tiers.length === 0 ? (
-            <div className={`${styles.empty} sc-copy sc-copy--center`}>
+            <div className={styles.empty}>
               {isLoading
                 ? 'Loading The Mystery Bounty Ladder'
                 : stage === 'pending'
@@ -322,36 +289,29 @@ export default function MysteryBountyPanel({
                   key={`${t.tier}:${t.amountCents}`}
                   className={`${styles.tierRow} ${exhausted ? styles.tierRowExhausted : ''}`}
                 >
+                  <span
+                    className={styles.tierSwatch}
+                    style={{ background: mysteryBountyTierColor(t.tier) }}
+                    aria-hidden="true"
+                  />
                   <span className={styles.tierMain}>
                     <span
-                      className={`${styles.tierAmount} ${
-                        exhausted
-                          ? 'sc-ink--muted'
-                          : isHeadlineTier(t.tier)
-                            ? 'sc-ink--gold'
-                            : 'sc-ink--silver'
-                      }`}
+                      className={`${styles.tierAmount} ${exhausted ? styles.tierAmountExhausted : ''}`}
                     >
                       {formatCents(t.amountCents)} x{t.original.toLocaleString('en-US')}
                     </span>
-                    <span className={`${styles.tierName} sc-label sc-ink--blue`}>
-                      {mysteryBountyTierLabel(t.tier)}
-                    </span>
+                    <span className={styles.tierName}>{mysteryBountyTierLabel(t.tier)}</span>
                     {winners.length > 0 && (
-                      <span className={`${styles.tierWonBy} sc-ink--muted`}>
-                        Won By {winners.join(', ')}
-                      </span>
+                      <span className={styles.tierWonBy}>Won By {winners.join(', ')}</span>
                     )}
                   </span>
                   <span className={styles.tierCounts}>
                     <span
-                      className={`${styles.tierRemaining} ${
-                        exhausted ? 'sc-ink--muted' : 'sc-ink--silver'
-                      }`}
+                      className={`${styles.tierRemaining} ${exhausted ? styles.tierRemainingZero : ''}`}
                     >
                       {t.remaining.toLocaleString('en-US')} Remaining
                     </span>
-                    <span className={`${styles.tierOriginal} sc-ink--muted`}>
+                    <span className={styles.tierOriginal}>
                       {t.awarded.toLocaleString('en-US')} Awarded Of{' '}
                       {t.original.toLocaleString('en-US')}
                     </span>
@@ -364,7 +324,7 @@ export default function MysteryBountyPanel({
         {(hiddenTierCount > 0 || showAllTiers) && tiers.length > 0 && (
           <button
             type="button"
-            className={`${styles.collapseBtn} sc-ink--blue`}
+            className={styles.collapseBtn}
             onClick={() => setShowAllTiers((v) => !v)}
           >
             {showAllTiers
@@ -377,46 +337,40 @@ export default function MysteryBountyPanel({
       {/* ══ B. AWARDED (sections 34, 35) ══ */}
       <section className={styles.section}>
         <div className={styles.sectionHead}>
-          <h4 className={`${styles.sectionTitle} sc-ink--silver`}>Mystery Bounties Awarded</h4>
-          <span className={`${styles.sectionNote} sc-ink--blue`}>
+          <h4 className={styles.sectionTitle}>Mystery Bounties Awarded</h4>
+          <span className={styles.sectionNote}>
             {awards.length.toLocaleString('en-US')} Revealed
           </span>
         </div>
         <div className={styles.rows}>
           {awards.length === 0 ? (
-            <div className={`${styles.empty} sc-copy sc-copy--center`}>
+            <div className={styles.empty}>
               {stage === 'pending'
                 ? 'No Mystery Bounties Have Been Opened Yet'
                 : 'The First Chest Has Not Been Opened Yet'}
             </div>
           ) : (
             visibleAwards.map((a) => (
-              <div key={a.awardId} className={styles.awardRow}>
-                <span className={styles.awardMain}>
-                  <span className={`${styles.awardWinners} sc-ink--silver`}>{winnerNames(a)}</span>
+              <div
+                key={a.awardId}
+                className={`${styles.awardRow} ${isHeadlineTier(a.tier) ? styles.awardHeadline : ''}`}
+              >
+                <span>
+                  <span className={styles.awardWinners}>{winnerNames(a)}</span>
                   <span
-                    className={`${styles.awardTier} sc-label ${
-                      isHeadlineTier(a.tier) ? 'sc-ink--gold' : 'sc-ink--blue'
-                    }`}
+                    className={styles.awardTier}
+                    style={{ color: mysteryBountyTierColor(a.tier) }}
                   >
                     {mysteryBountyTierLabel(a.tier)}
                   </span>
-                  <span className={`${styles.awardMeta} sc-ink--muted`}>
+                  <span className={styles.awardMeta}>
                     Knocked Out {a.eliminated.username}
                     {a.handId ? ` / Hand ${a.handId}` : ''}
                   </span>
                 </span>
-                <span className={styles.awardSide}>
-                  <span
-                    className={`${styles.awardAmount} ${
-                      isHeadlineTier(a.tier) ? 'sc-ink--gold' : 'sc-ink--silver'
-                    }`}
-                  >
-                    {formatCents(a.amountCents)}
-                  </span>
-                  <span className={`${styles.awardWhen} sc-ink--muted`}>
-                    {shortWhen(a.revealedAt)}
-                  </span>
+                <span>
+                  <span className={styles.awardAmount}>{formatCents(a.amountCents)}</span>
+                  <span className={styles.awardWhen}>{shortWhen(a.revealedAt)}</span>
                 </span>
               </div>
             ))
@@ -425,7 +379,7 @@ export default function MysteryBountyPanel({
         {awards.length > COLLAPSED_AWARD_LIMIT && (
           <button
             type="button"
-            className={`${styles.collapseBtn} sc-ink--blue`}
+            className={styles.collapseBtn}
             onClick={() => setShowAllAwards((v) => !v)}
           >
             {showAllAwards
@@ -435,19 +389,15 @@ export default function MysteryBountyPanel({
         )}
       </section>
 
-      {/* ══ C. LEADERBOARD (section 36) ══
-          Every button inside this section is a leaderboard ROW - the test reads
-          them by role and indexes them. Do not add a control here. */}
+      {/* ══ C. LEADERBOARD (section 36) ══ */}
       <section className={styles.section}>
         <div className={styles.sectionHead}>
-          <h4 className={`${styles.sectionTitle} sc-ink--silver`}>Mystery Bounty Leaderboard</h4>
-          <span className={`${styles.sectionNote} sc-ink--blue`}>By Bounty Earnings</span>
+          <h4 className={styles.sectionTitle}>Mystery Bounty Leaderboard</h4>
+          <span className={styles.sectionNote}>By Bounty Earnings</span>
         </div>
         <div className={styles.rows}>
           {leaderboard.length === 0 ? (
-            <div className={`${styles.empty} sc-copy sc-copy--center`}>
-              Nobody Has Won A Mystery Bounty Yet
-            </div>
+            <div className={styles.empty}>Nobody Has Won A Mystery Bounty Yet</div>
           ) : (
             leaderboard.map((row, i) => (
               <button
@@ -458,17 +408,15 @@ export default function MysteryBountyPanel({
                   setSelectedUserId((prev) => (prev === row.userId ? null : row.userId))
                 }
               >
-                <span className={`${styles.lbRank} sc-ink--blue`}>{i + 1}</span>
-                <span className={`${styles.lbName} sc-ink--silver`}>
+                <span className={styles.lbRank}>{i + 1}</span>
+                <span className={styles.lbName}>
                   {row.username}
-                  <span className={`${styles.lbCount} sc-ink--muted`}>
+                  <span className={styles.lbCount}>
                     {row.bountiesWon.toLocaleString('en-US')} Bount
                     {row.bountiesWon === 1 ? 'y' : 'ies'} Won
                   </span>
                 </span>
-                <span className={`${styles.lbEarnings} sc-ink--silver`}>
-                  {formatCents(row.earningsCents)}
-                </span>
+                <span className={styles.lbEarnings}>{formatCents(row.earningsCents)}</span>
               </button>
             ))
           )}
@@ -479,63 +427,61 @@ export default function MysteryBountyPanel({
       {selectedUserId && (
         <div className={styles.playerCard}>
           <div className={styles.playerHead}>
-            <span className={`${styles.playerName} sc-ink--white`}>
+            <span className={styles.playerName}>
               {selectedBoardRow?.username ?? selectedTotals?.username ?? 'Player'}
             </span>
             <button
               type="button"
-              className={`${styles.playerClose} sc-ink--blue`}
+              className={styles.playerClose}
               onClick={() => setSelectedUserId(null)}
               aria-label="Close Player Payout"
             >
-              Close
+              X
             </button>
           </div>
-          <div className={styles.rows}>
-            <div className={styles.figure}>
-              <span className="sc-label sc-ink--blue">Bounties Won</span>
-              <span className={`${styles.figureValue} sc-ink--silver`}>
+          <div className={styles.playerGrid}>
+            <div className={styles.playerStat}>
+              <span className={styles.playerStatLabel}>Bounties Won</span>
+              <span className={styles.playerStatValue}>
                 {selectedBounties.toLocaleString('en-US')}
               </span>
             </div>
-            <div className={styles.figure}>
-              <span className="sc-label sc-ink--blue">Bounty Earnings</span>
-              <span className={`${styles.figureValue} sc-ink--silver`}>
-                {formatCents(selectedEarnings)}
-              </span>
+            <div className={styles.playerStat}>
+              <span className={styles.playerStatLabel}>Bounty Earnings</span>
+              <span className={styles.playerStatValue}>{formatCents(selectedEarnings)}</span>
             </div>
-            <div className={styles.figure}>
-              <span className="sc-label sc-ink--blue">Largest Bounty</span>
-              <span className={`${styles.figureValue} sc-ink--silver`}>
+            <div className={styles.playerStat}>
+              <span className={styles.playerStatLabel}>Largest Bounty</span>
+              <span className={styles.playerStatValue}>
                 {formatCents(selectedTotals?.largestCents ?? 0)}
               </span>
             </div>
             {isCompleted && (
               <>
-                <div className={styles.figure}>
-                  <span className="sc-label sc-ink--blue">Final Position</span>
-                  <span className={`${styles.figureValue} sc-ink--silver`}>
+                <div className={styles.playerStat}>
+                  <span className={styles.playerStatLabel}>Final Position</span>
+                  <span className={styles.playerStatValue}>
                     {playerPayout?.position ? `#${playerPayout.position}` : 'Not Finished'}
                   </span>
                 </div>
-                <div className={styles.figure}>
-                  <span className="sc-label sc-ink--blue">Tournament Prize</span>
-                  <span className={`${styles.figureValue} sc-ink--silver`}>
+                <div className={styles.playerStat}>
+                  <span className={styles.playerStatLabel}>Tournament Prize</span>
+                  <span className={styles.playerStatValue}>
                     {(playerPayout?.prize ?? 0).toLocaleString('en-US')}
                   </span>
                 </div>
               </>
             )}
-            <div className={styles.figure}>
-              <span className="sc-label sc-ink--blue">Total Payout</span>
-              <span className={`${styles.figureValue} sc-ink--gold`}>
+            <div className={`${styles.playerStat} ${styles.playerTotal}`}>
+              <span className={styles.playerStatLabel}>Total Payout</span>
+              <span className={`${styles.playerStatValue} ${styles.playerTotalValue}`}>
                 {formatCents(Math.round((playerPayout?.prize ?? 0) * 100) + selectedEarnings)}
               </span>
             </div>
           </div>
         </div>
       )}
-    </SpadeConsole>
+    </div>
   );
 }
 

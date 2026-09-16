@@ -1,15 +1,17 @@
 /**
  * AGENT BACK OFFICE
  *
- * Current downline and recorded accounting activity for the selected club.
- * Posted cash wallet movement is not a certified settlement amount. Missing
- * historical commission attribution remains unavailable until reconciled.
- * The server authorizes each requested club; account and club changes discard
- * outstanding responses before they can display another scope's statement.
+ * The two things an agent actually needs and could not see before:
+ *   1. Their roster — every player under them, with the win/loss and rake
+ *      that decides what they owe or are owed.
+ *   2. Their weekly statement — the single net settlement number.
+ *
+ * Both are served by SECURITY DEFINER functions that scope to the caller,
+ * so passing no agent id gives the signed-in agent their own book. A union
+ * overseer may pass an id to inspect someone else's.
  */
 
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { useAuthUser } from '../../hooks/useAuthUser';
+import { useCallback, useEffect, useState } from 'react';
 import {
   UnionOpsService,
   describeRpcError,
@@ -19,27 +21,16 @@ import {
 import { reportError } from '../../utils/errorReporter';
 
 const money = (n: unknown) =>
-  n === null || n === undefined || !Number.isFinite(Number(n))
-    ? 'Not Available'
-    : new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
-        Number(n)
-      );
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 interface Props {
   /** Omit to view the signed-in agent's own book. */
   agentUserId?: string;
-  clubId?: string;
   /** Optional heading; hidden when embedded under an existing one. */
   title?: string;
 }
 
-export default function AgentBackOffice({ agentUserId, clubId, title }: Props) {
-  const { user } = useAuthUser();
-  const selection = `${user?.id ?? ''}:${agentUserId ?? ''}:${clubId ?? ''}`;
-  const selectionRef = useRef(selection);
-  selectionRef.current = selection;
-  const request = useRef(0);
-  const [loadedSelection, setLoadedSelection] = useState<string | null>(null);
+export default function AgentBackOffice({ agentUserId, title }: Props) {
   const [loading, setLoading] = useState(true);
   const [roster, setRoster] = useState<AgentRosterRow[]>([]);
   const [statement, setStatement] = useState<AgentStatement | null>(null);
@@ -47,45 +38,28 @@ export default function AgentBackOffice({ agentUserId, clubId, title }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const operation = ++request.current;
-    const current = () => operation === request.current && selectionRef.current === selection;
     setLoading(true);
     setLoadError(null);
-    if (!user?.id) {
-      setLoadedSelection(selection);
-      setLoadError('Sign In To View Your Statement');
-      setLoading(false);
-      return;
-    }
     try {
       const [r, s] = await Promise.all([
-        UnionOpsService.getAgentRoster(agentUserId, undefined, undefined, clubId),
-        UnionOpsService.getAgentStatement(agentUserId, undefined, undefined, clubId),
+        UnionOpsService.getAgentRoster(agentUserId),
+        UnionOpsService.getAgentStatement(agentUserId),
       ]);
-      if (!current()) return;
-      if (!s) throw new Error('Agent statement unavailable');
       setRoster(r);
       setStatement(s);
-      setLoadedSelection(selection);
     } catch (e) {
-      if (!current()) return;
-      setLoadedSelection(selection);
       setLoadError(describeRpcError(e));
       reportError(e, 'AgentBackOffice.load');
     } finally {
-      if (current()) setLoading(false);
+      setLoading(false);
     }
-  }, [agentUserId, clubId, selection, user?.id]);
+  }, [agentUserId]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     void load();
-    return () => {
-      request.current++;
-    };
   }, [load]);
 
-  if (loading || loadedSelection !== selection)
-    return <div style={{ padding: 16, color: '#8aa' }}>Loading Roster…</div>;
+  if (loading) return <div style={{ padding: 16, color: '#8aa' }}>Loading Roster…</div>;
 
   if (loadError) {
     return (
@@ -135,7 +109,7 @@ export default function AgentBackOffice({ agentUserId, clubId, title }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {title && <h3 style={{ color: '#e6f1f5', margin: 0 }}>{title}</h3>}
 
-      {/* Recorded activity is separate from an invoice with a verified amount due. */}
+      {/* WEEKLY STATEMENT — the number that settles */}
       {statement && (
         <div
           style={{
@@ -155,14 +129,21 @@ export default function AgentBackOffice({ agentUserId, clubId, title }: Props) {
           >
             Week Of {new Date(statement.period_start).toLocaleDateString()}
           </div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 700, marginTop: 4, color: '#e6f1f5' }}>
-            {statement.settlement_verified === true && statement.net_settlement_position !== null
-              ? money(statement.net_settlement_position)
-              : 'Settlement Requires Reconciliation'}
+          <div
+            style={{
+              fontSize: '1.9rem',
+              fontWeight: 800,
+              marginTop: 4,
+              color: Number(statement.net_settlement_position) >= 0 ? '#37e7c7' : '#ff7676',
+            }}
+          >
+            {Number(statement.net_settlement_position) >= 0 ? '+' : ''}
+            {money(statement.net_settlement_position)}
           </div>
-          <div style={{ color: '#8fa3ad', fontSize: '0.78rem', marginTop: 6 }}>
-            Use Issued Invoices For Amounts Due. Activity Below Shows The Current Downline And
-            Posted Records.
+          <div style={{ color: '#66787f', fontSize: '0.78rem' }}>
+            {Number(statement.net_settlement_position) >= 0
+              ? 'Due To You From The Club'
+              : 'Due From You To The Club'}
           </div>
 
           <div
@@ -173,11 +154,11 @@ export default function AgentBackOffice({ agentUserId, clubId, title }: Props) {
               marginTop: 14,
             }}
           >
-            <Line label="Cash Rake Recorded" value={money(statement.rake_generated)} />
-            <Line label="Commission Recorded" value={money(statement.commission_earned)} />
+            <Line label="Rake Generated" value={money(statement.rake_generated)} />
+            <Line label="Commission Earned" value={money(statement.commission_earned)} />
             <Line label="Paid To Players" value={money(statement.rakeback_passed_to_players)} />
-            <Line label="Recorded Less Paid" value={money(statement.commission_net_of_rakeback)} />
-            <Line label="Net Cash Wallet Movement" value={money(statement.player_net_result)} />
+            <Line label="Commission Kept" value={money(statement.commission_net_of_rakeback)} />
+            <Line label="Player Net Result" value={money(statement.player_net_result)} />
             <Line label="Credit Outstanding" value={money(statement.credit_outstanding)} />
           </div>
         </div>
@@ -219,10 +200,10 @@ export default function AgentBackOffice({ agentUserId, clubId, title }: Props) {
                 <th style={{ padding: 8 }}>Player</th>
                 <th style={{ padding: 8 }}>Club</th>
                 <Th field="buyins" sort={sort} onSort={setSort}>
-                  Cash Buy-Ins
+                  Buy-Ins
                 </Th>
                 <Th field="cashouts" sort={sort} onSort={setSort}>
-                  Cash Table Returns
+                  Cash-Outs
                 </Th>
                 <Th field="net_result" sort={sort} onSort={setSort}>
                   Net
@@ -231,7 +212,7 @@ export default function AgentBackOffice({ agentUserId, clubId, title }: Props) {
                   Rake
                 </Th>
                 <Th field="agent_commission" sort={sort} onSort={setSort}>
-                  Player Commission
+                  Commission
                 </Th>
                 <Th field="chip_balance" sort={sort} onSort={setSort}>
                   Chips

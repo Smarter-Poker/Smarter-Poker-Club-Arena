@@ -49,7 +49,7 @@ describe('cleanupStaleData normal-mode reset', () => {
 
   it('still normalises waiting and running tables', () => {
     const branch = normalModeBranch();
-    expect(branch).not.toMatch(/current_players\s*:/);
+    expect(branch).toContain('current_players: 0');
     expect(branch).toContain("status: 'waiting'");
     expect(branch).toContain("is('tournament_id', null)"); // cash only, never tournaments
   });

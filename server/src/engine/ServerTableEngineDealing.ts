@@ -88,9 +88,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   protected async dealingLoop(): Promise<void> {
-    // A roster read can retire mirrors before its arrival proof is available.
-    // Keep the prior occupancies until that observation can be announced.
-    let deferredRosterBeforeArrival: Map<string, SeatedPlayer['occupancy_id']> | null = null;
     while (this.running) {
       try {
         // FIX 211: Await any pending postHandTasks before reloading players
@@ -227,15 +224,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // 22-30 times in six hours. Each step now stamps its own phase and
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
-        const previousOccupancies: Map<string, SeatedPlayer['occupancy_id']> =
-          deferredRosterBeforeArrival ??
-          new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
-        const nextRoster = await this.prepareNextHand();
-        if (!this.lifecycleCanMutate()) return;
-        // A leave and rejoin can both commit between reads. User identity is
-        // unchanged, but entry debt, button eligibility and presence belonged
-        // to the old stay. Retire those mirrors before adopting the new seat.
-        this.adoptSeatRoster(nextRoster);
+        const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
+        this.seatedPlayers = await this.prepareNextHand();
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player
@@ -246,23 +236,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // adopted BEFORE the sit-out restore, because that restore registers
         // the player and restoreFsmStates never clobbers a live entry. See
         // ServerTableEngineBase.adoptMovedPresence.
-        if (!(await this.adoptMovedPresence())) {
-          if (!this.lifecycleCanMutate()) return;
-          deferredRosterBeforeArrival = previousOccupancies;
-          await this.sleep(5000);
-          continue;
-        }
-        if (!this.lifecycleCanMutate()) return;
-        deferredRosterBeforeArrival = null;
+        this.adoptMovedPresence();
         this.restoreSitOutsFromSeats();
-
-        const previousSeatedIds = new Set(previousOccupancies.keys());
-        if (!this.isTournamentTable()) {
-          for (const p of this.seatedPlayers) {
-            if (previousOccupancies.get(p.user_id) !== p.occupancy_id)
-              previousSeatedIds.delete(p.user_id);
-          }
-        }
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.
@@ -293,15 +268,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         // Bible V8 §4.2: Detect new joiners. Any userId that appears in
         // seatedPlayers but wasn't known before is a new player. After the
-        // first dealingLoop iteration a cash entrant waits for the big blind
-        // or posts to enter. Automatic moves carry their own paid-entry
-        // marker. On boot, restore outstanding entry holds before seeding
-        // button eligibility for players who were already playing.
+        // first dealingLoop iteration every such player is registered — which
+        // since 2026-08-25 no longer means "wait for the big blind". Cash entry
+        // is free and the release a few lines below happens on this same tick.
+        // The set now exists only so the two positional hold-outs (never dealt
+        // into the small blind, never handed the button on your first hand) get
+        // a chance to look at the seat before the deal. On the very first
+        // iteration — cold start OR crash recovery — all seated players are
+        // treated as the initial roster and none of that applies.
         // A SEAT CHANGED (2026-09-05): an arrival or a departure seen in the
         // rows this iteration wakes the game's ClusterController tick.
-        let rosterChanged = [...previousOccupancies.keys()].some(
-          (id) => !this.seatedPlayers.some((p) => p.user_id === id)
-        );
+        let rosterChanged = false;
         if (this.dealingLoopFirstIteration) {
           // Dan 2026-08-30: BEFORE the veteran seeding below, because that
           // seeding is what used to destroy the hold. Both halves of the fix
@@ -891,16 +868,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // so the notice only ever speaks of a hand that is about to be dealt
         // (2026-09-05: it used to run at load_seats, on idle iterations too).
         // Bounded like every other step.
-        const movesKnown = await this.withStepBudget(
+        await this.withStepBudget(
           'announce_seat_moves',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           this.announcePendingSeatMoves()
         );
-        if (!movesKnown) {
-          if (!this.lifecycleCanMutate()) return;
-          await this.sleep(3000);
-          continue;
-        }
         if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
           await this.awaitPauseGate();
           if (!this.running) break;
@@ -1676,76 +1648,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               current.seat_number === p.seat_number &&
               current.occupancy_id === p.occupancy_id
           ) &&
-          (this.isTournamentTable() ||
-            (!this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
-              !this.waitingForBB.has(p.user_id) &&
-              !this.isHeldForSwap(p.user_id)))
+          (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
       );
-      if (players.length < this.minPlayersToDeal()) return;
+      if (players.length < 2) return;
       if (!this.tableInfo) return;
-
-      // ── DECK CAPACITY GUARD (2026-08-15) ─────────────────────────────────
-      // Deck.deal throws 'Not enough cards in deck' when hole cards exhaust the
-      // deck. HAND_START is emitted BEFORE dealHoleCards, and HAND_START marks
-      // watchdog progress — so a table that cannot physically be dealt looped
-      // "deal -> throw -> sleep 2s -> deal" forever with a perfectly green
-      // watchdog. Refuse the deal instead, loudly and slowly.
-      // 2026-08-23: this was a local map, unexported and invisible to the only
-      // other copy of the same fact in HandController.getCardsPerPlayer(). Both
-      // fell back to 2, so `flo8` would have passed a capacity check computed for
-      // a two-card game and then been dealt four. One table now: VariantRules.
-      //
-      // MOVED ABOVE THE HAND-NUMBER ALLOCATION (2026-09-09). It used to sit
-      // below it and undo the allocation with `this.handCount--; // this hand
-      // never happened`. That line was written when handCount was a per-table
-      // counter; it is not one any more. Since 2026-08-18 the number comes from
-      // `fn_next_hand_number`, a sequence SHARED BY EVERY TABLE, and a sequence
-      // value cannot be un-allocated - the decrement simply pointed this table at
-      // a number another table had already written hand_history against. It was
-      // then read during the 30-second sleep below by the horse recovery pass.
-      // A hand that never happened must not take a number at all, so the refusal
-      // comes first and no number is taken. `handsDealtThisSession` follows the
-      // same rule for the same reason.
-      const variantKey = (this.tableInfo?.game_variant || 'nlh').toLowerCase();
-      const cardsPerPlayer = holeCardCount(variantKey);
-      const deckSize = deckSizeFor(variantKey);
-      const maxSeatable = maxSeatsFor(variantKey);
-
-      if (players.length > maxSeatable) {
-        reportError(
-          new Error(
-            `Deck cannot serve ${players.length} seats of ${variantKey} ` +
-              `(${cardsPerPlayer}/player, ${deckSize}-card deck, max ${maxSeatable})`
-          ),
-          'ServerTableEngine.' + this.tableId + '.deck_capacity_exceeded'
-        );
-
-        /**
-         * MARK PROGRESS, BECAUSE THE LOOP IS ALIVE (2026-08-25).
-         *
-         * This refusal is correct - the deck genuinely cannot serve the table -
-         * but returning without marking progress made the engine lie about
-         * itself. `lastProgressAtMs` froze while the loop kept ticking, so the
-         * watchdog read a table that is refusing on purpose as a WEDGED one and
-         * called killForRestart. That restarts the WHOLE ENGINE - every table on
-         * the instance, ~2 minutes of 4404 rehydration, every seated human
-         * dropped - to cure one table that will refuse identically the moment
-         * the engine comes back. It is the mass-disconnect workstream's own
-         * failure mode, triggered by a guard.
-         *
-         * The loop is not stuck. It is running, and the answer it keeps
-         * producing is "no". Say so honestly and let the alarm above be the
-         * signal, rather than a restart nobody asked for.
-         *
-         * The real cure is upstream: tournament tables are now built through
-         * clampSeatsForVariant, so this branch should be unreachable for
-         * anything created after 2026-08-25. It stays as a backstop, and a
-         * backstop must not be able to take the fleet down.
-         */
-        this.markProgress();
-        await this.sleep(30000); // do NOT hot-loop
-        return;
-      }
 
       // GLOBAL HAND NUMBER (2026-08-18). Allocated from the database sequence at
       // the moment the hand is dealt, so numbers ascend in true deal order across
@@ -1815,6 +1721,58 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       );
 
       // Convert to SeatPlayer format
+      // ── DECK CAPACITY GUARD (2026-08-15) ─────────────────────────────────
+      // Deck.deal throws 'Not enough cards in deck' when hole cards exhaust the
+      // deck. HAND_START is emitted BEFORE dealHoleCards, and HAND_START marks
+      // watchdog progress — so a table that cannot physically be dealt looped
+      // "deal -> throw -> sleep 2s -> deal" forever with a perfectly green
+      // watchdog. Refuse the deal instead, loudly and slowly.
+      // 2026-08-23: this was a local map, unexported and invisible to the only
+      // other copy of the same fact in HandController.getCardsPerPlayer(). Both
+      // fell back to 2, so `flo8` would have passed a capacity check computed for
+      // a two-card game and then been dealt four. One table now: VariantRules.
+      const variantKey = (this.tableInfo?.game_variant || 'nlh').toLowerCase();
+      const cardsPerPlayer = holeCardCount(variantKey);
+      const deckSize = deckSizeFor(variantKey);
+      const maxSeatable = maxSeatsFor(variantKey);
+
+      if (players.length > maxSeatable) {
+        reportError(
+          new Error(
+            `Deck cannot serve ${players.length} seats of ${variantKey} ` +
+              `(${cardsPerPlayer}/player, ${deckSize}-card deck, max ${maxSeatable})`
+          ),
+          'ServerTableEngine.' + this.tableId + '.deck_capacity_exceeded'
+        );
+        this.handCount--; // this hand never happened
+
+        /**
+         * MARK PROGRESS, BECAUSE THE LOOP IS ALIVE (2026-08-25).
+         *
+         * This refusal is correct - the deck genuinely cannot serve the table -
+         * but returning without marking progress made the engine lie about
+         * itself. `lastProgressAtMs` froze while the loop kept ticking, so the
+         * watchdog read a table that is refusing on purpose as a WEDGED one and
+         * called killForRestart. That restarts the WHOLE ENGINE - every table on
+         * the instance, ~2 minutes of 4404 rehydration, every seated human
+         * dropped - to cure one table that will refuse identically the moment
+         * the engine comes back. It is the mass-disconnect workstream's own
+         * failure mode, triggered by a guard.
+         *
+         * The loop is not stuck. It is running, and the answer it keeps
+         * producing is "no". Say so honestly and let the alarm above be the
+         * signal, rather than a restart nobody asked for.
+         *
+         * The real cure is upstream: tournament tables are now built through
+         * clampSeatsForVariant, so this branch should be unreachable for
+         * anything created after 2026-08-25. It stays as a backstop, and a
+         * backstop must not be able to take the fleet down.
+         */
+        this.markProgress();
+        await this.sleep(30000); // do NOT hot-loop
+        return;
+      }
+
       const hcPlayers: SeatPlayer[] = players.map((p) => ({
         seat: p.seat_number,
         user_id: p.user_id,
@@ -2780,8 +2738,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
         // Only initialize time bank if player is NEW (don't reset existing pool per session)
         if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
-          const allowance = tbExtras.get(p.user_id);
-          const tbTotal = this.timeBankBaseSeconds + (allowance?.extraSeconds ?? 0);
+          const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
           // ── REVERTED 2026-08-25, same day it shipped. Read this before trying
           //    the restart-fidelity time-bank restore again. ──
           //
@@ -2811,13 +2768,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
             remainingSeconds: tbTotal,
             usesRemaining: Math.ceil(tbTotal / 20),
-            unlimitedActivations: allowance?.unlimitedActivations === true,
           });
           this.timeBankMeta.set(p.user_id, {
             initialSeconds: tbTotal,
             baseSeconds: this.timeBankBaseSeconds,
             dbConsumedSeconds: 0,
-            ...(allowance?.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
           });
         }
         this.disconnectEngine.registerPlayer(
@@ -3345,18 +3300,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const seated = this.seatedPlayers.filter((p) => p.user_id && !p.is_horse);
     const broke = seated.filter((p) => Number(p.stack ?? 0) <= 0);
 
-    /* Anyone who is funded again stops being watched.
-       2026-09-09: this used to prune against the NON-HORSE broke list, which is
-       correct for what this sweep releases and wrong for what the map means.
-       `bustedSince` is "when was this seat first seen at zero", and since the
-       horse recovery pass now measures the same grace from the same map (10.5 -
-       both seats must clear on identical clocks), pruning on the non-horse list
-       deleted every horse's entry on every tick and the grace could never
-       elapse. The map is pruned against every seat that is no longer at zero,
-       horse or human; the ACTION below is still non-horses only. */
-    const brokeIds = new Set(
-      this.seatedPlayers.filter((p) => p.user_id && Number(p.stack ?? 0) <= 0).map((p) => p.user_id)
-    );
+    // Anyone who is funded again stops being watched.
+    const brokeIds = new Set(broke.map((p) => p.user_id));
     for (const [id] of this.bustedSince) {
       if (!brokeIds.has(id)) this.bustedSince.delete(id);
     }
@@ -3439,30 +3384,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const now = Date.now();
     for (const horse of bustHorses) {
       if (isMaintenanceFrozen()) return;
-
-      /* THE SEAT CLEARS ON THE SAME CLOCK A HUMAN'S DOES (10.5, 2026-09-09).
-
-         A busted human's seat cannot be released until it has been seen at zero
-         for BUSTED_GRACE_MS, and longer while a rebuy prompt is open. A busted
-         horse's was released on the FIRST idle tick: `bustRecoveryLastAttempt
-         .get(...) || 0` makes `now - 0 >= 30000` true immediately. The two
-         sweeps run on the same tick at the same table, so the difference was
-         visible on the felt - one seat vanishes the instant it busts, the next
-         sits there for ten seconds - and that is the rhythm tell Dan named:
-         "IF YOU DIDN'T GIVE THEM THE SAME EXACT FEATURES AND FUNCTIONALITY,
-         PEOPLE WOULD NOTICE". The comment at the stop-loss release below
-         already CLAIMED this parity. It is true now.
-
-         The clock starts here, from the SAME map the human sweep uses, so the
-         two cannot drift apart. It does NOT gate the rebuy: a human can rebuy
-         the instant the prompt appears, and `autoRebuyHorse` is the horse's
-         equivalent input device (10.5's second sanctioned branch), so making it
-         wait would be a different treatment, not the same one. Only the two
-         RELEASE decisions below are held. */
-      const firstSeenBusted = this.bustedSince.get(horse.user_id) ?? now;
-      this.bustedSince.set(horse.user_id, firstSeenBusted);
-      const releaseAllowed = now - firstSeenBusted >= ServerTableEngineDealing.BUSTED_GRACE_MS;
-
       const lastAttempt = this.bustRecoveryLastAttempt.get(horse.user_id) || 0;
       if (now - lastAttempt < 30000) continue;
       this.bustRecoveryLastAttempt.set(horse.user_id, now);
@@ -3478,17 +3399,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            leaves through - money path, then `seat_left`, then the trackers -
            so a busted horse's seat clears on every client at the same moment
            a human's does. Timing is part of the treatment (Dan 2026-08-27). */
-        if (!releaseAllowed) {
-          // Inside the grace, not a failed attempt: give the throttle back so
-          // the release lands ON the grace boundary rather than 30s later.
-          this.bustRecoveryLastAttempt.delete(horse.user_id);
-          continue;
-        }
         const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
         if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
-        this.bustedSince.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} at stop-loss - removed.`
         );
@@ -3524,27 +3438,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         horse.stack = funding.stack;
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
-        // Funded again: the seat is no longer at zero, so it stops being watched
-        // - the same line the human sweep runs when a rebuy lands.
-        this.bustedSince.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: rebought ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
         );
       } else {
-        /* Same grace as the human, for the same reason. The rebuy above was
-           already attempted and declined, so the throttle is given back too:
-           the seat is released on the grace boundary, and if the club treasury
-           is topped up inside that window the horse gets the second chance a
-           human at the cashier would get. Bounded by BUSTED_GRACE_MS. */
-        if (!releaseAllowed) {
-          this.bustRecoveryLastAttempt.delete(horse.user_id);
-          continue;
-        }
         const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
         if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
-        this.bustedSince.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} left - insufficient treasury funds`
         );

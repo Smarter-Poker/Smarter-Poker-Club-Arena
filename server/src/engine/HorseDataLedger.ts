@@ -206,7 +206,7 @@ const sqlTag = (key: string, consumer: string, note: string, since: string): Led
 });
 
 export const TAG_CONSUMERS: LedgerEntry[] = [
-  // Omaha stack-off diagnostics; proposals do not authorize policy adjustments.
+  // Omaha stack-offs -> V40 pressure cap (PLO_STACKOFF_TAGS) + tuner dials
   tag(
     'nonnut_flush_stackoff',
     'HorseLogic.ploStackoffLoad / nlhStackoffLoad; HorseSelfTuner (stackoff gate)',
@@ -243,7 +243,7 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'top pair no redraw, 100bb+',
     'V38'
   ),
-  // Hold em stack-off diagnostics (NLH_STACKOFF_TAGS).
+  // hold em stack-offs -> V41 heat into the V20 cap (NLH_STACKOFF_TAGS)
   tag(
     'top_pair_weak_kicker_stackoff',
     'HorseLogic.nlhStackoffLoad / tourneyStackoffLoad',
@@ -269,7 +269,7 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'V21'
   ),
   tag('underfull_stackoff', 'HorseLogic.nlhStackoffLoad', 'bottom boat', 'V21'),
-  // River escalation diagnostics (RIVER_WAR_TAGS).
+  // river wars -> V41 respect + war gate (RIVER_WAR_TAGS)
   tag(
     'river_raise_war',
     'HorseLogic.riverWarLoad',
@@ -282,9 +282,9 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'bet the river, called a raise, lost',
     'V23'
   ),
-  // Limped-pot diagnostics (LIMP_BLOAT_TAGS).
+  // limped pots -> V41 limped-pot cap (LIMP_BLOAT_TAGS)
   tag('limped_pot_bloat', 'HorseLogic.limpBloatLoad', 'entered for one blind, lost 40bb+', 'V23'),
-  // Preflop audit proposals, including the historical tournament premium.
+  // preflop -> tuner tightness + V41 tournament premium
   tag(
     'preflop_stackoff',
     'HorseSelfTuner (preflop gate); HorseLogic.tourneyStackoffLoad',
@@ -580,7 +580,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'v41Leaks',
-    'diagnostic telemetry for ignored historical review fields; never authorizes policy or sampling changes',
+    'the rest of the tag table reaches a decision: hold em stack-off load, river-war load, limp-bloat load, by variant family',
     'V41'
   ),
 
@@ -598,6 +598,17 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       ['thinkRange', 'think-time band for V9 timing'],
       ['callRespect', 'variant call respect offset (HorseVariantProfile)'],
       ['familyBias', 'V18 sizing family hashed from the horse id'],
+      [
+        'ploStackoffLoad',
+        'V40: this horse own Omaha stack-off tag rate (profile leaks / leaksHands)',
+      ],
+      ['nlhStackoffLoad', 'V41: this horse own hold em stack-off tag rate (leaksHoldem)'],
+      ['riverWarLoad', 'V41: river raise-war / paid-off tag rate for this hand family'],
+      ['limpBloatLoad', 'V41: limped-pot bloat tag rate for this hand family'],
+      [
+        'tourneyLeakPremium',
+        'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)',
+      ],
     ] as const
   ).map(
     ([key, note]): LedgerEntry => ({
@@ -607,7 +618,17 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       cadence: 'per_action',
       consumer: 'HorseLogic.decide / HorsePreflop.decidePreflopV7',
       note,
-      since: key === 'familyBias' ? 'V18' : 'V2',
+      since:
+        key === 'ploStackoffLoad'
+          ? 'V40'
+          : key === 'nlhStackoffLoad' ||
+              key === 'riverWarLoad' ||
+              key === 'limpBloatLoad' ||
+              key === 'tourneyLeakPremium'
+            ? 'V41'
+            : key === 'familyBias'
+              ? 'V18'
+              : 'V2',
     })
   ),
 
@@ -655,7 +676,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
         key === 'persona'
           ? 'HorsePersona.resolvePersona (ServerTableEngineDealing straddle round); HorseLogic.followsSolver (the GTO consult)'
           : key.startsWith('leaks')
-            ? 'HorseLogic.leakLoad (diagnostic only); HorseLogic.decide (ignored-evidence receipt)'
+            ? 'HorseLogic.leakLoad'
             : 'HorseLogic.decide',
       note,
       since,
@@ -793,41 +814,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // TABLES. What the services compile and where it goes.
   // ─────────────────────────────────────────────────────────────────────────
   table(
-    'horse_observation_discovery_epochs',
-    'minute',
-    'HorseObservationDiscovery via fn_discover_horse_observation_requests; fn_prune_horse_observation_discovery',
-    'private bounded source-window discovery progress and retained gaps; roster discovery does not establish observation-time coverage, journal completion or model activation',
-    'Phase14'
-  ),
-  table(
-    'horse_observation_discovery_segments',
-    'minute',
-    'fn_discover_horse_observation_requests; fn_prune_horse_observation_discovery',
-    'private source snapshots, atomic-hand and actor digests, frozen novel actors and bounded admission cursor; pending membership survives source removal and restart',
-    'Phase14'
-  ),
-  table(
-    'horse_observation_discovery_members',
-    'minute',
-    'fn_discover_horse_observation_requests through canonical fn_admit_horse_observation_capture; fn_prune_horse_observation_discovery',
-    'private deduplicated actor-to-original-window request references; admission and membership commit together without financial or policy writes',
-    'Phase14'
-  ),
-  table(
-    'horse_observation_capture_work',
-    'minute',
-    'HorseObservationCapture via fn_claim_horse_observation_capture; HorseLearningQueueHealth via fn_horse_learning_work_health',
-    'private durable actor/window acquisition requests; bounded sequential cursor recovery in one queue slot and retained gaps; not source coverage or model activation',
-    'Phase14'
-  ),
-  table(
-    'horse_observation_capture_receipts',
-    'minute',
-    'HorseObservationCapture via fn_finish_horse_observation_capture_witness and legacy fn_finish_horse_observation_capture; HorseCaptureEvidence via fn_horse_observation_capture_evidence; fn_prune_horse_observation_captures',
-    'private immutable accepted-slice acknowledgments; exact source-read witnesses commit with journal admission and cursor advance; bounded revision-fenced evidence recovery compares independent journal receipts; legacy missing witnesses and unfinished gaps stay explicit without establishing source coverage',
-    'Phase14'
-  ),
-  table(
     'horse_mind_stats',
     'boot',
     'HorseMindPersistence (load at boot, save on a timer)',
@@ -862,7 +848,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_review_rollup',
     'nightly',
-    'HorseSelfTuner (unapplied review proposals); HorseTunerObservationalAudit (preserved profile)',
+    'HorseSelfTuner (leak counts -> dials and the V40 leak profile)',
     'per horse/day/variant tag counts',
     'V18',
     { dayColumn: 'day', freshnessDays: 2 }
@@ -894,44 +880,23 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_self_tune_log',
     'nightly',
-    'fn_complete_horse_tuner_study via HorseTunerStudyCompletion; HorseDailyAudit; the panel',
-    'what the tuner did to each horse and why; an individual row is only partial nightly progress',
+    'HorseDailyAudit (instrument liveness); the panel',
+    'what the tuner did to each horse and why',
     'V8',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
   table(
     'horse_brain_telemetry',
     'nightly',
-    'fn_audit_layer_silence_and_coverage, fn_audit_layer_drift, fn_audit_data_receipts (BrainTelemetryFlush writes through fn_horse_brain_flush_receipt)',
+    'fn_audit_layer_silence_and_coverage, fn_audit_layer_drift, fn_audit_data_receipts (BrainTelemetryFlush writes through fn_brain_telemetry_add)',
     'per-day fire counts per layer (BrainTelemetryFlush)',
     'V15',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(
-    'horse_brain_flush_receipts',
-    'nightly',
-    'fn_horse_brain_flush_receipt via BrainTelemetryFlush and HorseBrainTelemetryPublisher',
-    'private atomic batch deduplication with source identity; accepted batches only, not a complete decision ledger',
-    'Phase15'
-  ),
-  table(
-    'horse_journaled_model_sweep',
-    'nightly',
-    'fn_claim_horse_journaled_model and fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
-    'private leased cursor for bounded journal-only diagnostic reconstruction; not a source watermark',
-    'Phase14'
-  ),
-  table(
-    'horse_journaled_opponent_models',
-    'nightly',
-    'fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
-    'private latest scoped frequency and holdout reports; no causal EV, source completeness or activation authority',
-    'Phase14'
-  ),
-  table(
     'horse_decision_latency',
     'nightly',
-    'the panel; fn_horse_brain_flush_receipt (BrainTelemetryFlush atomically writes counters and latency with source receipts)',
+    'the panel; fn_horse_decision_latency_add (BrainTelemetryFlush writes through the RPC)',
     'per-day decision latency histograms',
     'V28',
     { dayColumn: 'day', freshnessDays: 1 }
@@ -1010,27 +975,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'findings + agent analysis per day',
     'V13',
     { dayColumn: 'day', freshnessDays: 2 }
-  ),
-  table(
-    'horse_tuner_write_receipts',
-    'nightly',
-    'fn_horse_tuner_recorded_horses via HorseTunerStudyCompletion',
-    'immutable per-horse daily writes let an interrupted study resume without retuning accepted horses',
-    'Phase14'
-  ),
-  table(
-    'horse_tuner_study_rosters',
-    'nightly',
-    'fn_prepare_horse_tuner_study via HorseTunerStudyCompletion',
-    'durable original eligible membership prevents a resumed study from silently dropping unfinished horses',
-    'Phase14'
-  ),
-  table(
-    'horse_tuner_study_completions',
-    'nightly',
-    'HorseLeague / HorseSelfTuner',
-    'one execution receipt after every member of the captured eligible cohort has an atomic audit receipt; not causal validation',
-    'Phase14'
   ),
   table(
     'horse_job_runs',
@@ -1579,12 +1523,23 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'decide_omaha',
     0.0001
   ),
-
   receipt(
-    'phase14_review_signal_ignored',
-    'HorseLogic.decide',
-    'historical review fields were present and excluded from decision adjustments; diagnostic only',
-    'Phase14'
+    'v40_leak_profile_read',
+    'HorseLogic (V40)',
+    'the horse own review tags changed a decision; needs tuner-written leaks',
+    'V40'
+  ),
+  receipt(
+    'v41_nlh_leak_read',
+    'HorseLogic (V41)',
+    'a hold em horse tagged for stack-offs read a single big bet as pressure; needs tuner-written leaksHoldem',
+    'V41'
+  ),
+  receipt(
+    'v41_river_war_read',
+    'HorseLogic (V41)',
+    'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
+    'V41'
   ),
   receipt(
     'phase5_canonical_state',
@@ -2183,44 +2138,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.001
   ),
   receipt(
-    'phase15_telemetry_batch_expired',
-    'BrainTelemetryFlush.flush',
-    'a retained pending telemetry batch exceeded the 32-day receipt window and was explicitly refused without aggregation; this is an evidence gap',
-    'Phase15'
-  ),
-  receipt(
-    'phase15_brain_exception',
-    'HorseLogic.decide',
-    'a policy exception produced an explicit check/fold liveness fallback; the private error is not part of the action receipt',
-    'Phase15'
-  ),
-  receipt(
-    'phase15_policy_*',
-    'HorseLogic.decide',
-    'finite registered variant outcomes: reference, disabled, computed, outside_domain or unavailable; unregistered input refuses before policy execution',
-    'Phase15'
-  ),
-  receipt(
-    'phase15_deep_brain_exception_retired',
-    'ServerTableEngineTurns.scheduleHorseAction',
-    'a failed deep evaluation was retired while the original fast decision and its execution authority were retained',
-    'Phase15'
-  ),
-  receipt(
-    'phase15_execution_*',
-    'HorseExecutionWitness.countFinal',
-    'one terminal memory-witness outcome per returned decision, bound to the controller accepted record; not a durable decision ledger',
-    'Phase15'
-  ),
-  ...(['fast', 'deep', 'worker_fallback'] as const).map((lane) =>
-    receipt(
-      `phase15_${lane}_execution_*`,
-      'HorseExecutionWitness.countFinal',
-      `terminal execution-witness outcomes from the ${lane} lane; failed or discarded computation is distinct from accepted policy intent`,
-      'Phase15'
-    )
-  ),
-  receipt(
     'v44_second_look_flipped',
     'ServerTableEngineTurns.scheduleHorseAction',
     'the deeper read overturned the fast answer',
@@ -2309,7 +2226,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a river big bet was priced by its tempo; needs a player with five snap or tank showdowns',
     'V43'
   ),
-
+  receipt(
+    'v41_tourney_leak_read',
+    'HorseLogic (V41)',
+    'a horse tagged for event stack-offs paid extra ICM premium; tournament volume only, needs tuner-written leaksTournament',
+    'V41'
+  ),
+  receipt(
+    'v41_limp_bloat_*',
+    'HorseLogic (V41)',
+    'read / cap: a horse tagged for limped-pot bloat, in a limped pot, facing a big bet; needs tuner-written leaks',
+    'V41'
+  ),
   // TAGS. Every leak tag the review system emits, with its reader.
   ...TAG_CONSUMERS,
 ];

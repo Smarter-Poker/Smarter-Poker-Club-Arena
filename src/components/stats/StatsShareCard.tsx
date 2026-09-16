@@ -18,7 +18,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './StatsShareCard.css';
 import { isNativePlatform } from '../../lib/appBase';
 
@@ -218,7 +217,7 @@ export default function StatsShareCard({
     try {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       if (!blob) {
-        setNote('Could Not Build The Image. Try Again.');
+        setNote('Could not build the image. Try again.');
         return;
       }
       const file = new File([blob], 'smarter-poker-stats.png', { type: 'image/png' });
@@ -246,11 +245,11 @@ export default function StatsShareCard({
       // Revoke on the next frame: revoking synchronously can cancel the
       // download in some browsers before it has read the blob.
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      setNote('Saved To Your Downloads.');
+      setNote('Saved to your downloads.');
     } catch (err) {
       // AbortError just means the user dismissed the share sheet.
       if ((err as Error)?.name !== 'AbortError') {
-        setNote('Could Not Share The Image On This Device.');
+        setNote('Could not share the image on this device.');
       }
     } finally {
       setBusy(false);
@@ -258,14 +257,8 @@ export default function StatsShareCard({
   };
 
   return (
-    <SpadeConsole
-      className="sharecard"
-      eyebrow="Share"
-      title="Share Your Stats"
-      pill={busy ? 'Preparing' : 'Image'}
-      pillInk={busy ? 'muted' : 'blue'}
-      foot="foot"
-    >
+    <div className="sharecard">
+      <h3 className="sharecard-title">Share Your Stats</h3>
       <div className="sharecard-preview">
         <canvas
           ref={canvasRef}
@@ -274,23 +267,12 @@ export default function StatsShareCard({
           aria-label="A Shareable Image Of Your Headline Poker Stats"
         />
       </div>
-      <div className="sharecard-actions">
-        <button
-          type="button"
-          className="sharecard-btn sc-ink--white"
-          onClick={handleShare}
-          disabled={busy}
-        >
-          {busy ? 'Preparing...' : 'Share Or Save Image'}
-        </button>
-      </div>
-      <p
-        className="sc-copy sc-copy--center sharecard-note sc-ink--muted"
-        role="status"
-        aria-live="polite"
-      >
+      <button type="button" className="sharecard-btn" onClick={handleShare} disabled={busy}>
+        {busy ? 'Preparing...' : 'Share Or Save Image'}
+      </button>
+      <p className="sharecard-note" role="status" aria-live="polite">
         {note}
       </p>
-    </SpadeConsole>
+    </div>
   );
 }

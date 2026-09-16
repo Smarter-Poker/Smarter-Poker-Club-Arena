@@ -202,17 +202,11 @@ function configureFromTableRow(
     run_it_mode?: string;
     tournament_id?: string | null;
     game_type?: string;
-    max_players?: number;
   }
 ): { ritEffective: boolean; insuranceEnabled: boolean } {
   const ritIsTournament = !!row.tournament_id || row.game_type === 'tournament';
-  // HEADS-UP TABLE GATE 2026-09-13: a two-seat table FORMAT never offers the
-  // question (Dan 2026-08-26: "never ... HEADS UP"). Mirrors the engine's
-  // HEADS_UP_SEATS (2) read of tableInfo.max_players.
-  const ritIsHeadsUpTable = Number(row.max_players) > 0 && Number(row.max_players) <= 2;
   const ritEnabled =
     !ritIsTournament &&
-    !ritIsHeadsUpTable &&
     (((row.run_it_twice ?? true) && (row.allow_run_it_twice ?? true)) ||
       (row.run_it_twice_enabled ?? false));
   // ALL-CASH INSURANCE 2026-08-26: insurance carries the same tournament gate
@@ -302,39 +296,6 @@ describe('insurance no longer switches run it twice off — they are sequenced p
     expect(cfg.insuranceEnabled).toBe(false);
   });
 
-  it('a heads-up TABLE (two seats) never offers run it twice, whatever the columns say', () => {
-    // Dan 2026-08-26: "it should never be in MTT, SPINS OR HEADS UP." The
-    // tournament gate covered the first two; every 2-seat table on the
-    // platform is a tournament today, so the third held only by accident.
-    const engine = new RunItTwiceEngine(undefined, stubScheduler());
-    const cfg = configureFromTableRow(engine, TABLE, {
-      run_it_twice: true,
-      allow_run_it_twice: true,
-      run_it_twice_enabled: true,
-      insurance_enabled: true,
-      tournament_id: null,
-      game_type: 'cash',
-      max_players: 2,
-    });
-    expect(engine.isEnabled(TABLE)).toBe(false);
-    expect(cfg.ritEffective).toBe(false);
-    // Insurance carries only the tournament gate; a heads-up cash table keeps it.
-    expect(cfg.insuranceEnabled).toBe(true);
-  });
-
-  it('a two-way all-in on a full ring is NOT heads-up: six seats keep the question', () => {
-    const engine = new RunItTwiceEngine(undefined, stubScheduler());
-    const cfg = configureFromTableRow(engine, TABLE, {
-      run_it_twice: true,
-      allow_run_it_twice: true,
-      tournament_id: null,
-      game_type: 'cash',
-      max_players: 6,
-    });
-    expect(engine.isEnabled(TABLE)).toBe(true);
-    expect(cfg.ritEffective).toBe(true);
-  });
-
   it('a tournament_id disables both even when game_type says cash', () => {
     const engine = new RunItTwiceEngine(undefined, stubScheduler());
     const cfg = configureFromTableRow(engine, TABLE, {
@@ -410,15 +371,6 @@ describe('the engine host re-reads the config and announces every single run', (
    * lines, and they fail the moment somebody restores FIX 92's config-layer
    * exclusion instead of the per-hand sequencing that replaced it.
    */
-  it('a heads-up table format is refused at configure time, by the seat count', () => {
-    expect(BASE).toContain("import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';");
-    // Whitespace-insensitive: Prettier wraps this line at the width it likes.
-    expect(BASE.replace(/\s+/g, ' ')).toContain(
-      'const ritIsHeadsUpTable = Number(this.tableInfo.max_players) > 0 && Number(this.tableInfo.max_players) <= HEADS_UP_SEATS;'
-    );
-    expect(BASE).toContain('!ritIsTournament &&\n      !ritIsHeadsUpTable &&');
-  });
-
   it('insurance does NOT switch RIT off at configure time', () => {
     expect(BASE).toContain('const ritEffective = ritEnabled;');
     expect(BASE).toContain(
@@ -460,32 +412,14 @@ describe('the engine host re-reads the config and announces every single run', (
     expect(block).not.toContain('continueRunout');
   });
 
-  it('the auto-decline is forwarded to the wire, for the hand it belongs to, and only that', () => {
-    /* WIDENED AND EXTENDED 2026-09-09, not weakened. The forwarder gained the
-       hand-identity check below and the window it is read through had to grow
-       with it. It also no longer calls `emitRitSingleRun('no_agreement')` bare:
-       the DeadlineScheduler fires on its own clock, so a timeout surfacing
-       after the hand turned over used to toast "Running It Once" on the NEXT
-       hand AND consume that hand's own single-run notice. The event carries its
-       own handId; the forwarder reads it and drops a stale one. */
-    /* BOUNDED BY THE METHOD, NOT BY A BYTE COUNT (2026-09-14). Both sides of
-       this merge had guessed a window - 1200 on one, 2200 on the other - and
-       that disagreement IS the conflict: each grew the number when its own
-       addition fell off the end. A magic window also fails silently in the
-       other direction, passing because the code it watched slid out of view.
-       `sliceMethod` takes the whole method and grows with it. */
-    const fn = sliceMethod(RUNOUT, 'protected wireRunItTwiceEvents()');
+  it('the auto-decline is forwarded to the wire, and only that', () => {
+    const fn = RUNOUT.slice(
+      RUNOUT.indexOf('protected wireRunItTwiceEvents()'),
+      RUNOUT.indexOf('protected wireRunItTwiceEvents()') + 500
+    );
     expect(fn).toContain("event.type !== 'RIT_DECLINED'");
     expect(fn).toContain("!== 'timeout'");
-    // The stale-timeout guard: the hand comes from the EVENT, not the clock.
-    expect(fn).toMatch(/handId/);
-    expect(fn).toMatch(/declinedHand !== this\.handCount\) return;/);
-    /* 2026-09-13: a single silent seat is named, the collective line otherwise.
-       Both pins moved on 2026-09-14 to carry `declinedHand`: the two rules
-       compose, so every notice this forwarder emits now states the hand it is
-       about, and neither can land on the hand after it. */
-    expect(fn).toContain("emitRitSingleRun('no_answer', silent[0] as string, declinedHand)");
-    expect(fn).toContain("emitRitSingleRun('no_agreement', undefined, declinedHand)");
+    expect(fn).toContain("emitRitSingleRun('no_agreement')");
   });
 
   it('a chooser who accepts without a run count gets an actionable error', () => {

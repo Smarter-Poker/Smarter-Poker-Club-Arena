@@ -302,7 +302,7 @@ const RESUME_LOOP = sliceEnclosingBlock(SRC, "'GameServer.Tournament_resume_fail
 describe('the RUNNING re-adoption loop is wired to the law', () => {
   it('no longer launches an admission for every managerless RUNNING tournament', () => {
     expect(LANE_CODE).not.toContain('for (const tournament of running || [])');
-    expect(LANE).toMatch(/selectRunningResumes\(\s*running,/);
+    expect(LANE).toMatch(/selectRunningResumes\(\s*running \|\| \[\]/);
   });
 
   it('runs on its own five-second lane, never behind the REGISTERING walk', () => {
@@ -357,7 +357,7 @@ describe('the RUNNING re-adoption loop is wired to the law', () => {
     const refusal = sliceEnclosingBlock(SRC, 'GameServer.running_board_read_failed');
     expect(refusal).not.toContain('this.tournamentResumeCooldowns.settle(');
     expect(LANE).toMatch(
-      /\} else \{[^}]*this\.tournamentResumeCooldowns\.settle\(running, \(id\) =>\s*this\.tournamentEngines\.has\(id\)/
+      /\} else \{[^}]*this\.tournamentResumeCooldowns\.settle\(running \|\| \[\], \(id\) =>\s*this\.tournamentEngines\.has\(id\)/
     );
     // And the re-check after the stagger reads the same in-flight rule.
     expect(RESUME_LOOP).toContain('this.tournamentManagerAdmissionRetryTimers.has(tournamentId)');

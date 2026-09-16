@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode, Ref } from 'react';
 import { useFitText } from '../lobby/game-cards/useFitText';
 import './SpadeConsole.css';
 
@@ -62,77 +62,6 @@ export const SPADE_CONSOLE_ZONES = {
   plateSecondary: { x: 100, y: 46, width: 381, height: 129 },
   platePrimary: { x: 520, y: 46, width: 381, height: 129 },
 } satisfies Record<string, Zone>;
-
-/**
- * THE SHARK FAMILY. Dan's shark heads-up master, cut into head / rails / foot
- * like the spade (Dan 2026-09-13: not every card the same frame). One plate in
- * the foot, the shark crest below it, the diamond crest in the head. All zone
- * maths is in this master's own pixels: 733 wide.
- */
-export const SHARK_CONSOLE_W = 733;
-export const SHARK_CONSOLE_TOP_H = 154;
-export const SHARK_CONSOLE_FOOT_H = 172;
-export const SHARK_CONSOLE_ZONES = {
-  eyebrow: { x: 70, y: 50, width: 440, height: 26 },
-  title: { x: 70, y: 76, width: 590, height: 66 },
-  titleBesidePill: { x: 70, y: 76, width: 440, height: 66 },
-  subtitle: { x: 70, y: 126, width: 440, height: 22 },
-  /** The rounded slot at the right of the well, x 527-642 y 70-122. */
-  pill: { x: 537, y: 79, width: 96, height: 36 },
-  /** The one blue plate's face, inside its chamfered rim. */
-  plate: { x: 110, y: 18, width: 512, height: 76 },
-} as const;
-
-/**
- * THE RIVETED FAMILY. Dan's spade NLH master (game-cards/nlh/spade-nlh-premium-v1,
- * 729 wide): bolted corners, a wider base that steps out around two plates,
- * and the spade chip medallion in the bottom rail. Cut at the glass gap
- * between the header well and the first bay (rows 246-256 are the plain
- * rail), and again at the gap above the base (row 582). Two plates, like the
- * spade console, on a heavier frame - for money.
- */
-export const RIVETED_CONSOLE_W = 729;
-export const RIVETED_CONSOLE_TOP_H = 209;
-export const RIVETED_CONSOLE_FOOT_H = 333;
-export const RIVETED_CONSOLE_ZONES = {
-  eyebrow: { x: 88, y: 72, width: 350, height: 26 },
-  title: { x: 88, y: 100, width: 555, height: 72 },
-  titleBesidePill: { x: 88, y: 100, width: 350, height: 72 },
-  subtitle: { x: 88, y: 168, width: 350, height: 24 },
-  /** The chrome capsule at the right of the well, x 455-645 y 85-145. */
-  pill: { x: 472, y: 97, width: 156, height: 38 },
-  /** The two bolted plates' faces, inside their rims. */
-  plateSecondary: { x: 80, y: 82, width: 235, height: 98 },
-  platePrimary: { x: 380, y: 82, width: 260, height: 98 },
-} as const;
-
-export type ConsoleFamily = 'spade' | 'shark' | 'riveted';
-
-/** Everything that differs between families. Structure varies BETWEEN
- *  families, never within one - each row here is one approved master. */
-const FAMILY = {
-  spade: {
-    W: SPADE_CONSOLE_W,
-    TOP_H: SPADE_CONSOLE_TOP_H,
-    FOOT_H: SPADE_CONSOLE_PLATES_H,
-    zones: SPADE_CONSOLE_ZONES,
-    plates: 2,
-  },
-  shark: {
-    W: SHARK_CONSOLE_W,
-    TOP_H: SHARK_CONSOLE_TOP_H,
-    FOOT_H: SHARK_CONSOLE_FOOT_H,
-    zones: SHARK_CONSOLE_ZONES,
-    plates: 1,
-  },
-  riveted: {
-    W: RIVETED_CONSOLE_W,
-    TOP_H: RIVETED_CONSOLE_TOP_H,
-    FOOT_H: RIVETED_CONSOLE_FOOT_H,
-    zones: RIVETED_CONSOLE_ZONES,
-    plates: 2,
-  },
-} as const;
 
 export function zonePct(zone: Zone, canvasW: number, canvasH: number): CSSProperties {
   return {
@@ -219,7 +148,6 @@ export function SpadeConsole({
   pill,
   pillInk = 'blue',
   crest = 'spade',
-  family = 'spade',
   foot,
   plates,
   children,
@@ -236,8 +164,6 @@ export function SpadeConsole({
   pillInk?: ConsoleInk;
   /** Which emblem the head wears. Same structure, different dress. */
   crest?: ConsoleCrest;
-  /** Which approved master the frame is cut from. 'shark' carries ONE plate. */
-  family?: ConsoleFamily;
   /** 'plates' paints the two action plates into the foot; 'foot' just closes. */
   foot?: 'plates' | 'foot';
   plates?: {
@@ -247,33 +173,17 @@ export function SpadeConsole({
   children?: ReactNode;
   className?: string;
   as?: 'section' | 'div' | 'article';
-  /**
-   * DOM passthrough, NOT an escape hatch (2026-09-11). This was
-   * `& Record<string, unknown>`, which accepted any prop at all: on
-   * feat/diamond-games, ArenaAccessBoundary asked for `crest="diamond"` against
-   * a copy of this component that had no crest prop, and TypeScript said
-   * nothing while the panel rendered the spade and React was handed an unknown
-   * DOM attribute. A typed passthrough still carries aria-*, data-*, id and
-   * role, and refuses a prop this console does not have.
-   */
-} & Omit<HTMLAttributes<HTMLElement>, 'title'>) {
+} & Record<string, unknown>) {
   const footKind = foot ?? (plates ? 'plates' : 'foot');
-  const F = FAMILY[family];
-  const W = F.W;
-  const TOP_H = F.TOP_H;
-  const Z = F.zones;
-  const onePlate = F.plates === 1;
+  const W = SPADE_CONSOLE_W;
   return (
-    <Tag
-      className={`sc sc--${footKind} sc--crest-${crest} sc--family-${family} ${className}`.trim()}
-      {...rest}
-    >
+    <Tag className={`sc sc--${footKind} sc--crest-${crest} ${className}`.trim()} {...rest}>
       <div className="sc__head">
         {eyebrow && (
           <ZoneText
             text={eyebrow}
             className="sc__eyebrow sc-ink--blue"
-            style={zonePct(Z.eyebrow, W, TOP_H)}
+            style={zonePct(SPADE_CONSOLE_ZONES.eyebrow, W, SPADE_CONSOLE_TOP_H)}
           />
         )}
         <ZoneText
@@ -288,46 +198,40 @@ export function SpadeConsole({
              thing the fit exists to prevent. The floor drops for titles only;
              every other zone keeps the default. */
           minRatio={0.44}
-          style={zonePct(pill ? Z.titleBesidePill : Z.title, W, TOP_H)}
+          style={zonePct(
+            pill ? SPADE_CONSOLE_ZONES.titleBesidePill : SPADE_CONSOLE_ZONES.title,
+            W,
+            SPADE_CONSOLE_TOP_H
+          )}
         />
         {subtitle && (
           <ZoneText
             text={subtitle}
             className="sc__subtitle sc-ink--muted"
-            style={zonePct(Z.subtitle, W, TOP_H)}
+            style={zonePct(SPADE_CONSOLE_ZONES.subtitle, W, SPADE_CONSOLE_TOP_H)}
           />
         )}
         {pill && (
           <ZoneText
             text={pill}
             className={`sc__pill sc-ink--${pillInk}`}
-            style={zonePct(Z.pill, W, TOP_H)}
+            style={zonePct(SPADE_CONSOLE_ZONES.pill, W, SPADE_CONSOLE_TOP_H)}
           />
         )}
       </div>
       {children !== undefined && children !== null && <div className="sc__body">{children}</div>}
       <div className="sc__foot">
-        {onePlate && plates?.primary && (
+        {footKind === 'plates' && plates?.secondary && (
           <PlateButton
-            zone={SHARK_CONSOLE_ZONES.plate}
-            canvasW={W}
-            canvasH={F.FOOT_H}
-            {...plates.primary}
-          />
-        )}
-        {!onePlate && footKind === 'plates' && plates?.secondary && (
-          <PlateButton
-            zone={(Z as typeof SPADE_CONSOLE_ZONES).plateSecondary}
-            canvasW={W}
-            canvasH={F.FOOT_H}
+            zone={SPADE_CONSOLE_ZONES.plateSecondary}
+            canvasH={SPADE_CONSOLE_PLATES_H}
             {...plates.secondary}
           />
         )}
-        {!onePlate && footKind === 'plates' && plates?.primary && (
+        {footKind === 'plates' && plates?.primary && (
           <PlateButton
-            zone={(Z as typeof SPADE_CONSOLE_ZONES).platePrimary}
-            canvasW={W}
-            canvasH={F.FOOT_H}
+            zone={SPADE_CONSOLE_ZONES.platePrimary}
+            canvasH={SPADE_CONSOLE_PLATES_H}
             {...plates.primary}
           />
         )}

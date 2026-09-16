@@ -278,11 +278,11 @@ function fixture(
   engine.prepareNextHand = async () => seats;
   engine.takePreparedHandNumber = () => 1;
   engine.refreshRakeConfig = async () => {};
-  engine.fetchTimeBankExtras = async () =>
-    new Map([[seats[0].user_id, { extraSeconds: 20, unlimitedActivations: false }]]);
+  engine.fetchTimeBankExtras = async () => new Map([[seats[0].user_id, 20]]);
+  engine.adoptMovedPresence = () => {};
   engine.restoreSitOutsFromSeats = () => {};
   engine.evictExpiredSitOuts = async () => {};
-  engine.announcePendingSeatMoves = async () => true;
+  engine.announcePendingSeatMoves = async () => {};
   engine.persistPresenceForRestart = async () => {};
   engine.awaitNextHandRest = async () => {};
   engine.broadcastCurrentState = async () => {};

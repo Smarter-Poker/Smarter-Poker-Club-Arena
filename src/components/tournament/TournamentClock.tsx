@@ -73,26 +73,9 @@ interface ClockState {
    *
    * null = on a break whose end is not yet stamped (the gap between
    * `tournament_break` and `tournament_break_started`). The overlay shows BREAK
-   * and the phase label rather than inventing a clock.
-   *
-   * THAT LAST SENTENCE WAS NOT TRUE UNTIL 2026-09-09, and it is worth knowing
-   * why. `tournament_break` carries `breakEndsAt: null` and
-   * `breakDurationMinutes: 5`, and tournamentEventBridge forwarded the duration,
-   * so the `Date.now() + durationMinutes` fallback below reconstructed exactly
-   * the fabricated instant the engine had stopped sending — a 5:00 countdown at
-   * :55 that then jumped back up to 5:00 when the real end arrived. The bridge
-   * now offers a seed only once a countdown has genuinely started, which is what
-   * makes this comment describe the code.
+   * with no clock rather than inventing one.
    */
   breakEndsAtMs?: number | null;
-  /**
-   * Which half of the break this is, straight off the engine's own `phase`
-   * field. 'last_hand' is the :55 window: announced, no end time yet, and the
-   * overlay says so instead of showing a clock (the same rule
-   * TournamentBreakScreen.tsx:352 applies at the table). null when not on a
-   * break.
-   */
-  breakPhase?: 'last_hand' | 'counting_down' | null;
 }
 
 /** Epoch ms, or null for absent/unparseable. Never NaN, never a silent zero. */
@@ -135,7 +118,6 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     tournamentName: '',
     isPaused: false,
     breakEndsAtMs: null,
-    breakPhase: null,
   });
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -253,9 +235,6 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         tournamentName: tournament.name || 'Tournament',
         isPaused: timerState?.isPaused || false,
         breakEndsAtMs: onBreak ? breakEndsAtMs : null,
-        /* From the row: a break with `break_ends_at` stamped is counting down,
-           one without it is still waiting on the last hand. */
-        breakPhase: onBreak ? (breakEndsAtMs === null ? 'last_hand' : 'counting_down') : null,
       });
     } catch (err) {
       reportError(err, 'TournamentClock.Refresh_error');
@@ -376,7 +355,6 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         isBreak: false, // Clear break status on new level
         breakTimeRemaining: 0,
         breakEndsAtMs: null,
-        breakPhase: null,
       }));
       // Also do a full refresh to get timeRemaining for the new level
       refreshState();
@@ -404,25 +382,14 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         (Number(payload?.durationMinutes) > 0
           ? Date.now() + Number(payload.durationMinutes) * 60_000
           : null);
-      setClock((prev) => {
-        const nextEnd = endsAtMs ?? prev.breakEndsAtMs ?? null;
-        return {
-          ...prev,
-          isBreak: true,
-          /* The :55 announcement carries no end, the countdown-start event does.
-             Never let the announcement erase an end already known. */
-          breakEndsAtMs: nextEnd,
-          breakTimeRemaining: secondsUntil(nextEnd),
-          /* The engine's own `phase`, relayed by tournamentEventBridge. A known
-             end always means counting down, whatever the label says. */
-          breakPhase:
-            nextEnd !== null
-              ? 'counting_down'
-              : payload?.phase === 'counting_down'
-                ? 'counting_down'
-                : 'last_hand',
-        };
-      });
+      setClock((prev) => ({
+        ...prev,
+        isBreak: true,
+        /* The :55 announcement carries no end, the countdown-start event does.
+           Never let the announcement erase an end already known. */
+        breakEndsAtMs: endsAtMs ?? prev.breakEndsAtMs ?? null,
+        breakTimeRemaining: secondsUntil(endsAtMs ?? prev.breakEndsAtMs),
+      }));
     },
     [tournamentId]
   );
@@ -434,7 +401,6 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           isBreak: false,
           breakTimeRemaining: 0,
           breakEndsAtMs: null,
-          breakPhase: null,
         }));
         refreshState();
       }
@@ -492,15 +458,9 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         <div className="tc-break-overlay">
           <span className="tc-break-icon">◇</span>
           <span className="tc-break-text">BREAK</span>
-          {clock.breakTimeRemaining > 0 ? (
+          {clock.breakTimeRemaining > 0 && (
             <span className="tc-break-timer">{formatTime(clock.breakTimeRemaining)}</span>
-          ) : clock.breakPhase === 'last_hand' ? (
-            /* The :55 window. There is no end time yet and inventing one is the
-               bug this whole path exists to avoid, so say which half of the
-               break this is - the same words TournamentBreakScreen.tsx:352 uses
-               at the table. */
-            <span className="tc-break-timer">Last Hand</span>
-          ) : null}
+          )}
         </div>
       )}
 

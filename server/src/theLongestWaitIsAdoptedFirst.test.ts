@@ -37,7 +37,7 @@ const SRC = readFileSync(resolve(__dirname, './GameServer.ts'), 'utf8');
  * however many `.eq()`/`.order()` links it grows. Never a byte count
  * (tests/unit/noFixedSizeSourceWindows.test.ts).
  */
-const RESUME_READ = sliceStatement(SRC, 'const board = await fetchAllRows');
+const RESUME_READ = sliceStatement(SRC, 'const { data: running, error: runningErr }');
 /** The refusal beside it: the `if (runningErr)` block, by its own braces. */
 const RESUME_REFUSAL = sliceEnclosingBlock(SRC, 'GameServer.running_board_read_failed');
 
@@ -47,21 +47,16 @@ describe('the longest-waiting tournament is adopted first', () => {
     expect(RESUME_READ).toContain("eq('status', 'RUNNING')");
   });
 
-  it('enumerates every id page before applying the start-time admission order', () => {
-    expect(RESUME_READ).toContain(".order('id', { ascending: true })");
-    expect(RESUME_READ).toContain("query.gt('id', cursor)");
-    expect(RESUME_READ).toContain(".select('id, name, started_at')");
+  it('orders the RUNNING board by start time, oldest first', () => {
+    expect(RESUME_READ, 'an unordered board starves the same events every pass').toMatch(
+      /\.order\(\s*'started_at'\s*,\s*\{[^}]*ascending:\s*true/
+    );
   });
 
   it('puts a tournament with no start time last, not first', () => {
     // A NULL start_time is not evidence of a long wait, and letting it sort to
     // the front would hand the queue to exactly the rows that prove nothing.
-    // Actual admission ordering, including nulls and later pages, is exercised
-    // by RunningResumePagination.test.ts using the real discovery method.
-    const sorted = sliceStatement(SRC, 'const running = runningErr');
-    expect(sorted).toContain('a.started_at === null ? Infinity');
-    expect(sorted).toContain('b.started_at === null ? Infinity');
-    expect(sorted).toContain('aStarted - bStarted || a.id.localeCompare(b.id)');
+    expect(RESUME_READ).toMatch(/nullsFirst:\s*false/);
   });
 
   it('still treats an unreadable board as UNKNOWN rather than an empty one', () => {
@@ -83,7 +78,7 @@ describe('the longest-waiting tournament is adopted first', () => {
     // re-adopted the same fenced set on every pass (tournamentResumeBudget.ts).
     // It now has the same AIMD budget. The budget decides HOW MANY per pass;
     // this board's started_at order still decides WHICH, so both pins stand.
-    expect(SRC).toMatch(/selectRunningResumes\(\s*running,/);
+    expect(SRC).toMatch(/selectRunningResumes\(\s*running \|\| \[\]/);
     expect(SRC).toContain('budget: this.tournamentResumeBudget');
   });
 });

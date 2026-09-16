@@ -38,7 +38,6 @@ would then have hit them: 1 and 2 are exactly about horses holding tournament se
 ## Findings (fixed unless marked)
 
 ### 1. P1 FIXED - tournament stacks were counted as cash exposure; every horse in an event was
-
 refused at the sit verdict
 `HorseFleetManager.ts` ~L1150-1190 (`horseExposure`). `allActiveSeats` is every open seat on the
 platform; the loop summed `seat.stack` for all of them. A tournament seat's stack is tournament
@@ -55,7 +54,6 @@ Change: exposure sums only seats whose table is in this cycle's open cash list
 seat (the four-game limit does). Pinned by the new test, section 1.
 
 ### 2. P1 FIXED - the wallet the engine gated on was not the wallet the database debited, for
-
 every horse holding a Midway tournament seat
 `HorseFleetManager.ts` ~L1945-1960 (`seatClubInScope`). `fn_seat_club_for_user_membership_unchecked`
 (read from `pg_proc`) resolves "one club at a time" from ANY open seat where
@@ -76,7 +74,6 @@ still wins. Fail-open unchanged: if that read fails the map is empty and the DB 
 (the warning now says so). Pinned by the new test, section 2.
 
 ### 3. P1 FIXED - the Stable Hand game key was the TABLE NAME, so a must-move was a "seat
-
 given up" and the daily sit cap counted per chair
 `HorseSitVerdict.ts` (mutex key) and `HorseFleetManager.ts` ~L3357 (`currentSeatKeys` diff).
 Both called `gameKey({ template: t.name })`. OPORD section 10 / `StableHand.test.ts` T32 define
@@ -94,7 +91,6 @@ the spurious windows cost nothing beyond wrong rows; noted as P2 dead code in St
 lane). Pinned: new test section 3 + one case in HorseSitVerdict.test.ts.
 
 ### 4. P2 FIXED - the activity window refused silently and "No available horses" hid it
-
 ~L2912 onward. `pool = sittable.filter(isActiveNow)` and then a bare
 `No available horses for "X" (need N, band B)` for a table with 0 awake, whether sittable was 0
 or 6. Change: `asleep` counted per table from the sittable pool; the line now reads
@@ -102,7 +98,6 @@ or 6. Change: `asleep` counted per table from the sittable pool; the line now re
 too (they were the one silent gate in the candidate filter). Both reach the heartbeat (finding 6).
 
 ### 5. P2 FIXED (behaviour) - an empty/lone cluster table with sittable horses that were asleep
-
 stayed dark
 Same block. `seedToDealable` says a cluster table at 0-1 is seeded to two THIS cycle and
 `refusesLoneSeat` keeps one horse off an empty one, but only the opening-feeder rule widened the
@@ -114,7 +109,6 @@ Only the hour, never the band or the verdict, same justification as the 2026-09-
 `hour_widened` counts it. The pinned order rescue < feeder < handed is preserved (checked).
 
 ### 6. P2 FIXED - the heartbeat said `reason: nothing_to_seat` and nothing else
-
 `publishFleetState`. `fn_ca_fleet_state_upsert(p_rows jsonb, p_beat jsonb)` stores
 `p_beat->'detail'` as-is when it is an object (read from pg_proc), so no migration. `detail` now
 also carries `bookings_read_failed`, `booked_out`, `horses_seated_cash` (`horses_seated` is
@@ -126,7 +120,6 @@ stale_tables_skipped, unsittable{}, seat_stage_skipped{}, mutex_refused{}, buy_i
 bankroll{} (this cycle's delta of `bankrollCounters()`). Every number the cycle line prints.
 
 ### 7. P3 FIXED - `tables.update({status:'running'})` after seating could reopen a closed row
-
 ~L3123. It was `.neq('status','running')`: a table closed by status alone between the door
 re-read and the write (operator close-game writes status only, per HorseStaleTable) would flip
 back to running. Now `.eq('status','waiting')`, the same `count >= 2 ? running : waiting` rule the
@@ -135,18 +128,15 @@ controller: the controller owns `lifecycle`, the engine recount owns `status`, a
 same value.
 
 ### 8. P3 FIXED - `claimOfferedSeats` read `status = 'notified'` unpaged
-
 Now `fetchAllRows` keyset on id (`HorseFleet.offeredSeats`); an incomplete read answers what it
 read and warns (a seat call answered beats one skipped; the rest keep their hold).
 
 ### 9. P3 FIXED - dead code: `MIDWAY_UNION_ID` local const (no reader), `clubIndex` +
-
 `getNextClubId()` (the table-creation round-robin, no reader since Gate 7), unused import
 `variantLabel`, and `gameKey` import replaced by `gameKeyForTable`. `this.clubIds` kept (pinned,
 seeds `clubIdsToLoad`; harmless, the union loader adds the same two clubs).
 
 ### 10. P3 NOT FIXED - four-game mirror counts seats at CLOSED tables; the SQL does not
-
 `fn_concurrent_game_load` clause (1) is `t.status <> 'closed'`; the fleet's `horseTables` is every
 `left_at IS NULL` seat. Zero such seats exist right now (measured) and the fleet is only ever
 stricter, so it costs nothing today; fixing it needs a status for every seat's table, which the
@@ -156,13 +146,11 @@ seat-first exclusion, per-(player,tournament) dedupe, `p_exclude_table_id` == "a
 table") agrees with the function text read today.
 
 ### 11. P2 NOT FIXED (other lane) - `mayRebuyInSeat` / `inTwoHourWindow` have no live caller
-
 `StableHand.ts` L990, `StableHandTags.ts` L395. The two-hour window is written every cycle and
 read by nothing. Either wire it into the rebuy path (HorseRebuyPolicy lane) or delete the column
 write. Finding 3 stops the writes from being wrong meanwhile.
 
 ### 12. NOT FIXED - two written rules disagree on DSS and I am not resolving it (CLAUDE.md 10.8)
-
 Dan 2026-09-02 (HorseBehavior.ts header, HorseOccupancy.test.ts): "horses need to be occupying
 at least 75% of all seats in the cash games". OPORD section 11 (`StableHand.ts` OCCUPANCY_CURVE_PCT,
 `peakCap = 40% of N`, night 5%): a host may carry at most 40% of its horses as bodies. DSS has 416
@@ -172,7 +160,6 @@ pinned at exactly the curve (149/149) with 156 empty seats. Needs Dan's ruling; 
 either constant.
 
 ### 13. Verified - `TournamentRecurring.horse_load_seats_failed` in the log (`pickFreeHorses`
-
 embed) is covered by the P0 commit d72f4be: `TournamentRecurringService.ts:4258` now names
 `tables!table_seats_table_id_fkey!inner(...)`, and no un-hinted `tables!inner(` survives in
 `server/src`.
@@ -185,7 +172,7 @@ embed) is covered by the P0 commit d72f4be: `TournamentRecurringService.ts:4258`
 - Pins re-verified by script against the edited source: HorseAggregateExposure (exposure set
   line unchanged, placed after the cash-only skip), HorseBankrollGateClubs (resolver, clubIds,
   eligibleClubsFor), theFeederKeepsItsBuyers (tournamentTables read still `.neq('status',
-'closed')`, `beat.bookedOut`), theFeederFillsFromTheCountItOpenedOn (rescue < feeder < handed;
+  'closed')`, `beat.bookedOut`), theFeederFillsFromTheCountItOpenedOn (rescue < feeder < handed;
   claim path), HorseSitVerdict PART 2 (`let pool = sittable.filter(...)` verbatim, ctx fields),
   HorseFleetPolicyWiring (no bare `return;` after the withhold), aDisabledGameIsNotSeeded
   (`isTableOfDisabledGame(` count still 3), HorseStaleTable (`stale_door_read_failed`).
@@ -207,7 +194,7 @@ embed) is covered by the P0 commit d72f4be: `TournamentRecurringService.ts:4258`
 - `rejoinTableKey` club: `cash_rejoin_constraints.club_id` is the TABLE's club (fade0000 for
   Midway rows), matching `t.club_id`; sb/bb strings vs numbers normalised on both sides.
 - `classifyBuyInRefusal` vs live RPC strings: only `TABLE_SIZE: table is full (6 of 6 seats
-taken)` (-> table_full, a race, 1-2 per 90 min), `duplicate key` (-> seat_taken), one
+  taken)` (-> table_full, a race, 1-2 per 90 min), `duplicate key` (-> seat_taken), one
   `refused=1` whose message the filtered log dropped. All 13 literals match the RPC text in
   `atomic_table_buyin_before_maintenance_announcement_gate`.
 - `humansWaitingByTable` excludes horses by id: sanctioned (horses do not queue, Dan 09-02).

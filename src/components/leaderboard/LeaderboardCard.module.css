@@ -1,109 +1,156 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   LEADERBOARD CARD - standings printed on a console's glass (#ClubArenaConsole)
-
-   This card paints nothing of its own. Its one live caller (PromotionsPage)
-   prints it on the Rewards Circuit console, so the frame is the master's and
-   the standings are rows on the black glass: place in lit blue (the podium
-   in gold), the player in silver, the score in silver and the prize in
-   green, an engraved rule between rows. The `card` variant keeps a small
-   title row and nothing else - no box, no gradient, no rounded corner.
-   Sizes are cqw against the console. No :hover.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  LEADERBOARD CARD — Premium Dark Theme CSS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
 .card {
-  --lbc-rule: 1px solid #000;
-  --lbc-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
-  display: grid;
-  min-width: 0;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-variant-numeric: tabular-nums lining-nums;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
+  border: 1px solid rgba(251, 191, 36, 0.15);
+  border-radius: 16px;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.glass {
+/* On a console's glass the card paints nothing of its own (#ClubArenaConsole):
+   the frame is the master's, the standings print between its rails. */
+.card.glass {
+  border: 0;
+  border-radius: 0;
   background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
 }
 
-.header {
-  padding: 0 0 1.6cqw;
-}
-
-.title {
-  margin: 0;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 3cqw;
-}
-
-.loading,
-.empty {
-  padding: 3cqw 0;
-  text-align: center;
-  font-size: 3cqw;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+.card.glass .empty {
+  padding: 0.5rem 0;
+  color: #9aa5b3;
+  font:
+    600 0.8rem/1.4 Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.empty p {
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.header h3 {
   margin: 0;
+  font-size: 18px;
+  color: white;
 }
 
+.trophy {
+  font-size: 24px;
+}
+
+/* Loading */
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 40px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #fbbf24;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Empty */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.empty span {
+  font-size: 32px;
+}
+
+/* List */
 .list {
-  display: grid;
+  padding: 8px 0;
 }
 
-/* ── One row per place ──────────────────────────────────────────────────── */
-
+/* Row */
 .row {
   display: flex;
   align-items: center;
-  gap: 2.4cqw;
-  min-width: 0;
-  padding: 1.8cqw 0;
-  border-top: var(--lbc-rule);
-  box-shadow: var(--lbc-rule-lit);
+  padding: 12px 20px;
+  gap: 12px;
+  transition: background 0.2s ease;
 }
 
-.topThree {
-  padding-block: 2cqw;
+.row {
+  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.currentUser .nameText {
-  font-weight: 900;
+.row.topThree {
+  background: rgba(251, 191, 36, 0.05);
 }
 
+.row.currentUser {
+  background: rgba(59, 130, 246, 0.1);
+  border-left: 3px solid #3b82f6;
+}
+
+/* Rank Column */
 .rankCol {
-  flex: 0 0 9cqw;
+  width: 40px;
   text-align: center;
 }
 
 .medal {
-  font-size: 3.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 24px;
 }
 
 .rankNumber {
-  font-size: 3.6cqw;
-  font-weight: 800;
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
 }
 
+/* Player Column */
 .playerCol {
+  flex: 1;
   display: flex;
-  flex: 1 1 auto;
   align-items: center;
-  gap: 2cqw;
+  gap: 12px;
   min-width: 0;
 }
 
 .avatar {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 9cqw;
-  height: 9cqw;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
-  background: #000;
 }
 
 .avatar img {
@@ -112,62 +159,54 @@
   object-fit: cover;
 }
 
-.avatarInitial {
-  font-size: 4.4cqw;
-  font-weight: 800;
+.avatar span {
+  font-size: 18px;
 }
 
 .name {
-  display: flex;
-  align-items: center;
-  gap: 2cqw;
-  min-width: 0;
-  font-size: 3.8cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
-.nameText {
-  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .youBadge {
-  flex: 0 0 auto;
-  font-size: 2.6cqw;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  background: #3b82f6;
+  border-radius: 4px;
+  color: white;
 }
 
+/* Score Column */
 .scoreCol {
   display: flex;
-  flex: 0 0 auto;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.4cqw;
+  gap: 2px;
 }
 
 .score {
-  font-size: 4cqw;
-  font-weight: 800;
-  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
 }
 
 .prize {
-  font-size: 2.9cqw;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
+  font-size: 12px;
+  color: #10b981;
 }
 
+/* Separator */
 .separator {
-  padding: 2cqw 0 0.6cqw;
   text-align: center;
-  font-size: 2.6cqw;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  padding: 8px;
+  letter-spacing: 4px;
 }

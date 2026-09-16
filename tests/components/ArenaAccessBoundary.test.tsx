@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ access: vi.fn(), auth: vi.fn(), unsubscribe: vi.fn() }));
 vi.mock('../../src/services/ArenaContextService', () => ({ getArenaContext: mocks.access }));
@@ -21,16 +21,11 @@ const diamond = {
   role: 'player',
   capabilities: { join: false, hierarchy: false, chipWallet: false, diamondTransfers: true },
 };
-/** Prints wherever the boundary sends us, so a navigation is assertable. */
-function Here() {
-  return <div data-testid="here">{useLocation().pathname}</div>;
-}
 const view = (key: string) => (
   <MemoryRouter>
     <ArenaAccessBoundary clubKey={key}>
       <div>Private Chip Lobby</div>
     </ArenaAccessBoundary>
-    <Here />
   </MemoryRouter>
 );
 beforeEach(() => {
@@ -46,20 +41,18 @@ describe('Arena entry before cached club content mounts', () => {
   it('requires an explicit join for an unjoined chip club', async () => {
     mocks.access.mockResolvedValue({ ...chip, member: false });
     render(view('chip'));
-    // The join control is the console's painted primary plate now (2026-09-10,
-    // #ClubArenaConsole), not a CSS link, so it is a button; what matters is
-    // still that it is explicit and that it goes to the invite.
-    const join = await screen.findByRole('button', { name: 'Join This Club' });
+    expect(await screen.findByRole('link', { name: 'Join This Club' })).toHaveAttribute(
+      'href',
+      '/invite/chip'
+    );
     expect(screen.queryByText('Private Chip Lobby')).toBeNull();
-    fireEvent.click(join);
-    await waitFor(() => expect(screen.getByTestId('here').textContent).toBe('/invite/chip'));
   });
   it('recognizes Diamond membership without mounting chip wallets or a join flow', async () => {
     mocks.access.mockResolvedValue(diamond);
     render(view('diamond'));
     expect(await screen.findByText('You Are Already A Member.')).toBeTruthy();
     expect(screen.queryByText('Private Chip Lobby')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Join This Club' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Join This Club' })).toBeNull();
   });
   it('does not show the previous club or accept a late response after switching', async () => {
     let resolveOld: (v: unknown) => void = () => {};

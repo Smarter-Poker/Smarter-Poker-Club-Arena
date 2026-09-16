@@ -29,7 +29,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import { computePlacePrize } from './payoutMath.js';
-import { CHIP_UNIT_CENTS } from './tournamentUnit.js';
 
 /** The nine-place structure the production reconciler is pinned against. */
 const NINE_PLACE = [
@@ -114,15 +113,15 @@ describe('LAW - and the chip ladder did not move', () => {
   it('pays the cents it has always paid, on the reconciler structure', () => {
     /* The exact figures the production reconciler is pinned to. If the unit
        parameter had changed the chip path at all, these move. */
-    expect(computePlacePrize(483, NINE_PLACE, 1, CHIP_UNIT_CENTS)).toBe(144.9);
-    expect(computePlacePrize(483, NINE_PLACE, 9, CHIP_UNIT_CENTS)).toBe(12.07);
+    expect(computePlacePrize(483, NINE_PLACE, 1)).toBe(144.9);
+    expect(computePlacePrize(483, NINE_PLACE, 9)).toBe(12.07);
   });
 
   it('and the default unit is a cent, so every existing caller is unchanged', () => {
     for (const pool of [483, 997, 12345.67]) {
       for (const p of NINE_PLACE) {
         expect(
-          computePlacePrize(pool, NINE_PLACE, p.place, CHIP_UNIT_CENTS),
+          computePlacePrize(pool, NINE_PLACE, p.place),
           `place ${p.place} moved when the unit parameter was added`
         ).toBe(computePlacePrize(pool, NINE_PLACE, p.place, 1));
       }

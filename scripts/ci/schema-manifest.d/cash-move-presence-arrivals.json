@@ -1,5 +1,0 @@
-{
-  "_owner": "codex-mustmove-audit-sep14",
-  "_comment": "Required by the source candidate; migration 20260915134400 is not applied or qualified yet. Read-only engine arrival proof for exact active destination occupancies.",
-  "functions": ["fn_cash_seat_move_arrivals"]
-}

@@ -65,26 +65,10 @@
  * 'quoted phrase' still capitalises and You're is left alone. Both cases are
  * pinned in tests/utils/popupStyle.test.tsx.
  */
-/*
- * ── THE CLASS WAS [a-z], AND MOST OF THE WORLD IS NOT (2026-09-13) ────────
- *
- * `[a-z]` is ASCII. A word beginning with any other lowercase letter was not a
- * word as far as this rule was concerned, so the house Title Case simply did
- * not apply to it:
- *
- *     "über montag"   ->  "über Montag"     the first word never capitalised
- *     "ırmak kulübü"  ->  "ırmak Kulübü"    same
- *
- * Operators type club names, tournament names and custom ticker messages, and
- * this transform runs over all of them. A German, Turkish, Spanish, French,
- * Portuguese or Vietnamese club had a house style that quietly skipped half
- * its own copy. `\p{Ll}` with the `u` flag is every lowercase letter there is,
- * and ASCII is a subset of it, so nothing English changes.
- */
-const WORD_START = /(^|[\s([{"‘“-])(\p{Ll})/gu;
+const WORD_START = /(^|[\s([{"‘“-])([a-z])/g;
 
 /** A quote that OPENS a phrase: at the start, or after whitespace/bracket. */
-const QUOTED_WORD_START = /(^|[\s([{])(['’])(\p{Ll})/gu;
+const QUOTED_WORD_START = /(^|[\s([{])(['’])([a-z])/g;
 
 /** An em/en dash used as a clause break: surrounded by spaces. */
 // FORMATTER-PROOF 2026-08-21: a format pass once mangled literal em/en
@@ -105,23 +89,13 @@ export function formatPopupText(message: string): string {
       // …anything else dash-like becomes a plain hyphen.
       .replace(DASH_ANY, '-')
       // First letter of every word up. Interior capitals untouched.
-      /* toLocaleUpperCase, not toUpperCase: Turkish dotted and dotless i are
-         the case where the invariant answer is the wrong one. On a Turkish
-         runtime "izmir" becomes "İzmir" rather than "Izmir"; on every other
-         runtime the two are identical, so this costs nothing anywhere else.
-         It still cannot fix a Turkish name read by an English browser - that
-         needs the language OF THE TEXT, which nothing on this platform
-         records - but it is right for the player whose own language it is. */
-      .replace(
-        WORD_START,
-        (_, boundary: string, letter: string) => boundary + letter.toLocaleUpperCase()
-      )
+      .replace(WORD_START, (_, boundary: string, letter: string) => boundary + letter.toUpperCase())
       // …and a word opened by a quote, which the class above no longer covers
       // so that contractions survive.
       .replace(
         QUOTED_WORD_START,
         (_, boundary: string, quote: string, letter: string) =>
-          boundary + quote + letter.toLocaleUpperCase()
+          boundary + quote + letter.toUpperCase()
       )
   );
 }

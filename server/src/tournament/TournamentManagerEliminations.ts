@@ -34,7 +34,6 @@ import {
   eliminationSweepsInflight,
 } from '../observability/engineInstruments.js';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
-import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
@@ -149,39 +148,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * standings tie that the accepted hand can distinguish.
    */
   private readonly bustRefusalStreak = new Map<string, number>();
-
-  /**
-   * ═════════════════════════════════════════════════════════════════════════
-   *  THE UNIT THIS MANAGER PRICES PLACES IN - ONE ANSWER, TWO CALL SITES
-   * ═════════════════════════════════════════════════════════════════════════
-   *
-   * Both places this file prices a finishing position - `eliminatePlayer` for
-   * places 2..N and the late-registration reprice for all of them - ask here
-   * rather than each naming a unit of their own. That is the shape the rest of
-   * Phase 8 was about: the ladder rule had four spellings and nothing held
-   * them together, so the unit gets one spelling from the start.
-   *
-   * DIAMOND-AWARE SINCE 2026-09-14. The 2026-09-13 note here held this at the
-   * chip unit because `fn_prepare_tournament_place_obligations` priced the
-   * ladder to the cent and demanded `tournament_players.prize` agree with it.
-   * Read again against the live estate before the payout migration: that
-   * function has no caller in the database or in this engine (it belongs to
-   * the ruling path the server does not call). The path the engine DOES call
-   * - fn_complete_tournament_terminal -> fn_settle_tournament_places - derives
-   * its ladder from fn_ca_tournament_place_amounts, which knows the unit, and
-   * stamps `tournament_players.prize` from that ladder in the same
-   * transaction; it never compares the engine's provisional figure with its
-   * own until the event is COMPLETED and the stamp is its own. So the number
-   * computed here is presentation, and the only wrong thing it can do is show
-   * a Diamond finisher 122.10 for a bust the database will settle at 122.
-   *
-   * The unit comes from the club read beside the tournament row
-   * (`readTournamentClub`). When that read failed, the named admission is
-   * passed and the failure was already reported there - never a bare cent.
-   */
-  private placeLadderUnitCents(): number {
-    return this.tournamentUnit() ?? UNIT_CENTS_ASSET_NOT_READ;
-  }
 
   override requestEliminationSweep(
     reason?: string,
@@ -2274,7 +2240,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           return false;
         }
-        prize = computePlacePrize(ladderPool, payouts, position, this.placeLadderUnitCents());
+        prize = computePlacePrize(ladderPool, payouts, position);
       }
     }
 
@@ -3741,12 +3707,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     for (const player of eliminated) {
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
-        ? computePlacePrize(
-            ladderPool,
-            payouts,
-            Number(player.position),
-            this.placeLadderUnitCents()
-          )
+        ? computePlacePrize(ladderPool, payouts, Number(player.position))
         : 0;
 
       /**
@@ -4086,7 +4047,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async cleanupCommittedTournament(
     receipt: VerifiedTournamentCompletionReceipt
   ): Promise<boolean> {
-    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.committedFinishReceipt = receipt;
 
@@ -4109,7 +4069,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async cleanupCommittedSatellite(
     receipt: VerifiedSatelliteSettlementReceipt
   ): Promise<boolean> {
-    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.committedSatelliteReceipt = receipt;
     await this.broadcastCommittedOutcome('tournament_winner', {
@@ -4874,7 +4833,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async settleFinalTableDeal(
     receipt: VerifiedTournamentCompletionReceipt
   ): Promise<boolean> {
-    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.finalTableDealHandled = true;
     this.committedFinalTableDealReceipt = receipt;
@@ -5092,10 +5050,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           {
             tournament_id: this.tournamentId,
             winner_id: winnerId,
-            // The durable inbox must retain the cause after this container's
-            // logs are gone; reportError alone does not preserve it there.
-            error: settlementErr instanceof Error ? settlementErr.message : String(settlementErr),
-            error_name: settlementErr instanceof Error ? settlementErr.name : typeof settlementErr,
             outcome_unknown: outcomeUnknown,
             proven_refusal: provenRefusal,
           }

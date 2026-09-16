@@ -1,28 +1,8 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   FINAL TABLE - on the spade console (2026-09-08)
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * FINAL TABLE OVERLAY — Cinematic tournament final table announcement
+ * ═══════════════════════════════════════════════════════════════════════════════ */
 
-   The frame, the crest, the header well, the pill slot, the inks and the flat
-   closing cap all come from the approved master via SpadeConsole.css. This
-   sheet places the console on the backdrop and types the lineup on the black
-   glass between the rails. No card, no tile, no disc, no drawn button; sizes
-   are cqw against the console; no :hover anywhere.
-
-   EVERY ANIMATION THIS OVERLAY EVER PLAYED STILL PLAYS (CLAUDE.md 10.6), at
-   its original duration:
-
-     ftSlideIn / ftSlideOut  the console arrives and leaves, as before
-     ftPlayerIn              each row still arrives, on its inline stagger
-     ftPulse                 the dismiss line still breathes
-     ftCrownPulse            MOVED. The crown it breathed on is painted into
-                             the master's crest now, so the beat runs on the
-                             prize figure - the thing this moment is about.
-
-   The one thing still drawn is the chip-share bar. It is kept deliberately:
-   it is a measurement, in the same class as the slider the standard permits,
-   and the master paints no equivalent. It is a flat brand-blue fill on an
-   engraved groove - no gradient, no radius, no shadow.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
+/* ── Overlay Container ────────────────────────────────────────────────────── */
 .ft-overlay {
   position: fixed;
   inset: 0;
@@ -30,28 +10,36 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
   cursor: pointer;
 }
 
+/* ── Backdrop ─────────────────────────────────────────────────────────────── */
 .ft-overlay__backdrop {
   position: absolute;
   inset: 0;
-  /* Black, not a violet wash: one tone behind the frame and inside it. */
-  background: rgb(0 0 0 / 92%);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.95));
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 
+/* ── Content ──────────────────────────────────────────────────────────────── */
 .ft-overlay__content {
   position: relative;
-  width: min(100%, 440px);
-  max-height: 100%;
-  overflow: visible auto;
+  width: 90%;
+  max-width: 520px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 2rem 1.5rem;
+  background: linear-gradient(135deg, rgba(25, 25, 40, 0.95), rgba(15, 15, 30, 0.98));
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: 20px;
+  box-shadow:
+    0 0 60px rgba(167, 139, 250, 0.15),
+    0 0 120px rgba(96, 165, 250, 0.08),
+    0 30px 60px rgba(0, 0, 0, 0.6);
 }
 
-/* ── Phase animations ─────────────────────────────────────────────────── */
-
+/* ── Phase Animations ─────────────────────────────────────────────────────── */
 .ft-overlay--enter .ft-overlay__content {
   animation: ftSlideIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -70,7 +58,6 @@
     opacity: 0;
     transform: scale(0.7) translateY(30px);
   }
-
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -82,34 +69,21 @@
     opacity: 1;
     transform: scale(1);
   }
-
   100% {
     opacity: 0;
     transform: scale(0.85) translateY(-20px);
   }
 }
 
-/* ── The prize, as a row on the glass ─────────────────────────────────── */
-
-.ft-overlay__prize-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: baseline;
-  padding: 1cqw 0.5cqw 2.6cqw;
+/* ── Title Section ────────────────────────────────────────────────────────── */
+.ft-overlay__title-wrap {
+  text-align: center;
+  margin-bottom: 1.5rem;
 }
 
-.ft-overlay__prize-label {
-  font-size: 2.7cqw;
-}
-
-.ft-overlay__prize {
-  justify-self: end;
-  font-size: 5.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-align: right;
-  /* The crown's beat, on the figure the crown was celebrating. */
+.ft-overlay__crown {
+  font-size: 2.5rem;
+  margin-bottom: 0.25rem;
   animation: ftCrownPulse 2s ease-in-out infinite;
 }
 
@@ -117,34 +91,72 @@
   0%,
   100% {
     transform: scale(1);
-    filter: brightness(1);
+    filter: drop-shadow(0 0 8px rgba(111, 220, 255, 0.5));
   }
-
   50% {
-    transform: scale(1.06);
-    filter: brightness(1.25);
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 16px rgba(111, 220, 255, 0.8));
   }
 }
 
-/* ── The lineup ───────────────────────────────────────────────────────── */
-
-.ft-overlay__players {
-  display: grid;
+.ft-overlay__title {
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: transparent;
+  background: linear-gradient(135deg, #6fdcff, #0a5dc2, #d97706);
+  background-clip: text;
+  -webkit-background-clip: text;
+  margin: 0;
+  text-transform: uppercase;
+  text-shadow: none;
 }
 
+.ft-overlay__subtitle {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+.ft-overlay__prize {
+  font-size: 0.85rem;
+  color: #6fdcff;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  padding: 4px 12px;
+  display: inline-block;
+  background: rgba(111, 220, 255, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(111, 220, 255, 0.2);
+}
+
+/* ── Player List ──────────────────────────────────────────────────────────── */
+.ft-overlay__players {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Individual Player Row ────────────────────────────────────────────────── */
 .ft-player {
   display: grid;
-  grid-template-columns: 7cqw minmax(0, 1fr);
+  grid-template-columns: 28px 40px 1fr;
   grid-template-rows: auto auto;
-  gap: 0 3cqw;
+  gap: 0 10px;
   align-items: center;
-  padding: 2.4cqw 0.5cqw 2cqw;
-  /* An engraved rule between rows: a black cut with a light lip, the same
-     cut the master's own chrome rules are made of. */
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   opacity: 0;
   animation: ftPlayerIn 0.5s ease-out forwards;
+  transition: background 0.2s;
+}
+
+.ft-player:first-child {
+  background: rgba(111, 220, 255, 0.06);
+  border-color: rgba(111, 220, 255, 0.15);
 }
 
 @keyframes ftPlayerIn {
@@ -152,118 +164,143 @@
     opacity: 0;
     transform: translateX(-15px);
   }
-
   100% {
     opacity: 1;
     transform: translateX(0);
   }
 }
 
+/* Rank */
 .ft-player__rank {
-  font-size: 4.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
   text-align: center;
 }
 
+.ft-player:first-child .ft-player__rank {
+  color: #6fdcff;
+}
+
+/* Avatar */
+.ft-player__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.ft-player:first-child .ft-player__avatar {
+  border-color: rgba(111, 220, 255, 0.4);
+}
+
+.ft-player__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ft-player__avatar-initial {
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Info */
 .ft-player__info {
-  grid-column: 2;
-  display: grid;
-  gap: 0.6cqw;
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
 .ft-player__name-row {
   display: flex;
-  gap: 2.4cqw;
-  align-items: baseline;
-  min-width: 0;
+  align-items: center;
+  gap: 6px;
 }
 
 .ft-player__name {
-  min-width: 0;
-  font-size: 4cqw;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.ft-player__style {
-  flex: 0 0 auto;
-  font-size: 2.5cqw;
+/* Player Style Badge */
+.ft-player__style-badge {
+  font-size: 0.65rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
   white-space: nowrap;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 
 .ft-player__chips-row {
   display: flex;
-  gap: 2.6cqw;
-  align-items: baseline;
+  align-items: center;
+  gap: 8px;
 }
 
 .ft-player__chips {
-  font-size: 3.6cqw;
+  font-size: 0.8rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  color: #6fdcff;
+  font-variant-numeric: tabular-nums;
 }
 
 .ft-player__chip-pct {
-  font-size: 2.9cqw;
-  font-weight: 600;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 500;
 }
 
-/* The share bar: a groove cut into the glass with a flat brand fill. */
+/* Chip Bar */
 .ft-player__bar-wrap {
   grid-column: 1 / -1;
-  height: 0.7cqw;
-  margin-top: 1.6cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  margin-top: 4px;
 }
 
 .ft-player__bar {
   height: 100%;
-  background: #1877f2;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #6fdcff, #0a5dc2);
   transition: width 0.6s ease-out;
 }
 
-/* ── Dismiss line ─────────────────────────────────────────────────────── */
+.ft-player:first-child .ft-player__bar {
+  background: linear-gradient(90deg, #6fdcff, #1877f2);
+}
 
+/* ── Dismiss Label ────────────────────────────────────────────────────────── */
 .ft-overlay__dismiss {
-  padding-top: 2.4cqw;
-  color: #7c8794;
-  font-size: 2.9cqw;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 1.25rem;
+  letter-spacing: 1px;
   animation: ftPulse 2s ease-in-out infinite;
 }
 
 @keyframes ftPulse {
   0%,
   100% {
-    opacity: 0.35;
+    opacity: 0.3;
   }
-
   50% {
-    opacity: 0.75;
-  }
-}
-
-/* Reduced motion collapses MOTION, never meaning (10.6). */
-@media (prefers-reduced-motion: reduce) {
-  .ft-overlay--enter .ft-overlay__content,
-  .ft-overlay--exit .ft-overlay__content,
-  .ft-overlay__prize,
-  .ft-overlay__dismiss {
-    animation: none;
-  }
-
-  .ft-player {
-    animation: none;
-    opacity: 1;
+    opacity: 0.7;
   }
 }

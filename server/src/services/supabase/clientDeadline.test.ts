@@ -107,55 +107,6 @@ describe('database deadline includes response body and caller cancellation', () 
   });
 });
 
-describe('database request setup releases deadline resources on refusal', () => {
-  it.each([0, 1, 2])(
-    'cleans up client %s when headers are invalid before transport',
-    async (client) => {
-      const transport = vi.fn();
-      vi.stubGlobal('fetch', transport);
-      const controller = new AbortController();
-      const add = vi.spyOn(controller.signal, 'addEventListener');
-      const remove = vi.spyOn(controller.signal, 'removeEventListener');
-      await expect(
-        captured.fetches[client]('https://example.test/rpc', {
-          method: 'POST',
-          signal: controller.signal,
-          headers: { 'invalid\nheader': 'refused' },
-        })
-      ).rejects.toThrow();
-      expect(transport).not.toHaveBeenCalled();
-      expect(add).toHaveBeenCalledTimes(1);
-      expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1]);
-      expect(vi.getTimerCount()).toBe(0);
-    }
-  );
-
-  it.each([0, 1, 2])(
-    'cleans up client %s when authority header preparation throws',
-    async (client) => {
-      const actor = await import('./dataActorContext.js');
-      vi.spyOn(actor, 'dataActorHeaders').mockImplementation(() => {
-        throw new Error('authority_setup_refused');
-      });
-      const transport = vi.fn();
-      vi.stubGlobal('fetch', transport);
-      const controller = new AbortController();
-      const add = vi.spyOn(controller.signal, 'addEventListener');
-      const remove = vi.spyOn(controller.signal, 'removeEventListener');
-      await expect(
-        captured.fetches[client]('https://example.test/rpc', {
-          method: 'POST',
-          signal: controller.signal,
-        })
-      ).rejects.toThrow('authority_setup_refused');
-      expect(transport).not.toHaveBeenCalled();
-      expect(add).toHaveBeenCalledTimes(1);
-      expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1]);
-      expect(vi.getTimerCount()).toBe(0);
-    }
-  );
-});
-
 describe('database transport compatibility', () => {
   it('retries only a proven pre-execution rejection and keeps the response readable', async () => {
     const transport = vi

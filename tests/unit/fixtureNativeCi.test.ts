@@ -146,6 +146,114 @@ describe('the journal gate follows every financial probe input', () => {
   );
 });
 
+describe('FIFO5 qualification inputs reach the existing accounting category', () => {
+  it.each([
+    'scripts/qualification/spin-expiry-business-races.py',
+    'scripts/qualification/spin-expiry-business-state.sql',
+    'scripts/qualification/spin-expiry-committed-refund-oracle.py',
+    'scripts/qualification/spin-expiry-committed-refund-state.sql',
+    'scripts/qualification/spin-expiry-committed-refund.authority.json',
+    'scripts/qualification/spin-expiry-committed-refund.py',
+    'scripts/qualification/spin-expiry-lock-order.authority.json',
+    'scripts/qualification/spin-expiry-lock-order.component-inputs.sql',
+    'scripts/qualification/spin-expiry-lock-order.sql',
+    'supabase/components/spin-expiry-lock-order.rollback.sql',
+    'supabase/components/spin-expiry-lock-order.sql',
+    'scripts/ci/test-spin-expiry-postgres.py',
+    'scripts/ci/test_spin_expiry_wrapper.py',
+    'scripts/ci/classify-ci-changes.mjs',
+    'tests/unit/fixtureNativeCi.test.ts',
+    '.github/workflows/ci.yml',
+  ])('classifies the directly owned input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, fifo5: true });
+  });
+
+  it.each([
+    'scripts/qualification/spin-expiry-business-races.md',
+    'scripts/qualification/spin-expiry-committed-refund.md',
+    'scripts/qualification/spin-expiry-lock-order.md',
+  ])('does not select financial CI for documentation-only input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: false, fifo5: false });
+  });
+
+  it.each([
+    'src/pages/PlayerStatisticsPage.css',
+    'docs/example.md',
+    'scripts/qualification/unrelated.py',
+    'supabase/components/spin-expiry-lock-order-unrelated.sql',
+  ])('does not select FIFO5 for an unrelated path %s', (path) => {
+    expect(classifyChangedPaths([path]).fifo5).toBe(false);
+  });
+
+  it.each([undefined, null, 'unknown', [null], [''], ['bad\0path']])(
+    'retains FIFO5 when changed paths are malformed: %j',
+    (paths) => {
+      expect(classifyChangedPaths(paths)).toMatchObject({ server: true, fifo5: true });
+    }
+  );
+
+  it.each(['rename', 'delete'])('retains the %s of an authority input', (operation) => {
+    withGitFixture(({ directory, git, write, commit }) => {
+      const path = 'scripts/qualification/spin-expiry-committed-refund.authority.json';
+      write(path);
+      const base = commit();
+      if (operation === 'rename') git('mv', path, 'docs/retired-authority.json');
+      else git('rm', path);
+      const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+      expect(result.complete).toBe(true);
+      expect(result.paths).toContain(path);
+      expect(result.flags).toMatchObject({ server: true, fifo5: true });
+    });
+  });
+
+  it('exports the flag through the existing immutable change-detection job', () => {
+    expect(ci.jobs.changes.outputs.fifo5).toBe('${{ steps.f.outputs.fifo5 }}');
+    expect(ci.jobs.accounting_postgres.if).toContain("needs.changes.outputs.server == 'true'");
+  });
+
+  it('runs the wrapper selftest and real FIFO5 qualification once in the accounting job', () => {
+    const steps = ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-spin-expiry-postgres.py')
+    );
+    expect(steps).toHaveLength(1);
+    const step = steps[0];
+    expect(step.if).toBe(
+      "github.event_name == 'schedule' || needs.changes.result != 'success' || needs.changes.outputs.fifo5 != 'false'"
+    );
+    expect(step.run.trim().split('\n')).toEqual([
+      'python3 scripts/ci/test-spin-expiry-postgres.py --self-test',
+      'python3 scripts/ci/test-spin-expiry-postgres.py',
+    ]);
+    expect(step.env).toEqual({
+      PG_BIN: '/usr/lib/postgresql/17/bin',
+      FIFO5_PG17_PROVIDER_DIR: '${{ vars.FIFO5_PG17_PROVIDER_DIR }}',
+      FIFO5_PG17_PROVIDER_SHA256: '${{ vars.FIFO5_PG17_PROVIDER_SHA256 }}',
+    });
+    expect(step).not.toHaveProperty('continue-on-error');
+    expect(ci.jobs.accounting_postgres['runs-on']).toEqual([
+      'self-hosted',
+      'smarter-local-linux-arm64',
+    ]);
+    expect(ci.jobs.accounting_postgres['timeout-minutes']).toBe(15);
+  });
+
+  it('keeps the existing server tests dependent on successful financial qualification', () => {
+    expect(ci.jobs.server_shards.needs).toEqual(['changes', 'accounting_postgres']);
+    expect(ci.jobs.server_shards.if).toContain("needs.changes.outputs.server == 'true'");
+    const gate = ci.jobs.server_shards.steps.find(
+      (step: { name?: string }) => step.name === 'Require successful real PostgreSQL accounting tests'
+    );
+    expect(gate.if).toBe("needs.accounting_postgres.result != 'success'");
+    expect(gate.run).toMatch(/\bexit 1\b/);
+    expect(gate).not.toHaveProperty('continue-on-error');
+    const suite = ci.jobs.server_shards.steps.find(
+      (step: { name?: string }) => step.name === 'Full server test suite'
+    );
+    expect(suite.run).toContain('npm test -- --shard="$SERVER_TEST_SHARD/4"');
+    expect(suite).not.toHaveProperty('if');
+  });
+});
+
 describe('required CI owns native fixture verification', () => {
   it.each([
     'operations/release/fixture/safeupdate-provider.mjs',

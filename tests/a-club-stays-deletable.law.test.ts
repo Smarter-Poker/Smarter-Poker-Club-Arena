@@ -299,7 +299,7 @@ describe('a club stays deletable', () => {
               assert.equal(url, 'https://catalog.invalid/rest/v1/rpc/fn_ca_fk_index_gaps');
               assert.equal(options.method, 'POST');
               assert.equal(options.body, JSON.stringify({p_parent: 'public.clubs'}));
-              assert.equal(options.headers.apikey, 'sb_secret_fixture_only');
+              assert.equal(options.headers.apikey, 'sb_secret_test_fixture_only');
               return {ok: ${reply !== null}, status: ${reply === null ? 503 : 200},
                 json: async () => (${JSON.stringify(reply)}), text: async () => 'fixture unavailable'};
             };
@@ -318,7 +318,7 @@ describe('a club stays deletable', () => {
                 PATH: `${dirname(process.execPath)}:${process.env.PATH}`,
                 NODE_OPTIONS: `--import=${pathToFileURL(stub).href}`,
                 SUPABASE_URL: 'https://catalog.invalid',
-                SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_fixture_only',
+                SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test_fixture_only',
                 PUBLISH_MARKER: marker,
               },
             }

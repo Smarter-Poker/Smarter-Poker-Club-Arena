@@ -252,8 +252,10 @@ SELECT jsonb_build_object('stage','bank2_committed','receipt',result) FROM spin_
 
 SELECT jsonb_build_object('stage','creator_intent','execution',execution,'tournament',tournament) FROM spin_q_inputs;
 BEGIN;
+-- The genuine zero-opening-grant Union host is canonically union-owned: the
+-- tournament/table BEFORE INSERT stampers retain this exact fixture union.
 CREATE TEMP TABLE spin_q_create_config AS SELECT jsonb_build_object(
-  'club_id',execution,'union_id',NULL,'name','Spin expiry qualification '||execution,
+  'club_id',execution,'union_id',execution,'name','Spin expiry qualification '||execution,
   'game_type','NLH','variant','spin','tournament_type','SPIN','buy_in_amount',1,'buy_in_fee',0,
   'guaranteed_prize',0,'starting_chips',1000,'max_players',3,'min_players',3,'table_size',3,
   'current_players',0,'status','REGISTERING',
@@ -277,11 +279,12 @@ COMMIT;
 CREATE TEMP TABLE spin_q_table AS SELECT (result->>'table_id')::uuid id FROM spin_q_calls WHERE stage='create';
 GRANT SELECT ON spin_q_table TO authenticated;
 SELECT pg_temp.spin_q_assert((SELECT count(*)=1 FROM public.tournaments t JOIN spin_q_inputs q ON t.id=q.tournament
-  WHERE t.club_id=q.execution AND t.union_id IS NULL AND t.variant='spin' AND t.status='REGISTERING'
+  WHERE t.club_id=q.execution AND t.union_id=q.execution AND t.variant='spin' AND t.status='REGISTERING'
     AND t.started_at IS NULL AND t.max_players=3 AND t.buy_in_amount=1 AND t.buy_in_fee=0)
   AND (SELECT count(*)=1 FROM public.tournaments)
-  AND (SELECT count(*)=1 FROM public.tables b JOIN spin_q_table x ON b.id=x.id
-    WHERE b.tournament_id=(SELECT tournament FROM spin_q_inputs) AND b.status='waiting' AND b.max_players=3)
+  AND (SELECT count(*)=1 FROM public.tables b JOIN spin_q_table x ON b.id=x.id CROSS JOIN spin_q_inputs q
+    WHERE b.tournament_id=q.tournament AND b.club_id=q.execution AND b.union_id=q.execution
+      AND b.status='waiting' AND b.max_players=3)
   AND (SELECT count(*)=1 FROM public.tables)
   AND public.fn_poker_diamond_tournament((SELECT tournament FROM spin_q_inputs)) IS FALSE,
   'committed single ordinary-chip parent/table pair');

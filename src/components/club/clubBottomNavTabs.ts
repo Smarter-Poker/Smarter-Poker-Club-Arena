@@ -19,7 +19,7 @@
  * result drives `aria-current` while all six approved controls remain present.
  */
 
-export type TabKey = 'profile' | 'players' | 'cashier' | 'marketplace' | 'data' | 'stats';
+export type TabKey = 'diamond-spins' | 'players' | 'cashier' | 'marketplace' | 'data' | 'stats';
 
 /**
  * Path segments that mean "you are already on this tab's page", by tab.
@@ -32,7 +32,15 @@ export type TabKey = 'profile' | 'players' | 'cashier' | 'marketplace' | 'data' 
  * match used to misidentify.
  */
 export const TAB_SEGMENTS: Record<TabKey, readonly string[]> = {
-  profile: ['settings'],
+  'diamond-spins': [
+    'wheel',
+    'diamond-games',
+    'plinko',
+    'crash',
+    'crossing',
+    'mines',
+    'earn-diamonds',
+  ],
   players: ['members', 'players'],
   cashier: ['cashier', 'cashier-classic'],
   marketplace: ['marketplace'],

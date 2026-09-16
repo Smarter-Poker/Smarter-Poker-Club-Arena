@@ -7,6 +7,7 @@ import type {
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
 import { buildHorseDecisionKey } from './protocol.js';
+import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import {
   HorseDecisionAbortedError,
   HorseDecisionExpiredError,
@@ -192,6 +193,329 @@ const fastResult = (requestId: number, fence: string): FastHorseDecisionResult =
 });
 
 describe('LiveHorseDecisionWorkerClient', () => {
+  it.each([null, undefined, 3, 'FAST_RESULT', [], {}])(
+    'contains a malformed response envelope: %j',
+    async (message) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('bad-envelope'));
+      void pending.catch(() => undefined);
+      expect(() => worker.emitMessage(message as any)).not.toThrow();
+      await expect(pending).rejects.toThrow('invalid response envelope');
+      expect(client.status()).toMatchObject({ phase: 'failed', completedJobs: 0, queueDepth: 0 });
+    }
+  );
+  it('preserves zero compute time, full uint32 states and stale but valid governor readings', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage({
+      ...ready,
+      governor: {
+        ...ready.governor,
+        enabled: false,
+        stale: true,
+        scale: 1,
+        sampledAt: 0,
+        p50Ms: 0,
+        p99Ms: 0,
+        timerLateMs: 0,
+        throttledForS: 0,
+      },
+    });
+    const pending = client.decideFast(snapshot('valid-boundaries'));
+    worker.emitMessage({
+      ...fastResult(1, 'valid-boundaries'),
+      rngBefore: 0,
+      rngAfter: 0xffffffff,
+      computeMs: 0,
+      governorScale: 1,
+    });
+    expect(await pending).toMatchObject({ rngBefore: 0, rngAfter: 0xffffffff, computeMs: 0 });
+    expect(client.status()).toMatchObject({
+      phase: 'ready',
+      completedJobs: 1,
+      governor: { stale: true, enabled: false, scale: 1 },
+    });
+    const stopping = client.stop();
+    worker.emitMessage({ type: 'STOPPED' });
+    await stopping;
+  });
+  it.each(['fast', 'deep', 'discard'] as const)(
+    'rejects invalid %s compute metadata before recording completion',
+    async (lane) => {
+      for (const [key, bad] of [
+        ['computeMs', NaN],
+        ['computeMs', Infinity],
+        ['computeMs', -1],
+        ['governorScale', NaN],
+        ['governorScale', 0],
+        ['governorScale', 1.01],
+      ] as const) {
+        const worker = new FakeWorker();
+        const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+        worker.emitMessage(ready);
+        const input = snapshot('bad-metadata');
+        const pending =
+          lane === 'fast'
+            ? client.decideFast(input)
+            : lane === 'deep'
+              ? client.decideDeep({ ...input, rngBefore: 11, deepEquity: 6 })
+              : client.decideDiscard({
+                  ...input,
+                  cards: [],
+                  communityCards: [],
+                  gameVariant: 'pineapple',
+                });
+        void pending.catch(() => undefined);
+        const reply: any =
+          lane === 'discard'
+            ? {
+                type: 'DISCARD_RESULT',
+                requestId: 1,
+                generation: 7,
+                fence: input.fence,
+                cardIndex: 1,
+                computeMs: 4,
+                governorScale: 0.35,
+              }
+            : {
+                ...fastResult(1, input.fence),
+                type: lane === 'fast' ? 'FAST_RESULT' : 'DEEP_RESULT',
+              };
+        reply[key] = bad;
+        worker.emitMessage(reply);
+        expect(client.status().phase, `${lane}:${key}:${bad}`).toBe('failed');
+        await expect(pending).rejects.toThrow('invalid compute metadata');
+        expect(client.status().completedJobs).toBe(0);
+        expect(worker.terminateCalls).toBe(1);
+      }
+    }
+  );
+  it.each(['rngBefore', 'rngAfter'] as const)(
+    'rejects an invalid %s before a fast result reaches the table',
+    async (key) => {
+      for (const bad of [-1, 0.5, 4294967296, NaN, undefined]) {
+        const worker = new FakeWorker();
+        const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+        worker.emitMessage(ready);
+        const pending = client.decideFast(snapshot('bad-rng'));
+        void pending.catch(() => undefined);
+        const reply: any = fastResult(1, 'bad-rng');
+        reply[key] = bad;
+        worker.emitMessage(reply);
+        expect(client.status().phase).toBe('failed');
+        await expect(pending).rejects.toThrow('invalid sampling state');
+      }
+    }
+  );
+  it.each([-1, 3, 0.5, NaN, undefined])(
+    'rejects discard index %s at the client boundary',
+    async (cardIndex) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const pending = client.decideDiscard({
+        generation: 7,
+        fence: 'discard',
+        cards: [],
+        communityCards: [],
+        gameVariant: 'pineapple',
+      });
+      void pending.catch(() => undefined);
+      worker.emitMessage({
+        type: 'DISCARD_RESULT',
+        requestId: 1,
+        generation: 7,
+        fence: 'discard',
+        cardIndex,
+        computeMs: 0,
+        governorScale: 1,
+      } as any);
+      expect(client.status().phase).toBe('failed');
+      await expect(pending).rejects.toThrow('invalid discard index');
+    }
+  );
+  it('rejects the active status promise before removing corrupt status from the queue', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending: Promise<unknown> = (client as any).enqueue(
+      { type: 'STATUS', requestId: 1, generation: 0, fence: 'worker:status' },
+      'STATUS_RESULT'
+    );
+    let terminal = 'pending';
+    void pending.then(
+      () => {
+        terminal = 'resolved';
+      },
+      () => {
+        terminal = 'rejected';
+      }
+    );
+    worker.emitMessage({
+      ...ready,
+      type: 'STATUS_RESULT',
+      requestId: 1,
+      generation: 0,
+      fence: 'worker:status',
+      solverStores: { ...ready.solverStores, postflopV31Dataset: null },
+    });
+    await Promise.resolve();
+    expect(client.status().phase).toBe('failed');
+    expect(terminal).toBe('rejected');
+    expect(client.status().completedJobs).toBe(0);
+  });
+  it.each(['ready', 'status'] as const)('refuses corrupt governor fields in %s', async (kind) => {
+    for (const [key, bad] of [
+      ['scale', NaN],
+      ['scale', 0],
+      ['p99Ms', -1],
+      ['p50Ms', Infinity],
+      ['sampledAt', NaN],
+      ['throttledForS', -1],
+      ['timerLateMs', -1],
+      ['stale', undefined],
+      ['enabled', 'true'],
+    ] as const) {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      let pending: Promise<unknown>;
+      if (kind === 'ready') pending = client.ready();
+      else {
+        worker.emitMessage(ready);
+        pending = (client as any).enqueue(
+          { type: 'STATUS', requestId: 1, generation: 0, fence: 'worker:status' },
+          'STATUS_RESULT'
+        );
+      }
+      void pending.catch(() => undefined);
+      const message =
+        kind === 'ready'
+          ? { ...ready }
+          : {
+              ...ready,
+              type: 'STATUS_RESULT',
+              requestId: 1,
+              generation: 0,
+              fence: 'worker:status',
+            };
+      message.governor = { ...ready.governor, [key]: bad };
+      worker.emitMessage(message as any);
+      expect(client.status().phase, `${kind}:${key}`).toBe('failed');
+      await expect(pending).rejects.toThrow('invalid governor');
+    }
+  });
+
+  it('rejects internally consistent policy ownership for the wrong request variant', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const input = snapshot('wrong-owner');
+    input.gameState.gameVariant = 'plo4';
+    const pending = client.decideFast(input);
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, 'wrong-owner');
+    reply.decision.policyOwnership = {
+      version: 'horse-policy-ownership-v1',
+      variant: 'nlh',
+      owner: 'reference',
+      packVersion: null,
+      mode: 'reference',
+      outcome: 'reference',
+      reason: null,
+    };
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+  });
+  it.each(['fast', 'deep'] as const)(
+    'rejects malformed %s policy graphs inside the failure boundary',
+    async (lane) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('invalid-graph');
+      const pending =
+        lane === 'fast'
+          ? client.decideFast(input)
+          : client.decideDeep({ ...input, rngBefore: 11, deepEquity: 6 });
+      void pending.catch(() => undefined);
+      const reply = fastResult(1, 'invalid-graph');
+      reply.decision.policyGraph = { version: 'horse-policy-order-v1', transitions: null } as any;
+      expect(() =>
+        worker.emitMessage(lane === 'fast' ? reply : { ...reply, type: 'DEEP_RESULT' })
+      ).not.toThrow();
+      await expect(pending).rejects.toThrow('invalid policy receipt');
+      expect(client.status().phase).toBe('failed');
+      expect(worker.terminateCalls).toBe(1);
+    }
+  );
+  it.each([
+    'discontinuity',
+    'wrong_final',
+    'private_field',
+    'invalid_action',
+    'invalid_clock',
+  ] as const)('rejects a returned decision with %s', async (fault) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(snapshot('invalid-receipt'));
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, 'invalid-receipt');
+    const graph = new HorsePolicyGraph(() => 0);
+    for (const node of HORSE_POLICY_ORDER)
+      graph.run(node, node === 'reference' ? null : reply.decision, () => ({
+        decision: reply.decision,
+      }));
+    reply.decision = graph.finish(reply.decision);
+    if (fault === 'discontinuity')
+      reply.decision.policyGraph!.transitions[2].before!.action = 'raise';
+    if (fault === 'wrong_final') reply.decision.action = 'check';
+    if (fault === 'private_field')
+      Object.assign(reply.decision.policyGraph!.transitions[1], { cards: ['private-input'] });
+    if (fault === 'invalid_action') reply.decision.action = 'invalid' as any;
+    if (fault === 'invalid_clock') reply.decision.thinkTime = NaN;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+  });
+  it('keeps the brain failure provenance in the exact private execution witness', async () => {
+    const worker = new FakeWorker(),
+      client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(snapshot('brain-exception'));
+    const reply = fastResult(1, 'brain-exception');
+    reply.decision.policyFallback = 'brain_exception';
+    worker.emitMessage(reply);
+    const result = await pending;
+    expect(result.decision.executionWitness).toMatchObject({
+      policyFallback: 'brain_exception',
+      identity: { lane: 'fast' },
+    });
+  });
+  it.each([
+    null,
+    [],
+    { action: 'fold', thinkTime: 1, policyFallback: 'unknown' },
+    { action: 'fold', thinkTime: 1, policyFallback: true },
+  ])(
+    'rejects malformed decision provenance without throwing from the message handler: %j',
+    async (decision) => {
+      const worker = new FakeWorker(),
+        client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('bad-provenance'));
+      const rejected = expect(pending).rejects.toThrow('invalid fallback provenance');
+      expect(() =>
+        worker.emitMessage({ ...fastResult(1, 'bad-provenance'), decision } as any)
+      ).not.toThrow();
+      await rejected;
+      expect(client.status().phase).toBe('failed');
+    }
+  );
+
   it.each(['fast', 'deep'] as const)(
     'binds the %s response to its canonical request without copying private inputs',
     async (lane) => {

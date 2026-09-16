@@ -34,9 +34,9 @@ exactly this shape.
 ## What changed
 
 **A hand.** `fn_ca_diamond_rule_flip_due()`, on a daily pg*cron tick beside the
-four `ca-diamond-*` jobs already running this subsystem's work. It is not a
+four `ca-diamond-*`jobs already running this subsystem's work. It is not a
 repair job (10.12): it repairs nothing and compensates for nothing. Its schedule
-\_is* the product — `flip_after` is a date, and a date needs something that
+\_is* the product —`flip_after` is a date, and a date needs something that
 notices it. It decides nothing either: arming was decided when each rule was
 written (rulings 13–20, with dates). It executes recorded intent.
 

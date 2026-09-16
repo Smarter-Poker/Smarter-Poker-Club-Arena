@@ -48,7 +48,8 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, smarter-local-publish]
+    environment: Production
     timeout-minutes: 15
     permissions:
       contents: read

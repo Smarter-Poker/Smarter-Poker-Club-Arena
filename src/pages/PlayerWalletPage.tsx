@@ -41,6 +41,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useDiamondWalletSummary } from '../hooks/useDiamondWalletSummary';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useToast } from '../components/common/Toast';
+import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
@@ -1250,6 +1251,19 @@ export default function PlayerWalletPage() {
           </div>
         </div>
       </section>
+
+      {/* THE OTHER WAY TO GET CHIPS (Dan 2026-09-10). The cashier is where a
+          player comes when they have none, so the door belongs here too: it
+          shows only when this club's host has a game open and the player holds
+          enough diamonds to get in. */}
+      {currentClubId ? (
+        <DiamondsToChipsButton
+          clubId={currentClubId}
+          size="large"
+          className="wallet-diamond-games"
+          onGo={(to) => navigate(to)}
+        />
+      ) : null}
 
       {/* ═══════════ TABS ═══════════ */}
       <div

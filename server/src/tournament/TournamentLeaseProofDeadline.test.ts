@@ -64,6 +64,19 @@ afterEach(() => {
 });
 
 describe('tournament lease proof deadline', () => {
+  it('refuses a late renewal before an overdue expiry timer has run', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    _setTournamentLeaseMonotonicNowForTests(() => now);
+    const manager = new LeaseDeadlineHarness(20_000);
+    manager.activate();
+    now = 20_001;
+    expect(manager.renewTournamentLeaseProof(GENERATION, 25_000)).toBe(false);
+    expect(manager.authorityIsCurrent()).toBe(false);
+    expect(manager.rawRunning()).toBe(false);
+    await manager.stop();
+  });
+
   it('fail-stops the manager at its conservative monotonic deadline', async () => {
     vi.useFakeTimers();
     let now = 0;

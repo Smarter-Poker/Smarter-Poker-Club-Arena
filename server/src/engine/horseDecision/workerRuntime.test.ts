@@ -319,6 +319,18 @@ describe('Phase 13 cross-board worker boundary', () => {
     request.gameState.communityCards3 = ['8', '9', 'T'].map((r) => card(r, 'hearts')) as any;
     return request;
   };
+  it.each(['PLO4', 'Plo4'])(
+    'rejects noncanonical policy name %s before invoking the brain',
+    async (variant) => {
+      const h = harness();
+      const request = structuredClone(fastRequest());
+      request.gameState.gameVariant = variant as any;
+      h.runtime.receive(rekey(request));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)?.type).toBe('ERROR');
+      expect(h.decisionsAtRng).toHaveLength(0);
+    }
+  );
   it('accepts a complete physical triple-board betting snapshot', async () => {
     const h = harness();
     h.runtime.receive(rekey(multiboard()));
@@ -1245,6 +1257,34 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.stopped()).toBe(1);
   });
 
+  it('drops partial decision effects when the real brain catches an evaluation failure', async () => {
+    const h = harness(true);
+    h.setCapturedEffects([
+      {
+        type: 'raise_plan',
+        handKey: 'table:hand',
+        userId: 'horse-2',
+        street: 'flop',
+        plan: 'foldToRaise',
+      },
+    ]);
+    const failed = vi.spyOn(HorseLogic as any, 'decideInternal').mockImplementation(() => {
+      throw Error('failed policy evaluation');
+    });
+    try {
+      h.runtime.receive(fastRequest(1));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'FAST_RESULT',
+        decision: { action: 'fold', policyFallback: 'brain_exception' },
+        effects: [],
+      });
+      expect(h.appliedEffects).toEqual([]);
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
   it('applies fast decision effects only through an explicit FIFO commit', async () => {
     const h = harness();
     const effects: HorseMindDecisionEffect[] = [
@@ -1588,8 +1628,16 @@ it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundar
   };
   request.gameState.dealerSeat = 2;
   request.decisionKey = buildHorseDecisionKey(request);
-  h.runtime.receive(request);
-  await h.runtime.drain();
+  // This proves execution/wiring, not latency. A shared runner pause cannot
+  // be required to fit the production 4 ms window. Budget refusal is tested
+  // independently by Plo4LivePolicy; no live request clock control is enabled.
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    h.runtime.receive(request);
+    await h.runtime.drain();
+  } finally {
+    clock.mockRestore();
+  }
   const result = h.messages.find((m) => m.type === 'FAST_RESULT');
   if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
   expect(result.decision.plo4Policy?.mode).toBe('shadow');

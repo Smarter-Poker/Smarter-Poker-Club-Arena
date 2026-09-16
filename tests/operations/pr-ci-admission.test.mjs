@@ -257,12 +257,15 @@ for (const name of [
   'build',
   'css-beats-e2e',
 ]) {
-  test(`${name} admits before dependency setup on a fresh hosted read-only runner`, () => {
+  test(`${name} admits before dependency setup on the local read-only runner`, () => {
     const source = job(name),
       start = source.indexOf('- name: Admit only the current PR head');
     assert.ok(start > source.indexOf('uses: actions/checkout@'));
     assert.ok(start < source.indexOf('- name: Setup Node'));
-    assert.match(source, /runs-on: ubuntu-latest/);
+    assert.match(
+      source,
+      /^    runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m
+    );
     assert.match(source, /permissions:\n      contents: read\n      pull-requests: read/);
     const gate = source.slice(start, source.indexOf('- name: Setup Node'));
     assert.match(gate, /working-directory: \./);
@@ -270,6 +273,36 @@ for (const name of [
     assert.doesNotMatch(gate, /continue-on-error|\bif:|\|\| true|\bwrite\b/);
   });
 }
+test('every required workflow job uses its exact local architecture without a hosted fallback', () => {
+  for (const name of ['ci', 'silent-revert-guard', 'component-fixture-native-smoke']) {
+    const source = readFileSync(
+      new URL(`../../.github/workflows/${name}.yml`, import.meta.url),
+      'utf8'
+    );
+    const jobs = source.slice(source.indexOf('\njobs:\n') + 7);
+    const entries = [...jobs.matchAll(/^  ([A-Za-z_][A-Za-z_0-9-]*):\s*$/gm)];
+    assert.ok(entries.length > 0, `${name} declares jobs`);
+    for (let i = 0; i < entries.length; i++) {
+      const body = jobs.slice(entries[i].index, entries[i + 1]?.index);
+      if (/^    uses:/m.test(body)) {
+        assert.equal(name, 'ci');
+        assert.equal(entries[i][1], 'fixture_native');
+        assert.match(
+          body,
+          /^    uses: \.\/\.github\/workflows\/component-fixture-native-smoke\.yml$/m
+        );
+      } else {
+        assert.match(
+          body,
+          name === 'component-fixture-native-smoke'
+            ? /^    runs-on: \[self-hosted, smarter-local-linux-amd64\]$/m
+            : /^    runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m,
+          `${name}/${entries[i][1]} must wait for the matching local architecture`
+        );
+      }
+    }
+  }
+});
 test('required TypeScript gate still requires the actual compilation result', () => {
   assert.match(job('typecheck'), /needs: \[typecheck_compile, changes, fixture_native\]/);
   assert.match(job('typecheck'), /COMPILE_RESULT: \$\{\{ needs.typecheck_compile.result \}\}/);
@@ -337,4 +370,23 @@ test('successful current-head shards retain both required passing aggregates', (
     stdio: 'pipe',
     env: { MATRIX_RESULT: 'success' },
   });
+});
+
+// The first local ARM run failed before exercising any journal transaction:
+// its default embedded runtime only exists for Linux x64. Use the same PG17
+// provider as the other real-database jobs without changing the probe itself.
+test('the journal gate uses the installed PostgreSQL 17 provider', () => {
+  const body = job('typecheck_compile');
+  const step = body.split('      - name: Chip journal transactions survive failures and replays\n')[1]?.split(/\n      - /)[0];
+  assert.ok(step);
+  assert.match(step, /^        env:\n          PGBIN: \/usr\/lib\/postgresql\/17\/bin$/m);
+  assert.match(step, /^        run: bash scripts\/ci\/probes\/chip-journal-atomicity\/run-isolated\.sh$/m);
+  assert.doesNotMatch(step, /continue-on-error|if:/);
+});
+
+test('installed dependency caches cannot cross local CPU architectures', () => {
+  const source = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const keys = [...source.matchAll(/^          key: (nm-[^\n]+)$/gm)];
+  assert.ok(keys.length >= 5);
+  for (const [, key] of keys) assert.ok(key.includes('${{ runner.arch }}'), key);
 });

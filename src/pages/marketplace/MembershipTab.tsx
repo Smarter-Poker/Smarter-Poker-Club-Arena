@@ -13,7 +13,6 @@ import { masterBus } from '../../core/MasterBus';
 import { isNativePlatform } from '../../lib/appBase';
 import { fmt, formatDate } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
-import { VipArt } from './ItemArt';
 import {
   startCheckout,
   storeFetch,
@@ -21,6 +20,11 @@ import {
   type VipPlan,
   type WalletInfo,
 } from './marketplaceShared';
+
+// This is the established gold VIP card used by the Arena. Membership state,
+// plan names, prices, and actions remain live DOM beside it; Marketplace must
+// not replace it with generated term-specific frames.
+const VIP_CARD_ART = `${import.meta.env.BASE_URL}images/vip-card.png`;
 
 interface MembershipTabProps {
   clubId: string;
@@ -238,7 +242,7 @@ export default function MembershipTab({
       <div className={wallet.isVip ? styles.vipStatusActive : styles.vipStatusInactive}>
         {wallet.isVip ? (
           <>
-            <span className={styles.vipStatusBadge}>VIP ACTIVE</span>
+            <span className={styles.vipStatusBadge}>VIP Active</span>
             <span>
               {wallet.vipTier === 'lifetime'
                 ? 'Lifetime Membership'
@@ -258,16 +262,15 @@ export default function MembershipTab({
             key={plan.id}
             className={`${styles.planCard} ${plan.featured ? styles.planCardFeatured : ''}`}
           >
-            {plan.featured && <span className={styles.pkgRibbon}>MOST POPULAR</span>}
+            {plan.featured && <span className={styles.pkgRibbon}>Most Popular</span>}
             <div className={styles.planArt}>
-              <VipArt
-                variant={
-                  plan.id === 'vip-lifetime'
-                    ? 'lifetime'
-                    : plan.id === 'vip-yearly'
-                      ? 'yearly'
-                      : 'monthly'
-                }
+              <img
+                className={styles.planArtImage}
+                src={VIP_CARD_ART}
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                decoding="async"
               />
             </div>
             <div className={styles.planName}>{plan.name}</div>
@@ -307,8 +310,8 @@ export default function MembershipTab({
                   >
                     {busy === `card-${plan.checkoutPlan}`
                       ? native
-                        ? 'Opening Store...'
-                        : 'Opening Checkout...'
+                        ? 'Opening Store'
+                        : 'Opening Checkout'
                       : wallet.isVip
                         ? 'Switch To This Plan'
                         : native
@@ -322,7 +325,7 @@ export default function MembershipTab({
                   onClick={() => plan.planKey && buyWithDiamonds(plan.planKey, plan.priceDiamonds)}
                 >
                   {busy === `diamonds-${plan.planKey}`
-                    ? 'Processing...'
+                    ? 'Processing'
                     : `Pay ${fmt(plan.priceDiamonds)} Diamonds`}
                 </button>
               </>
@@ -345,7 +348,7 @@ export default function MembershipTab({
             disabled={busy !== null}
             onClick={restorePurchases}
           >
-            {busy === 'restore' ? 'Restoring...' : 'Restore Purchases'}
+            {busy === 'restore' ? 'Restoring' : 'Restore Purchases'}
           </button>
           . Diamond-Paid Plans Do Not Auto-Renew, And Lifetime Never Does.
         </div>

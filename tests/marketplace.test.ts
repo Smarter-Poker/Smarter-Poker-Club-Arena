@@ -63,8 +63,12 @@ describe('describeGrant — what the card promises the buyer', () => {
 
   it('pluralises correctly', () => {
     expect(describeGrant({ type: 'time_bank', qty: 1 })).toContain('(1 Use)');
-    expect(describeGrant({ type: 'throwable', qty: 1 })).toBe('1 Free Throw');
-    expect(describeGrant({ type: 'throwable', qty: 5 })).toBe('5 Free Throws');
+    expect(describeGrant({ type: 'throwable', qty: 1 })).toBe(
+      '1 Use Across All 49 Table Throwables'
+    );
+    expect(describeGrant({ type: 'throwable', qty: 5 })).toBe(
+      '5 Uses Across All 49 Table Throwables'
+    );
   });
 
   it('never renders a fractional or zero quantity', () => {

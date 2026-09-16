@@ -88,6 +88,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   protected async dealingLoop(): Promise<void> {
+    // A roster read can retire mirrors before its arrival proof is available.
+    // Keep the prior occupancies until that observation can be announced.
+    let deferredRosterBeforeArrival: Map<string, SeatedPlayer['occupancy_id']> | null = null;
     while (this.running) {
       try {
         // FIX 211: Await any pending postHandTasks before reloading players
@@ -224,43 +227,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // 22-30 times in six hours. Each step now stamps its own phase and
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
-        const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        const previousOccupancies = new Map(
-          this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id])
-        );
+        const previousOccupancies: Map<string, SeatedPlayer['occupancy_id']> =
+          deferredRosterBeforeArrival ??
+          new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
         const nextRoster = await this.prepareNextHand();
         if (!this.lifecycleCanMutate()) return;
-        this.seatedPlayers = nextRoster;
         // A leave and rejoin can both commit between reads. User identity is
         // unchanged, but entry debt, button eligibility and presence belonged
         // to the old stay. Retire those mirrors before adopting the new seat.
-        if (!this.isTournamentTable()) {
-          for (const p of this.seatedPlayers) {
-            if (
-              !previousOccupancies.has(p.user_id) ||
-              previousOccupancies.get(p.user_id) === p.occupancy_id
-            )
-              continue;
-            previousSeatedIds.delete(p.user_id);
-            this.knownPlayerIds.delete(p.user_id);
-            this.waitingForBB.delete(p.user_id);
-            this.postingBBToEnter.delete(p.user_id);
-            this.postBBWhenClear.delete(p.user_id);
-            this.pendingPostToEnter.delete(p.user_id);
-            this.mustPostBB.delete(p.user_id);
-            this.returningFromSitout.delete(p.user_id);
-            this.heldForSwap.delete(p.user_id);
-            this.dealtInUserIds.delete(p.user_id);
-            this.pendingSitOut.delete(p.user_id);
-            this.leaveHeldByClock.delete(p.user_id);
-            this.horseRebuys.delete(p.user_id);
-            this.disconnectEngine.unregisterPlayer(this.tableId, p.user_id);
-            this.timeBankEngine.removePlayer(this.tableId, p.user_id);
-            this.straddleEngine.removePlayer(this.tableId, p.user_id);
-            this.preActionEngine.removePlayer(this.tableId, p.user_id);
-            this.chipContinuity.forget(p.user_id);
-          }
-        }
+        this.adoptSeatRoster(nextRoster);
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player
@@ -271,8 +246,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // adopted BEFORE the sit-out restore, because that restore registers
         // the player and restoreFsmStates never clobbers a live entry. See
         // ServerTableEngineBase.adoptMovedPresence.
-        this.adoptMovedPresence();
+        if (!(await this.adoptMovedPresence())) {
+          if (!this.lifecycleCanMutate()) return;
+          deferredRosterBeforeArrival = previousOccupancies;
+          await this.sleep(5000);
+          continue;
+        }
+        if (!this.lifecycleCanMutate()) return;
+        deferredRosterBeforeArrival = null;
         this.restoreSitOutsFromSeats();
+
+        const previousSeatedIds = new Set(previousOccupancies.keys());
+        if (!this.isTournamentTable()) {
+          for (const p of this.seatedPlayers) {
+            if (previousOccupancies.get(p.user_id) !== p.occupancy_id)
+              previousSeatedIds.delete(p.user_id);
+          }
+        }
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.
@@ -309,7 +299,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // button eligibility for players who were already playing.
         // A SEAT CHANGED (2026-09-05): an arrival or a departure seen in the
         // rows this iteration wakes the game's ClusterController tick.
-        let rosterChanged = false;
+        let rosterChanged = [...previousOccupancies.keys()].some(
+          (id) => !this.seatedPlayers.some((p) => p.user_id === id)
+        );
         if (this.dealingLoopFirstIteration) {
           // Dan 2026-08-30: BEFORE the veteran seeding below, because that
           // seeding is what used to destroy the hold. Both halves of the fix
@@ -2777,7 +2769,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
         // Only initialize time bank if player is NEW (don't reset existing pool per session)
         if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
-          const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
+          const allowance = tbExtras.get(p.user_id);
+          const tbTotal = this.timeBankBaseSeconds + (allowance?.extraSeconds ?? 0);
           // ── REVERTED 2026-08-25, same day it shipped. Read this before trying
           //    the restart-fidelity time-bank restore again. ──
           //
@@ -2807,11 +2800,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
             remainingSeconds: tbTotal,
             usesRemaining: Math.ceil(tbTotal / 20),
+            unlimitedActivations: allowance?.unlimitedActivations === true,
           });
           this.timeBankMeta.set(p.user_id, {
             initialSeconds: tbTotal,
             baseSeconds: this.timeBankBaseSeconds,
             dbConsumedSeconds: 0,
+            ...(allowance?.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
           });
         }
         this.disconnectEngine.registerPlayer(

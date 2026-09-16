@@ -10,7 +10,7 @@ const m = vi.hoisted(() => ({
   readMember: vi.fn(),
   readCommissions: vi.fn(),
   balanceRefresh: () => undefined as unknown,
-  commissionRefresh: () => undefined as unknown,
+  commissionRefresh: undefined as (() => unknown) | undefined,
   owner: '10000000-0000-4000-8000-000000000001',
   agentBalance: 100,
   memberBalance: 456,
@@ -110,6 +110,7 @@ beforeEach(() => {
   m.memberError = false;
   m.filters = [];
   m.clubId = '20000000-0000-4000-8000-000000000001';
+  m.commissionRefresh = undefined;
   m.readMember.mockReset().mockImplementation(() => ({
     data: m.memberError ? null : { chip_balance: m.memberBalance },
     error: m.memberError ? new Error('denied') : null,
@@ -224,11 +225,13 @@ describe('agent page response ordering', () => {
     m.readCommissions.mockReturnValue(commissionResult(31));
     const view = mount();
     await screen.findByText('Total: 31 Chips');
+    await waitFor(() => expect(m.commissionRefresh).toEqual(expect.any(Function)));
+    const refreshCommissions = m.commissionRefresh!;
     const older = deferred<ReturnType<typeof commissionResult>>();
     m.readCommissions.mockReturnValueOnce(older.promise).mockReturnValue(commissionResult(37));
     const calls = m.readCommissions.mock.calls.length;
     act(() => {
-      m.commissionRefresh();
+      refreshCommissions();
     });
     await waitFor(() => expect(m.readCommissions).toHaveBeenCalledTimes(calls + 1));
     m.clubId = clubB;
@@ -252,15 +255,19 @@ describe('agent page response ordering', () => {
     m.readCommissions.mockReturnValue(commissionResult(31));
     mount();
     await screen.findByText('Total: 31 Chips');
+    // The initial read can render before the realtime subscription effect.
+    // Wait for this mount's callback, never a prior mount's retained closure.
+    await waitFor(() => expect(m.commissionRefresh).toEqual(expect.any(Function)));
+    const refreshCommissions = m.commissionRefresh!;
     const older = deferred<ReturnType<typeof commissionResult>>();
     m.readCommissions.mockReturnValueOnce(older.promise).mockReturnValueOnce(commissionResult(37));
     const calls = m.readCommissions.mock.calls.length;
     act(() => {
-      m.commissionRefresh();
+      refreshCommissions();
     });
     await waitFor(() => expect(m.readCommissions).toHaveBeenCalledTimes(calls + 1));
     act(() => {
-      m.commissionRefresh();
+      refreshCommissions();
     });
     await screen.findByText('Total: 37 Chips');
     await act(async () => {

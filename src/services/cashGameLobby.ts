@@ -248,6 +248,14 @@ export async function requestSeatChange(
     p_to_table_id: toTableId,
   });
   if (error) throw error;
+  if (data?.ok !== true) throw new Error(String(data?.reason ?? 'Seat change was not confirmed'));
+  const hasRequest = typeof data.request_id === 'string' && data.request_id.trim().length > 0;
+  const moving = ['moving', 'swapping', 'moved'].includes(data.action);
+  const hasDestination = typeof data.to_table_id === 'string' && data.to_table_id.trim().length > 0;
+  const listed =
+    data.action === 'listed' && Number.isSafeInteger(data.position) && data.position > 0;
+  if (!hasRequest || !(moving ? hasDestination : listed))
+    throw new Error('Seat change was not confirmed');
   return data as SeatChangeResult;
 }
 
@@ -256,6 +264,10 @@ export async function cancelSeatChange(
 ): Promise<{ ok: boolean; cancelled: number }> {
   const { data, error } = await supabase.rpc('fn_cash_seat_change_cancel', { p_game_id: gameId });
   if (error) throw error;
+  if (data?.ok !== true)
+    throw new Error(String(data?.reason ?? 'Seat change cancellation was not confirmed'));
+  if (!Number.isSafeInteger(data.cancelled) || data.cancelled < 0)
+    throw new Error('Seat change cancellation was not confirmed');
   return data as { ok: boolean; cancelled: number };
 }
 

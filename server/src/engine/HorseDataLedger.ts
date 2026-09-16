@@ -902,15 +902,36 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_brain_telemetry',
     'nightly',
-    'fn_audit_layer_silence_and_coverage, fn_audit_layer_drift, fn_audit_data_receipts (BrainTelemetryFlush writes through fn_brain_telemetry_add)',
+    'fn_audit_layer_silence_and_coverage, fn_audit_layer_drift, fn_audit_data_receipts (BrainTelemetryFlush writes through fn_horse_brain_flush_receipt)',
     'per-day fire counts per layer (BrainTelemetryFlush)',
     'V15',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(
+    'horse_brain_flush_receipts',
+    'nightly',
+    'fn_horse_brain_flush_receipt via BrainTelemetryFlush and HorseBrainTelemetryPublisher',
+    'private atomic batch deduplication with source identity; accepted batches only, not a complete decision ledger',
+    'Phase15'
+  ),
+  table(
+    'horse_journaled_model_sweep',
+    'nightly',
+    'fn_claim_horse_journaled_model and fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
+    'private leased cursor for bounded journal-only diagnostic reconstruction; not a source watermark',
+    'Phase14'
+  ),
+  table(
+    'horse_journaled_opponent_models',
+    'nightly',
+    'fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
+    'private latest scoped frequency and holdout reports; no causal EV, source completeness or activation authority',
+    'Phase14'
+  ),
+  table(
     'horse_decision_latency',
     'nightly',
-    'the panel; fn_horse_decision_latency_add (BrainTelemetryFlush writes through the RPC)',
+    'the panel; fn_horse_brain_flush_receipt (BrainTelemetryFlush atomically writes counters and latency with source receipts)',
     'per-day decision latency histograms',
     'V28',
     { dayColumn: 'day', freshnessDays: 1 }
@@ -2160,6 +2181,44 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V44',
     'decide',
     0.001
+  ),
+  receipt(
+    'phase15_telemetry_batch_expired',
+    'BrainTelemetryFlush.flush',
+    'a retained pending telemetry batch exceeded the 32-day receipt window and was explicitly refused without aggregation; this is an evidence gap',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_brain_exception',
+    'HorseLogic.decide',
+    'a policy exception produced an explicit check/fold liveness fallback; the private error is not part of the action receipt',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_policy_*',
+    'HorseLogic.decide',
+    'finite registered variant outcomes: reference, disabled, computed, outside_domain or unavailable; unregistered input refuses before policy execution',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_deep_brain_exception_retired',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a failed deep evaluation was retired while the original fast decision and its execution authority were retained',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_execution_*',
+    'HorseExecutionWitness.countFinal',
+    'one terminal memory-witness outcome per returned decision, bound to the controller accepted record; not a durable decision ledger',
+    'Phase15'
+  ),
+  ...(['fast', 'deep', 'worker_fallback'] as const).map((lane) =>
+    receipt(
+      `phase15_${lane}_execution_*`,
+      'HorseExecutionWitness.countFinal',
+      `terminal execution-witness outcomes from the ${lane} lane; failed or discarded computation is distinct from accepted policy intent`,
+      'Phase15'
+    )
   ),
   receipt(
     'v44_second_look_flipped',

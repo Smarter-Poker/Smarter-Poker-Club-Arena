@@ -1,4 +1,4 @@
-# server/src/GameServerWedgedPassNamesTheHalf.test.ts
+# server/src/GameServerWedgedPassNamesTheHalf.law.test.ts
 
 `performOwnedEngineLeaseProofRenewal` awaits two halves and each half awaits
 exactly one RPC, so the half still outstanding when a pass is abandoned names the

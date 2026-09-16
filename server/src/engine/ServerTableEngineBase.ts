@@ -74,12 +74,18 @@ import {
   pendingSeatMoves,
   seatMoveCancelledNotice,
   seatMoveNotice,
+  SeatMoveBatchError,
   type PendingSeatMove,
+  type SeatMoveOutcome,
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
-import { claimMovedPresence, depositMovedPresence } from './SeatMovePresence.js';
+import { claimMovedPresence, depositMovedPresence, hasMovedPresence } from './SeatMovePresence.js';
+import {
+  readCashMoveArrivals,
+  type CashMoveArrival,
+} from '../services/supabase/cashMovePresence.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
   SeatPlayer,
@@ -149,6 +155,31 @@ let leaseMonotonicNow: () => number = () => performance.now();
 /** Test seam for a timer callback delayed beyond its monotonic authority. */
 export function _setEngineLeaseMonotonicNowForTests(now?: () => number): void {
   leaseMonotonicNow = now ?? (() => performance.now());
+}
+
+interface TimeBankAllowance {
+  extraSeconds: number;
+  /** Undefined means the legacy v1 RPC did not report this entitlement. */
+  unlimitedActivations?: boolean;
+}
+
+async function awaitTimeBankRpc<T>(operation: PromiseLike<T>, timeoutMs?: number): Promise<T> {
+  if (!timeoutMs || timeoutMs <= 0) return Promise.resolve(operation);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Time Bank Entitlement Revalidation Timed Out')),
+          timeoutMs
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export abstract class ServerTableEngineBase {
@@ -1011,22 +1042,102 @@ export abstract class ServerTableEngineBase {
       for (const [seat, at] of [...this.pineappleDiscardDeadlines]) {
         if (at > now) continue; // this seat bought itself more time
         this.pineappleDiscardDeadlines.delete(seat);
-        try {
-          // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
-          // auto-discard the last card - a random discard the player never
-          // chose, which then kept playing for them.
-          this.handController.foldForMissedDiscard(seat);
-        } catch (err) {
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
-            seat,
-          });
-          // Keep going — one bad seat must not strand the whole table.
-        }
+        /* An early press ARMS a bank; it does not spend it. The ordinary turn
+           clock redeems that intent at expiry through onPrimaryTimerExpired,
+           and the simultaneous discard round must do the same. Removing the
+           deadline before the bounded Lifetime revalidation also lets a real
+           discard land while the read is in flight; the resolver re-checks the
+           HandController before it can extend or fold anything. */
+        void this.resolvePineappleDiscardExpiry(seat, at, controllerRef).catch((err: unknown) => {
+          reportError(
+            err,
+            'ServerTableEngine.' + this.tableId + '.pineapple_discard_expiry_resolution',
+            { seat }
+          );
+        });
       }
       this.markProgress();
       // Seats with an extended deadline are still owed their round.
       this.armPineappleDiscardSweep(controllerRef);
     }, wait);
+  }
+
+  /**
+   * Resolve one expired discard clock. An armed Time Bank gets the same exact
+   * 20-second activation used on an ordinary turn; otherwise the missed
+   * discard folds. Lifetime is revalidated before another unlimited use is
+   * manufactured, and every identity/stage check is repeated after that await.
+   */
+  private async resolvePineappleDiscardExpiry(
+    seat: number,
+    expiredAt: number,
+    controllerRef: unknown
+  ): Promise<void> {
+    const controller = this.handController;
+    if (!controller || controller !== controllerRef) return;
+    if (controller.getState().stage !== 'pineapple_discard') return;
+    if (!controller.owesPineappleDiscard(seat)) return;
+
+    const player = this.seatedPlayers.find((candidate) => candidate.seat_number === seat);
+    const userId = player?.user_id;
+    if (userId && this.timeBankEngine.isArmed(this.tableId, userId)) {
+      if (this.timeBankEngine.isUnlimited(this.tableId, userId)) {
+        try {
+          await this.revalidateUnlimitedTimeBank(userId);
+        } catch (err) {
+          // A failed entitlement read cannot leave the round suspended behind
+          // a cached Lifetime flag. Fall back to the player's real finite pool.
+          this.timeBankEngine.setUnlimitedActivations(this.tableId, userId, false);
+          reportError(
+            err,
+            'ServerTableEngine.' + this.tableId + '.pineapple_timebank_revalidation_failed',
+            { seat }
+          );
+        }
+      }
+
+      const currentController = this.handController;
+      if (!currentController || currentController !== controllerRef) return;
+      if (currentController.getState().stage !== 'pineapple_discard') return;
+      if (!currentController.owesPineappleDiscard(seat)) return;
+      // A replacement round/extension may have installed a newer deadline
+      // while Lifetime was being revalidated. Never overwrite it.
+      const replacementDeadline = this.pineappleDiscardDeadlines.get(seat);
+      if (replacementDeadline !== undefined && replacementDeadline !== expiredAt) return;
+
+      const activated = this.timeBankEngine.onPrimaryTimerExpired(this.tableId, userId, () => {});
+      if (activated) {
+        const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+        const seconds = Math.max(0, bank?.currentUseSeconds ?? 0);
+        if (seconds > 0) {
+          const extended = Date.now() + seconds * 1000;
+          this.pineappleDiscardDeadlines.set(seat, extended);
+          this.markProgress();
+          this.armPineappleDiscardSweep(controllerRef);
+          this.broadcastCurrentState();
+          return;
+        }
+      }
+    }
+
+    const currentController = this.handController;
+    if (!currentController || currentController !== controllerRef) return;
+    if (currentController.getState().stage !== 'pineapple_discard') return;
+    if (!currentController.owesPineappleDiscard(seat)) return;
+    try {
+      // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
+      // auto-discard the last card - a random discard the player never chose,
+      // which then kept playing for them.
+      currentController.foldForMissedDiscard(seat);
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
+        seat,
+      });
+      // One bad seat must not strand the whole table.
+    }
+    this.markProgress();
+    this.armPineappleDiscardSweep(controllerRef);
+    this.broadcastCurrentState();
   }
 
   /**
@@ -1105,7 +1216,12 @@ export abstract class ServerTableEngineBase {
       0,
       before - this.timeBankEngine.getRemainingSeconds(this.tableId, userId)
     );
-    const seconds = granted > 0 ? granted : before;
+    const activeBank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+    const seconds = activeBank?.unlimitedActivations
+      ? activeBank.currentUseSeconds
+      : granted > 0
+        ? granted
+        : before;
     const extended = Date.now() + seconds * 1000;
     this.pineappleDiscardDeadlines.set(seat, extended);
     this.armPineappleDiscardSweep(this.handController);
@@ -1350,7 +1466,9 @@ export abstract class ServerTableEngineBase {
    *
    * `eligible` is who was dealt into that hand: a spectator cannot buy a look
    * at a hand they were never part of, and `revealed` makes a paid reveal
-   * repeatable for the buyer without charging them twice.
+   * repeatable for the buyer without charging them twice. The settlement layer
+   * derives one durable request UUID from the table, hand, and player identity,
+   * so retries and replacement engine instances reuse the same receipt key.
    */
   protected rabbitHuntOffers: Map<
     number,
@@ -1741,7 +1859,12 @@ export abstract class ServerTableEngineBase {
    */
   protected timeBankMeta: Map<
     string,
-    { initialSeconds: number; baseSeconds: number; dbConsumedSeconds: number }
+    {
+      initialSeconds: number;
+      baseSeconds: number;
+      dbConsumedSeconds: number;
+      unlimitedActivations?: boolean;
+    }
   > = new Map();
   /**
    * Free time-bank seconds every player starts a session with, before any VIP
@@ -2640,8 +2763,9 @@ export abstract class ServerTableEngineBase {
         }
         const idsBeforeSweep = new Set(this.seatedPlayers.map((p) => p.user_id));
         try {
-          this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+          const nextRoster = await loadSeatedPlayers(this.tableId);
           if (!this.lifecycleCanMutate()) return;
+          for (const userId of this.adoptSeatRoster(nextRoster)) idsBeforeSweep.delete(userId);
         } catch (err) {
           // This is a POLL. It already runs every 5s, so a failed sweep costs
           // one sweep — while letting it escape aborted start() entirely and
@@ -2678,7 +2802,12 @@ export abstract class ServerTableEngineBase {
         }
         // BEFORE the sit-out restore, always: registering a player first would
         // block the adoption (restoreFsmStates never clobbers a live entry).
-        this.adoptMovedPresence();
+        if (!(await this.adoptMovedPresence())) {
+          if (!this.lifecycleCanMutate()) return;
+          await this.sleep(5000);
+          continue;
+        }
+        if (!this.lifecycleCanMutate()) return;
         this.restoreSitOutsFromSeats();
         // Dan 2026-08-30: and the cash entry holds, for the same reason the
         // sit-out restore is here rather than only in the dealing loop — a
@@ -3225,7 +3354,7 @@ export abstract class ServerTableEngineBase {
          transaction, so the partner's own engine never runs an executor and
          this is its only chance to hand its player's presence over. Harmless
          for a move that never lands: an unclaimed deposit expires. */
-      this.depositPresenceForMove(m.player_id, m.to_table_id);
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
       if (m.announced_at == null) fresh.push(m.move_id);
       if (this.announcedSeatMoves.has(m.move_id)) continue;
       this.announcedSeatMoves.add(m.move_id);
@@ -3336,7 +3465,30 @@ export abstract class ServerTableEngineBase {
     if (!this.lifecycleCanMutate()) return [];
     if (pending === null) return [];
     this.reconcileSeatMoveHolds(pending);
-    const { done, held, refused } = await executePendingSeatMoves(this.tableId, opts, pending);
+    // Stage the hand-boundary state BEFORE the transaction. The destination
+    // may observe its committed seat before this RPC response returns, including
+    // idle moves that never passed through a hand-start announcement.
+    for (const m of pending) {
+      if (opts.announcedOnly && m.announced_at == null) continue;
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
+    }
+    let outcome: SeatMoveOutcome;
+    let incomplete: SeatMoveBatchError | null = null;
+    try {
+      outcome = await executePendingSeatMoves(
+        this.tableId,
+        {
+          ...opts,
+          shouldContinue: () => this.lifecycleCanMutate(),
+        },
+        pending
+      );
+    } catch (error) {
+      if (!(error instanceof SeatMoveBatchError)) throw error;
+      outcome = error.outcome;
+      incomplete = error;
+    }
+    const { done, held, refused } = outcome;
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     if (!this.lifecycleCanMutate()) return [];
@@ -3371,7 +3523,7 @@ export abstract class ServerTableEngineBase {
       // A held side is still seated HERE and will be moved by the other
       // table's transaction: refresh its deposit while this engine still has
       // its presence to give.
-      this.depositPresenceForMove(h.player_id, h.to_table_id);
+      this.depositPresenceForMove(h.player_id, h.to_table_id, h.move_id, h.source_occupancy_id);
       if (this.heldForSwap.has(h.player_id)) continue;
       this.heldForSwap.add(h.player_id);
       this.hub?.emitEvent(this.tableId, {
@@ -3395,7 +3547,7 @@ export abstract class ServerTableEngineBase {
          immediately before this engine forgets them, so the destination
          adopts what they were half a second ago rather than what they were at
          the start of the hand. */
-      this.depositPresenceForMove(m.player_id, m.to_table_id);
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
       this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
@@ -3456,6 +3608,9 @@ export abstract class ServerTableEngineBase {
       // The game's seats changed at two tables at once; one wake covers both.
       this.wakeClusterGame('seat_move');
     }
+    // Keep the original failure visible after reflecting only confirmed outcomes.
+    // The uncertain move and every unattempted move remain outside this cleanup.
+    if (incomplete) throw incomplete;
     return movedIds;
   }
 
@@ -3471,13 +3626,23 @@ export abstract class ServerTableEngineBase {
    * registers them the ordinary way, which is what happened before any of
    * this existed.
    */
-  protected depositPresenceForMove(playerId: string, toTableId: string): void {
+  protected depositPresenceForMove(
+    playerId: string,
+    toTableId: string,
+    moveId: string,
+    sourceOccupancyId: string
+  ): void {
     if (!playerId || !toTableId || toTableId === this.tableId) return;
+    if (!moveId || !sourceOccupancyId) return;
+    const seated = this.seatedPlayers.find((p) => p.user_id === playerId);
+    if (!seated || seated.occupancy_id !== sourceOccupancyId) return;
     const fsm = this.disconnectEngine.getFsmState(this.tableId, playerId);
     if (!fsm) return;
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, playerId);
     const meta = this.timeBankMeta.get(playerId);
     depositMovedPresence(playerId, toTableId, {
+      moveId,
+      sourceOccupancyId,
       fsm,
       fromTableId: this.tableId,
       timeBank: bank
@@ -3487,6 +3652,7 @@ export abstract class ServerTableEngineBase {
             initialSeconds: meta?.initialSeconds ?? bank.remainingSeconds,
             baseSeconds: meta?.baseSeconds ?? this.timeBankBaseSeconds,
             dbConsumedSeconds: meta?.dbConsumedSeconds ?? 0,
+            unlimitedActivations: bank.unlimitedActivations || meta?.unlimitedActivations === true,
           }
         : null,
     });
@@ -3511,9 +3677,46 @@ export abstract class ServerTableEngineBase {
    * seeding is guarded on `!getPlayerBank(...)`, so a bank adopted now is the
    * one the player keeps and the free refill never happens for a mover.
    */
-  protected adoptMovedPresence(): void {
-    for (const p of this.seatedPlayers) {
-      const carried = claimMovedPresence(p.user_id, this.tableId);
+  protected async adoptMovedPresence(): Promise<boolean> {
+    if (!this.lifecycleCanMutate()) return false;
+    const candidates = this.seatedPlayers
+      .filter((p) => hasMovedPresence(p.user_id, this.tableId))
+      .map((p) => ({ userId: p.user_id, occupancyId: p.occupancy_id }));
+    if (candidates.length === 0) return true;
+    let arrivals: CashMoveArrival[];
+    try {
+      arrivals = await readCashMoveArrivals(
+        this.tableId,
+        candidates.map((p) => p.occupancyId ?? '')
+      );
+    } catch (error) {
+      reportError(error, 'ServerTableEngine.seat_move_arrival_unreadable', {
+        tableId: this.tableId,
+      });
+      return false;
+    }
+    if (!this.lifecycleCanMutate()) return false;
+    for (const arrival of arrivals) {
+      if (
+        !candidates.some(
+          (candidate) =>
+            candidate.userId === arrival.player_id &&
+            candidate.occupancyId === arrival.destination_occupancy_id
+        )
+      )
+        continue;
+      const p = this.seatedPlayers.find(
+        (seat) =>
+          seat.user_id === arrival.player_id &&
+          seat.occupancy_id === arrival.destination_occupancy_id
+      );
+      if (!p) continue;
+      const carried = claimMovedPresence(p.user_id, this.tableId, {
+        moveId: arrival.move_id,
+        fromTableId: arrival.from_table_id,
+        sourceOccupancyId: arrival.source_occupancy_id,
+        destinationOccupancyId: arrival.destination_occupancy_id,
+      });
       if (!carried) continue;
       const restored = this.disconnectEngine.restoreFsmStates(this.tableId, {
         [p.user_id]: carried.fsm,
@@ -3522,11 +3725,13 @@ export abstract class ServerTableEngineBase {
         this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
           remainingSeconds: carried.timeBank.remainingSeconds,
           usesRemaining: carried.timeBank.usesRemaining,
+          unlimitedActivations: carried.timeBank.unlimitedActivations,
         });
         this.timeBankMeta.set(p.user_id, {
           initialSeconds: carried.timeBank.initialSeconds,
           baseSeconds: carried.timeBank.baseSeconds,
           dbConsumedSeconds: carried.timeBank.dbConsumedSeconds,
+          ...(carried.timeBank.unlimitedActivations ? { unlimitedActivations: true } : {}),
         });
       }
       console.log(
@@ -3535,6 +3740,40 @@ export abstract class ServerTableEngineBase {
           (restored ? '' : ' (a live observation already won)')
       );
     }
+    return true;
+  }
+
+  /** Retire departed/replaced cash stays; return only replacements for arrival detection. */
+  protected adoptSeatRoster(nextRoster: SeatedPlayer[]): string[] {
+    if (!this.lifecycleCanMutate()) return [];
+    const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
+    this.seatedPlayers = nextRoster;
+    if (this.isTournamentTable()) return [];
+    const replaced: string[] = [];
+    for (const [userId, occupancyId] of previous) {
+      const current = nextRoster.find((p) => p.user_id === userId);
+      if (current && current.occupancy_id === occupancyId) continue;
+      if (current) replaced.push(userId);
+      this.knownPlayerIds.delete(userId);
+      this.waitingForBB.delete(userId);
+      this.postingBBToEnter.delete(userId);
+      this.postBBWhenClear.delete(userId);
+      this.pendingPostToEnter.delete(userId);
+      this.mustPostBB.delete(userId);
+      this.returningFromSitout.delete(userId);
+      this.heldForSwap.delete(userId);
+      this.dealtInUserIds.delete(userId);
+      this.pendingSitOut.delete(userId);
+      this.leaveHeldByClock.delete(userId);
+      this.horseRebuys.delete(userId);
+      this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+      this.timeBankEngine.removePlayer(this.tableId, userId);
+      this.timeBankMeta.delete(userId);
+      this.straddleEngine.removePlayer(this.tableId, userId);
+      this.preActionEngine.removePlayer(this.tableId, userId);
+      this.chipContinuity.forget(userId);
+    }
+    return replaced;
   }
 
   /** Last time the empty-cluster-table check read the row. See below. */
@@ -5102,16 +5341,62 @@ export abstract class ServerTableEngineBase {
    * session base. Fail-open to base-only: an allowance outage must never
    * block dealing.
    */
-  protected async fetchTimeBankExtras(userIds: string[]): Promise<Map<string, number>> {
-    const extras = new Map<string, number>();
+  protected async fetchTimeBankExtras(
+    userIds: string[],
+    timeoutMs?: number
+  ): Promise<Map<string, TimeBankAllowance>> {
+    const extras = new Map<string, TimeBankAllowance>();
     if (userIds.length === 0) return extras;
+    const deadline = timeoutMs && timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+    const remainingTimeout = () =>
+      deadline === undefined ? undefined : Math.max(1, deadline - Date.now());
     try {
-      const { data, error } = await supabase.rpc('fn_time_bank_allowance', {
-        p_user_ids: userIds,
-      });
-      if (error) throw new Error(error.message);
-      for (const row of (data as Array<{ user_id: string; extra_seconds: number }>) ?? []) {
-        extras.set(row.user_id, Math.max(0, Number(row.extra_seconds) || 0));
+      const { data, error } = await awaitTimeBankRpc(
+        supabase.rpc('fn_time_bank_allowance_v2', {
+          p_user_ids: userIds,
+        }),
+        remainingTimeout()
+      );
+      if (!error) {
+        for (const row of (data as Array<{
+          user_id: string;
+          is_lifetime?: boolean;
+          unlimited_activations?: boolean;
+          extra_seconds: number;
+        }>) ?? []) {
+          extras.set(row.user_id, {
+            extraSeconds: Math.max(0, Number(row.extra_seconds) || 0),
+            unlimitedActivations: row.is_lifetime === true && row.unlimited_activations === true,
+          });
+        }
+        return extras;
+      }
+
+      const code = String((error as { code?: string }).code ?? '');
+      const message = String(error.message ?? '');
+      const v2Unavailable =
+        code === 'PGRST202' ||
+        code === '42883' ||
+        /fn_time_bank_allowance_v2[\s\S]*(not found|does not exist|schema cache)/i.test(message) ||
+        /(not found|does not exist|schema cache)[\s\S]*fn_time_bank_allowance_v2/i.test(message);
+      if (!v2Unavailable) {
+        throw Object.assign(new Error(message || 'Time Bank Allowance V2 Failed'), { code });
+      }
+
+      // Rolling deployment compatibility. V1 has no Lifetime entitlement, so
+      // it supplies only the finite allowance until V2 is present.
+      const legacy = await awaitTimeBankRpc(
+        supabase.rpc('fn_time_bank_allowance', {
+          p_user_ids: userIds,
+        }),
+        remainingTimeout()
+      );
+      if (legacy.error) throw new Error(legacy.error.message);
+      for (const row of (legacy.data as Array<{ user_id: string; extra_seconds: number }>) ?? []) {
+        extras.set(row.user_id, {
+          extraSeconds: Math.max(0, Number(row.extra_seconds) || 0),
+          unlimitedActivations: undefined,
+        });
       }
     } catch (err) {
       reportError(err, 'TimeBank.allowance_fetch_failed');
@@ -5135,28 +5420,40 @@ export abstract class ServerTableEngineBase {
     }
     try {
       const meta = this.timeBankMeta.get(event.playerId);
+      const unlimited =
+        event.unlimitedActivations === true ||
+        meta?.unlimitedActivations === true ||
+        this.timeBankEngine.isUnlimited(this.tableId, event.playerId);
+      if (unlimited) {
+        const secondsUsed = Math.max(0, Number(event.secondsUsed) || 0);
+        if (secondsUsed > 0) this.consumeTimeBankSeconds(event.playerId, secondsUsed);
+        return;
+      }
       if (!meta) return;
       const remaining = this.timeBankEngine.getRemainingSeconds(this.tableId, event.playerId);
       const usedTotal = Math.max(0, meta.initialSeconds - remaining);
       const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
       if (owed <= 0) return;
       meta.dbConsumedSeconds += owed;
-      // Promise.resolve() so this is a real Promise with a .catch(), not the
-      // PromiseLike the query builder returns. The enclosing try/catch below
-      // covers only the SYNCHRONOUS part of this statement — see the note on
-      // recordRecoveryEvent() for why the rejection path matters.
-      void Promise.resolve(
-        supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
-      )
-        .then(({ error }) => {
-          if (error) console.warn('[TimeBank] consume failed:', error.message);
-        })
-        .catch((err: unknown) => {
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-        });
+      this.consumeTimeBankSeconds(event.playerId, owed);
     } catch {
       /* accounting must never break gameplay */
     }
+  }
+
+  /** Best-effort ledger/audit write. Gameplay never waits for this call. */
+  private consumeTimeBankSeconds(userId: string, seconds: number): void {
+    // Promise.resolve() converts the Supabase PromiseLike into a real Promise
+    // so transport rejections cannot become unhandled rejections.
+    void Promise.resolve(
+      supabase.rpc('fn_consume_time_bank', { p_user_id: userId, p_seconds: seconds })
+    )
+      .then(({ error }) => {
+        if (error) console.warn('[TimeBank] consume failed:', error.message);
+      })
+      .catch((err: unknown) => {
+        console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
+      });
   }
 
   /**
@@ -5165,22 +5462,52 @@ export abstract class ServerTableEngineBase {
    * in-memory bank to base-residue + fresh DB extras so the purchase is
    * usable without re-seating. Returns false if nothing could be refreshed.
    */
-  protected async refreshTimeBankFromDb(userId: string): Promise<boolean> {
+  protected async refreshTimeBankFromDb(
+    userId: string,
+    options?: { timeoutMs?: number; requireExplicitUnlimitedState?: boolean }
+  ): Promise<boolean> {
     const meta = this.timeBankMeta.get(userId);
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
     if (!meta || !bank || bank.isActive) return false;
-    const extras = await this.fetchTimeBankExtras([userId]);
+    const extras = await this.fetchTimeBankExtras([userId], options?.timeoutMs);
     if (!extras.has(userId)) return false;
     const usedTotal = Math.max(0, meta.initialSeconds - bank.remainingSeconds);
     const baseLeft = Math.max(0, meta.baseSeconds - Math.min(usedTotal, meta.baseSeconds));
-    const newRemaining = baseLeft + (extras.get(userId) ?? 0);
-    if (!this.timeBankEngine.rebase(this.tableId, userId, newRemaining)) return false;
+    const allowance = extras.get(userId);
+    if (!allowance) return false;
+    const newRemaining = baseLeft + allowance.extraSeconds;
+    const unlimitedActivations = options?.requireExplicitUnlimitedState
+      ? allowance.unlimitedActivations === true
+      : allowance.unlimitedActivations;
+    if (!this.timeBankEngine.rebase(this.tableId, userId, newRemaining, unlimitedActivations)) {
+      return false;
+    }
     this.timeBankMeta.set(userId, {
       initialSeconds: newRemaining,
       baseSeconds: baseLeft,
       dbConsumedSeconds: 0,
+      ...(unlimitedActivations === true ? { unlimitedActivations: true } : {}),
     });
     return true;
+  }
+
+  /**
+   * Lifetime is revalidated before every cached unlimited activation. A failed
+   * or timed-out read removes only the unlimited flag; any real finite base or
+   * purchased balance remains available under the ordinary rules.
+   */
+  protected async revalidateUnlimitedTimeBank(userId: string): Promise<void> {
+    if (!this.timeBankEngine.isUnlimited(this.tableId, userId)) return;
+
+    const refreshed = await this.refreshTimeBankFromDb(userId, {
+      timeoutMs: 1_500,
+      requireExplicitUnlimitedState: true,
+    });
+    if (refreshed) return;
+
+    this.timeBankEngine.setUnlimitedActivations(this.tableId, userId, false);
+    const meta = this.timeBankMeta.get(userId);
+    if (meta) delete meta.unlimitedActivations;
   }
 
   /**

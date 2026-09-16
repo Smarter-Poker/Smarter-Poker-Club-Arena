@@ -287,3 +287,62 @@ describe('journal worker lifecycle owner', () => {
     expect(children[0].terminate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('journaled model receipt boundary', () => {
+  it('publishes finite model outcomes separately and never relays private report inputs', () => {
+    service.start();
+    ready(children[0]);
+    for (const model of ['recorded', 'refused', 'idle', 'unknown', 'lease_lost', 'capacity_full']) {
+      children[0].emit('message', { type: 'CYCLE_STARTED' });
+      children[0].emit('message', {
+        type: 'CYCLE_COMPLETED',
+        work: 'skipped',
+        retention: 'skipped',
+        model,
+        actorKey: 'private-actor',
+        report: { cards: ['As', 'Ad'] },
+      });
+    }
+    expect(service.status()).toMatchObject({
+      phase: 'ready',
+      completed: 0,
+      cycles: 6,
+      modelsRecorded: 1,
+      modelsRefused: 2,
+      modelUncertain: 2,
+      lastModel: 'capacity_full',
+      lastModelAt: Date.now(),
+    });
+    expect(JSON.stringify(service.status())).not.toMatch(/private-actor|cards|actorKey/);
+  });
+  it.each([['recorded'], { status: 'recorded' }, 'invented'])(
+    'refuses malformed model status %s',
+    (model) => {
+      service.start();
+      ready(children[0]);
+      children[0].emit('message', { type: 'CYCLE_STARTED' });
+      children[0].emit('message', {
+        type: 'CYCLE_COMPLETED',
+        work: 'skipped',
+        retention: 'skipped',
+        model,
+      });
+      expect(service.status().modelsRecorded).toBe(0);
+      expect(service.status().phase).not.toBe('ready');
+    }
+  );
+  it('rejects a model outcome mislabeled as journal or acquisition work', () => {
+    service.start();
+    ready(children[0]);
+    children[0].emit('message', { type: 'CYCLE_STARTED' });
+    children[0].emit('message', {
+      type: 'CYCLE_COMPLETED',
+      work: 'completed',
+      retention: 'skipped',
+      model: 'recorded',
+    });
+    expect(service.status().modelsRecorded).toBe(0);
+    expect(service.status().completed).toBe(0);
+    expect(service.status().phase).not.toBe('ready');
+  });
+});

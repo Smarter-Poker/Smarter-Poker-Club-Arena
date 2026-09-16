@@ -377,6 +377,14 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       const el = document.querySelector('.mbc__lid');
       if (!el) return { ms: -2, transform: '' };
       document.getElementById('mbc')!.className = 'mbc mbc--locked';
+      // The preceding beat already opened this lid. Finish its closing
+      // transition before measuring a fresh opening: reversing it after one
+      // frame invokes CSS's reversing-shortening rule (858ms in CI), not the
+      // full 900ms duration this assertion is intended to measure.
+      for (const animation of el.getAnimations()) {
+        if ((animation as CSSTransition).transitionProperty === 'transform') animation.finish();
+      }
+      const closedTransform = getComputedStyle(el).transform;
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       document.getElementById('mbc')!.className = 'mbc mbc--opening';
       /* FLAKE FIX (2026-08-29): two rAFs was a guess at when the browser
@@ -389,6 +397,7 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
          SAME 900ms the pin is about. The transform assertion below still
          proves the lid actually swings. */
       let d: number | string | CSSNumericValue | undefined;
+      let transition: Animation | undefined;
       for (let frame = 0; frame < 20 && d === undefined; frame++) {
         const t = el
           .getAnimations()
@@ -397,6 +406,7 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
               (a as unknown as { transitionProperty?: string }).transitionProperty === 'transform'
           );
         d = t?.effect?.getTiming().duration as number | undefined;
+        transition = t;
         if (d === undefined) {
           await new Promise<void>((r) => requestAnimationFrame(() => r()));
         }
@@ -411,14 +421,19 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
           d = Math.round(parseFloat(raw) * (raw.endsWith('ms') ? 1 : 1000));
         }
       }
+      // Measure a real point in the swing, not whichever first frame the
+      // browser exposes when it registers the transition.
+      if (transition && typeof d === 'number') transition.currentTime = d / 2;
       return {
         ms: typeof d === 'number' ? Math.round(d) : -1,
         transform: getComputedStyle(el).transform,
+        closedTransform,
       };
     });
     expect(lid.ms, 'the lid must hinge open').toBe(900);
     // and it must actually be swinging, not merely "transitioning" in place.
     expect(lid.transform, 'the lid must be laid back, not flat').not.toBe('none');
+    expect(lid.transform, 'the lid must move away from its closed position').not.toBe(lid.closedTransform);
   });
 
   test('the TOURNAMENT WINNER overlay: entrance, trophy, prize counter', async ({ page }) => {

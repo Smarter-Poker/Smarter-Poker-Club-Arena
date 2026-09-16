@@ -1,4 +1,5 @@
 import type { AdaptiveJournalWorkResult } from '../HorseAdaptiveJournalWork.js';
+import type { JournaledModelCycle } from '../HorseJournaledOpponentModels.js';
 import type { pruneAdaptiveJournal } from '../HorseAdaptiveJournalRetention.js';
 import type { JournalQueueHealth } from './queueHealth.js';
 import { unknownDiscovery, type DiscoveryReceipt } from './discoveryReceipt.js';
@@ -13,11 +14,13 @@ export type JournalCycle = Readonly<{
   retention: 'skipped' | Awaited<ReturnType<typeof pruneAdaptiveJournal>>['status'];
   acquisition?: ObservationCaptureResult['status'];
   discovery?: DiscoveryReceipt;
+  model?: JournaledModelCycle;
 }>;
 type Dependencies = {
   processWork: () => Promise<AdaptiveJournalWorkResult>;
   processCapture?: () => Promise<ObservationCaptureResult>;
   discover?: () => Promise<DiscoveryReceipt>;
+  processModels?: () => Promise<JournaledModelCycle>;
   prune: typeof pruneAdaptiveJournal;
   pruneCaptures?: typeof pruneObservationCaptures;
   pruneDiscovery?: typeof pruneObservationDiscovery;
@@ -47,6 +50,8 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
   let nextDiscoveryAt = 0;
   let discoveryEligible = false;
   let discoveryFailures = 0;
+  let modelTurns = 0;
+  let nextModelAt = 0;
   while (!signal.aborted) {
     d.started();
     if (d.discover && discoveryEligible && d.now() >= nextDiscoveryAt) {
@@ -85,6 +90,26 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       continue;
     }
     discoveryEligible = true;
+    // One separately bounded model cycle after eight ordinary journal turns.
+    // Neither discovery nor model failure can consume the other's deadline.
+    if (d.processModels && modelTurns >= 8 && d.now() >= nextModelAt) {
+      modelTurns = 0;
+      let model: JournaledModelCycle;
+      try {
+        model = await d.processModels();
+      } catch {
+        model = 'unknown';
+      }
+      if (signal.aborted) return;
+      d.completed(Object.freeze({ work: 'skipped', retention: 'skipped', model }));
+      nextModelAt = d.now() + (model === 'recorded' || model === 'refused' ? 1000 : 60000);
+      try {
+        await d.wait(1000, signal);
+      } catch (error) {
+        if (!signal.aborted) throw error;
+      }
+      continue;
+    }
     if (captureNext && d.processCapture) {
       // Acquisition has up to three bounded RPCs. Keep maintenance/health in
       // ordinary journal cycles so this cycle remains below the watchdog.
@@ -161,6 +186,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       d.queueHealth?.(health);
     }
     d.completed(Object.freeze({ work: result.status, retention }));
+    modelTurns = Math.min(modelTurns + 1, 8);
     if (d.processCapture) journalTurns = Math.min(journalTurns + 1, CAPTURE_FAIRNESS_JOURNAL_TURNS);
     captureFromBacklog = result.status !== 'idle';
     captureNext =

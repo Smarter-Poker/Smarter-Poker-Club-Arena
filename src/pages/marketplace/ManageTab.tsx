@@ -580,7 +580,7 @@ export default function ManageTab({
               >
                 <option value="">
                   {avatarCatalogState === 'loading'
-                    ? 'Loading The 97-Avatar Library...'
+                    ? 'Loading The 97-Avatar Library'
                     : avatarCatalogState === 'error'
                       ? 'Avatar Library Unavailable - Try Again'
                       : 'Choose An Avatar'}
@@ -618,14 +618,14 @@ export default function ManageTab({
           disabled={processing || !name.trim() || !price}
           onClick={handleCreate}
         >
-          {processing ? 'Creating...' : 'Create Item'}
+          {processing ? 'Creating' : 'Create Item'}
         </button>
       </div>
 
       {/* Item list */}
       {!loaded ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Loading Items...</span>
+          <span className={styles.emptyText}>Loading Items</span>
         </div>
       ) : loadError ? (
         <div className={styles.emptyState}>
@@ -890,7 +890,7 @@ export default function ManageTab({
                               )}
                               <option value="">
                                 {avatarCatalogState === 'loading'
-                                  ? 'Loading The 97-Avatar Library...'
+                                  ? 'Loading The 97-Avatar Library'
                                   : avatarCatalogState === 'error'
                                     ? 'Avatar Library Unavailable - Try Again'
                                     : 'Choose An Avatar'}
@@ -921,7 +921,7 @@ export default function ManageTab({
                       disabled={processing}
                       onClick={() => handleSaveEdit(item)}
                     >
-                      {processing ? 'Saving...' : 'Save Changes'}
+                      {processing ? 'Saving' : 'Save Changes'}
                     </button>
                     <button
                       className={styles.btnGhost}

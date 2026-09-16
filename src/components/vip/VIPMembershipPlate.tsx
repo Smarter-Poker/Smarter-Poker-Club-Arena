@@ -21,7 +21,8 @@
  *
  * VIP points are real - 1,005 players hold them and vip_points_ledger has 5.1
  * million rows - so they stay. What they are NOT is a ladder: they buy things
- * in the rewards marketplace, and they do not confer a tier.
+ * in the rewards marketplace, and they do not confer a tier. Exact Lifetime
+ * entitlements are rendered separately from ordinary VIP monthly meters.
  */
 import React from 'react';
 import { VIP_MONTHLY_ALLOWANCES } from '../../services/VIPService';
@@ -55,12 +56,13 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
   points,
 }) => {
   const isMember = status !== 'none';
+  const isLifetime = status === 'lifetime';
 
   const allowances = [
     {
       id: 'rabbit',
       label: 'Rabbit Hunts',
-      // fn_consume_rabbit_hunt, v_vip_monthly_cap = 100. 5 diamonds from the 101st.
+      // Ordinary VIP: fn_consume_rabbit_hunt meters 100, then charges 5 Diamonds.
       used: limits.rabbitHunts.used,
       limit: limits.rabbitHunts.limit || VIP_MONTHLY_ALLOWANCES.rabbitHunts,
       unit: '',
@@ -102,16 +104,65 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
       limit: limits.throwables.limit || VIP_MONTHLY_ALLOWANCES.throwables,
       unit: '',
     },
-  ];
+  ].filter(
+    (allowance) =>
+      !isLifetime || !['rabbit', 'timebank', 'emojis', 'tags', 'throwables'].includes(allowance.id)
+  );
 
-  /* Included, not metered. Each is a per-session or per-use diamond charge a
-     member does not pay. "Included" and never "Unlimited" - Dan struck that
-     word: "THERE IS NOTHING UNLIMITED LIKE THROWABLES OR TIME BANKS." */
+  /* Ordinary VIP keeps every existing cap. The exact Lifetime membership adds
+     the newer unmetered gameplay and cataloged digital-cosmetic contract. */
   const included = [
+    ...(isLifetime
+      ? [
+          {
+            id: 'lifetime-rabbit',
+            label: 'Rabbit Hunts',
+            detail: 'Unlimited With Lifetime VIP',
+          },
+          {
+            id: 'lifetime-throwables',
+            label: 'Throwables',
+            detail: 'Unlimited With Lifetime VIP',
+          },
+          {
+            id: 'lifetime-timebank',
+            label: 'Standard 20-Second Time Bank Activations',
+            detail: 'Unlimited With Lifetime VIP',
+          },
+          {
+            id: 'lifetime-emojis',
+            label: 'Digital Emoji Packs',
+            detail: 'All Digital Options Included',
+          },
+          {
+            id: 'lifetime-tags',
+            label: 'Player Tags',
+            detail: 'All Digital Options Included',
+          },
+          {
+            id: 'lifetime-table-art',
+            label: 'Cataloged Table Skins And Backgrounds',
+            detail: 'All Digital Options Included',
+          },
+          {
+            id: 'lifetime-card-art',
+            label: 'Cataloged Card Backs And Dealer Buttons',
+            detail: 'All Digital Options Included',
+          },
+          {
+            id: 'lifetime-avatar-art',
+            label: 'VIP Avatars, Frames, And Auras',
+            detail: 'All VIP-Only Digital Options Included',
+          },
+        ]
+      : []),
     { id: 'stack', label: 'Show Stack In Big Blinds', otherwise: '5 Diamonds Per Session' },
     { id: 'offline', label: 'Offline Protection', otherwise: '10 Diamonds Per Session' },
     { id: 'autobank', label: 'Auto Time Bank', otherwise: '5 Diamonds Per Activation' },
-  ];
+  ].map((item) => ({
+    ...item,
+    detail: 'detail' in item ? item.detail : `Otherwise ${item.otherwise}`,
+  }));
 
   return (
     <section className="vmp" aria-label="VIP Membership">
@@ -160,41 +211,43 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
 
       {isMember && (
         <>
-          <div className="vmp__section">
-            <h3 className="vmp__title">Included Each Month</h3>
-            <ul className="vmp__allowances">
-              {allowances.map((a) => {
-                const remaining = Math.max(0, a.limit - a.used);
-                return (
-                  <li key={a.id} className="vmp__allowance">
-                    <span className="vmp__allowanceLabel">{a.label}</span>
-                    <strong className="vmp__allowanceValue">
-                      {fmt(remaining)}
-                      {a.unit}
-                      <span className="vmp__allowanceOf">
-                        {' '}
-                        Of {fmt(a.limit)}
-                        {a.unit} Left
-                      </span>
-                    </strong>
-                    <span
-                      className="vmp__meter"
-                      role="meter"
-                      aria-valuenow={a.used}
-                      aria-valuemin={0}
-                      aria-valuemax={a.limit}
-                      aria-label={`${a.label} Used This Month`}
-                    >
+          {allowances.length > 0 && (
+            <div className="vmp__section">
+              <h3 className="vmp__title">Included Each Month</h3>
+              <ul className="vmp__allowances">
+                {allowances.map((a) => {
+                  const remaining = Math.max(0, a.limit - a.used);
+                  return (
+                    <li key={a.id} className="vmp__allowance">
+                      <span className="vmp__allowanceLabel">{a.label}</span>
+                      <strong className="vmp__allowanceValue">
+                        {fmt(remaining)}
+                        {a.unit}
+                        <span className="vmp__allowanceOf">
+                          {' '}
+                          Of {fmt(a.limit)}
+                          {a.unit} Left
+                        </span>
+                      </strong>
                       <span
-                        className="vmp__meterFill"
-                        style={{ width: `${pct(a.used, a.limit)}%` }}
-                      />
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+                        className="vmp__meter"
+                        role="meter"
+                        aria-valuenow={a.used}
+                        aria-valuemin={0}
+                        aria-valuemax={a.limit}
+                        aria-label={`${a.label} Used This Month`}
+                      >
+                        <span
+                          className="vmp__meterFill"
+                          style={{ width: `${pct(a.used, a.limit)}%` }}
+                        />
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
           <div className="vmp__section">
             <h3 className="vmp__title">Included, Not Metered</h3>
@@ -202,7 +255,7 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
               {included.map((i) => (
                 <li key={i.id}>
                   <span className="vmp__includedLabel">{i.label}</span>
-                  <span className="vmp__includedOtherwise">Otherwise {i.otherwise}</span>
+                  <span className="vmp__includedOtherwise">{i.detail}</span>
                 </li>
               ))}
             </ul>

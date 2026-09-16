@@ -108,6 +108,17 @@ export interface SeatMoveOutcome {
   refused: Array<{ move_id: string; player_id: string; reason: string }>;
 }
 
+/** Earlier committed transfers still need reflection when a later result is unknown. */
+export class SeatMoveBatchError extends Error {
+  constructor(
+    readonly outcome: SeatMoveOutcome,
+    readonly cause: unknown
+  ) {
+    super(cause instanceof Error ? cause.message : 'Seat move batch did not complete');
+    this.name = 'SeatMoveBatchError';
+  }
+}
+
 /**
  * Executor answers that leave the move alive or already landed. Everything
  * else is terminal: the row is cancelled or expired and the player stays.
@@ -188,6 +199,8 @@ export interface ExecuteSeatMovesOptions {
    * running, every pending move lands now.
    */
   announcedOnly: boolean;
+  /** Withdraws future dispatches; an already issued request remains owned until settled. */
+  shouldContinue?: () => boolean;
 }
 
 /**
@@ -207,137 +220,146 @@ export async function executePendingSeatMoves(
   const done: ExecutedSeatMove[] = [];
   const held: SeatMoveOutcome['held'] = [];
   const refused: SeatMoveOutcome['refused'] = [];
-  for (const m of due) {
-    let data: unknown;
-    let failure: unknown;
-    // A lost response retries only this immutable move, never another current seat.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const result = await supabase.rpc('fn_cash_seat_move_execute', { p_move_id: m.move_id });
-        if (result.error) throw new Error(result.error.message || 'Seat move execution failed');
-        data = result.data;
-        failure = undefined;
-        break;
-      } catch (error) {
-        failure = error;
+  try {
+    for (const m of due) {
+      if (opts.shouldContinue?.() === false) break;
+      let data: unknown;
+      let failure: unknown;
+      // A lost response retries only this immutable move, never another current seat.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0 && opts.shouldContinue?.() === false) break;
+        try {
+          const result = await supabase.rpc('fn_cash_seat_move_execute', { p_move_id: m.move_id });
+          if (result.error) throw new Error(result.error.message || 'Seat move execution failed');
+          data = result.data;
+          failure = undefined;
+          break;
+        } catch (error) {
+          failure = error;
+        }
       }
-    }
-    if (failure) throw failure;
-    const res = (data ?? {}) as {
-      ok?: boolean;
-      move_id?: string;
-      player_id?: string;
-      from_table_id?: string;
-      source_occupancy_id?: string;
-      destination_occupancy_id?: string;
-      source_seat_number?: number;
-      idempotency_key?: string;
-      reason?: string;
-      held?: boolean;
-      partner_id?: string;
-      to_table_id?: string;
-      to_seat_number?: number;
-      stack?: number;
-      swap?: boolean;
-      partner?: {
-        source_occupancy_id: string;
-        destination_occupancy_id: string;
-        source_seat_number: number;
-        player_id: string;
-        from_table_id: string;
-        to_table_id: string;
-        to_seat_number: number;
-        stack: number;
+      if (failure) throw failure;
+      const res = (data ?? {}) as {
+        ok?: boolean;
+        move_id?: string;
+        player_id?: string;
+        from_table_id?: string;
+        source_occupancy_id?: string;
+        destination_occupancy_id?: string;
+        source_seat_number?: number;
+        idempotency_key?: string;
+        reason?: string;
+        held?: boolean;
+        partner_id?: string;
+        to_table_id?: string;
+        to_seat_number?: number;
+        stack?: number;
+        swap?: boolean;
+        partner?: {
+          source_occupancy_id: string;
+          destination_occupancy_id: string;
+          source_seat_number: number;
+          player_id: string;
+          from_table_id: string;
+          to_table_id: string;
+          to_seat_number: number;
+          stack: number;
+        };
       };
-    };
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const amount = (value: unknown): value is number =>
-      typeof value === 'number' &&
-      Number.isFinite(value) &&
-      value > 0 &&
-      Math.round(value * 100) / 100 === value;
-    const scopeMatches =
-      res.move_id === m.move_id &&
-      res.player_id === m.player_id &&
-      res.from_table_id === tableId &&
-      typeof res.source_occupancy_id === 'string' &&
-      uuid.test(res.source_occupancy_id) &&
-      res.source_occupancy_id === m.source_occupancy_id &&
-      Number.isInteger(res.source_seat_number);
-    if (res.ok === true) {
-      if (
-        !scopeMatches ||
-        res.to_table_id !== m.to_table_id ||
-        !Number.isInteger(res.to_seat_number) ||
-        !amount(res.stack) ||
-        res.idempotency_key !== 'seatmove:' + m.move_id ||
-        typeof res.destination_occupancy_id !== 'string' ||
-        !uuid.test(res.destination_occupancy_id) ||
-        res.destination_occupancy_id === res.source_occupancy_id ||
-        (res.partner &&
-          (!uuid.test(res.partner.source_occupancy_id) ||
-            !uuid.test(res.partner.destination_occupancy_id) ||
-            !uuid.test(res.partner.player_id) ||
-            res.partner.from_table_id !== m.to_table_id ||
-            res.partner.to_table_id !== tableId ||
-            !Number.isInteger(res.partner.to_seat_number) ||
-            !Number.isInteger(res.partner.source_seat_number) ||
-            !amount(res.partner.stack)))
-      ) {
-        throw new Error('Seat move outcome does not prove the original transfer');
-      }
-      done.push({
-        source_occupancy_id: res.source_occupancy_id!,
-        destination_occupancy_id: res.destination_occupancy_id!,
-        source_seat_number: res.source_seat_number!,
-        move_id: m.move_id,
-        player_id: m.player_id,
-        to_table_id: res.to_table_id,
-        to_seat_number: res.to_seat_number!,
-        stack: Number(res.stack ?? 0),
-        reason: m.reason,
-        partner: res.partner
-          ? {
-              source_occupancy_id: res.partner.source_occupancy_id,
-              destination_occupancy_id: res.partner.destination_occupancy_id,
-              source_seat_number: res.partner.source_seat_number,
-              player_id: res.partner.player_id,
-              from_table_id: res.partner.from_table_id,
-              to_table_id: res.partner.to_table_id,
-              to_seat_number: Number(res.partner.to_seat_number),
-              stack: Number(res.partner.stack ?? 0),
-            }
-          : null,
-      });
-    } else if (res.reason === 'waiting_partner' && res.held === true) {
-      if (
-        !scopeMatches ||
-        res.to_table_id !== m.to_table_id ||
-        !res.partner_id ||
-        !uuid.test(res.partner_id)
-      )
-        throw new Error('Seat swap hold does not prove the original occupancy');
-      held.push({
-        source_occupancy_id: res.source_occupancy_id!,
-        move_id: m.move_id,
-        player_id: m.player_id,
-        to_table_id: res.to_table_id ?? m.to_table_id,
-        partner_id: res.partner_id ?? '',
-      });
-    } else {
-      /* THROW ON AN UNREADABLE OUTCOME, CLASSIFY A READABLE ONE. The two
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const amount = (value: unknown): value is number =>
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value > 0 &&
+        Math.round(value * 100) / 100 === value;
+      const scopeMatches =
+        res.move_id === m.move_id &&
+        res.player_id === m.player_id &&
+        res.from_table_id === tableId &&
+        typeof res.source_occupancy_id === 'string' &&
+        uuid.test(res.source_occupancy_id) &&
+        res.source_occupancy_id === m.source_occupancy_id &&
+        Number.isInteger(res.source_seat_number);
+      if (res.ok === true) {
+        if (
+          !scopeMatches ||
+          res.to_table_id !== m.to_table_id ||
+          !Number.isInteger(res.to_seat_number) ||
+          !amount(res.stack) ||
+          res.idempotency_key !== 'seatmove:' + m.move_id ||
+          typeof res.destination_occupancy_id !== 'string' ||
+          !uuid.test(res.destination_occupancy_id) ||
+          res.destination_occupancy_id === res.source_occupancy_id ||
+          (res.partner &&
+            (!uuid.test(res.partner.source_occupancy_id) ||
+              !uuid.test(res.partner.destination_occupancy_id) ||
+              !uuid.test(res.partner.player_id) ||
+              res.partner.from_table_id !== m.to_table_id ||
+              res.partner.to_table_id !== tableId ||
+              !Number.isInteger(res.partner.to_seat_number) ||
+              !Number.isInteger(res.partner.source_seat_number) ||
+              !amount(res.partner.stack)))
+        ) {
+          throw new Error('Seat move outcome does not prove the original transfer');
+        }
+        done.push({
+          source_occupancy_id: res.source_occupancy_id!,
+          destination_occupancy_id: res.destination_occupancy_id!,
+          source_seat_number: res.source_seat_number!,
+          move_id: m.move_id,
+          player_id: m.player_id,
+          to_table_id: res.to_table_id,
+          to_seat_number: res.to_seat_number!,
+          stack: Number(res.stack ?? 0),
+          reason: m.reason,
+          partner: res.partner
+            ? {
+                source_occupancy_id: res.partner.source_occupancy_id,
+                destination_occupancy_id: res.partner.destination_occupancy_id,
+                source_seat_number: res.partner.source_seat_number,
+                player_id: res.partner.player_id,
+                from_table_id: res.partner.from_table_id,
+                to_table_id: res.partner.to_table_id,
+                to_seat_number: Number(res.partner.to_seat_number),
+                stack: Number(res.partner.stack ?? 0),
+              }
+            : null,
+        });
+      } else if (res.reason === 'waiting_partner' && res.held === true) {
+        if (
+          res.ok !== false ||
+          !scopeMatches ||
+          res.to_table_id !== m.to_table_id ||
+          !res.partner_id ||
+          !uuid.test(res.partner_id)
+        )
+          throw new Error('Seat swap hold does not prove the original occupancy');
+        held.push({
+          source_occupancy_id: res.source_occupancy_id!,
+          move_id: m.move_id,
+          player_id: m.player_id,
+          to_table_id: res.to_table_id ?? m.to_table_id,
+          partner_id: res.partner_id ?? '',
+        });
+      } else {
+        /* THROW ON AN UNREADABLE OUTCOME, CLASSIFY A READABLE ONE. The two
          compose, and the order is the whole argument: main proves the answer
          is a real refusal carrying a real reason, and only then does this lane
          decide whether that reason is one the PLAYER has to be told about. */
-      if (res.ok !== false || typeof res.reason !== 'string' || !res.reason)
-        throw new Error('Seat move outcome was not confirmed');
-      console.log(
-        `[seatMoves:${tableId}] move ${m.move_id} for ${m.player_id} not executed: ${res.reason}`
-      );
-      if (!SEAT_MOVE_NON_TERMINAL_REASONS.has(res.reason)) {
-        refused.push({ move_id: m.move_id, player_id: m.player_id, reason: res.reason });
+        if (res.ok !== false || typeof res.reason !== 'string' || !res.reason)
+          throw new Error('Seat move outcome was not confirmed');
+        console.log(
+          `[seatMoves:${tableId}] move ${m.move_id} for ${m.player_id} not executed: ${res.reason}`
+        );
+        if (!SEAT_MOVE_NON_TERMINAL_REASONS.has(res.reason)) {
+          refused.push({ move_id: m.move_id, player_id: m.player_id, reason: res.reason });
+        }
       }
     }
+  } catch (error) {
+    if (done.length || held.length || refused.length)
+      throw new SeatMoveBatchError({ done, held, refused }, error);
+    throw error;
   }
   return { done, held, refused };
 }

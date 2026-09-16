@@ -50,6 +50,27 @@ def additions(before, after, key, count):
     return added
 
 
+def reporting_additions(before, after, tournament, settled):
+    # The canonical terminal trigger stamps only this event's previously open
+    # reporting rows. Preserve every other original field and every other event.
+    expected = deepcopy(before)
+    for row in expected:
+        if row['related_entity_id'] == tournament:
+            require(row['terminal_closed_at'] is None, 'original report already closed')
+            row['terminal_closed_at'] = settled
+    return additions(expected, after, 'id', 2)
+
+
+def elimination_sequences(before, after):
+    old, new = indexed(before, 'id'), indexed(after, 'id')
+    require(set(old) == set(new), 'elimination roster identity changed')
+    require(all(row['status'] != 'eliminated' and row['elimination_sequence'] is None
+                for row in old.values()), 'original roster already eliminated')
+    values = [row['elimination_sequence'] for row in new.values()]
+    require(all(type(value) is int and value > 0 for value in values)
+            and len(set(values)) == len(values), 'invalid database elimination sequence')
+
+
 def initial(state, tournament):
     parent = one(state['tournaments'], id=tournament)
     require(parent['variant'] == 'spin' and parent['max_players'] == 3
@@ -70,6 +91,8 @@ def initial(state, tournament):
     require(len(entitlements) == 2 and len(indexed(entitlements,'user_id')) == 2,
             'two distinct immutable entitlements required')
     require(state['refund_authorizations_count'] == 0, 'outstanding one-use authorization')
+    require(all(row['terminal_closed_at'] is None for row in players + seats + [table]),
+            'original lifecycle row already terminal')
     for relation in ('tournament_refund_tranches','tournament_obligations',
                      'tournament_cancellation_receipts','spin_reserve_ledger',
                      'spin_draw_receipts','tournament_launch_receipts',
@@ -113,10 +136,12 @@ def initial(state, tournament):
         debit=one(original_reports,user_id=entitlement['user_id'])
         require(debit['type']=='debit' and debit['wallet_type']=='PLAYER'
                 and debit['category']=='tournament_buyin'
+                and debit['terminal_closed_at'] is None
                 and money(debit['amount'])==money(entitlement['gross']),
                 'original reporting debit disagrees with paid entitlement')
     escrow = one(state['tournament_escrow'], tournament_id=tournament)
     require(escrow['enforced'] is True and escrow['closed_at'] is None
+            and escrow['terminal_closed_at'] is None
             and money(escrow['prize_balance']) == total
             and money(parent['prize_pool']) == total
             and money(escrow['bounty_balance']) == 0 and money(escrow['fee_balance']) == 0,
@@ -175,7 +200,8 @@ def committed(before, after, tournament, returned_receipt, reader_receipt):
                          'wallet_transaction_id',2)
     obligations = additions(before['tournament_obligations'],after['tournament_obligations'],'id',2)
     credits = additions(before['chip_ledger'],after['chip_ledger'],'id',2)
-    reports = additions(before['wallet_transactions'],after['wallet_transactions'],'id',2)
+    reports = reporting_additions(before['wallet_transactions'], after['wallet_transactions'],
+                                  tournament, settled)
     registry = additions(before['wallet_credit_idempotency'],after['wallet_credit_idempotency'],'key',2)
     changed_wallets = set()
     for entitlement in basis['entitlements']:
@@ -205,6 +231,7 @@ def committed(before, after, tournament, returned_receipt, reader_receipt):
         require(obligation['kind'] == 'refund' and obligation['place'] is None
                 and obligation['source'] == 'atomic_cancel_tournament'
                 and money(obligation['amount_owed']) == gross and money(obligation['amount_paid']) == gross
+                and obligation['terminal_closed_at'] == settled
                 and obligation['settled_at'] == settled, 'refund obligation not exactly closed')
         credit = one(credits,id=line['credit_ledger_id'],idempotency_key=key)
         require(credit['tournament_id'] == tournament and credit['club_id'] == club
@@ -232,6 +259,7 @@ def committed(before, after, tournament, returned_receipt, reader_receipt):
                 and report['category'] == 'refund' and report['related_entity_id'] == tournament
                 and report['description']==description
                 and report['table_id'] is None and report['hand_id'] is None
+                and report['terminal_closed_at'] == settled
                 and money(report['amount']) == gross
                 and money(report['balance_after']) == money(new_wallet['chip_balance']),
                 'reporting credit does not bind actual wallet change')
@@ -248,6 +276,7 @@ def committed(before, after, tournament, returned_receipt, reader_receipt):
             and parent['on_break'] is False and parent['break_started_at'] is None
             and parent['break_ends_at'] is None
             and escrow['enforced'] is True and escrow['closed_at'] == settled
+            and escrow['terminal_closed_at'] == settled
             and escrow['close_note'] == header['escrow_close_note']
             and all(money(escrow[k]) == 0 for k in ('prize_balance','bounty_balance','fee_balance')),
             'terminal parent/escrow does not conserve wallet credits')
@@ -259,16 +288,19 @@ def committed(before, after, tournament, returned_receipt, reader_receipt):
         require(escrow[name]==old_escrow[name],'non-refund escrow rail changed: '+name)
     new_players=matching(after['tournament_players'],tournament_id=tournament)
     require(sorted(indexed(new_players,'id'))==original_players,'actual roster identity set changed')
+    elimination_sequences(basis['players'], new_players)
     for player in new_players:
         old_player=one(basis['players'],id=player['id'])
         require(player['id'] in original_players and player['status'] == 'eliminated'
                 and player['user_id']==old_player['user_id']
+                and player['terminal_closed_at'] == settled
                 and player['eliminated_at'] == settled and money(player['chips']) == 0
                 and money(player['current_bounty']) == 0, 'roster not closed')
     table = one(after['tables'],id=basis['table']['id'])
     require(len(matching(after['tables'],tournament_id=tournament))==1
             and table['tournament_id']==tournament,'actual event/table identity set changed')
     require(table['status'] == 'closed' and table['lifecycle'] == 'closed'
+            and table['seat_admission_key'] == 'closed'
             and table['current_players'] == 0 and table['terminal_closed_at'] == settled,
             'table not closed')
     new_seats=matching(after['table_seats'],table_id=table['id'])
@@ -277,6 +309,8 @@ def committed(before, after, tournament, returned_receipt, reader_receipt):
         old_seat=one(basis['seats'],id=seat['id'])
         require(seat['id'] in original_seats and seat['left_at'] == settled
                 and seat['user_id']==old_seat['user_id'] and seat['table_id']==old_seat['table_id']
+                and seat['terminal_closed_at'] == settled
+                and seat['active_game_scope'] is None and seat['active_parent_key'] is None
                 and seat['status'] == 'left' and seat['leave_pending'] is False
                 and seat['is_sitting_out'] is False and seat['is_away'] is False
                 and seat['sit_out_at'] is None and seat['scheduled_leave_hands'] is None,
@@ -284,12 +318,14 @@ def committed(before, after, tournament, returned_receipt, reader_receipt):
     target_updates={
         'tournaments':({'id':tournament},{'status','ended_at','updated_at','prize_pool','bounty_pool',
             'total_rake','current_players','on_break','break_started_at','break_ends_at'}),
-        'tables':({'tournament_id':tournament},{'status','lifecycle','current_players','terminal_closed_at','updated_at'}),
+        'tables':({'tournament_id':tournament},{'status','lifecycle','current_players','terminal_closed_at','updated_at','seat_admission_key'}),
         'table_seats':({'table_id':table['id']},{'left_at','status','leave_pending','is_sitting_out',
-            'is_away','sit_out_at','scheduled_leave_hands','updated_at'}),
-        'tournament_players':({'tournament_id':tournament},{'status','eliminated_at','chips','current_bounty','updated_at'}),
+            'is_away','sit_out_at','scheduled_leave_hands','updated_at','terminal_closed_at',
+            'active_game_scope','active_parent_key'}),
+        'tournament_players':({'tournament_id':tournament},{'status','eliminated_at','chips','current_bounty','updated_at',
+            'terminal_closed_at','elimination_sequence'}),
         'tournament_escrow':({'tournament_id':tournament},{'refund_prize','refund_bounty','refund_fee',
-            'prize_balance','bounty_balance','fee_balance','updated_at','closed_at','close_note'}),
+            'prize_balance','bounty_balance','fee_balance','updated_at','closed_at','close_note','terminal_closed_at'}),
     }
     for relation,(scope,allowed) in target_updates.items():
         key='tournament_id' if relation=='tournament_escrow' else 'id'
@@ -359,6 +395,33 @@ def negative_controls(before, after, tournament):
         ('changed original paid source',changed_source),('unconsumed authorization',retained_capability),
         ('uncleared original seat',uncleared_seat),('unposted refund journal',unposted_credit),
         ('invented wallet-writer balance metadata',invented_balance_metadata)]
+    # These columns are maintained by the real terminal/seat/elimination
+    # triggers, not arbitrary mutable fields. Refuse each incorrect postimage.
+    def changed_field(relation, identity, field, replacement):
+        def mutate(value):
+            one(value[relation], **identity)[field] = replacement
+        return mutate
+    original_report = one(before['wallet_transactions'], user_id=entitlement['user_id'],
+                          related_entity_id=tournament)
+    table = one(after['tables'], tournament_id=tournament)
+    seat = one(after['table_seats'], table_id=table['id'], user_id=entitlement['user_id'])
+    for name, relation, identity, field, replacement in (
+        ('original report marker', 'wallet_transactions', {'id':original_report['id']}, 'terminal_closed_at', None),
+        ('original report event', 'wallet_transactions', {'id':original_report['id']}, 'related_entity_id', None),
+        ('original report amount', 'wallet_transactions', {'id':original_report['id']}, 'amount', money(original_report['amount'])+Decimal('.01')),
+        ('refund report marker', 'wallet_transactions', {'id':lines[0]['wallet_transaction_id']}, 'terminal_closed_at', None),
+        ('obligation marker', 'tournament_obligations', {'id':lines[0]['obligation_id']}, 'terminal_closed_at', None),
+        ('player marker', 'tournament_players', {'id':lines[0]['registration_id']}, 'terminal_closed_at', None),
+        ('seat marker', 'table_seats', {'id':seat['id']}, 'terminal_closed_at', None),
+        ('escrow marker', 'tournament_escrow', {'tournament_id':tournament}, 'terminal_closed_at', None),
+        ('closed table admission', 'tables', {'id':table['id']}, 'seat_admission_key', 'cash'),
+        ('released seat game scope', 'table_seats', {'id':seat['id']}, 'active_game_scope', 'stale'),
+        ('released seat parent key', 'table_seats', {'id':seat['id']}, 'active_parent_key', 'stale'),
+        ('invalid elimination sequence', 'tournament_players', {'id':lines[0]['registration_id']}, 'elimination_sequence', 0),
+        ('duplicate elimination sequence', 'tournament_players', {'id':lines[0]['registration_id']},
+         'elimination_sequence', one(after['tournament_players'], id=lines[1]['registration_id'])['elimination_sequence']),
+    ):
+        controls.append((name, changed_field(relation, identity, field, replacement)))
     results=[]
     for name,mutate in controls:
         damaged=deepcopy(after); mutate(damaged)

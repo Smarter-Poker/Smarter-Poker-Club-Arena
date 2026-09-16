@@ -354,6 +354,66 @@ class RelationAuthorityTests(unittest.TestCase):
                 self.refund.observed_policy_roles(observed)
 
 
+class TerminalObservationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        path = Path(__file__).resolve().parents[1] / 'qualification/spin-expiry-committed-refund-oracle.py'
+        spec = importlib.util.spec_from_file_location('terminal_refund_oracle', path)
+        cls.oracle = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.oracle)
+
+    def reports(self):
+        before = [dict(id='paid', related_entity_id=TOURNAMENT, terminal_closed_at=None, amount=1),
+                  dict(id='other', related_entity_id='other-event', terminal_closed_at=None, amount=2)]
+        after = copy.deepcopy(before)
+        after[0]['terminal_closed_at'] = 'settled'
+        after += [dict(id='refund1'), dict(id='refund2')]
+        return before, after
+
+    def test_only_exact_target_report_stamp_is_allowed(self):
+        before, after = self.reports()
+        original = copy.deepcopy(before)
+        # The original immutable-only comparison reproduces the observed refusal.
+        with self.assertRaisesRegex(RuntimeError, 'prior immutable row'):
+            self.oracle.additions(before, after, 'id', 2)
+        self.assertEqual(self.oracle.reporting_additions(before, after, TOURNAMENT, 'settled'), after[2:])
+        self.assertEqual(before, original)
+
+    def test_report_marker_event_money_and_unrelated_changes_refuse(self):
+        for row, field, value in ((0, 'terminal_closed_at', None), (0, 'terminal_closed_at', 'wrong'),
+                                  (0, 'related_entity_id', 'other-event'), (0, 'amount', 2),
+                                  (1, 'terminal_closed_at', 'settled')):
+            with self.subTest(row=row, field=field, value=value):
+                before, after = self.reports()
+                after[row][field] = value
+                with self.assertRaisesRegex(RuntimeError, 'prior immutable row'):
+                    self.oracle.reporting_additions(before, after, TOURNAMENT, 'settled')
+        before, after = self.reports()
+        with self.assertRaisesRegex(RuntimeError, 'prior immutable row'):
+            self.oracle.reporting_additions(before, after[1:], TOURNAMENT, 'settled')
+        before[0]['terminal_closed_at'] = 'already-closed'
+        with self.assertRaisesRegex(RuntimeError, 'original report already closed'):
+            self.oracle.reporting_additions(before, after, TOURNAMENT, 'settled')
+
+    def test_elimination_sequence_requires_new_positive_unique_integer(self):
+        before = [dict(id=str(i), status='playing', elimination_sequence=None) for i in range(2)]
+        after = [dict(id=str(i), status='eliminated', elimination_sequence=i+10) for i in range(2)]
+        self.oracle.elimination_sequences(before, after)
+        for invalid in (None, 0, -1, True, '10', 1.5, 11):
+            with self.subTest(invalid=invalid):
+                damaged = copy.deepcopy(after)
+                damaged[0]['elimination_sequence'] = invalid
+                with self.assertRaisesRegex(RuntimeError, 'invalid database elimination sequence'):
+                    self.oracle.elimination_sequences(before, damaged)
+        for field, value in (('status', 'eliminated'), ('elimination_sequence', 4)):
+            damaged = copy.deepcopy(before)
+            damaged[0][field] = value
+            with self.assertRaisesRegex(RuntimeError, 'original roster already eliminated'):
+                self.oracle.elimination_sequences(damaged, after)
+        with self.assertRaisesRegex(RuntimeError, 'elimination roster identity changed'):
+            self.oracle.elimination_sequences(before, after[:1])
+
+
 class ProviderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

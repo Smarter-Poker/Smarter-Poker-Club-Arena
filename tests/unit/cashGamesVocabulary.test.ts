@@ -258,7 +258,7 @@ describe('the four template-locked rules are printed, never sent', () => {
       })
     );
     expect(madness.map((l) => l.value)).toEqual([
-      'One Big Blind, Paid By The Player In The Big Blind',
+      'One Big Blind From Each Dealt In Player',
       '50% Over 10 Hands',
       'Double Board, 3 BB Ante, Every Orbit',
     ]);

@@ -320,11 +320,11 @@ body[data-toast-theme='daily-missions-casino'] .toast--success {
 }
 
 body[data-toast-theme='daily-missions-casino'] .toast--error {
-  --toast-casino-accent: #f02849;
+  --toast-casino-accent: #ff8f79;
 }
 
 body[data-toast-theme='daily-missions-casino'] .toast--warning {
-  --toast-casino-accent: #d6ad52;
+  --toast-casino-accent: #d3a855;
 }
 
 body[data-toast-theme='daily-missions-casino'] .toast__icon {

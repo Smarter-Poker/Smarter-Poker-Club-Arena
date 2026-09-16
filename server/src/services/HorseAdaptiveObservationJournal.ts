@@ -59,10 +59,7 @@ function encode(o: QualifiedAdaptiveObservation): string {
   ]);
 }
 
-function decodeWithScope(
-  text: unknown,
-  knownScope?: { raw: string; frozen: readonly unknown[] }
-): QualifiedAdaptiveObservation {
+function decode(text: unknown): QualifiedAdaptiveObservation {
   if (typeof text !== 'string' || bytes(text) > ADAPTIVE_JOURNAL_LIMITS.observationBytes)
     throw Error('invalid_observation');
   const a = JSON.parse(text);
@@ -100,35 +97,13 @@ function decodeWithScope(
     observedAtMs: a[5],
     partition: a[6],
     scopeKey: a[7],
-    scope: knownScope?.raw === a[8] ? knownScope.frozen : freezeScope(JSON.parse(a[8])),
+    scope: freezeScope(JSON.parse(a[8])),
     action: a[9],
     facedBet: a[10],
     origin: a[11],
   });
   if (encode(o) !== text) throw Error('noncanonical_observation');
   return o;
-}
-export function decodeAdaptiveJournalObservation(text: unknown): QualifiedAdaptiveObservation {
-  return decodeWithScope(text);
-}
-const decode = decodeAdaptiveJournalObservation;
-
-/** Model sweeps contain exactly one public node. Reuse its frozen, validated
- * scope instead of retaining thousands of identical nested arrays. Every row
- * still passes digest, canonical encoding, partition and identity validation. */
-export function decodeScopedAdaptiveJournalObservations(
-  rows: readonly string[],
-  scopeKey: string
-): readonly QualifiedAdaptiveObservation[] {
-  if (!digest(scopeKey) || rows.length > ADAPTIVE_JOURNAL_LIMITS.observations)
-    throw Error('invalid_scope');
-  let knownScope: { raw: string; frozen: readonly unknown[] } | undefined;
-  return rows.map((text) => {
-    const observation = decodeWithScope(text, knownScope);
-    if (observation.scopeKey !== scopeKey) throw Error('invalid_scope');
-    knownScope ??= { raw: JSON.stringify(observation.scope), frozen: observation.scope };
-    return observation;
-  });
 }
 
 export interface PreparedAdaptiveJournalBatch {

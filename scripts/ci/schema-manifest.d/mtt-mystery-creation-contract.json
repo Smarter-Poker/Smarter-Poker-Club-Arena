@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/mtt-atomic-mystery-creation-sep14; installed 20260914104027; atomic selected mystery options and activation immutability",
-  "functions": [
-    "fn_mystery_bounty_creation_document",
-    "fn_guard_tournament_mystery_creation_contract"
-  ]
-}

@@ -18,9 +18,6 @@
 #   --restart always        Covers process crash + daemon restart + host reboot.
 #                           It does NOT cover an intentional manual stop; no
 #                           periodic mutator is allowed to reverse one.
-#   --stop-timeout 45        Preserves the shutdown grace for stop/restart callers
-#                           that omit a timeout. The Linux default is only 10s,
-#                           shorter than the engine's 40s ownership deadline.
 #   --log-opt max-size      Unbounded json-file logs fill the disk, and a full
 #                           disk wedges the engine in exactly the way this whole
 #                           workstream exists to prevent.
@@ -240,7 +237,6 @@ fi
 docker run -d \
   --name "$CONTAINER" \
   --restart "$RESTART_POLICY" \
-  --stop-timeout 45 \
   --health-interval="$HEALTH_INTERVAL" \
   --health-timeout="$HEALTH_TIMEOUT" \
   --health-start-period="$HEALTH_START_PERIOD" \

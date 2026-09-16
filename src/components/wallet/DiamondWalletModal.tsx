@@ -16,7 +16,6 @@ import { supabase } from '../../lib/supabase';
 import DiamondCustodyBalance from '../arena/DiamondCustodyBalance';
 import DiamondWalletTransfer from './DiamondWalletTransfer';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './DiamondWalletModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { formatPopupText } from '../../utils/popupStyle';
@@ -159,25 +158,6 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
   diamond_deduction: { icon: 'gem', label: 'Diamond Spent', color: '#ef4444' },
   diamond_reward: { icon: 'gem', label: 'Diamond Reward', color: '#22c55e' },
   diamond_refund: { icon: 'gem', label: 'Diamond Refund', color: '#94a3b8' },
-
-  /* ── ADDED 2026-09-13, read from the writers and the live ledger ──────────
-     THE DIAMOND ARENA IS DIAMONDS ONLY. A buy-in moves diamonds into custody
-     (fn_poker_diamond_buyin writes `arena_deposit`), a cash-out moves them
-     back (`arena_withdraw`). Neither is a chip and neither is labelled as one.
-     The rest are the highest-volume kinds of the last 30 days that had no
-     label and fell through to the humaniser (daily_challenge_claim alone is
-     55,183 of the 57,000 rows written in that window). */
-  arena_deposit: { icon: 'gem', label: 'Diamond Arena Buy-In', color: '#00d4ff' },
-  arena_withdraw: { icon: 'gem', label: 'Diamond Arena Cash-Out', color: '#22c55e' },
-  debt_settlement: { icon: 'settings', label: 'Owed Diamonds Settled', color: '#94a3b8' },
-  daily_challenge_claim: { icon: 'gem', label: 'Daily Challenge', color: '#22c55e' },
-  daily_challenge_reroll: { icon: 'refresh', label: 'Challenge Reroll', color: '#ef4444' },
-  daily_mission_milestone: { icon: 'gem', label: 'Mission Milestone', color: '#22c55e' },
-  plinko_drop: { icon: 'gem', label: 'Plinko Drop', color: '#ef4444' },
-  crash_bet: { icon: 'gem', label: 'Crash Bet', color: '#ef4444' },
-  wheel_spin: { icon: 'gem', label: 'Wheel Spin', color: '#ef4444' },
-  wheel_prize: { icon: 'gem', label: 'Wheel Prize', color: '#22c55e' },
-  transfer: { icon: 'gem', label: 'Transfer', color: '#94a3b8' },
 
   /* ── ADDED 2026-08-25, from the live `diamond_transactions` table ──────────
      Every type below occurs in production and had NO entry, so all of them fell
@@ -387,139 +367,133 @@ export default function DiamondWalletModal({
 
   if (!isOpen) return null;
 
-  /* ONE CONSOLE (#ClubArenaConsole): the spade master wearing the diamond
-     crest. The balances, the transfer, the filters and every receipt are
-     printed on the black glass between the rails in the master's own inks,
-     with an engraved rule between rows. The two painted plates in the foot
-     are the wallet's controls: Close on steel, Buy Diamonds on the blue
-     glass. Nothing else is drawn. */
   return (
-    <div className="diamond-wallet-backdrop" onClick={onClose} role="presentation">
-      <div
-        className="dwc"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dwc-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <SpadeConsole
-          crest="diamond"
-          eyebrow="Club Arena"
-          title="Diamond Wallet"
-          titleId="dwc-title"
-          pill={FILTER_OPTIONS.find((opt) => opt.value === filter)?.label ?? 'All'}
-          pillInk="blue"
-          plates={{
-            secondary: { label: 'Close', ink: 'silver', onClick: onClose, 'aria-label': 'Close' },
-            primary: {
-              label: 'Buy Diamonds',
-              ink: 'white',
-              onClick: () => {
-                onClose();
-                onBuyClick?.();
-              },
-            },
-          }}
-          className="dwc__console"
-        >
-          {/* Balances: available and in play are two figures, never a total. */}
+    <>
+      {/* Backdrop */}
+      <div className="diamond-wallet-backdrop" onClick={onClose} />
+
+      {/* Modal — Full Screen */}
+      <div className="diamond-wallet-modal">
+        {/* Close button */}
+        <div className="diamond-wallet-modal__close-row">
+          <button className="diamond-wallet-modal__close-btn" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        {/* Header — Balance Display */}
+        <div className="diamond-wallet-modal__header">
+          <div className="diamond-wallet-modal__header-label">Diamond Wallet</div>
           <div className="diamond-wallet-modal__custody-balances">
             <DiamondCustodyBalance key={balanceRevision} />
           </div>
+          <button
+            className="diamond-wallet-modal__buy-btn"
+            onClick={() => {
+              onClose();
+              onBuyClick?.();
+            }}
+          >
+            + Buy Diamonds
+          </button>
+        </div>
 
-          {user?.id && (
-            <DiamondWalletTransfer
-              key={user.id}
-              userId={user.id}
-              onComplete={() => {
-                setBalanceRevision((value) => value + 1);
-                void fetchTransactions();
-              }}
-            />
-          )}
+        {user?.id && (
+          <DiamondWalletTransfer
+            key={user.id}
+            userId={user.id}
+            onComplete={() => {
+              setBalanceRevision((value) => value + 1);
+              void fetchTransactions();
+            }}
+          />
+        )}
 
-          {/* Filters: lit words in a row; the chosen one burns white. */}
-          <div className="dwc__filters" role="group" aria-label="Filter Transactions">
-            {FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`dwc-word ${filter === opt.value ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                aria-pressed={filter === opt.value}
-                onClick={() => setFilter(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+        {/* Filter Bar */}
+        <div className="diamond-wallet-modal__filters">
+          {FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={`diamond-wallet-modal__filter ${filter === opt.value ? 'diamond-wallet-modal__filter--active' : ''}`}
+              onClick={() => setFilter(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
 
-          {/* Receipts */}
-          <div className="dwc__list">
-            {loading || historyOwnerId !== user?.id ? (
-              <p className="sc-copy sc-copy--center dwc__status" role="status">
-                Loading Transactions
-              </p>
-            ) : loadError ? (
-              /* "No Transactions Yet" is a claim about the player's money. It
-                 must never be shown for a read that failed - see the error note
-                 in fetchTransactions. */
-              <div className="dwc__status" role="status">
-                <p className="sc-copy sc-copy--center">Could Not Load Your Diamond History</p>
-                <button
-                  type="button"
-                  className="dwc-word sc-ink--white"
-                  onClick={() => fetchTransactions()}
-                >
-                  Retry
-                </button>
+        {/* Transaction List */}
+        <div className="diamond-wallet-modal__list">
+          {loading || historyOwnerId !== user?.id ? (
+            <div className="diamond-wallet-modal__status">Loading Transactions...</div>
+          ) : loadError ? (
+            /* "No Transactions Yet" is a claim about the player's money. It
+               must never be shown for a read that failed — see the error note
+               in fetchTransactions. */
+            <div className="diamond-wallet-modal__status">
+              <div style={{ fontSize: 32, marginBottom: 8 }} aria-hidden="true">
+                {'⚠'}
               </div>
-            ) : filteredTx.length === 0 ? (
-              <p className="sc-copy sc-copy--center dwc__status">
-                {filter === 'all' ? 'No Transactions Yet' : 'No Transactions Of This Kind'}
-              </p>
-            ) : (
-              filteredTx.map((tx) => {
-                const txType = tx.transaction_type || tx.type || '';
-                const config = TX_TYPES[txType];
-                const label = diamondTxLabel(txType);
-                const isPositive = tx.amount >= 0;
-                const dt = new Date(tx.created_at);
+              Could Not Load Your Diamond History
+              <button className="diamond-wallet-modal__retry" onClick={() => fetchTransactions()}>
+                Retry
+              </button>
+            </div>
+          ) : filteredTx.length === 0 ? (
+            <div className="diamond-wallet-modal__status">
+              <div style={{ fontSize: 32, marginBottom: 8 }} aria-hidden="true">
+                ◆
+              </div>
+              {filter === 'all' ? 'No Transactions Yet' : 'No Transactions Of This Kind'}
+            </div>
+          ) : (
+            filteredTx.map((tx) => {
+              const txType = tx.transaction_type || tx.type || '';
+              const config = TX_TYPES[txType];
+              const color = config?.color || '#94a3b8';
+              const label = diamondTxLabel(txType);
+              const isPositive = tx.amount >= 0;
+              const dt = new Date(tx.created_at);
 
-                return (
-                  <div key={tx.id} className="dwc__tx">
-                    <span className="dwc__tx-glyph sc-ink--blue" aria-hidden="true">
-                      {iconGlyph(config?.icon || 'gem')}
-                    </span>
-                    <div className="dwc__tx-body">
-                      <span className="dwc__tx-label sc-ink--silver">{label}</span>
-                      <span className="dwc__tx-desc sc-ink--muted">
-                        {formatPopupText(tx.description || label)}
-                      </span>
-                    </div>
-                    <div className="dwc__tx-figures">
-                      <span
-                        className={`dwc__tx-amount ${isPositive ? 'sc-ink--green' : 'sc-ink--red'}`}
-                      >
-                        {isPositive ? '+' : ''}
-                        {tx.amount.toLocaleString()}
-                      </span>
-                      {tx.balance_after != null && (
-                        <span className="dwc__tx-meta sc-ink--muted">
-                          Bal: {tx.balance_after.toLocaleString()}
-                        </span>
-                      )}
-                      <span className="dwc__tx-meta sc-ink--muted">
-                        {dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                        {dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+              return (
+                <div key={tx.id} className="diamond-wallet-modal__tx">
+                  <div
+                    className="diamond-wallet-modal__tx-icon"
+                    style={{ backgroundColor: `${color}15`, color }}
+                    aria-hidden="true"
+                  >
+                    {iconGlyph(config?.icon || 'gem')}
+                  </div>
+                  <div className="diamond-wallet-modal__tx-body">
+                    <div className="diamond-wallet-modal__tx-label">{label}</div>
+                    <div className="diamond-wallet-modal__tx-desc">
+                      {formatPopupText(tx.description || label)}
                     </div>
                   </div>
-                );
-              })
-            )}
-          </div>
-        </SpadeConsole>
+                  <div className="diamond-wallet-modal__tx-amount-col">
+                    <span
+                      className="diamond-wallet-modal__tx-amount"
+                      style={{ color: isPositive ? '#4ade80' : '#f87171' }}
+                    >
+                      {isPositive ? '+' : ''}
+                      {tx.amount.toLocaleString()}
+                    </span>
+                    {tx.balance_after != null && (
+                      <span className="diamond-wallet-modal__tx-bal">
+                        Bal: {tx.balance_after.toLocaleString()}
+                      </span>
+                    )}
+                    <span className="diamond-wallet-modal__tx-time">
+                      {dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                      {dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

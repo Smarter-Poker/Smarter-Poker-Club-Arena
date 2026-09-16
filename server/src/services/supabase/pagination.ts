@@ -104,10 +104,6 @@ export interface FetchAllOptions {
    * retry entirely. See PAGE_ATTEMPTS for why the default is not 1.
    */
   pageAttempts?: number;
-  /** Stop admitting pages/retries when the owning lifecycle is withdrawn.
-   * The request already in flight is still joined; its result cannot certify
-   * a complete read after withdrawal. This never cancels a mutation. */
-  shouldContinue?: () => boolean;
 }
 
 export interface FetchAllResult<T> {
@@ -149,9 +145,7 @@ export async function fetchAllRows<T extends Record<string, unknown>>(
     let data: T[] | null = null;
     let error: unknown = null;
     for (let attempt = 1; attempt <= attempts; attempt++) {
-      if (opts.shouldContinue?.() === false) return { rows: out, complete: false };
       ({ data, error } = await makeQuery(cursor, want));
-      if (opts.shouldContinue?.() === false) return { rows: out, complete: false };
       // A successful SELECT returns an array, including [] for no rows.
       // Null or malformed data proves neither emptiness nor the end of an
       // earlier page. Retry the same read, retaining the original error.

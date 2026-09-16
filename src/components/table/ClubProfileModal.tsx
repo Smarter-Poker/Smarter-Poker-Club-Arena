@@ -54,7 +54,6 @@ import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { sessionStatsService, type SessionStats } from '../../services/SessionStatsService';
 import { reportError } from '../../utils/errorReporter';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './ClubProfileModal.css';
 
 export interface ClubProfileModalProps {
@@ -187,112 +186,121 @@ export function ClubProfileModal({
   if (!isOpen) return null;
 
   const net = stats ? stats.profitLoss : null;
-  const netInk =
-    net === null
-      ? 'sc-ink--silver'
-      : net > 0
-        ? 'sc-ink--green'
-        : net < 0
-          ? 'sc-ink--red'
-          : 'sc-ink--silver';
+  const netClass = net === null ? '' : net > 0 ? 'cpm-up' : net < 0 ? 'cpm-down' : '';
   const netPrefix = net === null ? '' : net > 0 ? '+' : '';
   const initial = (username || '?').charAt(0).toUpperCase();
 
-  /* Every figure is a row on the glass: label in lit blue on the left, the
-     value in silver on the right, an engraved rule between rows. */
-  const tableRows: Array<[string, string, string]> = [
-    ['Stack', stats ? fmtChips(stats.currentStack) : '--', 'sc-ink--silver'],
-    ['Net', net === null ? '--' : `${netPrefix}${fmtChips(net)}`, netInk],
-    ['Big Blinds', stats ? `${netPrefix}${fmtWhole(stats.bigBlindsWon)}` : '--', netInk],
-    ['Bought In', stats ? fmtChips(stats.buyInTotal) : '--', 'sc-ink--silver'],
-  ];
-  const sessionRows: Array<[string, string]> = [
-    ['Hands', stats ? fmtWhole(stats.handsPlayed) : '--'],
-    ['Won', stats ? fmtWhole(stats.handsWon) : '--'],
-    ['VPIP', stats ? fmtPercent(stats.vpipPercent) : '--'],
-    ['PFR', stats ? fmtPercent(stats.pfrPercent) : '--'],
-    ['Time', tableId ? duration : '--'],
-    ['Per Hour', stats ? fmtWhole(stats.handsPerHour) : '--'],
-  ];
-
-  /* ONE CONSOLE (#ClubArenaConsole): the spade master. Who you are is the
-     first row; the two sections print under their lit-blue labels; a page of
-     content with one way out, so the foot is the flat cap and CLOSE is a lit
-     word on the glass. Nothing is drawn. */
   return (
-    <div className="cpm-overlay" onClick={onClose} role="presentation">
+    <div className="cpm-overlay" onClick={onClose}>
       <div
-        className="cpc"
+        className="cpm-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="cpm-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <SpadeConsole
-          eyebrow={clubName}
-          title="Profile"
-          titleId="cpm-title"
-          pill={tableId ? 'Seated' : 'Watching'}
-          pillInk={tableId ? 'green' : 'muted'}
-          foot="foot"
-          className="cpc__console"
-        >
-          <div className="cpc__who">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="cpc__avatar" />
-            ) : (
-              <span className="cpc__avatar cpc__avatar--initial sc-ink--silver" aria-hidden="true">
-                {initial}
-              </span>
-            )}
-            <div className="cpc__who-lines">
-              <span className="cpc__name sc-ink--silver">{username}</span>
-              <span className="cpc__id sc-ink--muted">ID: {playerNumber ?? '--'}</span>
+        <div className="cpm-header">
+          <h2 className="cpm-title" id="cpm-title">
+            Profile
+          </h2>
+          <button className="cpm-close" onClick={onClose} aria-label="Close Profile">
+            &#10005;
+          </button>
+        </div>
+
+        <div className="cpm-body">
+          <div className="cpm-user-section">
+            <div className="cpm-avatar-container">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="cpm-avatar" />
+              ) : (
+                <span className="cpm-avatar-placeholder">{initial}</span>
+              )}
+            </div>
+            <div className="cpm-user-info">
+              <span className="cpm-username">{username}</span>
+              <span className="cpm-user-id">ID: {playerNumber ?? '--'}</span>
+              <span className="cpm-user-club">{clubName}</span>
             </div>
           </div>
 
           {/* `currentStack` is what the session service has watched arrive and
               leave, so it agrees with the Session Stats panel by construction
               rather than by a second, hand-rolled sum. */}
-          <section className="cpc__section" aria-label="At This Table">
-            <h3 className="cpc__section-title sc-label sc-ink--blue">At This Table</h3>
-            {tableRows.map(([label, value, ink]) => (
-              <div key={label} className="cpc__row">
-                <span className="cpc__row-label sc-ink--blue">{label}</span>
-                <span className={`cpc__row-value ${ink}`}>{value}</span>
+          <div className="cpm-section">
+            <div className="cpm-section-title">At This Table</div>
+            <div className="cpm-stat-grid">
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">Stack</span>
+                <span className="cpm-stat-value">
+                  {stats ? fmtChips(stats.currentStack) : '--'}
+                </span>
               </div>
-            ))}
-          </section>
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">Net</span>
+                <span className={`cpm-stat-value ${netClass}`}>
+                  {net === null ? '--' : `${netPrefix}${fmtChips(net)}`}
+                </span>
+              </div>
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">Big Blinds</span>
+                <span className={`cpm-stat-value ${netClass}`}>
+                  {stats ? `${netPrefix}${fmtWhole(stats.bigBlindsWon)}` : '--'}
+                </span>
+              </div>
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">Bought In</span>
+                <span className="cpm-stat-value">{stats ? fmtChips(stats.buyInTotal) : '--'}</span>
+              </div>
+            </div>
+          </div>
 
-          <section className="cpc__section" aria-label="This Session">
-            <h3 className="cpc__section-title sc-label sc-ink--blue">This Session</h3>
-            {sessionRows.map(([label, value]) => (
-              <div key={label} className="cpc__row">
-                <span className="cpc__row-label sc-ink--blue">{label}</span>
-                <span className="cpc__row-value sc-ink--silver">{value}</span>
+          <div className="cpm-section">
+            <div className="cpm-section-title">This Session</div>
+            <div className="cpm-stat-grid">
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">Hands</span>
+                <span className="cpm-stat-value">{stats ? fmtWhole(stats.handsPlayed) : '--'}</span>
               </div>
-            ))}
-          </section>
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">Won</span>
+                <span className="cpm-stat-value">{stats ? fmtWhole(stats.handsWon) : '--'}</span>
+              </div>
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">VPIP</span>
+                <span className="cpm-stat-value">
+                  {stats ? fmtPercent(stats.vpipPercent) : '--'}
+                </span>
+              </div>
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">PFR</span>
+                <span className="cpm-stat-value">
+                  {stats ? fmtPercent(stats.pfrPercent) : '--'}
+                </span>
+              </div>
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">Time</span>
+                <span className="cpm-stat-value">{tableId ? duration : '--'}</span>
+              </div>
+              <div className="cpm-stat">
+                <span className="cpm-stat-label">Per Hour</span>
+                <span className="cpm-stat-value">
+                  {stats ? fmtWhole(stats.handsPerHour) : '--'}
+                </span>
+              </div>
+            </div>
+          </div>
 
           {/* An observer, or anyone whose session has not started, gets a
               sentence instead of a grid of confident zeros. */}
-          {!tableId && (
-            <p className="sc-copy sc-copy--center cpc__note">
-              Session Figures Appear Once You Are Seated.
-            </p>
-          )}
+          {!tableId && <div className="cpm-note">Session Figures Appear Once You Are Seated.</div>}
+        </div>
 
-          <div className="cpc__actions">
-            <button
-              type="button"
-              className="cpc-word sc-ink--white"
-              onClick={onClose}
-              aria-label="Close Profile"
-            >
-              Close
-            </button>
-          </div>
-        </SpadeConsole>
+        <div className="cpm-footer">
+          <button className="cpm-confirm-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

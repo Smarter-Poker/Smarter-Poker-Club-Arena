@@ -21,7 +21,6 @@ import { compactChips, formatDateShort as formatDate } from '../utils/format';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
-import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { reportError } from '../utils/errorReporter';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { publicOrigin } from '../lib/appBase';
@@ -514,21 +513,6 @@ export default function PromotionsPage() {
           </ul>
         )}
       </RewardsSurfaceHeader>
-
-      {/* THE DIAMOND GAMES (Dan 2026-09-07; restored 2026-09-11). The wheel,
-          the board and the curve are a promotion the club runs, so the door
-          belongs on this page. It went missing when the Rewards Circuit rewrite
-          landed on main and this branch's own copy of the page was replaced by
-          it; the merge put it back on the component every other surface uses,
-          rather than as a second banner that could drift from the rest. One
-          rule decides when it shows, and it lives in DiamondsToChipsButton. */}
-      <DiamondsToChipsButton
-        clubId={clubId ?? null}
-        alwaysShow
-        size="large"
-        className="promotions-diamond-games"
-        onGo={(to) => navigate(to)}
-      />
 
       {/* Referral Modal */}
       <ReferralModal

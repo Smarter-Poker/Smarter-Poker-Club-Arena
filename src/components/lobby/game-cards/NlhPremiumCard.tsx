@@ -94,20 +94,6 @@ function NlhBuyIn({ value }: { value: string }) {
   return <ArenaPremiumValueText ref={ref}>{line}</ArenaPremiumValueText>;
 }
 
-/* A fitted one-line label printed on a painted plate, fitted to the plate's
-   face (the well inside the chrome rim), never the rim: Dan 2026-09-08,
-   "adjust the font sizes so they never go over the edges of the frame". */
-function NlhActionLabel({ text }: { text: string }) {
-  const ref = useFitText<HTMLSpanElement>(text, 1, 0.5);
-  return (
-    <span className="agc-nlh-premium__action-well">
-      <span className="agc-nlh-premium__action-text" ref={ref}>
-        {text}
-      </span>
-    </span>
-  );
-}
-
 export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
   const titleRef = useFitText<HTMLElement>(data.title, TITLE_SCALE_X);
   const titleZone = data.subtitle ? NLH_PREMIUM_ZONES.titleNoDot : NLH_PREMIUM_ZONES.titleAlone;
@@ -172,46 +158,30 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
         <NlhBuyIn value={zoneText('buyIn', data.buyIn)} />
       </div>
 
-      {/* The plates are painted label-free (2026-09-04); the label each
-          prints is the action it performs, in the plate's ink: silver on
-          steel, white on the blue glass, or the state's own colour (green
-          Return To Game, red Leave Waitlist, gold Late Register). Before
-          this the words VIEW TABLE / JOIN TABLE were baked into the art, so
-          a full table read JOIN TABLE while the action was Join Waitlist. */}
       {actions.secondaryLabel && (
         <>
-          <ArtLayer src={NLH_PREMIUM_ASSETS.viewPlate} zone="viewTableArt" />
+          <ArtLayer src={NLH_PREMIUM_ASSETS.viewTable} zone="viewTableArt" />
           <button
             type="button"
-            className="agc-nlh-premium__hitbox agc-nlh-premium__action agc-nlh-premium__action--silver"
+            className="agc-nlh-premium__hitbox"
             data-zone="secondaryAction"
             aria-label={actions.secondaryLabel}
             style={premiumZoneStyle(NLH_PREMIUM_ZONES.secondaryAction)}
             onClick={actions.onSecondary}
-          >
-            <NlhActionLabel text={actions.secondaryLabel} />
-          </button>
+          />
         </>
       )}
 
-      <ArtLayer src={NLH_PREMIUM_ASSETS.joinPlate} zone="joinTableArt" />
+      <ArtLayer src={NLH_PREMIUM_ASSETS.joinTable} zone="joinTableArt" />
       <button
         type="button"
-        className={`agc-nlh-premium__hitbox agc-nlh-premium__action agc-nlh-premium__action--${
-          actions.primaryTone === 'green' ||
-          actions.primaryTone === 'red' ||
-          actions.primaryTone === 'gold'
-            ? actions.primaryTone
-            : 'white'
-        }`}
+        className="agc-nlh-premium__hitbox"
         data-zone="primaryAction"
         aria-label={actions.primaryLabel}
         disabled={actions.primaryDisabled || actions.busy}
         style={premiumZoneStyle(NLH_PREMIUM_ZONES.primaryAction)}
         onClick={actions.onPrimary}
-      >
-        <NlhActionLabel text={actions.primaryLabel} />
-      </button>
+      />
     </div>
   );
 }

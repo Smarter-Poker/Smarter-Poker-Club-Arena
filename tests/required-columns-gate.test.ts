@@ -126,7 +126,7 @@ describe('the two writes that were broken now supply what they must', () => {
   it('a credit request carries its club', () => {
     const src = read('src/services/CreditService.ts');
     expect(src).toContain('club_id: account.clubId');
-    expect(src).toMatch(/\.select\(\s*'id, user_id, club_id,/);
+    expect(src).toContain("select('id, user_id, club_id,");
     expect(src).toContain('no club, so a credit request cannot be raised');
   });
 });

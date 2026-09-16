@@ -363,7 +363,7 @@ describe('ClubDataPage', () => {
     // test deadline even though the immutable export already completed.
     await waitFor(() => expect(downloadMock).toHaveBeenCalledOnce(), { timeout: 10_000 });
     expect(
-      await screen.findAllByText('Exported All 2 Games.', undefined, { timeout: 10_000 })
+      await screen.findAllByText('Exported all 2 games.', undefined, { timeout: 10_000 })
     ).toHaveLength(2);
     expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
     expect(rpcMock).toHaveBeenCalledWith(
@@ -672,7 +672,7 @@ describe('ClubDataPage', () => {
         { timeout: 12_000 }
       );
       expect(screen.getByText('Shark Table One')).toBeInTheDocument();
-      expect(screen.queryByText('Could Not Load Club Data.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
       expect(screen.getByText(/Showing The Last Verified Snapshot/i)).toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();
@@ -706,7 +706,7 @@ describe('ClubDataPage', () => {
         { timeout: 2_000 }
       );
       expect(screen.getByText('Table Regular')).toBeInTheDocument();
-      expect(screen.queryByText('Could Not Load Player Data.')).not.toBeInTheDocument();
+      expect(screen.queryByText('Could not load player data.')).not.toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();
     }
@@ -767,7 +767,7 @@ describe('ClubDataPage', () => {
 
     await screen.findByText('Shark Table One');
     expect(snapshotRequest).toBe(2);
-    expect(screen.queryByText('Could Not Load Club Data.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
   });
 
   it('keeps healing through a contended cold start before exposing an error state', async () => {
@@ -794,7 +794,7 @@ describe('ClubDataPage', () => {
     // authoritative read after first paint, so the user contract is a lower
     // bound rather than an arbitrary transport-call ceiling.
     expect(snapshotRequest).toBeGreaterThanOrEqual(4);
-    expect(screen.queryByText('Could Not Load Club Data.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
   });
 
   it('aborts a protected request when its response deadline expires', async () => {
@@ -824,7 +824,7 @@ describe('ClubDataPage', () => {
 
       expect(snapshotSignal?.aborted).toBe(true);
       expect(
-        screen.getByText('Club Data Took Too Long To Respond. Try Again.')
+        screen.getByText('Club data took too long to respond. Try again.')
       ).toBeInTheDocument();
     } finally {
       errorSpy.mockRestore();

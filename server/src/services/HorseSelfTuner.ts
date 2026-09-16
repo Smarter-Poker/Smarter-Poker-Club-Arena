@@ -10,18 +10,20 @@
  *  1. MEASURE — replay the last 7 days of real CASH hand_history and compute,
  *     per horse: VPIP, PFR, 3-bet rate, fold-to-3-bet, WWSF (won when saw
  *     flop), postflop aggression factor, and approximate net bb/100.
- *  2. DIAGNOSE — compare against versioned diagnostic bands. Too loose,
+ *  2. DIAGNOSE — compare against winning-player benchmark bands. Too loose,
  *     too passive, folding to every 3-bet, never winning without showdown —
  *     each recognized leak maps to a small corrective nudge.
- *  3. AUDIT — retain bounded proposed nudges and review counts in the atomic
- *     study record. Frequency/leak diagnostics do not establish counterfactual
- *     improvement, so they cannot rewrite profiles.horse_profile. Actual
- *     modifier values stay unchanged. Causal, holdout and shadow qualification
- *     belong to the separate Phase14 activation control path, still pending.
+ *  3. ADJUST — merge bounded nudges (±0.02/night, hard caps 0.85–1.18) into
+ *     profiles.horse_profile, the exact jsonb resolveHorseStyle already reads
+ *     on every live decision. The horse plays differently TOMORROW because of
+ *     what it did TODAY — individually, permanently, and auditable in
+ *     horse_self_tune_log.
  *
- * Diagnostic proposals retain the legacy ±0.02/night and 0.85–1.18 bounds.
- * Those bounds and observed results do not establish winning strength or
- * authorize activation. Authored profiles and earlier values are preserved.
+ * The nudges deliberately move slowly: a leak must persist across nights to
+ * move a dial far, and every dial is clamped so no horse can drift outside
+ * the "winning player" envelope no matter how unlucky a week gets. When a
+ * horse with a big sample is losing badly overall, its dials regress toward
+ * neutral instead of chasing noise.
  *
  * Fail-safe: every DB touch is caught + reported; a failed run retries the
  * next scheduled check. Tournament hands are EXCLUDED from frequency
@@ -30,13 +32,6 @@
  */
 
 import { supabase } from './supabase.js';
-import { recordObservationalHorseStudy } from './HorseTunerObservationalAudit.js';
-import {
-  completeHorseTunerStudy,
-  prepareHorseTunerStudy,
-  readRecordedHorseTunes,
-  TUNER_STUDY_MAX_HORSES,
-} from './HorseTunerStudyCompletion.js';
 import { reportError } from './errorReporter.js';
 import { claimNightlyJob } from '../benchmark/HorseLeague.js';
 import type { HorseProfileMods, LeakFamily } from '../engine/HorseLogic.js';
@@ -450,15 +445,15 @@ const lifecycleIsCurrent = (generation: number): boolean =>
 async function alreadyTunedToday(date: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
-      .from('horse_tuner_study_completions')
-      .select('run_date')
+      .from('horse_self_tune_log')
+      .select('horse_id')
       .eq('run_date', date)
       .limit(1);
     if (error) throw new Error(error.message);
     return (data?.length ?? 0) > 0;
   } catch (err) {
-    // A failed lookup cannot close the day. Per-horse immutable receipts
-    // preserve completed work while a later study resumes the unfinished set.
+    // A failed lookup must not silently skip the night. The audit rows upsert
+    // on (horse_id, run_date), so a duplicate run is harmless.
     reportError(err, 'HorseSelfTuner.alreadyTunedToday');
     return false;
   }
@@ -492,7 +487,7 @@ async function maybeRunSelfTune(generation: number): Promise<void> {
   if (!lifecycleIsCurrent(generation)) return;
   // A returned worker promise is not completion evidence: runSelfTune reports
   // failures and empty studies as { studied: 0, tuned: 0 }. Re-read the
-  // durable whole-study receipt before latching, so a failed night remains open
+  // durable log before latching this process, so a failed night remains open
   // for the stale-claim takeover on the next tick.
   const completed = await alreadyTunedToday(today);
   if (!lifecycleIsCurrent(generation)) return;
@@ -691,14 +686,9 @@ export async function runSelfTune(
   const date = runDate ?? new Date().toISOString().slice(0, 10);
   try {
     const t0 = Date.now();
-    const prior = await readRecordedHorseTunes(date);
-    if (!shouldContinue()) return { studied: 0, tuned: 0 };
-    if (prior.status !== 'snapshot') throw new Error('Tuner progress is unreadable');
-    const recordedHorses = new Set(prior.horseIds);
 
     // Horses + their current profiles.
     const horses = new Map<string, HorseProfileMods & { style?: unknown }>();
-    const expectedProfiles = new Map<string, unknown>();
     {
       let cursor: string | null = null;
       for (;;) {
@@ -723,8 +713,7 @@ export async function runSelfTune(
           // hashing the user id — silently erasing an authored personality,
           // permanently. No string rows exist in production today; this keeps
           // it that way if any are ever re-seeded.
-          const raw = JSON.parse(JSON.stringify(row.horse_profile ?? null));
-          expectedProfiles.set(row.id, raw);
+          const raw = row.horse_profile;
           const p: Record<string, unknown> =
             typeof raw === 'string'
               ? { style: raw }
@@ -741,7 +730,6 @@ export async function runSelfTune(
           });
         }
         cursor = (data[data.length - 1] as { id: string }).id;
-        if (horses.size > TUNER_STUDY_MAX_HORSES) throw new Error('Tuner horse budget exceeded');
         if (data.length < 1000) break;
       }
     }
@@ -1000,26 +988,11 @@ export async function runSelfTune(
       fromStream++;
     }
 
-    // Diagnose + audit. Observational proposals cannot activate profile changes.
+    // Diagnose + write.
     let tuned = 0;
-    let unfinished = 0;
-    const eligibleHorses = [...stats]
-      .filter(([, s]) => s.hands >= MIN_HANDS_TO_TUNE)
-      .map(([id]) => id);
-    if (stats.size === 0) return { studied: 0, tuned: 0 };
-    const cohort = await prepareHorseTunerStudy(date, stats.size, eligibleHorses);
-    if (!shouldContinue()) return { studied: stats.size, tuned: 0 };
-    if (cohort.status !== 'prepared') throw new Error('Tuner study roster is unconfirmed');
-    for (const horseId of cohort.horseIds) {
+    for (const [horseId, s] of stats) {
       if (!shouldContinue()) return { studied: stats.size, tuned };
-      // This horse already committed its one daily update. Never recompute a
-      // new request from its updated profile after a crash or lost response.
-      if (recordedHorses.has(horseId)) continue;
-      const s = stats.get(horseId);
-      if (!s || s.hands < MIN_HANDS_TO_TUNE || !horses.has(horseId)) {
-        unfinished++;
-        continue;
-      }
+      if (s.hands < MIN_HANDS_TO_TUNE) continue;
       const prevMods = horses.get(horseId) ?? {};
       const rn = realNets.get(horseId);
       const realBB100 =
@@ -1045,9 +1018,10 @@ export async function runSelfTune(
           leaksHands: leakHandsByHorse.get(horseId) ?? 0,
         }
       );
-      // Retain the legacy candidate's leak counts and denominators as review
-      // diagnostics. The observational adapter preserves the actual profile;
-      // these new counts do not become decision-time inputs through this study.
+      // V40 (Dan 2026-09-04): the leak profile travels WITH the dials, so
+      // the brain can read its own review verdicts at decision time
+      // (HorseLogic ploStackoffLoad). Counts over the study window plus the
+      // reviewed-hand denominator; rewritten whenever it moves.
       const leakCounts = leaksByHorse.get(horseId) ?? null;
       const leakProfile: Record<string, number> = {};
       if (leakCounts) {
@@ -1093,37 +1067,32 @@ export async function runSelfTune(
         leaksChanged;
 
       try {
-        const newProfile = {
-          ...(prevMods as object),
-          ...mods,
-          leaks: leakProfile,
-          leaksHands,
-          leaksOmaha: familyProfile.leaksOmaha,
-          leaksHandsOmaha: familyProfile.leaksHandsOmaha,
-          leaksHoldem: familyProfile.leaksHoldem,
-          leaksHandsHoldem: familyProfile.leaksHandsHoldem,
-          leaksTournament: familyProfile.leaksTournament,
-          leaksHandsTournament: familyProfile.leaksHandsTournament,
-        };
-        const reviewDiagnostics = Object.fromEntries(
-          [
-            ['all', leakProfile],
-            ['omaha', familyProfile.leaksOmaha],
-            ['holdem', familyProfile.leaksHoldem],
-            ['tournament', familyProfile.leaksTournament],
-          ].flatMap(([family, counts]) =>
-            Object.entries(counts as Record<string, number>).map(([key, value]) => [
-              `review_${family}_${key}`,
-              value,
-            ])
-          )
-        );
-        const written = await recordObservationalHorseStudy({
-          horseId,
-          runDate: date,
-          expectedProfile: expectedProfiles.get(horseId),
-          nextProfile: changed ? newProfile : expectedProfiles.get(horseId),
-          audit: {
+        if (changed) {
+          const newProfile = {
+            ...(prevMods as object),
+            ...mods,
+            leaks: leakProfile,
+            leaksHands,
+            leaksOmaha: familyProfile.leaksOmaha,
+            leaksHandsOmaha: familyProfile.leaksHandsOmaha,
+            leaksHoldem: familyProfile.leaksHoldem,
+            leaksHandsHoldem: familyProfile.leaksHandsHoldem,
+            leaksTournament: familyProfile.leaksTournament,
+            leaksHandsTournament: familyProfile.leaksHandsTournament,
+          };
+          const { error: upErr } = await supabase
+            .from('profiles')
+            .update({ horse_profile: newProfile })
+            .eq('id', horseId)
+            .eq('is_horse', true);
+          if (!shouldContinue()) return { studied: stats.size, tuned };
+          if (upErr) throw new Error(upErr.message);
+          tuned++;
+        }
+        const { error: logErr } = await supabase.from('horse_self_tune_log').upsert(
+          {
+            horse_id: horseId,
+            run_date: date,
             hands: s.hands,
             stats: {
               ...statSnapshot(s),
@@ -1141,46 +1110,29 @@ export async function runSelfTune(
               fleet_p25_bb100: fleetP25 !== null ? round4(fleetP25) : -9999,
               // where this horse's frequencies came from: play rows or the stream
               study_source: fromPlayRows.has(horseId) ? 1 : 0,
-              review_hands: leaksHands,
-              review_hands_omaha: familyProfile.leaksHandsOmaha,
-              review_hands_holdem: familyProfile.leaksHandsHoldem,
-              review_hands_tournament: familyProfile.leaksHandsTournament,
-              ...reviewDiagnostics,
             },
-            modsBefore: {
+            mods_before: {
               tightness: prevMods.tightness ?? 1,
               aggression: prevMods.aggression ?? 1,
               bluffFreq: prevMods.bluffFreq ?? 1,
             },
-            modsAfter: {
+            mods_after: {
               tightness: mods.tightness,
               aggression: mods.aggression,
               bluffFreq: mods.bluffFreq,
             },
             reasons,
           },
-        });
+          { onConflict: 'horse_id,run_date' }
+        );
         if (!shouldContinue()) return { studied: stats.size, tuned };
-        if (written.status !== 'recorded')
-          throw new Error(
-            `atomic tuner write ${written.status}${written.status === 'unavailable' ? ': ' + written.reason : ''}`
-          );
-        if (written.changed && !written.replayed) tuned++;
+        if (logErr) throw new Error(logErr.message);
       } catch (err) {
-        unfinished++;
         reportError(err, 'HorseSelfTuner.write');
       }
     }
 
-    const eligible = cohort.horseIds.length;
-    if (shouldContinue() && unfinished === 0 && stats.size > 0) {
-      const completed = await completeHorseTunerStudy(date, cohort.studied, cohort.horseIds);
-      if (!completed)
-        reportError(
-          new Error('Tuner study completion remains unconfirmed'),
-          'HorseSelfTuner.completion'
-        );
-    }
+    const eligible = [...stats.values()].filter((s) => s.hands >= MIN_HANDS_TO_TUNE).length;
     console.log(
       `[HorseSelfTuner] Studied ${fromPlayRows.size} horses from horse_daily_play (full ${STUDY_WINDOW_DAYS}d) ` +
         `and ${fromStream} from a ${fetched}-hand hand_history stream covering the newest ${coveredHours}h, ` +

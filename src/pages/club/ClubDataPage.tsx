@@ -63,10 +63,8 @@ import { useVirtualScroll } from '../../hooks/useVirtualScroll';
 import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
 import RakeSnapshotPanel from '../../components/club/RakeSnapshotPanel';
 import type { RakeScope } from '../../services/ClubRakeSnapshotService';
-import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
-import { titleCase } from '../../utils/titleCase';
-import { compactChips } from '../../utils/format';
 import styles from './ClubDataPage.module.css';
+import { mediaUrl } from '../../utils/mediaBase';
 
 /**
  * The ledger presets. 90 is the ceiling because ca_club_data_snapshot clamps
@@ -350,7 +348,7 @@ function coldRead<T>(
  */
 function utcTime(iso: string): string {
   const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return 'Unknown';
+  if (!Number.isFinite(d.getTime())) return 'unknown';
   return `${d.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UTC`;
 }
 
@@ -371,14 +369,12 @@ function invoiceStatusLabel(status: string): string {
     .join(' ');
 }
 
-/** " (30.0%)" when both figures are real, empty string otherwise. A rakeback
- *  share is a RATE, and a rate keeps one decimal (Dan 2026-09-13): rounding
- *  32.5% to 33% misstates the number a club owner is paid on. */
+/** " (90%)" when both figures are real, empty string otherwise. */
 function splitPct(part: unknown, whole: unknown): string {
   const p = Number(part);
   const w = Number(whole);
   if (!Number.isFinite(p) || !Number.isFinite(w) || w === 0) return '';
-  return ` (${((p / w) * 100).toFixed(1)}%)`;
+  return ` (${Math.round((p / w) * 100)}%)`;
 }
 
 function toISODate(d: Date): string {
@@ -392,6 +388,13 @@ function money(n: number | null | undefined): string {
 
 function compactInt(n: number | null | undefined): string {
   return Number(n || 0).toLocaleString('en-US');
+}
+
+function badgeClass(row: SnapshotRow): string {
+  if (row.kind === 'MTT') return `${styles.badge} ${styles.badgeMtt}`;
+  if (row.kind === 'SNG') return `${styles.badge} ${styles.badgeSng}`;
+  if (row.kind === 'SPIN') return `${styles.badge} ${styles.badgeSpin}`;
+  return styles.badge;
 }
 
 function rowsToCsv(rows: SnapshotRow[]): string {
@@ -736,13 +739,13 @@ export default function ClubDataPage() {
         // stayed true and the page showed skeleton rows forever with no way
         // out. Same failure shape as the messenger's "Loading your clubs...".
         setClubUuid(null);
-        setError('Club Not Found.');
+        setError('Club not found.');
         setLoading(false);
       })
       .catch((err) => {
         reportError(err, 'ClubDataPage.resolve_club');
         if (stale()) return;
-        setError('Club Not Found.');
+        setError('Club not found.');
         setLoading(false);
       });
     return () => {
@@ -866,7 +869,7 @@ export default function ClubDataPage() {
               setError(null);
               setLedgerSource('degraded');
             } else {
-              setError('Could Not Load Club Data.');
+              setError('Could not load club data.');
             }
           }
           if (isAuthzError(rpcError) || !preserveOnError) setSnapshot(null);
@@ -882,7 +885,7 @@ export default function ClubDataPage() {
             setError(null);
             setLedgerSource('degraded');
           } else {
-            setError('Could Not Load Club Data.');
+            setError('Could not load club data.');
             setSnapshot(null);
           }
           return false;
@@ -997,7 +1000,7 @@ export default function ClubDataPage() {
           setError(null);
           setLedgerSource('degraded');
         } else {
-          setError('Club Data Took Too Long To Respond. Try Again.');
+          setError('Club data took too long to respond. Try again.');
           setSnapshot(null);
         }
         return false;
@@ -1161,7 +1164,7 @@ export default function ClubDataPage() {
             removeClubDataCaches(userId, clubUuid);
           } else {
             reportError(rpcError, 'ClubDataPage.players_rpc');
-            setPlayersError(preserveOnError ? null : 'Could Not Load Player Data.');
+            setPlayersError(preserveOnError ? null : 'Could not load player data.');
           }
           if (isAuthzError(rpcError) || !preserveOnError) setPlayers(null);
           return false;
@@ -1172,7 +1175,7 @@ export default function ClubDataPage() {
           !Array.isArray(page.rows)
         ) {
           reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
-          setPlayersError(preserveOnError ? null : 'Could Not Load Player Data.');
+          setPlayersError(preserveOnError ? null : 'Could not load player data.');
           if (!preserveOnError) setPlayers(null);
           return false;
         } else {
@@ -1204,7 +1207,7 @@ export default function ClubDataPage() {
         if (stale()) return false;
         reportError(err, 'ClubDataPage.players_request');
         setPlayersError(
-          preserveOnError ? null : 'Player Data Took Too Long To Respond. Try Again.'
+          preserveOnError ? null : 'Player data took too long to respond. Try again.'
         );
         if (!preserveOnError) setPlayers(null);
         return false;
@@ -1948,9 +1951,9 @@ export default function ClubDataPage() {
           onProgress: setExportProgress,
         });
         if (!downloadCsv(`club_players_${startDate}_${endDate}.csv`, playersToCsv(rows))) {
-          setExportNote('This Browser Could Not Start The Download.');
+          setExportNote('This browser could not start the download.');
         } else {
-          setExportNote(`Exported All ${compactInt(rows.length)} Players.`);
+          setExportNote(`Exported all ${compactInt(rows.length)} players.`);
         }
         return;
       }
@@ -1973,17 +1976,17 @@ export default function ClubDataPage() {
         onProgress: setExportProgress,
       });
       if (!downloadCsv(`club_data_${startDate}_${endDate}.csv`, rowsToCsv(rows))) {
-        setExportNote('This Browser Could Not Start The Download.');
+        setExportNote('This browser could not start the download.');
       } else {
-        setExportNote(`Exported All ${compactInt(rows.length)} Games.`);
+        setExportNote(`Exported all ${compactInt(rows.length)} games.`);
       }
     } catch (e) {
       if (isClubDataExportAbort(e)) {
-        setExportNote('Export Cancelled. No Partial File Was Downloaded.');
+        setExportNote('Export cancelled. No partial file was downloaded.');
       } else {
         reportError(e, 'ClubDataPage.export_prepare');
         setExportNote(
-          'The Complete Export Could Not Be Prepared. No Partial File Was Downloaded. Try Again.'
+          'The complete export could not be prepared. No partial file was downloaded. Try again.'
         );
       }
     } finally {
@@ -2047,16 +2050,14 @@ export default function ClubDataPage() {
     });
   }, []);
 
-  // "Vs Prev 14 Days" under a headline number. Null pct means the prior window was
+  // "vs prev 14d" under a headline number. Null pct means the prior window was
   // zero, and nothing is a percentage of nothing - so nothing is shown.
-  const prevDaysCount = prevRange?.days ?? preset;
-  const prevDays = `${prevDaysCount} Day${prevDaysCount === 1 ? '' : 's'}`;
   const pctNote = (pct: number | null | undefined) => {
     if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) return null;
     // The RPC rounds to one decimal; rounding again here means a hand-rolled
     // caller cannot push 33.33333333333333% into a 93px tile.
     const v = Math.round(Number(pct) * 10) / 10;
-    const cls = v > 0 ? 'sc-ink--green' : v < 0 ? 'sc-ink--red' : 'sc-ink--muted';
+    const cls = v > 0 ? styles.deltaUp : v < 0 ? styles.deltaDown : styles.deltaFlat;
     return (
       <span
         className={`${styles.delta} ${cls}`}
@@ -2066,7 +2067,7 @@ export default function ClubDataPage() {
         {/* prevRange, not `preset`: the preset flips the instant the button is
             tapped while the snapshot is still the old window, so this read
             "Vs Prev 1d" over a 14-day comparison for the whole fetch. */}
-        {`${v}% Vs Prev ${prevDays}`}
+        {v}% Vs Prev {prevRange?.days ?? preset}d
       </span>
     );
   };
@@ -2074,14 +2075,14 @@ export default function ClubDataPage() {
   const absNote = (abs: number | null | undefined) => {
     if (abs === null || abs === undefined || !Number.isFinite(Number(abs))) return null;
     const v = Number(abs);
-    const cls = v > 0 ? 'sc-ink--green' : v < 0 ? 'sc-ink--red' : 'sc-ink--muted';
+    const cls = v > 0 ? styles.deltaUp : v < 0 ? styles.deltaDown : styles.deltaFlat;
     return (
       <span
         className={`${styles.delta} ${cls}`}
         title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
-        {`${money(v)} Vs Prev ${prevDays}`}
+        {money(v)} Vs Prev {prevRange?.days ?? preset}d
       </span>
     );
   };
@@ -2123,61 +2124,47 @@ export default function ClubDataPage() {
     );
   }
 
-  const syncing = loading && !snapshot;
-  /* A failed first read used to sit under a green "Live Club Ledger" lamp:
-     ledgerSource stays 'cold' on an error, and cold read as live. */
-  const failed = Boolean(error) && !snapshot;
-  const statusWord = syncing
-    ? 'Syncing'
-    : failed
-      ? 'Offline'
-      : ledgerSource === 'cached'
-        ? 'Cached'
-        : ledgerSource === 'degraded'
-          ? 'Delayed'
-          : 'Live';
-  const statusInk: ConsoleInk = syncing
-    ? 'blue'
-    : failed
-      ? 'red'
-      : ledgerSource === 'cached'
-        ? 'gold'
-        : ledgerSource === 'degraded'
-          ? 'red'
-          : 'green';
-  const statusLine = syncing
-    ? 'Synchronizing Ledger'
-    : failed
-      ? 'Ledger Unavailable'
-      : ledgerSource === 'cached'
-        ? 'Recent Verified Snapshot'
-        : ledgerSource === 'degraded'
-          ? 'Live Refresh Delayed'
-          : 'Live Club Ledger';
-  const clubLabel = clubName ? titleCase(clubName) : '';
-  const invoicePill = latestInvoice
-    ? latestInvoice.overdue
-      ? 'Overdue'
-      : invoiceStatusLabel(latestInvoice.status)
-    : 'Unavailable';
-  const invoicePillInk: ConsoleInk = latestInvoice
-    ? latestInvoice.overdue
-      ? 'red'
-      : latestInvoice.status === 'paid'
-        ? 'green'
-        : 'gold'
-    : 'muted';
-  const ledgerPill =
-    tab === 'games'
-      ? snapshot
-        ? `${compactChips(snapshot.row_count)} Games`
-        : undefined
-      : players
-        ? `${compactChips(players.player_count)} Players`
-        : undefined;
-
   return (
     <div className={styles.page} data-page="club-data">
+      <header className={styles.header}>
+        <button
+          type="button"
+          className={`${styles.headerBtn} ${styles.backButton}`}
+          onClick={() => navigate(-1)}
+          aria-label="Go Back"
+        >
+          <span aria-hidden="true">&#8592;</span>
+          <span>Back</span>
+        </button>
+        <span className={styles.headerIdentity}>Club Intelligence</span>
+        <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={styles.headerBtn}
+            onClick={() => void refreshAll()}
+            disabled={manualRefreshing || !clubUuid || isHydrating}
+            aria-label="Refresh Club Ledger"
+          >
+            {manualRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+          <button
+            type="button"
+            className={`${styles.headerBtn} ${styles.exportButton}`}
+            onClick={() => {
+              if (exporting) cancelExport();
+              else void exportCsv();
+            }}
+            disabled={
+              !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length)
+            }
+            aria-label={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
+            title={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
+          >
+            {exporting ? 'Cancel Export' : 'Export CSV'}
+          </button>
+        </div>
+      </header>
+
       <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
         {refreshNote ||
           exportNote ||
@@ -2188,87 +2175,55 @@ export default function ClubDataPage() {
               : '')}
       </div>
 
-      {/* ── The ledger head: status, the two page actions, the export notes ── */}
-      <SpadeConsole
-        eyebrow={clubLabel || 'Club Intelligence'}
-        title="Read The Room"
-        titleId="club-data-title"
-        subtitle="Own The Numbers"
-        pill={statusWord}
-        pillInk={statusInk}
-        crest="spade"
-        className={styles.console}
-        aria-labelledby="club-data-title"
-        plates={{
-          secondary: {
-            label: manualRefreshing ? 'Refreshing' : 'Refresh',
-            onClick: () => void refreshAll(),
-            disabled: manualRefreshing || !clubUuid || isHydrating,
-            'aria-label': 'Refresh Club Ledger',
-          },
-          primary: {
-            label: exporting ? 'Cancel Export' : 'Export CSV',
-            ink: exporting ? 'red' : 'white',
-            onClick: () => {
-              if (exporting) cancelExport();
-              else void exportCsv();
-            },
-            disabled:
-              !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length),
-            'aria-label': exporting ? 'Cancel CSV Export' : 'Export As CSV',
-            title: exporting ? 'Cancel CSV Export' : 'Export As CSV',
-          },
-        }}
-      >
-        <div className={styles.headRow}>
-          <button
-            type="button"
-            className={`${styles.word} sc-ink--muted`}
-            onClick={() => navigate(-1)}
-            aria-label="Go Back"
-          >
-            Back
-          </button>
-          <span className={`${styles.statusLine} sc-ink--${statusInk}`} aria-live="polite">
+      <section className={styles.hero} aria-labelledby="club-data-title">
+        <img
+          className={styles.heroArt}
+          src={mediaUrl('images/club-data/data-vault-hero-v1.webp')}
+          alt=""
+          width="1600"
+          height="901"
+          fetchPriority="high"
+          decoding="async"
+        />
+        <div className={styles.heroShade} aria-hidden="true" />
+        <div className={styles.heroContent}>
+          <div className={styles.heroEyebrow} aria-live="polite">
             <span className={styles.statusLight} aria-hidden="true" />
-            <span>{statusLine}</span>
-          </span>
-        </div>
-        <p className={`sc-copy ${styles.tagline}`}>
-          Track Every Game, Fee, Player Result, And Union Square-Up From One Operator-Grade View.
-        </p>
-        <div className={styles.rows}>
-          <div className={styles.dataRow}>
-            <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Cash Updated</span>
-            <span className={`sc-ink--silver ${styles.dataValue}`}>
+            {loading && !snapshot
+              ? 'Synchronizing Ledger'
+              : ledgerSource === 'cached'
+                ? 'Recent Verified Snapshot'
+                : ledgerSource === 'degraded'
+                  ? 'Live Refresh Delayed'
+                  : 'Live Club Ledger'}
+          </div>
+          <h1 className={styles.title} id="club-data-title">
+            Read The Room.
+            <span>Own The Numbers.</span>
+          </h1>
+          <p className={styles.heroCopy}>
+            Track Every Game, Fee, Player Result, And Union Square-Up From One Operator-Grade View.
+          </p>
+          <div className={styles.heroMeta}>
+            <span>{clubName || 'Club Data'}</span>
+            <span>
               {snapshot?.data_updated_at
-                ? utcTime(snapshot.data_updated_at)
+                ? `Cash Updated ${utcTime(snapshot.data_updated_at)}`
                 : loading
                   ? 'Loading Live Records'
                   : 'Live Records Ready'}
             </span>
           </div>
         </div>
-        {(ledgerSource === 'cached' || ledgerSource === 'degraded') && snapshot && (
-          <p className={`sc-copy ${styles.note}`} role="status">
-            {ledgerSource === 'cached'
-              ? 'Showing A Recent Verified Snapshot While Live Numbers Refresh.'
-              : 'Live Refresh Is Delayed. Showing The Last Verified Snapshot And Retrying Automatically.'}
-          </p>
-        )}
-        {exportNote && (
-          <p className={`sc-copy ${styles.note}`} role="status">
-            {exportNote}
-          </p>
-        )}
-        {exportProgress && (
-          <p className={`sc-copy ${styles.note}`} role="status" aria-live="polite">
-            {exportProgress.stage === 'preparing'
-              ? 'Preparing An Exact Snapshot For Export...'
-              : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
-          </p>
-        )}
-      </SpadeConsole>
+      </section>
+
+      {(ledgerSource === 'cached' || ledgerSource === 'degraded') && snapshot && (
+        <div className={styles.footNote} role="status">
+          {ledgerSource === 'cached'
+            ? 'Showing A Recent Verified Snapshot While Live Numbers Refresh.'
+            : 'Live Refresh Is Delayed. Showing The Last Verified Snapshot And Retrying Automatically.'}
+        </div>
+      )}
 
       {clubUuid && (
         <RakeSnapshotPanel
@@ -2279,45 +2234,40 @@ export default function ClubDataPage() {
         />
       )}
 
-      {/* ── Data integrity ─────────────────────────────────────────────── */}
-      <SpadeConsole
-        eyebrow="Operator Trust Layer"
-        title="Data Integrity"
-        titleId="club-data-integrity-title"
-        pill={!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
-        pillInk={!snapshot ? 'muted' : integrityNeedsAttention ? 'red' : 'green'}
-        crest="flat"
-        foot="foot"
-        className={`${styles.console} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
+      <section
+        className={`${styles.integrityPanel} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
         aria-labelledby="club-data-integrity-title"
       >
-        <dl className={styles.rows}>
-          <div className={styles.dataRow}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Payload Checks</dt>
-            <dd className={`sc-ink--silver ${styles.dataValue}`}>
-              {integrity ? `${integrity.passed} / ${integrity.checks}` : NO_VALUE}
-            </dd>
+        <div className={styles.integrityHeading}>
+          <div>
+            <span>Operator Trust Layer</span>
+            <h2 id="club-data-integrity-title">Data Integrity</h2>
           </div>
-          <div className={styles.dataRow}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Live Feeds</dt>
-            <dd className={`sc-ink--silver ${styles.dataValue}`}>
-              {realtimeEnabled ? `${liveFeedCount} / 4` : 'Standby'}
-            </dd>
+          <span className={styles.integrityBadge} role="status" aria-live="polite">
+            {!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
+          </span>
+        </div>
+        <dl className={styles.integrityGrid}>
+          <div>
+            <dt>Payload Checks</dt>
+            <dd>{integrity ? `${integrity.passed} / ${integrity.checks}` : NO_VALUE}</dd>
           </div>
-          <div className={styles.dataRow}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Last Verified</dt>
-            <dd className={`sc-ink--silver ${styles.dataValue}`}>
+          <div>
+            <dt>Live Feeds</dt>
+            <dd>{realtimeEnabled ? `${liveFeedCount} / 4` : 'Standby'}</dd>
+          </div>
+          <div>
+            <dt>Last Verified</dt>
+            <dd>
               {lastVerifiedAt ? formatClubDataAge(telemetryClock - lastVerifiedAt) : 'Checking'}
             </dd>
           </div>
-          <div className={styles.dataRow}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Ledger Read</dt>
-            <dd className={`sc-ink--silver ${styles.dataValue}`}>
-              {lastRequestMs === null ? 'Checking' : `${lastRequestMs.toLocaleString()}ms`}
-            </dd>
+          <div>
+            <dt>Ledger Read</dt>
+            <dd>{lastRequestMs === null ? 'Checking' : `${lastRequestMs.toLocaleString()}ms`}</dd>
           </div>
         </dl>
-        <p className={`sc-copy ${styles.note}`}>
+        <p className={styles.integrityNote}>
           {integrity?.issues.length
             ? `${integrity.issues.length} Integrity Check${integrity.issues.length === 1 ? '' : 's'} Need Review. Verified Rows Stay Visible While Recovery Runs.`
             : liveFeedCount < 4 && realtimeEnabled
@@ -2325,905 +2275,811 @@ export default function ClubDataPage() {
               : 'Internal Totals Reconcile. Live Invalidations And The 60-Second Verified Poll Are Active.'}
         </p>
         {integrity?.issues.length ? (
-          <ul className={`sc-copy ${styles.issues}`}>
+          <ul className={styles.integrityIssues}>
             {integrity.issues.map((issue) => (
-              <li key={issue}>{titleCase(issue)}</li>
+              <li key={issue}>{issue}</li>
             ))}
           </ul>
         ) : null}
-      </SpadeConsole>
+      </section>
 
-      {/* ── Club pulse: the reporting window and the headline figures ──── */}
-      <SpadeConsole
-        eyebrow="Performance Ledger"
-        title="Club Pulse"
-        titleId="club-data-pulse-title"
-        pill={loading ? 'Syncing' : 'Live'}
-        pillInk={loading ? 'blue' : 'green'}
-        crest="club"
-        foot="foot"
-        className={styles.console}
-        aria-labelledby="club-data-pulse-title"
-      >
-        <section className={styles.block} aria-label="Reporting Period">
-          <span className={`sc-label sc-ink--blue ${styles.blockLabel}`}>Reporting Window</span>
-          <div className={styles.rangeBar}>
-            <button
-              type="button"
-              className={`${styles.word} ${styles.arrow} sc-ink--white`}
-              onClick={() => shiftRange(-1)}
-              aria-label="Previous Period"
-            >
-              &#8592;
-            </button>
-            <span className={`sc-ink--silver ${styles.rangeChip}`}>
-              <span>{startDate}</span>
-              <span className={`sc-ink--muted ${styles.rangeDivider}`}>-</span>
-              <span>{endDate}</span>
-              <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>UTC</span>
-            </span>
-            <button
-              type="button"
-              className={`${styles.word} ${styles.arrow} sc-ink--white`}
-              onClick={() => shiftRange(1)}
-              disabled={isToday}
-              aria-label="Next Period"
-            >
-              &#8594;
-            </button>
+      <section className={styles.controlDeck} aria-label="Reporting Period">
+        <div className={styles.controlLabel}>Reporting Window</div>
+        <div className={styles.rangeBar}>
+          <button
+            type="button"
+            className={styles.arrow}
+            onClick={() => shiftRange(-1)}
+            aria-label="Previous Period"
+          >
+            &#8592;
+          </button>
+          <div className={styles.rangeChip}>
+            <span>{startDate}</span>
+            <span className={styles.rangeDivider}>-</span>
+            <span>{endDate}</span>
+            <span className={styles.rangeTz}>UTC</span>
           </div>
+          <button
+            type="button"
+            className={styles.arrow}
+            onClick={() => shiftRange(1)}
+            disabled={isToday}
+            aria-label="Next Period"
+          >
+            &#8594;
+          </button>
+        </div>
 
-          {/* role="group" + aria-pressed, not a tablist. These control no tabpanel,
+        {/* role="group" + aria-pressed, not a tablist. These control no tabpanel,
           and the stakes row is a TOGGLE - tapping the active chip clears it,
           which is impossible for a tab and leaves a tablist with nothing
           selected. A screen reader was told "tab 3 of 6" for a filter. */}
-          <div className={styles.words} role="group" aria-label="Date Range">
-            {PRESETS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                aria-pressed={preset === p}
-                className={`${styles.word} ${preset === p ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                onClick={() => setPreset(p)}
-              >
-                {p === 1 ? '1 Day' : `${p} Days`}
-              </button>
-            ))}
-          </div>
-        </section>
+        <div className={styles.presets} role="group" aria-label="Date Range">
+          {PRESETS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              aria-pressed={preset === p}
+              className={`${styles.preset} ${preset === p ? styles.active : ''}`}
+              onClick={() => setPreset(p)}
+            >
+              {p === 1 ? '1 Day' : `${p} Days`}
+            </button>
+          ))}
+        </div>
+      </section>
 
-        {/* ZEROS ARE A LIE ON THIS PAGE (Dan 2026-08-25).
+      <div className={styles.sectionThreshold}>
+        <div>
+          <span>Performance Ledger</span>
+          <h2>Club Pulse</h2>
+        </div>
+        <span className={styles.thresholdStatus}>{loading ? 'Syncing' : 'Live'}</span>
+      </div>
+
+      <div className={styles.tabs} role="tablist" aria-label="View">
+        <button
+          ref={gamesTabRef}
+          type="button"
+          role="tab"
+          id="club-data-tab-games"
+          aria-controls="club-data-panel-games"
+          aria-selected={tab === 'games'}
+          tabIndex={tab === 'games' ? 0 : -1}
+          className={`${styles.tab} ${tab === 'games' ? styles.active : ''}`}
+          onClick={() => setTab('games')}
+          onKeyDown={onTabKeyDown}
+        >
+          Games
+        </button>
+        <button
+          ref={playersTabRef}
+          type="button"
+          role="tab"
+          id="club-data-tab-players"
+          aria-controls="club-data-panel-players"
+          aria-selected={tab === 'players'}
+          tabIndex={tab === 'players' ? 0 : -1}
+          className={`${styles.tab} ${tab === 'players' ? styles.active : ''}`}
+          onClick={() => setTab('players')}
+          onKeyDown={onTabKeyDown}
+        >
+          Players
+        </button>
+      </div>
+
+      {/* ZEROS ARE A LIE ON THIS PAGE (Dan 2026-08-25).
           money(undefined) is "0.00", so any failed RPC - an authz refusal, a
           timeout, a shapeless payload - painted "Games 0, Total Winnings 0.00,
           Fee 0.00" in confident green with the real message buried in the list
           below. On the screen that answers "what do I owe the union", a zero
           has to mean zero. Dashes while there is no snapshot to read. */}
-        <dl className={styles.rows} aria-busy={loading} aria-label="Club Performance Summary">
-          <div className={`${styles.dataRow} ${styles.figureRow}`}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Games</dt>
-            <dd className={`sc-ink--silver ${styles.figure}`}>
-              {summary ? compactChips(summary.games) : NO_VALUE}
-            </dd>
-            {summary && <dd className={styles.figureMeta}>{pctNote(delta?.games_pct)}</dd>}
-          </div>
-          <div className={`${styles.dataRow} ${styles.figureRow}`}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Total Winnings</dt>
-            <dd
-              className={`${styles.figure} ${summary && Number(summary.total_winnings) < 0 ? 'sc-ink--red' : 'sc-ink--green'}`}
-            >
-              {summary ? money(summary.total_winnings) : NO_VALUE}
-            </dd>
-            {summary && <dd className={styles.figureMeta}>{absNote(delta?.winnings_abs)}</dd>}
-          </div>
-          <div className={`${styles.dataRow} ${styles.figureRow}`}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>MTT Winnings</dt>
-            <dd
-              className={`${styles.figure} ${summary && Number(summary.mtt_winnings) < 0 ? 'sc-ink--red' : 'sc-ink--green'}`}
-            >
-              {summary ? money(summary.mtt_winnings) : NO_VALUE}
-            </dd>
-          </div>
-          <div className={`${styles.dataRow} ${styles.figureRow}`}>
-            <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Fee</dt>
-            <dd className={`sc-ink--silver ${styles.figure}`}>
-              {summary ? money(summary.fee) : NO_VALUE}
-            </dd>
-            {/* cash_fee and mtt_fee are already in the payload and rendered
+      <dl className={styles.summary} aria-busy={loading} aria-label="Club Performance Summary">
+        <div className={styles.tile}>
+          <dt className={styles.tileLabel}>Games</dt>
+          <dd className={styles.tileValue}>{summary ? compactInt(summary.games) : NO_VALUE}</dd>
+          {summary && <dd className={styles.tileMeta}>{pctNote(delta?.games_pct)}</dd>}
+        </div>
+        <div className={styles.tile}>
+          <dt className={styles.tileLabel}>Total Winnings</dt>
+          <dd
+            className={`${styles.tileValue} ${summary && Number(summary.total_winnings) < 0 ? styles.neg : styles.pos}`}
+          >
+            {summary ? money(summary.total_winnings) : NO_VALUE}
+          </dd>
+          {summary && <dd className={styles.tileMeta}>{absNote(delta?.winnings_abs)}</dd>}
+        </div>
+        <div className={styles.tile}>
+          <dt className={styles.tileLabel}>MTT Winnings</dt>
+          <dd
+            className={`${styles.tileValue} ${summary && Number(summary.mtt_winnings) < 0 ? styles.neg : styles.pos}`}
+          >
+            {summary ? money(summary.mtt_winnings) : NO_VALUE}
+          </dd>
+        </div>
+        <div className={styles.tile}>
+          <dt className={styles.tileLabel}>Fee</dt>
+          <dd className={styles.tileValue}>{summary ? money(summary.fee) : NO_VALUE}</dd>
+          {/* cash_fee and mtt_fee are already in the payload and rendered
               nowhere. Cash rake is a percentage of pots; MTT fee is a fixed cut
               of buy-ins. Blending them into one number meant an owner deciding
               "more tournaments or more cash tables" could not answer it from
               the page that exists to answer it. Dan 2026-08-25. */}
-            {summary &&
-              Number.isFinite(Number(summary.cash_fee)) &&
-              Number.isFinite(Number(summary.mtt_fee)) && (
-                <dd className={`sc-ink--muted ${styles.figureMeta}`}>
-                  {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
-                </dd>
-              )}
-            {summary && <dd className={styles.figureMeta}>{pctNote(delta?.fee_pct)}</dd>}
-          </div>
-        </dl>
+          {summary &&
+            Number.isFinite(Number(summary.cash_fee)) &&
+            Number.isFinite(Number(summary.mtt_fee)) && (
+              <dd className={`${styles.tileSub} ${styles.tileMeta}`}>
+                {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
+              </dd>
+            )}
+          {summary && <dd className={styles.tileMeta}>{pctNote(delta?.fee_pct)}</dd>}
+        </div>
+      </dl>
 
-        {/* The tiles are filtered by the game/stakes/search chips, which are only
+      {/* The tiles are filtered by the game/stakes/search chips, which are only
           RENDERED on the Games tab. Switching to Players left Omaha-only totals
           sitting above a whole-club per-player breakdown with nothing saying
           so. Say so. */}
-        {summary && filtersActive && (
-          <p className={`sc-copy ${styles.note}`} role="status">
-            These Totals Are Filtered{game !== 'ALL' ? ` - ${titleCase(game)}` : ''}
-            {stakes !== 'ALL' ? ` - ${titleCase(stakes)}` : ''}
-            {search ? ` - "${titleCase(search)}"` : ''}.
-            {tab === 'players' ? ' The Player Breakdown Below Is Not.' : ''}
-          </p>
-        )}
-      </SpadeConsole>
+      {summary && filtersActive && (
+        <div className={styles.footNote} role="status">
+          These Totals Are Filtered{game !== 'ALL' ? ` - ${game}` : ''}
+          {stakes !== 'ALL' ? ` - ${stakes}` : ''}
+          {search ? ` - "${search}"` : ''}.
+          {tab === 'players' ? ' The Player Breakdown Below Is Not.' : ''}
+        </div>
+      )}
 
-      {/* ── The union statement ────────────────────────────────────────── */}
-      {(latestInvoice || invoicesError) && (
-        <SpadeConsole
-          eyebrow={unionOwesClub ? 'Union Owes You' : 'Weekly Square-Up'}
-          title="Union Statement"
-          titleId="club-data-statement-title"
-          pill={invoicePill}
-          pillInk={invoicePillInk}
-          crest="diamond"
-          foot="foot"
-          className={styles.console}
-          aria-labelledby="club-data-statement-title"
+      {invoicesError && (
+        <div className={`${styles.state} ${styles.error}`} role="alert">
+          <span>
+            {invoicesError}
+            {latestInvoice ? ' Showing The Last Verified Statement.' : ''}
+          </span>
+          <button
+            type="button"
+            className={styles.retryButton}
+            onClick={() => void loadInvoices()}
+            disabled={invoicesLoading}
+          >
+            {invoicesLoading ? 'Refreshing' : 'Try Again'}
+          </button>
+        </div>
+      )}
+
+      {olderInvoices.length > 0 && latestInvoice && (
+        <div className={styles.invoiceHistory}>
+          <button
+            type="button"
+            className={styles.linkBtn}
+            onClick={() => setShowInvoiceHistory((v) => !v)}
+            aria-expanded={showInvoiceHistory}
+            aria-controls="club-data-invoice-history"
+          >
+            {showInvoiceHistory
+              ? 'Hide Earlier Statements'
+              : `Earlier Statements (${olderInvoices.length})`}
+          </button>
+          {showInvoiceHistory && (
+            <div id="club-data-invoice-history">
+              {olderInvoices.map((inv) => (
+                <div className={styles.invoiceLine} key={inv.invoice_id}>
+                  <span>
+                    {String(inv.period_start || '').slice(0, 10)} To{' '}
+                    {String(inv.period_end || '').slice(0, 10)}
+                  </span>
+                  <span>
+                    {inv.direction === 'union owes club' ? '+' : '-'}
+                    {Number.isFinite(Number(inv.amount))
+                      ? money(Math.abs(Number(inv.amount)))
+                      : NO_VALUE}
+                    {inv.status ? ` - ${invoiceStatusLabel(inv.status)}` : ''}
+                    {inv.overdue ? ' - Overdue' : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {latestInvoice && (
+        <div
+          /* `direction` was read for the LABEL and ignored by the styling, so
+             an invoice where the union owes the club rendered in the red that
+             means "you owe", above a bare unsigned figure. Direction decides
+             the colour and the sign; status only decides whether it is settled. */
+          className={`${styles.invoice} ${
+            latestInvoice.status === 'paid'
+              ? styles.invoicePaid
+              : unionOwesClub
+                ? styles.invoiceCredit
+                : Number(latestInvoice.amount) > 0
+                  ? styles.invoiceOwed
+                  : ''
+          }`}
           aria-busy={invoicesLoading}
         >
-          {invoicesError && (
-            <div className={styles.stateRow} role="alert">
-              <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>
-                {invoicesError}
-                {latestInvoice ? ' Showing The Last Verified Statement.' : ''}
+          <div className={styles.invoiceTop}>
+            <span className={styles.invoiceLabel}>
+              {latestInvoice.direction === 'union owes club'
+                ? 'Union Owes You'
+                : 'Weekly Square-Up'}
+            </span>
+            <span className={styles.invoiceAmount}>
+              {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
+              {money(Math.abs(Number(latestInvoice.amount) || 0))}
+            </span>
+          </div>
+          <div className={styles.invoiceMeta}>
+            {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
+            {String(latestInvoice.period_end || '').slice(0, 10)}
+            {latestInvoice.due_at ? ` - due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
+            {latestInvoice.status ? ` - ${invoiceStatusLabel(latestInvoice.status)}` : ''}
+          </div>
+
+          {/* PHASE 6 (2026-09-04): ca_club_union_invoices has computed
+              `overdue`, `paid_total` and `outstanding` since it was written
+              and this card rendered none of them, so the one question an
+              owner opens a statement to answer - how much of this is still
+              owed, and is it late - was on the wire and not on the screen.
+              Paid is only shown once something has been paid; outstanding is
+              shown whenever the statement is not settled. */}
+          {(latestInvoice.overdue ||
+            Number(latestInvoice.paid_total) > 0 ||
+            (latestInvoice.status !== 'paid' && Number(latestInvoice.outstanding) > 0)) && (
+            <div className={styles.invoiceStanding}>
+              {latestInvoice.overdue && (
+                <span className={styles.invoiceOverdue}>
+                  Overdue
+                  {latestInvoice.due_at
+                    ? ` Since ${String(latestInvoice.due_at).slice(0, 10)}`
+                    : ''}
+                </span>
+              )}
+              {Number(latestInvoice.paid_total) > 0 && (
+                <span>{money(Number(latestInvoice.paid_total))} Paid</span>
+              )}
+              {latestInvoice.status !== 'paid' && Number(latestInvoice.outstanding) > 0 && (
+                <span className={styles.invoiceOutstanding}>
+                  {money(Number(latestInvoice.outstanding))} Outstanding
+                </span>
+              )}
+            </div>
+          )}
+
+          {showInvoiceDetail && latestInvoice.breakdown && (
+            <div className={styles.invoiceLines} id="club-data-invoice-detail">
+              {[
+                // The figures come from the invoice; the percentages used to be
+                // literals, so any club on a non-standard deal got a label that
+                // contradicted its own numbers. Derive them or omit them.
+                ['Rake Generated', latestInvoice.breakdown.rake_generated],
+                [
+                  `Your rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
+                  latestInvoice.breakdown.rakeback_due,
+                ],
+                [
+                  `Union fee kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
+                  latestInvoice.breakdown.union_fee_kept,
+                ],
+                ['Player Win/Loss', latestInvoice.breakdown.players_won],
+                ['Settled In Chips', latestInvoice.breakdown.settled_in_chips],
+                ['ECO Adjustment', latestInvoice.breakdown.eco_amount],
+                ['Payments Received', latestInvoice.breakdown.presettled],
+              ].map(([label, value]) => (
+                <div className={styles.invoiceLine} key={String(label)}>
+                  <span>{String(label)}</span>
+                  {/* money(Number('n/a')) is NaN, and NaN is falsy, so a corrupt
+                      line item printed as a real 0.00. Show that it is missing. */}
+                  <span>{Number.isFinite(Number(value)) ? money(Number(value)) : NO_VALUE}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className={styles.linkBtn}
+            onClick={() => setShowInvoiceDetail((v) => !v)}
+            disabled={!latestInvoice.breakdown}
+            title={latestInvoice.breakdown ? undefined : 'No Line Detail On This Statement'}
+            aria-expanded={latestInvoice.breakdown ? showInvoiceDetail : undefined}
+            aria-controls={latestInvoice.breakdown ? 'club-data-invoice-detail' : undefined}
+          >
+            {!latestInvoice.breakdown
+              ? 'No Statement Detail'
+              : showInvoiceDetail
+                ? 'Hide Statement'
+                : 'View Statement'}
+          </button>
+        </div>
+      )}
+
+      {tab === 'games' && (
+        <div
+          role="tabpanel"
+          id="club-data-panel-games"
+          aria-labelledby="club-data-tab-games"
+          tabIndex={0}
+        >
+          <div className={styles.searchRow}>
+            <label className={styles.srOnly} htmlFor="club-data-search">
+              Search Games
+            </label>
+            <input
+              id="club-data-search"
+              className={styles.searchInput}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Type In The Name Of The Game, Creator ID Or Player ID"
+            />
+          </div>
+
+          <div className={styles.filterRow} role="group" aria-label="Game Type">
+            {GAME_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                aria-pressed={game === f.id}
+                className={`${styles.chip} ${game === f.id ? styles.active : ''}`}
+                onClick={() => setGame(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className={`${styles.filterRow} ${styles.stakesRow}`}
+            role="group"
+            aria-label="Stakes"
+          >
+            {STAKES_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                aria-pressed={stakes === f.id}
+                className={`${styles.chip} ${stakes === f.id ? styles.active : ''}`}
+                onClick={() => setStakes((cur) => (cur === f.id ? 'ALL' : f.id))}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div className={styles.filterRow} role="group" aria-label="Sort Games">
+            {GAME_SORTS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={gameSort === option.id}
+                className={`${styles.chip} ${gameSort === option.id ? styles.active : ''}`}
+                onClick={() => setGameSort(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          {filtersActive && (
+            <div className={styles.filterUtility}>
+              <span>
+                {compactInt(snapshot?.row_count || 0)} Matching Game
+                {Number(snapshot?.row_count || 0) === 1 ? '' : 's'}
               </span>
               <button
                 type="button"
-                className={`${styles.word} sc-ink--white`}
-                onClick={() => void loadInvoices()}
-                disabled={invoicesLoading}
+                onClick={() => {
+                  setGame('ALL');
+                  setStakes('ALL');
+                  setSearchInput('');
+                  setSearch('');
+                }}
               >
-                {invoicesLoading ? 'Refreshing' : 'Try Again'}
+                Reset Filters
               </button>
             </div>
           )}
 
-          {latestInvoice && (
-            <>
-              <div className={styles.rows}>
-                {/* `direction` was read for the LABEL and ignored by the styling, so
-                   an invoice where the union owes the club rendered in the red that
-                   means "you owe", above a bare unsigned figure. Direction decides
-                   the colour and the sign; status only decides whether it is settled. */}
-                <div className={`${styles.dataRow} ${styles.figureRow}`}>
-                  <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>
-                    {unionOwesClub ? 'Owed To You' : 'You Owe'}
-                  </span>
-                  <span
-                    className={`${styles.figure} ${styles.figureBig} ${
-                      latestInvoice.status === 'paid'
-                        ? 'sc-ink--silver'
-                        : unionOwesClub
-                          ? 'sc-ink--green'
-                          : Number(latestInvoice.amount) > 0
-                            ? 'sc-ink--red'
-                            : 'sc-ink--silver'
-                    }`}
-                  >
-                    {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
-                    {money(Math.abs(Number(latestInvoice.amount) || 0))}
-                  </span>
-                </div>
-                <div className={styles.dataRow}>
-                  <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Period</span>
-                  <span className={`sc-ink--silver ${styles.dataValue}`}>
-                    {String(latestInvoice.period_start || '').slice(0, 10)} To{' '}
-                    {String(latestInvoice.period_end || '').slice(0, 10)}
-                  </span>
-                </div>
-                {latestInvoice.due_at && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Due</span>
-                    <span className={`sc-ink--silver ${styles.dataValue}`}>
-                      {String(latestInvoice.due_at).slice(0, 10)}
-                    </span>
-                  </div>
-                )}
-                {latestInvoice.status && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Status</span>
-                    <span className={`sc-ink--silver ${styles.dataValue}`}>
-                      {invoiceStatusLabel(latestInvoice.status)}
-                    </span>
-                  </div>
-                )}
-                {/* PHASE 6 (2026-09-04): ca_club_union_invoices has computed
-                   `overdue`, `paid_total` and `outstanding` since it was written
-                   and this card rendered none of them, so the one question an
-                   owner opens a statement to answer - how much of this is still
-                   owed, and is it late - was on the wire and not on the screen.
-                   Paid is only shown once something has been paid; outstanding is
-                   shown whenever the statement is not settled. */}
-                {latestInvoice.overdue && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--red ${styles.dataLabel}`}>Overdue</span>
-                    <span className={`sc-ink--red ${styles.dataValue}`}>
-                      {latestInvoice.due_at
-                        ? `Since ${String(latestInvoice.due_at).slice(0, 10)}`
-                        : 'Past Due'}
-                    </span>
-                  </div>
-                )}
-                {Number(latestInvoice.paid_total) > 0 && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Paid</span>
-                    <span className={`sc-ink--green ${styles.dataValue}`}>
-                      {money(Number(latestInvoice.paid_total))}
-                    </span>
-                  </div>
-                )}
-                {latestInvoice.status !== 'paid' && Number(latestInvoice.outstanding) > 0 && (
-                  <div className={styles.dataRow}>
-                    <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Outstanding</span>
-                    <span className={`sc-ink--gold ${styles.dataValue}`}>
-                      {money(Number(latestInvoice.outstanding))}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {showInvoiceDetail && latestInvoice.breakdown && (
-                <div className={styles.rows} id="club-data-invoice-detail">
-                  <span className={`sc-label sc-ink--blue ${styles.blockLabel}`}>
-                    Statement Detail
-                  </span>
-                  {[
-                    // The figures come from the invoice; the percentages used to be
-                    // literals, so any club on a non-standard deal got a label that
-                    // contradicted its own numbers. Derive them or omit them.
-                    ['Rake Generated', latestInvoice.breakdown.rake_generated],
-                    [
-                      `Your Rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
-                      latestInvoice.breakdown.rakeback_due,
-                    ],
-                    [
-                      `Union Fee Kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
-                      latestInvoice.breakdown.union_fee_kept,
-                    ],
-                    ['Player Win/Loss', latestInvoice.breakdown.players_won],
-                    ['Settled In Chips', latestInvoice.breakdown.settled_in_chips],
-                    ['ECO Adjustment', latestInvoice.breakdown.eco_amount],
-                    ['Payments Received', latestInvoice.breakdown.presettled],
-                  ].map(([label, value]) => (
-                    <div className={styles.dataRow} key={String(label)}>
-                      <span className={`sc-copy ${styles.lineLabel}`}>{String(label)}</span>
-                      {/* money(Number('n/a')) is NaN, and NaN is falsy, so a corrupt
-                          line item printed as a real 0.00. Show that it is missing. */}
-                      <span className={`sc-ink--silver ${styles.dataValue}`}>
-                        {Number.isFinite(Number(value)) ? money(Number(value)) : NO_VALUE}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {showInvoiceHistory && olderInvoices.length > 0 && (
-                <div className={styles.rows} id="club-data-invoice-history">
-                  <span className={`sc-label sc-ink--blue ${styles.blockLabel}`}>
-                    Earlier Statements
-                  </span>
-                  {olderInvoices.map((inv) => (
-                    <div className={styles.dataRow} key={inv.invoice_id}>
-                      <span className={`sc-copy ${styles.lineLabel}`}>
-                        {String(inv.period_start || '').slice(0, 10)} To{' '}
-                        {String(inv.period_end || '').slice(0, 10)}
-                      </span>
-                      <span
-                        className={`${inv.direction === 'union owes club' ? 'sc-ink--green' : 'sc-ink--silver'} ${styles.dataValue}`}
-                      >
-                        {inv.direction === 'union owes club' ? '+' : '-'}
-                        {Number.isFinite(Number(inv.amount))
-                          ? money(Math.abs(Number(inv.amount)))
-                          : NO_VALUE}
-                        {inv.status ? ` - ${invoiceStatusLabel(inv.status)}` : ''}
-                        {inv.overdue ? ' - Overdue' : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className={styles.words}>
-                <button
-                  type="button"
-                  className={`${styles.word} ${latestInvoice.breakdown ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                  onClick={() => setShowInvoiceDetail((v) => !v)}
-                  disabled={!latestInvoice.breakdown}
-                  title={latestInvoice.breakdown ? undefined : 'No Line Detail On This Statement'}
-                  aria-expanded={latestInvoice.breakdown ? showInvoiceDetail : undefined}
-                  aria-controls={latestInvoice.breakdown ? 'club-data-invoice-detail' : undefined}
-                >
-                  {!latestInvoice.breakdown
-                    ? 'No Statement Detail'
-                    : showInvoiceDetail
-                      ? 'Hide Statement'
-                      : 'View Statement'}
-                </button>
-                {olderInvoices.length > 0 && (
-                  <button
-                    type="button"
-                    className={`${styles.word} sc-ink--white`}
-                    onClick={() => setShowInvoiceHistory((v) => !v)}
-                    aria-expanded={showInvoiceHistory}
-                    aria-controls="club-data-invoice-history"
-                  >
-                    {showInvoiceHistory
-                      ? 'Hide Earlier Statements'
-                      : `Earlier Statements (${olderInvoices.length})`}
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-        </SpadeConsole>
-      )}
-
-      {/* ── The ledger: games and players ──────────────────────────────── */}
-      <SpadeConsole
-        eyebrow="Games And Players"
-        title="Ledger"
-        titleId="club-data-ledger-title"
-        pill={ledgerPill}
-        pillInk="blue"
-        crest="flat"
-        foot="foot"
-        className={styles.console}
-        aria-labelledby="club-data-ledger-title"
-      >
-        <div className={`${styles.words} ${styles.tabs}`} role="tablist" aria-label="View">
-          <button
-            ref={gamesTabRef}
-            type="button"
-            role="tab"
-            id="club-data-tab-games"
-            aria-controls="club-data-panel-games"
-            aria-selected={tab === 'games'}
-            tabIndex={tab === 'games' ? 0 : -1}
-            className={`${styles.word} ${styles.tab} ${tab === 'games' ? 'sc-ink--white' : 'sc-ink--muted'}`}
-            onClick={() => setTab('games')}
-            onKeyDown={onTabKeyDown}
-          >
-            Games
-          </button>
-          <button
-            ref={playersTabRef}
-            type="button"
-            role="tab"
-            id="club-data-tab-players"
-            aria-controls="club-data-panel-players"
-            aria-selected={tab === 'players'}
-            tabIndex={tab === 'players' ? 0 : -1}
-            className={`${styles.word} ${styles.tab} ${tab === 'players' ? 'sc-ink--white' : 'sc-ink--muted'}`}
-            onClick={() => setTab('players')}
-            onKeyDown={onTabKeyDown}
-          >
-            Players
-          </button>
-        </div>
-
-        {tab === 'games' && (
           <div
-            className={styles.panel}
-            role="tabpanel"
-            id="club-data-panel-games"
-            aria-labelledby="club-data-tab-games"
+            ref={gameVirtual.containerRef}
+            className={`${styles.list} ${styles.virtualList}`}
+            role={snapshot?.rows.length ? 'list' : undefined}
+            aria-busy={loading}
+            aria-label="Games"
             tabIndex={0}
           >
-            <label className={styles.searchField}>
-              <span className={styles.srOnly}>Search Games</span>
-              <input
-                id="club-data-search"
-                className={`sc-ink--silver ${styles.searchInput}`}
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search Game, Creator ID Or Player ID"
-              />
-            </label>
-
-            <div className={styles.words} role="group" aria-label="Game Type">
-              {GAME_FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  aria-pressed={game === f.id}
-                  className={`${styles.word} ${game === f.id ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                  onClick={() => setGame(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            <div className={styles.words} role="group" aria-label="Stakes">
-              {STAKES_FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  aria-pressed={stakes === f.id}
-                  className={`${styles.word} ${stakes === f.id ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                  onClick={() => setStakes((cur) => (cur === f.id ? 'ALL' : f.id))}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            <div className={styles.words} role="group" aria-label="Sort Games">
-              {GAME_SORTS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  aria-pressed={gameSort === option.id}
-                  className={`${styles.word} ${gameSort === option.id ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                  onClick={() => setGameSort(option.id)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-
-            {filtersActive && (
-              <div className={styles.stateRow}>
-                <span className={`sc-copy ${styles.stateCopy}`}>
-                  {`${compactInt(snapshot?.row_count || 0)} Matching Game${Number(snapshot?.row_count || 0) === 1 ? '' : 's'}`}
+            {loading && !snapshot && !error && (
+              <>
+                <span className={styles.srOnly} role="status">
+                  Loading Games
                 </span>
+                <div className={styles.skeletonRow} aria-hidden="true" />
+                <div className={styles.skeletonRow} aria-hidden="true" />
+                <div className={styles.skeletonRow} aria-hidden="true" />
+              </>
+            )}
+
+            {error && (
+              <div className={`${styles.state} ${styles.error}`} role="alert">
+                <span>{error}</span>
                 <button
                   type="button"
-                  className={`${styles.word} sc-ink--white`}
-                  onClick={() => {
-                    setGame('ALL');
-                    setStakes('ALL');
-                    setSearchInput('');
-                    setSearch('');
-                  }}
+                  className={styles.retryButton}
+                  onClick={() => void load(true, true)}
                 >
-                  Reset Filters
+                  Try Again
                 </button>
               </div>
             )}
 
-            <div
-              ref={gameVirtual.containerRef}
-              className={`${styles.list} ${styles.virtualList}`}
-              role={snapshot?.rows.length ? 'list' : undefined}
-              aria-busy={loading}
-              aria-label="Games"
-              tabIndex={0}
-            >
-              {loading && !snapshot && !error && (
-                <>
-                  <span className={styles.srOnly} role="status">
-                    Loading Games
-                  </span>
-                  <div className={styles.skeletonRow} aria-hidden="true" />
-                  <div className={styles.skeletonRow} aria-hidden="true" />
-                  <div className={styles.skeletonRow} aria-hidden="true" />
-                </>
-              )}
+            {!loading && !error && snapshot && snapshot.rows.length === 0 && (
+              <div className={styles.state}>No Games In This Period.</div>
+            )}
 
-              {error && (
-                <div className={styles.stateRow} role="alert">
-                  <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>{error}</span>
-                  <button
-                    type="button"
-                    className={`${styles.word} sc-ink--white`}
-                    onClick={() => void load(true, true)}
+            {!error && gameVirtual.paddingTop > 0 && (
+              <div aria-hidden="true" style={{ height: gameVirtual.paddingTop }} />
+            )}
+
+            {!error &&
+              gameVirtual.visibleItems.map((row, virtualIndex) => {
+                // Intl, not padStart (CLAUDE.md §5.5) - and padStart could not
+                // see an Invalid Date, so a malformed started_at rendered
+                // "NaN:NaN". en-GB + timeZone UTC gives the same 24h HH:MM and
+                // DD/MM this was hand-rolling, with the guard for free.
+                const started = row.started_at ? new Date(row.started_at) : null;
+                const validStart = started && Number.isFinite(started.getTime()) ? started : null;
+                const hhmm = validStart
+                  ? validStart.toLocaleTimeString('en-GB', {
+                      timeZone: 'UTC',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '--:--';
+                const ddmm = validStart
+                  ? validStart.toLocaleDateString('en-GB', {
+                      timeZone: 'UTC',
+                      day: '2-digit',
+                      month: '2-digit',
+                    })
+                  : '';
+                const idLabel =
+                  row.creator_name ||
+                  (row.creator_id ? row.creator_id.slice(0, 8) : row.id.slice(0, 8));
+
+                return (
+                  <div
+                    className={styles.row}
+                    key={`${row.kind}-${row.id}`}
+                    role="listitem"
+                    aria-posinset={gameVirtual.startIndex + virtualIndex + 1}
+                    aria-setsize={snapshot?.row_count}
                   >
-                    Try Again
-                  </button>
-                </div>
-              )}
+                    <div className={styles.rowTime}>
+                      <div className={styles.rowTimeMain}>{hhmm}</div>
+                      <div className={styles.rowTimeSub}>{ddmm}</div>
+                    </div>
 
-              {!loading && !error && snapshot && snapshot.rows.length === 0 && (
-                <p className={`sc-copy sc-copy--center ${styles.empty}`}>
-                  No Games In This Period.
-                </p>
-              )}
-
-              {!error && gameVirtual.paddingTop > 0 && (
-                <div aria-hidden="true" style={{ height: gameVirtual.paddingTop }} />
-              )}
-
-              {!error &&
-                gameVirtual.visibleItems.map((row, virtualIndex) => {
-                  // Intl, not padStart (CLAUDE.md §5.5) - and padStart could not
-                  // see an Invalid Date, so a malformed started_at rendered
-                  // "NaN:NaN". en-GB + timeZone UTC gives the same 24h HH:MM and
-                  // DD/MM this was hand-rolling, with the guard for free.
-                  const started = row.started_at ? new Date(row.started_at) : null;
-                  const validStart = started && Number.isFinite(started.getTime()) ? started : null;
-                  const hhmm = validStart
-                    ? validStart.toLocaleTimeString('en-GB', {
-                        timeZone: 'UTC',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '--:--';
-                  const ddmm = validStart
-                    ? validStart.toLocaleDateString('en-GB', {
-                        timeZone: 'UTC',
-                        day: '2-digit',
-                        month: '2-digit',
-                      })
-                    : '';
-                  const idLabel = titleCase(
-                    row.creator_name ||
-                      (row.creator_id ? row.creator_id.slice(0, 8) : row.id.slice(0, 8))
-                  );
-                  const gameName = titleCase(row.name);
-
-                  return (
-                    <div
-                      className={styles.row}
-                      key={`${row.kind}-${row.id}`}
-                      role="listitem"
-                      aria-posinset={gameVirtual.startIndex + virtualIndex + 1}
-                      aria-setsize={snapshot?.row_count}
-                    >
-                      <div className={styles.rowTime}>
-                        <span className={`sc-ink--silver ${styles.rowTimeMain}`}>{hhmm}</span>
-                        <span className={`sc-ink--muted ${styles.rowTimeSub}`}>{ddmm}</span>
-                      </div>
-
-                      <div className={styles.avatarWrap}>
-                        {/* Sized and error-guarded, matching the player rows below.
+                    <div className={styles.avatarWrap}>
+                      {/* Sized and error-guarded, matching the player rows below.
                           This rendered the raw URL with no onError, so a dead
                           storage object showed the browser's broken-image glyph
                           and pulled a full-size asset into a 40px box. */}
-                        {row.creator_avatar ? (
-                          <img
-                            className={styles.avatar}
-                            src={sizedStorageUrl(row.creator_avatar, 40)}
-                            alt=""
-                            loading="lazy"
-                            onError={(e) => {
-                              e.currentTarget.onerror = null;
-                              e.currentTarget.src = generateAvatarSvg(
-                                row.creator_id || row.id,
-                                row.creator_name || row.name || '?'
-                              );
-                            }}
-                          />
-                        ) : (
-                          <span
-                            className={`sc-ink--silver ${styles.avatarFallback}`}
-                            aria-hidden="true"
-                          >
-                            {(row.name || '?').slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                        <span className={`sc-ink--muted ${styles.rowId}`} title={idLabel}>
-                          {idLabel}
-                        </span>
-                      </div>
-
-                      <div className={styles.rowMain}>
-                        <span className={`sc-ink--silver ${styles.rowName}`} title={gameName}>
-                          {gameName}
-                        </span>
-                        <span className={styles.rowTags}>
-                          {row.rake_percent !== null && (
-                            <span className={`sc-label sc-ink--blue ${styles.tag}`}>
-                              {Number(row.rake_percent)}%
-                            </span>
-                          )}
-                          <span className={`sc-label sc-ink--blue ${styles.tag}`}>
-                            {titleCase(row.kind === 'CASH' ? row.variant : row.kind)}
-                          </span>
-                        </span>
-                        {row.blinds && (
-                          <span className={`sc-ink--muted ${styles.rowSub}`}>
-                            Blinds: {row.blinds}
-                          </span>
-                        )}
-                        {!row.blinds && row.players > 0 && (
-                          <span className={`sc-ink--muted ${styles.rowSub}`}>
-                            {compactInt(row.players)} Players
-                          </span>
-                        )}
-                      </div>
-
-                      <div className={styles.rowFee}>
-                        <span className={`sc-ink--silver ${styles.rowFeeValue}`}>
-                          {money(row.fee)}
-                        </span>
-                        <span className={`sc-label sc-ink--blue ${styles.rowFeeLabel}`}>Fee</span>
-                        <span
-                          className={`${styles.rowWin} ${row.winnings < 0 ? 'sc-ink--red' : 'sc-ink--green'}`}
-                        >
-                          {money(row.winnings)}
-                        </span>
+                      {row.creator_avatar ? (
+                        <img
+                          className={styles.avatar}
+                          src={sizedStorageUrl(row.creator_avatar, 40)}
+                          alt=""
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = generateAvatarSvg(
+                              row.creator_id || row.id,
+                              row.creator_name || row.name || '?'
+                            );
+                          }}
+                        />
+                      ) : (
+                        <div className={styles.avatarFallback} aria-hidden="true">
+                          {(row.name || '?').slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <div className={styles.rowId} title={idLabel}>
+                        {idLabel}
                       </div>
                     </div>
-                  );
-                })}
 
-              {!error && gameVirtual.paddingBottom > 0 && (
-                <div aria-hidden="true" style={{ height: gameVirtual.paddingBottom }} />
-              )}
-            </div>
+                    <div className={styles.rowMain}>
+                      <div className={styles.rowName} title={row.name}>
+                        {row.name}
+                      </div>
+                      <div className={styles.rowTags}>
+                        {row.rake_percent !== null && (
+                          <span className={styles.rakePct}>{Number(row.rake_percent)}%</span>
+                        )}
+                        <span className={badgeClass(row)}>
+                          {row.kind === 'CASH' ? row.variant : row.kind}
+                        </span>
+                      </div>
+                      {row.blinds && <div className={styles.rowBlinds}>Blinds: {row.blinds}</div>}
+                      {!row.blinds && row.players > 0 && (
+                        <div className={styles.rowBlinds}>{compactInt(row.players)} Players</div>
+                      )}
+                    </div>
 
-            {gamesPageError && (
-              <div className={styles.stateRow} role="alert">
-                <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>{gamesPageError}</span>
-                <button
-                  type="button"
-                  className={`${styles.word} sc-ink--white`}
-                  onClick={() => void loadMoreGames()}
-                  disabled={gamesLoadingMore || loading}
-                >
-                  {gamesLoadingMore ? 'Loading' : 'Try Again'}
-                </button>
-              </div>
-            )}
+                    <div className={styles.rowFee}>
+                      <div className={styles.rowFeeValue}>{money(row.fee)}</div>
+                      <div className={styles.rowFeeLabel}>Fee</div>
+                      <div
+                        className={`${styles.rowWin} ${row.winnings < 0 ? styles.neg : styles.pos}`}
+                      >
+                        {money(row.winnings)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
 
-            {snapshot && !error && (gamesHasMore || gamesLoadingMore) && (
-              <div className={styles.words}>
-                <button
-                  type="button"
-                  className={`${styles.word} sc-ink--white`}
-                  onClick={() => void loadMoreGames()}
-                  disabled={gamesLoadingMore || loading}
-                >
-                  {gamesLoadingMore
-                    ? 'Loading More Games'
-                    : `Load More Games - ${compactInt(snapshot.rows.length)} Of ${compactInt(snapshot.row_count)}`}
-                </button>
-              </div>
-            )}
-
-            {snapshot && (
-              <p className={`sc-copy ${styles.note}`}>
-                {clubLabel ? `${clubLabel} - ` : ''}
-                Showing {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
-                {snapshot.data_updated_at
-                  ? ` - Cash Data Updated ${utcTime(snapshot.data_updated_at)}`
-                  : ''}
-              </p>
+            {!error && gameVirtual.paddingBottom > 0 && (
+              <div aria-hidden="true" style={{ height: gameVirtual.paddingBottom }} />
             )}
           </div>
-        )}
 
-        {tab === 'players' && (
-          <div
-            className={styles.panel}
-            role="tabpanel"
-            id="club-data-panel-players"
-            aria-labelledby="club-data-tab-players"
-            aria-busy={playersLoading}
-            tabIndex={0}
-          >
-            <div className={styles.words} role="group" aria-label="Sort Players">
-              {PLAYER_SORTS.map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  aria-pressed={playerSort === o.id}
-                  className={`${styles.word} ${playerSort === o.id ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                  onClick={() => setPlayerSort(o.id)}
-                >
-                  {o.label}
-                </button>
-              ))}
-              {/* Only offered when there is something to hide. A viewer whose
+          {gamesPageError && (
+            <div className={`${styles.state} ${styles.error}`} role="alert">
+              <span>{gamesPageError}</span>
+              <button
+                type="button"
+                className={styles.retryButton}
+                onClick={() => void loadMoreGames()}
+                disabled={gamesLoadingMore || loading}
+              >
+                {gamesLoadingMore ? 'Loading' : 'Try Again'}
+              </button>
+            </div>
+          )}
+
+          {snapshot && !error && (gamesHasMore || gamesLoadingMore) && (
+            <button
+              type="button"
+              className={styles.loadMore}
+              onClick={() => void loadMoreGames()}
+              disabled={gamesLoadingMore || loading}
+            >
+              {gamesLoadingMore
+                ? 'Loading More Games'
+                : `Load More Games - ${compactInt(snapshot.rows.length)} Of ${compactInt(snapshot.row_count)}`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {tab === 'players' && (
+        <div
+          className={styles.playersPanel}
+          role="tabpanel"
+          id="club-data-panel-players"
+          aria-labelledby="club-data-tab-players"
+          aria-busy={playersLoading}
+          tabIndex={0}
+        >
+          <div className={styles.filterRow} role="group" aria-label="Sort Players">
+            {PLAYER_SORTS.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                aria-pressed={playerSort === o.id}
+                className={`${styles.chip} ${playerSort === o.id ? styles.active : ''}`}
+                onClick={() => setPlayerSort(o.id)}
+              >
+                {o.label}
+              </button>
+            ))}
+            {/* Only offered when there is something to hide. A viewer whose
                 flag is masked sees every row come back false, so the control
                 would be a switch that does nothing and invites the question it
                 is not allowed to answer. */}
-              {horsesLoaded > 0 && (
-                <button
-                  type="button"
-                  aria-pressed={hideHorses}
-                  className={`${styles.word} ${hideHorses ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                  onClick={() => setHideHorses((v) => !v)}
-                  title={`${compactInt(horsesLoaded)} Of The Loaded Rows Are House Horses`}
-                >
-                  {hideHorses ? 'People Only' : 'Hide Horses'}
-                </button>
-              )}
-            </div>
-
-            {playerTotals && (
-              <div className={styles.totals}>
-                <span className={`sc-ink--silver ${styles.totalsItem}`}>
-                  {compactInt(playerTotals.players)} {playerTotals.scoped ? 'People' : 'Players'}
-                </span>
-                <span
-                  className={`${styles.totalsItem} ${Number(playerTotals.net) < 0 ? 'sc-ink--red' : 'sc-ink--green'}`}
-                >
-                  {money(playerTotals.net)} Net
-                </span>
-                <span className={`sc-ink--silver ${styles.totalsItem}`}>
-                  {money(playerTotals.rake)} Rake
-                </span>
-                {/* Says what it is counting the moment it stops counting
-                  everything: these are the rows on screen, not the window. */}
-                {playerTotals.scoped && (
-                  <span className={`sc-label sc-ink--muted ${styles.totalsScope}`}>
-                    Of The Rows Loaded
-                  </span>
-                )}
-              </div>
-            )}
-
-            <div
-              ref={playerVirtual.containerRef}
-              className={`${styles.list} ${styles.virtualList}`}
-              role={sortedPlayers.length ? 'list' : undefined}
-              aria-busy={playersLoading}
-              aria-label="Players"
-              tabIndex={0}
-            >
-              {playersLoading && !players && !playersError && (
-                <>
-                  <span className={styles.srOnly} role="status">
-                    Loading Players
-                  </span>
-                  <div className={styles.skeletonRow} aria-hidden="true" />
-                  <div className={styles.skeletonRow} aria-hidden="true" />
-                  <div className={styles.skeletonRow} aria-hidden="true" />
-                </>
-              )}
-
-              {playersError && (
-                <div className={styles.stateRow} role="alert">
-                  <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>{playersError}</span>
-                  <button
-                    type="button"
-                    className={`${styles.word} sc-ink--white`}
-                    onClick={() => void loadPlayers(true)}
-                  >
-                    Try Again
-                  </button>
-                </div>
-              )}
-
-              {!playersLoading && !playersError && players && sortedPlayers.length === 0 && (
-                <p className={`sc-copy sc-copy--center ${styles.empty}`}>
-                  No Player Activity In This Period.
-                </p>
-              )}
-
-              {!playersError && playerVirtual.paddingTop > 0 && (
-                <div aria-hidden="true" style={{ height: playerVirtual.paddingTop }} />
-              )}
-
-              {!playersError &&
-                playerVirtual.visibleItems.map((pl, i) => {
-                  const playerName = titleCase(pl.username);
-                  return (
-                    <div
-                      className={styles.playerRow}
-                      key={pl.user_id}
-                      role="listitem"
-                      aria-posinset={playerVirtual.startIndex + i + 1}
-                      aria-setsize={players?.player_count}
-                    >
-                      <span className={`sc-ink--blue ${styles.playerRank}`}>
-                        {playerVirtual.startIndex + i + 1}
-                      </span>
-
-                      <div className={styles.avatarWrap}>
-                        {pl.avatar_url ? (
-                          <img
-                            className={styles.avatar}
-                            src={sizedStorageUrl(pl.avatar_url, 40)}
-                            alt=""
-                            loading="lazy"
-                            onError={(e) => {
-                              e.currentTarget.onerror = null;
-                              e.currentTarget.src = generateAvatarSvg(
-                                pl.user_id,
-                                pl.username || '?'
-                              );
-                            }}
-                          />
-                        ) : (
-                          <span
-                            className={`sc-ink--silver ${styles.avatarFallback}`}
-                            aria-hidden="true"
-                          >
-                            {(pl.username || '?').slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className={styles.rowMain}>
-                        <span className={`sc-ink--silver ${styles.rowName}`} title={playerName}>
-                          {playerName}
-                          {/* A house player, named as one. The flag arrives false
-                            for any viewer not entitled to it, so this simply
-                            never renders for them. */}
-                          {pl.is_horse && (
-                            <span className={`sc-label sc-ink--gold ${styles.horseTag}`}>
-                              Horse
-                            </span>
-                          )}
-                        </span>
-                        <span className={`sc-ink--muted ${styles.rowSub}`}>
-                          {compactInt(pl.hands)} Hands &middot; {money(pl.rake)} Rake
-                        </span>
-                      </div>
-
-                      <div className={styles.rowFee}>
-                        <span
-                          className={`${styles.rowFeeValue} ${pl.net < 0 ? 'sc-ink--red' : 'sc-ink--green'}`}
-                        >
-                          {money(pl.net)}
-                        </span>
-                        <span className={`sc-label sc-ink--blue ${styles.rowFeeLabel}`}>Net</span>
-                      </div>
-                    </div>
-                  );
-                })}
-
-              {!playersError && playerVirtual.paddingBottom > 0 && (
-                <div aria-hidden="true" style={{ height: playerVirtual.paddingBottom }} />
-              )}
-            </div>
-
-            {playersPageError && (
-              <div className={styles.stateRow} role="alert">
-                <span className={`sc-copy sc-ink--red ${styles.stateCopy}`}>
-                  {playersPageError}
-                </span>
-                <button
-                  type="button"
-                  className={`${styles.word} sc-ink--white`}
-                  onClick={() => void loadMorePlayers()}
-                  disabled={playersLoadingMore || playersLoading}
-                >
-                  {playersLoadingMore ? 'Loading' : 'Try Again'}
-                </button>
-              </div>
-            )}
-
-            {players && !playersError && (playersHasMore || playersLoadingMore) && (
-              <div className={styles.words}>
-                <button
-                  type="button"
-                  className={`${styles.word} sc-ink--white`}
-                  onClick={() => void loadMorePlayers()}
-                  disabled={playersLoadingMore || playersLoading}
-                >
-                  {playersLoadingMore
-                    ? 'Loading More Players'
-                    : `Load More Players - ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)}`}
-                </button>
-              </div>
-            )}
-
-            {players && !playersError && (
-              <p className={`sc-copy ${styles.note}`}>
-                A Positive Net Means The Player Is Up.
-                {(() => {
-                  // Sliced, not compared raw: this is typed `string` and a
-                  // timestamp would both fail the comparison - silently
-                  // suppressing the caveat exactly when it matters - and print
-                  // its time component into the sentence.
-                  const through = String(players.rake_complete_through || '').slice(0, 10);
-                  return through && through < endDate
-                    ? ` Per-Player Rake Is Complete Through ${through}. Today's Rake Lands In Tomorrow's Rollup.`
-                    : '';
-                })()}
-                {players.player_count > sortedPlayers.length
-                  ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
-                  : ''}
-              </p>
+            {horsesLoaded > 0 && (
+              <button
+                type="button"
+                aria-pressed={hideHorses}
+                className={`${styles.chip} ${hideHorses ? styles.active : ''}`}
+                onClick={() => setHideHorses((v) => !v)}
+                title={`${compactInt(horsesLoaded)} Of The Loaded Rows Are House Horses`}
+              >
+                {hideHorses ? 'People Only' : 'Hide Horses'}
+              </button>
             )}
           </div>
-        )}
-      </SpadeConsole>
+
+          {playerTotals && (
+            <div className={styles.playerTotals}>
+              <span>
+                {compactInt(playerTotals.players)} {playerTotals.scoped ? 'People' : 'Players'}
+              </span>
+              <span className={Number(playerTotals.net) < 0 ? styles.neg : styles.pos}>
+                {money(playerTotals.net)} Net
+              </span>
+              <span>{money(playerTotals.rake)} Rake</span>
+              {/* Says what it is counting the moment it stops counting
+                  everything: these are the rows on screen, not the window. */}
+              {playerTotals.scoped && (
+                <span className={styles.playerTotalsScope}>Of The Rows Loaded</span>
+              )}
+            </div>
+          )}
+
+          <div
+            ref={playerVirtual.containerRef}
+            className={`${styles.list} ${styles.virtualList}`}
+            role={sortedPlayers.length ? 'list' : undefined}
+            aria-busy={playersLoading}
+            aria-label="Players"
+            tabIndex={0}
+          >
+            {playersLoading && !players && !playersError && (
+              <>
+                <span className={styles.srOnly} role="status">
+                  Loading Players
+                </span>
+                <div className={styles.skeletonRow} aria-hidden="true" />
+                <div className={styles.skeletonRow} aria-hidden="true" />
+                <div className={styles.skeletonRow} aria-hidden="true" />
+              </>
+            )}
+
+            {playersError && (
+              <div className={`${styles.state} ${styles.error}`} role="alert">
+                <span>{playersError}</span>
+                <button
+                  type="button"
+                  className={styles.retryButton}
+                  onClick={() => void loadPlayers(true)}
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
+            {!playersLoading && !playersError && players && sortedPlayers.length === 0 && (
+              <div className={styles.state}>No Player Activity In This Period.</div>
+            )}
+
+            {!playersError && playerVirtual.paddingTop > 0 && (
+              <div aria-hidden="true" style={{ height: playerVirtual.paddingTop }} />
+            )}
+
+            {!playersError &&
+              playerVirtual.visibleItems.map((pl, i) => (
+                <div
+                  className={styles.playerRow}
+                  key={pl.user_id}
+                  role="listitem"
+                  aria-posinset={playerVirtual.startIndex + i + 1}
+                  aria-setsize={players?.player_count}
+                >
+                  <div className={styles.playerRank}>{playerVirtual.startIndex + i + 1}</div>
+
+                  <div className={styles.avatarWrap}>
+                    {pl.avatar_url ? (
+                      <img
+                        className={styles.avatar}
+                        src={sizedStorageUrl(pl.avatar_url, 40)}
+                        alt=""
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = generateAvatarSvg(pl.user_id, pl.username || '?');
+                        }}
+                      />
+                    ) : (
+                      <div className={styles.avatarFallback} aria-hidden="true">
+                        {(pl.username || '?').slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={styles.rowMain}>
+                    <div className={styles.rowName} title={pl.username}>
+                      {pl.username}
+                      {/* A house player, named as one. The flag arrives false
+                          for any viewer not entitled to it, so this simply
+                          never renders for them. */}
+                      {pl.is_horse && <span className={styles.horseTag}>Horse</span>}
+                    </div>
+                    <div className={styles.rowBlinds}>
+                      {compactInt(pl.hands)} Hands &middot; {money(pl.rake)} Rake
+                    </div>
+                  </div>
+
+                  <div className={styles.rowFee}>
+                    <div
+                      className={`${styles.rowFeeValue} ${pl.net < 0 ? styles.neg : styles.pos}`}
+                    >
+                      {money(pl.net)}
+                    </div>
+                    <div className={styles.rowFeeLabel}>Net</div>
+                  </div>
+                </div>
+              ))}
+
+            {!playersError && playerVirtual.paddingBottom > 0 && (
+              <div aria-hidden="true" style={{ height: playerVirtual.paddingBottom }} />
+            )}
+          </div>
+
+          {playersPageError && (
+            <div className={`${styles.state} ${styles.error}`} role="alert">
+              <span>{playersPageError}</span>
+              <button
+                type="button"
+                className={styles.retryButton}
+                onClick={() => void loadMorePlayers()}
+                disabled={playersLoadingMore || playersLoading}
+              >
+                {playersLoadingMore ? 'Loading' : 'Try Again'}
+              </button>
+            </div>
+          )}
+
+          {players && !playersError && (playersHasMore || playersLoadingMore) && (
+            <button
+              type="button"
+              className={styles.loadMore}
+              onClick={() => void loadMorePlayers()}
+              disabled={playersLoadingMore || playersLoading}
+            >
+              {playersLoadingMore
+                ? 'Loading More Players'
+                : `Load More Players - ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)}`}
+            </button>
+          )}
+
+          {players && !playersError && (
+            <div className={styles.footNote}>
+              A Positive Net Means The Player Is Up.
+              {(() => {
+                // Sliced, not compared raw: this is typed `string` and a
+                // timestamp would both fail the comparison - silently
+                // suppressing the caveat exactly when it matters - and print
+                // its time component into the sentence.
+                const through = String(players.rake_complete_through || '').slice(0, 10);
+                return through && through < endDate
+                  ? ` Per-player rake is complete through ${through}; today's rake lands in tomorrow's rollup.`
+                  : '';
+              })()}
+              {players.player_count > sortedPlayers.length
+                ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
+                : ''}
+            </div>
+          )}
+        </div>
+      )}
+
+      {exportNote && (
+        <div className={styles.footNote} role="status">
+          {exportNote}
+        </div>
+      )}
+
+      {exportProgress && (
+        <div className={styles.footNote} role="status" aria-live="polite">
+          {exportProgress.stage === 'preparing'
+            ? 'Preparing An Exact Snapshot For Export...'
+            : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
+        </div>
+      )}
+
+      {tab === 'games' && snapshot && (
+        <div className={styles.footNote}>
+          {clubName ? `${clubName} - ` : ''}
+          Showing {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
+          {snapshot.data_updated_at
+            ? ` - cash data updated ${utcTime(snapshot.data_updated_at)}`
+            : ''}
+        </div>
+      )}
     </div>
   );
 }

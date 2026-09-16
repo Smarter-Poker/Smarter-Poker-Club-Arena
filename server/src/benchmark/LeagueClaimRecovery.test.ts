@@ -33,16 +33,8 @@ const state: {
   // column - because that is all claimProducedRows ever asks for.
   auditRows: Array<{ day: string }>;
   selfTuneRows: Array<{ run_date: string; id: number }>;
-  completedTuneRows: Array<{ run_date: string }>;
   updateAttempts: number;
-} = {
-  jobRuns: [],
-  leagueRows: [],
-  auditRows: [],
-  selfTuneRows: [],
-  completedTuneRows: [],
-  updateAttempts: 0,
-};
+} = { jobRuns: [], leagueRows: [], auditRows: [], selfTuneRows: [], updateAttempts: 0 };
 
 vi.mock('../services/supabase.js', () => {
   const api = {
@@ -104,7 +96,6 @@ vi.mock('../services/supabase.js', () => {
         if (table === 'horse_daily_audit') return state.auditRows as Array<Record<string, unknown>>;
         if (table === 'horse_self_tune_log')
           return state.selfTuneRows as Array<Record<string, unknown>>;
-        if (table === 'horse_tuner_study_completions') return state.completedTuneRows;
         return state.leagueRows as Array<Record<string, unknown>>;
       };
       return {
@@ -145,7 +136,6 @@ beforeEach(() => {
   state.leagueRows = [];
   state.auditRows = [];
   state.selfTuneRows = [];
-  state.completedTuneRows = [];
   state.updateAttempts = 0;
   process.env.HOSTNAME = 'container-A';
   // The clock-based cases below were written for a process that has been up
@@ -323,7 +313,7 @@ describe('claimNightlyJob - daily_audit and self_tuner recovery', () => {
     expect(state.jobRuns[0].claimed_by).toBe('container-A');
   });
 
-  it('a partial self_tuner claim can be resumed even after one audit row', async () => {
+  it('a self_tuner claim that DID write tune rows is left alone', async () => {
     state.jobRuns.push({
       job: 'self_tuner',
       run_date: DAY,
@@ -331,18 +321,6 @@ describe('claimNightlyJob - daily_audit and self_tuner recovery', () => {
       claimed_by: 'container-B',
     });
     state.selfTuneRows.push({ run_date: DAY, id: 1 });
-    expect(await claimNightlyJob('self_tuner', DAY)).toBe(true);
-    expect(state.jobRuns[0].claimed_by).toBe('container-A');
-  });
-
-  it('a fully completed self_tuner claim is left alone', async () => {
-    state.jobRuns.push({
-      job: 'self_tuner',
-      run_date: DAY,
-      claimed_at: new Date(Date.now() - 5 * HOUR).toISOString(),
-      claimed_by: 'container-B',
-    });
-    state.completedTuneRows.push({ run_date: DAY });
     expect(await claimNightlyJob('self_tuner', DAY)).toBe(false);
     expect(state.jobRuns[0].claimed_by).toBe('container-B');
   });

@@ -1,25 +1,31 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   STATS SHARE CARD - on the spade console (#ClubArenaConsole)
-
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master (components/console/SpadeConsole.css); the card itself is
-   the canvas, drawn at 1200x630 and scaled down so it stays crisp on retina
-   and exports at full social-card resolution, printed on the black glass
-   with the one action as a lit word under an engraved rule. Nothing else is
-   drawn. Sizes are cqw against the console. No :hover.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * StatsShareCard — canvas preview plus a single share/save action.
+ * The canvas is drawn at 1200x630 and scaled down by CSS, so it stays crisp
+ * on retina and exports at full social-card resolution.
+ */
 
 .sharecard {
-  --share-rule: 1px solid #000;
-  --share-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
-  --sc-max: 720px;
-  margin: 0 0 1rem;
+  margin: 0 0.75rem 1rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.sharecard-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f4ff;
 }
 
 .sharecard-preview {
+  border-radius: 12px;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   line-height: 0;
-  outline: 1px solid #000;
 }
 
 .sharecard-canvas {
@@ -29,50 +35,41 @@
   aspect-ratio: 1200 / 630;
 }
 
-.sharecard-actions {
-  display: flex;
-  justify-content: center;
-  padding-top: 2.4cqw;
-  border-top: var(--share-rule);
-  box-shadow: var(--share-rule-lit);
-}
-
 .sharecard-btn {
-  appearance: none;
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.7rem;
   min-height: 44px;
-  margin: 0;
-  padding: 1.6cqw 3cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.4cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  background: rgba(0, 212, 255, 0.12);
+  color: #e8f4ff;
+  font-size: 0.85rem;
+  font-weight: 700;
   cursor: pointer;
-  touch-action: manipulation;
-}
-
-.sharecard-btn:active {
-  filter: brightness(1.25);
+  transition: background 0.18s ease;
 }
 
 .sharecard-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.6;
   cursor: default;
 }
 
 .sharecard-btn:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.6cqw;
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
 }
 
 .sharecard-note {
-  min-height: 1.5em;
-  margin: 0;
+  margin: 0.5rem 0 0;
+  font-size: 0.7rem;
+  color: rgba(200, 224, 245, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sharecard-btn {
+    transition: none;
+  }
 }
 
 /* The share card is a screen affordance; it must never appear in a printed

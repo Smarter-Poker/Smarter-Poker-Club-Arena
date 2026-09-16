@@ -1,146 +1,270 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   FINANCIAL HEALTH - on the spade console (#ClubArenaConsole)
-
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master (components/console/SpadeConsole.css); this file lays the
-   three sections on the black glass between the rails as rows - label in lit
-   blue on the left, value in silver on the right, an engraved rule between
-   sections - with each section's "Run Now" as a lit word. The two painted
-   plates carry the quick actions. Nothing is drawn: no card, no button face,
-   no coloured status box. Sizes are cqw against the console. No :hover
-   (tests/no-hover-effects.law.test.ts).
-   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  FINANCIAL HEALTH PAGE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
 .financial-health-page {
-  --fhp-rule: 1px solid #000;
-  --fhp-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  padding: 16px;
+  max-width: 800px;
+  margin: 0 auto;
   width: 100%;
-  max-width: 100vw;
-  padding: 12px 8px max(70px, env(safe-area-inset-bottom));
-  /* clip, not hidden - see src/styles/design-system.css on body. `hidden` on
+  box-sizing: border-box;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
      one axis computes the other to `auto`, which makes this a scroll container,
      and WebKit then resolves the fixed ClubBottomNav against IT instead of the
      viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
   overflow-x: clip;
-  background: #020305;
-  color: #e6e9ee;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  color-scheme: dark;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
-.fhp__console {
-  --sc-max: 640px;
-  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
-}
-
-/* ── Sections: rows on the glass ────────────────────────────────────────── */
-
-.fhp__section {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  padding-top: 2.4cqw;
-  border-top: var(--fhp-rule);
-  box-shadow: var(--fhp-rule-lit);
-}
-
-.fhp__section:first-child {
-  padding-top: 0;
-  border-top: 0;
-  box-shadow: none;
-}
-
-.fhp__section-head {
+.fh-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2cqw;
-  min-height: 44px;
+  margin-bottom: 20px;
 }
-
-.fhp__section-title {
+.fh-header h2 {
   margin: 0;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 3cqw;
+  font-size: 1.25rem;
+  color: var(--text-primary, #fff);
 }
-
-.fhp__row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 3cqw;
-  min-height: 9cqw;
-  padding: 1.8cqw 0;
-}
-
-.fhp__row + .fhp__row {
-  border-top: var(--fhp-rule);
-  box-shadow: var(--fhp-rule-lit);
-}
-
-.fhp__row-label {
-  font-size: 3cqw;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.fhp__row-value {
-  min-width: 0;
-  font-size: 4.2cqw;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-
-/* The suspension figures are value-then-label in the DOM (a test reads the
-   figure as the label's previous sibling); the row swaps them back so the
-   label leads on the left and the figure sits on the right like every row. */
-.fhp__row--stat {
-  flex-direction: row-reverse;
-}
-
-.fhp__alert,
-.fhp__state {
-  margin: 0;
-  padding: 1.8cqw 0;
-}
-
-/* ── Lit words ──────────────────────────────────────────────────────────── */
-
-.fhp-word {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  padding: 1.2cqw 1.6cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.4cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  white-space: nowrap;
+.fh-refresh-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary, #aaa);
+  font-size: 1.1rem;
   cursor: pointer;
-  touch-action: manipulation;
+  transition: all 0.2s;
 }
 
-.fhp-word:active {
-  filter: brightness(1.25);
+/* Section */
+.fh-section {
+  margin-bottom: 20px;
+}
+.fh-section h3 {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #aaa);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.fh-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.fh-section-header h3 {
+  margin: 0;
 }
 
-.fhp-word:disabled {
-  opacity: 0.45;
+/* Status Grid */
+.fh-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.fh-status-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+.fh-status-card.healthy {
+  border-color: rgba(52, 199, 89, 0.2);
+}
+.fh-status-card.error {
+  border-color: rgba(255, 59, 48, 0.2);
+}
+.fh-status-card.warning {
+  border-color: rgba(255, 167, 38, 0.2);
+}
+.fh-status-indicator {
+  font-size: 1.3rem;
+}
+.fh-status-label {
+  font-size: 0.7rem;
+  color: var(--text-tertiary, #666);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.fh-status-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary, #fff);
+}
+
+/* Action Buttons */
+.fh-action-btn {
+  padding: 6px 14px;
+  background: rgba(24, 119, 242, 0.1);
+  border: 1px solid rgba(24, 119, 242, 0.3);
+  border-radius: 8px;
+  color: #1877f2;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.fh-action-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.fhp-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.4cqw;
+/* Result Card */
+.fh-result-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.fh-result-card.balanced {
+  border-color: rgba(52, 199, 89, 0.2);
+  background: rgba(52, 199, 89, 0.04);
+}
+.fh-result-card.drift {
+  border-color: rgba(255, 59, 48, 0.2);
+  background: rgba(255, 59, 48, 0.04);
+}
+.fh-result-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+.fh-result-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-primary, #fff);
+}
+.fh-result-detail {
+  font-size: 0.82rem;
+  color: var(--text-secondary, #aaa);
+  margin-top: 4px;
+}
+.fh-result-time {
+  font-size: 0.72rem;
+  color: var(--text-tertiary, #666);
+  margin-top: 4px;
+}
+
+/* Suspension Stats */
+.fh-suspension-stats {
+  display: flex;
+  gap: 10px;
+}
+.fh-stat {
+  flex: 1;
+  text-align: center;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+.fh-stat.warning {
+  border-color: rgba(255, 167, 38, 0.2);
+}
+.fh-stat.danger {
+  border-color: rgba(255, 59, 48, 0.2);
+}
+.fh-stat-value {
+  display: block;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-primary, #fff);
+}
+.fh-stat-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-tertiary, #666);
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+/* Quick Actions */
+.fh-quick-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.fh-nav-btn {
+  flex: 1;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: var(--text-primary, #fff);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+/* Empty state */
+.fh-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-tertiary, #666);
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.06);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .financial-health-page {
+    padding: 12px;
+  }
+
+  .fh-header h2 {
+    font-size: 1.05rem;
+  }
+
+  .fh-refresh-btn {
+    width: 44px;
+    height: 44px;
+    touch-action: manipulation;
+  }
+
+  .fh-status-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .fh-status-item {
+    padding: 12px;
+  }
+
+  .fh-status-value {
+    font-size: 1.1rem;
+  }
+
+  .fh-action-btn {
+    min-height: 44px;
+    padding: 6px 12px;
+    touch-action: manipulation;
+  }
+
+  .fh-nav-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .fh-section-title {
+    font-size: 0.82rem;
+  }
 }

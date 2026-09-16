@@ -54,6 +54,6 @@ describe('Club Data complete export contract', () => {
     expect(helper).toContain('rows.length !== total || offset !== total');
     expect(helper).toContain('seen.has(key)');
     expect(helper).toContain("options.rpc('ca_club_data_export_cancel'");
-    expect(page).toContain('No Partial File Was Downloaded');
+    expect(page).toContain('No partial file was downloaded');
   });
 });

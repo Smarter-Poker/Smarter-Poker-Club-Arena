@@ -40,8 +40,6 @@ const utilityControls: Array<{ icon: ClubIconName; label: string }> = [
   { icon: 'rabbit', label: 'Rabbit Hunt' },
   { icon: 'previous', label: 'Prev Hand' },
   { icon: 'menu', label: 'Menu' },
-  { icon: 'sound', label: 'Sound' },
-  { icon: 'info', label: 'Info' },
 ];
 
 const moneyValues = ['$0.00', '$9.99', '$480.00', '$12,850', '$1,376,644.87', '$123,456,789.99'];

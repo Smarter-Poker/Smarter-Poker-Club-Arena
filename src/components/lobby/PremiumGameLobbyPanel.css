@@ -150,34 +150,18 @@
 
 .glp--cash .glp__section {
   position: relative;
-  isolation: isolate;
   padding: 15.5cqw 7.2cqw 15cqw;
   overflow: visible;
   border: 0;
   border-radius: 0;
   background:
     url('/assets/club-buttons/lobby/shark-panel-v1/top.png') top center / 100% auto no-repeat,
-    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100% auto no-repeat;
+    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100% auto no-repeat,
+    url('/assets/club-buttons/lobby/shark-panel-v1/mid.png') center / 100% auto repeat-y;
   box-shadow: none;
 }
 
-/* THE RAILS GET THEIR OWN BOX (#ClubArenaConsole trap 7.1, fixed 2026-09-14).
-   mid.png used to be a third background layer on the section, repeating over
-   its WHOLE height - and top.png is transparent for its first 33 rows, so the
-   rails painted above the crest cap and below the closing rail, lines running
-   out from under the frame. A pseudo-element inset to the caps carries the
-   strip and nothing else; `background-clip: content-box` does NOT do this, it
-   clips the side rails away too. */
-.glp--cash .glp__section::before {
-  content: '';
-  position: absolute;
-  inset: 15.5cqw 0 15cqw;
-  z-index: -1;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/mid.png') top center / 100% auto
-    repeat-y;
-  pointer-events: none;
-}
-
+.glp--cash .glp__section::before,
 .glp--cash .glp__section::after {
   content: none;
 }

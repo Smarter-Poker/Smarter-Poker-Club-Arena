@@ -1,6 +1,0 @@
-{
-  "_owner": "Horse Brain Phase14 capture source provenance",
-  "tables": [],
-  "functions": ["fn_finish_horse_observation_capture_witness"],
-  "columns": { "horse_observation_capture_receipts": ["source_witness", "source_witness_digest"] }
-}

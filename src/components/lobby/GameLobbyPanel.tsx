@@ -9,13 +9,6 @@
  * register/unregister, spinQuickJoin). No parallel join systems.
  *
  * Desktop: right-side drawer. Small screens: full-width sheet. Esc closes.
- *
- * #ClubArenaConsole (2026-09-14): the cash variant is Dan's approved shark
- * console (PremiumGameLobbyPanel.css, 2026-09-03) and is untouched here. The
- * tournament variant's sections - Overview / Details, Blind Structure,
- * Payouts, Format - each print on a SpadeConsole (flat crest, flat cap):
- * figures as rows on the black glass, tables with engraved rules, the tabs
- * and links as lit words. Nothing under the plaque is drawn in CSS any more.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -24,11 +17,11 @@ import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import ArenaGameCard from './game-cards/ArenaGameCard';
 import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
 import type { ArenaGameCardActions } from './game-cards/arenaGameCardTypes';
-import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow, RuleMedallion } from './lobbyEntries';
+import type { LobbyEntry, LobbyTableRow, LobbyTournamentRow } from './lobbyEntries';
 import { parseBlindStructure, tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import { parseTableSettings, seatsTakenLabel, seatFirstJoinable } from './lobbyEntries';
 import { cashBuyInRange } from '../../lib/cashBuyIn';
-import { tournamentService, type TournamentWithArena } from '../../services/TournamentService';
+import { tournamentService } from '../../services/TournamentService';
 import { waitlistService, type WaitlistEntry } from '../../services/WaitlistService';
 import { tableService } from '../../services/TableService';
 import { supabase } from '../../lib/supabase';
@@ -41,15 +34,12 @@ import {
   effectivePlaceLadderPool,
   placePrize,
   resolvePayoutStructure,
-  tournamentRowUnitCents,
 } from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
-import { SpadeConsole } from '../console/SpadeConsole';
-import { titleCase } from '../../utils/titleCase';
 import './GameLobbyPanel.css';
 import './PremiumGameLobbyPanel.css';
-import { formatPrizeAtUnit, formatTableChips } from '../../utils/format';
+import { formatTableChips } from '../../utils/format';
 
 export interface GameLobbyPanelProps {
   entry: LobbyEntry;
@@ -64,8 +54,6 @@ export interface GameLobbyPanelProps {
   onJoinTable: (tableId: string) => void;
   /** Why no seat can be taken on this whole board; see LobbyRowContext. */
   seatsClosedLabel?: string;
-  /** Why no tournament can be entered on this whole board; see LobbyRowContext. */
-  registrationClosedLabel?: string;
   onWaitlistToggle: (tableId: string, joining: boolean) => void;
   onRegister: (t: LobbyTournamentRow) => void;
   onUnregister: (t: LobbyTournamentRow) => void;
@@ -107,28 +95,6 @@ interface CtaSpec {
   note?: string;
 }
 
-/* THE FIRST LETTER OF EVERY WORD (Dan 2026-09-14): a medallion's label and
-   its explanation are data, and they are Title Cased where they print. */
-const titleCaseRule = (r: RuleMedallion): RuleMedallion => ({
-  ...r,
-  label: titleCase(r.label),
-  tip: titleCase(r.tip),
-});
-
-/** One rule under its label - the label lit blue on a console, plain on the
- *  approved cash sheet, which paints its own ink. */
-function RuleLine({ r, lit }: { r: RuleMedallion; lit?: boolean }) {
-  return (
-    <li>
-      <b className={lit ? 'sc-label sc-ink--blue' : undefined}>
-        {r.label}
-        {r.detail ? ` ${r.detail}` : ''}
-      </b>
-      <span>{r.tip}</span>
-    </li>
-  );
-}
-
 const lvlNum = (
   l: BlindLevel,
   snake: 'small_blind' | 'big_blind' | 'duration_minutes',
@@ -148,7 +114,6 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     onClose,
     onJoinTable,
     seatsClosedLabel,
-    registrationClosedLabel,
     onWaitlistToggle,
     onRegister,
     onUnregister,
@@ -198,7 +163,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   }, [onClose]);
 
   // ── Detail data (read-only enrichment; actions never depend on it) ──
-  const [tournament, setTournament] = useState<TournamentWithArena | null>(null);
+  const [tournament, setTournament] = useState<Tournament | null>(null);
   const [tournamentFieldSize, setTournamentFieldSize] = useState<number | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [waitlistError, setWaitlistError] = useState(false);
@@ -522,15 +487,6 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     if (st === 'completed' || st === 'closed')
       return { label: 'Registration Closed', kind: 'disabled' as const };
     if (st === 'running') return { label: 'Registration Closed', kind: 'disabled' as const };
-    /* The whole board's door is shut (Diamond Phase 8): the event is listed
-       so it can be read, and every registration door refuses until the
-       arena's tournament switch is on. Say so rather than offer the button. */
-    if (registrationClosedLabel)
-      return {
-        label: registrationClosedLabel,
-        kind: 'disabled' as const,
-        note: 'Tournaments Are Listed So You Can Read Them. Registration Opens Later.',
-      };
     const full = entry.capacity > 0 && entry.players >= entry.capacity;
     if (full) return { label: 'Tournament Full', kind: 'disabled' as const };
     if (st === 'late_reg')
@@ -548,7 +504,6 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     };
   }, [
     seatsClosedLabel,
-    registrationClosedLabel,
     entry,
     isCash,
     seated,
@@ -669,21 +624,6 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       panelIsSatellite
     );
   }, [panelIsSatellite, panelPayouts, tournament, tournamentFieldSize]);
-
-  /**
-   * THE UNIT THIS EVENT PAYS IN, read from the arena `getTournament` embedded
-   * rather than assumed. The projected ladder below is the surface the Diamond
-   * build programme named as still speaking chips for a Diamond event, and
-   * this is what it speaks instead: `computePlacePrize` snaps every share to
-   * this unit and `formatPrizeAtUnit` prints it at the same one, so a player
-   * reading a Diamond event sees the whole Diamonds the settlement will pay.
-   *
-   * `null` while the tournament is still loading is the SQL's own "join found
-   * nothing" answer, a cent - and the ladder does not render at all until
-   * `tournament` is non-null, so no chip-denominated row is ever painted and
-   * then corrected.
-   */
-  const panelUnitCents = useMemo(() => tournamentRowUnitCents(tournament), [tournament]);
 
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
   /* One helper, so the panel and the card behind it cannot quote different
@@ -948,7 +888,13 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   <h3 className="glp__h">Rules</h3>
                   <ul className="glp__rules">
                     {entry.rules.map((r) => (
-                      <RuleLine key={r.key} r={titleCaseRule(r)} />
+                      <li key={r.key}>
+                        <b>
+                          {r.label}
+                          {r.detail ? ` ${r.detail}` : ''}
+                        </b>
+                        <span>{r.tip}</span>
+                      </li>
                     ))}
                   </ul>
                 </section>
@@ -1023,14 +969,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
               )}
 
               {(entry.kind !== 'mtt' || tab === 'overview') && (
-                <SpadeConsole
-                  as="section"
-                  className="glp__console"
-                  crest="flat"
-                  foot="foot"
-                  title={entry.kind === 'mtt' ? 'Overview' : 'Details'}
-                  pill={entry.statusLabel}
-                  pillInk={entry.live ? 'green' : 'blue'}
+                <section
+                  className="glp__section"
                   {...(entry.kind === 'mtt'
                     ? {
                         id: 'glp-panel-overview',
@@ -1040,6 +980,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       }
                     : {})}
                 >
+                  <h3 className="glp__h">{entry.kind === 'mtt' ? 'Overview' : 'Details'}</h3>
                   <dl className="glp__grid">
                     <div>
                       <dt>Game</dt>
@@ -1138,26 +1079,18 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       Full Details Could Not Be Loaded. The Figures Above Come From The Lobby.
                     </p>
                   )}
-                </SpadeConsole>
+                </section>
               )}
 
               {entry.kind === 'mtt' && tab === 'structure' && (
-                <SpadeConsole
-                  as="section"
-                  className="glp__console"
-                  crest="flat"
-                  foot="foot"
-                  title="Blind Structure"
-                  pill={
-                    panelBlindLevels.some((l) => !l.isBreak)
-                      ? `${panelBlindLevels.filter((l) => !l.isBreak).length} Levels`
-                      : entry.gameLabel
-                  }
+                <section
+                  className="glp__section"
                   id="glp-panel-structure"
                   role="tabpanel"
                   aria-labelledby="glp-tab-structure"
                   tabIndex={0}
                 >
+                  <h3 className="glp__h">Blind Structure</h3>
                   {panelBlindLevels.length ? (
                     <div className="glp__tablewrap">
                       <table className="glp__table">
@@ -1198,22 +1131,18 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           : 'Loading Structure'}
                     </p>
                   )}
-                </SpadeConsole>
+                </section>
               )}
 
               {entry.kind === 'mtt' && tab === 'payouts' && (
-                <SpadeConsole
-                  as="section"
-                  className="glp__console"
-                  crest="flat"
-                  foot="foot"
-                  title="Payouts"
-                  pill={panelPayouts.length ? `${panelPayouts.length} Paid` : entry.gameLabel}
+                <section
+                  className="glp__section"
                   id="glp-panel-payouts"
                   role="tabpanel"
                   aria-labelledby="glp-tab-payouts"
                   tabIndex={0}
                 >
+                  <h3 className="glp__h">Payouts</h3>
                   {tournament && panelPayouts.length > 0 ? (
                     <>
                       <div className="glp__tablewrap">
@@ -1243,14 +1172,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                                         same cent-rounded amount settlement uses. */}
                                     {panelPlaceLadderPool === null
                                       ? '-'
-                                      : formatPrizeAtUnit(
-                                          placePrize(
-                                            panelPlaceLadderPool,
-                                            panelPayouts,
-                                            p.place,
-                                            panelUnitCents
-                                          ),
-                                          panelUnitCents
+                                      : formatTableChips(
+                                          placePrize(panelPlaceLadderPool, panelPayouts, p.place)
                                         )}
                                   </td>
                                 )}
@@ -1273,7 +1196,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                           : 'Loading Payouts'}
                     </p>
                   )}
-                </SpadeConsole>
+                </section>
               )}
 
               {/* NO TAB CONDITION (2026-08-26). The board's Rules column is
@@ -1283,20 +1206,20 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                   title attribute needs a hover this panel's traffic does not
                   have. It renders under all three tabs, as the plaque does. */}
               {entry.rules.length > 0 && (
-                <SpadeConsole
-                  as="section"
-                  className="glp__console"
-                  crest="flat"
-                  foot="foot"
-                  title="Format"
-                  pill={entry.gameLabel}
-                >
+                <section className="glp__section">
+                  <h3 className="glp__h">Format</h3>
                   <ul className="glp__rules">
                     {entry.rules.map((r) => (
-                      <RuleLine key={r.key} r={titleCaseRule(r)} lit />
+                      <li key={r.key}>
+                        <b>
+                          {r.label}
+                          {r.detail ? ` ${r.detail}` : ''}
+                        </b>
+                        <span>{r.tip}</span>
+                      </li>
                     ))}
                   </ul>
-                </SpadeConsole>
+                </section>
               )}
 
               {entry.kind === 'mtt' && (

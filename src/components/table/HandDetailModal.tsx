@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  HAND DETAIL MODAL — the Previous Hand breakdown  #ClubArenaConsole
+ *  HAND DETAIL MODAL — the Previous Hand breakdown  #SMARTERCASINOREALISM
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Opened by tapping the Previous Hand card, or from a row of the Hand History
@@ -14,9 +14,9 @@
  *                  amount, the stack left after each action, the board as it
  *                  came, the running pot, then the showdown and the drop.
  *
- * Header carries date · stakes · hand number, REPLAY for THE HAND ON SCREEN
- * and the two ways to take it away with you. The bottom bar pages through the
- * table's recorded hands (newest at the right).
+ * Header carries date · stakes · hand number, REPLAY and SHARE for THE HAND ON
+ * SCREEN. The bottom bar pages through the table's recorded hands (newest at
+ * the right).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * 2026-09-04 — ONE RECONSTRUCTION, ONE FETCH
@@ -34,22 +34,6 @@
  * with the panel, the archive or the jackpot rundown. The subject is pinned by
  * hand id, not by position: a new hand landing while the player reads does not
  * silently move them to its neighbour.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * THE CONSOLE (#ClubArenaConsole). The sheet was a rounded panel with a grey
- * header bar carrying three 32px square icon buttons, a pill tab strip, a
- * rounded card per showdown row, bordered board blocks, a boxed rake panel and
- * a rounded "Show What Would Have Come" button. The spade master is the frame
- * now: the table is the eyebrow, HAND DETAIL is engraved in the header well,
- * the hand number sits in the well's painted pill slot, every board, pot,
- * showdown row and rake figure is a ROW on the black glass, and REPLAY /
- * CLOSE are the plates painted into the foot.
- *
- * WHAT DID NOT MOVE. The sheet's GEOMETRY is unchanged and is pinned by
- * tests/unit/handHistorySheets.test.tsx: three quarters of the height on a
- * phone, anchored to the bottom, so there is a backdrop left to tap, and the
- * safe-area inset paid at the top. So are drag-to-dismiss, the focus trap, the
- * tablist, the subject-by-id pinning, the rake fetch and every copy control.
  */
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
@@ -65,7 +49,6 @@ import './HandDetailModal.css';
 import { blindLabel, gameTypeLabel, money, stamp } from '../../utils/handFormat';
 import { handDeepLink } from '../../lib/handHistoryLive';
 import { StatsFactsService, type HandRakeShare } from '../../services/StatsFactsService';
-import { SpadeConsole } from '../console/SpadeConsole';
 
 export interface HandDetailModalProps {
   isOpen: boolean;
@@ -576,21 +559,30 @@ export function HandDetailModal({
       }
     : undefined;
 
-  /* THE TOP OF THE SHEET. It is the drag affordance and, more to the point,
-     the strip that pays the safe-area inset so the crest never lands under
-     the phone's clock - pinned by tests/unit/handHistorySheets.test.tsx in
-     both places it can vanish. */
-  const headerStrip = (
+  const grabHandle = (
     <div
-      className="hdm-header"
+      className="hdm-grab"
       aria-hidden="true"
       onPointerDown={onGrabDown}
       onPointerMove={onGrabMove}
       onPointerUp={onGrabUp}
       onPointerCancel={onGrabUp}
     >
-      <span className="hdm-grab" />
+      <span />
     </div>
+  );
+
+  const closeBtn = (
+    <button type="button" className="hdm-icon-btn" aria-label="Close" onClick={onClose}>
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path
+          d="M5 5l10 10M15 5L5 15"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
   );
 
   if (!isOpen) return null;
@@ -611,27 +603,20 @@ export function HandDetailModal({
           style={sheetStyle}
           onClick={(e) => e.stopPropagation()}
         >
-          {headerStrip}
-          <SpadeConsole
-            as="div"
-            className="hdm-console"
-            eyebrow="This Table"
-            title="Hand Detail"
-            foot="foot"
-          >
-            <div className="hdm-empty">
-              {loadState === 'loading'
-                ? 'Loading The Hands For This Table'
-                : loadState === 'failed'
-                  ? 'Could Not Load The Hands For This Table. Close And Try Again.'
-                  : viewerSeated
-                    ? 'No Completed Hands For You At This Table Yet. Play A Hand To The End And It Will Appear Here.'
-                    : 'You Are Watching. Hands Are Recorded For The Players Dealt Into Them. Take A Seat And Yours Will Appear Here.'}
-            </div>
-            <button type="button" className="hdm-word-btn" aria-label="Close" onClick={onClose}>
-              Close
-            </button>
-          </SpadeConsole>
+          {grabHandle}
+          <div className="hdm-header">
+            <span className="hdm-title">Hand Detail</span>
+            <div className="hdm-header__actions">{closeBtn}</div>
+          </div>
+          <div className="hdm-empty">
+            {loadState === 'loading'
+              ? 'Loading The Hands For This Table'
+              : loadState === 'failed'
+                ? 'Could Not Load The Hands For This Table. Close And Try Again.'
+                : viewerSeated
+                  ? 'No Completed Hands For You At This Table Yet. Play A Hand To The End And It Will Appear Here.'
+                  : 'You Are Watching. Hands Are Recorded For The Players Dealt Into Them. Take A Seat And Yours Will Appear Here.'}
+          </div>
         </div>
       </div>
     );
@@ -661,45 +646,55 @@ export function HandDetailModal({
         style={sheetStyle}
         onClick={(e) => e.stopPropagation()}
       >
-        {headerStrip}
-        <SpadeConsole
-          as="div"
-          className="hdm-console"
-          eyebrow={hand.tableName || 'This Table'}
-          title="Hand Detail"
-          /* The hand number in the well's painted pill slot: it is what every
-             dispute and every chat about a hand opens with. */
-          pill={`#${hand.handNumber}`}
-          pillInk="blue"
-          plates={{
-            /* The steel plate closes; the blue glass carries the one thing a
-               player comes back to a finished hand for. With no replay handler
-               (the share route, the lobby) the plate says so rather than being
-               painted and empty. */
-            secondary: { label: 'Close', onClick: onClose, 'aria-label': 'Close' },
-            primary: onReplay
-              ? {
-                  label: 'Replay',
-                  ink: 'white' as const,
-                  title: 'Video Replay',
-                  'aria-label': 'Video Replay',
-                  onClick: () => onReplay(hand),
-                }
-              : { label: 'No Replay', ink: 'muted' as const, disabled: true },
-          }}
-        >
-          <div className="hdm-subheader">
-            <span>{stamp(model.playedAt) || new Date(hand.timestamp).toLocaleString()}</span>
-            <span>
-              {blindLabel(model.smallBlind)} / {blindLabel(model.bigBlind)}
-              {variant ? <em className="hdm-variant">{variant}</em> : null}
-            </span>
+        {grabHandle}
+        <div className="hdm-header">
+          <div className="hdm-header__titles">
+            <span className="hdm-eyebrow">{hand.tableName || 'This Table'}</span>
+            <span className="hdm-title">Hand Detail</span>
           </div>
+          <div className="hdm-header__actions">
+            {onReplay && (
+              <button
+                type="button"
+                className="hdm-icon-btn"
+                title="Video Replay"
+                aria-label="Video Replay"
+                onClick={() => onReplay(hand)}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <circle cx="10" cy="10" r="8.5" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M8 6.5v7l5.5-3.5z" fill="currentColor" />
+                </svg>
+              </button>
+            )}
+            {onShare && (
+              <button
+                type="button"
+                className="hdm-icon-btn"
+                title="Share Hand"
+                aria-label="Share Hand"
+                onClick={() => onShare(hand)}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path
+                    d="M13 5l-6 3.2M7 11.8L13 15M15 3.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM5 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm10 5.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                </svg>
+              </button>
+            )}
+            {closeBtn}
+          </div>
+        </div>
 
-          {/* TAKING THE HAND WITH YOU: the number, the link, and the share
-              sheet - three lit words on one engraved row, because they are one
-              intention. Share used to be a glyph in the header bar. */}
-          <div className="hdm-sn">
+        <div className="hdm-subheader">
+          <span>{stamp(model.playedAt) || new Date(hand.timestamp).toLocaleString()}</span>
+          <span>
+            {blindLabel(model.smallBlind)} / {blindLabel(model.bigBlind)}
+            {variant ? <em className="hdm-variant">{variant}</em> : null}
+          </span>
+          <span className="hdm-sn">
             <button
               type="button"
               className="hdm-copy"
@@ -717,199 +712,191 @@ export function HandDetailModal({
               aria-label="Copy Link To This Hand"
               onClick={() => void copyText('link', handDeepLink(hand.id))}
             >
-              Link
-              <span className="hdm-copy__hint">{copied === 'link' ? 'Copied' : 'Copy'}</span>
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M8.5 11.5l3-3M7 13a3 3 0 0 1 0-4.2l2-2a3 3 0 0 1 4.2 4.2l-.6.6M13 7a3 3 0 0 1 0 4.2l-2 2a3 3 0 0 1-4.2-4.2l.6-.6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="hdm-copy__hint">{copied === 'link' ? 'Copied' : 'Link'}</span>
             </button>
-            {onShare && (
-              <button
-                type="button"
-                className="hdm-copy"
-                title="Share Hand"
-                aria-label="Share Hand"
-                onClick={() => onShare(hand)}
-              >
-                Share
-                <span className="hdm-copy__hint">Send</span>
-              </button>
-            )}
-          </div>
+          </span>
+        </div>
 
-          <div
-            className="hdm-body"
-            id="hdm-panel-body"
-            role="tabpanel"
-            aria-labelledby={tab === 'summary' ? 'hdm-tab-summary' : 'hdm-tab-detail'}
-            tabIndex={0}
-          >
-            {tab === 'detail' ? (
-              <HandDetailView
-                model={model}
-                currentUserId={heroId}
-                currentUserName={currentUserName}
-                badge={variant}
-                viewerFacts={hand.heroFacts}
-                footer={rakeShare ? <HandRakeShareBlock share={rakeShare} /> : null}
-              />
-            ) : (
-              <>
-                <div className="hdm-potline hdm-potline--top">
-                  <span className="hdm-potline__label">Pot</span>
-                  <span className="hdm-potline__pots">
-                    {model.pots.map((p, i) => (
-                      <span key={`${i}-${p.label}`}>
-                        {p.label} {money(p.amount)}
-                      </span>
-                    ))}
-                  </span>
-                  {(model.rake > 0 || model.bbjFee > 0) && (
-                    <span className="hdm-potline__drop">
-                      {model.rake > 0 ? `Rake ${money(model.rake)}` : ''}
-                      {model.rake > 0 && model.bbjFee > 0 ? ' · ' : ''}
-                      {model.bbjFee > 0 ? `Jackpot ${money(model.bbjFee)}` : ''}
+        <div
+          className="hdm-body"
+          id="hdm-panel-body"
+          role="tabpanel"
+          aria-labelledby={tab === 'summary' ? 'hdm-tab-summary' : 'hdm-tab-detail'}
+          tabIndex={0}
+        >
+          {tab === 'detail' ? (
+            <HandDetailView
+              model={model}
+              currentUserId={heroId}
+              currentUserName={currentUserName}
+              badge={variant}
+              viewerFacts={hand.heroFacts}
+              footer={rakeShare ? <HandRakeShareBlock share={rakeShare} /> : null}
+            />
+          ) : (
+            <>
+              <div className="hdm-potline hdm-potline--top">
+                <span className="hdm-potline__label">Pot</span>
+                <span className="hdm-potline__pots">
+                  {model.pots.map((p, i) => (
+                    <span key={`${i}-${p.label}`}>
+                      {p.label} {money(p.amount)}
                     </span>
-                  )}
-                </div>
-
-                <BoardsBlock model={model} isBomb={isBomb} />
-
-                {onRabbitHunt ? (
-                  <RabbitHuntReplayBlock
-                    key={hand.id}
-                    hand={hand}
-                    model={model}
-                    onRabbitHunt={onRabbitHunt}
-                    userId={rabbitUserId}
-                  />
-                ) : null}
-
-                {showdownRows.length === 0 ? (
-                  <div className="hdm-empty hdm-empty--inline">
-                    No Showdown{takenBy ? ` · Pot Taken By ${takenBy}` : ''}
-                  </div>
-                ) : (
-                  <section className="hdm-showdown" aria-label="Showdown">
-                    <header className="hdm-section-head">
-                      <span>Showdown</span>
-                      {model.hiLo && <span className="hdm-section-count">High And Low</span>}
-                    </header>
-                    {showdownRows.map((row) => (
-                      <SummaryRow
-                        key={row.key}
-                        row={row}
-                        isYou={isYou(row.userId, row.name)}
-                        muckCount={muckCount}
-                        collected={collectedBy.get(row.userId)}
-                      />
-                    ))}
-                  </section>
+                  ))}
+                </span>
+                {(model.rake > 0 || model.bbjFee > 0) && (
+                  <span className="hdm-potline__drop">
+                    {model.rake > 0 ? `Rake ${money(model.rake)}` : ''}
+                    {model.rake > 0 && model.bbjFee > 0 ? ' · ' : ''}
+                    {model.bbjFee > 0 ? `Jackpot ${money(model.bbjFee)}` : ''}
+                  </span>
                 )}
+              </div>
 
-                {/* Your own cards on a hand you folded: the table never saw them,
-                    so they are not a showdown row. They are still yours to see. */}
-                {(() => {
-                  const me = model.players.find((p) => p.userId === heroId);
-                  if (!me?.privateHole?.length || showdownRows.some((r) => r.userId === heroId))
-                    return null;
-                  return (
-                    <section className="hdm-yours" aria-label="Your Cards">
-                      <header className="hdm-section-head">
-                        <span>Your Cards</span>
-                        <span className="hdm-section-count">Folded, Not Shown</span>
-                      </header>
-                      <div className="hdm-sd is-you">
-                        <div className="hdm-sd__who">
-                          <span className="hdm-sd__name">{me.username}</span>
-                          <span className="hdm-sd__pos">{me.position}</span>
-                        </div>
-                        <div className="hdm-sd__cards">
-                          {me.privateHole.map((c, i) => (
-                            <CardImage key={i} card={c} size="sm" className="hdm-private" />
-                          ))}
-                        </div>
-                        <div className="hdm-sd__right">
-                          <span
-                            className={`hdm-sd__net${me.net < 0 ? ' is-down' : me.net > 0 ? ' is-up' : ''}`}
-                          >
-                            {`${me.net > 0 ? '+' : me.net < 0 ? '-' : ''}${money(Math.abs(me.net))}`}
-                          </span>
-                        </div>
+              <BoardsBlock model={model} isBomb={isBomb} />
+
+              {onRabbitHunt ? (
+                <RabbitHuntReplayBlock
+                  key={hand.id}
+                  hand={hand}
+                  model={model}
+                  onRabbitHunt={onRabbitHunt}
+                  userId={rabbitUserId}
+                />
+              ) : null}
+
+              {showdownRows.length === 0 ? (
+                <div className="hdm-empty hdm-empty--inline">
+                  No Showdown{takenBy ? ` · Pot Taken By ${takenBy}` : ''}
+                </div>
+              ) : (
+                <section className="hdm-showdown" aria-label="Showdown">
+                  <header className="hdm-section-head">
+                    <span>Showdown</span>
+                    {model.hiLo && <span className="hdm-section-count">High And Low</span>}
+                  </header>
+                  {showdownRows.map((row) => (
+                    <SummaryRow
+                      key={row.key}
+                      row={row}
+                      isYou={isYou(row.userId, row.name)}
+                      muckCount={muckCount}
+                      collected={collectedBy.get(row.userId)}
+                    />
+                  ))}
+                </section>
+              )}
+
+              {/* Your own cards on a hand you folded: the table never saw them,
+                  so they are not a showdown row. They are still yours to see. */}
+              {(() => {
+                const me = model.players.find((p) => p.userId === heroId);
+                if (!me?.privateHole?.length || showdownRows.some((r) => r.userId === heroId))
+                  return null;
+                return (
+                  <section className="hdm-yours" aria-label="Your Cards">
+                    <header className="hdm-section-head">
+                      <span>Your Cards</span>
+                      <span className="hdm-section-count">Folded, Not Shown</span>
+                    </header>
+                    <div className="hdm-sd is-you">
+                      <div className="hdm-sd__who">
+                        <span className="hdm-sd__name">{me.username}</span>
+                        <span className="hdm-sd__pos">{me.position}</span>
                       </div>
-                    </section>
-                  );
-                })()}
-              </>
-            )}
-          </div>
+                      <div className="hdm-sd__cards">
+                        {me.privateHole.map((c, i) => (
+                          <CardImage key={i} card={c} size="sm" className="hdm-private" />
+                        ))}
+                      </div>
+                      <div className="hdm-sd__right">
+                        <span
+                          className={`hdm-sd__net${me.net < 0 ? ' is-down' : me.net > 0 ? ' is-up' : ''}`}
+                        >
+                          {`${me.net > 0 ? '+' : me.net < 0 ? '-' : ''}${money(Math.abs(me.net))}`}
+                        </span>
+                      </div>
+                    </div>
+                  </section>
+                );
+              })()}
+            </>
+          )}
+        </div>
 
-          <div className="hdm-nav">
-            <button
-              type="button"
-              className="hdm-nav__arrow"
-              disabled={index >= total - 1}
-              aria-label="Older Hand"
-              onClick={() => goTo(index + 1)}
-            >
-              &#9664;
-            </button>
-            <div className="hdm-nav__track">
-              <span className="hdm-nav__label">
-                {displayPos}/{total}
-              </span>
-              {/* The only thing drawn on this sheet: a position control the
-                  master paints nowhere, cut down to an engraved track and a
-                  square lit handle. Fifty hands is fifty taps without it. */}
-              <input
-                type="range"
-                min={1}
-                max={Math.max(1, total)}
-                value={displayPos}
-                onChange={(e) => goTo(total - Number(e.target.value))}
-                aria-label="Hand Position"
-              />
-            </div>
-            <button
-              type="button"
-              className="hdm-nav__arrow"
-              disabled={index <= 0}
-              aria-label="Newer Hand"
-              onClick={() => goTo(index - 1)}
-            >
-              &#9654;
-            </button>
-          </div>
-
-          <div
-            className="hdm-tabs"
-            role="tablist"
-            aria-label="Hand Detail View"
-            onKeyDown={onTabsKeyDown}
+        <div className="hdm-nav">
+          <button
+            type="button"
+            className="hdm-nav__arrow"
+            disabled={index >= total - 1}
+            aria-label="Older Hand"
+            onClick={() => goTo(index + 1)}
           >
-            <button
-              type="button"
-              role="tab"
-              id="hdm-tab-summary"
-              aria-selected={tab === 'summary'}
-              aria-controls="hdm-panel-body"
-              tabIndex={tab === 'summary' ? 0 : -1}
-              className={`hdm-tab${tab === 'summary' ? ' hdm-tab--active' : ''}`}
-              onClick={() => setTab('summary')}
-            >
-              Hand Summary
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="hdm-tab-detail"
-              aria-selected={tab === 'detail'}
-              aria-controls="hdm-panel-body"
-              tabIndex={tab === 'detail' ? 0 : -1}
-              className={`hdm-tab${tab === 'detail' ? ' hdm-tab--active' : ''}`}
-              onClick={() => setTab('detail')}
-            >
-              Hand Detail
-            </button>
+            &#9664;
+          </button>
+          <div className="hdm-nav__track">
+            <span className="hdm-nav__label">
+              {displayPos}/{total}
+            </span>
+            <input
+              type="range"
+              min={1}
+              max={Math.max(1, total)}
+              value={displayPos}
+              onChange={(e) => goTo(total - Number(e.target.value))}
+              aria-label="Hand Position"
+            />
           </div>
-        </SpadeConsole>
+          <button
+            type="button"
+            className="hdm-nav__arrow"
+            disabled={index <= 0}
+            aria-label="Newer Hand"
+            onClick={() => goTo(index - 1)}
+          >
+            &#9654;
+          </button>
+        </div>
+
+        <div
+          className="hdm-tabs"
+          role="tablist"
+          aria-label="Hand Detail View"
+          onKeyDown={onTabsKeyDown}
+        >
+          <button
+            type="button"
+            role="tab"
+            id="hdm-tab-summary"
+            aria-selected={tab === 'summary'}
+            aria-controls="hdm-panel-body"
+            tabIndex={tab === 'summary' ? 0 : -1}
+            className={`hdm-tab${tab === 'summary' ? ' hdm-tab--active' : ''}`}
+            onClick={() => setTab('summary')}
+          >
+            Hand Summary
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="hdm-tab-detail"
+            aria-selected={tab === 'detail'}
+            aria-controls="hdm-panel-body"
+            tabIndex={tab === 'detail' ? 0 : -1}
+            className={`hdm-tab${tab === 'detail' ? ' hdm-tab--active' : ''}`}
+            onClick={() => setTab('detail')}
+          >
+            Hand Detail
+          </button>
+        </div>
       </div>
     </div>
   );

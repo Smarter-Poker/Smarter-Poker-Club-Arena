@@ -79,7 +79,6 @@ import {
   ordinal,
   placePrize,
   resolvePayoutStructure,
-  tournamentRowUnitCents,
 } from './types';
 import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
@@ -587,12 +586,7 @@ export default function RewardsTab({
               // first place is representative of the band.
               const prize =
                 placeLadderPool !== null && placeLadderPool > 0 && parsedPlaces
-                  ? placePrize(
-                      placeLadderPool,
-                      parsedPlaces,
-                      band.fromPlace,
-                      tournamentRowUnitCents(tournament)
-                    )
+                  ? placePrize(placeLadderPool, parsedPlaces, band.fromPlace)
                   : 0;
 
               return (

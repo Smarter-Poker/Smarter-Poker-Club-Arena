@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
@@ -227,10 +228,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'legendary',
     requirement: 1,
-    // 0 since 2026-09-09. See the note above `awardRewards`: the door this paid
-    // through is retired and there is no funded automatic source, so a non-zero
-    // figure here only ever advertised a credit that could not land.
-    chipReward: 0,
+    chipReward: 500,
   },
   {
     id: 'straight_flush',
@@ -283,8 +281,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'rare',
     requirement: 30,
-    // 0 since 2026-09-09 - see `awardRewards`.
-    chipReward: 0,
+    chipReward: 100,
   },
   {
     id: 'streak_100',
@@ -294,8 +291,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'legendary',
     requirement: 100,
-    // 0 since 2026-09-09 - see `awardRewards`.
-    chipReward: 0,
+    chipReward: 500,
   },
 ];
 
@@ -390,14 +386,9 @@ class AchievementServiceClass {
    *
    * `fn_achievement_record_progress` does the whole thing in one statement:
    * progress only rises, the unlock is set once and never cleared, and it
-   * returns true ONLY on the call that flipped it - so `awardRewards` fires
-   * exactly once even with several tabs open.
-   *
-   * CORRECTED 2026-09-09: this sentence used to end "so `awardRewards`, which
-   * moves real chips through `add_to_promo_wallet`, fires exactly once". It
-   * moves no chips and has not since 2026-09-03, when
-   * `20260903234327_the_phantom_promo_pool_is_retired_and_its_doors_are_shut`
-   * made that function raise unconditionally. See `awardRewards`.
+   * returns true ONLY on the call that flipped it — so `awardRewards`, which
+   * moves real chips through `add_to_promo_wallet`, fires exactly once even
+   * with several tabs open.
    */
   async incrementProgress(
     userId: string,
@@ -520,46 +511,23 @@ class AchievementServiceClass {
   // Rewards
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * NO ACHIEVEMENT PAYS CHIPS (2026-09-09).
-   *
-   * This used to call `add_to_promo_wallet` for the three achievements that
-   * carried a `chipReward` (royal_flush 500, streak_30 100, streak_100 500).
-   * That function has raised unconditionally since 2026-09-03
-   * (`20260903234327_the_phantom_promo_pool_is_retired_and_its_doors_are_shut`):
-   * "A deposit bonus, referral bonus or achievement reward needs a funded
-   * source before it can pay ... leaderboards are the only automatic promo
-   * payout. (Dan, 2026-09-03.)"
-   *
-   * The raise was only `reportError`ed, and the notification below plus the
-   * MILESTONE_UNLOCKED toast then told the player they had earned the chips.
-   * Nothing repaired that afterwards and nothing could: `_record` calls this
-   * only when `fn_achievement_record_progress` returns true, which happens
-   * ONCE EVER per (user, achievement), so every one of those credits was lost
-   * the moment it was announced.
-   *
-   * There is no funded automatic source to route it to, and Dan's ruling of
-   * 2026-09-05 is broader than this file: "NOTHING EVER 'EARNS CHIPS' ONLY
-   * EVER DIAMONDS. MAKE SURE THATS THE CASE GLOBALLY!"
-   * (`tests/a-reward-is-paid-in-diamonds.law.test.ts`). So the three figures
-   * are 0 and the credit is gone rather than replaced. A player is told what
-   * they unlocked, which is true, and never told about money.
-   *
-   * The guard below is not a repair - nothing is repaired here. It exists so
-   * that a future editor who sets a `chipReward` finds out from an error
-   * instead of from a player who was promised chips nobody sent.
-   */
   private async awardRewards(userId: string, achievement: Achievement): Promise<void> {
+    // Award chips
     if (achievement.chipReward && achievement.chipReward > 0) {
-      reportError(
-        new Error(
-          `Achievement "${achievement.id}" carries chipReward=${achievement.chipReward} but no ` +
-            'funded automatic door exists to pay it. Route it through a funded owner path or ' +
-            'set it to 0; do not announce it.'
-        ),
-        'AchievementService.awardRewards.unfundedChipReward',
-        { userId: userId.slice(0, 8), achievementName: achievement.name }
+      const { error: rewardErr } = await retryAsync(
+        () =>
+          // Round 19: drop p_description (not a prod param).
+          supabase.rpc('add_to_promo_wallet', {
+            p_user_id: userId,
+            p_amount: achievement.chipReward,
+          }),
+        3
       );
+      if (rewardErr)
+        reportError(rewardErr, 'AchievementService.awardRewards', {
+          userId: userId.slice(0, 8),
+          achievementName: achievement.name,
+        });
     }
 
     // Create notification

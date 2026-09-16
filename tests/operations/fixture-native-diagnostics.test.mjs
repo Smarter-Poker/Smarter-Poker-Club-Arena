@@ -6,6 +6,9 @@ import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
+import * as markerFs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer } from 'node:http';
 import * as runtimeFiles from '../../operations/release/fixture/runtime-files.mjs';
 import {
@@ -430,4 +433,90 @@ test('only the fixed native smoke source line is retained from a private stack',
     error: 'AssertionError',
     native_line: 324,
   });
+});
+
+// Run the maintained oracle writer and unchanged service handoff against real
+// files. Only the write scheduling is controlled; no DB/browser is started.
+async function oracleCompletionFixture(action, { delayed = false, failWrite = false } = {}) {
+  const source = readFileSync(new URL('../../operations/release/fixture/native-smoke.mjs', import.meta.url), 'utf8');
+  const oracle = source.slice(source.indexOf('async function oracle()'), source.indexOf('async function services()'));
+  const start = oracle.includes('  const completionStage =')
+    ? oracle.indexOf('  const completionStage =')
+    : oracle.indexOf("  await writeFile('/tmp/native-smoke-oracle-complete'");
+  assert.ok(start >= 0);
+  const writer = oracle.slice(start, oracle.indexOf('  console.log(', start));
+  const handoff = source.slice(source.indexOf("    await writeFile(`${root}/ready`"));
+  const reader = handoff.slice(handoff.indexOf('    await eventually('), handoff.indexOf('    databaseOwner.check();'));
+  const dir = await markerFs.mkdtemp(join(tmpdir(), 'fixture-oracle-completion-'));
+  const target = join(dir, 'complete');
+  const stage = join(dir, 'private', 'complete');
+  await markerFs.mkdir(join(dir, 'private'), { mode: 0o700 });
+  const mapped = path => {
+    if (path === '/tmp/native-smoke-oracle-complete') return target;
+    assert.equal(path, '/tmp/qualification/native-smoke-oracle-complete');
+    return stage;
+  };
+  let release, entered, closed = 0;
+  const blocked = new Promise(resolve => { entered = resolve; });
+  const proceed = new Promise(resolve => { release = resolve; });
+  const open = async (path, flags, mode) => {
+    const handle = await markerFs.open(mapped(path), flags, mode);
+    return {
+      async writeFile(bytes) {
+        entered();
+        if (delayed) await proceed;
+        if (failWrite) throw Object.assign(new Error('fixture write refusal'), { code: 'ENOSPC' });
+        await handle.writeFile(bytes);
+      },
+      async close() { await handle.close(); closed += 1; },
+    };
+  };
+  const writeFile = async (path, bytes, options) => {
+    const handle = await open(path, options.flag, options.mode);
+    try { await handle.writeFile(bytes); } finally { await handle.close(); }
+  };
+  const publish = () => Function('open', 'writeFile', 'link', 'unlink', `return (async () => {${writer}})();`)(
+    open, writeFile, (from, to) => markerFs.link(mapped(from), mapped(to)), path => markerFs.unlink(mapped(path)));
+  const consume = eventually => Function('eventually', 'access', 'readFile', 'assert', `return (async () => {${reader}})();`)(
+    eventually, path => markerFs.access(mapped(path)), (path, encoding) => markerFs.readFile(mapped(path), encoding), assert);
+  try { await action({ publish, consume, blocked, release, target, stage, closed: () => closed }); }
+  finally { release(); await markerFs.rm(dir, { recursive: true, force: true }); }
+}
+
+test('oracle completion stays invisible during delayed write and satisfies the unchanged reader after publication', async () => {
+  await oracleCompletionFixture(async fixture => {
+    const writing = fixture.publish();
+    try {
+      await fixture.blocked;
+      await fixture.consume(async (check, deadline) => {
+        assert.equal(deadline, 90000);
+        assert.equal(await check(), false, 'incomplete marker became visible to service');
+        fixture.release();
+        await writing;
+        assert.equal(await check(), true);
+      });
+      assert.equal((await markerFs.stat(fixture.target)).mode & 0o777, 0o644);
+      assert.equal(fixture.closed(), 1);
+      await assert.rejects(markerFs.access(fixture.stage), { code: 'ENOENT' });
+    } finally { fixture.release(); await writing; }
+  }, { delayed: true });
+});
+
+test('oracle completion refuses an existing final marker and cleans its owned stage', async () => {
+  await oracleCompletionFixture(async fixture => {
+    await markerFs.writeFile(fixture.target, 'previous', { flag: 'wx' });
+    await assert.rejects(fixture.publish(), { code: 'EEXIST' });
+    assert.equal(await markerFs.readFile(fixture.target, 'utf8'), 'previous');
+    assert.equal(fixture.closed(), 1);
+    await assert.rejects(markerFs.access(fixture.stage), { code: 'ENOENT' });
+  });
+});
+
+test('oracle completion cleans a failed staged write without publishing or leaking its descriptor', async () => {
+  await oracleCompletionFixture(async fixture => {
+    await assert.rejects(fixture.publish(), { code: 'ENOSPC' });
+    assert.equal(fixture.closed(), 1);
+    await assert.rejects(markerFs.access(fixture.target), { code: 'ENOENT' });
+    await assert.rejects(markerFs.access(fixture.stage), { code: 'ENOENT' });
+  }, { failWrite: true });
 });

@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, writeFile, readFile, access, open, readdir, lstat, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, access, open, readdir, lstat, unlink, link } from 'node:fs/promises';
 import pg from 'pg';
 import { chromium } from '@playwright/test';
 import {
@@ -235,10 +235,20 @@ async function oracle() {
   } finally {
     await browser.close();
   }
-  await writeFile('/tmp/native-smoke-oracle-complete', 'complete', {
-    flag: 'wx',
-    mode: 0o644,
-  });
+  // Existence is the service's handoff signal: publish only completed bytes.
+  // A same-filesystem hard link preserves exclusive creation of the final name.
+  const completionStage = '/tmp/qualification/native-smoke-oracle-complete';
+  const completionFile = await open(completionStage, 'wx', 0o644);
+  try {
+    try {
+      await completionFile.writeFile('complete');
+    } finally {
+      await completionFile.close();
+    }
+    await link(completionStage, '/tmp/native-smoke-oracle-complete');
+  } finally {
+    await unlink(completionStage);
+  }
   console.log(
     JSON.stringify({
       scope: 'native-service-smoke',

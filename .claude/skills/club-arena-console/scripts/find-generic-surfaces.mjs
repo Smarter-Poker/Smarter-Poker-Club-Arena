@@ -52,6 +52,57 @@ const VISUAL_TEST =
    the most generic surface in the app, behind a law that would have applied to
    its rebuild anyway. */
 
+/* INTERNAL ONLY: Dan, 2026-09-14 - "THESE POP UPS OR EVENT LOGS (IF INTERNAL
+   USE ONLY) DO NOT NEED DYNAMIC IMAGES AND POP UPS." A surface no player and
+   no club operator can reach - the QA scenario harness, the bus event log,
+   the platform's own engine/analytics/ads dashboards - is a tool for the
+   house. It is held to the copy laws and the colour schema, never to the
+   painted chassis, and it is off the sweep so nobody spends a round of art on
+   a page four people open. Anything a CLUB owner reaches is customer-facing
+   and stays in. */
+const INTERNAL_ONLY = [
+  'src/pages/SimPage.tsx',
+  'src/pages/BusDevToolsPage.tsx',
+  'src/pages/admin/EngineDashboard.tsx',
+  'src/pages/admin/AnalyticsDashboard.tsx',
+  'src/pages/admin/HouseAdsPage.tsx',
+  'src/pages/AdminDashboardPage.tsx',
+  'src/pages/DriftIncidentsPage.tsx',
+  'src/pages/ClubFooterShowcasePage.tsx',
+  'src/pages/CustomizationStudioShowcasePage.tsx',
+];
+/* Everything under src/pages/dev/ is a showcase harness by definition. */
+const isInternal = (rel) => INTERNAL_ONLY.includes(rel) || rel.startsWith('src/pages/dev/');
+
+/* RULED, WITH THE REASON (2026-09-15). A surface can be finished work without
+   a test whose TITLE says so: the artwork contract may be phrased as "the
+   three pieces of artwork ship with the bundle", or the decision may be Dan's
+   own, made in review. These were the last rows in this inventory, and every
+   wave re-derived them from scratch before deciding not to touch them. They
+   are written down here instead, each with the ruling that closed it, so the
+   count reaches zero and a later agent reads the answer rather than guessing
+   at it again. Deleting a line here re-opens that surface deliberately. */
+const RULED = {
+  'src/components/table/ActionPanel.tsx':
+    'Dan art-directed the three action buttons by screenshot (2026-08-26: FOLD = RED, CHECK = BLUE, BET = GREEN) and gameplay-wears-the-house-colours pins those exact gradients; the raise overlay geometry is pinned by actionBarSliderAndFooter. Repainting either deletes a written law s subject.',
+  'src/components/table/BombPotOverlay.tsx':
+    'Felt cinematics, not a card (Dan 2026-09-09): inked to the schema, never framed in a console.',
+  'src/components/table/TournamentAnnouncementOverlay.tsx':
+    'Felt cinematics, same ruling as BombPotOverlay; inked 2026-09-14.',
+  'src/components/vip/DiamondTopUpModal.tsx':
+    'On the #SmarterCasinoRealism master, and diamond-checkout-mobile.spec.ts is its visual contract.',
+  'src/components/cash/CashGameCard.tsx':
+    'On approved master art: Dan supplied the three cash-card frames and the component prints into zones measured in percent of them. cashGameCard.test.tsx is the contract.',
+  'src/components/lobby/game-cards/NlhPremiumCard.tsx':
+    'On the approved NLH chassis art; club-lobby-premium-machine.test.ts pins the zone maths and the asset pack.',
+  'src/components/lobby/game-cards/layeredCard.tsx':
+    'Same approved lobby card family as NlhPremiumCard.',
+  'src/components/table/PreviousHandCard.tsx':
+    'One of three interchangeable 66px HUD tiles on an approved button asset; all-in-cannot-leave-and-the-hud-slot pins their geometry as a set.',
+  'src/components/bbj/BBJBasicPanel.tsx':
+    'Already on this standard: it renders as rows on the Bad Beat Jackpot console glass, so it has no frame of its own to rebuild.',
+};
+
 const spokenFor = new Set();
 try {
   for (const t of walk(join(ROOT, 'tests'))) {
@@ -84,8 +135,9 @@ for (const tsx of files) {
   const name = basename(tsx, '.tsx');
   const isSurface = /Page$|Modal$|Sheet$|Panel$|Overlay$|Dialog$|Banner$|Card$/.test(name);
   if (!isSurface) continue;
-  const css = [join(dirname(tsx), `${name}.css`), join(dirname(tsx), `${name}.module.css`)]
-    .find(existsSync);
+  const css = [join(dirname(tsx), `${name}.css`), join(dirname(tsx), `${name}.module.css`)].find(
+    existsSync
+  );
   const src = sources.get(tsx);
   const style = css ? readFileSync(css, 'utf8') : '';
   const both = src + style;
@@ -113,16 +165,20 @@ for (const tsx of files) {
        as generic sends an agent to rebuild a page that is pinned by contract
        to a different standard, which is how two pages were nominated at 193
        and 200 despite being finished work. */
-    master: count(both, /club-buttons\/|images\/challenges\/|images\/stats\/|--realism-|data-arena-surface|RewardsSurfaceHeader|CasinoSurfaceHeader/g),
+    master: count(
+      both,
+      /club-buttons\/|images\/challenges\/|images\/stats\/|--realism-|data-arena-surface|RewardsSurfaceHeader|CasinoSurfaceHeader/g
+    ),
     console: count(src, /SpadeConsole|PlateButton|ZoneText|sc-ink--/g),
     hover: count(style, /:hover/g),
     px: count(style, /font-size:\s*\d+(\.\d+)?px/g),
   };
-  row.spokenFor = spokenFor.has(rel);
+  row.internalOnly = isInternal(rel);
+  row.ruled = Object.prototype.hasOwnProperty.call(RULED, rel);
+  if (row.ruled) row.ruling = RULED[rel];
+  row.spokenFor = spokenFor.has(rel) || row.internalOnly || row.ruled;
   row.score =
-    row.master + row.console > 0 || row.spokenFor
-      ? 0
-      : row.radius * 2 + row.grad + row.hover * 5;
+    row.master + row.console > 0 || row.spokenFor ? 0 : row.radius * 2 + row.grad + row.hover * 5;
   rows.push(row);
 }
 rows.sort((a, b) => b.score - a.score || b.radius - a.radius);

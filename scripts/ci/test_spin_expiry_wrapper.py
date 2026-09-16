@@ -249,6 +249,111 @@ class SessionEnvironmentTests(unittest.TestCase):
                              self.lib.psql_environment('refund-control'))
 
 
+class RelationAuthorityTests(unittest.TestCase):
+    def setUp(self):
+        directory = Path(__file__).resolve().parents[2] / 'scripts' / 'qualification'
+        spec = importlib.util.spec_from_file_location(
+            'spin_expiry_relation_controls', directory / 'spin-expiry-committed-refund.py')
+        self.refund = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.refund)
+        captures = json.loads((directory / 'spin-expiry-committed-refund.authority.json').read_text())['captures']
+        self.rows = next(c['rows'] for c in captures
+                         if c['origin'] == 'fifo5-R2-current-payment-relations-1409.json')
+        self.roles = {'0': 'PUBLIC', '16481': 'authenticated', '16482': 'service_role'}
+
+    def test_retained_capture_normalizes_only_column_gaps_and_observed_role_oids(self):
+        original = copy.deepcopy(self.rows)
+        actual = copy.deepcopy(self.rows)
+        self.assertTrue(any(c['ordinal_position'] != index
+                            for row in original for index, c in enumerate(row['columns'], 1)))
+        for row in actual:
+            for index, column in enumerate(row['columns'], 1):
+                column['ordinal_position'] = index
+            for policy in row['policies'] or []:
+                policy['roles'] = policy['roles'].replace('16481', '16389').replace('16482', '16390')
+        actual_before = copy.deepcopy(actual)
+        observed = [{'oid': '16389', 'name': 'authenticated'}, {'oid': '16390', 'name': 'service_role'}]
+        observed_before = copy.deepcopy(observed)
+        actual_roles = self.refund.observed_policy_roles(observed)
+        self.assertEqual(actual_roles, {'0': 'PUBLIC', '16389': 'authenticated', '16390': 'service_role'})
+        self.assertEqual(self.refund.CAPTURED_POLICY_ROLES, self.roles)
+        expected = self.refund.relation_authority(self.rows, self.roles)
+        self.assertEqual(self.refund.relation_authority(actual, actual_roles), expected)
+        self.assertEqual(self.rows, original)
+        self.assertEqual(actual, actual_before)
+        self.assertEqual(observed, observed_before)
+        self.assertEqual(len(expected), len(original))
+        self.assertEqual(expected[0]['policies'][0]['roles'], ['PUBLIC'])
+        for before, after in zip(original, expected):
+            self.assertEqual({k: v for k, v in before.items() if k not in ('columns', 'policies')},
+                             {k: v for k, v in after.items() if k not in ('columns', 'policies')})
+            self.assertEqual(len(before['columns']), len(after['columns']))
+            self.assertEqual(before['policies'] is None, after['policies'] is None)
+            self.assertEqual(len(before['policies'] or []), len(after['policies'] or []))
+            for index, (old_column, new_column) in enumerate(zip(before['columns'], after['columns']), 1):
+                self.assertEqual(new_column, dict(old_column, ordinal_position=index))
+            for old_policy, new_policy in zip(before['policies'] or [], after['policies'] or []):
+                names = sorted(self.roles[oid] for oid in old_policy['roles'][1:-1].split(','))
+                self.assertEqual(new_policy, dict(old_policy, roles=names))
+
+    def test_real_column_and_policy_drift_remains_distinct(self):
+        expected = self.refund.relation_authority(self.rows, self.roles)
+        for change in ('column-order', 'type', 'default', 'nullability', 'policy-role', 'policy-expression'):
+            changed = copy.deepcopy(self.rows)
+            columns = changed[0]['columns']
+            if change == 'column-order':
+                first, second = columns[0]['ordinal_position'], columns[1]['ordinal_position']
+                columns[0], columns[1] = columns[1], columns[0]
+                columns[0]['ordinal_position'], columns[1]['ordinal_position'] = first, second
+            if change == 'type': columns[0]['data_type'] = 'text'
+            if change == 'default': columns[0]['column_default'] = None
+            if change == 'nullability': columns[0]['is_nullable'] = 'YES'
+            if change == 'policy-role': changed[0]['policies'][0]['roles'] = '{16482}'
+            if change == 'policy-expression': changed[0]['policies'][0]['using'] = 'true'
+            with self.subTest(change=change):
+                self.assertNotEqual(self.refund.relation_authority(changed, self.roles), expected)
+
+    def test_malformed_ordinals_columns_or_policy_role_arrays_refuse(self):
+        for ordinal in (0, -1, True, 1.5, '1', None):
+            changed = copy.deepcopy(self.rows)
+            changed[0]['columns'][0]['ordinal_position'] = ordinal
+            with self.subTest(ordinal=ordinal), self.assertRaises(RuntimeError):
+                self.refund.relation_authority(changed, self.roles)
+        for change in ('duplicate-ordinal', 'decreasing-ordinal', 'duplicate-column', 'missing-column'):
+            changed = copy.deepcopy(self.rows)
+            columns = changed[0]['columns']
+            if change == 'duplicate-ordinal': columns[1]['ordinal_position'] = columns[0]['ordinal_position']
+            if change == 'decreasing-ordinal': columns[0]['ordinal_position'] = columns[1]['ordinal_position'] + 1
+            if change == 'duplicate-column': columns[1]['column_name'] = columns[0]['column_name']
+            if change == 'missing-column': del columns[0]['column_name']
+            with self.subTest(change=change), self.assertRaises(RuntimeError):
+                self.refund.relation_authority(changed, self.roles)
+        for roles in ('{99999}', '{0,0}', '{}', '{16481,}', '{-1}', '{NULL}', '[16481]', ['16481'], None):
+            changed = copy.deepcopy(self.rows)
+            changed[0]['policies'][0]['roles'] = roles
+            with self.subTest(roles=roles), self.assertRaises(RuntimeError):
+                self.refund.relation_authority(changed, self.roles)
+        for mappings in ({'0': 'authenticated', '16481': 'authenticated', '16482': 'service_role'},
+                         {'0': 'PUBLIC', '16481': 'PUBLIC', '16482': 'service_role'},
+                         {'0': 'PUBLIC', '16481': '', '16482': 'service_role'}):
+            with self.subTest(mappings=mappings), self.assertRaises(RuntimeError):
+                self.refund.relation_authority(self.rows, mappings)
+
+    def test_observed_roles_require_exact_unique_names_and_positive_oid_bindings(self):
+        good = [{'oid': '16389', 'name': 'authenticated'}, {'oid': '16390', 'name': 'service_role'}]
+        invalid = [[], good[:1], good + [good[0]],
+                   [good[0], {'oid': '16390', 'name': 'authenticated'}],
+                   [good[0], {'oid': '16389', 'name': 'service_role'}],
+                   [good[0], {'oid': '16390', 'name': 'PUBLIC'}],
+                   [good[0], {'oid': '16390'}],
+                   [good[0], {'name': 'service_role'}]]
+        for oid in ('0', '-1', '1.5', '', 'abc', None, True):
+            invalid.append([good[0], {'oid': oid, 'name': 'service_role'}])
+        for observed in invalid:
+            with self.subTest(observed=observed), self.assertRaises(RuntimeError):
+                self.refund.observed_policy_roles(observed)
+
+
 class ProviderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

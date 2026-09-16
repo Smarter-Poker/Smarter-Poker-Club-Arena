@@ -6,11 +6,13 @@ Commits are intentionally NOT rolled back: the protected owner must dispose the
 whole allocation and retain uncertain originals. No production-capable default.
 """
 import argparse
+import copy
 import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import time
 
 
@@ -27,6 +29,64 @@ FROZEN = {
     DIRECTORY/'spin-expiry-lock-order.authority.json':
         '204c8528c4963c723139a2636fe7482abbad6ebcf3a247ec8a2f1de5fbccc09c',
 }
+# Raw R2 payment-relation capture bindings, corroborated by the retained named
+# club_members policy declarations. These OIDs describe the capture, not a server.
+CAPTURED_POLICY_ROLES = {'0': 'PUBLIC', '16481': 'authenticated', '16482': 'service_role'}
+
+
+def observed_policy_roles(rows):
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise RuntimeError('R2 invalid observed policy role identities')
+    roles = {'0': 'PUBLIC'}
+    names = set()
+    for row in rows:
+        oid, name = row.get('oid'), row.get('name')
+        if (not isinstance(oid, str) or not re.fullmatch(r'[1-9][0-9]*', oid)
+                or name not in ('authenticated', 'service_role')
+                or oid in roles or name in names):
+            raise RuntimeError('R2 invalid or duplicate observed policy role identity')
+        roles[oid] = name
+        names.add(name)
+    if names != {'authenticated', 'service_role'}:
+        raise RuntimeError('R2 missing observed policy role identity')
+    return roles
+
+
+def relation_authority(rows, role_names):
+    """Compare logical catalog identity while retaining every semantic field.
+
+    Logical restore omits dropped-column slots and allocates new role OIDs.
+    Ordered column definitions and exact named policy principals remain binding.
+    The caller retains both unmodified raw observations and the original capture.
+    """
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise RuntimeError('R2 invalid selected relation rows')
+    result = copy.deepcopy(rows)
+    for row in result:
+        previous, names = 0, set()
+        for position, column in enumerate(row.get('columns') or [], 1):
+            ordinal, name = column.get('ordinal_position'), column.get('column_name')
+            if (type(ordinal) is not int or ordinal <= previous
+                    or not isinstance(name, str) or not name or name in names):
+                raise RuntimeError('R2 invalid column order or duplicate column identity')
+            previous = ordinal
+            names.add(name)
+            column['ordinal_position'] = position
+        for policy in row.get('policies') or []:
+            raw = policy.get('roles')
+            if not isinstance(raw, str) or not re.fullmatch(
+                    r'\{(?:0|[1-9][0-9]*)(?:,(?:0|[1-9][0-9]*))*\}', raw):
+                raise RuntimeError('R2 invalid policy role identity array')
+            ids = raw[1:-1].split(',')
+            if len(set(ids)) != len(ids) or any(oid not in role_names for oid in ids):
+                raise RuntimeError('R2 duplicate or unmapped policy role identity')
+            resolved = [role_names[oid] for oid in ids]
+            if (any(not isinstance(name, str) or not name for name in resolved)
+                    or len(set(resolved)) != len(resolved)
+                    or any((oid == '0') != (name == 'PUBLIC') for oid, name in zip(ids, resolved))):
+                raise RuntimeError('R2 invalid or duplicate policy role name')
+            policy['roles'] = sorted(resolved)
+    return result
 
 
 def digest(path):
@@ -76,6 +136,10 @@ class Journal:
 def authority(observer,lib):
     base=lib.authority(observer,'candidate')
     captures=lib.exact_json(AUTHORITY.read_text())['captures']
+    role_rows=observer.json("SELECT COALESCE(jsonb_agg(jsonb_build_object('oid',oid::text,"
+        "'name',rolname) ORDER BY oid),'[]'::jsonb) FROM pg_roles "
+        "WHERE rolname IN ('authenticated','service_role');")
+    roles=observed_policy_roles(role_rows)
     results=[]
     for capture in captures:
         # Literal SELECT source is copied from the reviewed public catalog read.
@@ -86,11 +150,12 @@ def authority(observer,lib):
         # row multisets, retaining duplicates, rather than an accidental plan order.
         key=lambda row: json.dumps(row,sort_keys=True,default=lib.evidence_value,
                                    allow_nan=False,separators=(',',':'))
-        actual=sorted(actual,key=key)
-        lib.require(actual==sorted(capture['rows'],key=key),
+        normalized=relation_authority(actual,roles)
+        expected=relation_authority(capture['rows'],CAPTURED_POLICY_ROLES)
+        lib.require(sorted(normalized,key=key)==sorted(expected,key=key),
                     'R2 selected authority drift: '+capture['origin'])
-        results.append({'origin':capture['origin'],'actual':actual})
-    return {'B':base,'R2':results}
+        results.append({'origin':capture['origin'],'actual':sorted(actual,key=key)})
+    return {'B':base,'R2':results,'policy_role_bindings':role_rows}
 
 
 def main():

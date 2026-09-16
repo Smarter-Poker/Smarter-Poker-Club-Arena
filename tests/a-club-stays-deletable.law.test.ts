@@ -83,6 +83,18 @@ const CLOSED: Array<[string, string]> = [
 ];
 
 describe('a club stays deletable', () => {
+  it('keeps the Diamond bonus club foreign key fully indexed within bounded DDL', () => {
+    const sql = read('diamond_bonus_club_foreign_key_is_indexed');
+    const statements = sql.replace(/--[^\n]*/g, '').trim();
+    expect(statements).toMatch(/^BEGIN;[\s\S]*COMMIT;$/);
+    expect(statements).toContain("SET LOCAL lock_timeout = '1s';");
+    expect(statements).toContain("SET LOCAL statement_timeout = '5s';");
+    expect(statements.match(/CREATE INDEX[^;]*;/g)).toEqual([
+      expect.stringMatching(/^CREATE INDEX IF NOT EXISTS idx_diamond_bonus_entries_club_id_fk\s+ON public\.diamond_bonus_entries \(club_id\);$/),
+    ]);
+    expect(statements).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP)\b/);
+  });
+
   it('closes every foreign key gap that made the delete slow', () => {
     for (const [name, table] of CLOSED) {
       expect(INDEXES, `${name} is missing`).toContain(name);

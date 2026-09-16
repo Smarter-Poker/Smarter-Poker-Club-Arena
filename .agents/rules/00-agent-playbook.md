@@ -3,6 +3,8 @@ description: The one and only way agents ship code in this repo. Binding on Clau
 trigger: always_on
 ---
 
+> **Current owner instruction (September 16):** Read [AGENTS.md](../../AGENTS.md) before using this historical playbook. Task `01a0ab39-71ca-7821-825d-4943a0a6a0a3` is the sole restoration writer, integrator and publisher. Original GitHub/Vercel/Hetzner delivery is authorized. All later work and retired local/custom pipelines remain held until a NEW EXPLICIT MANUAL OWNER PROMPT AFTER completed, verified restoration. Other agents must not push, merge, deploy, install database changes or initiate releases during this hold. Historical autopilot, automatic-merge, watchdog and repair directions below are inactive. Use the configured GitHub credential store; never copy credentials from `.env` files.
+
 # RULE 1 — VERIFICATION PASS. Do not take your own word for it.
 
 Every claim below needs a command behind it, and you must paste the output.

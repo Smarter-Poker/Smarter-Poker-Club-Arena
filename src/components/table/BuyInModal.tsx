@@ -539,7 +539,7 @@ const BUY_IN_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/popups
 export const BUY_IN_ASSETS = {
   /* The master's rows 350-1135: the four bays (labels lifted), the plates,
      the chip. The head is the console's own top slice. */
-  deck: `${BUY_IN_ASSET_ROOT}/deck.png`,
+  deck: `${BUY_IN_ASSET_ROOT}/deck-d5664b815000.png`,
   reference: `${BUY_IN_ASSET_ROOT}/source/approved-reference-37716019dbbf.png`,
 } as const;
 export const BUY_IN_DECK_H = 627;

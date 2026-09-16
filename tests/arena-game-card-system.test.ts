@@ -22,6 +22,7 @@ import {
 } from '../src/components/lobby/game-cards/arenaGameCardRegistry';
 import type { LobbyRowContext } from '../src/components/lobby/lobbyCardContext';
 import { SpadePloCard } from '../src/components/lobby/game-cards/SpadePloCard';
+import { NLH_PREMIUM_ASSETS } from '../src/components/lobby/game-cards/nlhPremiumTemplate';
 import { BUY_IN_ASSETS } from '../src/components/table/BuyInModal';
 
 const ROOT = resolve(__dirname, '..');
@@ -138,6 +139,23 @@ function lobbyContext(overrides: Partial<LobbyRowContext> = {}): LobbyRowContext
 }
 
 describe('Arena game-card creation', () => {
+  it('keeps the new NLH view plate and buy-in deck off historical pool URLs', () => {
+    const plate =
+      'assets/club-buttons/game-cards/nlh/spade-nlh-premium-v1/buttons/view-plate-10e21c24e5d6.png';
+    const deck = 'assets/club-buttons/popups/buy-in-v1/deck-d5664b815000.png';
+    expect(NLH_PREMIUM_ASSETS.viewPlate).toBe(`${import.meta.env.BASE_URL}${plate}`);
+    expect(BUY_IN_ASSETS.deck).toBe(`${import.meta.env.BASE_URL}${deck}`);
+    for (const file of [
+      'src/components/console/DeckConsole.css',
+      'src/components/table/BuyInModal.css',
+      'src/components/table/RebuyModal.css',
+    ]) {
+      const css = readFileSync(resolve(ROOT, file), 'utf8');
+      expect(css).toContain(`url('/${deck}')`);
+      expect(css).not.toContain('buy-in-v1/deck.png');
+    }
+  });
+
   it('keeps the replacement buy-in reference off its already-published URL', () => {
     const asset = 'assets/club-buttons/popups/buy-in-v1/source/approved-reference-37716019dbbf.png';
     expect(BUY_IN_ASSETS.reference).toBe(`${import.meta.env.BASE_URL}${asset}`);
@@ -145,7 +163,7 @@ describe('Arena game-card creation', () => {
       createHash('sha256')
         .update(readFileSync(resolve(ROOT, 'public', asset)))
         .digest('hex')
-    ).toBe('37716019dbbf81c2e82e74cb91d6f566e78cf4339a52df4cd4dcf3a2593715af');
+    ).toBe('36aaa95d0c8256b5af7626e7295c60d86f18a4403c40ed9c27f8944b5e3d1b85');
   });
 
   it('preserves the PLO chassis bytes already served under the original permanent URL', () => {
@@ -153,7 +171,7 @@ describe('Arena game-card creation', () => {
       resolve(ROOT, 'public/assets/club-buttons/game-cards/plo/spade-plo-premium-v1/chassis.png')
     );
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(
-      '549514741c7b98b167fd0f79ecc4c5a6b84c9592ae09cb07ad9c84ba3c445687'
+      '9411a09e2a61040170b87300652239013677ffe75ec26f77d110d235372e8eb3'
     );
   });
 
@@ -161,7 +179,7 @@ describe('Arena game-card creation', () => {
     const file = 'plo/spade-plo-premium-v1/chassis-b0b05b302c99.png';
     const bytes = readFileSync(resolve(ROOT, 'public/assets/club-buttons/game-cards', file));
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(
-      'b0b05b302c9914dcc1991771909e67dfc774f7c3c1b42cce595f8e08c47397c1'
+      '460b8a9858ce5601e32d6ba20789bd0d48fedd9f0798f3f1aee561369424b4b2'
     );
     const asset = resolveArenaGameCardTemplate({ family: 'plo', presentation: 'mobile' }).skin
       .mobile.asset;

@@ -606,6 +606,7 @@ export abstract class TournamentManagerBase {
       this.tournamentLeaseAuthorityExpired ||
       this.stopFenceApplied ||
       (!this.running && !this.shutdownDrainFenceApplied) ||
+      !this.hasCurrentTournamentLeaseAuthority() ||
       !Number.isFinite(proofDeadlineMonotonicMs) ||
       tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs
     ) {

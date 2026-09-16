@@ -38,6 +38,49 @@ async function postgrestServer(handler, action) {
   finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
 }
 
+test('PostgREST startup uses loopback admin readiness and retains schema-pending refusal', async () => {
+  const source = readFileSync(new URL('../../operations/release/fixture/native-smoke.mjs', import.meta.url), 'utf8');
+  const startup = source.slice(source.indexOf("    stage = 'postgrest-server-start';"),
+    source.indexOf("    stage = 'postgrest-safeupdate-native-http';"));
+  const loop = source.slice(source.indexOf('async function eventually('), source.indexOf('async function healthy('));
+  const realLoop = Function('assert', 'Date', 'databaseOwner', 'nativeChildFailure', `
+    const bridgeFailure = null, gatewayFailure = false, children = [];
+    const pause = async () => {};
+    ${loop}
+    return eventually;
+  `)(assert, { now: (() => { let now = -60001; return () => now += 60001; })() }, { check() {} }, nativeChildFailure);
+  let starts = 0;
+  let request;
+  const probe = postgrestProbe(async (url, options) => {
+    request = { url, redirect: options.redirect };
+    return new Response(null, { status: 503 }); // Genuine v14.5 schema-pending status.
+  });
+  const invoke = Function('start', 'eventually', 'healthy', 'password', 'database', 'secrets', `
+    return (async () => { let stage; ${startup} return stage; })();
+  `);
+  await assert.rejects(invoke(async (name, binary, args, env) => {
+    starts++;
+    assert.equal(name, 'postgrest');
+    assert.equal(binary, '/usr/local/bin/postgrest');
+    assert.deepEqual(args, []);
+    assert.equal(env.PGRST_SERVER_HOST, '127.0.0.1');
+    assert.equal(env.PGRST_SERVER_PORT, '3000');
+    assert.equal(env.PGRST_ADMIN_SERVER_HOST, '127.0.0.1');
+    assert.equal(env.PGRST_ADMIN_SERVER_PORT, '3001');
+  }, realLoop, probe.healthy, 'fixture-only', 'fixture-only', { jwtSecret: 'fixture-only' }),
+  { name: 'AssertionError', message: 'native service readiness timed out' });
+  assert.equal(starts, 1);
+  assert.deepEqual(request, { url: 'http://127.0.0.1:3001/ready', redirect: 'error' });
+  assert.equal(probe.failure(new Error()).postgrest_http_status, 503);
+});
+
+test('PostgREST readiness accepts only success, never pending cache or unavailable listener', async () => {
+  for (const [status, expected] of [[503, false], [500, false], [200, true]]) {
+    const probe = postgrestProbe(async () => new Response(null, { status }));
+    assert.equal(await probe.healthy('http://127.0.0.1:3001/ready'), expected);
+  }
+});
+
 test('PostgREST actual readiness probe retains only status and validated code in terminal failure', async () => {
   await postgrestServer((request, response) => {
     response.writeHead(503, { 'content-type': 'application/json', 'x-private': 'PRIVATE HEADER' });

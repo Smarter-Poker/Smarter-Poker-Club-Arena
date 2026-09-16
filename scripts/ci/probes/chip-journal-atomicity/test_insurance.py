@@ -1,11 +1,12 @@
 """Insurance bank routing, canonical cents, replay and journal atomicity."""
 from pathlib import Path
-import re,os,subprocess,json
+import re,os,subprocess,json,hashlib
 C="'50000000-0000-4000-8000-000000000001'"
 T="'50000000-0000-4000-8000-000000000002'"
 U="'50000000-0000-4000-8000-000000000003'"
 P="'50000000-0000-4000-8000-000000000004'"
 def verify_insurance(run):
+ verify_private_projection(run)
  here=Path(__file__).resolve().parent
  definitions=[]
  for p in sorted((here.parents[3]/"supabase/migrations").glob("*.sql")):
@@ -83,3 +84,107 @@ def verify_insurance(run):
    if result.returncode:raise RuntimeError(result.stderr)
    print(result.stdout.strip(),flush=True);count+=1
  print(f"TOTAL fixed insurance: {count} passing cases",flush=True)
+
+def verify_private_projection(run):
+ """Pure JSON cases only, inside the existing disposable query transaction."""
+ root=Path(__file__).resolve().parents[4]
+ source=root/'tests/sql/fixtures/g8-inert-accounting'
+ pins={
+  'predecessor0141/definition.sql':'88d036432ddf5e4471752fb2dffc28e5ee51c5a95da494357b3786e7c58efe96',
+  'insurance0145/definition.sql':'d02b9708435e2fa754c98ae890bd33e992c633397432e08dd4d5910251f370d5',
+  'insurance0145/cases.sql':'2afb465749df18ebc40a7f185cc26c2c5011697060bb3235d1391a99975f993e',
+  'insurance0145/predecessor-regression.sql':'ddef2577a576a82f9df15ffbfced24e55b11cf0e4a348fcd3d2f12002ecc0bea',
+ }
+ texts={}
+ for name,pin in pins.items():
+  raw=(source/name).read_bytes()
+  if hashlib.sha256(raw).hexdigest()!=pin: raise RuntimeError('Projection source drift: '+name)
+  texts[name]=raw.decode('utf8')
+ bodies=[texts[name].split('$function$')[1] for name in ('predecessor0141/definition.sql','insurance0145/definition.sql')]
+ # These are source literals for catalogue readback, never executable SQL from a caller.
+ expected=json.dumps(dict(zip(('insurance_projection_0141','insurance_projection_0144'),bodies)))
+ if '$ip_expected$' in expected: raise RuntimeError('Projection source delimiter collision')
+ guard=(source/'projection-install-guard.sql').read_text()
+ readback=(source/'projection-readback.sql').read_text().replace('__EXPECTED_BODIES__','$ip_expected$'+expected+'$ip_expected$::jsonb')
+ finish=(source/'projection-rollback.sql').read_text()
+ verify_projection_refusals(run,guard,readback,finish,texts)
+ run(guard+'\n'+texts['predecessor0141/definition.sql']+'\n'+texts['insurance0145/definition.sql']+'\n'+readback+
+     '\nSET LOCAL ROLE postgres;\n'+texts['insurance0145/cases.sql']+'\n'+texts['insurance0145/predecessor-regression.sql']+
+     '\nRESET ROLE;\n'+finish)
+ print('Pure insurance projection: 49 structural cases, predecessor refusal and isolated ACL/rollback checks passed; financial authority unqualified',flush=True)
+
+def verify_projection_refusals(run,guard,readback,finish,texts):
+ """Nine exact refusals through the original error/connection-close path."""
+ if not os.environ.get('PGNODE'):
+  raise RuntimeError('Projection refusal controls require the existing PGNODE query path')
+ definitions=texts['predecessor0141/definition.sql']+'\n'+texts['insurance0145/definition.sql']
+ snapshot="""SELECT
+ (SELECT jsonb_agg(to_jsonb(r) ORDER BY oid) FROM pg_roles r) roles,
+ (SELECT coalesce(jsonb_agg(to_jsonb(m) ORDER BY roleid,member,grantor),'[]'::jsonb) FROM pg_auth_members m) memberships,
+ (SELECT coalesce(jsonb_agg(to_jsonb(d) ORDER BY oid),'[]'::jsonb) FROM pg_default_acl d) defaults"""
+ # A fresh query must compare the original complete preimage, not a fabricated
+ # expected catalogue. The test-owned baseline is never a financial baseline.
+ boundary='CREATE TEMP TABLE ip_fixture_preimage ON COMMIT DROP AS'
+ if guard.count(boundary)!=1: raise RuntimeError('Projection preflight boundary drift')
+ # Reuse the exact validation-only prefix, including BEGIN and timeouts.
+ # No baseline DDL may precede connection/role/default-ACL qualification.
+ preflight=guard.split(boundary,1)[0]
+ baseline_sql=preflight+"""DO $baseline$ BEGIN
+ IF to_regclass('public.ip_projection_control_baseline') IS NOT NULL THEN
+  RAISE EXCEPTION 'IP_CONTROL_BASELINE_EXISTS';
+ END IF;
+ END $baseline$;
+ CREATE TABLE public.ip_projection_control_baseline AS """+snapshot+'; COMMIT;'
+ def expect_refusal(name,sql,marker):
+  try:
+   run(sql)
+  except RuntimeError as error:
+   # Match the actual query.mjs code/message, not arbitrary SQL failure.
+   if str(error).strip()!='P0001 '+marker:
+    raise RuntimeError('Projection control '+name+' failed at an unexpected stage: '+str(error)) from error
+  else:
+   raise RuntimeError('Projection control '+name+' did not refuse')
+ baseline_absent=preflight+"""DO $absent$ BEGIN
+ IF to_regclass('public.ip_projection_control_baseline') IS NOT NULL THEN
+  RAISE EXCEPTION 'IP_CONTROL_BASELINE_NOT_ABSENT';
+ END IF;
+ END $absent$; ROLLBACK;"""
+ run(baseline_absent)
+ if baseline_sql.count('BEGIN;')!=1: raise RuntimeError('Projection baseline transaction drift')
+ # Exercise the actual baseline constructor before any baseline exists. DDL
+ # moved ahead of its preflight must fail this exact-identity control.
+ expect_refusal('connection',baseline_sql.replace('BEGIN;','BEGIN; SET LOCAL ROLE anon;',1),'IP_FIXTURE_CONNECTION')
+ run(baseline_absent)
+ print('Projection guard control connection: actual baseline constructor refused and fresh-call absence passed',flush=True)
+ run(baseline_sql)
+ fresh="""DO $fresh$ BEGIN
+ IF EXISTS(SELECT FROM pg_namespace WHERE nspname='smarter_private')
+ OR EXISTS(SELECT FROM pg_roles WHERE rolname IN ('postgres','authenticator','ip_projection_outsider'))
+ OR (SELECT to_jsonb(b) FROM public.ip_projection_control_baseline b) IS DISTINCT FROM
+ (SELECT to_jsonb(s) FROM ("""+snapshot+""") s) THEN
+  RAISE EXCEPTION 'IP_CONTROL_FRESH_PREIMAGE';
+ END IF;
+ END $fresh$;"""
+ def before_guard(fault):
+  if guard.count('DO $guard$')!=1: raise RuntimeError('Projection guard insertion drift')
+  return guard.replace('DO $guard$',fault+'\nDO $guard$',1)
+ body_fault=texts['insurance0145/definition.sql'].replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION',1).replace('DECLARE','-- isolated body-corruption control\nDECLARE',1)
+ rollback_marker='ROLLBACK TO SAVEPOINT ip_private_install;'
+ if finish.count(rollback_marker)!=1: raise RuntimeError('Projection rollback insertion drift')
+ controls=[
+  ('owned-schema',before_guard('CREATE SCHEMA smarter_private;'),'IP_FIXTURE_OWNED_NAMES_EXIST'),
+  ('membership',before_guard('GRANT anon TO authenticated;'),'IP_FIXTURE_ROLE_DEFAULT_ACL_PREIMAGE'),
+  ('default-acl',before_guard('ALTER DEFAULT PRIVILEGES FOR ROLE journal_test GRANT EXECUTE ON FUNCTIONS TO anon;'),'IP_FIXTURE_ROLE_DEFAULT_ACL_PREIMAGE'),
+  ('function-body',guard+'\n'+definitions+'\n'+body_fault+'\n'+readback,'IP_FIXTURE_FUNCTION_READBACK: insurance_projection_0144'),
+  ('unlisted-function-grant',guard+'\n'+definitions+'\nCREATE ROLE ip_projection_outsider NOLOGIN; GRANT EXECUTE ON FUNCTION smarter_private.insurance_projection_0144(jsonb,jsonb) TO ip_projection_outsider;\n'+readback,'IP_FIXTURE_FUNCTION_READBACK: insurance_projection_0144'),
+  ('schema-access',guard+'\n'+definitions+'\nGRANT USAGE ON SCHEMA smarter_private TO anon;\n'+readback,'IP_FIXTURE_SCHEMA_READBACK'),
+  ('rollback-contamination',guard+'\n'+definitions+'\n'+readback+'\n'+finish.replace(rollback_marker,rollback_marker+'\nCREATE ROLE ip_projection_outsider NOLOGIN;',1),'IP_FIXTURE_ROLLBACK_READBACK'),
+  ('postinstall-connection-close',guard+'\n'+definitions+'\n'+readback+"\nDO $fault$ BEGIN RAISE EXCEPTION 'IP_CONTROL_POSTINSTALL_UNEXPECTED'; END $fault$;",'IP_CONTROL_POSTINSTALL_UNEXPECTED'),
+ ]
+ for name,sql,marker in controls:
+  expect_refusal(name,sql,marker)
+  # run(sql) returned only after query.mjs ended the failing client. A new
+  # invocation must independently observe rollback, including unexpected error.
+  run(fresh)
+  print('Projection guard control '+name+': exact refusal and fresh-call rollback passed',flush=True)
+ run('DROP TABLE public.ip_projection_control_baseline;')

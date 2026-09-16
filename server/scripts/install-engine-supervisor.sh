@@ -35,6 +35,11 @@ REQUIRED_FILES=(
   engine-up.sh
   build-engine-image.sh
   engine-release-protocol-v1.schema
+  engine-image-ci-bundle.py
+  engine-release-image-request.py
+  engine-release-image-request-v2.schema
+  engine-release-image-result.py
+  engine-release-image-generation.py
   engine-release-seal.py
   verify-recovery-stack.sh
   collect-monitoring-health.sh
@@ -296,7 +301,7 @@ PY
 else
   GENERATION_STAGE="$(mktemp -d "$GENERATION_ROOT/.generation.XXXXXXXX")"
   for file in "${REQUIRED_FILES[@]}"; do
-    if [ "$file" = "$PROTOCOL_V1_FILE" ]; then
+    if [ "$file" = "$PROTOCOL_V1_FILE" ] || [ "$file" = engine-release-image-request-v2.schema ]; then
       install -m 0644 "$SOURCE_DIR/$file" "$GENERATION_STAGE/$file"
     else
       install -m 0755 "$SOURCE_DIR/$file" "$GENERATION_STAGE/$file"
@@ -313,7 +318,9 @@ else
     install-engine-intake.sh retain-engine-images.sh install-engine-supervisor.sh; do
     bash -n "$GENERATION_STAGE/$script"
   done
-  for script in engine-release-seal.py engine-release-database-proof.py; do
+  for script in engine-release-seal.py engine-release-database-proof.py \
+    engine-image-ci-bundle.py engine-release-image-request.py \
+    engine-release-image-result.py engine-release-image-generation.py; do
     python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
       "$GENERATION_STAGE/$script"
   done

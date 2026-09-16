@@ -55,7 +55,7 @@ async function mockStudioBackend(
     const path = new URL(request.url()).pathname;
     const body = request.postDataJSON?.() as Record<string, any> | null;
 
-    if (path.endsWith('/rpc/fn_purchase_feature')) {
+    if (path.endsWith('/rpc/fn_purchase_feature_v2')) {
       const feature = String(body?.p_feature || '');
       server.purchases.push(feature);
       await fulfillJson(route, { success: true, cost: 350 });
@@ -348,7 +348,14 @@ test.describe('real Table Studio browser flows', () => {
       };
       const capture = async (name: string) => {
         await settleArtwork();
-        await shell.scrollIntoViewIfNeeded();
+        /* The shell scrolls to the TOP of the viewport, never merely into it.
+           On the console (2026-09-13) the preview sits mid-page, and a
+           minimal scroll parks its bottom edge on the viewport's bottom edge -
+           which is where the toast rail lives, and every tap on a look raises
+           a four-second "Theme Applied" toast. A clip that can contain a toast
+           is a baseline that depends on timing. Aligned to the top, the clip
+           never meets the rail at either viewport size. */
+        await shell.evaluate((node) => node.scrollIntoView({ block: 'start' }));
         const bounds = await shell.boundingBox();
         expect(bounds, `preview bounds for ${name}`).not.toBeNull();
         const clip = {

@@ -1,0 +1,107 @@
+/*
+ * DIAMOND WHEEL - the wheel's own sheet. CSS Module so nothing here can collide
+ * with another page's class (tests/global-css-does-not-leak-across-pages).
+ * No :hover anywhere (tests/no-hover-effects.law.test.ts): the wheel is a
+ * phone-first surface and the spin button carries the press feedback.
+ */
+
+.frame {
+  position: relative;
+  margin: 0 auto;
+  border-radius: 50%;
+  /* The wheel sits ON the console's glass. The cavity this used to draw
+     (its own radial fill and inset shadows) was a frame drawn in CSS inside
+     a painted frame - one background inside and another out. The rim's own
+     drop shadow is what grounds it now. */
+  background: transparent;
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+}
+
+.segGlass {
+  fill: url(#dw-glass);
+}
+
+.segGoldHot {
+  fill: url(#dw-gold-hot);
+}
+
+.segBlue {
+  fill: url(#dw-blue);
+}
+
+.segDark {
+  fill: url(#dw-dark);
+}
+
+.segLocked {
+  opacity: 0.38;
+  filter: saturate(0.3);
+}
+
+.segText {
+  font-family: var(
+    --realism-font-display,
+    'Rajdhani',
+    'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif
+  );
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  fill: #0b1017;
+  paint-order: stroke fill;
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 0.6px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.segDark .segText,
+.segBlue .segText,
+.segGlass .segText {
+  fill: #eaf6ff;
+  stroke: rgba(0, 0, 0, 0.5);
+}
+
+.segDark .segText {
+  fill: #9aa5b3;
+}
+
+.segLock {
+  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  fill: #e6edf3;
+}
+
+/* The lamps are the frame's blue LEDs: dark steel studs at rest, lit in a
+   chase while the wheel turns. */
+.lamp {
+  fill: #2a3542;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 0.5;
+}
+
+.lampOn {
+  fill: #8fd4ff;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 0.5;
+  filter: drop-shadow(0 0 3px rgba(69, 173, 255, 0.9));
+  animation: dw-lamp-chase calc(0.28s * var(--animation-speed, 1)) steps(2) infinite;
+}
+
+@keyframes dw-lamp-chase {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.25;
+  }
+}

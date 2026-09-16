@@ -125,7 +125,7 @@ export function describeGrant(
     case 'time_bank':
       return `+${qty * secondsPerUse}s Table Time (${qty} ${qty === 1 ? 'Use' : 'Uses'})`;
     case 'throwable':
-      return `${qty} Free ${qty === 1 ? 'Throw' : 'Throws'}`;
+      return `${qty} ${qty === 1 ? 'Use' : 'Uses'} Across All 49 Table Throwables`;
     case 'emote_pack':
       return 'Unlocks The Emote Pack';
     case 'table_skin':

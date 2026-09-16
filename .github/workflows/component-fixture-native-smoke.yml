@@ -20,7 +20,7 @@ concurrency:
 jobs:
   native-smoke:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, smarter-local-linux-amd64]
     timeout-minutes: 55
     outputs:
       native_verified: ${{ steps.smoke.outputs.native_verified }}
@@ -40,7 +40,8 @@ jobs:
           node --test operations/release/fixture/actors.test.mjs operations/release/fixture/financial-route-phase.test.mjs tests/operations/financial-checkpoint-observer.test.mjs tests/operations/financial-topup-verifier.test.mjs tests/operations/financial-insurance-verifier.test.mjs tests/operations/fixture-runtime-files.test.mjs tests/operations/financial-route-suite.test.mjs tests/operations/component-source-contract.test.mjs tests/operations/fixture-seed.test.mjs
           node --test tests/operations/fixture-auth-bootstrap.test.mjs tests/operations/fixture-service-role-boundary.test.mjs tests/operations/fixture-cron-provider.test.mjs tests/operations/fixture-safeupdate-provider.test.mjs
           node --test tests/operations/fixture-supervisor.test.mjs tests/operations/fixture-database-owner.test.mjs tests/operations/fixture-auth.test.mjs tests/operations/fixture-post-alignment-auth.test.mjs tests/operations/fixture-gateway.native.test.mjs tests/operations/fixture-realtime-launcher.test.mjs tests/operations/fixture-realtime-listener.test.mjs
-          node --test tests/operations/fixture-native-diagnostics.test.mjs tests/operations/fixture-service-preimage.test.mjs tests/operations/fixture-role-alignment.test.mjs tests/operations/fixture-role-alignment-render.test.mjs tests/operations/fixture-role-native.test.mjs tests/operations/fixture-role-native-oid.test.mjs tests/operations/provider-semantics-lifecycle.test.mjs
+          # Each module owns short real deadlines; avoid CPU contention between files on local QEMU.
+          node --test --test-concurrency=1 tests/operations/fixture-native-diagnostics.test.mjs tests/operations/fixture-service-preimage.test.mjs tests/operations/fixture-role-alignment.test.mjs tests/operations/fixture-role-alignment-render.test.mjs tests/operations/fixture-role-native.test.mjs tests/operations/fixture-role-native-oid.test.mjs tests/operations/provider-semantics-lifecycle.test.mjs
           python3 tests/operations/native-component-semantics.test.py
           python3 tests/operations/fixture-smoke-runner.test.py
           python3 tests/operations/fixture-smoke-lifecycle.test.py
@@ -53,6 +54,51 @@ jobs:
           python3 operations/release/ci/fixture-smoke.py . "$RUNNER_TEMP/fixture-smoke-evidence" "$FIXTURE_SOURCE_SHA"
           echo "native_verified=true" >> "$GITHUB_OUTPUT"
           echo "source_sha=$FIXTURE_SOURCE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Print retained native diagnostics before artifact upload
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, stat, uuid
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'fixture-smoke-evidence'
+          header = 'Reviewed image build only; no native service output.\n'
+          # The producer retains 131072 characters, at most four UTF-8 bytes each.
+          selected = [('native-smoke-receipt.json', 1024 * 1024),
+                      ('native-build.log', len(header.encode()) + 4 * 131072)]
+          failed = False
+          marker = uuid.uuid4().hex
+          print('::stop-commands::' + marker, flush=True)
+          try:
+              for name, limit in selected:
+                  try:
+                      with os.fdopen(os.open(root / name, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
+                          info = os.fstat(stream.fileno())
+                          if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
+                              raise ValueError()
+                          raw = stream.read(limit + 1)
+                      if len(raw) > limit:
+                          raise ValueError()
+                      text = raw.decode('utf-8')
+                      if name == 'native-smoke-receipt.json':
+                          receipt = json.loads(text)
+                          if (receipt.get('version') != 1 or receipt.get('scope') != 'pull-request-native-service-smoke'
+                                  or receipt.get('product_certificate') is not False
+                                  or receipt.get('status') not in ('passed', 'failed')):
+                              raise ValueError()
+                          text = json.dumps(receipt, indent=2)
+                      elif not text.startswith(header):
+                          raise ValueError()
+                      print('--- ' + name + ' ---\n' + text, flush=True)
+                  except FileNotFoundError:
+                      print(name + ': unavailable', flush=True)
+                      failed |= name == 'native-smoke-receipt.json'
+                  except Exception:
+                      print(name + ': refused; expected bounded producer evidence', flush=True)
+                      failed = True
+          finally:
+              print('::' + marker + '::', flush=True)
+          raise SystemExit(1 if failed else 0)
+          PY
       - name: Preserve sanitized native smoke and cleanup observations
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

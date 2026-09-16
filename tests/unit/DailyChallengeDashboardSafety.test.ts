@@ -233,12 +233,6 @@ describe('Daily Challenge dashboard safety boundary', () => {
       },
     ],
     [
-      'vault total that contradicts the challenge totals',
-      (payload: ReturnType<typeof dashboardPayload>) => {
-        payload.stats.totalCompleted = 1;
-      },
-    ],
-    [
       'paginated vault total smaller than its visible reward page',
       (payload: ReturnType<typeof dashboardPayload>) => {
         payload.stats.totalCompleted = 101;
@@ -282,6 +276,18 @@ describe('Daily Challenge dashboard safety boundary', () => {
 
     await expect(dailyChallengeService.getDashboard(USER_ID)).rejects.toThrow(/invalid/i);
     expect(mocks.reportError).toHaveBeenCalled();
+  });
+
+  it('accepts lifetime unclaimed totals that include an expired reward outside the claimable vault', async () => {
+    const payload = dashboardPayload();
+    payload.stats.totalCompleted = 1;
+    mocks.rpc.mockResolvedValue({ data: payload, error: null });
+
+    const dashboard = await dailyChallengeService.getDashboard(USER_ID);
+
+    expect(dashboard.stats).toMatchObject({ totalCompleted: 1, totalClaimed: 0 });
+    expect(dashboard.vault).toMatchObject({ count: 0, diamonds: 0, items: [] });
+    expect(mocks.reportError).not.toHaveBeenCalled();
   });
 
   it('rejects claim receipts that name an unrelated assignment', async () => {

@@ -62,7 +62,11 @@ import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 import { STORAGE_KEYS } from '../lib/storage';
+/* Before the module sheet: SpadeConsole.css must load first so this page's
+   .consoleNarrow (--sc-max) can narrow the console it lays out. */
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import styles from './HomePage.module.css';
+import { titleCase } from '../utils/titleCase';
 import { reportError } from '../utils/errorReporter';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 
@@ -118,17 +122,29 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
     if (this.state.hasError) {
       return (
         <div className={styles.errorBoundary}>
-          <div className={styles.errorBoundaryIcon}>!</div>
-          <h2 className={styles.errorBoundaryTitle}>Something Went Wrong</h2>
-          <p className={styles.errorBoundaryMessage}>
-            {this.state.errorMessage || 'An Unexpected Error Occurred. Please Try Again.'}
-          </p>
-          <button
-            className={styles.errorBoundaryRetry}
-            onClick={() => this.setState({ hasError: false, errorMessage: '' })}
+          <SpadeConsole
+            className={styles.consoleNarrow}
+            eyebrow="Poker Arena"
+            title="Something Went Wrong"
+            titleId="home-error-boundary-title"
+            pill="Error"
+            pillInk="red"
+            foot="foot"
+            role="alert"
+            aria-labelledby="home-error-boundary-title"
           >
-            Retry
-          </button>
+            <p className={`${styles.errorBoundaryMessage} sc-copy sc-copy--center`}>
+              {titleCase(this.state.errorMessage) ||
+                'An Unexpected Error Occurred. Please Try Again.'}
+            </p>
+            <button
+              type="button"
+              className={`${styles.word} sc-ink--blue`}
+              onClick={() => this.setState({ hasError: false, errorMessage: '' })}
+            >
+              Retry
+            </button>
+          </SpadeConsole>
         </div>
       );
     }
@@ -879,12 +895,13 @@ function HomePageInner() {
             (error) => ({ data: null, error })
           );
 
-        const { data: clubRows } = await supabase
+        const { data: clubRows, error: clubRowsError } = await supabase
           .from('clubs')
           .select(
             'id, member_count, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
           )
           .in('id', clubIds);
+        if (clubRowsError) reportError(clubRowsError, 'HomePage.Failed_to_fetch_club_stats');
 
         if (!isMounted || !clubRows) return;
 
@@ -1210,32 +1227,55 @@ function HomePageInner() {
 
       {/* #15: Offline indicator banner */}
       {!isOnline && (
-        <div className={styles.offlineBanner} role="alert">
-          <span>Offline -- Showing Cached Data</span>
+        <div className={`${styles.offlineBanner} sc-ink--red`} role="alert">
+          <span>Offline - Showing Cached Data</span>
         </div>
       )}
 
       {/* #1: Keyboard shortcut hint overlay */}
       {showShortcutHint && (
         <div className={styles.shortcutOverlay} onClick={() => setShowShortcutHint(false)}>
-          <div className={styles.shortcutPanel} onClick={(e) => e.stopPropagation()}>
-            <h3 className={styles.shortcutTitle}>Keyboard Shortcuts</h3>
-            <div className={styles.shortcutGrid}>
-              {[
-                ['1-5', 'Navigate Bottom Tiles'],
-                ['J', 'Join A Club'],
-                ['C', 'Create A Club'],
-                ['F', 'Find A Player'],
+          <div
+            className={styles.shortcutSheet}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="home-shortcuts-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* The dialog role sits on the sheet, not the console: metallic-popups
+                plates every [role='dialog'] > [class*='__head'] with !important. */}
+            <SpadeConsole
+              crest="flat"
+              eyebrow="Poker Arena"
+              title="Keyboard Shortcuts"
+              titleId="home-shortcuts-title"
+              pill="Keys"
+              foot="foot"
+            >
+              <div className={styles.shortcutGrid}>
+                {[
+                  ['1-5', 'Navigate Bottom Tiles'],
+                  ['J', 'Join A Club'],
+                  ['C', 'Create A Club'],
+                  ['F', 'Find A Player'],
 
-                ['?', 'Toggle This Help'],
-                ['Esc', 'Close Modals'],
-              ].map(([key, desc]) => (
-                <div key={key} className={styles.shortcutRow}>
-                  <kbd className={styles.shortcutKey}>{key}</kbd>
-                  <span className={styles.shortcutDesc}>{desc}</span>
-                </div>
-              ))}
-            </div>
+                  ['?', 'Toggle This Help'],
+                  ['Esc', 'Close Modals'],
+                ].map(([key, desc]) => (
+                  <div key={key} className={styles.shortcutRow}>
+                    <kbd className={`${styles.shortcutKey} sc-ink--blue`}>{key}</kbd>
+                    <span className={`${styles.shortcutDesc} sc-ink--silver`}>{desc}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={`${styles.word} sc-ink--muted`}
+                onClick={() => setShowShortcutHint(false)}
+              >
+                Close
+              </button>
+            </SpadeConsole>
           </div>
         </div>
       )}
@@ -1244,7 +1284,7 @@ function HomePageInner() {
                 MAIN CONTENT — Scrollable card layout
             ═══════════════════════════════════════════════════════════════════════ */}
       <div className={styles.mainContent}>
-        <h1 className={styles.arenaTitle}>Poker Arena</h1>
+        <h1 className={`${styles.arenaTitle} sc-ink--silver`}>Poker Arena</h1>
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
@@ -1302,15 +1342,23 @@ function HomePageInner() {
             statements and must not render the same. */}
         {!isLoading && loadFailed && (
           <div className={styles.emptyStateCard}>
-            <div className={styles.emptyStateIcon}>!</div>
-            <h3 className={styles.emptyStateTitle}>Could Not Load Your Clubs</h3>
-            <p className={styles.emptyStateDesc}>
-              Your Clubs Are Still There - We Just Could Not Reach Them Right Now. This Is Usually
-              Brief. Try Again In A Moment.
-            </p>
-            <div className={styles.emptyStateActions}>
+            <SpadeConsole
+              className={styles.consoleNarrow}
+              crest="flat"
+              eyebrow="Poker Arena"
+              title="Could Not Load Your Clubs"
+              pill="Error"
+              pillInk="red"
+              foot="foot"
+              role="status"
+            >
+              <p className={`${styles.emptyStateDesc} sc-copy sc-copy--center`}>
+                Your Clubs Are Still There - We Just Could Not Reach Them Right Now. This Is Usually
+                Brief. Try Again In A Moment.
+              </p>
               <button
-                className={styles.emptyStateBtnPrimary}
+                type="button"
+                className={`${styles.word} sc-ink--blue`}
                 onClick={() => {
                   setLoadFailed(false);
                   fetchUserData(false, () => true);
@@ -1318,38 +1366,40 @@ function HomePageInner() {
               >
                 Try Again
               </button>
-            </div>
+            </SpadeConsole>
           </div>
         )}
 
         {/* Empty state — premium onboarding when user has no clubs */}
         {!isLoading && !loadFailed && hasFetchedOnceRef.current && displayClubs.length === 0 && (
           <div className={styles.emptyStateCard}>
-            <div className={styles.emptyStateIcon}>♠</div>
-            <h3 className={styles.emptyStateTitle}>Welcome To Poker Arena</h3>
-            <p className={styles.emptyStateDesc}>
-              Join A Club To Play Poker With Friends, Compete On Leaderboards, And Earn Rewards.
-            </p>
-            <div className={styles.emptyStateActions}>
-              <button
-                className={styles.emptyStateBtnPrimary}
-                onClick={() => {
-                  haptic.medium();
-                  setShowJoinModal(true);
-                }}
-              >
-                Join A Club
-              </button>
-              <button
-                className={styles.emptyStateBtnSecondary}
-                onClick={() => {
-                  haptic.light();
-                  setShowCreateClubModal(true);
-                }}
-              >
-                Create One
-              </button>
-            </div>
+            <SpadeConsole
+              className={styles.consoleNarrow}
+              eyebrow="Poker Arena"
+              title="Welcome To Poker Arena"
+              pill="New"
+              plates={{
+                secondary: {
+                  label: 'Create One',
+                  onClick: () => {
+                    haptic.light();
+                    setShowCreateClubModal(true);
+                  },
+                },
+                primary: {
+                  label: 'Join A Club',
+                  ink: 'white',
+                  onClick: () => {
+                    haptic.medium();
+                    setShowJoinModal(true);
+                  },
+                },
+              }}
+            >
+              <p className={`${styles.emptyStateDesc} sc-copy sc-copy--center`}>
+                Join A Club To Play Poker With Friends, Compete On Leaderboards, And Earn Rewards.
+              </p>
+            </SpadeConsole>
           </div>
         )}
 
@@ -1405,11 +1455,19 @@ function HomePageInner() {
                   <img
                     src={tile.img}
                     alt={tile.alt}
-                    className={styles.tileImage}
+                    className={`${styles.tileImage} ${
+                      tile.preserveNativeRatio ? styles.tileImageNative : ''
+                    }`}
                     loading="eager"
-                    width={640}
-                    height={1024}
+                    width={tile.width || 640}
+                    height={tile.height || 1024}
                   />
+                  {tile.portalStatus ? (
+                    <span className={styles.tileLabel} aria-hidden="true">
+                      <strong>{tile.alt}</strong>
+                      <small>{tile.portalStatus}</small>
+                    </span>
+                  ) : null}
                 </div>
               </button>
             )
@@ -1436,33 +1494,38 @@ function HomePageInner() {
 
       {/* #4: Leave Confirmation Modal */}
       {leaveConfirm?.visible && (
-        <div className={styles.modalOverlay} onClick={() => setLeaveConfirm(null)}>
+        <div className={styles.leaveOverlay} onClick={() => setLeaveConfirm(null)}>
           <div
             ref={leaveModalRef}
-            className={styles.modalContent}
+            className={styles.leaveSheet}
             onClick={(e) => e.stopPropagation()}
             role="alertdialog"
+            aria-modal="true"
             aria-labelledby="leave-confirm-title"
           >
-            <h2 className={styles.modalTitle} id="leave-confirm-title">
-              Leave Club?
-            </h2>
-            <p className={styles.modalSubtitle}>
-              Are You Sure You Want To Leave{' '}
-              <strong>{leaveConfirm.club?.name || 'This Club'}</strong>? This Action Cannot Be
-              Undone.
-            </p>
-            <div className={styles.modalButtons}>
-              <button
-                className={`${styles.modalButtonPrimary} ${styles.modalButtonDanger}`}
-                onClick={() => handleLeaveClub(leaveConfirm.club)}
-              >
-                Yes, Leave Club
-              </button>
-              <button className={styles.modalButtonSecondary} onClick={() => setLeaveConfirm(null)}>
-                Cancel
-              </button>
-            </div>
+            <SpadeConsole
+              eyebrow={titleCase(leaveConfirm.club?.name) || 'This Club'}
+              title="Leave Club?"
+              titleId="leave-confirm-title"
+              pill="Leave"
+              pillInk="red"
+              plates={{
+                secondary: { label: 'Cancel', onClick: () => setLeaveConfirm(null) },
+                primary: {
+                  label: 'Yes, Leave Club',
+                  ink: 'red',
+                  onClick: () => handleLeaveClub(leaveConfirm.club),
+                },
+              }}
+            >
+              <p className={`${styles.leaveCopy} sc-copy sc-copy--center`}>
+                Are You Sure You Want To Leave{' '}
+                <strong className="sc-ink--silver">
+                  {titleCase(leaveConfirm.club?.name) || 'This Club'}
+                </strong>
+                ? This Action Cannot Be Undone.
+              </p>
+            </SpadeConsole>
           </div>
         </div>
       )}
@@ -1520,18 +1583,7 @@ function HomePageInner() {
           inline so bottom row tiles always render regardless of loading state */}
       {isLoading && !userClubs.length && !hasFetchedOnceRef.current && (
         <div className={styles.loadingOverlay}>
-          <div className={styles.skeletonRow}>
-            <div className={styles.skeletonCard}>
-              <div className={styles.skeletonStat} />
-            </div>
-            <div className={styles.skeletonCardFeatured}>
-              <div className={styles.skeletonStat} />
-            </div>
-            <div className={styles.skeletonCard}>
-              <div className={styles.skeletonStat} />
-            </div>
-          </div>
-          <span className={styles.loadingText}>Loading Arena</span>
+          <span className={`${styles.loadingText} sc-label sc-ink--blue`}>Loading Arena</span>
         </div>
       )}
     </div>

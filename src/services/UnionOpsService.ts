@@ -77,7 +77,7 @@ export interface AgentRosterRow {
   cashouts: number;
   net_result: number;
   rake_generated: number;
-  agent_commission: number;
+  agent_commission: number | null;
   chip_balance: number;
   credit_used: number;
   currently_seated: boolean;
@@ -96,7 +96,10 @@ export interface AgentStatement {
   chips_issued_to_players: number;
   chips_returned_from_players: number;
   credit_outstanding: number;
-  net_settlement_position: number;
+  net_settlement_position: number | null;
+  settlement_verified?: boolean;
+  settlement_note?: string;
+  club_ids?: string[];
 }
 
 export interface AgentRiskRow {
@@ -230,16 +233,18 @@ export const UnionOpsService = {
   async getAgentRoster(
     agentUserId?: string,
     since?: string,
-    until?: string
+    until?: string,
+    clubId?: string
   ): Promise<AgentRosterRow[]> {
     const { data, error } = await supabase.rpc('fn_agent_roster_report', {
       p_agent_user_id: agentUserId ?? null,
       p_since: since ?? null,
       p_until: until ?? null,
+      p_club_id: clubId ?? null,
     });
     if (error) {
       reportError(error, 'UnionOpsService.getAgentRoster');
-      return [];
+      throw new Error(error.message || 'Agent roster unavailable');
     }
     return (data ?? []) as AgentRosterRow[];
   },
@@ -247,16 +252,18 @@ export const UnionOpsService = {
   async getAgentStatement(
     agentUserId?: string,
     from?: string,
-    to?: string
+    to?: string,
+    clubId?: string
   ): Promise<AgentStatement | null> {
     const { data, error } = await supabase.rpc('fn_agent_weekly_statement', {
       p_agent_user_id: agentUserId ?? null,
       p_period_start: from ?? null,
       p_period_end: to ?? null,
+      p_club_id: clubId ?? null,
     });
     if (error) {
       reportError(error, 'UnionOpsService.getAgentStatement');
-      return null;
+      throw new Error(error.message || 'Agent statement unavailable');
     }
     return (data ?? null) as AgentStatement | null;
   },

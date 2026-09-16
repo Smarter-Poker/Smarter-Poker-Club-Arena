@@ -1,4 +1,5 @@
 import { HorsePolicyGraph } from './HorsePolicyGraph.js';
+import { horsePolicyRegistration, horsePolicyOwnership } from './HorsePolicyRegistry.js';
 import { hasHorseReviewSignals } from './HorseReviewSignals.js';
 import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
 import { horseVariantRulesFor } from './VariantRules.js';
@@ -2325,6 +2326,16 @@ export class HorseLogic {
     opts: HorseDecideOpts = {}
   ): HorseDecision {
     try {
+      if (
+        !horsePolicyRegistration(
+          gameState.stateSchemaVersion === 1
+            ? gameState.gameVariant
+            : (gameState.gameVariant ?? 'nlh')
+        )
+      ) {
+        if (telemetryOn(opts)) noteFire('phase15_policy_unregistered');
+        throw new Error('Horse policy variant is not registered with its canonical name');
+      }
       // V45 SCOPED READS: every read in this decision sees the bucket for
       // this card family and table size (HorseMind.readStats). Cleared on
       // every exit, including a throw.
@@ -2379,9 +2390,10 @@ export class HorseLogic {
       phase11DecisionEquityCeiling = null;
       phase12DecisionEquityCeiling = null;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
+      if (telemetryOn(opts)) noteFire('phase15_brain_exception');
       return toCall === 0
-        ? { action: 'check', thinkTime: 1500 }
-        : { action: 'fold', thinkTime: 1500 };
+        ? { action: 'check', thinkTime: 1500, policyFallback: 'brain_exception' }
+        : { action: 'fold', thinkTime: 1500, policyFallback: 'brain_exception' };
     } finally {
       phase7EquityEvidence = null;
       phase10EquityEvidence = null;
@@ -2416,6 +2428,7 @@ export class HorseLogic {
     }
 
     const compiledVariant = variantInfo(gs.gameVariant);
+    const registration = horsePolicyRegistration(gs.gameVariant ?? 'nlh')!;
     // Phase 5 live requests carry explicit rules and the worker proves they
     // match gameVariant before this method runs. Read those facts here rather
     // than transporting a contract the brain then ignores. Offline fixtures
@@ -2574,7 +2587,7 @@ export class HorseLogic {
     const beforePhase10 = decision;
     const variants = graph.run('variant_policy', decision, () => {
       const phase10 =
-        gs.gameVariant === 'plo4' && opts.phase10Plo4 !== 'off'
+        registration.owner === 'phase10' && opts.phase10Plo4 !== 'off'
           ? evaluatePlo4LivePolicy(
               player,
               gs,
@@ -2586,7 +2599,7 @@ export class HorseLogic {
           : null;
       if (phase10) decision = this.legalize(phase10.decision, player, gs, vi);
       const phase11 =
-        isOmahaPolicyVariant(gs.gameVariant) && opts.phase11Omaha !== 'off'
+        registration.owner === 'phase11' && opts.phase11Omaha !== 'off'
           ? evaluateOmahaVariantPolicy(
               player,
               gs,
@@ -2599,7 +2612,7 @@ export class HorseLogic {
           : null;
       if (phase11) decision = this.legalize(phase11.decision, player, gs, vi);
       const phase12 =
-        isRemainingPolicyVariant(gs.gameVariant) && opts.phase12Remaining !== 'off'
+        registration.owner === 'phase12' && opts.phase12Remaining !== 'off'
           ? evaluateRemainingVariantPolicy(
               player,
               gs,
@@ -3046,6 +3059,19 @@ export class HorseLogic {
       );
       return { decision };
     }).decision;
+    decision.policyOwnership = horsePolicyOwnership(
+      registration.variant,
+      decision,
+      registration.owner === 'phase10'
+        ? opts.phase10Plo4 !== 'off'
+        : registration.owner === 'phase11'
+          ? opts.phase11Omaha !== 'off'
+          : registration.owner === 'phase12'
+            ? opts.phase12Remaining !== 'off'
+            : true
+    );
+    if (tele)
+      noteFire(`phase15_policy_${registration.variant}_${decision.policyOwnership.outcome}`);
     return graph.finish(decision);
   }
 

@@ -1,14 +1,14 @@
 /**
  * TIME BANK STORE - buy time banks with diamonds, from the felt.
  *
- * REBUILT ON THE CONSOLE 2026-09-14 (#ClubArenaConsole, the riveted family:
- * diamonds leave the player's balance here, so it wears the money frame).
- * Re-rendered, not rewritten: the quantity and busy state, the double-tap
- * guard in buy(), the server-priced total and the shortfall, every string, the
- * dialog roles and the `tbs-title` id are the ones that were here. The CSS-
- * drawn diamond glyph is gone; the amount prints beside the platform's own
- * painted diamond icon. The quantity picker is lit words on the glass, the
- * chosen one in white - nothing drawn.
+ * Presets are 1, 10, 25, 100, and 500. The caller provides the server-owned
+ * `feature_pricing` value used by `fn_purchase_time_banks_v2`, and one RPC buys
+ * the full selected quantity so a large order cannot partially settle.
+ *
+ * The existing quantity, busy state, double-tap guard, server-priced total,
+ * shortfall, dialog semantics, and title remain intact. The presentation uses
+ * the Club Arena console money frame, the platform's painted Diamond icon, and
+ * semantic illuminated controls instead of CSS-drawn glyphs.
  */
 import React, { useState } from 'react';
 import { SpadeConsole } from '../console/SpadeConsole';

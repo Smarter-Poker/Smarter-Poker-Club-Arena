@@ -162,8 +162,18 @@ async function main() {
    *  intentional: enough that ordinary work is not blocked, little enough that
    *  this comment gets read again soon rather than never.
    */
-  const TOTAL_GZ_CEILING = 2600;
-  const TOTAL_RAW_CEILING = 9200;
+  // 2026-09-14: four requested Three.js games add one shared, lazy renderer.
+  // Paired builds with the same dependencies/config: main a00f5c5c measured
+  // 2527kB gz / 8963kB raw; Diamond Spins measured 2723kB gz / 9674kB raw.
+  // Source-map inspection found one copy of Three.js (129kB gz shared chunk)
+  // and unchanged single React, Supabase, Sentry, Motion and chart vendors.
+  // The remaining growth is the four game routes and their controls. The
+  // eager game-door imports were fixed first: initial load fell 311 -> 298kB
+  // gz, versus main's 296kB. No new source module enters first paint.
+  // This accounts for the new product surface with 77kB total headroom;
+  // initial-load limits and the entry-module gate remain unchanged.
+  const TOTAL_GZ_CEILING = 2800;
+  const TOTAL_RAW_CEILING = 10000;
 
   const biggest = all
     .map((f) => ({ name: path.basename(f), ...sizeOf(f) }))

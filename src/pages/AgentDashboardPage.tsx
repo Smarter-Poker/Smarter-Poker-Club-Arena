@@ -1826,7 +1826,11 @@ export default function AgentDashboardPage() {
               border: '1px solid rgba(255,255,255,0.08)',
             }}
           >
-            <AgentBackOffice title="Weekly Statement & Roster" />
+            <AgentBackOffice
+              key={`${user?.id}:${clubId}`}
+              clubId={clubId ?? undefined}
+              title="Weekly Statement & Roster"
+            />
           </div>
         </div>
       )}

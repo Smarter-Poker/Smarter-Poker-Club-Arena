@@ -108,7 +108,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
 
       {loading && !data ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Loading Sales...</span>
+          <span className={styles.emptyText}>Loading Sales</span>
         </div>
       ) : error && !data ? (
         <div className={styles.emptyState}>
@@ -181,9 +181,13 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                   <tbody>
                     {data.topItems.map((i) => (
                       <tr key={i.itemId}>
-                        <td style={{ fontWeight: 600 }}>{i.name}</td>
-                        <td>{fmt(i.sales)}</td>
-                        <td style={{ color: '#00d4ff', fontWeight: 700 }}>{fmt(i.revenue)}</td>
+                        <td data-label="Top Items" className={styles.dataItemName}>
+                          {i.name}
+                        </td>
+                        <td data-label="Sold">{fmt(i.sales)}</td>
+                        <td data-label="Diamonds" className={styles.dataValuePrice}>
+                          {fmt(i.revenue)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -203,9 +207,13 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                     <tbody>
                       {data.topBuyers.map((b) => (
                         <tr key={b.userId}>
-                          <td style={{ fontWeight: 600 }}>{b.name || 'Member'}</td>
-                          <td>{fmt(b.purchases)}</td>
-                          <td style={{ color: '#00d4ff', fontWeight: 700 }}>{fmt(b.spent)}</td>
+                          <td data-label="Top Buyers" className={styles.dataItemName}>
+                            {b.name || 'Member'}
+                          </td>
+                          <td data-label="Purchases">{fmt(b.purchases)}</td>
+                          <td data-label="Diamonds" className={styles.dataValuePrice}>
+                            {fmt(b.spent)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

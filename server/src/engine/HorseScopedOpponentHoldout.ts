@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
 import {
   buildScopedOpponentModel,
+  buildJournaledOpponentModel,
   SCOPED_MODEL_ACTIONS,
   SCOPED_MODEL_POLICY,
   type ScopedOpponentModelInput,
+  type JournaledOpponentModelInput,
+  type ScopedOpponentModelResult,
 } from './HorseScopedOpponentModel.js';
 
 export const SCOPED_HOLDOUT_POLICY = Object.freeze({
@@ -23,9 +26,38 @@ const refusal = (reason: string) => Object.freeze({ status: 'unavailable' as con
  * correction. Complete-window acquisition remains the caller's responsibility.
  */
 export function validateScopedOpponentHoldout(input: ScopedHoldoutInput) {
-  const training = buildScopedOpponentModel({ ...input, partition: 'training' });
+  return validateModels(input, (partition) => buildScopedOpponentModel({ ...input, partition }));
+}
+
+/** Fit the two immutable models once, then score those exact fits. The report
+ * consumer needs both models even when evidence is insufficient. Rebuilding
+ * them again for validation duplicates the largest bounded allocations and
+ * obscures whether the diagnostic actually describes the reported models.
+ * Capture bias and repeated holdout use remain unresolved; no causal authority. */
+export function buildJournaledOpponentStudy(input: Omit<JournaledOpponentModelInput, 'partition'>) {
+  const training = buildJournaledOpponentModel({ ...input, partition: 'training' });
+  const holdout = buildJournaledOpponentModel({ ...input, partition: 'holdout' });
+  return Object.freeze({
+    training,
+    holdout,
+    predictiveDiagnostic: Object.freeze({
+      population: 'journaled_qualified_observations' as const,
+      sourceCoverage: 'not_established' as const,
+      activationAuthorized: false as const,
+      validation: validateModels(input, (partition) =>
+        partition === 'training' ? training.model : holdout.model
+      ),
+    }),
+  });
+}
+
+function validateModels(
+  input: ScopedHoldoutInput | Omit<JournaledOpponentModelInput, 'partition'>,
+  build: (partition: 'training' | 'holdout') => ScopedOpponentModelResult
+) {
+  const training = build('training');
   if (training.status === 'unavailable') return refusal(training.reason);
-  const heldout = buildScopedOpponentModel({ ...input, partition: 'holdout' });
+  const heldout = build('holdout');
   if (heldout.status === 'unavailable') return refusal(heldout.reason);
 
   // A relabeled session cannot put one physical hand in both arms. Check the

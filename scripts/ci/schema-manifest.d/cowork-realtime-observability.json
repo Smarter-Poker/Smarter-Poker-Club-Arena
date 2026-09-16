@@ -1,4 +1,4 @@
 {
-  "_owner": "docs/sentry-realtime-programme",
+  "_owner": "docs/runbooks/engine-and-realtime-diagnostics",
   "functions": ["fn_replication_slot_metrics", "sp_prune_ca_settlements"]
 }

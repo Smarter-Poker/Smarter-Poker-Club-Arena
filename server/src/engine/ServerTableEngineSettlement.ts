@@ -2651,7 +2651,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
              one, and section 10.8's rule that an unseen check is no check
              cuts both ways.
 
-             `reportError` above still records every attempt to Sentry (with
+             `reportError` above still records every attempt to error reporting (with
              its own budget and throttle), so the transient stays observable.
              What moved is the FINANCIAL ALERT: it now fires only where the
              loop actually abandons the envelope - see `if (!obligationsApplied)`

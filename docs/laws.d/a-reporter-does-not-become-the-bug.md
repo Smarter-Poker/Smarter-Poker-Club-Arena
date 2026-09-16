@@ -14,7 +14,7 @@ is an accessor with no setter, so the assignment threw back out of the
 `window.onerror` and HorseBugReporter filed it as a second critical bug - 2,686
 pairs in one 98-minute session on 2026-04-02 and 158 pairs on 2026-08-29,
 exactly one per rejection, and not one of the underlying IndexedDB failures
-ever reached Sentry. The law pins all four halves: the reporter never throws
+ever reached error reporting. The law pins all four halves: the reporter never throws
 and never mutates the caller's error whatever was thrown (DOMException, Symbol,
 circular, null-prototype, frozen, a hostile getter), the queue's readers resolve
 rather than reject when the connection is closing, the rejection is marked

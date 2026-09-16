@@ -41,7 +41,7 @@
  * ── COMPLETENESS IS PART OF THE CONTRACT (review fix 2026-08-20) ─────────────
  *
  * The first version returned a bare `T[]` on error — a short array
- * indistinguishable from a complete one, behind a Sentry event nobody blocks
+ * indistinguishable from a complete one, behind a error reporting event nobody blocks
  * on. That re-armed the original failure mode. It now returns
  * `{ rows, complete }`, so a caller that needs completeness has to look, and
  * TypeScript makes them.

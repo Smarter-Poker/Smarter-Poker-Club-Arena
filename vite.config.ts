@@ -1,11 +1,9 @@
 import { defineConfig, type Plugin } from 'vite';
 import { cpus } from 'node:os';
 import react from '@vitejs/plugin-react';
-import { sentryVitePlugin } from '@sentry/vite-plugin';
 import path from 'path';
 import { writeFileSync } from 'fs';
 import { viteMediaIdentity } from './scripts/optimize-dist-media.mjs';
-import { resolveSentryUpload } from './scripts/sentry-upload-policy';
 
 /**
  * NATIVE BUILD TARGET (2026-09-07, docs/changelog/2026-09-07-capacitor-shell.md)
@@ -34,10 +32,6 @@ if (!Number.isSafeInteger(maxParallelFileOps) || maxParallelFileOps <= 0) {
   throw new Error('ROLLUP_MAX_FILE_OPS must be a positive safe integer.');
 }
 const mediaIdentity = viteMediaIdentity();
-const sentryUpload = resolveSentryUpload(process.env);
-if (process.env.CA_SENTRY_UPLOAD === '1' && !sentryUpload.enabled) {
-  console.warn('[sentry-upload] Upload Disabled:', sentryUpload.reason);
-}
 
 function sourceMapAssetIdentity(): Plugin {
   let policy = '';
@@ -70,9 +64,7 @@ export default defineConfig({
      * chunk against a committed baseline, so operator-only code cannot drift
      * into first paint unnoticed (it did on 2026-09-01, at a cost of ~190kB
      * raw). It originally read that list out of the entry chunk's sourcemap,
-     * which worked locally and could never have worked in CI: the Sentry
-     * plugin below uploads sourcemaps and then DELETES them from dist/, and it
-     * runs only for an explicitly enabled, verified release build.
+     * which depended on maps that are not part of published application output.
      *
      * Rollup already knows the answer, so ask it. Written on writeBundle
      * rather than emitted into the bundle so the list never ships to players.
@@ -98,52 +90,7 @@ export default defineConfig({
         );
       },
     },
-
-    // Sentry source-map upload + release tagging (Phase U5.1, task #133).
-    // The publisher explicitly opts in. A token on a developer machine is
-    // never enough: the complete, clean Git tree must match its release SHA.
-    // Org/project slugs default to the LIVE Sentry values verified 2026-04-23
-    // via the Sentry API: org `smarter-software-inc`, project `javascript-react`.
-    // The earlier defaults (smarter-poker / club-arena) referenced a non-existent
-    // org slug and uploads silently no-op'd — see task #133.
-    sentryUpload.enabled &&
-      sentryVitePlugin({
-        org: process.env.SENTRY_ORG || 'smarter-software-inc',
-        project: process.env.SENTRY_PROJECT || 'javascript-react',
-        authToken: process.env.SENTRY_AUTH_TOKEN,
-
-        // Upload source maps, then DELETE them from dist/ so they don't ship
-        // to end users (saves ~3 MB per deploy + avoids exposing source code).
-        // Sentry keeps its own copy on the server side for symbolication.
-        sourcemaps: {
-          assets: './dist/**',
-          ignore: ['node_modules'],
-          filesToDeleteAfterUpload: ['./dist/**/*.js.map', './dist/**/*.css.map'],
-        },
-
-        // Release management.
-        //
-        // THIS NAME MUST EQUAL THE ONE THE RUNTIME REPORTS or symbolication
-        // cannot work, and until 2026-09-04 it did not: this read
-        // npm_package_version and tagged every upload `club-arena@1.0.1`,
-        // while src/core/SentryInit.ts tags every event
-        // `club-arena@${VITE_APP_VERSION}` - the publishing commit's sha. Two
-        // different releases, so no event could ever find its maps. The
-        // publisher sets VITE_APP_VERSION to the sha it is shipping; the
-        // upload uses that verified identity without a package-version fallback.
-        release: {
-          name: sentryUpload.release,
-          setCommits: {
-            auto: true, // Automatically associate commits
-          },
-        },
-
-        // Don't fail the build if Sentry upload fails
-        errorHandler(err) {
-          console.warn('[sentry-vite-plugin] Warning:', err.message);
-        },
-      }),
-  ].filter(Boolean), // Filter out false values when not in production
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -184,18 +131,9 @@ export default defineConfig({
   define: {
     // Prevent process errors in browser
     'process.env': {},
-    /**
-     * Sentry ships its debug-logging paths behind these flags precisely so
-     * bundlers can drop them. vendor-sentry is the largest single script the
-     * app serves — 441 KB transferred, more than React (226 KB) and Supabase
-     * (168 KB) combined — so every kilobyte that is dead code in production is
-     * worth removing. Documented at
-     * https://docs.sentry.io/platforms/javascript/configuration/tree-shaking/
-     */
-    __SENTRY_DEBUG__: false,
   },
   // Strip console.log/debug/debugger in production builds.
-  // console.warn and console.error are preserved for Sentry error reporting.
+  // console.warn and console.error are preserved for operational diagnostics.
   esbuild: {
     drop: process.env.NODE_ENV === 'production' ? ['debugger'] : [],
     pure:
@@ -211,13 +149,8 @@ export default defineConfig({
       compress: { passes: 2 },
       format: { comments: 'some' },
     },
-    // Web: hidden maps still upload to Sentry for readable stack traces.
-    // Do not ship a sourceMappingURL in every chunk: the publisher removes
-    // those maps after upload, so each browser reference points at a missing
-    // file. Sentry also resolves adjacent <chunk>.map files without that URL.
-    // Native: off. The binary has no publisher to strip them, so a map here
-    // is ~3 MB of source shipped inside the app to every player.
-    sourcemap: NATIVE ? false : 'hidden',
+    // Neither web nor native publication needs source maps.
+    sourcemap: false,
     rollupOptions: {
       // Rollup defaults to 1000 concurrent file operations. Our intended
       // local cap is 20; shared CI hosts use half their CPUs, with a floor of 4.
@@ -243,14 +176,6 @@ export default defineConfig({
           // creating circular chunk deps (vendor-react ↔ vendor-charts).
           // Let Vite co-locate them naturally with their React dependency.
           if (id.includes('node_modules/framer-motion')) return 'vendor-motion';
-          if (id.includes('node_modules/@sentry/')) return 'vendor-sentry';
-          // The narrow Sentry surface belongs IN that chunk. It is a handful of
-          // re-exports, so Rollup would otherwise fold it into whichever chunk
-          // imports it — the entry — and the entry would then carry a static
-          // import of @sentry/*, dragging 80kB gzipped into the first paint that
-          // is supposed to arrive after it. Verified by measurement, twice.
-          if (id.includes('src/core/sentryBundle')) return 'vendor-sentry';
-
           // ── Application code: let Vite handle splitting naturally ──
           // DO NOT manually chunk services, core, hooks, stores, or common components.
           // These layers have bidirectional imports (MasterBus ↔ services, common → core/services)

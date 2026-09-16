@@ -85,7 +85,7 @@ describe('no flop, no drop is settled by the board', () => {
   });
 
   it('records the refusal durably, where it can be joined to a hand id', () => {
-    // Refusing the money must not also make the bug invisible. Sentry is not
+    // Refusing the money must not also make the bug invisible. error reporting is not
     // queryable next to the rake-law alarm; financial_alerts is.
     raiseFinancialAlert.mockClear();
     const players = mkPlayers([200, 200, 200]);

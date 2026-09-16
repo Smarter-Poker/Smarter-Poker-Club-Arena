@@ -17,7 +17,7 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
   const [isAccepting, setIsAccepting] = useState(false);
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [mounted, setMounted] = useState(false);
-  /* A failed acceptance used to be reported to Sentry and shown to the player
+  /* A failed acceptance used to be reported to error reporting and shown to the player
      as nothing at all: the button flipped from "Accepting..." back to
      "Accept & Continue" and the modal sat there. The player's only reading of
      that is "the site is broken". The reason the server gave is shown here. */

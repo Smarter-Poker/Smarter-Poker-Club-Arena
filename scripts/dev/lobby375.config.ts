@@ -34,7 +34,6 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@sentry/node': path.resolve(__dirname, '../../tests/stubs/sentry-node.ts'),
       'canvas-confetti': path.resolve(__dirname, '../../tests/stubs/canvas-confetti.ts'),
       '@': path.resolve(__dirname, '../../src'),
     },

@@ -131,7 +131,7 @@ describe('section 1 — only two game rules are sanctioned', () => {
   });
 
   it('reports ONCE per mount, not once per live VPIP tick', () => {
-    // An error loop on a per-hand event is the shape the engine's Sentry
+    // An error loop on a per-hand event is the shape the engine's error reporting
     // budget exists to survive (CLAUDE.md section 2). Do not re-report.
     vi.stubEnv('DEV', false);
     try {

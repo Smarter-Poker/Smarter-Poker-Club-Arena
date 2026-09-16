@@ -212,13 +212,10 @@ by accident:
    its own output, so a second pass re-encodes nothing; before 2026-09-04 a
    second pass re-encoded 90 files and lost quality every time.
 
-**Source maps go to Sentry and never to players.** `SENTRY_AUTH_TOKEN` belongs
-to `publish-club-arena.yml` and nowhere else. It used to sit in `ci.yml`, so
-the plugin uploaded maps for the pull-request bundle that gets thrown away,
-uploaded none for the bundle that ships, and - because
-`filesToDeleteAfterUpload` only runs on a successful upload - shipped 267 `.map`
-files (27MB) to players on every deploy. The publisher now strips them
-unconditionally and refuses to publish a survivor.
+**Source maps never go to players.** Both application targets disable maps.
+The publisher still strips maps unconditionally and refuses to publish a survivor.
+Error diagnostics use the existing console and durable financial-alert paths;
+no external error-telemetry SDK, upload token, or event budget is required.
 
 Full reasoning and every measurement:
 `docs/changelog/2026-09-04-push-to-live-under-six-minutes.md`.
@@ -418,14 +415,6 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - ALL game logic lives here: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
 - Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
-- Sentry: its OWN project `club-arena-engine` (since 2026-09-04) and an
-  SDK-side event budget (`server/src/services/sentryEventBudget.ts`, 10/min per
-  fingerprint, 60/min overall, dropped counts summarised every 10 min). An
-  engine loop burned the whole org quota in August and blinded every other
-  app for three weeks. Never point `SENTRY_DSN` back at the hub project, never
-  remove the budget from `beforeSend`, and do not raise its limits to make a
-  loop visible: the summary event already names it.
-  `docs/changelog/2026-09-04-engine-sentry-budget.md`.
 - The engine is ONE core and horse Monte Carlo was 90% of it (profiled
   2026-09-04). `server/src/engine/EquityLoadGovernor.ts` scales the sample
   when the event loop saturates; `/health.equityGovernor.scale < 1` means the

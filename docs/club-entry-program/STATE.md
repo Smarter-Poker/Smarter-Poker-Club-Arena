@@ -11,12 +11,12 @@
 
 The worktree inherited `node_modules` through a symlink to another checkout.
 That checkout contains package versions newer than this branch's lockfile,
-including incompatible Vitest/tinyrainbow and Sentry packages. Phase 1 replaces
+including incompatible Vitest/tinyrainbow packages and the now-retired external telemetry SDK. Phase 1 replaces
 the symlink with an isolated `npm ci` installation before tests are considered valid.
 
 ## Phase 1 Evidence
 
-- Lockfile-matched Vitest 4.0.18, tinyrainbow 3.0.3, and Sentry 10.38.0 installed locally.
+- Lockfile-matched Vitest 4.0.18, tinyrainbow 3.0.3 installed locally; the former external telemetry SDK has since been removed.
 - 75 Club Entry/header/law tests pass.
 - Full baseline: 590 files pass; 9,042 tests pass; one test is skipped.
 - Typecheck passes; targeted lint has zero errors and three pre-existing hook warnings.

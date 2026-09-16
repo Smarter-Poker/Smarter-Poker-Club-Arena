@@ -99,7 +99,7 @@ function VpipRequirementBadgeInner({
     if (isAllowedVpipRequirement(minimumVpip) || reportedRef.current) return;
     reportedRef.current = true;
     // Once per mount, not once per render: a live VPIP event must not turn a
-    // config mismatch into an error loop (the engine Sentry budget exists
+    // config mismatch into an error loop (the engine error reporting budget exists
     // because of exactly that shape - CLAUDE.md section 2).
     reportError(
       new Error(

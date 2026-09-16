@@ -422,7 +422,7 @@ export class HandController {
       // so the FSM REJECTED it and stayed parked on 'dealing' for the whole
       // hand. Every subsequent transition was then invalid too, so a single
       // bomb pot logged 'dealing -> flop', 'dealing -> showdown',
-      // 'dealing -> settlement' and 'dealing -> idle' to reportError/Sentry.
+      // 'dealing -> settlement' and 'dealing -> idle' to reportError/error reporting.
       // state.stage was always correct (transitionStage sets it regardless),
       // so play was never affected — but the FSM, whose entire job is to make
       // an illegal hand flow detectable, was reporting a false positive on
@@ -3656,15 +3656,15 @@ export class HandController {
         ),
         'HandController.saw_flop_without_board'
       );
-      /* And durably, where it can be READ. Sentry is where the first version
-         of this sent the finding, and Sentry is not queryable from the place
+      /* And durably, where it can be READ. error reporting is where the first version
+         of this sent the finding, and error reporting is not queryable from the place
          the rake-law alarm lives, so the two halves of the same incident sat
          in two systems and only one of them could be joined to a hand id.
          financial_alerts is the server's durable money-alarm table and takes
          a structured context; this is a money path refusing to pay, which is
          exactly what it is for. Fire-and-forget on the settlement hot path —
          raiseFinancialAlert never throws and never rejects (and re-escalates
-         a throttled critical to Sentry by itself). */
+         a throttled critical to error reporting by itself). */
       void raiseFinancialAlert(
         'critical',
         'HandController.saw_flop_without_board',

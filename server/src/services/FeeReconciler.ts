@@ -358,7 +358,7 @@ async function alarmUnqueueableFee(
         ? ''
         : ` The database could not be asked whether the fee is already banked, so this is unverified.`);
     reportError(new Error(detail), 'FeeReconciler.queue_failed');
-    // Sentry alone is not enough for a money alarm: financial_alerts is the
+    // error reporting alone is not enough for a money alarm: financial_alerts is the
     // durable, queryable channel an operator actually reads, and this is the
     // last line of defence before chips become unrecoverable from data.
     // THE WHOLE PAYLOAD, NOT A SUMMARY (2026-08-22).
@@ -857,7 +857,7 @@ export async function reconcilePendingFees(): Promise<{
  * condition holds, exactly one unresolved financial_alerts row exists for
  * `source`: raised the first time, refreshed (message + context) on later
  * cycles so the operator sees the CURRENT figures, and resolved automatically
- * - with a note - the first cycle the condition is false. Sentry hears about
+ * - with a note - the first cycle the condition is false. error reporting hears about
  * it once, when it is raised.
  *
  * Never throws: bookkeeping about an alarm must not fail the audit.
@@ -1018,7 +1018,7 @@ export async function auditBBJDrift(
     const unlinkableChips = Number(row?.unlinkable_chips ?? 0);
     /* ONE OPEN ROW PER CONDITION (BBJ build plan phase 1, 2026-09-05).
        This audit runs hourly and used to raise a NEW warning every hour for
-       the same 3.5 chips - 24 identical rows a day, each also a Sentry event
+       the same 3.5 chips - 24 identical rows a day, each also a error reporting event
        - which is precisely the pattern that buried the nine real alerts on
        2026-08-22 under 988 duplicates. A condition that is still true is
        still ONE fact: the open row is refreshed with the current figures, a

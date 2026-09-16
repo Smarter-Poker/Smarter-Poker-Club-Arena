@@ -127,7 +127,9 @@ export async function main(mode) {
   const receipt = { sha, url, requestedAt: event.client_payload.requested_at, buildSeconds, runId: process.env.GITHUB_RUN_ID };
   writeFileSync(join(source, 'publication-receipt.json'), JSON.stringify(receipt, null, 2));
   console.log(`Prebuilt candidate: ${url}`);
-  await verify(url, sha);
+  // Preview domains retain Vercel protection; the authenticated CLI supplies
+  // its supported bypass without disabling protection or exposing a secret.
+  assertHealth(JSON.parse(v(['curl', '/api/health', '--deployment', url, '--scope', TEAM])), sha);
   currentMain(sha);
   v(['promote', url, '--yes', '--scope', TEAM]);
   await verify('https://smarter.poker', sha);

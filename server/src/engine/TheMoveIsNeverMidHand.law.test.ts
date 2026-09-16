@@ -341,7 +341,7 @@ describe('D5 - a player who left leaves nothing of themselves behind', () => {
   });
 
   it('and the move path still deposits presence BEFORE it forgets the player', () => {
-    const at = BASE.indexOf('this.depositPresenceForMove(m.player_id, m.to_table_id);');
+    const at = BASE.indexOf('this.depositPresenceForMove(m.player_id, m.to_table_id,');
     const forget = BASE.indexOf(
       'this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);'
     );

@@ -52,7 +52,7 @@ describe('the obligations alarm belongs to the give-up, not to attempt 1', () =>
     expect(loop).not.toContain('raiseFinancialAlert');
   });
 
-  it('still reports every attempt to Sentry, so the transient stays visible', () => {
+  it('still reports every attempt to local diagnostics, so the transient stays visible', () => {
     expect(obligationsRetryCatch()).toMatch(
       /reportError\(\s*err,\s*'ServerTableEngine\.post_commit_obligations_pending'/
     );

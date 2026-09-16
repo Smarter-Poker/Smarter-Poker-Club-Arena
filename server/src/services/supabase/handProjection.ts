@@ -630,7 +630,7 @@ async function drainPass(
     // The budget cancelled this read. That is the bound doing its job, not a
     // transport fault: end the pass here and let the block below queue the
     // continuation. Reporting a routine handoff as an Error is what made the
-    // first version of this bound look like an outage in Sentry.
+    // first version of this bound look like an outage in error reporting.
     if (budget.aborted) break;
     if (error) throw new Error(`projection outbox read failed: ${describeError(error)}`);
 
@@ -678,7 +678,7 @@ async function drainPass(
        does owe is a return, so the next pass starts from a clean cursor under
        the causal retry. This is the one exit that must not throw: a pass
        ending at its bound is a handoff, and reporting a handoff as an Error is
-       how the first version of this bound filled Sentry with
+       how the first version of this bound filled error reporting with
        HandProjection.drain_failed every two minutes for ninety minutes. */
     resetSweep();
     sweep.retryOwed = true;

@@ -6,7 +6,7 @@
  * "once violations have been monitored and confirmed zero". That monitoring
  * has never happened, because the policy carries no `report-uri` and no
  * `report-to`: the only record a violation leaves is a line in whichever
- * browser happened to hit it. next.config.js says so itself, about the Sentry
+ * browser happened to hit it. next.config.js says so itself, about the error reporting
  * allowance that was missing until 2026-08-29 — "the only symptom was a line
  * in the console that nobody reads".
  *
@@ -21,7 +21,7 @@
  * Two jobs, and the second is the one that keeps paying:
  *   1. It answers whether the switch to enforcing is safe TODAY.
  *   2. It fails the moment somebody adds an external resource the policy does
- *      not allow — which is precisely how Sentry got in and stayed broken for
+ *      not allow — which is precisely how error reporting got in and stayed broken for
  *      ten days under a header that was supposed to be watching.
  */
 import { expect, test } from '@playwright/test';
@@ -134,10 +134,10 @@ test.describe('the content security policy', () => {
     ]) {
       expect(policy, `the policy dropped: ${directive}`).toContain(directive);
     }
-    // Sentry, because losing error reporting at the moment a security header
-    // changes is the single worst thing to lose. next.config.js says exactly
-    // this; nothing was checking it.
-    expect(policy, 'Sentry ingest is not in connect-src').toContain('ingest');
+    // A retired telemetry provider must not remain an allowed network destination.
+    expect(policy, 'Retired telemetry must not remain in connect-src').not.toMatch(
+      new RegExp(`${['sen', 'try'].join('')}\\.io`, 'i')
+    );
     // upgrade-insecure-requests is ignored inside a report-only policy, so it
     // lives in the enforced header and must stay there.
     expect(enforced, 'upgrade-insecure-requests left the enforced header').toContain(

@@ -67,11 +67,36 @@ test.describe('Union Management', () => {
   });
 
   test('should show create union page', async ({ page }) => {
-    const allowed = await expectUnionAccessDecision(page, 'unions/create');
-    if (!allowed) return;
+    const rendered = await expectRoute(page, 'unions/create');
+    if (!rendered) return;
+
+    const deniedHeading = page.getByRole('heading', { name: 'Community Center' });
+    const creationHeading = page.getByText(/^(?:Forge A Union|Create A Club First)$/).first();
+    // The guard resolves asynchronously. An initial create URL does not prove
+    // that authorization has settled, and a heading alone does not prove routing.
+    await expect
+      .poll(
+        async () => {
+          if (/\/community(?:[/?#]|$)/.test(page.url()) && (await deniedHeading.isVisible())) {
+            return true;
+          }
+          return (
+            /\/unions\/create(?:[/?#]|$)/.test(page.url()) && (await creationHeading.isVisible())
+          );
+        },
+        { timeout: 15000 }
+      )
+      .toBe(true);
+
+    if (/\/community(?:[/?#]|$)/.test(page.url())) {
+      await expect(page).toHaveURL(/\/community(?:[/?#]|$)/);
+      await expect(deniedHeading).toBeVisible();
+      return;
+    }
+    await expect(page).toHaveURL(/\/unions\/create(?:[/?#]|$)/);
 
     await expect(
-      page.getByText(/^(?:Forge A Union|Create A Club First)$/).first(),
+      creationHeading,
       'union creation should render either the forge or its club-ownership prerequisite'
     ).toBeVisible({ timeout: 15000 });
   });

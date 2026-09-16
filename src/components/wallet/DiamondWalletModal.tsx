@@ -288,7 +288,7 @@ export default function DiamondWalletModal({
          Both reads here discarded `error` entirely, so an RLS denial or a
          dropped connection produced an empty array and this modal told the
          player "No Transactions Yet" — a statement about their money that was
-         not true, with no error, no retry and nothing in Sentry. */
+         not true, with no error, no retry and nothing in error reporting. */
       if (dtError) throw dtError;
 
       const combined: DiamondTransaction[] = (dtData || []).map((t: any) => ({

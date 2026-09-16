@@ -1,0 +1,21 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
+describe('source maps never ship to players', () => {
+  it('disables maps in both application targets', () => {
+    expect(read('vite.config.ts')).toContain('sourcemap: false');
+  });
+  it('the publisher strips maps and refuses any surviving source map', () => {
+    const publisher = read('.github/workflows/publish-club-arena.yml');
+    expect(publisher).toContain("find dist -name '*.map' -delete");
+    expect(publisher).toContain('source maps survived the strip');
+    expect(publisher).toContain(`find "$ROOT/pool" -type f -name '*.map' -delete`);
+  });
+  it('retains exact application release identity', () => {
+    expect(read('.github/workflows/publish-club-arena.yml')).toContain(
+      'VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}'
+    );
+  });
+});

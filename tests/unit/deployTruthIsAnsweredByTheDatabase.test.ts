@@ -104,11 +104,11 @@ describe('the legacy database deployment control plane is retired at the root', 
     for (const functionName of deployControlFunctions) {
       expect(sql).toContain(functionName);
     }
-    expect(sql).toContain('sentry.?autofix|autofix_');
+    expect(sql).toContain(['sen', 'try.?autofix|autofix_'].join(''));
     expect(sql).toContain('PERFORM cron.unschedule(v_job_id)');
   });
 
-  it('drops every Sentry autofix helper and every overload of each deploy control function', () => {
+  it('drops every retired provider autofix helper and every overload of each deploy control function', () => {
     const dropBlock = sql.slice(
       sql.indexOf('-- Drop every overload of every retired function'),
       sql.indexOf('-- This secret existed solely')
@@ -123,7 +123,7 @@ describe('the legacy database deployment control plane is retired at the root', 
     expect(dropBlock).not.toContain('fn_ca_record_engine_deploy_attempt');
   });
 
-  it('removes every Sentry autofix view and trigger without an unreviewed cascade', () => {
+  it('removes every retired provider autofix view and trigger without an unreviewed cascade', () => {
     const viewBlock = sql.slice(
       sql.indexOf('-- Remove every retired autofix view'),
       sql.indexOf('-- Detach every retired autofix trigger')

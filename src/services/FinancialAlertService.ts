@@ -119,7 +119,7 @@ export const FinancialAlertService = {
 
     // AUDIT M7 — never swallow. If the durable channel failed and this is a
     // CRITICAL (money may be in an inconsistent state), escalate to the error
-    // reporter so it reaches Sentry. A dropped critical alert is itself an
+    // reporter so it reaches error reporting. A dropped critical alert is itself an
     // incident, not a config-level permission boundary to shrug at.
     if (!persisted && persistFailure) {
       if (severity === 'critical') {

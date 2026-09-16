@@ -3,7 +3,7 @@
  *  CLEAR USER CACHES — what must not survive a sign-out
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * 2026-08-23. Until now, signing out cleared the Zustand store, the Sentry
+ * 2026-08-23. Until now, signing out cleared the Zustand store, the error reporting
  * user, and the realtime hooks — and no storage whatsoever. Everything the
  * previous account had cached stayed on the device and was read straight back
  * by the next person to use it:

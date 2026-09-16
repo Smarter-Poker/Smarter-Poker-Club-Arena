@@ -147,7 +147,7 @@ async function main() {
    *  Measured before raising it, so the growth is known to be growth:
    *    main                          2328kB gz / 388 files  (local build)
    *    same tree + table management  2355kB gz / 393 files  (local build)
-   *    ten heaviest chunks inspected: one copy each of react, sentry,
+   *    ten heaviest chunks inspected: one copy each of react, error reporting,
    *      supabase, motion and the chart runtime. No duplicated vendor, no
    *      library arriving twice.
    *

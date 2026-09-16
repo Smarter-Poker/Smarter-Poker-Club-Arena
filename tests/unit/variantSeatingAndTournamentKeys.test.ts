@@ -32,7 +32,7 @@ import {
 import { canRunAsTournament, buildTournamentConfig } from '../../src/lib/tournamentFromTableConfig';
 // The server's own copy of the deck arithmetic. The two modules cannot share a
 // file (server/tsconfig.json sets rootDir './src'), but the root vitest config
-// can import both — it already aliases @sentry/node so client suites can reach
+// can import both — it already aliases @error-reporting/node so client suites can reach
 // server services — so the two copies can at least be pinned against each
 // other here instead of being trusted to agree.
 import { maxSeatsFor as serverMaxSeatsTheDeckAllows } from '../../server/src/engine/VariantRules';

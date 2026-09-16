@@ -327,7 +327,7 @@ class AchievementServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   async getUserAchievements(userId: string): Promise<UserAchievement[]> {
-    // Silent breaker — avoids Sentry flood from polling when table/RLS blocks reads
+    // Silent breaker — avoids error reporting flood from polling when table/RLS blocks reads
     if (this._dbReadDisabled) return [];
 
     const { data, error } = await supabase

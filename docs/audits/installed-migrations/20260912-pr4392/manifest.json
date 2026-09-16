@@ -64,7 +64,7 @@
     {
       "version": "20260912050321",
       "name": "the_ladder_is_the_one_the_money_was_paid_by",
-      "archive": "docs/audits/installed-migrations/20260912-pr4392/20260912050321_the_ladder_is_the_one_the_money_was_paid_by.sql",
+      "archive": "git:4cb0ed92f13daaab082fe2e217b3e4a590c71780:docs/audits/installed-migrations/20260912-pr4392/20260912050321_the_ladder_is_the_one_the_money_was_paid_by.sql",
       "statement_count": 1,
       "statement_bytes": 4015,
       "statement_sha256": "4297a48c536c384dd8ad34b56e793f020732f7d99eb50ae61cf5c5b12102a7b0",
@@ -77,7 +77,8 @@
         "sha256": "56890f8bc9c1a243cff8d19ff28f399192708d3718b891016f085091e1edf5de",
         "same_as_recorded": false
       },
-      "disposition": "Historical installation record only; never run as a new migration."
+      "disposition": "Historical installation record only; never run as a new migration.",
+      "custody": "Exact historical bytes also retained in restoration task 01a0ab39-71ca-7821-825d-4943a0a6a0a3 private arena-before-historical-cleanup.tar.gz archive; never execute as a new migration."
     },
     {
       "version": "20260912050353",

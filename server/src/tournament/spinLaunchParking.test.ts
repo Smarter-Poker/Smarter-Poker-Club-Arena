@@ -322,7 +322,7 @@ describe('a transient refusal', () => {
     expect(h.sleeps).toEqual([250, 500]);
     expect(h.parks.isParked(h.id, h.now())).toBe(true);
     expect(h.parks.parkedUntil(h.id, h.now())).toBe(h.now() + SPIN_LAUNCH_TRANSIENT_PARK_FIRST_MS);
-    // No financial alert for a transient refusal; Sentry gets today's report.
+    // No financial alert for a transient refusal; error reporting gets today's report.
     expect(h.alerts).toHaveLength(0);
     expect(h.warns).toHaveLength(0);
     expect(h.reports.map((r) => r.context)).toEqual(['Tournament.spin_draw_unavailable']);

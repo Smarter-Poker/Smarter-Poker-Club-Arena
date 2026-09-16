@@ -841,7 +841,7 @@ export default function DetailOverviewTab({
               </div>
             ) : satError ? (
               /* There was no error branch at all: a failed fetch reported to
-                 Sentry and then rendered the empty state, telling the player
+                 error reporting and then rendered the empty state, telling the player
                  as a fact that this event has no satellites. */
               <div className="dov-band__note dov-band__note--error" role="alert">
                 <span>{satError}</span>

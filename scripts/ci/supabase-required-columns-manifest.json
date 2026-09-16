@@ -3713,17 +3713,6 @@
     "seeded_content": [
       "body"
     ],
-    "sentry_error_log": [
-      "sentry_issue_id",
-      "title"
-    ],
-    "sentry_event_budget": [
-      "day"
-    ],
-    "sentry_event_fingerprints": [
-      "day",
-      "fingerprint"
-    ],
     "session_chat_messages": [
       "session_id",
       "user_id",

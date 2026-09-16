@@ -194,7 +194,7 @@ export default function VIPPage() {
             `{ data: null, error }`, so an RLS denial or a dropped connection
             previously produced an empty list and told the player "nothing
             happened" — a false statement about their own money, with nothing
-            in Sentry. */
+            in local diagnostics. */
       const { data: ledgerData, error: ledgerError } = await supabase
         .from('diamond_transactions')
         .select('id, type, transaction_type, amount, description, balance_after, created_at')

@@ -269,7 +269,7 @@ export default function ClubAnnouncementsPage() {
       }
     } catch (error) {
       reportError(error, 'ClubAnnouncementsPage.Failed_to_post_announcement');
-      // 2026-08-28: this catch was Sentry-only. A thrown failure (network,
+      // 2026-08-28: this catch was error reporting-only. A thrown failure (network,
       // resolveClubUUID) left the composer open with no success and no error
       // — the user could not tell whether the post landed. The in-band error
       // branch above already toasts; a thrown one must too.

@@ -321,12 +321,12 @@ groups:
           description: |
             Self-healing is firing repeatedly. It is doing its job, but a
             restart loop means an underlying defect is still present. Check
-            Sentry for watchdog_* and dealingLoop_died events.
+            engine logs for watchdog_* and dealingLoop_died events.
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STATS PIPELINE (Stats Page Programme phase 1, 2026-09-04)
   #
-  # The engine raises these itself through raiseEngineAlert (Sentry + the
+  # The engine raises these itself through raiseEngineAlert (engine logs + the
   # alert receiver) within a minute of the read that saw them. These rules are
   # the second, independent path: Prometheus reading the poker_stats_* gauges
   # the engine exposes, so a broken alert receiver cannot hide a lagging index.

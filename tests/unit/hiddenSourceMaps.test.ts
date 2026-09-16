@@ -10,8 +10,6 @@ const directories: string[] = [];
 const source = 'globalThis.sourceMapProbe = function sourceMapProbe() { return 19 + 1; };';
 
 beforeEach(() => {
-  vi.stubEnv('CA_SENTRY_UPLOAD', '');
-  vi.stubEnv('SENTRY_AUTH_TOKEN', '');
   vi.stubEnv('NODE_ENV', 'production');
   vi.stubEnv('ROLLUP_MAX_FILE_OPS', '4');
 });
@@ -54,19 +52,7 @@ async function buildProbe(native: boolean, linked = false) {
   return { output: result.output, chunk };
 }
 
-describe('Private web source maps', () => {
-  it('retains the adjacent map and original source without a dangling browser reference', async () => {
-    const { output, chunk } = await buildProbe(false);
-    expect(chunk.code).not.toContain('sourceMappingURL');
-    const asset = output.find((item) => item.fileName === chunk.fileName + '.map');
-    expect(asset?.type).toBe('asset');
-    if (!asset || asset.type !== 'asset') throw new Error('Missing Sentry source map');
-    const map = JSON.parse(String(asset.source));
-    expect(map.sources).toEqual(['../../entry.js']);
-    expect(map.sourcesContent).toEqual([source]);
-    expect(map.mappings.length).toBeGreaterThan(0);
-  });
-
+describe('Source maps stay out of application output', () => {
   it('changes only the map reference, leaving executable output identical', async () => {
     const hidden = await buildProbe(false);
     const linked = await buildProbe(false, true);
@@ -92,8 +78,8 @@ describe('Private web source maps', () => {
     expect(repeated.chunk.code).toBe(hidden.chunk.code);
   });
 
-  it('keeps native builds free of maps and browser map references', async () => {
-    const { output, chunk } = await buildProbe(true);
+  it.each([false, true])('keeps web and native builds free of maps (native=%s)', async (native) => {
+    const { output, chunk } = await buildProbe(native);
     expect(output.filter((item) => item.fileName.endsWith('.map'))).toEqual([]);
     expect(chunk.map).toBeNull();
     expect(chunk.code).not.toContain('sourceMappingURL');

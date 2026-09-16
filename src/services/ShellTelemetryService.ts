@@ -67,7 +67,7 @@ async function currentUserId(): Promise<string | null> {
     /* The error is BOUND and acted on, per the discarded-error-read ratchet
        (tests/unit/discardedErrorReadRatchet.test.ts). "Acted on" here means
        logged at debug and treated as signed-out: a KPI row is not worth a
-       Sentry event, but an invisible read failure is exactly how this
+       error reporting event, but an invisible read failure is exactly how this
        service would appear to work while writing nothing. */
     const { data, error } = await supabase.auth.getSession();
     if (error) {

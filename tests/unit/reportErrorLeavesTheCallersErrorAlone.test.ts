@@ -8,28 +8,20 @@
  * the code beneath it did `err.message = '[context] ' + err.message` for
  * every error that would let it - copying only the DOMException that would
  * not. So the host's toast read "[CashGameCreateFlow.create_failed] Failed to
- * fetch". Sentry still gets the prefixed copy; the caller's object does not
+ * fetch". the local console still gets the prefixed copy; the caller's object does not
  * change.
  */
 import { describe, expect, it, vi } from 'vitest';
 
-const captured = vi.hoisted(() => ({ calls: [] as Array<{ message: string; name: string }> }));
-vi.mock('../../src/core/SentryInit', () => ({
-  captureException: (e: Error) => {
-    captured.calls.push({ message: e.message, name: e.name });
-  },
-  addBreadcrumb: () => {},
-}));
-
 import { reportError } from '../../src/utils/errorReporter';
 
 describe('reportError leaves the caller error alone', () => {
-  it('a plain Error keeps its message; Sentry gets the prefixed copy with the same name', () => {
+  it('a plain Error keeps its message; the local console gets the prefixed copy with the same name', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const err = new TypeError('Failed to fetch');
     reportError(err, 'CashGameCreateFlow.create_failed');
     expect(err.message).toBe('Failed to fetch');
-    expect(captured.calls.at(-1)).toEqual({
+    expect(spy.mock.calls.at(-1)?.[1]).toMatchObject({
       message: '[CashGameCreateFlow.create_failed] Failed to fetch',
       name: 'TypeError',
     });
@@ -41,7 +33,7 @@ describe('reportError leaves the caller error alone', () => {
     const dom = new DOMException('The operation is insecure.', 'SecurityError');
     expect(() => reportError(dom, 'Somewhere')).not.toThrow();
     expect(dom.message).toBe('The operation is insecure.');
-    expect(captured.calls.at(-1)).toEqual({
+    expect(spy.mock.calls.at(-1)?.[1]).toMatchObject({
       message: '[Somewhere] The operation is insecure.',
       name: 'SecurityError',
     });
@@ -53,7 +45,9 @@ describe('reportError leaves the caller error alone', () => {
     const obj = { message: 'permission denied for table cash_games', code: '42501' };
     reportError(obj, 'Flow');
     expect(obj.message).toBe('permission denied for table cash_games');
-    expect(captured.calls.at(-1)?.message).toBe('[Flow] permission denied for table cash_games');
+    expect((spy.mock.calls.at(-1)?.[1] as Error)?.message).toBe(
+      '[Flow] permission denied for table cash_games'
+    );
     spy.mockRestore();
   });
 });

@@ -146,7 +146,7 @@ import {
   requeueUnbankedCashRake,
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
-import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
+import { reportError } from './services/errorReporter.js';
 import { startRakeSpecGuard, stopRakeSpecGuard } from './services/rakeSpecGuard.js';
 import { rakeSpecDriftState } from './config/rakeSpec.js';
 import {
@@ -2196,9 +2196,6 @@ export class GameServer {
     // no other tables get picked up. Lifecycle / auto-rebuy stay off.
     const testTableId = process.env.TEST_TABLE_ID || '';
 
-    // Initialize Sentry FIRST so all subsequent errors are captured
-    initSentry();
-
     /* THE CORE IS MEASURED FROM BOOT (2026-09-06). The governor used to take
        a reading only when a horse computed equity, so a loop saturated by
        anything else - settlement, broadcasts, a boot adopting 195 tables -
@@ -3023,7 +3020,6 @@ export class GameServer {
         `GameServer shutdown retained ${ownershipFailures.length} process owner(s); distributed leases were not released`
       );
       reportError(error, 'GameServer.shutdown_ownership_not_released');
-      await flushSentry();
       throw error;
     }
 
@@ -3062,7 +3058,6 @@ export class GameServer {
         `GameServer shutdown could not prove ${distributedReleaseFailures.length} exact distributed lease release(s)`
       );
       reportError(error, 'GameServer.shutdown_distributed_release_unproven');
-      await flushSentry();
       /* Leadership deliberately remains held and no success line is emitted.
          A supervisor may terminate this failed-stop process, after which the
          30-second DB lease boundary remains the conservative handoff gate. */
@@ -3078,9 +3073,6 @@ export class GameServer {
     // Phase 1.1 PR-5: no Supabase Realtime channels to clean up — engine
     // WebSocket server (EngineWebSocketServer.close()) handles its own
     // shutdown; TableStateHub has no channels to close.
-
-    // Flush pending Sentry events before exit
-    await flushSentry();
 
     console.log('[GameServer] Shutdown complete.');
   }
@@ -3445,7 +3437,7 @@ export class GameServer {
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
-      // Delivery failures remain inspectable even when the receiver or Sentry is unavailable.
+      // Delivery failures remain inspectable even when the receiver or error reporting is unavailable.
       alertDelivery: engineAlertDeliveryHealth(),
       // THE CLUSTER CONTROLLER'S LAST PASS (2026-09-05). On 2026-09-04 its
       // latch stalled for eleven minutes with no log line; the only witness
@@ -5998,7 +5990,7 @@ export class GameServer {
             /* A parked launch is not a stall this watchdog can cure: the
                front door would refuse the force-start anyway, and reporting
                "force-starting" every stall window for a game the authority
-               has refused would be a lie in Sentry. The clock is left
+               has refused would be a lie in error reporting. The clock is left
                running, so the pass after the park ends acts at once. */
             if (spinLaunchParks.isParked(id, stallNow)) continue;
 

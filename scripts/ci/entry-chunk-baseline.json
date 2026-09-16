@@ -109,7 +109,6 @@
     "src/core/AntiGravityBoot.ts",
     "src/core/IdentityDNA.ts",
     "src/core/MasterBus.ts",
-    "src/core/SentryInit.ts",
     "src/core/SystemOffline.tsx",
     "src/core/WebVitals.ts",
     "src/core/useGlobalBalanceSync.ts",

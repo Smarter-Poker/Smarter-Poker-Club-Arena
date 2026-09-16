@@ -239,9 +239,9 @@ describe('ErrorBoundary Component', () => {
     );
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      'ErrorBoundary caught an error:',
-      expect.any(Error),
-      expect.any(Object)
+      '[ErrorBoundary]',
+      expect.objectContaining({ message: '[ErrorBoundary] Test error' }),
+      expect.objectContaining({ componentStack: expect.any(String) })
     );
 
     consoleErrorSpy.mockRestore();

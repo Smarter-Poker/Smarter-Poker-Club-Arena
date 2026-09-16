@@ -21,12 +21,15 @@ export function classifyChangedPaths(paths) {
   // A rule-only edit must not skip their existing directly triggered suites.
   const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
   const spinComparator = matches(/^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/);
+  // The existing accounting job must own these financial probes. Client request
+  // and receipt changes must retain that qualification as well as unit tests.
+  const diamondGames = matches(/^(tests\/sql\/(diamond-games-funding-identity|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/);
   return {
     // Browser specifications, their shared fixtures and runner configuration
     // can break shipped-CSS qualification without changing application source.
     src: broad || matches(/^(src\/|tests\/e2e\/|playwright\.config\.)/),
-    server: broad || spinRules || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
-    tests: broad || spinRules || spinComparator || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
+    server: broad || spinRules || diamondGames || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/)/),
+    tests: broad || spinRules || spinComparator || diamondGames || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
     phase4: matches(phase4),
     fixture: matches(fixture),
   };

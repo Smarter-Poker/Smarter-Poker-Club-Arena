@@ -12,6 +12,8 @@ export function pendingBonus(user: string, club: string, game: BonusGame): Bonus
     v.clubId !== club ||
     v.game !== game ||
     !uuid.test(v.commitId) ||
+    (v.serverSeedHash !== undefined &&
+      (typeof v.serverSeedHash !== 'string' || !/^[a-f0-9]{64}$/.test(v.serverSeedHash))) ||
     typeof v.seed !== 'string' ||
     !v.seed.length ||
     v.seed.length > 64 ||
@@ -29,6 +31,10 @@ export function rememberBonus(user: string, input: BonusStart) {
   const prior = pendingBonus(user, input.clubId, input.game);
   if (prior && JSON.stringify(prior) !== JSON.stringify(input))
     throw new Error('Check Your Previous Bonus Before Starting Another');
+  // Never invent a commitment for an older saved wager. Replay its exact request,
+  // but require the displayed commitment before accepting any fresh wager.
+  if (!prior && !/^[a-f0-9]{64}$/.test(input.serverSeedHash ?? ''))
+    throw new Error('Prepare A Sealed Game Ticket Before Starting');
   // If the request cannot be retained, stop before sending any money request.
   sessionStorage.setItem(key(user, input.clubId, input.game), JSON.stringify(input));
 }

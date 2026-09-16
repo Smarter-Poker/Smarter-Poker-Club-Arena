@@ -25,6 +25,22 @@ BEGIN
   RAISE NOTICE 'R46 PASS: %',p_case;
 END $assert$;
 
+-- The migration must register the exact enabled money-table guards it installs.
+-- A source-only name declaration cannot prove the real trigger is connected.
+SELECT pg_temp.r46_assert((
+  SELECT count(*)=3
+  FROM (VALUES
+    ('a0_tournaments_unlimited_entry_capacity','public.fn_ca_normalize_mtt_entry_capacity()'),
+    ('a1_tournaments_restart_source','public.fn_ca_guard_tournament_restart_source()'),
+    ('a2_tournaments_new_satellite_target','public.fn_ca_guard_new_satellite_target()')
+  ) AS expected(trigger_name,function_identity)
+  JOIN pg_trigger t ON t.tgrelid='public.tournaments'::regclass
+    AND t.tgname=expected.trigger_name AND NOT t.tgisinternal AND t.tgenabled='O'
+    AND t.tgfoid=to_regprocedure(expected.function_identity)
+  JOIN public.ca_declared_money_triggers d ON d.table_name='tournaments'
+    AND d.trigger_name=expected.trigger_name AND length(btrim(d.note))>0
+),'all three installed MTT guards have their own money-trigger declarations');
+
 DO $classifier$
 DECLARE v_type text; v_target jsonb;
 BEGIN

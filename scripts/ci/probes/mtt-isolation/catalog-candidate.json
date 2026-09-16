@@ -8,7 +8,7 @@
   "source_branch": "fix/mtt-unlimited-entries-sep15",
   "migration": {
     "path": "supabase/migrations/20260915150000_mtts_have_no_entry_cap.sql",
-    "sha256": "f54d55bf8fae09f312dede7a9db0ce76e0edc250c4e5bf65370ce154464a24b8"
+    "sha256": "ca6383931739d8d904c86d7eb0c8af48bdc67f964ae336d1af871a054f5f0c9f"
   },
   "fixture": {
     "path": "scripts/ci/probes/mtt-isolation/fixture.sql",
@@ -131,7 +131,7 @@
   "native_probes": [
     {
       "path": "scripts/ci/probes/mtt-unlimited-entry-cap-native.sql",
-      "sha256": "23d5a9a024aeb541d84ac3938c122c7f5b3bce927cea36a2d5cb896f03941839"
+      "sha256": "8a27525815c4df7a60c8f888ee7224719cea37983bc4e605e799adbc5d6a0b99"
     },
     {
       "path": "scripts/ci/probes/mtt-unlimited-ticket-redemption-native.sql",

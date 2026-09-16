@@ -1317,4 +1317,17 @@ BEGIN
 END;
 $r46$;
 
+-- Declare the reviewed money-table guards in the same atomic migration that
+-- installs them. These guards validate configuration and identity; they do
+-- not settle, refund, or reinterpret an accepted tournament payment.
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note)
+VALUES
+  ('tournaments','a0_tournaments_unlimited_entry_capacity',
+   'Normalize new MTT and satellite field capacity to NULL and preserve fixed-format entry limits without changing accepted payment terms.'),
+  ('tournaments','a1_tournaments_restart_source',
+   'Serialize restart-source identity and reject incompatible or duplicate successor configuration without posting or replaying any payment.'),
+  ('tournaments','a2_tournaments_new_satellite_target',
+   'Lock and validate satellite target contracts at the owning write, preserving accepted prize and ticket terms without settling or refunding funds.')
+ON CONFLICT(table_name,trigger_name) DO UPDATE SET note=excluded.note;
+
 COMMIT;

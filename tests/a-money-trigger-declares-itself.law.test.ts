@@ -20,6 +20,7 @@
  * measures from a fixed baseline.
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   offenders,
   MONEY_TABLES,
@@ -68,6 +69,39 @@ describe('a new trigger on a money table', () => {
       )
     ).toHaveLength(1);
   });
+});
+
+describe('unlimited MTT admission declares its financial-table guards', () => {
+  const migration = readFileSync(
+    new URL('../supabase/migrations/20260915150000_mtts_have_no_entry_cap.sql', import.meta.url),
+    'utf8'
+  );
+  const triggers = [
+    'a0_tournaments_unlimited_entry_capacity',
+    'a1_tournaments_restart_source',
+    'a2_tournaments_new_satellite_target',
+  ];
+
+  it('satisfies the maintained declaration gate in the migration that creates the guards', () => {
+    expect(offenders(migration)).toEqual([]);
+    // Removing the register reference reproduces the actual push refusal;
+    // these guards cannot silently disappear from the watched surface.
+    const withoutRegister = migration.replace(/\bca_declared_money_triggers\b/g, 'unrelated_registry');
+    expect(offenders(withoutRegister).map(({ table, trigger }) => `${table}.${trigger}`).sort()).toEqual(
+      triggers.map((trigger) => `tournaments.${trigger}`)
+    );
+  });
+
+  for (const trigger of triggers) {
+    it(`requires the explicit declaration for ${trigger}`, () => {
+      // Keep CREATE TRIGGER intact and substitute only its quoted registry
+      // identity. A declaration for another guard must not cover this one.
+      const wrongDeclaration = migration.replaceAll(`'${trigger}'`, "'unrelated_declared_trigger'");
+      expect(offenders(wrongDeclaration)).toEqual([
+        { table: 'tournaments', trigger, sawRegister: true, sawName: false },
+      ]);
+    });
+  }
 });
 
 describe('what it deliberately leaves alone', () => {

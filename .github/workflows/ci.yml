@@ -879,15 +879,25 @@ jobs:
       # declaration is enforced where the trigger is WRITTEN. The last
       # unreviewed one broke a third of all hand settlements.
       - name: Supabase Invariants - A Money Trigger Declares Itself
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MONEY_TRIGGER_REPORTER_APP_ID: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}
         run: |
           set -o pipefail
           echo "## Money Trigger Declarations" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if node scripts/ci/check-money-trigger-declared.mjs 2>&1 | tee /tmp/trigdecl.log; then
+          node --test tests/protection-applicability.test.mjs tests/producer-boundary.test.mjs tests/money-trigger-recovery.test.mjs
+          if node scripts/ci/check-money-trigger-with-recovery.mjs --required-authority 2>&1 | tee /tmp/trigdecl.log; then
             echo "OK - every trigger created on a money table declares itself." >> $GITHUB_STEP_SUMMARY
           else
             code=$?
-            if [ "$code" = "2" ]; then
+            if [ "$code" = "3" ]; then
+              echo "DEFERRED - ordinary declarations refused; the configured App-bound" >> $GITHUB_STEP_SUMMARY
+              echo "Money trigger declaration authority check must pass for this exact PR head." >> $GITHUB_STEP_SUMMARY
+              echo "This is configuration proof, not a declaration or live-catalog pass." >> $GITHUB_STEP_SUMMARY
+              echo "Its catalog is fresh at trusted-check completion; no late-CI artifact is consumed here." >> $GITHUB_STEP_SUMMARY
+              exit 0
+            elif [ "$code" = "2" ]; then
               echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
             else
               echo "A migration creates a trigger on a money table without declaring it" >> $GITHUB_STEP_SUMMARY

@@ -41,7 +41,9 @@ jobs:
     # MUST be configured for main-only deployment branches before activation.
     # Reporter app key is environment-scoped, never a repository/PR secret.
     environment: money-trigger-recovery-trusted
-    runs-on: ubuntu-latest
+    # Live catalog and reporter credentials stay on the isolated local trusted VM.
+    # Checkout remains default-branch code; candidate SQL is data, never executed.
+    runs-on: [self-hosted, smarter-local-publish]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

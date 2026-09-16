@@ -54,8 +54,7 @@ describe('local database failure visibility', () => {
     );
     expect(log).toHaveBeenCalledWith(
       '[Supabase.wallet.select]',
-      expect.objectContaining({ message: '[Supabase.wallet.select] permission denied' }),
-      undefined
+      expect.objectContaining({ message: '[Supabase.wallet.select] permission denied' })
     );
     expect(warn).toHaveBeenCalledWith('[Supabase.wallet.select] RLS Policy Violation', {
       code: '42501',

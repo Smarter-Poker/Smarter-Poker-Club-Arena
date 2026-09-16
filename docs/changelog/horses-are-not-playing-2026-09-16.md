@@ -69,6 +69,17 @@ booked into events that will never end, so the cash fleet has nobody to seat.
    registered entry, and the gauges refresh at most four times a second from
    event paths (the one-second timer is unchanged).
 
+4. **The seating budget starts when seating starts** (`HorseFleetManager`).
+   The cash fleet's 18-second seating budget was measured from the start of
+   the cycle, load phase included, on the strength of a 5.3-second load
+   phase. With the pool full the load phase took 34 to 75 seconds, the
+   budget was spent before the first table, the one-table fallback tried the
+   same first table every cycle (every one of its thousand horse/table pairs
+   excluded on membership or tags), and the floor seated nobody for hours:
+   90 of 110 cash tables empty, "0 sit(s)" on every beat, 1,000 horses in
+   the pool. The budget now runs from the end of the load phase; a slow load
+   phase is reported on its own line and no longer cancels seating.
+
 ## What was not changed
 
 - No repair job finishes the 804 decided tournaments by hand; the sweeps

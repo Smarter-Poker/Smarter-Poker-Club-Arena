@@ -57,8 +57,9 @@ def verify_rebuy_receipts(run):
    run("BEGIN;"+seed+f"SELECT {call()};"+mutation+f"""DO $t$ DECLARE r numeric;s jsonb;BEGIN SELECT {state} INTO s;r:={call()};
     IF r<>95 OR s IS DISTINCT FROM {state} THEN RAISE EXCEPTION 'Receipt was replaced by current state';END IF;END $t$;ROLLBACK;""");count+=1
   for table in ["club_members","chip_ledger","table_pending_addons","wallet_transactions","entry_purchase_idempotency_receipts"]:
+   insert_guard="IF TG_OP='INSERT' THEN RETURN NEW;END IF;" if table=="entry_purchase_idempotency_receipts" else ""
    for fault in ["55P03","40P01","23514","23505","XX001"]:
-    run("BEGIN;"+seed+context+f"""CREATE FUNCTION rebuy_fault() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN {'IF TG_OP=\'INSERT\' THEN RETURN NEW;END IF;' if table=='entry_purchase_idempotency_receipts' else ''} RAISE EXCEPTION 'injected failure' USING ERRCODE='{fault}';END $f$;
+    run("BEGIN;"+seed+context+f"""CREATE FUNCTION rebuy_fault() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN {insert_guard} RAISE EXCEPTION 'injected failure' USING ERRCODE='{fault}';END $f$;
      CREATE TRIGGER rebuy_fault BEFORE INSERT OR UPDATE ON {table} FOR EACH ROW EXECUTE FUNCTION rebuy_fault();
      DO $t$ DECLARE s jsonb;caught boolean:=false;BEGIN SELECT {state} INTO s;
       BEGIN PERFORM {call()};EXCEPTION WHEN SQLSTATE '{fault}' THEN caught:=true;END;

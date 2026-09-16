@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   detect:
     name: Prove Whether The Server Tree Changed
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 3
     permissions:
       contents: read
@@ -74,7 +74,8 @@ jobs:
     name: Dispatch The Exact Main SHA
     needs: detect
     if: needs.detect.outputs.release_required == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, smarter-local-publish]
+    environment: Production
     timeout-minutes: 4
     permissions:
       actions: read

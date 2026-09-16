@@ -17,12 +17,16 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  // The loaded-rule comparator and the server Spin law read this rule file.
+  // A rule-only edit must not skip their existing directly triggered suites.
+  const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
+  const spinComparator = matches(/^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/);
   return {
     // Browser specifications, their shared fixtures and runner configuration
     // can break shipped-CSS qualification without changing application source.
     src: broad || matches(/^(src\/|tests\/e2e\/|playwright\.config\.)/),
-    server: broad || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
-    tests: broad || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
+    server: broad || spinRules || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
+    tests: broad || spinRules || spinComparator || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
     phase4: matches(phase4),
     fixture: matches(fixture),
   };

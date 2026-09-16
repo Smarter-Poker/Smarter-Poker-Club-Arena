@@ -102,6 +102,84 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     );
   };
   const move = (id = MOVE) => sql(`SELECT fn_cash_seat_move_execute('${id}')`);
+  const arrivals = (tableId: string, occupancyId: string) =>
+    sql(`SELECT coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb)
+      FROM fn_cash_seat_move_arrivals('${tableId}', ARRAY['${occupancyId}'::uuid]) r`);
+
+  it('reads exact arrival provenance without changing seats, receipts or chips', () => {
+    seedMove();
+    const result = move();
+    const before = snapshot();
+    expect(arrivals(OTHER_TABLE, result.destination_occupancy_id)).toEqual([
+      {
+        move_id: MOVE,
+        player_id: USER,
+        from_table_id: TABLE,
+        to_table_id: OTHER_TABLE,
+        source_occupancy_id: result.source_occupancy_id,
+        destination_occupancy_id: result.destination_occupancy_id,
+      },
+    ]);
+    expect(arrivals(TABLE, result.destination_occupancy_id)).toEqual([]);
+    expect(arrivals(OTHER_TABLE, result.source_occupancy_id)).toEqual([]);
+    expect(snapshot()).toEqual(before);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(1);
+  });
+
+  it('cannot attach a prior transfer receipt to a later voluntary stay', () => {
+    seedMove();
+    const result = move();
+    sql(`UPDATE table_seats SET left_at=now() WHERE table_id='${OTHER_TABLE}' AND user_id='${USER}';
+      UPDATE table_seats SET left_at=NULL WHERE table_id='${OTHER_TABLE}' AND user_id='${USER}'`);
+    const replacement = sql(`SELECT to_json(occupancy_id) FROM table_seats
+      WHERE table_id='${OTHER_TABLE}' AND user_id='${USER}' AND left_at IS NULL`);
+    expect(replacement).not.toBe(result.destination_occupancy_id);
+    expect(arrivals(OTHER_TABLE, result.destination_occupancy_id)).toEqual([]);
+    expect(arrivals(OTHER_TABLE, replacement)).toEqual([]);
+  });
+
+  it('has no arrival receipt for a cancelled plan', () => {
+    seedMove();
+    sql(`UPDATE cash_seat_moves SET state='cancelled' WHERE id='${MOVE}'`);
+    const original = sql(`SELECT to_json(occupancy_id) FROM table_seats WHERE user_id='${USER}'`);
+    expect(arrivals(OTHER_TABLE, original)).toEqual([]);
+    expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(0);
+  });
+
+  it('proves both swap arrivals only after the shared transfer commits', () => {
+    seedSwap();
+    const original = sql(`SELECT to_json(occupancy_id) FROM table_seats WHERE user_id='${USER}'`);
+    expect(move()).toMatchObject({ held: true });
+    expect(arrivals(OTHER_TABLE, original)).toEqual([]);
+    const partner = move(PARTNER_MOVE);
+    const first = move();
+    expect(arrivals(OTHER_TABLE, first.destination_occupancy_id)[0].move_id).toBe(MOVE);
+    expect(arrivals(TABLE, partner.destination_occupancy_id)[0].move_id).toBe(PARTNER_MOVE);
+  });
+
+  it('keeps arrival history engine-only and bounds its input', () => {
+    expect(
+      sql(`SELECT jsonb_build_array(
+      has_function_privilege('anon','public.fn_cash_seat_move_arrivals(uuid,uuid[])','EXECUTE'),
+      has_function_privilege('authenticated','public.fn_cash_seat_move_arrivals(uuid,uuid[])','EXECUTE'),
+      has_function_privilege('service_role','public.fn_cash_seat_move_arrivals(uuid,uuid[])','EXECUTE'))`)
+    ).toEqual([false, false, true]);
+    expect(() =>
+      sql(`SET test.is_engine='false';
+      SELECT count(*) FROM fn_cash_seat_move_arrivals('${TABLE}',ARRAY[]::uuid[])`)
+    ).toThrow(/ENGINE_ONLY/);
+    expect(() => sql(`SELECT count(*) FROM fn_cash_seat_move_arrivals('${TABLE}',NULL)`)).toThrow(
+      /INVALID_SEAT_MOVE_ARRIVAL_SCOPE/
+    );
+    expect(() =>
+      sql(`SELECT count(*) FROM fn_cash_seat_move_arrivals('${TABLE}',ARRAY[NULL]::uuid[])`)
+    ).toThrow(/INVALID_SEAT_MOVE_ARRIVAL_SCOPE/);
+    expect(() =>
+      sql(
+        `SELECT count(*) FROM fn_cash_seat_move_arrivals('${TABLE}',array_fill('${USER}'::uuid,ARRAY[65]))`
+      )
+    ).toThrow(/INVALID_SEAT_MOVE_ARRIVAL_SCOPE/);
+  });
   it('binds a move to its original stay and rejects identity changes', () => {
     seedMove();
     expect(sql('SELECT to_json(source_occupancy_id) FROM cash_seat_moves')).toEqual(

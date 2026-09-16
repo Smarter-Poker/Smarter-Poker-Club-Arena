@@ -1,0 +1,48 @@
+name: Publish World Hub prebuilt
+
+# The existing single trusted publisher serves both repositories. A request
+# comes from World Hub's protected-main push; this workflow always uses CA main.
+on:
+  repository_dispatch:
+    types: [publish-world-hub]
+
+concurrency:
+  group: publish-world-hub-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'Smarter-Poker/Smarter-Poker-Club-Arena'
+    runs-on: [self-hosted, smarter-local-publish]
+    environment: world-hub-production
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+      WH_SHA: ${{ github.event.client_payload.sha }}
+      VERCEL_TOKEN: ${{ secrets.WH_PUBLISH_VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: publisher
+      - name: Validate protected World Hub request
+        run: node publisher/.github/scripts/publish-world-hub.mjs validate
+      - uses: actions/checkout@v4
+        with:
+          repository: Smarter-Poker/Smarter-Poker-World-Hub
+          ref: ${{ env.WH_SHA }}
+          token: ${{ secrets.GH_PAT }}
+          persist-credentials: false
+          path: world-hub
+      - name: Build locally, upload prebuilt, verify and promote
+        env:
+          WH_SOURCE: ${{ github.workspace }}/world-hub
+        run: node publisher/.github/scripts/publish-world-hub.mjs publish
+      - name: Return publication result to World Hub
+        if: always()
+        env:
+          PUBLISH_RESULT: ${{ job.status }}
+        run: node publisher/.github/scripts/publish-world-hub.mjs status

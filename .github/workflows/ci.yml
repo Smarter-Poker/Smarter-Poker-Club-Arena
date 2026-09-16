@@ -338,7 +338,7 @@ jobs:
         run: node --test tests/operations/queue-pr.test.mjs
 
       - name: Post-deploy verdict distinguishes an unstarted publisher
-        run: node --test tests/operations/post-deploy-origin-verdict.test.mjs
+        run: node --test tests/operations/post-deploy-origin-verdict.test.mjs tests/operations/world-hub-publisher.test.mjs
 
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * NOTHING IN THIS REPO MAY DEPLOY TO VERCEL.
+ * CLUB ARENA MUST NOT DEPLOY TO VERCEL.
+ * The existing trusted publisher also accepts World Hub requests through
+ * publish-world-hub.yml. That maintained module publishes only World Hub's
+ * fixed project and prebuilt output; its contracts run in required CI.
  * ─────────────────────────────────────────────────────────────────────────
  * CLAUDE.md 1.3 has said this since March:
  *
@@ -75,7 +78,7 @@ const findings = [];
 })(ROOT);
 
 if (findings.length === 0) {
-  console.log('check-no-vercel-deploy: OK — nothing here can deploy to Vercel.');
+  console.log('check-no-vercel-deploy: OK — no Club Arena source deployment to Vercel.');
   process.exit(0);
 }
 

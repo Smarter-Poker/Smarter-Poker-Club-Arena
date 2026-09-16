@@ -1291,6 +1291,11 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-video-scrape-status-index.py
 
+      - name: Retired provider removal preserves signup diagnostics and refuses new audit data
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-error-provider-retirement.py
+
       - name: Native video inventory snapshot and service permissions
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

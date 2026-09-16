@@ -91,7 +91,7 @@ describe('the harness never reaches a bundle a player downloads', () => {
   it('the flags appear only in the CSS Beat job', () => {
     // Any OTHER job setting them is either shipping them or wasting the build
     // cache on a bundle that differs from the one it is meant to verify.
-    const beats = job(CI, 'css-beats-e2e');
+    const beats = job(CI, 'css-beats-e2e-work');
     for (const flag of HARNESS_FLAGS) {
       const everywhere = (CI.match(new RegExp(flag, 'g')) || []).length;
       const inBeats = (beats.match(new RegExp(flag, 'g')) || []).length;
@@ -105,7 +105,7 @@ describe('the harness never reaches a bundle a player downloads', () => {
   });
 
   it('the Production Build job does not set them', () => {
-    const build = job(CI, 'build');
+    const build = job(CI, 'build_work');
     for (const flag of HARNESS_FLAGS) {
       expect(build).not.toMatch(new RegExp(flag));
     }

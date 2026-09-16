@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateRequest, assertHealth, deploymentArgs, cacheKey, REPOSITORY, TEAM } from '../../.github/scripts/publish-world-hub.mjs';
+import { validateRequest, assertHealth, deploymentArgs, cacheKey, resolveBuildEnvironment, REPOSITORY, TEAM } from '../../.github/scripts/publish-world-hub.mjs';
+import { parseEnv } from 'node:util';
 
 const sha = 'a'.repeat(40);
 const event = { action: 'publish-world-hub', client_payload: { repository: REPOSITORY, sha } };
@@ -35,4 +36,11 @@ test('build caches change with dependencies, environment or build configuration'
   assert.notEqual(baseline, cacheKey('new lock', 'environment', 'configuration'));
   assert.notEqual(baseline, cacheKey('lock', 'new environment', 'configuration'));
   assert.notEqual(baseline, cacheKey('lock', 'environment', 'new configuration'));
+});
+test('redacted settings use qualified inputs without overriding visible provider settings', () => {
+  const result = parseEnv(resolveBuildEnvironment('A="[SENSITIVE]"\nB="current"\n', 'A="qualified"\nB="older"\n'));
+  assert.equal(result.A, 'qualified');
+  assert.equal(result.B, 'current');
+  assert.throws(() => resolveBuildEnvironment('A="[SENSITIVE]"', ''), /missing: A/);
+  assert.throws(() => resolveBuildEnvironment('A="[SENSITIVE]"', 'A="[SENSITIVE]"'), /missing: A/);
 });

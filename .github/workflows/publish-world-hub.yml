@@ -23,6 +23,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GH_PAT }}
       WH_SHA: ${{ github.event.client_payload.sha }}
       VERCEL_TOKEN: ${{ secrets.WH_PUBLISH_VERCEL_TOKEN }}
+      WH_QUALIFIED_BUILD_ENV: ${{ secrets.WH_QUALIFIED_BUILD_ENV }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,8 +42,24 @@ jobs:
         env:
           WH_SOURCE: ${{ github.workspace }}/world-hub
         run: node publisher/.github/scripts/publish-world-hub.mjs publish
+      - name: Remove this operation's build container even after interruption
+        if: always()
+        run: |
+          set -euo pipefail
+          name="wh-build-$GITHUB_RUN_ID"
+          ids=$(docker container ls -aq --filter "name=^/$name$")
+          if [ -n "$ids" ]; then docker container rm --force "$name"; fi
+          test -z "$(docker container ls -aq --filter "name=^/$name$")"
       - name: Return publication result to World Hub
         if: always()
         env:
           PUBLISH_RESULT: ${{ job.status }}
         run: node publisher/.github/scripts/publish-world-hub.mjs status
+      - name: Retain the candidate identity and publication timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-hub-publication-${{ github.run_id }}
+          path: world-hub/publication-receipt.json
+          if-no-files-found: ignore
+          retention-days: 7

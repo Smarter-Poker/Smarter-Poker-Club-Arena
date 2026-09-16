@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseEnv } from 'node:util';
 
 export const REPOSITORY = 'Smarter-Poker/Smarter-Poker-World-Hub';
 export const PROJECT = 'prj_op66GkZyZcygXQKm76iyycfVFAQx';
@@ -29,6 +30,18 @@ export function deploymentArgs() {
 export function cacheKey(lock, environment, configuration) {
   return createHash('sha256').update(IMAGE).update('vercel59.1.3').update(lock)
     .update(environment).update(configuration).digest('hex');
+}
+export function resolveBuildEnvironment(pulled, qualified) {
+  const values = parseEnv(pulled), retained = parseEnv(qualified);
+  for (const [key, value] of Object.entries(values)) {
+    if (value.includes('[SENSITIVE]')) {
+      if (!retained[key] || retained[key].includes('[SENSITIVE]')) {
+        throw new Error(`Qualified local build input missing: ${key}`);
+      }
+      values[key] = retained[key];
+    }
+  }
+  return Object.entries(values).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join('\n') + '\n';
 }
 
 const run = (command, args, options = {}) => {
@@ -92,6 +105,9 @@ export async function main(mode) {
   writeFileSync(join(source, '.vercel/project.json'), JSON.stringify({ projectId: PROJECT, orgId: TEAM }), { mode: 0o600 });
   v(['pull', '--yes', '--environment=production', '--scope', TEAM]);
   const buildEnv = join(source, '.vercel/.env.production.local');
+  // Vercel intentionally redacts sensitive settings when pulling locally.
+  // Reuse the qualified build inputs from the protected publisher environment.
+  writeFileSync(buildEnv, resolveBuildEnvironment(readFileSync(buildEnv, 'utf8'), process.env.WH_QUALIFIED_BUILD_ENV || ''), { mode: 0o600 });
   run('/opt/publisher-tools/node-v24.12.0-linux-arm64/bin/node',
     [join(source, 'scripts/check-local-production-build-env.mjs'), '--build-env-file', buildEnv]);
   const key = cacheKey(readFileSync(join(source, 'package-lock.json')), readFileSync(buildEnv), readFileSync(join(source, 'vercel.json')));

@@ -37,6 +37,9 @@ import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { watchBbjPool } from '../../lib/bbjPoolFeed';
 import { money } from '../../utils/handFormat';
+import { compactChips } from '../../utils/format';
+import { titleCase } from '../../utils/titleCase';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './BBJThresholdPanel.css';
 
 interface Threshold {
@@ -162,10 +165,50 @@ export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
 
   if (!loaded) return null;
 
+  /* REBUILT ON THE CONSOLE 2026-09-14 (#ClubArenaConsole, the diamond crest:
+     this is the jackpot's own panel). Re-rendered, not rewritten - every
+     read, write, toast, guard and literal above this line is untouched. The
+     `settings-section` shell is GONE: it is a bevelled realism card, and a
+     painted frame inside it would be a frame on a frame. The amounts are rows
+     on the black glass with an engraved rule between them, the two controls
+     an operator types into are the only drawn things, and the actions are lit
+     words. A member who cannot edit gets the flat closing cap instead of two
+     plates, because they have no action to take. */
   return (
-    <section className="settings-section bbj-threshold-panel">
-      <h3>Bad Beat Jackpot Announcements</h3>
-
+    <SpadeConsole
+      as="section"
+      className="bbj-threshold-panel"
+      crest="diamond"
+      eyebrow="Bad Beat Jackpot"
+      title="Announcements"
+      /* The live pool, so the number an operator picks is not a guess. A
+         browsing figure, so it is compact; the thresholds below are terms and
+         stay exact. */
+      pill={jackpot !== null ? compactChips(jackpot) : 'Live'}
+      pillInk="gold"
+      foot={canEdit ? 'plates' : 'foot'}
+      plates={
+        canEdit
+          ? {
+              secondary: {
+                label: 'Clear',
+                ink: 'silver',
+                onClick: () => {
+                  setAmountText('');
+                  setLabelText('');
+                },
+                disabled: busy || (!amountText && !labelText),
+              },
+              primary: {
+                label: 'Add Announcement',
+                ink: busy ? 'muted' : 'white',
+                onClick: () => void add(),
+                disabled: busy,
+              },
+            }
+          : undefined
+      }
+    >
       <p className="bbj-threshold-panel__intro">
         Tell Your Members When The Jackpot Passes An Amount You Choose. Each Amount Is Announced
         Once, And It Arms Again The Next Time The Jackpot Is Hit.
@@ -185,10 +228,18 @@ export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
         <ul className="bbj-threshold-panel__list">
           {rows.map((row) => (
             <li key={row.id} className="bbj-threshold-panel__row">
-              <span className="bbj-threshold-panel__amount">${money(row.amount)}</span>
-              {row.label && <span className="bbj-threshold-panel__label">{row.label}</span>}
+              <span className="bbj-threshold-panel__amount sc-ink--silver">
+                ${money(row.amount)}
+              </span>
+              {/* An operator types this note, so it is DATA and the copy gates
+                  never see it. Title Case at the print site (Dan 2026-09-14). */}
+              {row.label && (
+                <span className="bbj-threshold-panel__label sc-ink--muted">
+                  {titleCase(row.label)}
+                </span>
+              )}
               <span
-                className={`bbj-threshold-panel__state${row.enabled ? '' : ' bbj-threshold-panel__state--off'}`}
+                className={`bbj-threshold-panel__state${row.enabled ? ' sc-ink--green' : ' bbj-threshold-panel__state--off sc-ink--muted'}`}
               >
                 {row.enabled ? 'On' : 'Off'}
               </span>
@@ -196,7 +247,7 @@ export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
                 <span className="bbj-threshold-panel__actions">
                   <button
                     type="button"
-                    className="btn btn-secondary btn-sm"
+                    className="bbj-threshold-panel__word sc-ink--blue"
                     disabled={busy}
                     onClick={() => void toggle(row)}
                   >
@@ -204,7 +255,7 @@ export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-danger btn-sm"
+                    className="bbj-threshold-panel__word sc-ink--red"
                     disabled={busy}
                     onClick={() => void remove(row)}
                   >
@@ -219,10 +270,11 @@ export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
 
       {canEdit && (
         <div className="bbj-threshold-panel__add">
-          <div className="form-group">
-            <label htmlFor="bbj-threshold-amount">Announce At ($)</label>
+          <label className="bbj-threshold-panel__field" htmlFor="bbj-threshold-amount">
+            <span className="bbj-threshold-panel__field-label sc-ink--blue">Announce At ($)</span>
             <input
               id="bbj-threshold-amount"
+              className="bbj-threshold-panel__input"
               type="number"
               min="0"
               step="0.01"
@@ -230,28 +282,21 @@ export default function BBJThresholdPanel({ clubId, canEdit }: Props) {
               value={amountText}
               onChange={(e) => setAmountText(e.target.value)}
             />
-          </div>
-          <div className="form-group">
-            <label htmlFor="bbj-threshold-label">Note (Optional)</label>
+          </label>
+          <label className="bbj-threshold-panel__field" htmlFor="bbj-threshold-label">
+            <span className="bbj-threshold-panel__field-label sc-ink--blue">Note (Optional)</span>
             <input
               id="bbj-threshold-label"
+              className="bbj-threshold-panel__input"
               type="text"
               maxLength={60}
               placeholder="Weekend Push"
               value={labelText}
               onChange={(e) => setLabelText(e.target.value)}
             />
-          </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy}
-            onClick={() => void add()}
-          >
-            Add Announcement
-          </button>
+          </label>
         </div>
       )}
-    </section>
+    </SpadeConsole>
   );
 }

@@ -223,7 +223,10 @@
   flex: 1 1 auto;
   min-height: 0;
   gap: 0;
-  padding: 0 9% 0;
+  /* 1px top and bottom is the seam overlap the kit pays back as padding
+     (SpadeConsole.css, "THE SEAMS OVERLAP BY A PIXEL"); a plain `padding: 0`
+     here would leave the negative margins shifting this body up a row. */
+  padding: 1px 9%;
 }
 
 .tlm-console__bar {

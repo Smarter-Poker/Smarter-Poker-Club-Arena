@@ -324,7 +324,7 @@ export function CashierModal({
       aria-modal="true"
       aria-labelledby="table-cashier-title"
     >
-      <div className="cashier-dialog sc-dialog" ref={modalRef} onClick={(e) => e.stopPropagation()}>
+      <div className="cashier-dialog" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
           as="section"
           family="riveted"

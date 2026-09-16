@@ -22,8 +22,11 @@
  * uses for Copy and Retry.
  *
  * The agreement is a real checkbox to assistive technology (`role="checkbox"`
- * with `aria-checked`) and a lit word on the glass to everybody else: the
- * standard paints controls in the art, and the art paints no tick box.
+ * with `aria-checked`) and a tick well cut into the glass to everybody else.
+ * The master art paints no tick box; an earlier pass read that as "draw
+ * nothing", which left a person agreeing to terms with no box in sight. The
+ * well is kit CSS (`sc-check` in SpadeConsole.css), engraved the same way
+ * every row rule is.
  *
  * The copy is unchanged, and it is pinned: `tests/unit/nativeCompliance.test.ts`
  * requires "Club Play Credits" and Dan's 2026-09-07 sentence about chips
@@ -126,16 +129,19 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
               </a>
             </p>
 
-            {/* A checkbox to assistive technology, a lit word to everybody
-                else: the art paints no tick box, so nothing here draws one. */}
+            {/* A checkbox to assistive technology AND to the eye: the master
+                paints no tick box, so the kit cuts one into the glass
+                (`sc-check`, SpadeConsole.css). Dan 2026-09-15: "there needs to
+                be an area for the box check to the I Agree part." */}
             <button
               type="button"
               role="checkbox"
               aria-checked={hasAgreed}
-              className={`${styles.agree} ${hasAgreed ? 'sc-ink--green' : 'sc-ink--muted'}`}
+              className={`${styles.agree} sc-check ${hasAgreed ? 'sc-check--on sc-ink--green' : 'sc-ink--muted'}`}
               onClick={() => setHasAgreed((agreed) => !agreed)}
             >
-              I Understand And Agree To These Terms
+              <span className="sc-check__box" aria-hidden="true" />
+              <span>I Understand And Agree To These Terms</span>
             </button>
 
             <button

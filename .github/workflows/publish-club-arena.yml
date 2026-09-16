@@ -80,6 +80,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      # The existing exact-tree proof reads the source PR and its CI verdict.
+      pull-requests: read
+      checks: read
     outputs:
       target_sha: ${{ steps.target.outputs.sha }}
       tests_proven: ${{ steps.proven.outputs.tests_proven }}
@@ -252,12 +255,6 @@ jobs:
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
       # Cache the installed tree so npm ci is skipped on a hit - ~2 min off
       # each shard. Keyed on the lockfile, so any dependency change installs
       # fresh; identical behaviour, minus the wait.
@@ -267,6 +264,12 @@ jobs:
         with:
           path: node_modules
           key: nm-bfwh-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -326,12 +329,6 @@ jobs:
       # accumulated 716 ci-marker branches out of 1025 total on this repo —
       # every one of them a permanent ref that `actions/checkout` and every
       # `git ls-remote` pays for. Deleted here so it stops growing.
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
       # ── THE PUBLISHER WAS BUILDING COLD, EVERY TIME ──────────────────────
       #
       # CI's `Production Build` job caches both `node_modules` and
@@ -355,6 +352,12 @@ jobs:
         with:
           path: node_modules
           key: nm-publish-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
 
       - name: Cache Vite Build
         uses: actions/cache@v4
@@ -605,18 +608,18 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
       - name: Restore node_modules
         id: nm-cache
         uses: actions/cache@v4
         with:
           path: node_modules
           key: nm-publish-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: ${{ steps.nm-cache.outputs.cache-hit != 'true' && 'npm' || '' }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'

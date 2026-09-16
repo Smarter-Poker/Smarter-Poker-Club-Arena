@@ -262,10 +262,7 @@ for (const name of [
       start = source.indexOf('- name: Admit only the current PR head');
     assert.ok(start > source.indexOf('uses: actions/checkout@'));
     assert.ok(start < source.indexOf('- name: Setup Node'));
-    assert.match(
-      source,
-      /^    runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m
-    );
+    assert.match(source, /^    runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m);
     assert.match(source, /permissions:\n      contents: read\n      pull-requests: read/);
     const gate = source.slice(start, source.indexOf('- name: Setup Node'));
     assert.match(gate, /working-directory: \./);
@@ -307,6 +304,36 @@ test('required TypeScript gate still requires the actual compilation result', ()
   assert.match(job('typecheck'), /needs: \[typecheck_compile, changes, fixture_native\]/);
   assert.match(job('typecheck'), /COMPILE_RESULT: \$\{\{ needs.typecheck_compile.result \}\}/);
   assert.match(job('typecheck'), /run: node scripts\/ci\/fixture-native-gate.mjs/);
+});
+test('shard one owns repeated server checks while every full partition remains required', () => {
+  const source = job('server_shards');
+  const steps = source.split(/^ {6}- name: /m).slice(1);
+  const step = (name) => {
+    const found = steps.find((body) => body.startsWith(`${name}\n`));
+    assert.ok(found, name);
+    return found;
+  };
+  for (const [name, command] of [
+    ['TypeScript Check (server)', 'npx tsc --noEmit'],
+    [
+      'Freeze + watchdog + restart-gate regression suite',
+      'npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose',
+    ],
+  ]) {
+    const body = step(name);
+    assert.match(body, /^        if: matrix\.shard == 1$/m);
+    assert.ok(body.includes(`        run: ${command}\n`));
+  }
+  assert.match(source, /^        shard: \[1, 2, 3, 4\]$/m);
+  assert.match(source, /^      fail-fast: false$/m);
+  assert.doesNotMatch(source, /^\s*(?:include|exclude|continue-on-error):/m);
+  const full = step('Full server test suite');
+  assert.doesNotMatch(full, /^        if:/m);
+  assert.match(full, /^          SERVER_TEST_SHARD: \$\{\{ matrix\.shard \}\}$/m);
+  assert.match(full, /^          npm test -- --shard="\$SERVER_TEST_SHARD\/4"$/m);
+  assert.match(job('server'), /^    needs: \[changes, server_shards\]$/m);
+  assert.match(job('server'), /^    if: always\(\)$/m);
+  assert.match(job('server'), /MATRIX_RESULT: \$\{\{ needs\.server_shards\.result \}\}/);
 });
 test('admission refusal cannot trigger fail-fast cancellation of running siblings', () => {
   assert.match(job('unit_shards'), /fail-fast: false/);
@@ -377,11 +404,59 @@ test('successful current-head shards retain both required passing aggregates', (
 // provider as the other real-database jobs without changing the probe itself.
 test('the journal gate uses the installed PostgreSQL 17 provider', () => {
   const body = job('typecheck_compile');
-  const step = body.split('      - name: Chip journal transactions survive failures and replays\n')[1]?.split(/\n      - /)[0];
+  const step = body
+    .split('      - name: Chip journal transactions survive failures and replays\n')[1]
+    ?.split(/\n      - /)[0];
   assert.ok(step);
   assert.match(step, /^        env:\n          PGBIN: \/usr\/lib\/postgresql\/17\/bin$/m);
-  assert.match(step, /^        run: bash scripts\/ci\/probes\/chip-journal-atomicity\/run-isolated\.sh$/m);
-  assert.doesNotMatch(step, /continue-on-error|if:/);
+  assert.match(
+    step,
+    /^        run: bash scripts\/ci\/probes\/chip-journal-atomicity\/run-isolated\.sh$/m
+  );
+  assert.doesNotMatch(step, /continue-on-error/);
+  const condition = step.match(/^        if: (.+)$/m)?.[1];
+  assert.equal(
+    condition,
+    "needs.changes.result != 'success' || needs.changes.outputs.server != 'false'"
+  );
+  const shouldRun = new Function('needs', `return (${condition});`);
+  for (const result of ['success', 'failure', 'cancelled', 'skipped', '', undefined]) {
+    for (const server of ['true', 'false', '', 'unknown', undefined]) {
+      assert.equal(
+        shouldRun({ changes: { result, outputs: { server } } }),
+        !(result === 'success' && server === 'false'),
+        `${result}/${server}`
+      );
+    }
+  }
+});
+
+test('classification failure cannot skip compilation, but workflow cancellation does', () => {
+  const body = job('typecheck_compile');
+  assert.match(body, /^    needs: changes$/m);
+  const condition = body.match(/^    if: \$\{\{ (.+) \}\}$/m)?.[1];
+  assert.equal(condition, "!cancelled() && github.event_name == 'pull_request'");
+  const shouldCompile = new Function('cancelled', 'github', 'needs', `return (${condition});`);
+  for (const result of ['success', 'failure', 'cancelled', 'skipped', '', undefined]) {
+    const needs = { changes: { result } };
+    assert.equal(
+      shouldCompile(() => false, { event_name: 'pull_request' }, needs),
+      true
+    );
+    assert.equal(
+      shouldCompile(() => true, { event_name: 'pull_request' }, needs),
+      false
+    );
+    assert.equal(
+      shouldCompile(() => false, { event_name: 'push' }, needs),
+      false
+    );
+  }
+  const compile = body.split('      - name: TypeScript Check\n')[1]?.split(/\n      - /)[0];
+  assert.ok(compile);
+  assert.doesNotMatch(compile, /if:|continue-on-error/);
+  assert.match(compile, /npx tsc --noEmit/);
+  assert.match(compile, /npx tsc -p tsconfig.node.json --noEmit/);
 });
 
 test('installed dependency caches cannot cross local CPU architectures', () => {

@@ -54,11 +54,15 @@ booked into events that will never end, so the cash fleet has nobody to seat.
    only tables that could deal, which is the definition the liveness verdict
    and the alerts already used.
 
-2. **The deadline is the deadline** (`services/supabase/client.ts`). An
-   attempt that has not settled one second after its abort is settled by
-   the wrapper with the same rejection the abort would have produced. The
-   hand-commit loop, the settlement barrier and every `stop()` that joins
-   them now have the bound the wrapper always promised.
+2. **The deadline is the deadline** (`services/supabase/client.ts`). The
+   build production ran (57653ba0, 2026-09-14 to 16) had replaced the
+   wrapper's independent deadline boundary with a cooperative abort plus a
+   body drain, and that is the build on which the 3 h 40 min hang happened.
+   #4711 restored the 2026-09-13 baseline, whose wrapper races every
+   attempt against a boundary promise that rejects at the deadline whatever
+   the transport does. This change adds the regression test that pins that
+   behaviour (`clientDeadline.test.ts`: a transport that never settles still
+   ends at the deadline), so it cannot be lost again without a red test.
 
 3. **A stalled scheduler slot is replaced, not released**
    (`TournamentEliminationScheduler`). A promise unresolved past the warning

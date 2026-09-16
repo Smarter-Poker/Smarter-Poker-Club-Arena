@@ -61,8 +61,6 @@ const EFFECTIVE_SERVICE_ROLE_KEY =
  * catch can back off and retry on.
  */
 const DB_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS ?? 15_000);
-/** How long after its abort an attempt may stay unsettled before the wrapper settles it (see settleAtDeadline). */
-export const DEADLINE_BACKSTOP_MS = 1_000;
 /* Maintenance boundary writers may legitimately wait behind a guarded entry
  * transaction for up to 30 seconds. They use a dedicated client whose HTTP
  * deadline is longer than the database function's 45-second hard ceiling;
@@ -191,50 +189,11 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
           }
         };
 
-        /**
-         * THE DEADLINE IS THE DEADLINE (2026-09-16).
-         *
-         * The abort above is how an attempt is meant to end at `timeoutMs`,
-         * and everything that could keep the promise open after it - a
-         * queued request behind the 128-connection pool, a body that stalls
-         * mid-stream, a response that never begins - was reproduced and
-         * observed to settle. Production did not agree: table 170e6a2a's
-         * hand 11419543 committed in the database at 14:43:58Z, and the
-         * engine's `supabase.rpc('fn_ca_commit_hand_settlement')` for it
-         * stayed unsettled for three hours and forty minutes, holding that
-         * table's settlement barrier, its manager's `stop()`, and the
-         * tournament elimination scheduler slot that had joined that stop.
-         * Which internal path kept the fetch promise open is not known;
-         * what is known is that a request which has been aborted has no
-         * business still deciding anything, so the wrapper now settles the
-         * attempt itself one second after the abort, with the same rejection
-         * the abort would have produced. The connection was already told to
-         * go away at `timeoutMs`; this only stops the caller waiting for it.
-         */
-        const settleAtDeadline = (attemptPromise: Promise<Response>): Promise<Response> => {
-          let backstop: ReturnType<typeof setTimeout> | undefined;
-          return Promise.race([
-            attemptPromise,
-            new Promise<never>((_resolve, reject) => {
-              backstop = setTimeout(
-                () =>
-                  reject(
-                    new Error(
-                      `supabase_timeout: the request did not settle ${DEADLINE_BACKSTOP_MS}ms after its ${timeoutMs}ms abort`
-                    )
-                  ),
-                timeoutMs + DEADLINE_BACKSTOP_MS
-              );
-              backstop.unref?.();
-            }),
-          ]).finally(() => clearTimeout(backstop));
-        };
-
         const RETRYABLE = new Set(['PGRST001', 'PGRST002', 'PGRST003']);
         const DELAYS_MS = [300, 1200];
         let attempt = 0;
         for (;;) {
-          const resp = await settleAtDeadline(attemptOnce());
+          const resp = await attemptOnce();
           // A fenced manager generation stands down at the boundary that saw
           // the fence (tournamentManagerFence.ts). The response itself is
           // still returned so the caller's own error handling runs once.

@@ -17,10 +17,10 @@ BUILD_CONTRACT='clean-server-archive-v1'
 # The default Docker builder shares the daemon's unbounded memory budget. On
 # 2026-09-12 a concurrent TypeScript build outlived a global OOM kill of the
 # production engine. Every uncached build now runs inside this owned cgroup.
-BUILDER='club-arena-engine-bounded-v2'
+BUILDER='club-arena-engine-bounded-v3'
 BUILDER_CONTAINER="buildx_buildkit_${BUILDER}0"
 BUILDKIT_IMAGE='moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
-BUILD_MEMORY_BYTES=939524096
+BUILD_MEMORY_BYTES=4294967296
 BUILD_RESERVE_KIB=262144
 
 die() {

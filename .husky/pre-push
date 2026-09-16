@@ -355,6 +355,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       ;;
   esac
 
+  # Migration presence uses Git and the tracked schema manifest, not credentials.
+  # Check the whole branch: a follow-up push can otherwise hide an earlier
+  # migration behind HEAD~1 or the previous remote feature-branch tip.
+  MIGRATION_BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null \
+                   || git merge-base "$LOCAL_SHA" main 2>/dev/null || true)
+  if [ -z "$MIGRATION_BASE" ]; then
+    echo "[club-arena pre-push] BLOCKED: cannot establish the migration branch base."
+    FAIL=1
+  elif ! node scripts/ci/check-migrations-applied.mjs "$MIGRATION_BASE"; then
+    echo "[club-arena pre-push] BLOCKED by check-migrations-applied (CI runs this too)"
+    FAIL=1
+  fi
+
   # 0. Repo-wide invariants. Both are ~100ms.
   #
   #    CORRECTED 2026-08-28. This comment used to say branch protection was
@@ -372,9 +385,9 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # hand. That is a three-minute CI cycle and a red main to learn something a
   # local half-second knew.
   #
-  # These are every gate ci.yml runs that this hook did not, minus three that
-  # cannot run here: check-club-fk-indexes and check-migrations-applied need
-  # SUPABASE_URL and a service role key, and check-phantom-tables is currently
+  # These are every gate ci.yml runs that this hook did not, minus two that
+  # cannot run here: check-club-fk-indexes needs SUPABASE_URL and a service role
+  # key, and check-phantom-tables is currently
   # RED on nine tournament-deal RPCs that predate this work - adding it would
   # block every push in the repo for a fault the pusher did not cause. It is
   # written down rather than wired in, which is the honest way to leave it.

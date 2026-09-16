@@ -280,7 +280,6 @@ function fixture(
   engine.refreshRakeConfig = async () => {};
   engine.fetchTimeBankExtras = async () =>
     new Map([[seats[0].user_id, { extraSeconds: 20, unlimitedActivations: false }]]);
-  engine.adoptMovedPresence = () => {};
   engine.restoreSitOutsFromSeats = () => {};
   engine.evictExpiredSitOuts = async () => {};
   engine.announcePendingSeatMoves = async () => true;

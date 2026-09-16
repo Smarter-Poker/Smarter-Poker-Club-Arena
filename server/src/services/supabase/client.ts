@@ -155,9 +155,10 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
               );
               // Preserve caller headers, then stamp the immutable actor last.
               new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+              const authoritativeHeaders = dataActorHeaders(headers);
               const response = await fetch(attemptInput, {
                 ...init,
-                headers: dataActorHeaders(headers),
+                headers: authoritativeHeaders,
                 signal: ctl.signal,
               });
               if (ctl.signal.aborted) {

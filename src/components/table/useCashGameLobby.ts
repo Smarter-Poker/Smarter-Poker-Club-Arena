@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchCashGameLobby, type CashGameLobby } from '../../services/cashGameLobby';
+import { useUserStore } from '../../stores/useUserStore';
 import { isGameGone } from './mustMoveLobbyCopy';
 
-/** A reply belongs to one game and one opening, and the newest read wins. */
+/** A reply belongs to one viewer, game and opening; the newest explicit read wins. */
 export function useCashGameLobby(
   gameId: string | null | undefined,
   enabled: boolean,
   pollMs: number,
   refreshKey = 0
 ) {
+  const viewerId = useUserStore((state) => state.user?.id ?? null);
   const session = useMemo(
-    () => ({ active: false, read: 0, action: null as symbol | null }),
-    [gameId, enabled]
+    () => ({
+      active: false,
+      read: 0,
+      pendingRead: null as number | null,
+      action: null as symbol | null,
+    }),
+    [gameId, enabled, viewerId]
   );
   const [snapshot, setSnapshot] = useState<{
-    gameId: string;
+    session: typeof session;
     lobby: CashGameLobby | null;
     error: unknown;
   } | null>(null);
@@ -32,27 +39,34 @@ export function useCashGameLobby(
   const load = useCallback(async () => {
     if (!session.active || !gameId) return;
     const read = ++session.read;
+    session.pendingRead = read;
     const current = () => session.active && session.read === read;
     try {
       const lobby = await fetchCashGameLobby(gameId);
-      if (current()) setSnapshot({ gameId, lobby, error: null });
+      if (current()) setSnapshot({ session, lobby, error: null });
     } catch (error) {
       if (!current()) return;
       setSnapshot((previous) => ({
-        gameId,
-        // A temporary failure retains this game's last read only.
-        lobby: !isGameGone(error) && previous?.gameId === gameId ? previous.lobby : null,
+        session,
+        // A temporary failure retains only this viewer's current opening.
+        lobby: !isGameGone(error) && previous?.session === session ? previous.lobby : null,
         error,
       }));
+    } finally {
+      // A superseded reply cannot release a newer read's polling hold.
+      if (session.pendingRead === read) session.pendingRead = null;
     }
   }, [gameId, session]);
 
   useEffect(() => {
     if (!enabled || !gameId) return;
     void load();
-    const timer = window.setInterval(() => void load(), pollMs);
+    const timer = window.setInterval(() => {
+      // Let a slow reply finish, and let mutations perform their own confirmation read.
+      if (session.pendingRead === null && session.action === null) void load();
+    }, pollMs);
     return () => window.clearInterval(timer);
-  }, [enabled, gameId, load, pollMs, refreshKey]);
+  }, [enabled, gameId, load, pollMs, refreshKey, session]);
 
   const beginAction = useCallback(() => {
     // A ref-backed token closes the same-render double-tap window too.
@@ -71,7 +85,7 @@ export function useCashGameLobby(
     };
   }, [session]);
 
-  const current = snapshot?.gameId === gameId ? snapshot : null;
+  const current = snapshot?.session === session ? snapshot : null;
   return {
     lobby: current?.lobby ?? null,
     error: current?.error ?? null,

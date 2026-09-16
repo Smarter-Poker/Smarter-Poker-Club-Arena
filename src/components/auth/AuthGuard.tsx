@@ -59,6 +59,13 @@ function wasRecentlyAuthenticated(): boolean {
 interface AuthGuardProps {
   children: ReactNode;
   loadingFallback?: ReactNode;
+  /**
+   * Rendered INSTEAD of redirecting when there is no session. Used by the
+   * arena root so a signed-out visitor (and Googlebot) gets the public
+   * Poker Arena landing page rather than a bounce to the login form.
+   * Signed-in players are unaffected: `children` renders as before.
+   */
+  publicFallback?: ReactNode;
 }
 
 /**
@@ -122,7 +129,7 @@ function isDefinitelyAuthenticated(): boolean {
   return false;
 }
 
-export function AuthGuard({ children, loadingFallback }: AuthGuardProps) {
+export function AuthGuard({ children, loadingFallback, publicFallback }: AuthGuardProps) {
   // CRITICAL: Check ALL evidence sources synchronously on mount.
   // This prevents the loading flash on navigation between protected routes.
   const initiallyAuthenticated = isDefinitelyAuthenticated();
@@ -332,6 +339,7 @@ export function AuthGuard({ children, loadingFallback }: AuthGuardProps) {
 
   // Redirect to auth ONLY if not authenticated
   if (!isAuthenticated) {
+    if (publicFallback !== undefined) return <>{publicFallback}</>;
     const back = location.pathname + location.search + location.hash;
     if (IS_NATIVE_BUILD) {
       // NATIVE (2026-09-07): there is no World Hub in the bundle, so the

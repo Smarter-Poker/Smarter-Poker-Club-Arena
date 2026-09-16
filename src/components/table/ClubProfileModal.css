@@ -1,205 +1,244 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   TABLE PROFILE - on the spade console (#ClubArenaConsole)
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  TABLE PROFILE — Club Arena surface, built on the table's own tokens
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Rewritten 2026-08-27 with the component beside it. The previous sheet was
+ * traced off a competitor screenshot and carried three things that put it
+ * outside the Club Arena:
+ *
+ *   z-index: 10000       jumped the entire --z-* scale in design-tokens.css,
+ *                        so it painted over toasts and confetti that are
+ *                        deliberately ranked above modals;
+ *   background: #ffa800  a hard-coded orange close button, in an app whose
+ *                        design guidelines name Facebook blue and forbid the
+ *                        reference image's gold and amber;
+ *   font-family: sans-serif
+ *                        opted out of the app font on one sheet only.
+ *
+ * Everything below reads from design-tokens.css, so this sheet follows the
+ * table theme the player chose instead of pinning its own colours.
+ */
 
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master (components/console/SpadeConsole.css); this file only lays
-   the hero's card on the black glass between the rails: who you are, then
-   every figure as a row - label in lit blue on the left, value in silver on
-   the right - with an engraved rule (a black cut with a lit edge above it)
-   between rows, and CLOSE as a lit word at the foot. Nothing is drawn: no
-   card, no stat tile, no button face. Sizes are cqw against the console.
-   No :hover (tests/no-hover-effects.law.test.ts). Greens are the house
-   green only (tests/gameplay-wears-the-house-colours.test.ts) - the win /
-   loss inks are the console's own sc-ink--green / sc-ink--red.
-   ═══════════════════════════════════════════════════════════════════════════ */
+@import '../../styles/design-tokens.css';
 
 .cpm-overlay {
-  --cpc-rule: 1px solid #000;
-  --cpc-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
   position: fixed;
   inset: 0;
-  z-index: 2100;
+  background: var(--bg-overlay, rgba(0, 0, 0, 0.6));
   display: flex;
-  align-items: flex-start;
   justify-content: center;
-  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: rgb(2 4 7 / 88%);
-  color: #e6e9ee;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  color-scheme: dark;
-}
-
-/* The dialog is the console and nothing else; its name is deliberately not
-   one metallic-popups.css paints a steel shell on. */
-.cpc {
-  width: min(100%, 560px);
-  min-width: 0;
-  margin: auto 0;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  outline: 0;
-}
-
-.cpc__console {
-  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
-}
-
-.cpc .sc__title,
-.cpc .sc__eyebrow,
-.cpc .sc__pill {
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-}
-
-/* ── Who you are ────────────────────────────────────────────────────────── */
-
-.cpc__who {
-  display: flex;
-  gap: 3cqw;
   align-items: center;
-  min-width: 0;
+  z-index: var(--z-modal, 500);
+  padding: var(--space-lg, 16px);
 }
 
-.cpc__avatar {
-  flex: 0 0 auto;
-  width: 16cqw;
-  height: 16cqw;
-  object-fit: cover;
-  background: #000;
-}
-
-.cpc__avatar--initial {
-  display: grid;
-  place-items: center;
-  font-size: 8cqw;
-  font-weight: 800;
-}
-
-.cpc__who-lines {
-  display: grid;
-  gap: 0.8cqw;
-  min-width: 0;
-}
-
-.cpc__name {
-  overflow: hidden;
-  font-size: 5cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cpc__id {
-  font-size: 3cqw;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── The two sections: rows on the glass ────────────────────────────────── */
-
-.cpc__section {
-  display: grid;
-  margin: 0;
-}
-
-.cpc__section-title {
-  margin: 0;
-  padding: 2.6cqw 0 1.6cqw;
-  border-top: var(--cpc-rule);
-  box-shadow: var(--cpc-rule-lit);
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 3cqw;
-}
-
-.cpc__row {
+.cpm-modal {
+  width: min(380px, 100%);
+  max-height: 85vh;
   display: flex;
-  gap: 2.4cqw;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 1.8cqw 0;
-  border-top: var(--cpc-rule);
-  box-shadow: var(--cpc-rule-lit);
-}
-
-.cpc__row-label {
-  font-size: 2.9cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.cpc__row-value {
-  min-width: 0;
+  flex-direction: column;
+  background: var(--bg-secondary, #111827);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-xl, 16px);
+  box-shadow: var(--shadow-xl, 0 16px 40px rgba(0, 0, 0, 0.6));
+  color: var(--text-primary, #f3f4f6);
   overflow: hidden;
-  font-size: 4cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
-.cpc__note {
-  padding-top: 2.6cqw;
-  border-top: var(--cpc-rule);
-  box-shadow: var(--cpc-rule-lit);
-}
-
-/* ── The lit word at the foot: CLOSE ────────────────────────────────────── */
-
-.cpc__actions {
+/* ── Header ── */
+.cpm-header {
   display: flex;
   justify-content: center;
-  padding-top: 2.6cqw;
-  border-top: var(--cpc-rule);
-  box-shadow: var(--cpc-rule-lit);
+  align-items: center;
+  padding: var(--space-lg, 16px);
+  position: relative;
+  background: var(--bg-surface, #1a2234);
+  border-bottom: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  flex: 0 0 auto;
 }
 
-.cpc-word {
-  appearance: none;
-  min-height: 44px;
+.cpm-title {
   margin: 0;
-  padding: 1.6cqw 4cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.6cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.14em;
+  font-size: var(--font-lg, 1rem);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  white-space: nowrap;
+}
+
+.cpm-close {
+  position: absolute;
+  right: var(--space-md, 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  /* 44px of touch target around a 24px glyph: the table is a phone surface
+     first, and this sheet opens mid-hand. */
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary, #9ca3af);
+  font-size: var(--font-lg, 1rem);
+  line-height: 1;
   cursor: pointer;
-  touch-action: manipulation;
 }
 
-.cpc-word:active {
-  filter: brightness(1.25);
+.cpm-close:focus-visible {
+  color: var(--text-primary, #f3f4f6);
 }
 
-.cpc-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.6cqw;
+/* ── Body ── */
+.cpm-body {
+  padding: var(--space-lg, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg, 16px);
+  overflow-y: auto;
+  flex: 1 1 auto;
 }
 
-/* metallic-popups.css bevels every button inside a dialog with !important
-   at 0,0,1 and paints steel hardware on anything labelled Close. A lit word
-   paints nothing: the longhands are restated at 0,3,0. */
-[role='dialog'] .cpc-word.cpc-word {
+.cpm-user-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md, 12px);
+}
+
+.cpm-avatar-container {
+  flex: 0 0 auto;
+}
+
+.cpm-avatar,
+.cpm-avatar-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-circle, 50%);
+  border: 1px solid var(--border-active, rgba(255, 255, 255, 0.15));
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cpm-avatar-placeholder {
+  background: var(--bg-elevated, #1f2937);
+  color: var(--text-secondary, #9ca3af);
+  font-size: var(--font-xl, 1.25rem);
+  font-weight: var(--weight-bold, 700);
+}
+
+.cpm-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  color: #f4f7fb !important;
-  box-shadow: none !important;
-  transform: none !important;
+}
+
+.cpm-username {
+  font-size: var(--font-lg, 1rem);
+  font-weight: var(--weight-bold, 700);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cpm-user-id,
+.cpm-user-club {
+  font-size: var(--font-sm, 0.75rem);
+  color: var(--text-secondary, #9ca3af);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Stat sections ── */
+.cpm-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 8px);
+}
+
+.cpm-section-title {
+  font-size: var(--font-xs, 0.6875rem);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+
+.cpm-stat-grid {
+  display: grid;
+  /* Two up at 375px, three when there is room. No media query needed. */
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--space-sm, 8px);
+}
+
+.cpm-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm, 8px) var(--space-md, 12px);
+  background: var(--bg-surface, #1a2234);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-md, 8px);
+  min-width: 0;
+}
+
+.cpm-stat-label {
+  font-size: var(--font-2xs, 0.625rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+
+.cpm-stat-value {
+  font-size: var(--font-md, 0.875rem);
+  font-weight: var(--weight-bold, 700);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Winning and losing use the status tokens, not a fresh pair of greens.
+   The FALLBACK has to be the house green too. --color-success is #3fb950 now,
+   so a fallback of #22c55e is the old scheme lying in wait for the day the
+   token fails to resolve - which is exactly how the three competing greens
+   this phase merged got started. */
+.cpm-stat-value.cpm-up {
+  color: var(--color-success, #3fb950);
+}
+
+.cpm-stat-value.cpm-down {
+  color: var(--color-danger, #ef4444);
+}
+
+.cpm-note {
+  font-size: var(--font-sm, 0.75rem);
+  color: var(--text-secondary, #9ca3af);
+  text-align: center;
+}
+
+/* ── Footer ── */
+.cpm-footer {
+  padding: var(--space-md, 12px) var(--space-lg, 16px) var(--space-lg, 16px);
+  flex: 0 0 auto;
+}
+
+.cpm-confirm-btn {
+  width: 100%;
+  min-height: 44px;
+  background: var(--color-info, #3b82f6);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--font-md, 0.875rem);
+  font-weight: var(--weight-bold, 700);
+  cursor: pointer;
+}
+
+.cpm-confirm-btn:focus-visible {
+  filter: brightness(1.1);
 }

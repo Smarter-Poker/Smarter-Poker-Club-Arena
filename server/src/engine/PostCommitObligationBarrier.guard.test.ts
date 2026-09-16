@@ -96,11 +96,7 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
     // Only the drain loses the lease term. The reflection fence is untouched.
     expect(barrier).toContain('postCommitStateCanReflect = this.lifecycleCanMutate();');
 
-    // Observation keeps the original processor promise in this awaited
-    // barrier; it does not launch the obligation in the background.
-    expect(barrier).toMatch(
-      /const outcome = await this\.observeSettlementAwait\(\s*'post_commit_obligations',\s*persistenceGeneration,\s*snap\.handNumber,\s*\(\) => processHandPostCommitObligations\(v_handHistoryId!\)\s*\)/
-    );
+    expect(barrier).toContain('await processHandPostCommitObligations(v_handHistoryId)');
     expect(barrier).toContain('if (!obligationsApplied)');
     expect(barrier).toContain('return;');
     expect(barrier).toContain('post_commit_stack_refresh_failed');

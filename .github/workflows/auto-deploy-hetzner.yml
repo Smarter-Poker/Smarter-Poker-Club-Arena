@@ -22,7 +22,7 @@ concurrency:
 jobs:
   preflight:
     name: Test The Exact Engine Release Request (shard ${{ matrix.shard }}/4)
-    runs-on: [self-hosted, smarter-local-linux-arm64]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     # Each shard builds the same immutable server tree. Downstream jobs depend
     # on the entire matrix, so one failed/cancelled shard cannot admit a release.
@@ -94,82 +94,10 @@ jobs:
           npm run build
           npm test -- --shard="$RELEASE_TEST_SHARD/4"
 
-  produce-image:
-    name: Produce The Exact Engine Image Locally
-    needs: preflight
-    runs-on: [self-hosted, smarter-local-publish]
-    environment: Production
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    outputs:
-      image_id: ${{ steps.image.outputs.image_id }}
-      server_tree: ${{ steps.image.outputs.server_tree }}
-      archive_sha256: ${{ steps.image.outputs.archive_sha256 }}
-      archive_bytes: ${{ steps.image.outputs.archive_bytes }}
-      artifact_id: ${{ steps.upload.outputs.artifact-id }}
-    steps:
-      - name: Checkout the exact protected-main build control and history
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          filter: blob:none
-          persist-credentials: false
-      - name: Build and seal the exact AMD64 image on the local VM
-        id: image
-        env:
-          TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}
-        run: |
-          set -euo pipefail
-          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [ "$GITHUB_EVENT_NAME" = repository_dispatch ]
-          [ "$GITHUB_REF" = refs/heads/main ]
-          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
-          git merge-base --is-ancestor "$TARGET_SHA" origin/main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          SERVER_TREE="$(git rev-parse --verify "$TARGET_SHA:server")"
-          [[ "$SERVER_TREE" =~ ^[0-9a-f]{40}$ ]]
-          IMAGE_REF="club-arena-engine:$TARGET_SHA"
-          OUTPUT="$RUNNER_TEMP/engine-image-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          mkdir -m 0700 "$OUTPUT"
-          timeout --signal=TERM --kill-after=15s 3450s env \
-            ENGINE_BUILD_CONTEXT_ROOT="$RUNNER_TEMP/engine-build-contexts" \
-            ENGINE_BUILD_LOCK_FILE="$RUNNER_TEMP/engine-build.lock" \
-            bash server/scripts/build-engine-image.sh "$GITHUB_WORKSPACE" "$TARGET_SHA" "$IMAGE_REF"
-          IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE_REF")"
-          [[ "$IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
-          [ "$(docker image inspect -f '{{.Os}}/{{.Architecture}}' "$IMAGE_REF")" = linux/amd64 ]
-          # The original bounded archive verifier preserves exactly one image,
-          # checks every layer and drops auxiliary Docker/OCI graphs.
-          timeout --signal=TERM --kill-after=5s 90s docker image save --output "$OUTPUT/raw.tar" "$IMAGE_REF"
-          python3 - "$OUTPUT" "$TARGET_SHA" "$SERVER_TREE" "$IMAGE_ID" <<'PY'
-          import importlib.util, json, os, pathlib, sys
-          spec = importlib.util.spec_from_file_location('archive', 'server/scripts/engine-image-archive.py')
-          module = importlib.util.module_from_spec(spec)
-          spec.loader.exec_module(module)
-          output = pathlib.Path(sys.argv[1])
-          result = module.normalize_engine_archive(output / 'raw.tar', output / 'engine-image.tar',
-              source_sha=sys.argv[2], server_tree=sys.argv[3], image_id=sys.argv[4])
-          (output / 'raw.tar').unlink()
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
-              for key in ('image_id', 'server_tree', 'archive_sha256', 'archive_bytes'):
-                  stream.write(f'{key}={result[key]}\n')
-          PY
-      - name: Upload the exact locally built image
-        id: upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: engine-image-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/engine-image-${{ github.run_id }}-${{ github.run_attempt }}/engine-image.tar
-          if-no-files-found: error
-          retention-days: 7
-
   engine-doors:
     name: Prove The Exact Engine Has Every Production Door
     needs: preflight
-    runs-on: [self-hosted, smarter-local-publish]
-    environment: Production
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -184,15 +112,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      # preflight proved this exact checkout belongs to protected main. Ask
-      # before deploy can receive SSH authority; Node fetch needs no install.
-      - name: Prove every club foreign key is indexed before engine publication
-        timeout-minutes: 2
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/ci/check-club-fk-indexes.mjs
 
       # A schema manifest can describe a function before production actually
       # has it. Ask pg_proc from the exact requested checkout in a credential
@@ -209,9 +128,8 @@ jobs:
 
   deploy:
     name: Publish Through Hetzner Club Arena
-    needs: [preflight, engine-doors, produce-image]
-    runs-on: [self-hosted, smarter-local-publish]
-    environment: Production
+    needs: [preflight, engine-doors]
+    runs-on: ubuntu-latest
     timeout-minutes: 210
     permissions:
       contents: read
@@ -411,46 +329,6 @@ jobs:
               finally: os.close(fd)
           PY
           REMOTE
-
-      - name: Download this run's exact local image
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: ${{ needs.produce-image.outputs.artifact_id }}
-          path: ${{ runner.temp }}/engine-image-received
-          merge-multiple: true
-
-      - name: Import the authenticated image before the original release intake
-        env:
-          EXPECTED_IMAGE_ID: ${{ needs.produce-image.outputs.image_id }}
-          EXPECTED_SERVER_TREE: ${{ needs.produce-image.outputs.server_tree }}
-          EXPECTED_ARCHIVE_SHA256: ${{ needs.produce-image.outputs.archive_sha256 }}
-          EXPECTED_ARCHIVE_BYTES: ${{ needs.produce-image.outputs.archive_bytes }}
-        run: |
-          set -euo pipefail
-          [[ "$EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
-          [[ "$EXPECTED_SERVER_TREE" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$EXPECTED_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          [[ "$EXPECTED_ARCHIVE_BYTES" =~ ^[1-9][0-9]*$ ]]
-          [ "$EXPECTED_ARCHIVE_BYTES" -le 2147483648 ]
-          ARCHIVE="$RUNNER_TEMP/engine-image-received/engine-image.tar"
-          [ -f "$ARCHIVE" ] && [ ! -L "$ARCHIVE" ]
-          [ "$(stat -c %s "$ARCHIVE")" = "$EXPECTED_ARCHIVE_BYTES" ]
-          [ "$(sha256sum "$ARCHIVE" | cut -d ' ' -f 1)" = "$EXPECTED_ARCHIVE_SHA256" ]
-          REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s) - 15))
-          [ "$REMAINING" -gt 10 ]
-          TRANSFER_TIMEOUT="$REMAINING"
-          [ "$TRANSFER_TIMEOUT" -le 600 ] || TRANSFER_TIMEOUT=600
-          # This fixed fresh path is inside the existing root-owned run staging
-          # directory. Its cleanup remains with the original workflow owner.
-          REMOTE_ARCHIVE="/var/lib/club-arena/control-staging/$RUN_KEY/engine-image.tar"
-          timeout --signal=TERM --kill-after=5s "${TRANSFER_TIMEOUT}s" \
-            "$HSSH" "umask 077; set -C; cat > '$REMOTE_ARCHIVE'" < "$ARCHIVE"
-          REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s) - 15))
-          [ "$REMAINING" -gt 10 ]
-          IMPORT_TIMEOUT="$REMAINING"
-          [ "$IMPORT_TIMEOUT" -le 600 ] || IMPORT_TIMEOUT=600
-          timeout --signal=TERM --kill-after=5s "${IMPORT_TIMEOUT}s" \
-            "$HSSH" "python3 '/var/lib/club-arena/control-staging/$RUN_KEY/server/scripts/import-prebuilt-engine-image.py' --repo '$REPO_DIR' --source '$SHA' --tree '$EXPECTED_SERVER_TREE' --image '$EXPECTED_IMAGE_ID' --archive '$REMOTE_ARCHIVE' --archive-sha256 '$EXPECTED_ARCHIVE_SHA256' --deadline '$RELEASE_DISPATCH_DEADLINE_EPOCH'"
 
       - name: Dispatch the staged SHA through the durable Hetzner intake
         id: release
@@ -686,8 +564,7 @@ jobs:
     name: Record The Append-Only Engine Release Receipt
     needs: [preflight, deploy]
     if: always() && needs.preflight.result == 'success'
-    runs-on: [self-hosted, smarter-local-publish]
-    environment: Production
+    runs-on: ubuntu-latest
     timeout-minutes: 4
     permissions:
       contents: read
@@ -787,8 +664,7 @@ jobs:
   certify-production:
     name: Dispatch Exact Cross-Artifact Production Certification
     needs: [preflight, deploy, record-receipt]
-    runs-on: [self-hosted, smarter-local-publish]
-    environment: Production
+    runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
       actions: read

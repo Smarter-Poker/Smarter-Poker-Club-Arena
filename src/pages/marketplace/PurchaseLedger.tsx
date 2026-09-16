@@ -138,7 +138,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
             setOffset(0);
             setQuery(e.target.value);
           }}
-          placeholder="Search Item Or Member"
+          placeholder="Search Item Or Member..."
           aria-label="Search Purchases By Item Or Member"
           className={styles.formInput}
         />
@@ -146,7 +146,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
 
       {loading && rows.length === 0 ? (
         <div className={styles.emptyState}>
-          <span className={styles.emptyText}>Loading Purchases</span>
+          <span className={styles.emptyText}>Loading Purchases...</span>
         </div>
       ) : error && rows.length === 0 ? (
         <div className={styles.emptyState}>
@@ -180,17 +180,13 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
-                    <td data-label="Member" className={styles.dataItemName}>
-                      {r.buyerName}
-                    </td>
-                    <td data-label="Item">{r.itemName}</td>
-                    <td data-label="Paid" className={styles.dataValuePrice}>
+                    <td style={{ fontWeight: 600 }}>{r.buyerName}</td>
+                    <td>{r.itemName}</td>
+                    <td style={{ color: '#00d4ff', fontWeight: 700 }}>
                       {fmt(r.pricePaid)} {unitOf(r.currency)}
                     </td>
-                    <td data-label="When" className={styles.dataValueMuted}>
-                      {timeAgo(r.createdAt)}
-                    </td>
-                    <td data-label="Status">
+                    <td style={{ fontSize: '12px', color: '#8b8d91' }}>{timeAgo(r.createdAt)}</td>
+                    <td>
                       <span className={styles.categorySmall}>
                         {r.status === 'refunded'
                           ? 'Refunded'
@@ -201,14 +197,14 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
                               : 'Owned'}
                       </span>
                     </td>
-                    <td data-label="Actions">
+                    <td>
                       {r.refundable ? (
                         <button
                           className={styles.btnDeleteSmall}
                           onClick={() => handleRefund(r)}
                           disabled={refunding !== null}
                         >
-                          {refunding === r.id ? 'Refunding' : 'Refund'}
+                          {refunding === r.id ? '...' : 'Refund'}
                         </button>
                       ) : (
                         <span

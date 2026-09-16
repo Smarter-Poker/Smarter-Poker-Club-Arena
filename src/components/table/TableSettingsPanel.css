@@ -1,200 +1,298 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   TABLE SETTINGS - rows on the glass (#ClubArenaConsole)
-
-   Every setting used to be a rounded card: its own fill, its own border, a
-   lift on hover, and a 44x24 pill switch with a 999px track and a round white
-   thumb. That is a grid of drawn tiles carrying a drawn control, and the
-   standard deletes both - the frame is painted in the master and the state is
-   printed as a word.
-
-   So: one ROW per setting. The name in the master's lit blue on the left, what
-   it does under it in muted Inter, the state in engraved silver on the right,
-   and an engraved rule between rows - a black line with a light lip, the same
-   cut the master's own chrome rules are made of. No border-radius, no
-   gradient, no box-shadow on a box, no :hover anywhere in this file.
-
-   Sizes are cqw. `.tsp-container` declares the container itself so the inline
-   mode (which has no console around it) measures against the panel, while the
-   overlay mode measures against the console SpadeConsole.css already declares.
-
-   NOTE FOR THE NEXT AGENT: IdentityModal.css carries a VERBATIM COPY of the
-   old `.tsp-toggle` pill, for its own alias switch and its own markup, and
-   says "if that switch is restyled, restyle it here in the same commit". That
-   coupling is now one-way: this panel no longer draws a switch at all, and
-   IdentityModal keeps its own self-contained copy. Nothing there is broken by
-   this file; the two are simply no longer the same control.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * TABLE SETTINGS PANEL — Bible V8 §11.1
+ * Shared styles for overlay (table gear icon) and inline (hamburger menu) modes
+ * ═══════════════════════════════════════════════════════════════════════════════ */
 
 .tsp-container {
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  gap: 2cqw;
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #d7dee7;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--off-white, #e4e6eb);
 }
 
-/* The overlay stands on its own, so it wears the console. The inline mode is
-   a guest inside the hamburger menu and SettingsPanel and adds no chassis. */
+/* ── Overlay mode (table gear icon) ── */
 .tsp-overlay {
-  width: min(100%, 420px);
-  margin-inline: auto;
+  background: var(--dark-surface, #242526);
+  border-radius: 12px;
+  padding: 0;
+  max-height: 70vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
-.tsp-loading {
-  padding: 2cqw 0.5cqw;
-  color: #9aa5b3;
-  font-size: 2.7cqw;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+/* ── Inline mode (hamburger menu) ── */
+.tsp-inline {
+  background: transparent;
+  padding: 0;
 }
 
-.tsp-list {
+/* ── Header ── */
+.tsp-header {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-/* ── One setting, one engraved row ────────────────────────────────────── */
-
-.tsp-item {
-  appearance: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
   align-items: center;
-  width: 100%;
-  /* A switch on a phone still has to be hittable. */
-  min-height: 44px;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tsp-title {
   margin: 0;
-  padding: 2.4cqw 0.5cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
-  color: inherit;
-  font: inherit;
-  text-align: left;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--off-white, #e4e6eb);
+}
+
+.tsp-close {
+  background: var(--card-surface, #3a3b3c);
+  border: none;
+  color: var(--off-white, #e4e6eb);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 18px;
   cursor: pointer;
-  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
 }
 
-.tsp-item:active {
-  filter: brightness(1.25);
-  transform: none;
+/* ── Loading ── */
+.tsp-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--soft-white, #b0b3b8);
+  font-size: 14px;
 }
 
-.tsp-item:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1cqw;
+/* ── Toggle List ── */
+.tsp-list {
+  padding: 8px 0;
+}
+
+/* ── Individual Setting Item ── */
+.tsp-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 8px;
+  margin: 0 8px;
+  transition: background 0.15s ease;
+  gap: 12px;
+}
+
+.tsp-item--active {
+  /* subtle highlight for active items */
 }
 
 .tsp-item__info {
-  display: grid;
-  gap: 0.8cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
   min-width: 0;
 }
 
 .tsp-item__label {
-  min-width: 0;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 3.2cqw;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--off-white, #e4e6eb);
+  line-height: 1.3;
 }
 
 .tsp-item__desc {
-  min-width: 0;
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 2.9cqw/1.4 Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.01em;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  font-size: 11px;
+  color: var(--soft-white, #b0b3b8);
+  line-height: 1.3;
 }
 
-/* The state, printed. Engraved silver when the setting is on, dim when it is
-   off - the same pair the master uses for a live figure and a dead one. */
-.tsp-state {
-  color: #4a5462;
-  -webkit-text-fill-color: #4a5462;
-  font-size: 3.2cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-align: right;
-  text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-  white-space: nowrap;
+/* ── Toggle Switch ── */
+.tsp-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
-.tsp-item--active .tsp-state {
-  color: #e4e7ec;
-  -webkit-text-fill-color: #e4e7ec;
-  text-shadow:
-    0 -0.12cqw 0 rgb(255 255 255 / 45%),
-    0 0.2cqw 0 #6d747c,
-    0 0.35cqw 0 #050607,
-    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
-}
-
-/* A VIP-gated switch a non-VIP cannot turn on still reads as reachable - the
-   tap answers with the upsell rather than doing nothing - so it is dimmed by
-   its OFF state above and by nothing else. */
-
-/* ── The one action, above the flat closing cap ───────────────────────── */
-
-.tsp-close {
-  appearance: none;
+.tsp-toggle__track {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 44px;
-  margin: 1cqw 0 0;
-  padding: 2cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
-  color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  font-family: inherit;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  padding: 2px;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.tsp-toggle--on .tsp-toggle__track {
+  background-color: #3fb950;
+  border: 2px solid #4dc660;
+}
+
+.tsp-toggle--off .tsp-toggle__track {
+  background-color: #374151;
+  border: 2px solid #6b7280;
+}
+
+.tsp-toggle__thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.25s ease;
+}
+
+.tsp-toggle--on .tsp-toggle__thumb {
+  transform: translateX(20px);
+}
+
+.tsp-toggle--off .tsp-toggle__thumb {
+  transform: translateX(0);
+}
+
+/* ── Theme Settings Link ── */
+.tsp-theme-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin: 4px 8px 8px;
+  border-radius: 8px;
   cursor: pointer;
-  touch-action: manipulation;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.15s ease;
 }
 
-.tsp-close:active {
-  filter: brightness(1.25);
-  transform: none;
+.tsp-theme-link__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--royal-blue, #1877f2);
 }
 
+.tsp-theme-link__arrow {
+  font-size: 18px;
+  color: var(--soft-white, #b0b3b8);
+}
+
+/* Table Studio companion treatment: in-game controls use the same tactile
+   obsidian/cobalt language as the appearance picker they open. */
+.tsp-container {
+  --tsp-accent: #48bfff;
+  --tsp-line: rgba(148, 178, 205, 0.16);
+  color: #edf7ff;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+.tsp-overlay {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 44%), #090f16;
+  border: 1px solid rgba(161, 197, 224, 0.2);
+  border-radius: 4px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.62),
+    inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.tsp-header {
+  min-height: 64px;
+  padding: 14px 16px;
+  background: linear-gradient(90deg, rgba(25, 40, 55, 0.8), rgba(10, 17, 25, 0.8));
+  border-bottom-color: var(--tsp-line);
+}
+
+.tsp-title {
+  color: #f2f8fc;
+  font-family: 'Rajdhani', 'Arial Narrow', sans-serif;
+  font-size: 19px;
+  letter-spacing: 0.025em;
+}
+
+.tsp-close {
+  color: #9db1c1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--tsp-line);
+}
 .tsp-close:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1cqw;
+  color: #fff;
+  background: rgba(72, 191, 255, 0.12);
+  outline: 2px solid rgba(72, 191, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.tsp-list {
+  padding: 8px;
+}
+.tsp-item {
+  width: 100%;
+  min-height: 56px;
+  margin: 2px 0;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  font: inherit;
+  appearance: none;
+}
+.tsp-item--active {
+  background: rgba(72, 191, 255, 0.035);
+}
+.tsp-item__label {
+  color: #dce9f2;
+  font-size: 13px;
+  font-weight: 650;
+}
+.tsp-item__desc {
+  color: #71889a;
+  font-size: 10px;
+}
+
+.tsp-item:focus-visible {
+  outline: 2px solid var(--tsp-accent);
+  outline-offset: 2px;
+}
+.tsp-toggle__track {
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+.tsp-toggle--on .tsp-toggle__track {
+  background: linear-gradient(180deg, #52c7ff, #198cc5);
+  border-color: rgba(130, 220, 255, 0.75);
+  box-shadow:
+    0 0 15px rgba(42, 170, 230, 0.24),
+    inset 0 1px rgba(255, 255, 255, 0.25);
+}
+.tsp-toggle--off .tsp-toggle__track {
+  background: #17222d;
+  border-color: #34495a;
+}
+.tsp-toggle__thumb {
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(145deg, #fff, #dce7ee);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.tsp-toggle--on .tsp-toggle__thumb {
+  transform: translateX(20px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tsp-item,
+  .tsp-toggle__track,
+  .tsp-toggle__thumb {
+    transition: none !important;
+  }
 }

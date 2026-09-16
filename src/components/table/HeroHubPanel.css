@@ -1,16 +1,9 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  HERO HUB — tabbed panel behind the hero's own avatar, on the spade console
+ *  HERO HUB — tabbed panel behind the hero's own avatar (Dan 2026-08-28)
  * ═══════════════════════════════════════════════════════════════════════════════
  * Tabs: Throwables (inline ThrowableSelector) / Stats / Profile / Table.
- *
- * THE CONSOLE (#ClubArenaConsole). The panel was a 16px rounded card with a
- * border and a 48px shadow, carrying an avatar disc, a rounded tab strip, a
- * square close button, a grid of figure tiles, a card per launcher and a pill
- * switch per quick setting. The spade master is the frame now: the panel
- * paints nothing, every figure, launcher and switch is a ROW on the black
- * glass, and every state is a printed word. No border-radius on a card, tile,
- * pill or button, no gradient, no box-shadow on a box, no :hover.
+ * Neutral house surfaces only — no new accent colors.
  */
 
 .hero-hub__overlay {
@@ -19,10 +12,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
   z-index: 900; /* same layer the standalone throwable overlay uses */
-  /* Black, not grey: the console floats on the same black as the felt. */
-  background: rgb(0 0 0 / 82%);
+  background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(6px) saturate(1.1);
   -webkit-backdrop-filter: blur(6px) saturate(1.1);
 }
@@ -60,74 +51,61 @@
   max-height: min(58vh, 520px);
 }
 
-/* The panel is the space the picture stands in, and paints nothing itself. */
 .hero-hub {
-  display: flex;
-  flex-direction: column;
   width: min(400px, calc(100vw - 24px));
   max-height: min(78vh, 640px);
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  overflow: hidden auto;
-  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: rgba(16, 19, 28, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
 }
 
-.hero-hub:focus {
-  outline: none;
-}
-
-.hero-hub__console {
-  width: 100%;
-}
-
-/* ── Tab strip: four engraved words on the glass, not a pill bar ───────── */
+/* ── Tab strip ─────────────────────────────────────────────────────────── */
 
 .hero-hub__tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: stretch;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .hero-hub__tab {
-  appearance: none;
-  /* A tab on a phone still has to be hittable. */
-  min-height: 44px;
-  margin: 0;
-  padding: 2cqw 0.5cqw;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font-family: inherit;
-  font-size: 2.6cqw;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  line-height: 1.25;
-  text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  flex: 1 1 auto;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 10px 10px 0 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.8125rem;
+  font-weight: 700;
   cursor: pointer;
   touch-action: manipulation;
   white-space: nowrap;
 }
 
 .hero-hub__tab--active {
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0 2cqw rgb(49 168 255 / 30%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.65);
 }
 
-.hero-hub__tab:active {
-  filter: brightness(1.25);
-  transform: none;
+.hero-hub__close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  margin-left: 4px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 /* ── Throwables tab: the leaf selector, un-anchored ────────────────────── */
@@ -135,7 +113,7 @@
 .hero-hub__throwables {
   display: flex;
   justify-content: center;
-  padding: 2cqw 0;
+  padding: 10px;
   overflow-y: auto;
 }
 
@@ -149,273 +127,228 @@
   transform: none;
 }
 
+/* ── Launcher tabs ─────────────────────────────────────────────────────── */
+
+.hero-hub__menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.hero-hub__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hero-hub__item-label {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.hero-hub__item-sub {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.hero-hub__empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.85rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2026-08-29 HARDENING / MAX PASS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* WHOSE HUB IS THIS. The panel was titled "Player hub" and showed no player. */
+.hero-hub__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 0;
+}
+
+.hero-hub__identity-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.hero-hub__identity-name {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-hub__identity-stack {
+  margin-left: auto;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #3fb950;
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE FIGURES, INLINE. Mobile-first: two columns at 375px, three from 420px. */
+.hero-hub__figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+@media (min-width: 420px) {
+  .hero-hub__figures {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.hero-hub__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  min-width: 0;
+}
+
+.hero-hub__figure-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hero-hub__figure-value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-hub__figure.is-up .hero-hub__figure-value {
+  color: #3fb950;
+}
+
+.hero-hub__figure.is-down .hero-hub__figure-value {
+  color: var(--color-danger, #ef4444);
+}
+
 /* TWO CLOSE BUTTONS THAT DO THE SAME THING READ AS A BUG. The embedded
    ThrowableSelector keeps its own close for its standalone mount (the villain
-   avatar path); inside the hub, the hub's own close is the one close. The
+   avatar path); inside the hub, the hub's own x is the one close. The
    component is NOT forked - it is pinned by protected-features.json - so this
    is done here, in the wrapper's stylesheet, where it belongs. */
 .hero-hub__throwables .throwable-selector__close {
   display: none;
 }
 
-/* ── Launcher tabs ─────────────────────────────────────────────────────── */
-
-.hero-hub__menu {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  overflow-y: auto;
+/* Keyboard focus must be VISIBLE - the panel is now reachable and trapped. */
+.hero-hub__tab:focus-visible,
+.hero-hub__close:focus-visible,
+.hero-hub__item:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
 }
 
-/* A launcher is a row, not a card: the destination in engraved silver, what
-   is behind it in muted Inter under it. */
-.hero-hub__item {
-  appearance: none;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.6cqw;
-  width: 100%;
-  min-height: 44px;
-  margin: 0;
-  padding: 2.4cqw 0.5cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  touch-action: manipulation;
+.hero-hub:focus {
+  outline: none;
 }
 
-.hero-hub__item:active {
-  filter: brightness(1.25);
-  transform: none;
-}
-
-.hero-hub__item-label {
-  color: #e4e7ec;
-  -webkit-text-fill-color: #e4e7ec;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-shadow:
-    0 -0.12cqw 0 rgb(255 255 255 / 45%),
-    0 0.2cqw 0 #6d747c,
-    0 0.35cqw 0 #050607,
-    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
-}
-
-.hero-hub__item-sub {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 2.8cqw/1.4 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.hero-hub__empty {
-  padding: 7cqw 1cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 3.1cqw/1.45 Inter,
-    system-ui,
-    sans-serif;
-  text-align: center;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-/* ── The figures: one engraved row each, never a grid of tiles ────────── */
-
-.hero-hub__figures {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.hero-hub__figure {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: baseline;
-  padding: 2.2cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.hero-hub__figure-label {
-  min-width: 0;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 2.7cqw;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
-}
-
-.hero-hub__figure-value {
-  overflow: hidden;
-  color: #e4e7ec;
-  -webkit-text-fill-color: #e4e7ec;
-  font-size: 3.6cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums lining-nums;
-  text-align: right;
-  text-overflow: ellipsis;
-  text-shadow:
-    0 -0.12cqw 0 rgb(255 255 255 / 45%),
-    0 0.2cqw 0 #6d747c,
-    0 0.35cqw 0 #050607,
-    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
-}
-
-/* The house green and the console's red. A signed figure is the one place a
-   colour carries meaning rather than dressing. */
-.hero-hub__figure.is-up .hero-hub__figure-value {
-  color: #3fb950;
-  -webkit-text-fill-color: #3fb950;
-  text-shadow:
-    0 0 1cqw rgb(63 185 80 / 55%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-}
-
-.hero-hub__figure.is-down .hero-hub__figure-value {
-  color: #ff5b6e;
-  -webkit-text-fill-color: #ff5b6e;
-  text-shadow:
-    0 0 1cqw rgb(240 40 73 / 80%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-}
-
-/* ── QUICK TABLE TOGGLES (2026-08-30) ─────────────────────────────────────
-   The switches a player reaches for during a session, one tap from the avatar
-   instead of three. The 40x22 pill with a sliding thumb is gone: the state is
-   a WORD now, which also means reduced motion loses nothing - it never had a
-   slide to collapse, and the meaning was always the point. */
-
+/* QUICK TABLE TOGGLES (2026-08-30) — the switches a player reaches for during
+   a session, one tap from the avatar instead of three. */
 .hero-hub__toggles {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .hero-hub__toggle {
-  appearance: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   width: 100%;
   min-height: 44px; /* mobile-first: a real touch target at 375px */
-  margin: 0;
-  padding: 2.4cqw 0.5cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
-  color: inherit;
-  font: inherit;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
   cursor: pointer;
   touch-action: manipulation;
-}
-
-.hero-hub__toggle:active {
-  filter: brightness(1.25);
-  transform: none;
 }
 
 .hero-hub__toggle-label {
-  min-width: 0;
-  overflow: hidden;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 3.1cqw;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: 0.85rem;
+  font-weight: 700;
   text-align: left;
-  text-overflow: ellipsis;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
-  white-space: nowrap;
 }
 
-.hero-hub__toggle-state {
-  color: #4a5462;
-  -webkit-text-fill-color: #4a5462;
-  font-size: 3.1cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-align: right;
-  text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-  white-space: nowrap;
+.hero-hub__toggle-track {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  position: relative;
+  transition: background var(--sp-ui-fast, 160ms) ease;
 }
 
-.hero-hub__toggle.is-on .hero-hub__toggle-state {
-  color: #e4e7ec;
-  -webkit-text-fill-color: #e4e7ec;
-  text-shadow:
-    0 -0.12cqw 0 rgb(255 255 255 / 45%),
-    0 0.2cqw 0 #6d747c,
-    0 0.35cqw 0 #050607;
+.hero-hub__toggle.is-on .hero-hub__toggle-track {
+  background: #3fb950;
 }
 
-/* ── The one action, above the flat closing cap ───────────────────────── */
-
-.hero-hub__close {
-  appearance: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 44px;
-  margin: 1cqw 0 0;
-  padding: 2cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
-  color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  font-family: inherit;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-  cursor: pointer;
-  touch-action: manipulation;
+.hero-hub__toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform var(--sp-ui-fast, 160ms) ease;
 }
 
-.hero-hub__close:active {
-  filter: brightness(1.25);
-  transform: none;
+.hero-hub__toggle.is-on .hero-hub__toggle-thumb {
+  transform: translateX(18px);
 }
 
-/* Keyboard focus must be VISIBLE - the panel is reachable and trapped. */
-.hero-hub__tab:focus-visible,
-.hero-hub__close:focus-visible,
-.hero-hub__item:focus-visible,
 .hero-hub__toggle:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1cqw;
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+/* Reduced motion: the thumb still MOVES (it carries the meaning - on vs off),
+   it just stops sliding. See the animation law: motion may collapse, meaning
+   may not. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-hub__toggle-track,
+  .hero-hub__toggle-thumb {
+    transition: none;
+  }
 }

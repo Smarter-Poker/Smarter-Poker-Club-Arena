@@ -1,122 +1,110 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   REGISTRATION APPROVALS - on the spade console (#ClubArenaConsole)
-
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master (components/console/SpadeConsole.css), closed flat; this
-   file lays the whitelist on the black glass between the rails: every player
-   a row between engraved rules with Approve or Revoke as a lit word, and the
-   search printed straight on the glass. Nothing is drawn: no card, no button
-   face, no rounded field. Sizes are cqw against the console. No :hover
-   (tests/no-hover-effects.law.test.ts).
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* Registration Approvals Panel (2026-08-23) — mobile-first, 375px baseline. */
 
 .regApprovals {
-  --rap-rule: 1px solid #000;
-  --rap-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
-  --sc-max: 640px;
-  margin-bottom: 16px;
-  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+  margin: 12px 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.regApprovals__hint,
-.regApprovals__state {
-  margin: 0;
-}
-
-/* ── Rows on the glass ──────────────────────────────────────────────────── */
-
-.regApprovals__list {
-  display: grid;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.regApprovals__row {
+.regApprovalsHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 3cqw;
-  min-width: 0;
-  min-height: 44px;
-  padding: 0.6cqw 0;
-  border-top: var(--rap-rule);
-  box-shadow: var(--rap-rule-lit);
+  gap: 8px;
 }
 
-.regApprovals__name {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 3.8cqw;
+.regApprovalsTitle {
+  margin: 0;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
+}
+
+.regApprovalsCount {
+  font-size: 12px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.regApprovalsHint {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.65;
+}
+
+.regApprovalsLoading,
+.regApprovalsEmpty {
+  padding: 10px 2px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.regApprovalsSearch {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font-size: 14px;
+}
+
+.regApprovalsSearch:focus {
+  outline: none;
+  border-color: rgba(111, 220, 255, 0.5);
+}
+
+.regApprovalsList {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.regApprovalsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.regApprovalsRow:last-child {
+  border-bottom: none;
+}
+
+.regApprovalsName {
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ── Lit words ──────────────────────────────────────────────────────────── */
-
-.regApprovals-word {
-  appearance: none;
-  flex-shrink: 0;
-  min-height: 44px;
-  margin: 0;
-  padding: 1.2cqw 1.6cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.4cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  white-space: nowrap;
+.regApprovalsBtn {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(111, 220, 255, 0.45);
+  background: rgba(111, 220, 255, 0.12);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  touch-action: manipulation;
 }
 
-.regApprovals-word:active {
-  filter: brightness(1.25);
+.regApprovalsBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
-.regApprovals-word:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.regApprovals-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.4cqw;
-}
-
-/* ── The search: printed on the glass, closed by an engraved rule ───────── */
-
-.regApprovals__search {
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-  padding: 2cqw 0;
-  border: 0;
-  border-bottom: var(--rap-rule);
-  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
-  background: transparent;
-  color: #f4f7fb;
-  font:
-    500 16px/1.5 Inter,
-    system-ui,
-    sans-serif; /* under 16px makes iOS zoom the page on focus */
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.regApprovals__search::placeholder {
-  color: #9aa5b3;
-}
-
-.regApprovals__search:focus {
-  outline: 0;
-  border-bottom-color: #45adff;
-  box-shadow: 0 1px 0 rgb(69 173 255 / 45%);
+.regApprovalsBtnRevoke {
+  border-color: rgba(255, 80, 80, 0.45);
+  background: rgba(255, 80, 80, 0.1);
 }

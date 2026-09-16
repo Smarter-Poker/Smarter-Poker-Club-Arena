@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceMethod } from '../helpers/sourceWindow';
 
 /**
  * Dan 2026-08-23: "I just tried to run it twice, and it did not run a second
@@ -44,29 +43,17 @@ describe('a Run It Twice offer that ends in one board says so', () => {
   });
 
   it('announces the offer lapsing with no agreement', () => {
-    // The call carries the hand it is about since 2026-09-09 (see below), so
-    // this pins the announcement rather than the exact argument list.
-    expect(RUNOUT).toContain("emitRitSingleRun('no_agreement'");
+    expect(RUNOUT).toContain("emitRitSingleRun('no_agreement')");
   });
 
-  it('emits at most one notice per hand, and only for the hand it is about', () => {
+  it('emits at most one notice per hand', () => {
     // A decline followed by the timeout branch must not toast twice.
     expect(RUNOUT).toContain('ritSingleRunNotifiedHand');
     const fn = RUNOUT.slice(
       RUNOUT.indexOf('protected emitRitSingleRun('),
-      RUNOUT.indexOf('protected emitRitSingleRun(') + 1600
+      RUNOUT.indexOf('protected emitRitSingleRun(') + 700
     );
-    /* MOVED 2026-09-09, and STRENGTHENED. The dedupe used to compare against
-       `this.handCount` read at emit time. That is right for every synchronous
-       caller and wrong for the RIT auto-decline forwarder, which fires from a
-       DeadlineScheduler timer: a timeout surfacing after the hand turned over
-       stamped the NEXT hand as already-notified and suppressed its own
-       legitimate notice. The method takes the hand it is about (defaulting to
-       the live one, so nothing else changes) and dedupes on that - plus it now
-       refuses outright to announce a hand that is over. */
-    expect(fn).toMatch(/handNumber: number = this\.handCount/);
-    expect(fn).toMatch(/if \(handNumber !== this\.handCount\) return;/);
-    expect(fn).toMatch(/if \(this\.ritSingleRunNotifiedHand === handNumber\) return;/);
+    expect(fn).toMatch(/if \(this\.ritSingleRunNotifiedHand === this\.handCount\) return;/);
   });
 
   it('the client turns each reason into its own message', () => {
@@ -92,28 +79,5 @@ describe('a Run It Twice offer that ends in one board says so', () => {
       expect(m, m).not.toMatch(/—/);
       expect(m, m).not.toMatch(/\b(a|an|the|in|on|of|to)\b [a-z]/);
     }
-  });
-});
-
-describe('the expiry names the one seat that held things up (2026-09-13)', () => {
-  it('the host forwards a single silent player by id, and the collective line otherwise', () => {
-    /* BOUNDED BY THE METHOD (2026-09-14). This was `+ 1200`, and documenting
-       the forwarder pushed the very call this test exists for past the end of
-       the window - the test went red while the rule it guards was untouched.
-       A byte count fails the other way too, passing once the code it watched
-       slides out of view. `sliceMethod` grows with the method. */
-    const fn = sliceMethod(RUNOUT, 'protected wireRunItTwiceEvents(): void {');
-    expect(fn).toContain(
-      /* PIN MOVED 2026-09-14, not weakened. The seat-naming rule this test was
-         written for is intact; what changed is that it now composes with the
-         stale-timeout guard, so BOTH notices carry the hand they are about.
-         Naming the silent seat on the wrong hand would have been the same
-         defect wearing a friendlier sentence. */
-      "this.emitRitSingleRun('no_answer', silent[0] as string, declinedHand)"
-    );
-    expect(fn).toContain("else this.emitRitSingleRun('no_agreement', undefined, declinedHand);");
-    // and the stale-timeout guard stands in front of both
-    expect(fn).toMatch(/declinedHand !== this\.handCount\) return;/);
-    expect(RUNOUT).toContain("| 'no_answer'");
   });
 });

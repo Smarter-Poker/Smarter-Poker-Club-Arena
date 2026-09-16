@@ -19,7 +19,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { sliceBetween, sliceCssRule } from '../helpers/sourceWindow';
 import { TickerRail } from '../../src/components/tournament/TickerRail';
 import {
@@ -33,25 +33,6 @@ import { contrastRatio } from '../../src/utils/colorContrast';
 import { TONE_ACCENT } from '../../src/components/tournament/tickerTheme';
 
 const NOW = 1_800_000_000_000;
-
-/* ── THE CLOCK READS THE WALL CLOCK NOW (2026-09-14) ───────────────────────
-   TickerClock owns its own second, so it seeds itself from `Date.now()` and
-   not from the `now` prop the rail is handed. In a browser those are the same
-   clock. In a test they are only the same clock if we say so - and when they
-   disagree the countdown renders the distance to an epoch in the year 2027,
-   which is how this was caught.
-
-   DATE ONLY. `setInterval` stays real: none of these tests advance time, and a
-   faked scheduler here would also swallow React's, which is a different bug to
-   debug on a different day. */
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(NOW);
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 const APPEARANCE = {
   backgroundColor: '#0b1a33',

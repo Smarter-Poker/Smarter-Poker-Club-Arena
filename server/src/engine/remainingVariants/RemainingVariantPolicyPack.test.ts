@@ -6,11 +6,21 @@ import {
 import { PLO4_CORE_DEPTHS, PLO4_PREFLOP_ROLES, positionForOffset } from '../plo4/Plo4PolicyPack.js';
 import { plo4PreflopChoice } from '../plo4/Plo4LivePolicy.js';
 import { KNOWN_VARIANTS } from '../VariantRules.js';
-import { HORSE_POLICY_REGISTRY } from '../HorsePolicyRegistry.js';
 
 describe('complete remaining-variant preflop domain', () => {
   it('assigns every actual engine variant to an implemented core policy owner', () => {
-    expect(Object.keys(HORSE_POLICY_REGISTRY).sort()).toEqual([...KNOWN_VARIANTS].sort());
+    const owners = {
+      nlh: 'phase4/5/6/7',
+      plo4: 'phase10',
+      plo5: 'phase11',
+      plo6: 'phase11',
+      plo8: 'phase11',
+      short_deck: 'phase12',
+      pineapple: 'phase12',
+      flh: 'phase12',
+      flo8: 'phase12',
+    };
+    expect(Object.keys(owners).sort()).toEqual([...KNOWN_VARIANTS].sort());
   });
   it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
     '%s certifies every preflop coordinate and interpolation boundary',

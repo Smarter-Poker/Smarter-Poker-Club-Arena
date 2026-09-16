@@ -1,9 +1,9 @@
 # tests/critical-means-chips-are-at-stake.law.test.ts
 
 The drift board is a money board, and CRITICAL on it must mean chips are at
-stake. fn*ca_financial_alert_to_incident defaulted every engine alert to
+stake. fn_ca_financial_alert_to_incident defaulted every engine alert to
 critical, so ten zero-chip incidents sat red beside real money. Pins that
-ServerTableEngine.* and postHandTasks.\_ alerts carrying neither a discrepancy
+ServerTableEngine._ and postHandTasks._ alerts carrying neither a discrepancy
 nor an amount file as info - still written, deduped, counted and on the board,
 not red and not paged - while money-shaped sources (prize, payout, bounty,
 rake, treasury, guarantee, insurance, bbj, rakeback) stay critical whatever

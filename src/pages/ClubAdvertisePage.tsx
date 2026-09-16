@@ -46,14 +46,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { formatDate } from '../utils/format';
-import {
-  AdCampaignService,
-  POSTER_SHAPE,
-  billingLabel,
-  countriesLabel,
-  formatDollars,
-  parseCountries,
-} from '../services/AdCampaignService';
+import { AdCampaignService, POSTER_SHAPE } from '../services/AdCampaignService';
 import type {
   AdCampaign,
   AdCampaignDay,
@@ -128,7 +121,6 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
   const [headline, setHeadline] = useState('');
   const [destination, setDestination] = useState('lobby');
   const [externalUrl, setExternalUrl] = useState('');
-  const [countriesText, setCountriesText] = useState('');
   const [days, setDays] = useState(7);
   const [scope, setScope] = useState<'platform' | 'own_club'>('platform');
   const [file, setFile] = useState<File | null>(null);
@@ -148,16 +140,10 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
   /* A club books the surfaces open to clubs. A sponsor may book any priced
      surface something renders; the house decides at review. */
   const bookableRates = useMemo(
-    () =>
-      rates.filter((r) =>
-        sponsorMode ? !UNBUILT_SLOTS.includes(r.slot) && r.sponsorCentsPerDay > 0 : r.isOpen
-      ),
+    () => rates.filter((r) => (sponsorMode ? !UNBUILT_SLOTS.includes(r.slot) : r.isOpen)),
     [rates, sponsorMode]
   );
   const cost = rate ? rate.diamondsPerDay * days : 0;
-  /* A sponsor's price, in cents, from the same rate card the RPC freezes onto
-     the flight. The page shows it; the database is the authority. */
-  const quoteCents = rate ? rate.sponsorCentsPerDay * days : 0;
   const canAfford = sponsorMode || balance === null ? true : balance >= cost;
 
   const reloadCampaigns = useCallback(async () => {
@@ -176,7 +162,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
       const rateCard = await AdCampaignService.rateCard();
       setRates(rateCard);
       const bookable = rateCard.filter((r) =>
-        sponsorMode ? !UNBUILT_SLOTS.includes(r.slot) && r.sponsorCentsPerDay > 0 : r.isOpen
+        sponsorMode ? !UNBUILT_SLOTS.includes(r.slot) : r.isOpen
       );
       if (bookable.length && !bookable.some((r) => r.slot === slot)) setSlot(bookable[0].slot);
 
@@ -296,7 +282,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
       sponsorMode
         ? {
             title: 'Book This Advert?',
-            message: `${formatDollars(quoteCents)} For ${days} Day(s) On The ${rate.label}, Sending Players To ${externalUrl.trim()}. Smarter.Poker Reviews Every Advert Before It Runs And Invoices You Once It Is Approved. Nothing Is Charged Here.`,
+            message: `${days} Day(s) On The ${rate.label}, Sending Players To ${externalUrl.trim()}. Smarter.Poker Reviews Every Advert Before It Runs And Will Contact You About Payment. Nothing Is Charged Here.`,
             confirmText: 'Book It',
             cancelText: 'Not Yet',
           }
@@ -340,7 +326,6 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
           externalUrl: externalUrl.trim(),
           startsAt: new Date(),
           days,
-          countries: parseCountries(countriesText) ?? null,
         });
         if (!res.ok) {
           const why: Record<string, string> = {
@@ -349,7 +334,6 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
             advertiser_suspended: 'Your Advertising Account Is Paused. Contact Smarter.Poker',
             bad_headline: 'Give The Advert A Short Headline',
             unknown_slot: 'That Surface Cannot Be Booked',
-            surface_not_for_sale: 'That Surface Is Not For Sale Right Now',
             bad_days: 'Choose Between 1 And 365 Days',
             creative_not_in_your_folder: 'The Picture Did Not Land In Your Folder. Try Again',
             poster_not_in_your_folder: 'The Poster Did Not Land In Your Folder. Try Again',
@@ -360,9 +344,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
           toast.error(why[res.reason] ?? `Could Not Book: ${res.reason}`);
           return;
         }
-        toast.success(
-          `Booked At ${formatDollars(quoteCents)}. Smarter.Poker Will Review It And Invoice You Once It Is Approved`
-        );
+        toast.success('Booked. Smarter.Poker Will Review It And Be In Touch About Payment');
       } else if (clubId) {
         const dest = DESTINATIONS.find((d) => d.key === destination) ?? DESTINATIONS[0];
         let imageUrl: string;
@@ -504,7 +486,6 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
 
   const headlineOk = headline.trim().length > 0 && headline.trim().length <= 120;
   const destinationOk = sponsorMode ? isHttpsAddress(externalUrl) : true;
-  const countriesOk = sponsorMode ? parseCountries(countriesText) !== undefined : true;
   const advertiserOk = sponsorMode ? Boolean(advertiser && advertiser.status === 'active') : true;
   const canSubmit = Boolean(
     rate &&
@@ -512,7 +493,6 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
     poster &&
     headlineOk &&
     destinationOk &&
-    countriesOk &&
     advertiserOk &&
     !busy &&
     canAfford &&
@@ -538,7 +518,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
           </h1>
           <p className="club-advertise__sub">
             {sponsorMode
-              ? 'Put A Picture In Front Of Every Player On Smarter.Poker, Sending Them To Your Own Site. Priced Per Day, Reviewed Before It Runs, Invoiced Once Approved.'
+              ? 'Put A Picture In Front Of Every Player On Smarter.Poker, Sending Them To Your Own Site. Smarter.Poker Reviews Every Advert And Invoices You Directly.'
               : 'Put A Picture In Front Of Every Player On Smarter.Poker. Pay In Diamonds. The House Reviews Every Advert Before It Runs.'}
           </p>
         </div>
@@ -627,9 +607,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
               />
               <span className="club-advertise__surface-label">{r.label}</span>
               {sponsorMode ? (
-                <span className="club-advertise__surface-price">
-                  {formatDollars(r.sponsorCentsPerDay)} Per Day
-                </span>
+                <span className="club-advertise__surface-price">Priced On Request</span>
               ) : (
                 <span className="club-advertise__surface-price">
                   <span className="diamond-icon" aria-hidden="true" />
@@ -735,41 +713,22 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
             </small>
           </label>
           {sponsorMode ? (
-            <>
-              <label className="club-advertise__field">
-                <span>The Button Sends Players To</span>
-                <input
-                  type="url"
-                  maxLength={500}
-                  value={externalUrl}
-                  onChange={(e) => setExternalUrl(e.target.value)}
-                  placeholder="https://acme.example/poker"
-                  disabled={busy}
-                  inputMode="url"
-                />
-                <small>
-                  A Full HTTPS Address On Your Own Site. It Opens In A New Tab And Never Leaves A
-                  Player Signed Out.
-                </small>
-              </label>
-              <label className="club-advertise__field">
-                <span>Countries (Optional)</span>
-                <input
-                  type="text"
-                  maxLength={200}
-                  value={countriesText}
-                  onChange={(e) => setCountriesText(e.target.value)}
-                  placeholder="Leave Empty For Everywhere, Or US, CA, GB"
-                  disabled={busy}
-                  autoCapitalize="characters"
-                />
-                <small>
-                  {countriesOk
-                    ? `Shown ${countriesLabel(parseCountries(countriesText))}. A Player Whose Location Is Unknown Never Sees A Country-Limited Advert.`
-                    : 'Two-Letter Country Codes Only, Separated By Commas: US, CA, GB.'}
-                </small>
-              </label>
-            </>
+            <label className="club-advertise__field">
+              <span>The Button Sends Players To</span>
+              <input
+                type="url"
+                maxLength={500}
+                value={externalUrl}
+                onChange={(e) => setExternalUrl(e.target.value)}
+                placeholder="https://acme.example/poker"
+                disabled={busy}
+                inputMode="url"
+              />
+              <small>
+                A Full HTTPS Address On Your Own Site. It Opens In A New Tab And Never Leaves A
+                Player Signed Out.
+              </small>
+            </label>
           ) : (
             <label className="club-advertise__field">
               <span>Tapping It Opens</span>
@@ -823,11 +782,9 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
         <div className="club-advertise__total">
           {sponsorMode ? (
             <div>
-              <span className="club-advertise__total-label">Total</span>
-              <span className="club-advertise__total-value">{formatDollars(quoteCents)}</span>
+              <span className="club-advertise__total-label">Payment</span>
               <span className="club-advertise__total-math">
-                {rate ? `${formatDollars(rate.sponsorCentsPerDay)} x ${days} Day(s)` : ''}
-                {' · '}Invoiced By Smarter.Poker Once Approved. Nothing Is Charged Here.
+                Invoiced By Smarter.Poker After Review. Nothing Is Charged Here.
               </span>
             </div>
           ) : (
@@ -888,20 +845,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
                   <div className="club-advertise__item-meta">
                     {rates.find((r) => r.slot === c.slot)?.label ?? c.slot} {'·'} {c.days} Day(s){' '}
                     {'·'} {formatDate(c.startsAt)} To {formatDate(c.endsAt)}
-                    {sponsorMode ? (
-                      c.quotedCents != null ? (
-                        <>
-                          {' '}
-                          {'·'} {formatDollars(c.quotedCents)} {billingLabel(c)}
-                          {c.countries ? (
-                            <>
-                              {' '}
-                              {'·'} {countriesLabel(c.countries)}
-                            </>
-                          ) : null}
-                        </>
-                      ) : null
-                    ) : (
+                    {sponsorMode ? null : (
                       <>
                         {' '}
                         {'·'} <span className="diamond-icon" aria-hidden="true" />

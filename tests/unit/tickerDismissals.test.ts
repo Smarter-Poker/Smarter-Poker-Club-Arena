@@ -16,7 +16,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   DISMISS_TTL_MS,
   dismissItem,
-  onDismissedElsewhere,
   readDismissed,
   resetDismissalsForTests,
 } from '../../src/components/tournament/tickerDismissals';
@@ -108,78 +107,22 @@ describe('the two pre-2026-09-05 keys are imported, not orphaned', () => {
 
 describe('storage is never allowed to break the announcement', () => {
   it('survives a corrupt store', () => {
-    localStorage.setItem('ca_ticker_dismissed_v3', '{{{');
+    sessionStorage.setItem('ca_ticker_dismissed_v2', '{{{');
     expect(readDismissed(NOW).size).toBe(0);
   });
 
   it('survives a store holding the wrong shape', () => {
-    localStorage.setItem('ca_ticker_dismissed_v3', JSON.stringify(['an', 'array']));
+    sessionStorage.setItem('ca_ticker_dismissed_v2', JSON.stringify(['an', 'array']));
     expect(readDismissed(NOW).size).toBe(0);
   });
 
   it('ignores entries whose expiry is not a number', () => {
-    localStorage.setItem(
-      'ca_ticker_dismissed_v3',
+    sessionStorage.setItem(
+      'ca_ticker_dismissed_v2',
       JSON.stringify({ good: NOW + 60_000, bad: 'soon' })
     );
     const live = readDismissed(NOW);
     expect(live.has('good')).toBe(true);
     expect(live.has('bad')).toBe(false);
-  });
-});
-
-describe('a dismissal follows the player between tabs', () => {
-  /* This store was sessionStorage, which is per-TAB. Club Arena ships a
-     multi-table layer and players use it, so closing "Sunday Slam starts in
-     2:14" on one table left it on every other tab - the same announcement
-     dismissed once per tab, and again tomorrow in each of them. */
-
-  it('lives in localStorage, which tabs of an origin share', () => {
-    dismissItem('soon-t1', 'starting_soon', NOW);
-    expect(localStorage.getItem('ca_ticker_dismissed_v3')).toContain('soon-t1');
-    expect(sessionStorage.getItem('ca_ticker_dismissed_v3')).toBeNull();
-  });
-
-  it('tells this tab when another one dismisses something', () => {
-    const heard: Array<Set<string>> = [];
-    const stop = onDismissedElsewhere((ids) => heard.push(ids));
-
-    // What another tab's write looks like arriving here.
-    localStorage.setItem(
-      'ca_ticker_dismissed_v3',
-      JSON.stringify({ 'soon-elsewhere': Date.now() + 60_000 })
-    );
-    window.dispatchEvent(new StorageEvent('storage', { key: 'ca_ticker_dismissed_v3' }));
-
-    expect(heard).toHaveLength(1);
-    expect(heard[0].has('soon-elsewhere')).toBe(true);
-    stop();
-  });
-
-  it('ignores a storage event about somebody else key', () => {
-    const heard: Array<Set<string>> = [];
-    const stop = onDismissedElsewhere((ids) => heard.push(ids));
-    window.dispatchEvent(new StorageEvent('storage', { key: 'some-other-app-key' }));
-    expect(heard).toHaveLength(0);
-    stop();
-  });
-
-  it('stops listening when told to', () => {
-    const heard: Array<Set<string>> = [];
-    const stop = onDismissedElsewhere((ids) => heard.push(ids));
-    stop();
-    window.dispatchEvent(new StorageEvent('storage', { key: 'ca_ticker_dismissed_v3' }));
-    expect(heard).toHaveLength(0);
-  });
-
-  it('carries the per-tab store forward so the deploy costs nobody a dismissal', () => {
-    /* v2 lived in sessionStorage. A player who closed something five minutes
-       before this shipped keeps it closed. */
-    sessionStorage.setItem(
-      'ca_ticker_dismissed_v2',
-      JSON.stringify({ 'soon-t9': NOW + 60 * 60_000 })
-    );
-    expect(readDismissed(NOW).has('soon-t9')).toBe(true);
-    expect(sessionStorage.getItem('ca_ticker_dismissed_v2')).toBeNull();
   });
 });

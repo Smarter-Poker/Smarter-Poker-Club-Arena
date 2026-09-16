@@ -22,7 +22,6 @@
 import { createDefaultRegistry, type Counter, type Histogram } from './Metrics.js';
 import { Tracer, InMemorySpanExporter } from './Tracing.js';
 import { MetricsRegistry as AlwaysOnRegistryCtor } from './Metrics.js';
-import { sampleProcessMemory } from './processMemory.js';
 
 /**
  * ALWAYS-ON registry: exposed by /metrics unconditionally, and therefore the
@@ -576,35 +575,6 @@ for (const outcome of ['completed', 'threw', 'abandoned']) {
   leaseRenewalPassesTotal.inc(0, { outcome });
 }
 
-/**
- * WHICH HALF OF AN ABANDONED PASS NEVER CAME BACK (2026-09-12).
- *
- * `performOwnedEngineLeaseProofRenewal` awaits two halves, and each half awaits
- * exactly one RPC - the cash heartbeat and the tournament heartbeat. So this
- * label names the call that hung, not merely the branch it was in, and a wedge
- * that recurs answers its own question in one query:
- *
- *   sum by (half) (increase(poker_lease_renewal_outstanding_total[1h]))
- *
- * On 2026-09-12 that question cost hours. The loop stopped for four and a half
- * hours and telling a hung pass from a departed loop took a hand-diff of
- * pg_stat_statements against the container log, because the process itself said
- * nothing either way.
- *
- * Both halves go through a client bounded at 15s with at most three attempts,
- * so ANY increment here is already surprising and points at the bounded fetch
- * rather than at the lease protocol.
- */
-export const leaseRenewalOutstandingTotal: Counter = alwaysOnRegistry.counter(
-  'poker_lease_renewal_outstanding_total',
-  'Halves of an abandoned ownership lease renewal pass that had not settled (labels: half=cash|tournament)'
-);
-/* Zero-seeded: a rule on a name with no series is an empty vector, which reads
-   exactly like health. See anAlertCannotWaitForAFailureToExist. */
-for (const half of ['cash', 'tournament']) {
-  leaseRenewalOutstandingTotal.inc(0, { half });
-}
-
 /** 1 while the ownership lease renewal lifecycle is running, 0 once it leaves. */
 export const leaseRenewalLoopRunning: Gauge = alwaysOnRegistry.gauge(
   'poker_lease_renewal_loop_running',
@@ -827,63 +797,7 @@ showdownHandsTotal.inc(0);
 muckedHandsTotal.inc(0);
 rpcErrorsTotalAlwaysOn.inc(0, { method: 'action' });
 
-/* ── THE PROCESS'S OWN MEMORY (2026-09-14) ────────────────────────────────
-   See observability/processMemory.ts for why these exist. Always-on, bounded
-   cardinality (no labels), refreshed at scrape time from one cached sample.
-   `poker_engine_native_main_arena_bytes` retains its public name but measures
-   only the current [heap] virtual extent, not RSS or allocation ownership.
-   -1 where /proc is unreadable, never absent. */
-export const processRssBytes = alwaysOnRegistry.gauge(
-  'poker_engine_process_rss_bytes',
-  'Resident set size of the engine process (every isolate, every arena)'
-);
-export const processHeapUsedBytes = alwaysOnRegistry.gauge(
-  'poker_engine_heap_used_bytes',
-  'V8 main-isolate heap in use'
-);
-export const processHeapTotalBytes = alwaysOnRegistry.gauge(
-  'poker_engine_heap_total_bytes',
-  'V8 main-isolate heap committed'
-);
-export const processExternalBytes = alwaysOnRegistry.gauge(
-  'poker_engine_external_bytes',
-  'Memory V8 accounts for outside its heap (Buffers, bound C++ objects)'
-);
-export const processArrayBuffersBytes = alwaysOnRegistry.gauge(
-  'poker_engine_array_buffers_bytes',
-  'ArrayBuffer backing stores alive in the main isolate'
-);
-export const processNativeMainArenaBytes = alwaysOnRegistry.gauge(
-  'poker_engine_native_main_arena_bytes',
-  'Current [heap] virtual mapping extent, not RSS or allocation ownership; -1 when /proc is unreadable'
-);
-export const processRssAnonBytes = alwaysOnRegistry.gauge(
-  'poker_engine_rss_anon_bytes',
-  'Anonymous (non file-backed) resident memory of the process; -1 when /proc is unreadable'
-);
-export const processThreads = alwaysOnRegistry.gauge(
-  'poker_engine_threads',
-  'OS threads in the engine process (worker isolates, libuv, V8 helpers); -1 when /proc is unreadable'
-);
-
-export function refreshProcessMemoryGauges(): void {
-  const s = sampleProcessMemory();
-  processRssBytes.set(s.rssBytes);
-  processHeapUsedBytes.set(s.heapUsedBytes);
-  processHeapTotalBytes.set(s.heapTotalBytes);
-  processExternalBytes.set(s.externalBytes);
-  processArrayBuffersBytes.set(s.arrayBuffersBytes);
-  processNativeMainArenaBytes.set(s.nativeMainArenaBytes);
-  processRssAnonBytes.set(s.rssAnonBytes);
-  processThreads.set(s.threads);
-}
-// Published from the first scrape, like every always-on series (see the law
-// anAlertCannotWaitForAFailureToExist): a memory gauge that first appears
-// once something reads it is a gauge with no baseline.
-refreshProcessMemoryGauges();
-
 /** Prometheus lines for the always-on fleet registry. */
 export function alwaysOnPrometheusLines(): string[] {
-  refreshProcessMemoryGauges();
   return alwaysOnRegistry.renderPrometheus().split('\n').filter(Boolean);
 }

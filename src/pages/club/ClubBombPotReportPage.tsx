@@ -22,11 +22,6 @@
  * same hole fn_bomb_pot_ledger_gaps reports to reconcile_ledger_nightly. A
  * non-zero number there means this report is reading an incomplete ledger, and
  * the owner should be told that rather than shown a total that looks whole.
- *
- * #ClubArenaConsole: one console. The window as lit words, the six totals as
- * rows on the black glass, the per-table records as rows between engraved
- * rules (never HTML-table chrome), Back and Export CSV on the two painted
- * plates. Every read, guard and pinned literal of the generic page is kept.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -35,9 +30,6 @@ import { supabase } from '../../lib/supabase';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
-import { SpadeConsole } from '../../components/console/SpadeConsole';
-import { compactChips } from '../../utils/format';
-import { titleCase } from '../../utils/titleCase';
 import styles from './ClubBombPotReportPage.module.css';
 
 interface ReportRow {
@@ -59,9 +51,8 @@ interface ReportRow {
 
 const WINDOWS = [7, 30, 90] as const;
 
-/* Report money is forward-facing and reads compact (Dan: no decimals, 1.2K
-   past a thousand). The CSV below still carries the exact figures. */
-const chips = (n: number | null | undefined) => compactChips(Number(n ?? 0));
+const chips = (n: number | null | undefined) =>
+  Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 /**
  * The four trigger values are DB enums. The lobby maps them to English and the
@@ -77,7 +68,7 @@ const TRIGGER_LABEL: Record<string, string> = {
 };
 
 const triggerLabel = (t: string | null) =>
-  (t && TRIGGER_LABEL[t]) || (t ? titleCase(t.replace(/_/g, ' ')) : 'Unknown');
+  (t && TRIGGER_LABEL[t]) || (t ? t.replace(/_/g, ' ') : 'Unknown');
 
 const boardLabel = (n: number | null) => (n && n >= 2 ? `${n} Boards` : '1 Board');
 
@@ -194,28 +185,13 @@ export default function ClubBombPotReportPage() {
   if (notFound) {
     return (
       <div className={styles.page}>
-        <SpadeConsole
-          className={styles.console}
-          eyebrow="Bomb Pots"
-          title="Club Not Found"
-          titleId="bomb-pot-report-title"
-          pill="Missing"
-          pillInk="muted"
-          foot="foot"
-        >
-          <p className={`sc-copy sc-copy--center ${styles.state}`}>
-            No Club Answers To That Address.
-          </p>
-          <div className={styles.actions}>
-            <button
-              type="button"
-              className={`${styles.word} sc-ink--white`}
-              onClick={() => navigate('/clubs')}
-            >
-              Back To Clubs
-            </button>
-          </div>
-        </SpadeConsole>
+        <div className={styles.deniedCard}>
+          <h1>Club Not Found</h1>
+          <p>No Club Answers To That Address.</p>
+          <button className={styles.backBtn} onClick={() => navigate('/clubs')}>
+            Back To Clubs
+          </button>
+        </div>
       </div>
     );
   }
@@ -223,193 +199,135 @@ export default function ClubBombPotReportPage() {
   if (denied) {
     return (
       <div className={styles.page}>
-        <SpadeConsole
-          className={styles.console}
-          eyebrow="Bomb Pots"
-          title="Bomb Pot Report"
-          titleId="bomb-pot-report-title"
-          pill="Staff"
-          pillInk="red"
-          foot="foot"
-        >
-          <p className={`sc-copy sc-copy--center ${styles.state}`}>
-            This Report Is Only Available To Club Staff.
-          </p>
-          <div className={styles.actions}>
-            <button
-              type="button"
-              className={`${styles.word} sc-ink--white`}
-              onClick={() => navigate(`/clubs/${clubId}`)}
-            >
-              Back To Club
-            </button>
-          </div>
-        </SpadeConsole>
+        <div className={styles.deniedCard}>
+          <h1>Bomb Pot Report</h1>
+          <p>This Report Is Only Available To Club Staff.</p>
+          <button className={styles.backBtn} onClick={() => navigate(`/clubs/${clubId}`)}>
+            Back To Club
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className={styles.page}>
-      <SpadeConsole
-        className={styles.console}
-        eyebrow="Bomb Pots"
-        title="Bomb Pot Report"
-        titleId="bomb-pot-report-title"
-        pill={`${days} Days`}
-        pillInk="blue"
-        plates={{
-          secondary: { label: 'Back', onClick: () => navigate(`/clubs/${clubId}`) },
-          primary: {
-            label: 'Export CSV',
-            ink: 'white',
-            onClick: exportCsv,
-            disabled: !rows || rows.length === 0,
-          },
-        }}
-      >
-        <div className={styles.windows} role="group" aria-label="Report Window">
+      <header className={styles.header}>
+        <button className={styles.backBtn} onClick={() => navigate(`/clubs/${clubId}`)}>
+          Back
+        </button>
+        <h1>Bomb Pot Report</h1>
+        <div className={styles.windows}>
           {WINDOWS.map((w) => (
             <button
               key={w}
-              type="button"
-              className={`${styles.word} ${days === w ? 'sc-ink--white' : 'sc-ink--muted'}`}
-              aria-pressed={days === w}
+              className={days === w ? styles.windowActive : styles.window}
               onClick={() => setDays(w)}
             >
-              {w} Days
+              {w}d
             </button>
           ))}
         </div>
+      </header>
 
-        {loading && !rows ? (
-          <p className={`sc-copy sc-copy--center ${styles.state}`} aria-busy="true">
-            Loading Report...
-          </p>
-        ) : error ? (
-          <p className={`sc-copy sc-copy--center ${styles.state} sc-ink--red`} role="alert">
-            {error}
-          </p>
-        ) : !rows || rows.length === 0 ? (
-          <p className={`sc-copy sc-copy--center ${styles.state}`}>
-            No Bomb Pots Ran At This Club In The Last {days} Days. Turn Them On From A Table
-            Settings Page To Start.
-          </p>
-        ) : (
-          <>
-            <section className={styles.section} aria-label="Totals">
-              <div className={styles.row}>
-                <span className={`${styles.rowLabel} sc-ink--blue`}>Bomb Pots Dealt</span>
-                <span className={`${styles.rowValue} sc-ink--silver`}>
-                  {totals.hands.toLocaleString()}
-                </span>
+      {loading && !rows ? (
+        <p className={styles.empty}>Loading Report...</p>
+      ) : error ? (
+        <p className={styles.empty}>{error}</p>
+      ) : !rows || rows.length === 0 ? (
+        <p className={styles.empty}>
+          No Bomb Pots Ran At This Club In The Last {days} Days. Turn Them On From A Table Settings
+          Page To Start.
+        </p>
+      ) : (
+        <>
+          <section className={styles.cards}>
+            <div className={styles.card}>
+              <div className={styles.cardValue}>{totals.hands.toLocaleString()}</div>
+              <div className={styles.cardLabel}>Bomb Pots Dealt</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardValue}>{totals.tables}</div>
+              <div className={styles.cardLabel}>Tables Running Them</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardValue}>{totals.avgPlayers.toFixed(1)}</div>
+              <div className={styles.cardLabel}>Players Per Bomb</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardValue}>{chips(totals.antes)}</div>
+              <div className={styles.cardLabel}>Forced Antes Collected</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardValue}>{chips(totals.rake)}</div>
+              <div className={styles.cardLabel}>Rake From Bomb Pots</div>
+            </div>
+            <div className={styles.card}>
+              <div className={styles.cardValue}>
+                {totals.scoopRate === null ? '-' : `${totals.scoopRate}%`}
               </div>
-              <div className={styles.row}>
-                <span className={`${styles.rowLabel} sc-ink--blue`}>Tables Running Them</span>
-                <span className={`${styles.rowValue} sc-ink--silver`}>{totals.tables}</span>
-              </div>
-              <div className={styles.row}>
-                <span className={`${styles.rowLabel} sc-ink--blue`}>Players Per Bomb</span>
-                <span className={`${styles.rowValue} sc-ink--silver`}>
-                  {totals.avgPlayers.toFixed(1)}
-                </span>
-              </div>
-              <div className={styles.row}>
-                <span className={`${styles.rowLabel} sc-ink--blue`}>Forced Antes Collected</span>
-                <span className={`${styles.rowValue} sc-ink--silver`}>{chips(totals.antes)}</span>
-              </div>
-              <div className={styles.row}>
-                <span className={`${styles.rowLabel} sc-ink--blue`}>Rake From Bomb Pots</span>
-                <span className={`${styles.rowValue} sc-ink--green`}>{chips(totals.rake)}</span>
-              </div>
-              <div className={styles.row}>
-                <span className={`${styles.rowLabel} sc-ink--blue`}>Scooped Outright</span>
-                <span className={`${styles.rowValue} sc-ink--silver`}>
-                  {totals.scoopRate === null ? '-' : `${totals.scoopRate}%`}
-                </span>
-              </div>
-            </section>
+              <div className={styles.cardLabel}>Scooped Outright</div>
+            </div>
+          </section>
 
-            {/* The ledger telling on itself. A report that quietly averages over
-                hands it has no record of is how a hole stays invisible. */}
-            {totals.unrecorded > 0 && (
-              <p className={`sc-copy ${styles.notice} sc-ink--gold`}>
-                {totals.unrecorded.toLocaleString()} Of These Hands Have No Award Record, So The
-                Scoop Figures Above Cover The Rest. Hand Counts And Money Are Unaffected.
-              </p>
-            )}
+          {/* The ledger telling on itself. A report that quietly averages over
+              hands it has no record of is how a hole stays invisible. */}
+          {totals.unrecorded > 0 && (
+            <p className={styles.notice}>
+              {totals.unrecorded.toLocaleString()} Of These Hands Have No Award Record, So The Scoop
+              Figures Above Cover The Rest. Hand Counts And Money Are Unaffected.
+            </p>
+          )}
 
-            <section className={styles.section} aria-labelledby="bomb-pot-per-table">
-              <h2
-                id="bomb-pot-per-table"
-                className={`${styles.sectionTitle} sc-label sc-ink--silver`}
-              >
-                Per Table
-              </h2>
-              <ul className={styles.records}>
-                {rows.map((d) => (
-                  <li
-                    key={`${d.table_id}-${d.trigger_reason}-${d.board_count}-${d.variant ?? ''}`}
-                    className={styles.record}
-                  >
-                    <div className={styles.recordHead}>
-                      <span className={`${styles.recordName} sc-ink--silver`}>
-                        {d.table_name
-                          ? titleCase(d.table_name)
-                          : `Table ${d.table_id.slice(0, 8).toUpperCase()}`}
-                      </span>
-                      <span className={`${styles.recordMeta} sc-ink--blue`}>
-                        {triggerLabel(d.trigger_reason)}
-                        {' / '}
+          <section className={styles.tableSection}>
+            <div className={styles.tableHeader}>
+              <h2>Per Table</h2>
+              <button className={styles.exportBtn} onClick={exportCsv}>
+                Export CSV
+              </button>
+            </div>
+            <div className={styles.tableScroll}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Table</th>
+                    <th>Trigger</th>
+                    <th>Boards</th>
+                    <th>Hands</th>
+                    <th>Players</th>
+                    <th>Avg Pot</th>
+                    <th>Antes</th>
+                    <th>Rake</th>
+                    <th>Scoops</th>
+                    <th>Splits</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((d) => (
+                    <tr
+                      key={`${d.table_id}-${d.trigger_reason}-${d.board_count}-${d.variant ?? ''}`}
+                    >
+                      <td>{d.table_name || d.table_id.slice(0, 8)}</td>
+                      <td>{triggerLabel(d.trigger_reason)}</td>
+                      <td>
                         {boardLabel(d.board_count)}
-                        {d.variant ? ` / ${d.variant.toUpperCase()}` : ''}
-                      </span>
-                    </div>
-                    <dl className={styles.figures}>
-                      <div className={styles.figure}>
-                        <dt className={`${styles.figureLabel} sc-ink--muted`}>Hands</dt>
-                        <dd className={`${styles.figureValue} sc-ink--silver`}>{d.hands}</dd>
-                      </div>
-                      <div className={styles.figure}>
-                        <dt className={`${styles.figureLabel} sc-ink--muted`}>Players</dt>
-                        <dd className={`${styles.figureValue} sc-ink--silver`}>
-                          {d.avg_players == null ? '-' : Number(d.avg_players).toFixed(1)}
-                        </dd>
-                      </div>
-                      <div className={styles.figure}>
-                        <dt className={`${styles.figureLabel} sc-ink--muted`}>Avg Pot</dt>
-                        <dd className={`${styles.figureValue} sc-ink--silver`}>
-                          {chips(d.avg_pot)}
-                        </dd>
-                      </div>
-                      <div className={styles.figure}>
-                        <dt className={`${styles.figureLabel} sc-ink--muted`}>Antes</dt>
-                        <dd className={`${styles.figureValue} sc-ink--silver`}>
-                          {chips(d.total_antes)}
-                        </dd>
-                      </div>
-                      <div className={styles.figure}>
-                        <dt className={`${styles.figureLabel} sc-ink--muted`}>Rake</dt>
-                        <dd className={`${styles.figureValue} sc-ink--green`}>
-                          {chips(d.total_rake)}
-                        </dd>
-                      </div>
-                      <div className={styles.figure}>
-                        <dt className={`${styles.figureLabel} sc-ink--muted`}>Scoops</dt>
-                        <dd className={`${styles.figureValue} sc-ink--silver`}>{d.scoops}</dd>
-                      </div>
-                      <div className={styles.figure}>
-                        <dt className={`${styles.figureLabel} sc-ink--muted`}>Splits</dt>
-                        <dd className={`${styles.figureValue} sc-ink--silver`}>{d.splits}</dd>
-                      </div>
-                    </dl>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          </>
-        )}
-      </SpadeConsole>
+                        {d.variant ? ` · ${d.variant.toUpperCase()}` : ''}
+                      </td>
+                      <td>{d.hands}</td>
+                      <td>{d.avg_players == null ? '-' : Number(d.avg_players).toFixed(1)}</td>
+                      <td>{chips(d.avg_pot)}</td>
+                      <td>{chips(d.total_antes)}</td>
+                      <td>{chips(d.total_rake)}</td>
+                      <td>{d.scoops}</td>
+                      <td>{d.splits}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }

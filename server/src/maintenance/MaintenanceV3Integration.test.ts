@@ -49,7 +49,6 @@ function harness() {
     },
     isParkedBetweenHands: () => true,
     isBetweenHands: () => true,
-    hasSettlementInFlight: () => false,
     isRunning: () => true,
   };
   const store: MaintenanceBreakStore = {

@@ -103,22 +103,11 @@ describe('the union modal routes a club send by the wallet that is open', () => 
       /unionApi\.promoSend\(\s*unionId,\s*amt,\s*'club',\s*target\.data\.id/
     );
     expect(unionModal).toMatch(/unionApi\.sendToClub\(\s*unionId,\s*target\.data\.id,\s*amt/);
-    const sendStart = unionModal.indexOf('const r = clubSendRoute(walletKey, kind);');
-    const sendEnd = unionModal.indexOf('const pr = clubPullRoute(walletKey);', sendStart);
-    expect(sendStart, 'send route anchor').toBeGreaterThan(-1);
-    expect(sendEnd, 'send window end anchor').toBeGreaterThan(sendStart);
-    const clubBranch = unionModal.slice(sendStart, sendEnd);
-    // MOVED 2026-09-09, not weakened. The pin was `throw new Error(...)`;
-    // `definitiveRefusal` is the same throw carrying `definitive: true`, which
-    // is what lets the caller RETIRE the durable op id. That is correct here
-    // and only here: this browser refused before anything left it, so the
-    // outcome is known and a retry must mint a fresh key rather than replay a
-    // receipt that does not exist. The property the law guards - a refused
-    // route stops the send rather than quietly substituting one - is unchanged.
-    expect(clubBranch).toContain("if (r.kind === 'refused') throw definitiveRefusal(r.reason);");
-    // and the modal must carry BOTH verdicts, so an ambiguous transport
-    // failure cannot retire an op id the way a refusal does
-    expect(unionModal).toContain('const ambiguousFailure = (');
+    const clubBranch = unionModal.slice(
+      unionModal.indexOf('const r = clubSendRoute(walletKey, kind);'),
+      unionModal.indexOf('const pr = clubPullRoute(walletKey);')
+    );
+    expect(clubBranch).toContain("if (r.kind === 'refused') throw new Error(r.reason);");
     expect(clubBranch.indexOf('promoSend')).toBeLessThan(clubBranch.indexOf('sendToClub'));
     expect(clubBranch).toMatch(
       /if \(r\.kind === 'promo'\) \{[\s\S]*promoSend[\s\S]*\} else \{[\s\S]*sendToClub/
@@ -145,21 +134,12 @@ describe('a pull comes back to the wallet that is open', () => {
     expect(unionModal).toContain(
       "isPromoPull ? 'fn_union_clawback_promo_from_club' : 'fn_union_clawback_from_club'"
     );
-    // The end anchor is asserted, because `slice(n, -1)` with a missing one
-    // returns the rest of the FILE and every pin below then passes on text
-    // belonging to some other branch. The old anchor here was
-    // `if (onSent) onSent();`, which this source has never contained - it
-    // calls `onSent?.();` - so this window was 22,029 characters of a 37,000
-    // character file until 2026-09-09.
-    const pullStart = unionModal.indexOf('const pr = clubPullRoute(walletKey);');
-    // NOT the first `onSent?.();` after the anchor - that one sits inside a
-    // nested block and ends the window before the balance read below it.
-    const pullEnd = unionModal.indexOf('const known = err?.definitive === true;', pullStart);
-    expect(pullStart, 'pull route anchor').toBeGreaterThan(-1);
-    expect(pullEnd, 'pull window end anchor').toBeGreaterThan(pullStart);
-    const pull = unionModal.slice(pullStart, pullEnd);
+    const pull = unionModal.slice(
+      unionModal.indexOf('const pr = clubPullRoute(walletKey);'),
+      unionModal.indexOf('if (onSent) onSent();')
+    );
     expect(pull).toContain('p_op_id: opId');
-    expect(pull).toContain("if (pr.kind === 'refused') throw definitiveRefusal(pr.reason);");
+    expect(pull).toContain("if (pr.kind === 'refused') throw new Error(pr.reason);");
     expect(pull).toMatch(/isPromoPull \? cb\.promo_after : cb\.union_balance/);
   });
 

@@ -38,8 +38,6 @@ import { useUserStore } from '../stores/useUserStore';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
-import { safeInAppRedirect } from '../lib/signIn';
-import { DIAMOND_ARENA_SLUG } from '../lib/constants';
 import styles from './MarketplacePage.module.css';
 import {
   EMPTY_ENTITLEMENTS,
@@ -385,29 +383,6 @@ export default function MarketplacePage() {
    * The latch below survives the navigation. */
   const purchaseResult = searchParams.get('purchase');
   const purchaseHandledRef = useRef(false);
-  /* WHERE THE DIAMONDS ARE GOING (phase 3, 2026-09-14). The wallet sends a
-     player who is short of the cheapest Diamond Arena seat here with
-     `?next=/clubs/diamond-arena`; the checkout carries it through the Stripe
-     (or StoreKit) round trip, and when the player lands back on
-     `?purchase=success` the page offers the way onward instead of leaving
-     them on the store. Same validator the sign-in redirect uses: an in-app
-     path or nothing. THE DIAMOND ARENA IS DIAMONDS ONLY. */
-  const nextParam = searchParams.get('next');
-  const nextPath = useMemo(() => {
-    if (!nextParam) return null;
-    const safe = safeInAppRedirect(nextParam);
-    return safe === '/' ? null : safe;
-  }, [nextParam]);
-  const [continueOffered, setContinueOffered] = useState(false);
-  const continueLabel =
-    nextPath === `/clubs/${DIAMOND_ARENA_SLUG}` ? 'Continue To The Diamond Arena' : 'Continue';
-  const goOnward = () => {
-    if (!nextPath) return;
-    const cleaned = new URLSearchParams(searchParams);
-    cleaned.delete('next');
-    setSearchParams(cleaned, { replace: true });
-    navigate(nextPath);
-  };
   const pollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   // Always call the freshest loadWallet without making it an effect dependency
   // (`user` is a new object on every auth-store write, so depending on the
@@ -421,7 +396,6 @@ export default function MarketplacePage() {
 
     if (purchaseResult === 'success') {
       toast.success('Payment received. Your balance will update momentarily.');
-      if (nextPath) setContinueOffered(true);
       // Webhook fulfilment lags checkout by seconds. These timers are stored in
       // a ref and cleared ONLY on unmount: the previous version scheduled them
       // in an effect keyed on `purchaseResult`, and stripping the param below
@@ -782,25 +756,8 @@ export default function MarketplacePage() {
             </span>
           </div>
         )}
-        {tab === 'diamonds' && continueOffered && nextPath && (
-          <div className={styles.sectionIntro} role="status">
-            <p className={styles.sectionSub}>
-              Payment Received. Your Diamonds Land In A Few Seconds, And Your Seat Is Waiting.
-            </p>
-            <div>
-              <button type="button" className={styles.btnPrimary} onClick={goOnward}>
-                {continueLabel}
-              </button>
-            </div>
-          </div>
-        )}
         {tab === 'diamonds' && (
-          <DiamondsTab
-            clubId={clubId || ''}
-            wallet={wallet}
-            packages={catalog.diamondPackages}
-            nextPath={nextPath}
-          />
+          <DiamondsTab clubId={clubId || ''} wallet={wallet} packages={catalog.diamondPackages} />
         )}
         {tab === 'membership' && (
           <MembershipTab

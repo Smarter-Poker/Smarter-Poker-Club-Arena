@@ -17,72 +17,91 @@ const compiled = ts.transpileModule(
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
 const build = new Function('supabase', 'reportError', 'weekStart', 'console', compiled);
-type Options = { data?: unknown; rpcError?: unknown; throws?: boolean };
+type Options = {
+  data?: unknown;
+  rpcError?: unknown;
+  resetError?: unknown;
+  latchError?: unknown;
+  stateError?: unknown;
+  closed?: boolean;
+};
 async function run(options: Options = {}) {
   const report = vi.fn();
   const log = vi.fn();
-  const rpc = vi.fn(async () => {
-    if (options.throws) throw new Error('transport interrupted');
-    return {
-      data:
-        'data' in options
-          ? options.data
-          : { success: true, failed: 0, checked: 1, detail: [{ result: { success: true } }] },
-      error: options.rpcError ?? null,
-    };
-  });
+  const reset = vi.fn(() => Promise.resolve({ error: options.resetError ?? null }));
+  const latch = vi.fn(() => Promise.resolve({ error: options.latchError ?? null }));
+  const rpc = vi.fn(async () => ({
+    data: 'data' in options ? options.data : { success: true, failed: 0 },
+    error: options.rpcError ?? null,
+  }));
   const db = {
     rpc,
-    from: vi.fn(() => {
-      throw new Error('Separate accounting writes are forbidden');
-    }),
+    from(table: string) {
+      return table === 'agents'
+        ? { update: () => ({ gt: reset }) }
+        : {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: options.closed ? { high_water_mark: '2026-09-07' } : null,
+                  error: options.stateError ?? null,
+                }),
+              }),
+            }),
+            upsert: latch,
+          };
+    },
   };
   const subject = build(db, report, () => '2026-09-07', { log, warn: vi.fn() });
+  subject.supabaseRpc = async () => {
+    const { error } = await rpc();
+    return { error };
+  };
   await subject.runWeeklyFinancialClose();
-  return { report, log, rpc, from: db.from };
+  return { report, log, reset, latch, rpc };
 }
-describe('one weekly accounting coordinator', () => {
+describe('weekly financial close confirmation', () => {
   it.each([
     null,
     {},
     { success: false, failed: 0 },
     { success: true },
-    { success: true, failed: 1, checked: 1, detail: [] },
-    { success: true, failed: '0', checked: 0, detail: [] },
-    { success: true, failed: 0, checked: 2, detail: [{ result: { success: true } }] },
-    { success: true, failed: 0, checked: 1, detail: [{ result: { success: false } }] },
-    { success: true, skipped: true, reason: 'unknown' },
-  ])(
-    'reports incomplete receipts without independent payouts or counter resets: %j',
-    async (data) => {
-      const result = await run({ data });
-      expect(result.report).toHaveBeenCalledOnce();
-      expect(result.log).not.toHaveBeenCalled();
-      expect(result.from).not.toHaveBeenCalled();
-    }
-  );
-  it.each([{ rpcError: { message: 'timeout' } }, { throws: true }])(
-    'reports transport failure without a fallback payer: %j',
+    { success: true, failed: 1 },
+    { success: true, failed: '0' },
+  ])('preserves counters and retry eligibility on incomplete invoice receipt %j', async (data) => {
+    const result = await run({ data });
+    expect(result.reset).not.toHaveBeenCalled();
+    expect(result.latch).not.toHaveBeenCalled();
+    expect(result.report).toHaveBeenCalled();
+  });
+  it('preserves counters on invoice transport failure', async () => {
+    const result = await run({ rpcError: { message: 'timeout' } });
+    expect(result.reset).not.toHaveBeenCalled();
+    expect(result.latch).not.toHaveBeenCalled();
+  });
+  it('does not close the week when reset fails', async () => {
+    const result = await run({ resetError: { message: 'reset failed' } });
+    expect(result.latch).not.toHaveBeenCalled();
+    expect(result.report).toHaveBeenCalled();
+  });
+  it('reports latch failure without logging completion', async () => {
+    const result = await run({ latchError: { message: 'write failed' } });
+    expect(result.report).toHaveBeenCalled();
+    expect(result.log.mock.calls.flat().some((s) => s.includes('close done'))).toBe(false);
+  });
+  it('closes only after successful invoices and reset', async () => {
+    const result = await run();
+    expect(result.reset).toHaveBeenCalledOnce();
+    expect(result.latch).toHaveBeenCalledOnce();
+    expect(result.report).not.toHaveBeenCalled();
+  });
+  it.each([{ closed: true }, { stateError: { message: 'unreadable' } }])(
+    'does not act on a closed or unreadable week %j',
     async (options) => {
       const result = await run(options);
-      expect(result.report).toHaveBeenCalledOnce();
-      expect(result.rpc).toHaveBeenCalledOnce();
-      expect(result.from).not.toHaveBeenCalled();
-    }
-  );
-  it('logs completion only for complete scope receipts', async () => {
-    const result = await run();
-    expect(result.rpc).toHaveBeenCalledWith('fn_union_settlement_cascade_due', {});
-    expect(result.log).toHaveBeenCalledOnce();
-    expect(result.report).not.toHaveBeenCalled();
-    expect(result.from).not.toHaveBeenCalled();
-  });
-  it.each(['maintenance_window', 'already_running'])(
-    'does not claim completion for %s',
-    async (reason) => {
-      const result = await run({ data: { success: true, skipped: true, reason } });
-      expect(result.log).not.toHaveBeenCalled();
-      expect(result.report).not.toHaveBeenCalled();
+      expect(result.rpc).not.toHaveBeenCalled();
+      expect(result.reset).not.toHaveBeenCalled();
+      expect(result.latch).not.toHaveBeenCalled();
     }
   );
 });

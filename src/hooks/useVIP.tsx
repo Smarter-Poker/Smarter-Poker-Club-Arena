@@ -6,15 +6,7 @@
  * Provides VIP status checking at entry and feature gating throughout the app.
  */
 
-import {
-  useState,
-  useEffect,
-  useCallback,
-  createContext,
-  useContext,
-  ReactNode,
-  useRef,
-} from 'react';
+import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
 import {
   vipService,
   VIPStatus,
@@ -163,28 +155,12 @@ export function useVIPStatus() {
   const { user } = useAuthUser();
   const [isVIP, setIsVIP] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [stateUserId, setStateUserId] = useState(user?.id);
-  const activeUserIdRef = useRef(user?.id);
-  const requestRef = useRef(0);
-
-  if (activeUserIdRef.current !== user?.id) {
-    activeUserIdRef.current = user?.id;
-    requestRef.current += 1;
-  }
 
   useEffect(() => {
     let mounted = true;
-    const requestedUserId = user?.id;
-
-    setStateUserId(requestedUserId);
-    setIsVIP(false);
-    setIsLoading(true);
 
     const check = async () => {
-      const requestId = ++requestRef.current;
-      const isCurrent = () =>
-        mounted && activeUserIdRef.current === requestedUserId && requestRef.current === requestId;
-      if (!requestedUserId) {
+      if (!user?.id) {
         setIsVIP(false);
         setIsLoading(false);
         return;
@@ -215,23 +191,20 @@ export function useVIPStatus() {
        */
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const vip = await vipService.isVIP(requestedUserId);
-          if (isCurrent()) {
-            setStateUserId(requestedUserId);
-            setIsVIP(vip);
-          }
+          const vip = await vipService.isVIP(user.id);
+          if (mounted) setIsVIP(vip);
           break;
         } catch (e) {
           if (attempt === 0) {
             await new Promise((r) => setTimeout(r, 400));
-            if (!isCurrent()) return;
+            if (!mounted) return;
             continue;
           }
-          if (isCurrent()) reportError(e, 'useVIP.check');
+          reportError(e, 'useVIP.check');
           /* No setIsVIP here, deliberately. See above. */
         }
       }
-      if (isCurrent()) setIsLoading(false);
+      if (mounted) setIsLoading(false);
     };
 
     check();
@@ -240,14 +213,9 @@ export function useVIPStatus() {
     });
     return () => {
       mounted = false;
-      requestRef.current += 1;
       unsubscribe();
     };
   }, [user?.id]);
 
-  const stateBelongsToUser = stateUserId === user?.id;
-  return {
-    isVIP: stateBelongsToUser ? isVIP : false,
-    isLoading: stateBelongsToUser ? isLoading : true,
-  };
+  return { isVIP, isLoading };
 }

@@ -1,9 +1,3 @@
-import {
-  planOnlineGeometry,
-  type BalancerTable,
-  type OnlineGeometryProfile,
-  type OnlineGeometryResult,
-} from './TableBalancer.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TABLE BREAK ENGINE — Balanced Player Redistribution for Tournaments
@@ -98,15 +92,6 @@ export interface TableBreakEvent {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class TableBreakEngine {
-  /** Explicit online-policy entry; no mutation, callbacks or accepted receipt. */
-  planOnlineRedistribution(
-    brokenTable: BalancerTable,
-    remainingTables: readonly BalancerTable[],
-    profile: OnlineGeometryProfile
-  ): OnlineGeometryResult {
-    return planOnlineGeometry([brokenTable, ...remainingTables], profile, brokenTable.tableId);
-  }
-
   private config: TableBreakConfig = {
     minPlayersToBreak: 3,
     warningSeconds: 30,

@@ -1,131 +1,222 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   CLUB RULES - on the spade console (2026-09-04)
-
-   The console, its ink and its painted plates come from SpadeConsole.css.
-   This sheet only types the rule lines and the editor, on the glass. Sizes
-   are cqw against the console; no :hover anywhere; nothing drawn.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* #SMARTERCASINOREALISM - the material layer. Tokens are defined once on :root
+   in src/styles/club-engine.css, which main.tsx loads; this sheet only consumes
+   them. The page is the club's own house rules: members read the panel, club
+   staff swap it for a textarea and save. One panel, one field, three buttons. */
 
 .club-rules-page {
-  background: #000;
+  min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden - see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  background: linear-gradient(180deg, var(--realism-panel) 0%, var(--realism-carbon) 100%);
+  color: var(--realism-chrome-hot);
+  /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
+     out of flow, so whatever it covers is simply unreachable - the token
+     is the bar's height PLUS the home-indicator inset it adds on iOS. */
+  padding-bottom: var(--bottom-nav-clearance, 74px);
 }
 
-.club-rules-page .club-rules-console {
-  margin: 8px auto 0;
-  max-width: 560px;
-}
-
-/* ── The rules ────────────────────────────────────────────────────────── */
-
-.rules-display,
-.rules-editor {
-  display: grid;
-}
-
-.rules-text {
-  display: grid;
-  gap: 3cqw;
-  margin: 0;
-  padding: 0.5cqw 0 0;
-  list-style: none;
-}
-
-.rules-line {
-  display: grid;
-  grid-template-columns: 6.6cqw minmax(0, 1fr);
-  gap: 2cqw;
-  align-items: baseline;
-}
-
-.rules-line__number {
-  font-size: 4.4cqw;
-  font-weight: 800;
-  line-height: 1.3;
-  letter-spacing: 0.02em;
-  text-align: right;
-}
-
-.rules-line__text {
-  color: #dbe2ea;
-  font:
-    500 3.6cqw/1.45 Inter,
-    system-ui,
-    sans-serif;
-  overflow-wrap: anywhere;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.rules-gap {
-  height: 1cqw;
-}
-
-.rules-empty {
-  display: grid;
-  justify-items: center;
-  gap: 2.4cqw;
-  padding: 4cqw 3cqw 2cqw;
+.rules-header {
+  padding: 20px 16px 12px;
   text-align: center;
 }
 
-/* The retry is a lit word on the glass, like a link cut into the panel. */
-.rules-retry {
-  appearance: none;
+.rules-header h1 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--realism-cyan);
+  margin: 0 0 4px;
+}
+
+.rules-header h2 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--realism-muted);
   margin: 0;
-  padding: 1cqw 2cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.6cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
 }
 
-.rules-retry:active {
-  filter: brightness(1.3);
+.rules-content {
+  padding: 0 16px;
 }
 
-/* ── The editor: a groove in the glass, the caret lit blue ────────────── */
+/* The rules panel sits IN its frame: a lit top edge, a cavity under it, and a
+   gunmetal edge rather than a white outline. */
+.rules-display {
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  padding: 20px;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
+}
 
-.rules-textarea {
+.rules-text p {
+  color: var(--realism-chrome);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin: 4px 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.empty-rules {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.empty-icon {
+  font-size: 2.5rem;
   display: block;
-  width: 100%;
-  min-height: 52cqw;
+  margin-bottom: 12px;
+}
+
+.empty-rules h3 {
+  color: var(--realism-chrome-hot);
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+.empty-rules p {
+  color: var(--realism-muted);
+  font-size: 0.8rem;
   margin: 0;
-  padding: 3cqw 1cqw;
-  border: 0;
-  border-top: 1px solid #000;
-  border-bottom: 1px solid #000;
-  border-radius: 0;
-  background: transparent;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 9%),
-    0 1px 0 rgb(255 255 255 / 9%);
-  color: #e6e9ee;
-  font:
-    500 3.6cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
+}
+
+.edit-btn {
+  margin-top: 16px;
+  width: 100%;
+}
+
+/* The press, not a hover: on a phone the tap IS the feedback. The face and its
+   shadow come from the .btn layer in club-engine.css; this is the dip. */
+.edit-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.rules-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The field is the opposite of the panel: cut INTO the surface, so the light
+   falls on the inside of its top edge. */
+.rules-textarea {
+  width: 100%;
+  padding: 14px;
+  background: var(--realism-obsidian);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  color: var(--realism-chrome-hot);
+  font-size: 0.85rem;
+  line-height: 1.6;
   resize: vertical;
+  font-family: inherit;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.rules-textarea:focus {
   outline: none;
-  caret-color: #5bb8ff;
+  border-color: var(--realism-cyan);
+  box-shadow:
+    0 0 15px rgba(0, 212, 255, 0.5),
+    var(--realism-bevel);
 }
 
 .rules-textarea::placeholder {
-  color: #6b7784;
+  color: #4a5a6a;
 }
 
-.rules-textarea:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
+.club-rules-page button:focus-visible,
+.club-rules-page textarea:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
 }
 
+.rules-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes clubRulesPageFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE - Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .club-rules-page {
+    /* Side padding only - the shorthand used to wipe out the bottom-nav
+       clearance and the fixed ClubBottomNav covered the last content. */
+    padding: 12px 12px var(--bottom-nav-clearance, 74px);
+  }
+
+  .rules-header h2 {
+    font-size: 0.95rem;
+  }
+
+  .edit-btn {
+    min-height: 36px;
+  }
+
+  .rule-icon {
+    font-size: 2rem;
+  }
+
+  .rule-title {
+    font-size: 0.9rem;
+  }
+
+  .rule-text {
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .club-rules-page {
+    /* Zero the sides but keep the fixed-bottom-nav clearance - `padding: 0`
+       here let ClubBottomNav overlay the end of the rules text. */
+    padding: 0 !important;
+    padding-bottom: var(--bottom-nav-clearance, 74px) !important;
+  }
+  .rules-content {
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+}
+
+/* Motion collapses, the material does not: every border, bevel and colour above
+   survives here, so a reduced-motion player sees the same object held still. */
 @media (prefers-reduced-motion: reduce) {
-  .rules-line {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
+  .club-rules-page *,
+  .club-rules-page *::before,
+  .club-rules-page *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

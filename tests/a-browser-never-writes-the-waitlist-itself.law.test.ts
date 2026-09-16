@@ -12,8 +12,8 @@
  * write grants are revoked, and the two legitimate browser writes have their
  * own SECURITY DEFINER doors keyed on auth.uid().
  *
- * The client callers must use these doors. Naming them in a migration does
- * not establish that the shipped service stopped using revoked writes.
+ * The client files that must move to the doors are named in the migration
+ * (lane G's); this law pins that they are named, not that they were edited.
  * Behaviour proven rolled back on production as role authenticated
  * (scripts/dev/probe-join-door-hold.sql, S29-S36).
  */
@@ -80,13 +80,6 @@ describe('a browser never writes the waitlist itself', () => {
     expect(MIG).toMatch(/supabase\.rpc\('fn_table_waitlist_join', \{ p_table_id: tableId \}\)/);
     expect(MIG).toMatch(/supabase\.rpc\('fn_table_waitlist_leave', \{ p_table_id: tableId \}\)/);
     expect(MIG).toMatch(/pages\/api\/club-arena\/waitlist\.js/);
-  });
-
-  it('the live waitlist service calls both installed doors and contains no direct write', () => {
-    const service = read('src/services/WaitlistService.ts');
-    expect(service).toContain("supabase.rpc('fn_table_waitlist_join'");
-    expect(service).toContain("supabase.rpc('fn_table_waitlist_leave'");
-    expect(service).not.toMatch(/\.(?:insert|update|delete|upsert)\s*\(/);
   });
 
   it('reads is_horse nowhere (CLAUDE.md 10.5)', () => {

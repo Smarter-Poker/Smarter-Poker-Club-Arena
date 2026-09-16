@@ -97,19 +97,12 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
 
   if (!type) return null;
 
-  /* BRAND INK ONLY (#ClubArenaConsole, 2026-09-13). The accent each beat
-     paints its title, icon glow and rule in is a smarter.poker schema colour:
-     brass #d6ad52 (the warm accent), brand gold #ffd700, the lit blue #45adff
-     the console prints numerals in, the house green #3fb950 and the accent
-     red #f02849. The amber, orange, yellow and slate that used to sit here
-     were nobody's colours. This overlay is felt cinematics, not a card, so it
-     is inked rather than framed - the same ruling BombPotOverlay carries. */
   const config: Record<string, { icon: string; title: string; subtitle: string; color: string }> = {
     hand_for_hand: {
       icon: 'H',
       title: 'HAND FOR HAND',
       subtitle: 'All Tables Play One Hand At A Time - Bubble Approaching!',
-      color: '#d6ad52',
+      color: '#f59e0b',
     },
     bubble_burst: {
       icon: '$',
@@ -121,7 +114,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       icon: 'FT',
       title: 'FINAL TABLE',
       subtitle: `${data?.playersRemaining || 'All'} Players Remain - Final Table Begins!`,
-      color: '#ffd700',
+      color: '#d9aa4e',
     },
     level_up: {
       icon: '⬆',
@@ -142,41 +135,38 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
        */
       title: `LEVEL ${data?.level ?? '-'}`,
       subtitle: `Blinds: ${data?.smallBlind ?? '-'}/${data?.bigBlind ?? '-'}${data?.ante ? ` Ante: ${data.ante}` : ''}`,
-      color: '#45adff',
+      color: '#3b82f6',
     },
     bounty_collected: {
       icon: '◎',
       title: data?.mode === 'pko' ? 'BOUNTY CLAIMED' : 'KNOCKOUT!',
       subtitle: (() => {
-        // Title Case, like every other line on this overlay (popup law, Dan
-        // 2026-08-20). These two dynamic lines were the only ones printed in
-        // lower case.
-        const who = data?.knockerName || 'A Player';
+        const who = data?.knockerName || 'A player';
         const victim = data?.eliminatedName
-          ? ` Knocked Out ${data.eliminatedName}`
-          : ' Scored A Knockout';
-        const amt = data?.amount != null ? ` - Collected ${data.amount}` : '';
-        const head = data?.addedToHead > 0 ? ` (+${data.addedToHead} Onto Their Own Head)` : '';
+          ? ` knocked out ${data.eliminatedName}`
+          : ' scored a knockout';
+        const amt = data?.amount != null ? ` - collected ${data.amount}` : '';
+        const head = data?.addedToHead > 0 ? ` (+${data.addedToHead} onto their own head)` : '';
         return `${who}${victim}${amt}${head}`;
       })(),
-      color: '#f02849',
+      color: '#f97316',
     },
     mystery_bounty_revealed: {
       icon: '◈',
       title: 'MYSTERY BOUNTY!',
       subtitle: (() => {
-        const who = data?.knockerName || 'A Player';
+        const who = data?.knockerName || 'A player';
         const victim = data?.playerName || data?.eliminatedName;
-        const amt = data?.amount != null ? `${data.amount}` : 'A Mystery Prize';
+        const amt = data?.amount != null ? `${data.amount}` : 'a mystery prize';
         const big =
           data?.avgBounty && data?.amount && Number(data.amount) >= Number(data.avgBounty) * 3
             ? ' - JACKPOT!'
             : '';
         return victim
-          ? `${who} Opened ${victim}'s Envelope: ${amt}${big}`
-          : `${who} Revealed ${amt}${big}`;
+          ? `${who} opened ${victim}'s envelope: ${amt}${big}`
+          : `${who} revealed ${amt}${big}`;
       })(),
-      color: '#ffd700',
+      color: '#eab308',
     },
     seven_deuce_bounty: {
       icon: '72',
@@ -184,7 +174,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       subtitle: data?.winnerName
         ? `${data.winnerName} Won With 7-2 - Collected ${data?.amount ?? ''} From The Table`
         : `Won With 7-2 - Collected ${data?.amount ?? ''} From The Table`,
-      color: '#f02849',
+      color: '#ef4444',
     },
   };
 

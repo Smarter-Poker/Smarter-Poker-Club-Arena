@@ -92,6 +92,17 @@ const MAINTENANCE_DB_TIMEOUT_MS = Number(process.env.MAINTENANCE_SUPABASE_TIMEOU
  */
 const SEEDING_DB_TIMEOUT_MS = Number(process.env.SEEDING_SUPABASE_TIMEOUT_MS ?? 5_000);
 
+function preserveResponseMetadata(buffered: Response, original: Response): Response {
+  const clone = buffered.clone.bind(buffered);
+  Object.defineProperties(buffered, {
+    url: { value: original.url },
+    redirected: { value: original.redirected },
+    type: { value: original.type },
+    clone: { value: () => preserveResponseMetadata(clone(), original) },
+  });
+  return buffered;
+}
+
 function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
   const client = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
     auth: {
@@ -125,43 +136,55 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
           const attemptInput =
             typeof Request !== 'undefined' && input instanceof Request ? input.clone() : input;
           const ctl = new AbortController();
-          const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), timeoutMs);
-          const onAbort = () => ctl.abort(callerSignal?.reason);
+          let rejectBoundary!: (reason: unknown) => void;
+          const boundary = new Promise<never>((_resolve, reject) => {
+            rejectBoundary = reject;
+          });
+          const refuse = (reason: unknown) => {
+            rejectBoundary(reason);
+            ctl.abort(reason);
+          };
+          const t = setTimeout(() => refuse(new Error('supabase_timeout')), timeoutMs);
+          const onAbort = () => refuse(callerSignal!.reason);
           try {
-            // Setup can reject before fetch starts. Its timer and caller
-            // listener still belong to this attempt and must be released.
             callerSignal?.addEventListener('abort', onAbort, { once: true });
-            const headers = new Headers(
-              typeof Request !== 'undefined' && attemptInput instanceof Request
-                ? attemptInput.headers
-                : undefined
-            );
-            // Preserve explicit fetch-init overrides, then stamp the immutable
-            // actor last.  This is repeated for every retry so neither a mutable
-            // Headers object nor a consumed Request can change authority.
-            new Headers(init.headers).forEach((value, name) => headers.set(name, value));
-            const authoritativeHeaders = dataActorHeaders(headers);
-            const response = await fetch(attemptInput, {
-              ...init,
-              headers: authoritativeHeaders,
-              signal: ctl.signal,
-            });
-            // fetch resolves when the response headers arrive, while
-            // supabase-js still has to consume the body. Drain a clone under
-            // the same deadline so a response that stalls mid-body cannot
-            // freeze a dealing or ownership loop indefinitely.
-            const reader = response.clone().body?.getReader();
-            if (reader) {
-              try {
-                while (!(await reader.read()).done) {
-                  /* drain to EOF */
-                }
-              } finally {
-                reader.releaseLock();
+            callerSignal?.throwIfAborted();
+            const operation = (async () => {
+              const headers = new Headers(
+                typeof Request !== 'undefined' && attemptInput instanceof Request
+                  ? attemptInput.headers
+                  : undefined
+              );
+              // Preserve caller headers, then stamp the immutable actor last.
+              new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+              const authoritativeHeaders = dataActorHeaders(headers);
+              const response = await fetch(attemptInput, {
+                ...init,
+                headers: authoritativeHeaders,
+                signal: ctl.signal,
+              });
+              if (ctl.signal.aborted) {
+                // Late completion cannot become success or start a replay.
+                void response.body?.cancel(ctl.signal.reason).catch(() => {});
+                ctl.signal.throwIfAborted();
               }
-            }
-            ctl.signal.throwIfAborted();
-            return response;
+              // Consume the actual body under the deadline. Returning its
+              // buffered bytes keeps later SDK decoding off the network stream.
+              const bytes = response.body === null ? null : await response.arrayBuffer();
+              ctl.signal.throwIfAborted();
+              if (bytes === null) return response;
+              return preserveResponseMetadata(
+                new Response(bytes, {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: response.headers,
+                }),
+                response
+              );
+            })();
+            // Abort is cooperative; reject independently if transport stalls.
+            // The race observes late failures without replaying ambiguous writes.
+            return await Promise.race([operation, boundary]);
           } finally {
             clearTimeout(t);
             callerSignal?.removeEventListener('abort', onAbort);

@@ -101,7 +101,7 @@ function authEndpoint(endpoint) {
   return url.origin;
 }
 
-export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jwtSecret, signal }) {
+export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jwtSecret }) {
   const origin = authEndpoint(endpoint);
   assert.equal(verifyFixtureToken(serviceKey, jwtSecret).role, 'service_role');
   async function request(route, body, token = serviceKey, expectUserBanned = false) {
@@ -110,9 +110,7 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
       redirect: 'error',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(10000)])
-        : AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(10000),
     });
     if (expectUserBanned && response.status !== 400) {
       await response.body?.cancel();

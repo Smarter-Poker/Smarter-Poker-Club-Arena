@@ -143,34 +143,3 @@
     grid-template-columns: 1fr 1fr;
   }
 }
-
-/* Billing marks on a sponsor row: the word, then the one next action. */
-.campaign-queue__billing {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-/* The sponsor roster and its hand-off. */
-.campaign-queue__roster {
-  margin-top: 20px;
-}
-.campaign-queue__roster-title {
-  margin: 0 0 4px;
-  font-size: 15px;
-}
-.campaign-queue__roster-hint {
-  margin: 0 0 10px;
-  font-size: 12px;
-  opacity: 0.8;
-}
-.campaign-queue__handoff {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.campaign-queue__handoff .admin-input {
-  width: 190px;
-  max-width: 100%;
-}

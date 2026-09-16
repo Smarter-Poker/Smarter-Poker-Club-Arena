@@ -1,8 +1,0 @@
-{
-  "_owner": "feat/club-entry-surfaces-on-the-console - CompleteProfileModal and ClubArenaWelcomeModal are already first-paint modules (both are in the base snapshot: AppLayout mounts them as blocking doors before any route renders). Rebuilding them on #ClubArenaConsole makes them import the shared chassis, so SpadeConsole and its one hook arrive in the entry chunk with them. The chassis is 234 lines of TSX plus one stylesheet and a 40-line text-fitting hook, it replaces MORE CSS than it adds in both modules (a gradient header bar, an avatar disc, bordered wells, a checkmark square and two gradient buttons all left), and it cannot be lazy: a door that paints its frame a tick after it opens is the flash the gate was rewritten to remove. Initial and total gzip budgets are unchanged.",
-  "modules": [
-    "src/components/console/SpadeConsole.css",
-    "src/components/console/SpadeConsole.tsx",
-    "src/components/lobby/game-cards/useFitText.ts"
-  ]
-}

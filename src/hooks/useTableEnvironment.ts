@@ -28,10 +28,8 @@ import { isNativePlatform } from '../lib/appBase';
  *   2. The background-tab effect wrote its class onto
  *      `document.querySelector('.table-page')` — the FIRST such element in the
  *      document. With four tables open, all four instances fought over table
- *      one's root and tables two to four were never paused at all. It was
- *      scoped to the caller's own root, and then deleted outright on
- *      2026-09-09 (10.6): pausing animations in a hidden tab drops cues the
- *      player is owed. The multi-table lesson is what survives.
+ *      one's root and tables two to four were never paused at all. It takes the
+ *      caller's own root now.
  *
  * IF YOU ADD AN EFFECT HERE, ask what it does when four copies run it. If the
  * answer involves a document-level singleton, it belongs behind the refcount.
@@ -40,17 +38,12 @@ import { isNativePlatform } from '../lib/appBase';
  * 1. Sets document title
  * 2. Locks mobile viewport (prevents pinch-zoom) — refcounted
  * 3. Acquires Wake Lock (prevents screen dimming)
+ * 4. Adds background tab detection for CSS pausing — scoped to `pageRootRef`
  *
- * It no longer pauses anything when the tab is hidden. That effect and its CSS
- * rule were deleted on 2026-09-09 under CLAUDE.md 10.6 — see the note at the
- * bottom of this file. The multi-table lesson above still stands for anything
- * added here.
- *
- * @param pageRootRef the caller's OWN `.table-page` element. Nothing in this
- *        hook reads it since the background-tab pause was removed; it is kept
- *        so the four call sites do not have to change and so the next effect
- *        that needs a per-instance root has one, rather than reaching for
- *        `document.querySelector` again.
+ * @param pageRootRef the caller's OWN `.table-page` element. Optional only so
+ *        the hook stays usable outside TablePage; when it is omitted the
+ *        background-tab pause simply does not apply, which is the safe failure
+ *        (animations keep running) rather than pausing somebody else's table.
  */
 
 /**
@@ -273,20 +266,32 @@ export function useTableEnvironment(
   // are open, released only when the last one closes.
   useEffect(() => acquireWakeLock(), []);
 
-  /* ─── BACKGROUND TAB DETECTION — DELETED 2026-09-09 (CLAUDE.md 10.6) ───
-     A `visibilitychange` listener added `table-page--backgrounded` to this
-     table's root whenever the tab was hidden, and the CSS rule behind that
-     class paused every animation and killed every transition on the page.
+  // ─── BACKGROUND TAB DETECTION — Pause animations when tab is hidden ───
+  useEffect(() => {
+    /* THE CALLER'S OWN ROOT, never `document.querySelector('.table-page')`.
+       That query returns the FIRST such element in the document, and with four
+       tables mounted at once all four instances wrote to table one while tables
+       two to four kept every animation running in a hidden tab — the opposite
+       of what this effect is for.
 
-     The engine keeps dealing while the tab is hidden (that is what
-     useTabKeepAlive is for), so this froze the felt through entire hands, and
-     any cue that both started and ended while hidden never played at all -
-     not shortened, not sped up, never played. Dan's animation law: every
-     animation and its sound plays every time it is owed, for its full
-     duration, at the player's chosen Animation Speed, and `--animation-speed`
-     scaling is the only sanctioned control. "Battery savings" is not one, and
-     a pause is not a speed.
+       Reading it inside the effect rather than closing over it at render time
+       is deliberate: refs are populated after the render that creates them, so
+       the effect is the first moment there is anything to read. */
+    const tablePage = pageRootRef?.current;
+    if (!tablePage) return;
 
-     Both halves are gone - this effect and the `.table-page--backgrounded`
-     rule in TablePage.css. `pageRootRef` is still used by the callers above. */
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        tablePage.classList.add('table-page--backgrounded');
+      } else {
+        tablePage.classList.remove('table-page--backgrounded');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      tablePage.classList.remove('table-page--backgrounded');
+    };
+  }, [pageRootRef]);
 }

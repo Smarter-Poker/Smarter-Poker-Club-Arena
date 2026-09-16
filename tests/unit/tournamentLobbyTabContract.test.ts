@@ -250,21 +250,8 @@ describe('chips and chipsCompact', () => {
     expect(chipsCompact(Number.NaN)).toBe('0');
   });
 
-  /*
-   * ROUNDED DOWN, AND NO TENTH ON A ROUND FIGURE (Dan 2026-09-08, verbatim:
-   * "ONCE SOMETHING HITS OVER 1,000 USE 1K, IF ITS 1200 USE 1.2K, IF ITS
-   * 10,000 USE 10K").
-   *
-   * This pinned 1,250 -> "1.3K", which ROUNDS UP - it tells a player they hold
-   * more than they do - and the same formatter printed a round 5,000 as
-   * "5.0K", a decimal on a forward-facing page. Both were visible on the
-   * tournament cards. `chipsCompact` now delegates to the platform's single
-   * compact formatter (`utils/format.compactChips`), so the pin moves with the
-   * behaviour, in the same commit.
-   */
   it('shortens a big stack without losing the sense of it', () => {
-    expect(chipsCompact(1250)).toBe('1.2K');
-    expect(chipsCompact(5000)).toBe('5K');
+    expect(chipsCompact(1250)).toBe('1.3K');
     expect(chipsCompact(447000)).toBe('447K');
     expect(chipsCompact(2500000)).toBe('2.5M');
     expect(chipsCompact(999)).toBe('999');

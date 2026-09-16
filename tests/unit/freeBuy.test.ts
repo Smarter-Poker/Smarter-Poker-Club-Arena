@@ -153,7 +153,7 @@ describe('TournamentService.buildRpcConfig: the RPC payload carries the rule', (
     startingStack: 3000,
     maxPlayers: 100,
     minPlayers: 4,
-    blindStructure: [{ level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 }],
+    blindStructure: [],
     payoutStructure: [],
     lateRegistrationLevels: 4,
     isRebuy: false,

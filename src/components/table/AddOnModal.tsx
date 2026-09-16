@@ -14,7 +14,6 @@ import { haptic, soundService } from '../../services/SoundService';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money, moneyExact } from '../../utils/buyIn';
-import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 
 interface AddOnModalProps {
   isVisible: boolean;
@@ -40,13 +39,6 @@ interface AddOnModalProps {
    */
   onAccept: () => Promise<boolean>;
   onDecline: () => void;
-  /**
-   * The club whose host runs the Diamond Games (Dan 2026-09-10: a player who
-   * cannot cover the add-on is offered the diamonds-to-chips door). Omitted,
-   * the door is not offered.
-   */
-  diamondGamesClubId?: string | null;
-  onPlayDiamonds?: (path: string) => void;
 }
 
 function secondsUntilAddOnDeadline(endsAtMs: number | null, fallbackSeconds: number): number {
@@ -65,8 +57,6 @@ export default function AddOnModal({
   timeRemaining: initialTime,
   onAccept,
   onDecline,
-  diamondGamesClubId,
-  onPlayDiamonds,
 }: AddOnModalProps) {
   const [countdown, setCountdown] = useState(() =>
     secondsUntilAddOnDeadline(endsAtMs, initialTime)
@@ -323,16 +313,6 @@ export default function AddOnModal({
             {priceKnown && !canAfford && (
               <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
                 Insufficient Balance - You Need {totalCost.toLocaleString()} Chips
-              </div>
-            )}
-            {priceKnown && !canAfford && onPlayDiamonds && (
-              <div style={{ marginBottom: 12 }}>
-                <DiamondsToChipsButton
-                  clubId={diamondGamesClubId}
-                  enabled={isVisible}
-                  size="compact"
-                  onGo={onPlayDiamonds}
-                />
               </div>
             )}
 

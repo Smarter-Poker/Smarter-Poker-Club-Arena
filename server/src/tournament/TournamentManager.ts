@@ -473,7 +473,6 @@ export class TournamentManager extends TournamentManagerEliminations {
           true
         );
         this.pendingTournamentSeatMoveOutcomes.delete(requestId);
-        this.tableEngines.get(pending.move.toTableId)?.wakeWaitingForPlayers();
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} replay certified for ${pending.move.playerId.slice(0, 8)}`
         );
@@ -1059,9 +1058,6 @@ export class TournamentManager extends TournamentManagerEliminations {
         try {
           const receipt = await this.requestTournamentSeatMoveAtBoundary(input, boundary);
           moved++;
-          // The destination may be waiting below its deal minimum on a
-          // backed-off roster read; it looks now rather than in a minute.
-          this.tableEngines.get(move.toTableId)?.wakeWaitingForPlayers();
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic move ${receipt.requestId.slice(0, 8)} certified for ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${receipt.sourceSeatNumber} to table ${move.toTableId.slice(0, 8)} seat ${receipt.destinationSeatNumber}`
           );

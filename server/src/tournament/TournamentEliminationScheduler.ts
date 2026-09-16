@@ -47,7 +47,7 @@ const oldestWaitGauge = alwaysOnRegistry.gauge(
 );
 const dispatchTotal = alwaysOnRegistry.counter(
   'poker_tournament_elimination_scheduler_dispatch_total',
-  'Bounded tournament elimination scheduler lifecycle events (outcome=completed|failed|timed_out); timed_out never releases a live promise slot, it opens one compensating slot beside it (at most maxConcurrent of them).'
+  'Bounded tournament elimination scheduler lifecycle events (outcome=completed|failed|timed_out); timed_out is observational and never releases a live promise slot.'
 );
 for (const outcome of ['completed', 'failed', 'timed_out']) {
   dispatchTotal.inc(0, { outcome });
@@ -155,9 +155,6 @@ export class TournamentEliminationScheduler {
   private allSlotsStalledReported = false;
   private metricsTimer: ReturnType<typeof setInterval> | null = null;
   private wakeTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The deadline the armed wake timer is set for; null while no timer is armed. */
-  private wakeTimerDueAt: number | null = null;
-  private lastMetricsRefreshAt = Number.NEGATIVE_INFINITY;
 
   constructor(options: TournamentEliminationSchedulerOptions = {}) {
     this.maxConcurrent = Math.max(
@@ -172,40 +169,10 @@ export class TournamentEliminationScheduler {
     if (options.startTimers !== false) {
       // Wait age must keep moving while the queue is wedged; state-change-only
       // updates would make the incident gauge freeze at a reassuring number.
-      this.metricsTimer = setInterval(() => this.refreshMetrics(true), 1_000);
+      this.metricsTimer = setInterval(() => this.refreshMetrics(), 1_000);
       this.metricsTimer.unref?.();
     }
-    this.refreshMetrics(true);
-  }
-
-  /**
-   * A STALLED SLOT IS REPLACED, NOT RELEASED (2026-09-16).
-   *
-   * A physical promise that is still unresolved after the warning budget
-   * keeps its slot: releasing it would let the same tournament run twice and
-   * would turn every slow minute into unbounded database concurrency, which
-   * is the rule the quarantine test enshrines. But a slot that never comes
-   * back is capacity gone for the life of the process, silently. On
-   * 2026-09-16 three of the four slots were held by promises that had not
-   * settled since 05:30, 07:33 and 15:17 UTC; the fourth served 1,609
-   * registered tournaments one at a time, the oldest of them waiting 3.4
-   * hours, and 804 events whose last player had already won were never
-   * finished because the finish stage never got a turn.
-   *
-   * So each stalled promise opens one compensating slot beside it, and there
-   * are never more compensating slots than the cap itself: real concurrency
-   * is bounded at twice `maxConcurrent`, the stalled promise stays counted,
-   * stays excluded from re-dispatch for its own tournament, and stays on the
-   * `stalled_slots` gauge until it really settles.
-   */
-  private stalledCount(): number {
-    let stalled = 0;
-    for (const entry of this.activeEntries) if (entry.running && entry.warned) stalled++;
-    return stalled;
-  }
-
-  private capacityNow(): number {
-    return this.maxConcurrent + Math.min(this.stalledCount(), this.maxConcurrent);
+    this.refreshMetrics();
   }
 
   register(registration: TournamentEliminationRegistration): () => void {
@@ -280,20 +247,12 @@ export class TournamentEliminationScheduler {
       // Pulling an earlier feature wake forward must never demote an already
       // known bust/rebuy/bounty retry.
       entry.pendingWakeAs = strongerQueueKind(entry.pendingWakeAs, kind);
-      // ONE WAKE IS NOT A WALK OVER EVERY ENTRY (2026-09-16). This used to
-      // rescan all registered entries for the earliest deadline on every
-      // call, and with 1,612 entries and a recovery pass waking decided
-      // events thousands of times an hour that scan was measurable on the
-      // one event loop. The timer already holds the earliest deadline it was
-      // armed for; a new deadline only matters if it is earlier than that.
-      if (this.wakeTimer === null || this.wakeTimerDueAt === null || dueAt < this.wakeTimerDueAt) {
-        this.armWakeTimerAt(dueAt);
-      }
     } else {
       // A later bust may safely pull priority forward to an already earlier
       // feature wake. There is still only one pending wake per tournament.
       entry.pendingWakeAs = strongerQueueKind(entry.pendingWakeAs, kind);
     }
+    this.armWakeTimer();
     this.refreshMetrics();
     return true;
   }
@@ -319,7 +278,8 @@ export class TournamentEliminationScheduler {
       registered: this.entries.size,
       queued,
       running: this.runningCount,
-      stalled: this.stalledCount(),
+      stalled: Array.from(this.activeEntries).filter((entry) => entry.running && entry.warned)
+        .length,
       pendingWakes,
       oldestWaitMs: oldestEnqueuedAt === null ? 0 : Math.max(0, this.now() - oldestEnqueuedAt),
     };
@@ -331,7 +291,6 @@ export class TournamentEliminationScheduler {
     if (this.wakeTimer) clearTimeout(this.wakeTimer);
     this.metricsTimer = null;
     this.wakeTimer = null;
-    this.wakeTimerDueAt = null;
     for (const entry of this.entries.values()) {
       entry.registered = false;
       entry.abortController?.abort();
@@ -343,7 +302,7 @@ export class TournamentEliminationScheduler {
     this.activeEntries.clear();
     this.runningCount = 0;
     this.allSlotsStalledReported = false;
-    this.refreshMetrics(true);
+    this.refreshMetrics();
   }
 
   private remove(entry: Entry): void {
@@ -358,9 +317,7 @@ export class TournamentEliminationScheduler {
     if (this.entries.get(entry.tournamentId) === entry) {
       this.entries.delete(entry.tournamentId);
     }
-    // The wake timer may still be armed for this entry's deadline. It fires,
-    // finds nothing due, and re-arms from a scan; cheaper than scanning here
-    // for every one of a lease storm's hundreds of removals.
+    this.armWakeTimer();
     this.refreshMetrics();
   }
 
@@ -391,12 +348,10 @@ export class TournamentEliminationScheduler {
     if (pumpNow) this.pump();
   }
 
-  /** Re-arm from a full scan; used only when the armed deadline is unknown or spent. */
   private armWakeTimer(): void {
     if (this.wakeTimer) {
       clearTimeout(this.wakeTimer);
       this.wakeTimer = null;
-      this.wakeTimerDueAt = null;
     }
     let earliest: number | null = null;
     for (const entry of this.entries.values()) {
@@ -405,19 +360,9 @@ export class TournamentEliminationScheduler {
       }
     }
     if (earliest === null) return;
-    this.armWakeTimerAt(earliest);
-  }
-
-  private armWakeTimerAt(dueAt: number): void {
-    if (this.wakeTimer) {
-      clearTimeout(this.wakeTimer);
-      this.wakeTimer = null;
-    }
-    this.wakeTimerDueAt = dueAt;
     this.wakeTimer = setTimeout(
       () => {
         this.wakeTimer = null;
-        this.wakeTimerDueAt = null;
         const now = this.now();
         const due: Array<{
           entry: Entry;
@@ -462,7 +407,7 @@ export class TournamentEliminationScheduler {
         this.armWakeTimer();
         this.refreshMetrics();
       },
-      Math.max(0, dueAt - this.now())
+      Math.max(0, earliest - this.now())
     );
     this.wakeTimer.unref?.();
   }
@@ -541,7 +486,7 @@ export class TournamentEliminationScheduler {
     try {
       do {
         this.pumpRequestedWhilePumping = false;
-        while (this.runningCount < this.capacityNow()) {
+        while (this.runningCount < this.maxConcurrent) {
           const entry = this.next();
           if (!entry) break;
           entry.queuedAs = null;
@@ -604,11 +549,7 @@ export class TournamentEliminationScheduler {
         // ownership semantics: a warning is observable, but no live promise
         // is ever "forced" off its slot.
         eliminationSweepOverrunsTotal.inc(1, { outcome: 'warned' });
-        // The stalled promise keeps its slot; a compensating slot opens beside
-        // it (see capacityNow), so the queue keeps moving on the remaining
-        // capacity instead of shrinking to whatever the stalls left.
-        this.pump();
-        this.refreshMetrics(true);
+        this.refreshMetrics();
         const snapshot = this.snapshot();
         if (
           snapshot.running >= snapshot.capacity &&
@@ -640,16 +581,7 @@ export class TournamentEliminationScheduler {
       );
   }
 
-  /**
-   * Gauges refresh at most four times a second from event paths; the one
-   * second timer always refreshes. snapshot() walks every entry, and it was
-   * being paid on every wake, enqueue, dispatch and finish of a 1,600-entry
-   * scheduler (2026-09-16).
-   */
-  private refreshMetrics(force = false): void {
-    const at = this.now();
-    if (!force && at - this.lastMetricsRefreshAt < 250) return;
-    this.lastMetricsRefreshAt = at;
+  private refreshMetrics(): void {
     const snapshot = this.snapshot();
     registeredGauge.set(snapshot.registered);
     queueDepthGauge.set(snapshot.queued);

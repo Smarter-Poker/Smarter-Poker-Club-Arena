@@ -437,13 +437,7 @@ describe('TournamentEliminationScheduler', () => {
     scheduler.stop();
   });
 
-  it('replaces a stalled slot without releasing it: real concurrency is bounded at twice the cap', async () => {
-    /* A STALLED SLOT IS REPLACED, NOT RELEASED (2026-09-16). Three of four
-       production slots were held by promises unresolved since 05:30, 07:33
-       and 15:17 UTC; the fourth served 1,609 tournaments one at a time and
-       804 decided events never reached their finish stage. A stalled promise
-       still keeps its slot and its tournament stays excluded, but the cap is
-       raised by one for each stalled promise, never by more than the cap. */
+  it('quarantines timed-out promises so repeated timeouts cannot exceed real concurrency', async () => {
     vi.useFakeTimers();
     const scheduler = new TournamentEliminationScheduler({
       maxConcurrent: 2,
@@ -468,65 +462,18 @@ describe('TournamentEliminationScheduler', () => {
     }
     await flush();
     expect(started).toEqual(['hung-0', 'hung-1']);
-    expect(scheduler.snapshot()).toMatchObject({ running: 2, queued: 4, stalled: 0 });
 
-    // The first two stall past the warning budget: two compensating slots open.
-    await vi.advanceTimersByTimeAsync(101);
-    await flush();
-    expect(started).toEqual(['hung-0', 'hung-1', 'hung-2', 'hung-3']);
-    expect(scheduler.snapshot()).toMatchObject({ running: 4, queued: 2, stalled: 2 });
-
-    // Those stall too. Four stalled promises may open only two compensating
-    // slots (the cap), so nothing else is dispatched: real concurrency never
-    // exceeds twice the cap, whatever the number of stalls.
     await vi.advanceTimersByTimeAsync(1_000);
     await flush();
-    expect(started).toEqual(['hung-0', 'hung-1', 'hung-2', 'hung-3']);
-    expect(scheduler.snapshot()).toMatchObject({ running: 4, queued: 2, stalled: 4 });
-    expect(maxActualActive).toBe(4);
+    expect(started).toEqual(['hung-0', 'hung-1']);
+    expect(scheduler.snapshot()).toMatchObject({ running: 2, queued: 4 });
+    expect(maxActualActive).toBe(2);
 
-    // A stalled promise settling gives its slot back exactly once.
     releases.shift()!();
     await flush();
-    expect(started).toEqual(['hung-0', 'hung-1', 'hung-2', 'hung-3', 'hung-4']);
-    expect(scheduler.snapshot()).toMatchObject({ running: 4, queued: 1, stalled: 3 });
-    expect(actualActive).toBe(4);
-    expect(maxActualActive).toBe(4);
-    scheduler.stop();
-  });
-
-  it('never dispatches the same tournament twice while its stalled promise is live', async () => {
-    vi.useFakeTimers();
-    const scheduler = new TournamentEliminationScheduler({
-      maxConcurrent: 1,
-      sweepWarnMs: 100,
-      startTimers: false,
-    });
-    let releaseStalled!: () => void;
-    let runs = 0;
-    scheduler.register({
-      tournamentId: 'stuck',
-      run: async () => {
-        runs++;
-        await new Promise<void>((resolve) => (releaseStalled = resolve));
-      },
-    });
-    await flush();
-    expect(runs).toBe(1);
-    await vi.advanceTimersByTimeAsync(101);
-    // Its own wake cannot use the compensating slot; a peer can.
-    expect(scheduler.wake('stuck')).toBe(true);
-    await vi.advanceTimersByTimeAsync(1);
-    const peerRuns: string[] = [];
-    scheduler.register({ tournamentId: 'peer', run: async () => void peerRuns.push('peer') });
-    await flush();
-    expect(runs).toBe(1);
-    expect(peerRuns).toEqual(['peer']);
-    releaseStalled();
-    await vi.advanceTimersByTimeAsync(1);
-    await flush();
-    // The coalesced rerun happens only after the stalled promise settled.
-    expect(runs).toBe(2);
+    expect(started).toEqual(['hung-0', 'hung-1', 'hung-2']);
+    expect(actualActive).toBe(2);
+    expect(maxActualActive).toBe(2);
     scheduler.stop();
   });
 

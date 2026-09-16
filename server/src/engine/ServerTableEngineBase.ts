@@ -2637,10 +2637,11 @@ export abstract class ServerTableEngineBase {
         // did not - so the second chair that takes a feeder live, or the seat
         // that opens on a waiting Main 1, reached the controller at the next
         // pass instead of inside a second. Same wake, same debounce.
-        const rosterChanged =
-          this.seatedPlayers.length !== idsBeforeSweep.size ||
-          this.seatedPlayers.some((p) => !idsBeforeSweep.has(p.user_id));
-        if (!firstWaitSweep && rosterChanged) {
+        if (
+          !firstWaitSweep &&
+          (this.seatedPlayers.length !== idsBeforeSweep.size ||
+            this.seatedPlayers.some((p) => !idsBeforeSweep.has(p.user_id)))
+        ) {
           this.wakeClusterGame('seat_change');
         }
         firstWaitSweep = false;
@@ -2708,11 +2709,10 @@ export abstract class ServerTableEngineBase {
         // 180 seconds. Stamp only after the fresh read and awaited wait work:
         // a rejected read or hung sweep must still age into recovery.
         this.markProgress();
-        const pollMs = this.nextWaitForPlayersPollMs(rosterChanged);
         console.log(
-          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()}) next look in ${Math.round(pollMs / 1000)}s`
+          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()})`
         );
-        await this.waitForPlayersPause(pollMs);
+        await this.sleep(5000);
       }
 
       if (!this.lifecycleCanMutate()) return;
@@ -2802,8 +2802,6 @@ export abstract class ServerTableEngineBase {
     this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
     this.notifyBoundaryPauseWaiters();
-    // A backed-off wait-for-players pause ends now, so the loop sees the fence.
-    this.waitForPlayersWake?.();
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
 
@@ -3864,7 +3862,6 @@ export abstract class ServerTableEngineBase {
     this.clearEngineLeaseExpiryTimer();
     this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
-    this.waitForPlayersWake?.();
     this.settleReady(false);
     this.heartbeatActive = false;
     this.clearHandSafetyTimer();
@@ -5909,72 +5906,6 @@ export abstract class ServerTableEngineBase {
 
   protected sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  /**
-   * THE QUIET TOURNAMENT TABLE BACKS OFF (2026-09-16).
-   *
-   * The wait-for-players loop above read `table_seats` every five seconds for
-   * every table below its deal minimum, for as long as it stayed there. On a
-   * tournament table that is where a decided event's last player sits until
-   * the event is finished, and on 2026-09-16 there were 2,069 of them: 18,205
-   * of the 22,018 database requests the engine made in one 45-second sample
-   * were this one read, 128 of 128 connections in the process's HTTPS pool
-   * were busy with 250 to 720 requests queued behind them, a one-row read
-   * measured 350 to 1,400 ms from inside the process, the elimination sweeps
-   * that would have finished those events waited in that same queue, and the
-   * event-loop delay sat at 274 ms. The poll that waits for a table to fill
-   * was the reason the platform could not finish the events that would have
-   * emptied it.
-   *
-   * A cash table keeps its five seconds: anyone may sit down from the lobby
-   * at any moment. A tournament table's roster changes only when its manager
-   * moves someone in, seats a late registrant, or closes it, so an unchanged
-   * roster doubles the pause each look (5, 10, 20, 40, then 60 seconds), any
-   * change resets it, and `wakeWaitingForPlayers` lets the manager end a
-   * pause the instant it has seated someone. The cap stays far below the
-   * 180-second zombie rebuild, and `markProgress()` still runs every look.
-   */
-  static readonly WAIT_FOR_PLAYERS_POLL_MS = 5_000;
-  static readonly WAIT_FOR_PLAYERS_MAX_POLL_MS = 60_000;
-  private waitForPlayersPollMs = ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS;
-  private waitForPlayersWake: (() => void) | null = null;
-
-  /** The pause before the next roster read; grows only on a tournament table whose roster did not change. */
-  protected nextWaitForPlayersPollMs(rosterChanged: boolean): number {
-    const base = ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS;
-    if (!this.isTournamentTable() || rosterChanged) {
-      this.waitForPlayersPollMs = base;
-      return base;
-    }
-    const current = this.waitForPlayersPollMs;
-    this.waitForPlayersPollMs = Math.min(
-      current * 2,
-      ServerTableEngineBase.WAIT_FOR_PLAYERS_MAX_POLL_MS
-    );
-    return current;
-  }
-
-  /** The wait loop's pause: this engine's sleep, which a seat arrival or a stop ends early. */
-  protected waitForPlayersPause(ms: number): Promise<void> {
-    let wake!: () => void;
-    const woken = new Promise<void>((resolve) => {
-      wake = resolve;
-    });
-    this.waitForPlayersWake = wake;
-    return Promise.race([this.sleep(ms), woken]).finally(() => {
-      if (this.waitForPlayersWake === wake) this.waitForPlayersWake = null;
-    });
-  }
-
-  /**
-   * Someone was seated here by a path this engine's own reads did not see (a
-   * tournament move, a late registration): look now, and look every five
-   * seconds again until the roster settles.
-   */
-  wakeWaitingForPlayers(): void {
-    this.waitForPlayersPollMs = ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS;
-    this.waitForPlayersWake?.();
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

@@ -180,7 +180,9 @@ describe('the port agrees with the Python the artists run', () => {
   // numbers below are the ones both produced; a change to either that moves
   // them shows up here and in the baseline at once.
   const PINNED: ReadonlyArray<readonly [string, number]> = [
-    ['public/assets/club-buttons/club-nav-shell.png', 0.0],
+    // Preserve the original matte-clean source at a content-versioned URL.
+    ['public/assets/club-buttons/club-nav-shell-d45f56465bad.png', 0.0],
+    ['public/assets/club-buttons/wallet-row-shell-e7964bb1791f.webp', 0.3],
     ['public/assets/club-buttons/club/club-identity-icon-club-v1.png', 7.8],
     ['public/assets/club-buttons/console/spade-console-v1/mid.png', 4.2],
   ];

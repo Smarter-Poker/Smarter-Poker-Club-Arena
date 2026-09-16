@@ -77,6 +77,8 @@ concurrency:
 # there is no hosted, Hetzner, or repository-variable fallback.
 # Credential-bearing publication workflows remain a separate release lane.
 # ───────────────────────────────────────────────────────────────────────────
+# Work jobs respect cancellation. Required verdicts stay always() so a
+# cancelled or unexpectedly skipped worker cannot become an accepted skip.
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
   # WHICH CHECKS CAN THIS DIFF ACTUALLY BREAK?
@@ -237,7 +239,7 @@ jobs:
     name: Native fixture prerequisites
     needs: changes
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      always() && !cancelled() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
     permissions:
       contents: read
@@ -1025,7 +1027,7 @@ jobs:
     # green" pass, and change detection is meaningless there because there is
     # no diff to detect - the question is about the whole branch.
     if: >-
-      always() &&
+      always() && !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
@@ -1110,9 +1112,9 @@ jobs:
   # It must also survive the shards being SKIPPED. The ruleset counts a skipped
   # required check as satisfied, and the `if:` on unit_shards deliberately skips
   # when the diff touches neither src nor tests - so this runs on `always()`
-  # and only fails on a real failure, never on a skip.
+  # and accepts a skip only when successful classification proves it unrelated.
   unit:
-    needs: unit_shards
+    needs: [changes, unit_shards]
     if: always()
     name: Client Unit Tests (vitest)
     # Wait for the approved local runner; no hosted or estate fallback.
@@ -1120,6 +1122,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Every shard passed
+        env:
+          DIFF_RESULT: ${{ needs.changes.result }}
+          SRC_CHANGED: ${{ needs.changes.outputs.src }}
+          TESTS_CHANGED: ${{ needs.changes.outputs.tests }}
+          CI_EVENT_NAME: ${{ github.event_name }}
         run: |
           RESULT="${{ needs.unit_shards.result }}"
           echo "## Client Unit Tests" >> $GITHUB_STEP_SUMMARY
@@ -1129,8 +1136,12 @@ jobs:
             success)
               echo "All four shards passed." >> $GITHUB_STEP_SUMMARY ;;
             skipped)
-              # Not a failure: the diff touched neither src/ nor tests/.
-              echo "Skipped - the diff touched neither \`src/\` nor \`tests/\`." >> $GITHUB_STEP_SUMMARY ;;
+              if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SRC_CHANGED" = false ] && [ "$TESTS_CHANGED" = false ]; then
+                echo "Skipped - the checked diff touched neither src/ nor tests/." >> $GITHUB_STEP_SUMMARY
+              else
+                echo '::error::Required client tests were unexpectedly skipped.'
+                exit 1
+              fi ;;
             *)
               echo "A shard did not pass. Open the shard job for the failing test." >> $GITHUB_STEP_SUMMARY
               echo "::error title=CLIENT UNIT TESTS FAILED::At least one of the four vitest shards did not pass ($RESULT). The failing test is in the shard job, not here."
@@ -1142,7 +1153,7 @@ jobs:
   accounting_postgres:
     needs: changes
     if: >-
-      always() &&
+      always() && !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' ||
@@ -1361,7 +1372,7 @@ jobs:
     #
     # `schedule` runs it unconditionally - see the note on the unit job.
     if: >-
-      always() &&
+      always() && !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' ||
@@ -1501,7 +1512,7 @@ jobs:
     # Wait for the approved local runner; no hosted or estate fallback.
     runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 2
-    if: always()
+    if: always() && !cancelled()
     needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
     steps:
       - name: Say what ran, and what did not
@@ -1556,6 +1567,32 @@ jobs:
           exit 1
 
   build:
+    name: Production Build
+    needs: [changes, build_work]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: [self-hosted, smarter-local-linux-arm64]
+    timeout-minutes: 2
+    steps:
+      - name: Require successful work or a verified unrelated diff
+        env:
+          WORK_RESULT: ${{ needs.build_work.result }}
+          DIFF_RESULT: ${{ needs.changes.result }}
+          SRC_CHANGED: ${{ needs.changes.outputs.src }}
+          CI_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          case "$WORK_RESULT" in
+            success) echo 'Required work passed.' ;;
+            skipped)
+              if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SRC_CHANGED" = false ]; then
+                echo 'Work skipped: the checked diff does not change the client.'
+              else
+                echo '::error::Required work was unexpectedly skipped.'
+                exit 1
+              fi ;;
+            *) echo "::error::Required work did not pass ($WORK_RESULT)."; exit 1 ;;
+          esac
+
+  build_work:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -1576,9 +1613,9 @@ jobs:
     # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
     # treated as "could break anything", never as "nothing to do".
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      always() && !cancelled() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
-    name: Production Build
+    name: Production Build work
     # Wait for the approved local runner; no hosted or estate fallback.
     runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 15
@@ -2035,6 +2072,32 @@ jobs:
   # one red before it ships.
   # ───────────────────────────────────────────────────────────────────────────
   css-beats-e2e:
+    name: CSS Beat E2E (multi-table + animations)
+    needs: [changes, css-beats-e2e-work]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: [self-hosted, smarter-local-linux-arm64]
+    timeout-minutes: 2
+    steps:
+      - name: Require successful work or a verified unrelated diff
+        env:
+          WORK_RESULT: ${{ needs.css-beats-e2e-work.result }}
+          DIFF_RESULT: ${{ needs.changes.result }}
+          SRC_CHANGED: ${{ needs.changes.outputs.src }}
+          CI_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          case "$WORK_RESULT" in
+            success) echo 'Required work passed.' ;;
+            skipped)
+              if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SRC_CHANGED" = false ]; then
+                echo 'Work skipped: the checked diff does not change the client.'
+              else
+                echo '::error::Required work was unexpectedly skipped.'
+                exit 1
+              fi ;;
+            *) echo "::error::Required work did not pass ($WORK_RESULT)."; exit 1 ;;
+          esac
+
+  css-beats-e2e-work:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -2056,9 +2119,9 @@ jobs:
     # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
     # treated as "could break anything", never as "nothing to do".
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      always() && !cancelled() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
-    name: CSS Beat E2E (multi-table + animations)
+    name: CSS Beat E2E (multi-table + animations) work
     # Wait for the approved local runner; no hosted or estate fallback.
     runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 20

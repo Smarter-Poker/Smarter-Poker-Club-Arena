@@ -254,8 +254,8 @@ for (const name of [
   'unit_shards',
   'accounting_postgres',
   'server_shards',
-  'build',
-  'css-beats-e2e',
+  'build_work',
+  'css-beats-e2e-work',
 ]) {
   test(`${name} admits before dependency setup on the local read-only runner`, () => {
     const source = job(name),
@@ -303,6 +303,45 @@ test('every required workflow job uses its exact local architecture without a ho
     }
   }
 });
+// Exercise the maintained expressions, whose operators/string comparisons use
+// the same semantics for these exact fixtures in GitHub expressions and JS.
+function jobPredicate(name) {
+  const condition = job(name).match(/^    if: (.+(?:\n      [^\n]+)*)/m)?.[1]
+    .replace(/^>-\s*/, '').replace(/\s+/g, ' ');
+  assert.ok(condition, name);
+  return new Function('always', 'cancelled', 'github', 'needs', `return (${condition});`);
+}
+for (const name of [
+  'fixture_native', 'unit_shards', 'accounting_postgres', 'server_shards',
+  'verdict', 'build_work', 'css-beats-e2e-work',
+]) {
+  test(`${name} work admission respects cancellation and still exposes upstream failures`, () => {
+    const evaluate = jobPredicate(name);
+    for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
+      const changed = result === 'success' ? 'true' : 'false';
+      const needs = { changes: { result, outputs: {
+        fixture: changed, src: changed, tests: changed, server: changed,
+      } } };
+      const github = { event_name: 'pull_request' };
+      assert.equal(evaluate(() => true, () => false, github, needs), true, `${name}: ${result} remains visible`);
+      assert.equal(evaluate(() => true, () => true, github, needs), false, `${name}: cancelled work stops`);
+    }
+  });
+}
+for (const [name, title] of [
+  ['typecheck', 'TypeScript Check'], ['unit', 'Client Unit Tests (vitest)'],
+  ['server', 'Server Engine (typecheck + tests)'], ['build', 'Production Build'],
+  ['css-beats-e2e', 'CSS Beat E2E (multi-table + animations)'],
+]) {
+  test(`${name} required verdict is admitted even when the current workflow is cancelled`, () => {
+    assert.ok(job(name).includes(`    name: ${title}\n`));
+    assert.equal(jobPredicate(name)(() => true, () => true, { event_name: 'pull_request' }, {}), true);
+  });
+}
+test('shared preview cleanup still runs unconditionally within an admitted job', () => {
+  assert.match(job('css-beats-e2e-work'), /- name: Stop the shared preview\n        if: always\(\)/);
+});
+
 test('required TypeScript gate still requires the actual compilation result', () => {
   assert.match(job('typecheck'), /needs: \[typecheck_compile, changes, fixture_native\]/);
   assert.match(job('typecheck'), /COMPILE_RESULT: \$\{\{ needs.typecheck_compile.result \}\}/);
@@ -389,4 +428,37 @@ test('installed dependency caches cannot cross local CPU architectures', () => {
   const keys = [...source.matchAll(/^          key: (nm-[^\n]+)$/gm)];
   assert.ok(keys.length >= 5);
   for (const [, key] of keys) assert.ok(key.includes('${{ runner.arch }}'), key);
+});
+
+for (const [gate, worker] of [['build', 'build_work'], ['css-beats-e2e', 'css-beats-e2e-work']]) {
+  test(`${gate} current-head cancellation stops work and fails the required verdict`, async () => {
+    assert.equal((await admit(fixture(), fixture().pull_request)).admitted, true);
+    assert.ok(job(gate).includes(`    needs: [changes, ${worker}]\n`));
+    assert.ok(job(gate).includes(`WORK_RESULT: \${{ needs.${worker}.result }}`));
+    const needs = { changes: { result: 'success', outputs: { src: 'true' } } };
+    assert.equal(jobPredicate(worker)(() => true, () => true, { event_name: 'pull_request' }, needs), false);
+    for (const result of ['cancelled', 'failure', 'skipped']) {
+      const outcome = spawnSync('/bin/bash', ['-c', shell(gate)], {
+        encoding: 'utf8', env: { WORK_RESULT: result, DIFF_RESULT: 'success', SRC_CHANGED: 'true', CI_EVENT_NAME: 'pull_request' },
+      });
+      assert.equal(outcome.status, 1, result);
+    }
+  });
+  test(`${gate} only accepts a skipped worker for an explicitly unrelated PR diff`, () => {
+    const env = { WORK_RESULT: 'skipped', DIFF_RESULT: 'success', SRC_CHANGED: 'false', CI_EVENT_NAME: 'pull_request' };
+    assert.equal(spawnSync('/bin/bash', ['-c', shell(gate)], { env }).status, 0);
+    for (const change of [{ DIFF_RESULT: 'failure' }, { DIFF_RESULT: 'cancelled' }, { SRC_CHANGED: '' }, { SRC_CHANGED: 'true' }, { CI_EVENT_NAME: 'schedule' }]) {
+      assert.equal(spawnSync('/bin/bash', ['-c', shell(gate)], { env: { ...env, ...change } }).status, 1);
+    }
+    assert.equal(spawnSync('/bin/bash', ['-c', shell(gate)], { env: { ...env, WORK_RESULT: 'success', SRC_CHANGED: 'true' } }).status, 0);
+  });
+}
+test('client aggregate accepts only explicitly unrelated skips, never missing required work', () => {
+  assert.match(job('unit'), /needs: \[changes, unit_shards\]/);
+  const script = shell('unit').replace('${{ needs.unit_shards.result }}', 'skipped');
+  const env = { GITHUB_STEP_SUMMARY: '/dev/null', DIFF_RESULT: 'success', SRC_CHANGED: 'false', TESTS_CHANGED: 'false', CI_EVENT_NAME: 'pull_request' };
+  assert.equal(spawnSync('/bin/bash', ['-c', script], { env }).status, 0);
+  for (const change of [{ DIFF_RESULT: 'failure' }, { DIFF_RESULT: 'cancelled' }, { SRC_CHANGED: 'true' }, { TESTS_CHANGED: 'true' }, { SRC_CHANGED: '' }, { TESTS_CHANGED: '' }, { CI_EVENT_NAME: 'schedule' }]) {
+    assert.equal(spawnSync('/bin/bash', ['-c', script], { env: { ...env, ...change } }).status, 1);
+  }
 });

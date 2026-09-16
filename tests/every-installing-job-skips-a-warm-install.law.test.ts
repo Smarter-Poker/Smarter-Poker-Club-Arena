@@ -94,7 +94,7 @@ describe('every job that restores node_modules skips the install on a hit', () =
   it('the beats job in particular, because it is the critical path', () => {
     const ci = read('.github/workflows/ci.yml');
     // By job KEY, not by a string that also appears in another job's comments.
-    const beats = jobs(ci).find((j) => j.name === 'css-beats-e2e');
+    const beats = jobs(ci).find((j) => j.name === 'css-beats-e2e-work');
     expect(beats, 'the CSS Beat E2E job disappeared').toBeTruthy();
     expect(beats!.body).toMatch(/id: nm-cache/);
     expect(beats!.body).toMatch(

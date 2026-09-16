@@ -42,7 +42,10 @@ async function buildProbe(native: boolean, linked = false) {
       rollupOptions: {
         ...config.build?.rollupOptions,
         input: path.join(root, 'entry.js'),
-        output: { ...config.build?.rollupOptions?.output, entryFileNames: 'assets/probe.js' },
+        output: {
+          ...config.build?.rollupOptions?.output,
+          entryFileNames: 'assets/probe-[hash].js',
+        },
       },
     },
   })) as RollupOutput;
@@ -67,13 +70,26 @@ describe('Private web source maps', () => {
   it('changes only the map reference, leaving executable output identical', async () => {
     const hidden = await buildProbe(false);
     const linked = await buildProbe(false, true);
-    expect(linked.chunk.code).toContain('sourceMappingURL=probe.js.map');
+    expect(linked.chunk.code).toContain(
+      `sourceMappingURL=${path.basename(linked.chunk.fileName)}.map`
+    );
     expect(hidden.chunk.code.trim()).toBe(
       linked.chunk.code.replace(/^\/\/# sourceMappingURL=.*$/m, '').trim()
     );
     const context: { sourceMapProbe?: () => number } = {};
     runInNewContext(hidden.chunk.code, context);
     expect(context.sourceMapProbe?.()).toBe(20);
+  });
+
+  it('never reuses an immutable chunk URL when the emitted map reference changes', async () => {
+    const hidden = await buildProbe(false);
+    const linked = await buildProbe(false, true);
+    expect(hidden.chunk.code).not.toBe(linked.chunk.code);
+    expect(hidden.chunk.fileName).not.toBe(linked.chunk.fileName);
+
+    const repeated = await buildProbe(false);
+    expect(repeated.chunk.fileName).toBe(hidden.chunk.fileName);
+    expect(repeated.chunk.code).toBe(hidden.chunk.code);
   });
 
   it('keeps native builds free of maps and browser map references', async () => {

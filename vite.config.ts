@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { cpus } from 'node:os';
 import react from '@vitejs/plugin-react';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
@@ -37,11 +37,28 @@ if (process.env.CA_SENTRY_UPLOAD === '1' && !sentryUpload.enabled) {
   console.warn('[sentry-upload] Upload Disabled:', sentryUpload.reason);
 }
 
+function sourceMapAssetIdentity(): Plugin {
+  let policy = '';
+  return {
+    name: 'source-map-asset-identity',
+    renderStart(output) {
+      // Rollup appends sourceMappingURL after calculating the chunk hash.
+      // Include the actual output policy so linked and hidden maps cannot
+      // assign different bytes to the same immutable published URL.
+      policy = JSON.stringify({ sourcemap: output.sourcemap });
+    },
+    augmentChunkHash() {
+      return policy;
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   base: NATIVE ? '/' : WEB_BASE,
   plugins: [
     react(),
+    sourceMapAssetIdentity(),
 
     /**
      * ENTRY MODULE MANIFEST — what every player downloads before first paint.

@@ -29,11 +29,26 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
+import { parse as parseYaml } from 'yaml';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 describe('source maps go to Sentry, not to players', () => {
+  it('both published bundles explicitly disable the revoked ingestion DSN', () => {
+    const publisher = parseYaml(read('.github/workflows/publish-club-arena.yml'));
+    for (const [job, name] of [
+      ['build-and-store', 'Build Club Arena'],
+      ['publish-to-app', 'Build the app bundle'],
+    ]) {
+      const steps = publisher.jobs[job].steps.filter(
+        (step: { name?: string }) => step.name === name
+      );
+      expect(steps).toHaveLength(1);
+      expect(steps[0].env).toHaveProperty('VITE_SENTRY_DSN', '');
+    }
+  });
+
   it('the publisher holds the upload token', () => {
     const publisher = read('.github/workflows/publish-club-arena.yml');
     expect(publisher).toContain('SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}');

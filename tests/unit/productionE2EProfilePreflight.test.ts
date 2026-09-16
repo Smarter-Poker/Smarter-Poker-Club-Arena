@@ -172,6 +172,10 @@ describe('authenticated production account preflight', () => {
       'await handleDiamondBustPrompt(page)'
     );
     expect(source('tests/e2e/club-lobby.spec.ts')).toContain('await expectRoute(page, LOBBY)');
+    const realtime = source('tests/e2e/production-live-table-realtime.spec.ts');
+    expect(realtime).toMatch(
+      /test\.beforeEach\(async \(\{ page, browserName \}, testInfo\) => \{\s*requireCertificationConfiguration\(testInfo, browserName\);\s*await handleDiamondBustPrompt\(page\);\s*\}\);/
+    );
     const mobile = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
     expect(mobile.indexOf('await handleDiamondBustPrompt(page)')).toBeLessThan(
       mobile.indexOf('await page.goto(')

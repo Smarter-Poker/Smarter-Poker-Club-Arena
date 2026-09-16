@@ -12,6 +12,7 @@ import {
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
 import { createProgressSilenceGuard } from './support/progressSilence';
+import { handleDiamondBustPrompt } from './support/ensureClubMembership';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -794,8 +795,9 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
   );
   test.setTimeout(300_000);
 
-  test.beforeEach(async ({ browserName }, testInfo) => {
+  test.beforeEach(async ({ page, browserName }, testInfo) => {
     requireCertificationConfiguration(testInfo, browserName);
+    await handleDiamondBustPrompt(page);
   });
 
   for (const gameFormat of TOURNAMENT_FORMATS) {

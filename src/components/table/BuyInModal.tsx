@@ -540,7 +540,7 @@ export const BUY_IN_ASSETS = {
   /* The master's rows 350-1135: the four bays (labels lifted), the plates,
      the chip. The head is the console's own top slice. */
   deck: `${BUY_IN_ASSET_ROOT}/deck.png`,
-  reference: `${BUY_IN_ASSET_ROOT}/source/approved-reference.png`,
+  reference: `${BUY_IN_ASSET_ROOT}/source/approved-reference-37716019dbbf.png`,
 } as const;
 export const BUY_IN_DECK_H = 627;
 const DECK_Y = 350;

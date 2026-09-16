@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type {
   LobbyEntry,
@@ -18,6 +21,8 @@ import {
   validateArenaGameCardRegistry,
 } from '../src/components/lobby/game-cards/arenaGameCardRegistry';
 import type { LobbyRowContext } from '../src/components/lobby/lobbyCardContext';
+import { SpadePloCard } from '../src/components/lobby/game-cards/SpadePloCard';
+import { BUY_IN_ASSETS } from '../src/components/table/BuyInModal';
 
 const ROOT = resolve(__dirname, '..');
 const CARD_CSS = readFileSync(
@@ -133,6 +138,44 @@ function lobbyContext(overrides: Partial<LobbyRowContext> = {}): LobbyRowContext
 }
 
 describe('Arena game-card creation', () => {
+  it('keeps the replacement buy-in reference off its already-published URL', () => {
+    const asset = 'assets/club-buttons/popups/buy-in-v1/source/approved-reference-37716019dbbf.png';
+    expect(BUY_IN_ASSETS.reference).toBe(`${import.meta.env.BASE_URL}${asset}`);
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(ROOT, 'public', asset)))
+        .digest('hex')
+    ).toBe('37716019dbbf81c2e82e74cb91d6f566e78cf4339a52df4cd4dcf3a2593715af');
+  });
+
+  it('preserves the PLO chassis bytes already served under the original permanent URL', () => {
+    const bytes = readFileSync(
+      resolve(ROOT, 'public/assets/club-buttons/game-cards/plo/spade-plo-premium-v1/chassis.png')
+    );
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+      '549514741c7b98b167fd0f79ecc4c5a6b84c9592ae09cb07ad9c84ba3c445687'
+    );
+  });
+
+  it('renders the approved replacement through its new URL and the same registry entry', () => {
+    const file = 'plo/spade-plo-premium-v1/chassis-b0b05b302c99.png';
+    const bytes = readFileSync(resolve(ROOT, 'public/assets/club-buttons/game-cards', file));
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+      'b0b05b302c9914dcc1991771909e67dfc774f7c3c1b42cce595f8e08c47397c1'
+    );
+    const asset = resolveArenaGameCardTemplate({ family: 'plo', presentation: 'mobile' }).skin
+      .mobile.asset;
+    expect(asset).toBe(`${import.meta.env.BASE_URL}assets/club-buttons/game-cards/${file}`);
+    const html = renderToStaticMarkup(
+      createElement(SpadePloCard, {
+        data: arenaGameCardDataFromEntry(cashEntry('PLO')),
+        actions: { primaryLabel: 'Join Table', secondaryLabel: 'View Table' },
+      })
+    );
+    expect(html).toContain(`src="${asset}"`);
+    expect(html).not.toContain('spade-plo-premium-v1/chassis.png');
+  });
+
   it('automatically selects all five card families from existing lobby data', () => {
     expect(arenaGameCardDataFromEntry(tournamentEntry('mtt', 200)).family).toBe('mtt');
     expect(arenaGameCardDataFromEntry(cashEntry('NLH')).family).toBe('nlh');
@@ -180,7 +223,7 @@ describe('Arena game-card creation', () => {
       plo: {
         id: 'spade-plo-premium-v1',
         version: 1,
-        mobileAsset: /plo\/spade-plo-premium-v1\/chassis\.png$/,
+        mobileAsset: /plo\/spade-plo-premium-v1\/chassis-b0b05b302c99\.png$/,
       },
       spins: {
         id: 'shark-spins-premium-v1',

@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import stat
 import subprocess
 import time
 import uuid
@@ -70,6 +71,31 @@ def canonical_uuid(value):
     return parsed
 
 
+def psql_environment(name):
+    # Reuse the provider's fresh private home. libpq requires a plain password
+    # file; /dev/null emits a warning into the deliberately strict transcript.
+    home = ROOT.parent / 'work' / 'home'
+    require(os.environ.get('HOME') == str(home) and home.is_absolute()
+            and home.resolve() == home, 'exact private provider home required')
+    info = home.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+            and stat.S_IMODE(info.st_mode) == 0o700, 'unsafe provider home')
+    passfile = home / '.spin-expiry.pgpass'
+    try:
+        fd = os.open(passfile, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        fd = os.open(passfile, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid()
+                and stat.S_IMODE(info.st_mode) == 0o600 and info.st_size == 0,
+                'private password file must remain regular, empty and mode0600')
+    finally:
+        os.close(fd)
+    return {'LC_ALL': 'C', 'PGCONNECT_TIMEOUT': '2', 'PGAPPNAME': name,
+            'HOME': str(home), 'PGPASSFILE': str(passfile), 'PSQL_HISTORY': '/dev/null'}
+
+
 class Session:
     """One persistent psql backend; each command has an exact end marker.
 
@@ -78,11 +104,10 @@ class Session:
     Python must explicitly accept every error. No return code means SQL success.
     """
     def __init__(self, executable, database, name, deadline):
+        env = psql_environment(name)
         self.name, self.deadline = name, deadline
         self.raw, self.pending, self.pid = bytearray(), None, None
         self.selector = selectors.DefaultSelector()
-        env = {'LC_ALL': 'C', 'PGCONNECT_TIMEOUT': '2', 'PGAPPNAME': name,
-               'PGPASSFILE': '/dev/null', 'PSQL_HISTORY': '/dev/null'}
         self.process = subprocess.Popen(
             [str(executable), '-X', '-w', '-qAt', '-h', '127.0.0.1', '-p', '5432',
              '-U', 'postgres', '-d', database, '-v', 'ON_ERROR_STOP=off',

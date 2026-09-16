@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -71,6 +72,138 @@ def receipt(image='candidate'):
             'worker_netns': 'net:[101]', 'resource_controls': {'cpu.max': '100000 100000',
             'memory.max': '2147483648', 'memory.swap.max': '0', 'pids.max': '128'},
             'stages': stages, 'business_cases': records}
+
+
+class SessionEnvironmentTests(unittest.TestCase):
+    def setUp(self):
+        self.runners = Path(__file__).resolve().parents[2] / 'scripts' / 'qualification'
+        spec = importlib.util.spec_from_file_location(
+            'spin_expiry_session_controls', self.runners / 'spin-expiry-business-races.py')
+        self.lib = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.lib)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root, self.home = self.allocation(self.temp.name)
+        root_patch = patch.object(self.lib, 'ROOT', self.root)
+        root_patch.start(); self.addCleanup(root_patch.stop)
+        env_patch = patch.dict(os.environ, {
+            'HOME': str(self.home), 'PGPASSWORD': 'host-secret-must-not-reach-child',
+            'PGSERVICE': 'host-service', 'PGSERVICEFILE': '/host/service',
+            'PGPASSFILE': '/host/password', 'PGOPTIONS': '-c role=host-role',
+        }, clear=True)
+        env_patch.start(); self.addCleanup(env_patch.stop)
+
+    @staticmethod
+    def allocation(folder):
+        allocation = Path(folder).resolve()
+        root = allocation / 'source'; root.mkdir()
+        work = allocation / 'work'; work.mkdir(mode=0o700)
+        home = work / 'home'; home.mkdir(mode=0o700)
+        return root, home
+
+    def test_empty_private_password_file_is_reused_without_inheriting_credentials(self):
+        expected = {
+            'LC_ALL': 'C', 'PGCONNECT_TIMEOUT': '2', 'PGAPPNAME': 'spin-control',
+            'HOME': str(self.home), 'PGPASSFILE': str(self.home / '.spin-expiry.pgpass'),
+            'PSQL_HISTORY': '/dev/null',
+        }
+        self.assertEqual(self.lib.psql_environment('spin-control'), expected)
+        password_file = self.home / '.spin-expiry.pgpass'
+        before = password_file.lstat()
+        self.assertTrue(stat.S_ISREG(before.st_mode))
+        self.assertEqual((before.st_uid, stat.S_IMODE(before.st_mode), before.st_size),
+                         (os.geteuid(), 0o600, 0))
+        self.assertEqual(password_file.read_bytes(), b'')
+        self.assertEqual(self.lib.psql_environment('spin-control'), expected)
+        after = password_file.lstat()
+        self.assertEqual((before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns),
+                         (after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns))
+
+    def test_actual_session_launch_uses_private_environment_and_preserves_diagnostics(self):
+        with patch.object(self.lib.subprocess, 'Popen') as launch, \
+                patch.object(self.lib.selectors, 'DefaultSelector'), \
+                patch.object(self.lib.os, 'set_blocking'):
+            self.lib.Session(Path('/protected/psql'), 'qual_spin_expiry_' + EXECUTION.replace('-', ''),
+                             'spin-control', 123)
+        launch.assert_called_once()
+        args, kwargs = launch.call_args
+        self.assertEqual(args[0][:4], ['/protected/psql', '-X', '-w', '-qAt'])
+        self.assertEqual(kwargs['env'], self.lib.psql_environment('spin-control'))
+        self.assertEqual(set(kwargs['env']), {'LC_ALL', 'PGCONNECT_TIMEOUT', 'PGAPPNAME',
+                                             'HOME', 'PGPASSFILE', 'PSQL_HISTORY'})
+        self.assertEqual(kwargs['stdin'], self.lib.subprocess.PIPE)
+        self.assertEqual(kwargs['stdout'], self.lib.subprocess.PIPE)
+        self.assertEqual(kwargs['stderr'], self.lib.subprocess.STDOUT)
+
+    def test_unsafe_home_or_password_file_refuses_before_process_launch_without_truncation(self):
+        for case in ('missing-home-env', 'relative-home', 'foreign-home', 'home-mode', 'home-symlink',
+                     'password-symlink', 'password-directory', 'password-fifo',
+                     'password-nonempty', 'password-mode'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as folder:
+                root, home = self.allocation(folder)
+                password_file = home / '.spin-expiry.pgpass'
+                env = {'HOME': str(home)}
+                preserved = None
+                if case == 'missing-home-env': env = {}
+                if case == 'relative-home': env['HOME'] = 'work/home'
+                if case == 'foreign-home': env['HOME'] = str(root)
+                if case == 'home-mode': home.chmod(0o755)
+                if case == 'home-symlink':
+                    real_home = home.with_name('real-home'); home.rename(real_home)
+                    home.symlink_to(real_home, target_is_directory=True)
+                if case == 'password-symlink':
+                    preserved = home / 'unrelated-password'
+                    preserved.write_bytes(b'preserve-existing-content'); preserved.chmod(0o600)
+                    password_file.symlink_to(preserved)
+                if case == 'password-directory': password_file.mkdir(mode=0o700)
+                if case == 'password-fifo': os.mkfifo(password_file, 0o600)
+                if case == 'password-nonempty':
+                    preserved = password_file
+                    preserved.write_bytes(b'preserve-existing-content'); preserved.chmod(0o600)
+                if case == 'password-mode':
+                    password_file.write_bytes(b''); password_file.chmod(0o644)
+                original_open = self.lib.os.open
+                def bounded_open(path, flags, *args, **kwargs):
+                    # Exercise the real FIFO refusal, but fail before a blocking
+                    # open if the nonblocking guard regresses.
+                    if case == 'password-fifo' and not flags & os.O_CREAT:
+                        self.assertNotEqual(flags & os.O_NONBLOCK, 0)
+                    return original_open(path, flags, *args, **kwargs)
+                with patch.object(self.lib, 'ROOT', root), patch.dict(os.environ, env, clear=True), \
+                        patch.object(self.lib.os, 'open', side_effect=bounded_open), \
+                        patch.object(self.lib.subprocess, 'Popen') as launch, \
+                        patch.object(self.lib.selectors, 'DefaultSelector'), \
+                        self.assertRaises((RuntimeError, OSError)):
+                    self.lib.Session(Path('/protected/psql'), 'qual_spin_expiry_' + EXECUTION.replace('-', ''),
+                                     'spin-control', 123)
+                launch.assert_not_called()
+                if preserved is not None:
+                    self.assertEqual(preserved.read_bytes(), b'preserve-existing-content')
+                if case == 'password-symlink': self.assertTrue(password_file.is_symlink())
+                if case == 'password-fifo': self.assertTrue(stat.S_ISFIFO(password_file.lstat().st_mode))
+                if case == 'password-mode': self.assertEqual(stat.S_IMODE(password_file.stat().st_mode), 0o644)
+
+    def test_warning_prefixed_json_remains_a_failure(self):
+        session = object.__new__(self.lib.Session)
+        warning = "WARNING: password file '/dev/null' is not a plain file\n{\"ok\":true}"
+        with patch.object(session, 'command', return_value=warning), \
+                self.assertRaises(json.JSONDecodeError):
+            session.json('SELECT original_observation;')
+        with patch.object(session, 'command', return_value='ERROR: preserved diagnostic\n{"ok":true}'), \
+                self.assertRaisesRegex(RuntimeError, 'unexpected SQL failure'):
+            session.json('SELECT original_observation;')
+
+    def test_refund_runner_binds_the_exact_session_implementation(self):
+        spec = importlib.util.spec_from_file_location(
+            'spin_expiry_refund_pin_control', self.runners / 'spin-expiry-committed-refund.py')
+        refund = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(refund)
+        self.assertEqual(refund.R1, self.runners / 'spin-expiry-business-races.py')
+        self.assertEqual(refund.FROZEN[refund.R1], W.digest(refund.R1.read_bytes()))
+        imported = refund.load(refund.R1, 'spin_expiry_refund_actual_dependency')
+        with patch.object(imported, 'ROOT', self.root):
+            self.assertEqual(imported.psql_environment('refund-control'),
+                             self.lib.psql_environment('refund-control'))
 
 
 class ProviderTests(unittest.TestCase):

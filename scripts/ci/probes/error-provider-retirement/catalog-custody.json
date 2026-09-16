@@ -1,0 +1,7 @@
+{
+  "observed_date": "2026-09-16",
+  "source": "parent read-only PostgreSQL catalog",
+  "archive_function_body_md5": "97dfc291e85719410a9a42e8b2f8571b",
+  "retired_archive_function_body_md5": "57f561df4f3f3c932bcc1b72982dd308",
+  "scope": "definitions and dependencies only; no production row values"
+}

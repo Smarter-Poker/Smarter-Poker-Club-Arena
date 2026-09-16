@@ -5,7 +5,9 @@
 -- 20260916 captures and exact entry-provider-supplement.sql. No replacement
 -- financial functions, balance seeding, trigger disabling or historical IDs.
 --
--- Parent restores exactly THREE synthetic zero principals before real triggers,
+-- Parent restores three synthetic zero principals and the captured canonical
+-- cancellation actor's auth-only identity before real triggers (four auth rows,
+-- three profiles; the actor has no credentials, profile or live session),
 -- supplies execution_uuid, ordinary_user_uuid and a fresh v4 tournament_uuid,
 -- and installs the pinned current provider/entry supplement. This is not signup.
 -- Run from its maintained scripts/qualification path in the staged allocation;
@@ -42,6 +44,7 @@ CREATE TEMP TABLE spin_q_inputs AS SELECT
   :'execution_uuid'::uuid execution,
   :'tournament_uuid'::uuid tournament,
   '47965354-0e56-43ef-931c-ddaab82af765'::uuid owner_user,
+  '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid refund_actor,
   :'ordinary_user_uuid'::uuid player1,
   extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-player-2') player2,
   extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-owner-session') owner_session,
@@ -73,15 +76,28 @@ BEGIN
     'exact non-superuser private PG17 allocation required');
   PERFORM pg_temp.spin_q_assert(q.tournament::text ~
     '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-    AND (SELECT count(DISTINCT id)=5 FROM unnest(ARRAY[q.execution,q.tournament,
-      q.owner_user,q.player1,q.player2]) id), 'distinct fixture and canonical v4 tournament identities');
-  PERFORM pg_temp.spin_q_assert((SELECT count(*)=3 FROM auth.users)
+    AND (SELECT count(DISTINCT id)=6 FROM unnest(ARRAY[q.execution,q.tournament,
+      q.owner_user,q.player1,q.player2,q.refund_actor]) id),
+    'distinct fixture, refund actor and canonical v4 tournament identities');
+  PERFORM pg_temp.spin_q_assert((SELECT count(*)=4 FROM auth.users)
     AND (SELECT count(*)=3 FROM public.profiles)
     AND (SELECT count(*)=3 FROM auth.users WHERE id IN(q.owner_user,q.player1,q.player2))
     AND (SELECT count(*)=3 FROM public.profiles WHERE id IN(q.owner_user,q.player1,q.player2)
       AND diamonds IS NOT DISTINCT FROM 0 AND diamond_balance IS NOT DISTINCT FROM 0
       AND is_horse IS FALSE AND role='user') AND NOT EXISTS(SELECT 1 FROM auth.sessions),
-    'exact three pre-restored zero synthetic principals, no sessions');
+    'exact three pre-restored zero synthetic principals plus auth-only refund actor, no sessions');
+  PERFORM pg_temp.spin_q_assert((SELECT count(*)=1 FROM auth.users u
+    WHERE u.id=q.refund_actor AND u.aud='authenticated' AND u.role='authenticated'
+      AND u.email IS NULL AND u.encrypted_password IS NULL AND u.phone IS NULL
+      AND u.raw_app_meta_data='{}'::jsonb AND u.raw_user_meta_data='{}'::jsonb
+      AND u.is_sso_user=false AND u.is_anonymous=false AND u.email_change_confirm_status=0
+      AND NOT EXISTS(SELECT 1 FROM jsonb_each_text(to_jsonb(u)) f
+        WHERE f.key NOT IN('id','aud','role','raw_app_meta_data','raw_user_meta_data',
+          'is_sso_user','is_anonymous','email_change_confirm_status')
+          AND f.value IS NOT NULL AND f.value<>''))
+    AND NOT EXISTS(SELECT 1 FROM public.profiles WHERE id=q.refund_actor)
+    AND to_regclass('auth.identities') IS NULL,
+    'captured canonical refund actor is identity-only, without profile or credentials');
   -- Exact bodies here complement the parent's full owner/ACL/trigger/provider
   -- readback; these hashes alone do not establish that larger authority closure.
   PERFORM pg_temp.spin_q_assert(

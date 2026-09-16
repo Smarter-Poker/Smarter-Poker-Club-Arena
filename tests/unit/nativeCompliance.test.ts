@@ -107,7 +107,7 @@ describe('consent', () => {
     ]) {
       expect(p, name).toContain(`<strong>${name}:</strong>`);
     }
-    expect(p).toMatch(/It\s+Does\s+Not\s+Carry\s+Your\s+Email\s+Address/);
+    expect(p).toMatch(/It\s+Never\s+Receives\s+Hands,\s+Chips\s+Or\s+Messages/);
   });
 });
 

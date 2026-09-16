@@ -227,7 +227,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // 22-30 times in six hours. Each step now stamps its own phase and
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
-        const previousOccupancies =
+        const previousOccupancies: Map<string, SeatedPlayer['occupancy_id']> =
           deferredRosterBeforeArrival ??
           new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
         const nextRoster = await this.prepareNextHand();

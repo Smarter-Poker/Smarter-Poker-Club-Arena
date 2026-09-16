@@ -43,4 +43,8 @@ test('redacted settings use qualified inputs without overriding visible provider
   assert.equal(result.B, 'current');
   assert.throws(() => resolveBuildEnvironment('A="[SENSITIVE]"', ''), /missing: A/);
   assert.throws(() => resolveBuildEnvironment('A="[SENSITIVE]"', 'A="[SENSITIVE]"'), /missing: A/);
+  const filtered = parseEnv(resolveBuildEnvironment('GH_PAT="[SENSITIVE]"\nAUTOFIX_GITHUB_TOKEN="example"\nNPM_TOKEN="package-read"', ''));
+  assert.equal(filtered.GH_PAT, undefined);
+  assert.equal(filtered.AUTOFIX_GITHUB_TOKEN, undefined);
+  assert.equal(filtered.NPM_TOKEN, 'package-read');
 });

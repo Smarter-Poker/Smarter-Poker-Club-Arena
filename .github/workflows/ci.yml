@@ -237,7 +237,7 @@ jobs:
     name: Native fixture prerequisites
     needs: changes
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      !cancelled() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
     permissions:
       contents: read
@@ -1021,7 +1021,7 @@ jobs:
     # shown all green doing it. That is precisely the silent failure this estate
     # exists to prevent, introduced by the change meant to save money.
     #
-    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `!cancelled()` makes the job evaluate even when `changes` did not succeed, and
     # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
     # treated as "could break anything", never as "nothing to do".
     #
@@ -1029,7 +1029,7 @@ jobs:
     # green" pass, and change detection is meaningless there because there is
     # no diff to detect - the question is about the whole branch.
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
@@ -1146,7 +1146,7 @@ jobs:
   accounting_postgres:
     needs: changes
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' ||
@@ -1359,13 +1359,13 @@ jobs:
     # shown all green doing it. That is precisely the silent failure this estate
     # exists to prevent, introduced by the change meant to save money.
     #
-    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `!cancelled()` makes the job evaluate even when `changes` did not succeed, and
     # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
     # treated as "could break anything", never as "nothing to do".
     #
     # `schedule` runs it unconditionally - see the note on the unit job.
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' ||
@@ -1578,11 +1578,11 @@ jobs:
     # shown all green doing it. That is precisely the silent failure this estate
     # exists to prevent, introduced by the change meant to save money.
     #
-    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `!cancelled()` makes the job evaluate even when `changes` did not succeed, and
     # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
     # treated as "could break anything", never as "nothing to do".
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      !cancelled() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
     # Wait for the approved local runner; no hosted or estate fallback.
@@ -2058,11 +2058,11 @@ jobs:
     # shown all green doing it. That is precisely the silent failure this estate
     # exists to prevent, introduced by the change meant to save money.
     #
-    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `!cancelled()` makes the job evaluate even when `changes` did not succeed, and
     # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
     # treated as "could break anything", never as "nothing to do".
     if: >-
-      always() && github.event_name == 'pull_request' &&
+      !cancelled() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
     # Wait for the approved local runner; no hosted or estate fallback.

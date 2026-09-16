@@ -33,7 +33,9 @@ export function cacheKey(lock, environment, configuration) {
 }
 export function resolveBuildEnvironment(pulled, qualified) {
   const values = parseEnv(pulled), retained = parseEnv(qualified);
+  const publicationOnly = new Set(['GH_PAT', 'GH_ADMIN_PAT', 'AUTOFIX_GITHUB_TOKEN', 'AUTOPILOT_APP_PRIVATE_KEY', 'VERCEL_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN']);
   for (const [key, value] of Object.entries(values)) {
+    if (publicationOnly.has(key)) { delete values[key]; continue; }
     if (value.includes('[SENSITIVE]')) {
       if (!retained[key] || retained[key].includes('[SENSITIVE]')) {
         throw new Error(`Qualified local build input missing: ${key}`);

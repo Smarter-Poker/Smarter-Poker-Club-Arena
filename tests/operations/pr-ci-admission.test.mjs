@@ -305,6 +305,13 @@ test('required TypeScript gate still requires the actual compilation result', ()
   assert.match(job('typecheck'), /COMPILE_RESULT: \$\{\{ needs.typecheck_compile.result \}\}/);
   assert.match(job('typecheck'), /run: node scripts\/ci\/fixture-native-gate.mjs/);
 });
+for (const name of ['fixture_native', 'unit_shards', 'accounting_postgres', 'server_shards', 'build', 'css-beats-e2e']) {
+  test(`${name} stops admitting work after workflow cancellation`, () => {
+    const beforeSteps = job(name).split('    steps:')[0];
+    assert.match(beforeSteps, /!cancelled\(\)/);
+    assert.doesNotMatch(beforeSteps, /always\(\)/);
+  });
+}
 test('shard one owns repeated server checks while every full partition remains required', () => {
   const source = job('server_shards');
   const steps = source.split(/^ {6}- name: /m).slice(1);

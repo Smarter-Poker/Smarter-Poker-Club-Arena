@@ -185,6 +185,15 @@ jobs:
           node-version: 22
           cache: npm
 
+      # preflight proved this exact checkout belongs to protected main. Ask
+      # before deploy can receive SSH authority; Node fetch needs no install.
+      - name: Prove every club foreign key is indexed before engine publication
+        timeout-minutes: 2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/check-club-fk-indexes.mjs
+
       # A schema manifest can describe a function before production actually
       # has it. Ask pg_proc from the exact requested checkout in a credential
       # boundary that owns neither test execution nor root SSH authority.

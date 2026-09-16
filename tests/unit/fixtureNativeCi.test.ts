@@ -81,6 +81,71 @@ describe('browser changes retain their shipped-CSS qualification', () => {
   });
 });
 
+describe('the journal gate follows every financial probe input', () => {
+  it.each([
+    'server/src/services/SettlementService.ts',
+    'supabase/migrations/20260916000000_example.sql',
+    'supabase/migrations/20260916000000_example.sql.pending',
+    'scripts/ci/probes/chip-journal-atomicity/run-isolated.sh',
+    'scripts/ci/probes/chip-journal-atomicity/test_hand.py',
+    'scripts/ci/probes/chip-journal-atomicity/hand-fixture.sql',
+    'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/query.mjs',
+    'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/package-lock.json',
+    'scripts/ci/probes/stats-runout-index/probe.sql',
+    'scripts/ci/probes/stats-witness-showdown/baseline-facts-range.sql',
+    'scripts/dev/probe-tournament-registration-funding-pg17.py',
+    'scripts/dev/tournament_heads_up_payout_cases.py',
+    'scripts/dev/fixtures/heads-up-funding/captured-functions.json',
+    'tests/fixtures/financial.sql',
+    'tests/fixtures/financial.sql.pending',
+    '.github/workflows/ci.yml',
+    'scripts/ci/classify-ci-changes.mjs',
+    'package.json',
+    'package-lock.json',
+    '.npmrc',
+    '.node-version',
+  ])('runs the financial category for %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
+  it('does not rerun the journal for the seven UI/fixture paths in PR4705', () => {
+    const paths = [
+      'src/pages/PlayerStatisticsPage.css',
+      'tests/e2e/global-setup.ts',
+      'tests/e2e/production-daily-missions.spec.ts',
+      'tests/e2e/production-mobile-lobby-chrome.spec.ts',
+      'tests/e2e/routes/utils.ts',
+      'tests/e2e/support/ensureClubMembership.ts',
+      'tests/unit/productionE2EProfilePreflight.test.ts',
+    ];
+    expect(classifyChangedPaths(paths)).toMatchObject({ server: false, src: true, tests: true });
+  });
+
+  it.each([undefined, null, 'unknown', [null], [''], ['bad\0path']])(
+    'runs the journal when changed paths are malformed: %j',
+    (paths) => {
+      expect(classifyChangedPaths(paths).server).toBe(true);
+    }
+  );
+
+  it.each(['rename', 'delete'])(
+    'retains a %s of a probe input in the actual Git diff',
+    (operation) => {
+      withGitFixture(({ directory, git, write, commit }) => {
+        const path = 'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/package-lock.json';
+        write(path);
+        const base = commit();
+        if (operation === 'rename') git('mv', path, 'docs/retired-runtime.txt');
+        else git('rm', path);
+        const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+        expect(result.complete).toBe(true);
+        expect(result.paths).toContain(path);
+        expect(result.flags.server).toBe(true);
+      });
+    }
+  );
+});
+
 describe('required CI owns native fixture verification', () => {
   it.each([
     'operations/release/fixture/safeupdate-provider.mjs',
@@ -169,12 +234,14 @@ describe('required CI owns native fixture verification', () => {
     expect(ci.jobs.changes.steps[1].run).toBe('node scripts/ci/classify-ci-changes.mjs');
   });
 
-  it('binds the required result to compilation and the native dependency without serializing compilation', () => {
+  it('keeps compilation required after classification without waiting for native verification', () => {
     expect(ci.jobs.typecheck.name).toBe('TypeScript Check');
     expect(ci.jobs.typecheck.needs).toEqual(['typecheck_compile', 'changes', 'fixture_native']);
     expect(ci.jobs.typecheck.if).toBe("always() && github.event_name == 'pull_request'");
-    expect(ci.jobs.typecheck_compile.needs).toBeUndefined();
-    expect(ci.jobs.typecheck_compile.if).toBe("github.event_name == 'pull_request'");
+    expect(ci.jobs.typecheck_compile.needs).toBe('changes');
+    expect(ci.jobs.typecheck_compile.if).toBe(
+      "${{ !cancelled() && github.event_name == 'pull_request' }}"
+    );
     expect(ci.jobs.typecheck.steps[0].with.ref).toBe('${{ github.event.pull_request.head.sha }}');
     expect(ci.jobs.typecheck.steps[0].with['persist-credentials']).toBe(false);
     expect(ci.jobs.typecheck.steps.at(-1).run).toBe('node scripts/ci/fixture-native-gate.mjs');

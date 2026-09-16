@@ -21,7 +21,7 @@ permissions:
 jobs:
   signal:
     name: Ask trusted main to propose this branch
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, smarter-local-linux-arm64]
     timeout-minutes: 2
     steps:
       - name: Record the proposal signal

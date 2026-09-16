@@ -17,6 +17,12 @@ repair its cause with the relevant regression, and update its existing shared
 row (add one only for a new cause). Coordinate with the shared guide's current
 writer; do not copy its registry into this repository or treat an unrun check
 as passed. Use its small readiness template in the existing PR or handoff.
+Use [AGENTS-PUSH-GUIDE.md](./AGENTS-PUSH-GUIDE.md) for the current host-authenticated
+push, PR, protected auto-merge and publication route. Producers can use the
+existing queue-pr helper themselves; no project `.env` token is required.
+This supersedes older instructions claiming that only another agent can merge
+or that disabled workflows will automatically process a branch.
+
 <!-- END CURRENT OWNER CATEGORY GUIDE 2026-09-16 -->
 
 # Club Arena -- Agent Instructions

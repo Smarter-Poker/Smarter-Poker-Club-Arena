@@ -1,73 +1,54 @@
-# How Agents Push And Publish Club Arena
+# Current agent push and publication path
 
-Club Arena publishes from this repository to its own Hetzner origin. World Hub
-only rewrites the public route; it never receives, builds, or publishes the
-Club Arena bundle. The canonical path is
-`.agent/architecture/deploy-paths.md`.
+Read `/Users/smarter.poker/Documents/AGENTS.md` before older repository playbooks.
+This applies equally to Claude, Codex and Antigravity, including host-terminal
+sessions from Cowork. Use an owned `.agent-trees` feature branch and ordinary
+Git/gh host authentication. Project `.env` files and inert CA_ALLOW_* switches
+are not the delivery interface. Preserve existing credentials in place.
 
-Last verified: 2026-09-10
+Commit explicit files with normal hooks and push your owned feature branch.
+The existing Agent Branch Proposal signal, Agent Open PR consumer and Agent
+Autopilot perform the event-driven PR and protected auto-merge operations when
+they are enabled. The signal runs on local untrusted CI; credential-bearing
+consumers execute default-branch code on the trusted local publisher. No hosted
+fallback, schedule, administrative merge or new worker is involved.
 
-## Credential boundary
+If an existing workflow is disabled, producers can perform those same approved
+operations from the authenticated host without a new credential or owner-only
+merge power. Create the PR with `gh pr create`, then run the existing maintained
+queue helper on that specific PR:
 
-Use the host's configured Git/CLI authentication to push a branch. Never hunt
-through World Hub environment files, embed a token in a remote URL, copy a
-credential into a command, or print a value. The autopilot application and both
-Hetzner publishers read their own write-only Club Arena repository secrets.
-
-## Before your first push: `gh` must be resolvable
-
-`.husky/pre-push` runs `scripts/guard-merged-branch.sh`, which asks GitHub
-whether this branch's pull request has already merged. It **fails closed**
-without the GitHub CLI, and it is right to: the defect it prevents is a push
-that exits 0 and reaches nobody.
-
-`gh` IS installed and authenticated on this Mac (`/opt/homebrew/bin/gh`,
-v2.86.0, account `Smarter-Poker`, verified 2026-09-12). What it is not is
-**on a non-interactive PATH**. A tool-driven or hook shell gets
-`/usr/bin:/bin:/usr/sbin:/sbin`, `command -v gh` fails, and the guard refuses a
-push that was never wrong with:
-
-    [merged-branch guard] BLOCKED: GitHub CLI is required to verify
-    destination branch '<branch>'.
-
-The hook now repairs PATH for every tool its guards require. If you are running
-any of them by hand, or you see that message:
-
-```bash
-export PATH="/opt/homebrew/bin:$PATH"
+```sh
+bash .github/scripts/queue-pr.sh Smarter-Poker/Smarter-Poker-Club-Arena PR_NUMBER
 ```
 
-This is a PATH fact, not a credential one. Do not go looking for a token: the
-credential boundary above still holds, and `gh` already carries its own.
+That helper preserves holds/drafts, binds the head, and respects GitHub's
+required checks. Do not enable a workflow whose source still selects hosted
+compute. A submitted PR, an auto-merge request, a successful check and a merged
+revision are different evidence. Failed or cancelled current-head checks
+remain failures. After diagnosing a cancellation, use one bounded failed-only
+replay on the unchanged head; never manufacture commits merely to trigger CI.
 
-## Push paths, in order of preference
+The host gh CLI's GraphQL statusCheckRollup can fail with `Resource not
+accessible by personal access token`. That is an observation failure, not a
+pending check. Existing Actions REST reads provide run/job state:
 
-1. Work in an isolated worktree on a feature branch.
-2. Merge current `origin/main` into that branch when it moves; never rebase or
-   force-push around a conflict.
-3. Push the branch with normal hooks. The repository's `agent-open-pr` and
-   `agent-autopilot` workflows own proposal and merge.
-4. Follow required checks, merge, and the relevant Club Arena Hetzner workflow
-   to a terminal result. Fix red checks forward through the same branch path.
+```sh
+gh api 'repos/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs?head_sha=FULL_HEAD_SHA&per_page=100'
+gh api 'repos/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/RUN_ID/jobs?per_page=100'
+```
 
-## Deploy pipeline note
+Read all pages when needed. Likewise paginate runner inventories; the first
+page can contain only retired offline workers. Do not alter or extract tokens
+to work around a status-display failure. Existing branch rules remain the
+merge authority; a run list alone is not a replacement check verdict.
 
-Merging to `Smarter-Poker-Club-Arena` `main` triggers **`publish-club-arena.yml`**,
-whose `publish-to-origin` job rsyncs `dist/` to Club Arena's own static origin:
-`/srv/club-arena/releases/<ca_sha>/` on the Hetzner box, then swaps the `current`
-symlink atomically. The World Hub carries ONE Next.js rewrite,
-`/hub/club-arena/:path*`, pointing at `https://ca-static.smarter.poker`.
+A protected merge triggers the existing client publisher and, for relevant
+changes, the existing engine staging/release path. Preserve its maintenance
+window and database requirements. Check the exact served build-info identity
+and affected behavior; do not assume a merged engine revision has activated.
+No dependency install or build belongs in an agent worktree.
 
-Nothing is committed into the World Hub repo, and the bundle is not a Vercel
-deployment. To confirm a publish landed, read the build stamp - the origin and
-the rewrite must agree:
-
-    curl -s https://ca-static.smarter.poker/build-info.json
-    curl -s https://smarter.poker/hub/club-arena/build-info.json
-
-Both return `{ ca_sha, built_at, built_by: "publish-club-arena.yml", run_id }`
-and both `ca_sha` values must equal the exact current Club Arena `main`.
-
-Publishing is GitHub-Actions-gated. If a run is dropped or infrastructure
-recovers after an outage, re-dispatch the owning Club Arena workflow
-immediately; never create a workstation, World Hub, or Vercel fallback.
+September 16 baseline: successful client publisher35127044547 serves ba4c666b9f
+and includes PR4681/4685. Engine release35127285883 was still in progress at
+inspection. Read current evidence for later releases.

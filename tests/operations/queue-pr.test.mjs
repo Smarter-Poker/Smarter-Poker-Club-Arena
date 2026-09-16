@@ -176,3 +176,27 @@ test('incomplete refresh fails closed before a direct merge', (t) => {
     1
   );
 });
+
+// These existing event owners must be usable within the local-compute policy.
+// Credential-bearing consumers stay off the untrusted PR test lanes.
+for (const [file, lane, trusted] of [
+  ['agent-autopilot.yml', 'smarter-local-publish', true],
+  ['agent-open-pr.yml', 'smarter-local-publish', true],
+  ['agent-branch-proposal.yml', 'smarter-local-linux-arm64', false],
+]) {
+  test(`${file} retains its trust boundary on the approved local lane`, () => {
+    const source = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8');
+    assert.ok(source.includes(`runs-on: [self-hosted, ${lane}]`));
+    assert.doesNotMatch(source, /runs-on:.*(?:ubuntu-|macos-|windows-)/);
+    assert.doesNotMatch(source, /^\s+schedule:|--admin|continue-on-error:/m);
+    if (trusted) {
+      assert.match(source, /ref: \$\{\{ github.event.repository.default_branch \}\}/);
+      assert.match(source, /actions\/create-github-app-token@v3/);
+      assert.match(source, /secrets.AUTOPILOT_APP_PRIVATE_KEY/);
+      assert.match(source, /head(?:_repository|.repo).full_name == github.repository/);
+    } else {
+      assert.doesNotMatch(source, /secrets\.|actions\/checkout|create-github-app-token/);
+      assert.match(source, /contents: read/);
+    }
+  });
+}

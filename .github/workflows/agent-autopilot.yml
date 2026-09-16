@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # AGENT AUTOPILOT — event-driven protected merge authority.
 #
-# This workflow always executes reviewed default-branch code on a fresh hosted
+# This workflow always executes reviewed default-branch code on the trusted local publisher
 # runner. It never checks out pull-request code and receives no PAT fallback.
 # The GitHub App token is minted for one run and the job fails closed when that
 # authority is unavailable. There is no timer, reconciler, branch refresher,
@@ -30,7 +30,7 @@ jobs:
     if: >-
       github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, smarter-local-publish]
     timeout-minutes: 5
     steps:
       - name: Checkout reviewed default-branch automation

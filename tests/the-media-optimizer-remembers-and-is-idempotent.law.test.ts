@@ -24,9 +24,19 @@
  */
 import { describe, expect, it, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  statSync,
+  rmSync,
+  realpathSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { viteMediaIdentity } from '../scripts/optimize-dist-media.mjs';
 
 const ROOT = join(__dirname, '..');
 const SCRIPT = join(ROOT, 'scripts', 'optimize-dist-media.mjs');
@@ -125,3 +135,76 @@ describe('the media optimizer remembers, and running it twice changes nothing', 
     expect(src).toContain('sharpVersion');
   });
 });
+
+// These are the two actual rejected/published JPEG variants: same former Vite
+// URL and length, different final compressed bytes. No codec determinism is
+// assumed; both cache/platform outcomes must be safe to publish immutably.
+it('names final encoded bytes before Vite binds JS and CSS URLs, then leaves them immutable', async () => {
+  const { build } = await import('vite');
+  const sharp = (await import('sharp')).default;
+  const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
+  const original = readFileSync(join(ROOT, 'src/assets/backgrounds/bg_skin_gilded_fall.jpg'));
+  const variants = ['public', 'candidate'].map((kind) =>
+    readFileSync(join(ROOT, `tests/fixtures/media/gilded-fall-${kind}.jpg`))
+  );
+  expect(variants.map(sha)).toEqual([
+    'e16dd9e9651f8d3ac8af25fa0b33420f5b8c9cd93e8461df3d4d452d3288c409',
+    'f4fb518133b9effea630df777594394e0a4a10a8117fea5fc6dc142706af28cb',
+  ]);
+  expect(variants[0].length).toBe(variants[1].length);
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'ca-vite-media-law-')));
+  const previousCache = process.env.CA_DIST_MEDIA_CACHE;
+  try {
+    mkdirSync(join(root, 'src'));
+    mkdirSync(join(root, 'cache'));
+    writeFileSync(join(root, 'src/image.jpg'), original);
+    writeFileSync(join(root, 'src/style.css'), '.photo { background-image: url("./image.jpg"); }');
+    writeFileSync(
+      join(root, 'main.js'),
+      'import url from "./src/image.jpg"; import "./src/style.css"; globalThis.imageUrl = url;'
+    );
+    writeFileSync(join(root, 'index.html'), '<script type="module" src="/main.js"></script>');
+    process.env.CA_DIST_MEDIA_CACHE = join(root, 'cache');
+    const key = sha(Buffer.from(`${sha(original)}|1280|jpg|v1|sharp${sharp.versions.sharp}`));
+    const names: Array<{ image: string; js: string; css: string }> = [];
+    for (const bytes of variants) {
+      // A legitimate retained encoder result for the same original input.
+      writeFileSync(join(root, 'cache', `${key}.bin`), bytes);
+      const media = viteMediaIdentity();
+      const result = await build({
+        configFile: false,
+        root,
+        base: '/hub/club-arena/',
+        logLevel: 'silent',
+        plugins: [media.plugin],
+        build: {
+          minify: false,
+          assetsInlineLimit: 0,
+          rollupOptions: { output: { assetFileNames: media.assetFileNames } },
+        },
+      });
+      if (!('output' in result)) throw new Error('fixture must emit one Rollup output');
+      const image = result.output.find((item) => item.fileName.endsWith('.jpg'))!;
+      const js = result.output.find((item) => item.type === 'chunk')!;
+      const css = result.output.find((item) => item.fileName.endsWith('.css'))!;
+      expect(image.fileName).toContain(sha(bytes));
+      expect(readFileSync(join(root, 'dist', image.fileName))).toEqual(bytes);
+      expect(readFileSync(join(root, 'dist', js.fileName), 'utf8')).toContain(image.fileName);
+      expect(readFileSync(join(root, 'dist', css.fileName), 'utf8')).toContain(image.fileName);
+      run(root, join(root, 'cache'));
+      expect(readFileSync(join(root, 'dist', image.fileName))).toEqual(bytes);
+      names.push({ image: image.fileName, js: js.fileName, css: css.fileName });
+    }
+    expect(names[0].image).not.toBe(names[1].image);
+    expect(names[0].js).not.toBe(names[1].js);
+    expect(names[0].css).not.toBe(names[1].css);
+    expect(readFileSync(join(root, 'src/image.jpg'))).toEqual(original);
+    const config = readFileSync(join(ROOT, 'vite.config.ts'), 'utf8');
+    expect(config).toContain('mediaIdentity.plugin');
+    expect(config).toContain('assetFileNames: mediaIdentity.assetFileNames');
+  } finally {
+    if (previousCache === undefined) delete process.env.CA_DIST_MEDIA_CACHE;
+    else process.env.CA_DIST_MEDIA_CACHE = previousCache;
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 60_000);

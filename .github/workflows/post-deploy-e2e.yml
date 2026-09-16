@@ -629,6 +629,7 @@ jobs:
         if: always() && steps.live.outputs.ready == 'true'
         env:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
+          ATTEMPT_STATUS: ${{ job.status }}
         run: |
           set -euo pipefail
           [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -637,7 +638,8 @@ jobs:
           FINAL_SHA="$(printf '%s' "$BODY" \
             | node scripts/ci/production-e2e-provenance.mjs unchanged "$EXPECTED_LIVE_SHA")"
           [ "$FINAL_SHA" = "$EXPECTED_LIVE_SHA" ]
-          echo "Production stayed on \`$FINAL_SHA\` for the complete browser certificate." >> "$GITHUB_STEP_SUMMARY"
+          echo "The client stayed on \`$FINAL_SHA\` during this certification attempt." >> "$GITHUB_STEP_SUMMARY"
+          echo "Job status before the final identity check: \`$ATTEMPT_STATUS\`. The overall job conclusion is the certification verdict." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The

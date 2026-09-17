@@ -11,7 +11,7 @@
  * PokerEngine.ts (`HEADS_UP_RAKE_PERCENT`, `noFlopNoDrop`). The database audit
  * (`fn_rake_law_check`) therefore could not reproduce the engine's number and
  * its "under-rake" findings were noise: 421 of 2,044 flop hands flagged where
- * the engine was right every time (heads-up 5% and half cap, 3-dealt 67% cap,
+ * the engine was right every time (heads-up 5% and half cap, 3-dealt short cap,
  * 3.00 BB priced by tier fallback, ineligible variants dropping no BBJ).
  *
  * This object is now the engine's ONLY source for every number below.
@@ -89,6 +89,24 @@ export interface RakeRules {
   shortHandedCapFactor: number;
   /** Player count at which the short-handed factor applies (exactly). */
   shortHandedMaxPlayers: number;
+  /**
+   * Seats a table must HAVE for the three-handed discount to exist at all.
+   *
+   * Dan 2026-09-14: "HEADS UP GAMES SHOULD BE REDUCED MAX RAKE (50% OF MAX
+   * RAKE) AND 3 HANDED GAMES 75% MAX RAKE (ON 75% RAKE REDUCTION ON 9HANDED
+   * GAMES ONLY). ONCE ANY 6-8 HANDED GAME REACHES 3+ PLAYERS FULL RAKE + BBJ
+   * IS APPLIED."
+   *
+   * Three-handed means something different on a 9-max than on a 6-max. On a
+   * nine-seat table three players is a table that has emptied out and is being
+   * kept alive; on a six-seat table it is most of a game. So the discount is
+   * seat-gated: at or above this many seats a three-handed pot pays
+   * `shortHandedCapFactor`, below it a three-handed pot pays the full cap.
+   *
+   * HEADS-UP IS NOT GATED. Two players is two players at any table size, and
+   * Dan's 50% is unconditional - only the three-handed rung moves.
+   */
+  shortHandedMinSeats: number;
   /** No flop, no drop: a hand that never saw a flop is raked nothing. */
   noFlopNoDrop: boolean;
   /** The BBJ drop is collected only when at least this many were dealt in. */
@@ -264,10 +282,13 @@ const TIER_ORDER: readonly string[] = ['nano', 'micro', 'small', 'mid', 'high', 
 const RULES: RakeRules = {
   // Dan 2026-08-27: "Rake is 10% with a max cap. Heads up is 5% rake."
   headsUpPercent: 5,
-  // FIX 166 / Bible V8 §7.19: heads-up 50% of cap, 3-handed 67%, 4+ full.
+  // FIX 166 / Bible V8 §7.19: heads-up 50% of cap, 3-handed short, 4+ full.
+  // Dan 2026-09-14 moved the three-handed rung from 67% to 75% and gated it on
+  // a nine-seat table; see shortHandedMinSeats for the ruling in full.
   headsUpCapFactor: 0.5,
-  shortHandedCapFactor: 0.67,
+  shortHandedCapFactor: 0.75,
   shortHandedMaxPlayers: 3,
+  shortHandedMinSeats: 9,
   // Bible V8 §2.9 / Appendix A, and Dan 2026-08-29: no flop, no drop.
   noFlopNoDrop: true,
   // FIX 145: BBJ requires 3+ players dealt in.
@@ -298,6 +319,35 @@ const TIER_PRICED_BIG_BLINDS: readonly number[] = [3];
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * `round(fullCap * factor, 2)` as POSTGRES does it, which is not what
+ * `round2(fullCap * factor)` does.
+ *
+ * Found by RakeSpecParity.law.test.ts the moment the three-handed factor moved
+ * to 0.75 (Dan 2026-09-14): at 0.01/0.02 the cap is 0.30, and
+ *
+ *   TS   0.30 * 0.75            = 0.22499999999999998  -> round2 -> 0.22
+ *   SQL  round(0.30 * 0.75, 2)  = round(0.2250, 2)     ->        -> 0.23
+ *
+ * because Postgres `numeric` is an exact decimal and IEEE doubles are not, and
+ * 0.225 is precisely the midpoint the two disagree about. 0.67 never produced
+ * a midpoint, so the split did not exist until the factor changed. The engine
+ * is the pricer and the database is the mirror, so the engine must be the one
+ * that matches: half a cent, on every short-handed pot at that stake, is a
+ * real over- or under-charge and would have made the rake alarm report every
+ * one of them.
+ *
+ * Fixed by doing the multiply in integer CENTS. The cap is a two-decimal
+ * money value, so `round(fullCap * 100)` is its exact cent count; 0.5 and 0.75
+ * are exact binary fractions, so `cents * factor` is exact; and `Math.round`
+ * on a non-negative exact value is round-half-away-from-zero, which is
+ * Postgres' rule. Caps are never negative (the schedule, the tier fallback and
+ * the override ceiling are all clamped at 0), which is what makes Math.round
+ * the right operation here rather than merely a close one.
+ */
+export const applyCapFactor = (fullCap: number, factor: number): number =>
+  Math.round(Math.round(fullCap * 100) * factor) / 100;
 
 /**
  * THE MOST GENEROUS SHARE OF A BIG BLIND ANY PUBLISHED ROW TAKES (15 BB from
@@ -350,15 +400,48 @@ export function scheduleMatch(smallBlind: number, bigBlind: number): RakeSchedul
  * The cap ladder by players dealt: the engine finds the highest tier where
  * playersDealt >= players and applies that cap. Materialised here from the
  * factors so `ca_rake_schedule_caps` and this list are one derivation.
+ *
+ * `seats` is the table's SEAT COUNT, not how many are sitting - Dan
+ * 2026-09-14 gates the three-handed discount on a nine-seat table (see
+ * `shortHandedMinSeats`). Omitted, the ladder is the nine-max one: that is
+ * what `ca_rake_schedule_caps` publishes, and it is the only shape a caller
+ * with no table in hand can mean. A caller that HAS a table passes its seats,
+ * and a 6-, 7- or 8-max table gets the full cap on its three-handed rung.
+ *
+ * The rung is kept rather than dropped when the discount does not apply, so
+ * the ladder has one shape everywhere and the lookup in `calculateRake` has
+ * one behaviour. A rung equal to the full cap simply never lowers anything.
  */
-export function capsByPlayersDealt(fullCap: number): { players: number; cap: number }[] {
+export function capsByPlayersDealt(
+  fullCap: number,
+  seats?: number | null
+): { players: number; cap: number }[] {
+  const seated = Number(seats);
+  const shortHandedDiscountApplies =
+    !Number.isFinite(seated) || seated <= 0 || seated >= RULES.shortHandedMinSeats;
   return [
-    { players: 2, cap: round2(fullCap * RULES.headsUpCapFactor) },
-    { players: RULES.shortHandedMaxPlayers, cap: round2(fullCap * RULES.shortHandedCapFactor) },
+    { players: 2, cap: applyCapFactor(fullCap, RULES.headsUpCapFactor) },
+    {
+      players: RULES.shortHandedMaxPlayers,
+      cap: shortHandedDiscountApplies
+        ? applyCapFactor(fullCap, RULES.shortHandedCapFactor)
+        : fullCap,
+    },
     { players: RULES.shortHandedMaxPlayers + 1, cap: fullCap },
   ];
 }
 
+/**
+ * The published ladder, which is the NINE-MAX one.
+ *
+ * `ca_rake_schedule_caps` is keyed on (bb, players_dealt) and has no seat
+ * dimension, so it publishes the ladder at a table where every rung exists.
+ * A 6/7/8-max table's three-handed rung is the full cap, and the database
+ * applies that gate the same way the engine does - `fn_rake_cap_for_dealt`
+ * and `fn_effective_rake` take the seat count and fall back to the full cap
+ * below `short_handed_min_seats`. Neither side reads the published rows to
+ * decide it.
+ */
 function buildCapRows(): RakeCapRow[] {
   const rows: RakeCapRow[] = [];
   for (const s of SCHEDULE) {
@@ -412,6 +495,12 @@ export interface EffectiveRakeInput {
   overridePercent?: number | null;
   /** Owner override cap in BIG BLINDS. -1 / null / undefined = inherit. */
   overrideCapBB?: number | null;
+  /**
+   * The table's SEAT COUNT (`tables.max_players`). Gates the three-handed
+   * discount - Dan 2026-09-14, nine-max only. Omitted means the nine-max
+   * ladder, which is what the published caps table holds.
+   */
+  seats?: number | null;
 }
 
 export interface EffectiveRakeResult {
@@ -460,7 +549,8 @@ export function resolveStake(
  *   2. an owner override may only move DOWNWARD: clamp to the ceilings, then
  *      min() against the published price;
  *   3. heads-up (dealt <= 2): percent = min(percent, headsUpPercent);
- *   4. cap by players dealt: 2 -> round2(cap * 0.5), 3 -> round2(cap * 0.67),
+ *   4. cap by players dealt: 2 -> round2(cap * 0.5), 3 -> round2(cap * 0.75)
+ *      on a nine-seat table and the full cap below that (Dan 2026-09-14),
  *      4+ -> cap, and fewer than 2 (never dealt) -> the full cap;
  *   5. no flop, no drop -> 0; else rake = min(Math.round(pot * percent) / 100, cap).
  */
@@ -485,7 +575,7 @@ export function effectiveRake(
   if (input.playersDealt <= 2) percent = Math.min(percent, rules.headsUpPercent);
 
   let cap = fullCap;
-  const ladder = capsByPlayersDealt(fullCap).sort((a, b) => b.players - a.players);
+  const ladder = capsByPlayersDealt(fullCap, input.seats).sort((a, b) => b.players - a.players);
   const tier = ladder.find((t) => input.playersDealt >= t.players);
   if (tier) cap = tier.cap;
 
@@ -567,6 +657,7 @@ export function rakeSpecCanonical(spec: RakeSpec = RAKE_SPEC): string {
     `"no_flop_no_drop":${r.noFlopNoDrop ? 'true' : 'false'},` +
     `"short_handed_cap_factor":${q(n2(r.shortHandedCapFactor))},` +
     `"short_handed_max_players":${r.shortHandedMaxPlayers},` +
+    `"short_handed_min_seats":${r.shortHandedMinSeats},` +
     `"unscheduled_cap_bb":${q(n2(spec.unscheduledCapBB))}}`;
   const schedule = [...spec.schedule]
     .sort((a, b) => a.bb - b.bb || a.sb - b.sb)

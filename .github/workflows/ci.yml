@@ -289,7 +289,7 @@ jobs:
       - name: Native fixture gate rejects missing and skipped proof
         run: node --test tests/operations/fixture-required-ci.test.mjs
 
-      - name: Mac dependency policy keeps Linux enforcement
+      - name: Local dependency preflight refuses incomplete or stale installs
         run: node --test tests/operations/local-dependency-policy.test.mjs
 
       - name: Money-trigger CI caller preserves independent authority
@@ -1638,8 +1638,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Provenance compares ancestry against origin/main. A shallow merge
-          # can falsely appear behind even when main is its direct parent.
+          # Validate this event's exact merge/base/head with full ancestry.
+          # Main may advance while queued; this disposable PR build never
+          # qualifies as a publishable current-main artifact.
           fetch-depth: 0
           filter: blob:none
 
@@ -2085,8 +2086,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Provenance compares ancestry against origin/main. A shallow merge
-          # can falsely appear behind even when main is its direct parent.
+          # Validate this event's exact merge/base/head with full ancestry.
+          # Main may advance while queued; this disposable PR build never
+          # qualifies as a publishable current-main artifact.
           fetch-depth: 0
           filter: blob:none
 

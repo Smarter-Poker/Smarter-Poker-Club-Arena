@@ -1,8 +1,8 @@
 # Smarter Poker Agent Operating Law
 
-Version 2.6 — adopted operating instruction, September 17, 2026.
+Version 2.7 — adopted operating instruction, September 17, 2026.
 
-Revision 2.6 makes non-engine completion independent at every entry point, alongside direct ownership, queue recovery and preparation throughout the hour.
+Revision 2.7 adds mandatory applicable prechecks before submission. Version 2.6 established independent non-engine completion, direct ownership, queue recovery and preparation throughout the hour.
 
 Owner authorized installation and instruction alignment on September 17, 2026. This consolidates the four rules described in the supplied conversation; the earlier full 2.2 document was not supplied.
 
@@ -46,6 +46,10 @@ Use the reference index to name those exact files. “All references” means th
 Verify the actual checkout, branch, PR, provider run, selected component revision, and installed migration state as relevant. Determine whether interrupted actions already completed before retrying them. Preserve operation identity and pending/unknown outcomes under the existing hardening standard.
 
 Record a concise reading receipt in the existing checkpoint: time, actual file paths, and available policy version or Git revision. This is a handoff record, not a new approval label, release gate, or proof that the agent obeyed the policy. If a required reference is unavailable, try its verified canonical source; report the precise gap and do not proceed with actions whose authority or correctness depends on it. Do not claim a file was read when it was not.
+
+## Pre-submission evidence
+
+Follow the owner policy's exact-candidate precheck rule. Run applicable local checks before pushing; record their actual revision, commands and results in the existing checkpoint. Include document/workflow/script source contracts and qualification manifests. Incomplete dependencies or unavailable applicable checks block submission until repaired in an authorized owned workspace. Do not claim that a hook passed checks it deferred. Required hosted CI, publisher admission and live proof remain separate.
 
 ## 3. Resolve a failed delivery before optional work
 

@@ -72,11 +72,15 @@ Push ready changes, run checks, complete protected merge, build and stage as soo
 
 ### Route by the changed behavior
 
-| Change | Required route | Hourly activation gate |
-| --- | --- | --- |
-| Client pages, buttons, styles, assets or browser behavior with no new engine dependency | Client checks, protected merge, existing static publisher, both public build-info endpoints and affected behavior | None |
-| Engine runtime or its release control | Required engine checks, protected merge, immediate engine staging/build, certified activation and proof | Engine activation only |
-| Client and engine together | Validate compatibility; stage both promptly and identify the exact dependency before exposing behavior that requires the new engine | Only the dependent behavior and engine activation; unrelated client work remains independent |
-| Database or financial change | Applicable database/financial qualification and installation safeguards | Existing DDL/freeze restrictions where applicable, not a blanket client publication hold |
+| Change                                                                                  | Required route                                                                                                                      | Hourly activation gate                                                                       |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Client pages, buttons, styles, assets or browser behavior with no new engine dependency | Client checks, protected merge, existing static publisher, both public build-info endpoints and affected behavior                   | None                                                                                         |
+| Engine runtime or its release control                                                   | Required engine checks, protected merge, immediate engine staging/build, certified activation and proof                             | Engine activation only                                                                       |
+| Client and engine together                                                              | Validate compatibility; stage both promptly and identify the exact dependency before exposing behavior that requires the new engine | Only the dependent behavior and engine activation; unrelated client work remains independent |
+| Database or financial change                                                            | Applicable database/financial qualification and installation safeguards                                                             | Existing DDL/freeze restrictions where applicable, not a blanket client publication hold     |
 
 CI classification and deployment selection are separate. A client financial change may correctly require database/server tests without requiring an engine restart. Do not rename files or weaken checks to evade that qualification. A docs-only or client-only merge can invoke the lightweight engine detector; a verified unchanged engine tree must produce no engine deployment request. Provider runner queues and the static publisher's own serialization are not hourly maintenance gates.
+
+## Before submission
+
+Run the applicable local prechecks on the final candidate before push, as required by `docs/agent-policy/OWNER-POLICY.md`. Include source contracts reading changed Markdown/workflows/scripts and qualification manifests, not only imported-code tests. Resolve missing or stale owned dependencies and actual failures before submission; never defer an available local check to the first hosted run. Record exact input and results in the task checkpoint. Hosted CI, protected merge, publisher admission and applicable live proof remain mandatory.

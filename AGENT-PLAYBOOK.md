@@ -30,4 +30,4 @@ Evidence must match the actual inputs and component. A merge badge, successful c
 
 ## Preserve product rules
 
-The owner's ban on “em bars” means em dashes in user-visible text, not hamburger navigation icons. Preserve approved navigation, financial safeguards and task-specific product laws. Do not use real chips or active games for destructive tests. Unrelated TODOs are not an assignment, and unavailable verification must be reported rather than invented.
+The owner's ban on “em bars” means em dashes in user-visible text. It does not ban the hamburger menu. Preserve the approved artwork and navigation enforced by `tests/approvedHamburgerGearGuard.law.test.ts`, financial safeguards and task-specific product laws. Do not use real chips or active games for destructive tests. Unrelated TODOs are not an assignment, and unavailable verification must be reported rather than invented.

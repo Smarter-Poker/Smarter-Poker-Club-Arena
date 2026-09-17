@@ -102,6 +102,8 @@ Apply safeguards because they address an identified risk. Do not add unrelated i
 
 7. **Use Meaningful, Proportionate Verification**
 
+Owner continuation, September 17: perform applicable local prechecks before pushing, including tests reading documentation/configuration and exact qualification manifests. Follow the owner policy for private SSD dependencies and exact candidate evidence. Missing local tooling does not make an applicable check optional, and hosted checks still remain required.
+
 Verify the intended behavior, preserved behavior, and realistic failure conditions for this change.
 
 Use focused unit tests, integration tests, browser verification, contract checks, or other existing verification methods according to the risk.

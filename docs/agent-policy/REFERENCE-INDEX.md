@@ -10,16 +10,16 @@ Then read repository `AGENTS.md`, `CLAUDE.md` where present, `AGENT-PLAYBOOK.md`
 
 ## Component map
 
-| Assigned component | Repository | Additional applicable references |
-| --- | --- | --- |
-| World Hub / smarter.poker | Smarter-Poker-World-Hub | Relevant route, API, database and feature laws; migration safety for database changes |
-| Club Arena client | Smarter-Poker-Club-Arena | `.agent/architecture/deploy-paths.md`, relevant product laws and client checks |
-| Club Arena engine | Smarter-Poker-Club-Arena | `CLAUDE.md` maintenance rules, `.agent/architecture/deploy-paths.md`, owning release/maintenance contracts; `docs/HANDOFF_CURRENT_STATE.md` and `docs/ENGINE-RESTART-PROGRAMME.md` only for that assigned programme |
-| Club Commander | smarter-poker-commander | Applicable `docs/runbooks/`, Commander product laws and verified provider configuration |
-| Shared Commander package | commander-shared | `README.md`, `PUBLISHING.md`, consumer vendoring and lockfile contracts when assigned |
+| Assigned component        | Repository               | Additional applicable references                                                                                                                                                                                    |
+| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| World Hub / smarter.poker | Smarter-Poker-World-Hub  | Relevant route, API, database and feature laws; migration safety for database changes                                                                                                                               |
+| Club Arena client         | Smarter-Poker-Club-Arena | `.agent/architecture/deploy-paths.md`, relevant product laws and client checks                                                                                                                                      |
+| Club Arena engine         | Smarter-Poker-Club-Arena | `CLAUDE.md` maintenance rules, `.agent/architecture/deploy-paths.md`, owning release/maintenance contracts; `docs/HANDOFF_CURRENT_STATE.md` and `docs/ENGINE-RESTART-PROGRAMME.md` only for that assigned programme |
+| Club Commander            | smarter-poker-commander  | Applicable `docs/runbooks/`, Commander product laws and verified provider configuration                                                                                                                             |
+| Shared Commander package  | commander-shared         | `README.md`, `PUBLISHING.md`, consumer vendoring and lockfile contracts when assigned                                                                                                                               |
 
 ## Keep one checkpoint per task
 
-Use the existing handoff, adding only missing fields: scope and authorization; acceptance criteria; owned checkout/branch/PR; operation owner; fresh reference reading time and versions; successful checks and input identities; blocker and comparable successful baseline; pending provider run and component revision; actual cutover eligibility; remaining verification; and next action. Record diagnosis/fix-ready/submission/verification times for failed deployments. Never put credentials or environment-file values in the checkpoint. A receipt cannot grant authority.
+Use the existing handoff, adding only missing fields: scope and authorization; acceptance criteria; owned checkout/branch/PR; operation owner; fresh reference reading time and versions; actual pre-push commands/results and tested input identities; provider-only pending checks; blocker and comparable successful baseline; pending provider run and component revision; actual cutover eligibility; remaining verification; and next action. Record diagnosis/fix-ready/submission/verification times for failed deployments. Never put credentials or environment-file values in the checkpoint. A receipt cannot grant authority.
 
 Historical handoffs, audits and programme plans remain dated records. Do not execute their retired release instructions. Preserve actual schema dependencies, product/financial rules and task-specific holds; use the current owner policy and maintained publishing procedure for execution.

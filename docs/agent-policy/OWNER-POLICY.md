@@ -10,12 +10,21 @@ Inspect the assigned diff and the behavior it requires. Apply an engine activati
 
 For client-only delivery, verify its required checks, protected merge, client publisher, both client build-info endpoints and affected behavior immediately. Then finish that client scope; no new engine SHA, restart certificate, maintenance window or unrelated engine task completion is required. World Hub and Commander follow their own normal publication/verification procedures. For mixed work, record client and engine results separately and release independent compatible portions without a blanket hold; preserve genuine compatibility, financial, schema and maintenance safeguards.
 
+## Precheck the exact candidate before submission
+
+Owner continuation, September 17: run applicable local checks before pushing or requesting publication. Do not use hosted CI as the first attempt at a check that can run safely in the owned workspace. Inspect the final diff and the maintained workflow: run affected compilation, tests, source contracts, configuration/manifest validation and build checks, including tests that read Markdown, scripts or workflows instead of importing application code. A checkpoint is a record of actual results, not a substitute for running them.
+
+Record the tested revision or tree, relevant inputs, exact commands, outcomes and any provider-only checks still pending. Commit intended fixes and ensure the checked bytes match the pushed candidate. Recheck affected inputs after integration or edits. Missing tooling, partial dependencies, stale manifests and an unavailable required local check must be repaired before submission; they are not a pass or permission to skip. Never disable hooks, skip assertions, or relabel a failure to make delivery proceed.
+
+The September 17 SSD authorization permits the locked dependencies needed for these local checks in a unique task-owned checkout under `/Volumes/SmarterWork/agent-work`, after verifying mounted writable storage and sufficient space. Install only into a private dependency directory; never install through a shared `node_modules` symlink or mutate another task's cache. This supersedes the older blanket Mac dependency deferral for this limited purpose. It does not revive local production builders, runners, publishers or repair services. Workspace hooks inspect and validate; they must not repair shared dependencies during a push.
+
+Local prechecks reduce avoidable rejection; required hosted CI, protected merge, publisher admission and live verification remain distinct and mandatory. Provider-only secrets, Linux/native behavior and production state can still expose failures. Diagnose those actual failures immediately. A concurrent main advance invalidates affected integration evidence, not an unrelated completed check by default; PR validation artifacts must never be admitted as production artifacts.
+
 ## Shared 2 TB external SSD access — owner instruction, September 17, 2026
 
 All agents and delegated workers on this Mac may use the mounted 2 TB external SSD within their assigned scope. Its writable working volume is `/Volumes/SmarterWork`; its archive volume is `/Volumes/SmarterArchives`. Use a unique task-owned directory under `/Volumes/SmarterWork/agent-work` for new worktrees, scratch files and authorized caches, and `/Volumes/SmarterArchives/agent-evidence` for retained evidence or source archives. Existing directories may belong to another task: do not overwrite, reset, prune, move or delete them. Verify the volume is mounted and the destination is writable before using it; available space is dynamic and APFS volume quotas may be smaller than the physical 2 TB device.
 
 Use this storage when appropriate rather than reporting internal-disk pressure without checking it. Move an existing Git worktree only through Git's supported worktree operation with a clean, preserved state and coordinated readers; do not relocate other agents' live checkouts. The SSD adds local storage, not RAM to the remote Hetzner server. Its availability does not change the authorized GitHub/Vercel/Hetzner release route or permit restarting retired local/custom runners, publishers or repair loops.
-
 
 ## Owner update: automatic authorized publication, September 17, 2026
 

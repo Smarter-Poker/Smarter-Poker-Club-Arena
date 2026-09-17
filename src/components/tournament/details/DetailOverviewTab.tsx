@@ -1,3 +1,4 @@
+import { useTournamentHandForHand } from '../../../hooks/useTournamentHandForHand';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DETAIL / OVERVIEW TAB — everything about the event, on one screen
@@ -182,6 +183,7 @@ export default function DetailOverviewTab({
   const [tick, setTick] = useState(0);
   const status = String(tournament?.status || '').toUpperCase();
   const isRunning = status === 'RUNNING';
+  const handForHand = useTournamentHandForHand(tournament.id, currentUserId, isRunning);
   const isCompleted = status === 'COMPLETED';
   const { maintenanceBreak } = useMaintenanceBreak();
   const eventPaused = isRunning && tournament?.on_break === true;
@@ -828,9 +830,9 @@ export default function DetailOverviewTab({
       )}
 
       {/* Bubble play. Renders null unless hand-for-hand is actually on. */}
-      {isRunning && Boolean(tournament.hand_for_hand) && (
+      {isRunning && handForHand === true && (
         <HandForHandBanner
-          active={Boolean(tournament.hand_for_hand)}
+          active={handForHand === true}
           playersRemaining={field.alive}
           paidPositions={paidPositions}
         />

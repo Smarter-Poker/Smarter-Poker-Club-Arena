@@ -167,7 +167,7 @@ export class ChannelWebSocketServer {
   // charge on disconnect would let reconnects multiply unresolved requests.
   private activeHandReplays = new Set<PendingHandReplay>();
 
-  constructor() {
+  constructor(private readonly tournamentHandForHand?: (tournamentId: string) => boolean | null) {
     this.wss = new WebSocketServer({ noServer: true });
   }
 
@@ -543,6 +543,21 @@ export class ChannelWebSocketServer {
       case 'JOIN_TOURNAMENT':
         if (typeof msg.tournamentId === 'string' && msg.tournamentId) {
           channelHub.joinTournament(userId, msg.tournamentId);
+          // Subscribe before reading synchronously: a transition cannot fall
+          // between the initial state and the live subscription. No database
+          // read or gameplay mutation is allowed in this presentation callback.
+          if (this.tournamentHandForHand) {
+            const active = this.tournamentHandForHand(msg.tournamentId);
+            channelHub.sendToUser(userId, {
+              type: 'TOURNAMENT_EVENT',
+              tournamentId: msg.tournamentId,
+              event: {
+                type: 'tournament_presentation',
+                payload: { handForHand: typeof active === 'boolean' ? active : null },
+                timestamp: new Date().toISOString(),
+              },
+            });
+          }
         }
         return;
 

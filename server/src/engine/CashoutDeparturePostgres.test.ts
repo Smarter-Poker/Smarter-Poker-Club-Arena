@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
-const transport = vi.hoisted(() => ({ rpc: vi.fn() }));
+const transport = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: transport,
   maintenanceSupabase: transport,
@@ -64,6 +64,8 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetMovedPresence();
+    transport.from.mockReset();
+    sql('TRUNCATE engine_presence_parked');
     sql(
       'TRUNCATE table_waitlist,cash_game_waitlist,cash_seat_move_receipts,cash_seat_moves,cash_player_session,cash_cluster_events,cash_games,seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
@@ -538,7 +540,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         remainingSeconds: 7,
         usesRemaining: 1,
       });
-      e.timeBankMeta.set(userId, { initialSeconds: 40, baseSeconds: 30, dbConsumedSeconds: 33 });
+      e.timeBankMeta.set(userId, { initialSeconds: 80, baseSeconds: 40, dbConsumedSeconds: 33 });
       return e.disconnectEngine.getFsmState(e.tableId, userId);
     };
     const reconnect = async (tableId: string, userId: string) => {
@@ -727,6 +729,72 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     expect(
       (await c.reconnect(OTHER_TABLE, PARTNER_USER)).filter((e) => e.type === 'seat_moved')
     ).toEqual([expect.objectContaining({ user_id: PARTNER_USER, to_table_id: TABLE, stack: 70 })]);
+  });
+
+  it('composes durable parked state, engine replacement and the unchanged chip cohort', async () => {
+    seedMove();
+    const c = connectTransferComponents();
+    const source = c.engine(TABLE),
+      destination = c.engine(OTHER_TABLE);
+    c.seedPresence(source, USER, true);
+    await source.executePendingSeatMoves({ announcedOnly: false }, c.pending(TABLE));
+    destination.adoptSeatRoster(c.roster(OTHER_TABLE));
+    await destination.adoptMovedPresence();
+    const expectedPresence = destination.disconnectEngine.getFsmState(OTHER_TABLE, USER);
+    const before = c.cohort();
+    const literal = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+    transport.from.mockImplementation((table: string) => {
+      expect(table).toBe('engine_presence_parked');
+      return {
+        upsert: async (row: any) => {
+          sql(`INSERT INTO engine_presence_parked(table_id,disconnect_states,parked_at,engine_instance,time_bank_snapshot)
+            VALUES('${row.table_id}',${literal(JSON.stringify(row.disconnect_states))}::jsonb,
+              ${literal(row.parked_at)}::timestamptz,${literal(row.engine_instance)},${literal(JSON.stringify(row.time_bank_snapshot))}::jsonb)
+            ON CONFLICT(table_id) DO UPDATE SET disconnect_states=EXCLUDED.disconnect_states,
+              parked_at=EXCLUDED.parked_at,engine_instance=EXCLUDED.engine_instance,time_bank_snapshot=EXCLUDED.time_bank_snapshot`);
+          return { error: null };
+        },
+        select: () => ({
+          eq: (_column: string, id: string) => ({
+            maybeSingle: async () => ({
+              data: sql(`SELECT to_jsonb(p) FROM engine_presence_parked p WHERE table_id='${id}'`),
+              error: null,
+            }),
+          }),
+        }),
+      };
+    });
+    destination.handCount = 12;
+    await destination.persistPresenceForRestart('parked');
+    // Stop the old component's timers and erase process-local handoff state.
+    destination.preciseTimer.clearTable(OTHER_TABLE);
+    destination.timeBankEngine.disposeAll();
+    resetMovedPresence();
+    const replacement = c.engine(OTHER_TABLE);
+    replacement.handCount = 12;
+    const snapshots = await import('../services/supabase/snapshots.js');
+    const parked = await snapshots.loadPresenceFromPark(OTHER_TABLE);
+    replacement.disconnectEngine.restoreFsmStates(OTHER_TABLE, parked!);
+    await replacement.readParkedTimeBanks();
+    replacement.adoptSeatRoster(c.roster(OTHER_TABLE));
+    expect(replacement.disconnectEngine.getFsmState(OTHER_TABLE, USER)).toEqual(expectedPresence);
+    expect(replacement.timeBankEngine.getPlayerBank(OTHER_TABLE, USER)).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+    });
+    expect(replacement.timeBankMeta.get(USER)).toEqual({
+      initialSeconds: 80,
+      baseSeconds: 40,
+      dbConsumedSeconds: 33,
+    });
+    expect(c.cohort()).toEqual(before);
+    expect(before).toEqual({
+      wallets: 100,
+      stacks: 25,
+      wallet_transactions: 0,
+      chip_transactions: 0,
+      receipts: 1,
+    });
   });
 
   it('the pending RPC retains original occupancy and durable swap readiness', () => {

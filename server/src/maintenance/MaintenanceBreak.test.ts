@@ -667,6 +667,18 @@ describe('the restart gate', () => {
     expect(mb.readyForRestart()).toBe(true);
   });
 
+  it('waits for the engine to durably save initialized banks after the hand settles', async () => {
+    const { mb, engines } = build(1);
+    const e = [...engines.values()][0];
+    let saved = false;
+    Object.assign(e, { isMaintenanceStateDurable: () => saved });
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false);
+    saved = true;
+    expect(mb.readyForRestart()).toBe(true);
+  });
+
   it('opens for a QUIET table that never reaches the gate at all', async () => {
     /**
      * The production bug. A quiet table waits in the start-up loop; it only

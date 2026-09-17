@@ -57,6 +57,8 @@ import {
   getActiveHandSnapshotFull,
   savePresenceAtPark,
   loadPresenceFromPark,
+  loadTimeBanksFromPark,
+  type ParkedTimeBank,
   supabase,
   atomicCashout,
 } from '../services/supabase.js';
@@ -1752,6 +1754,9 @@ export abstract class ServerTableEngineBase {
    * getting two WHOLE extensions rather than one and a stub.
    */
   protected readonly timeBankBaseSeconds = 40;
+  private parkedTimeBanks: Record<string, ParkedTimeBank> = {};
+  private presenceSave: Promise<void> = Promise.resolve();
+  private parkedBankSaveComplete = false;
   /**
    * CHIP CONTINUITY (Operation Table Stakes, Slice 0). The engine-side mirror
    * of cash_player_session: the stay clock a player ahead of their buy-in
@@ -2582,6 +2587,8 @@ export abstract class ServerTableEngineBase {
         } catch (err) {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_restore');
         }
+        await this.readParkedTimeBanks();
+        if (!this.lifecycleCanMutate()) return;
       }
 
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
@@ -2636,6 +2643,7 @@ export abstract class ServerTableEngineBase {
           (this.handForHandPaused && this.holdBeforeNextHand)
         ) {
           this.setLoopPhase('parked_for_pause');
+          if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
           await this.awaitPauseGate();
           if (!this.running) break;
           this.setLoopPhase('start_wait_for_players');
@@ -3629,7 +3637,10 @@ export abstract class ServerTableEngineBase {
     if (!this.lifecycleCanMutate()) return [];
     const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
     this.seatedPlayers = nextRoster;
-    if (this.isTournamentTable()) return [];
+    if (this.isTournamentTable()) {
+      this.applyParkedTimeBanks(nextRoster);
+      return [];
+    }
     const replaced: string[] = [];
     for (const [userId, occupancyId] of previous) {
       const current = nextRoster.find((p) => p.user_id === userId);
@@ -3654,7 +3665,29 @@ export abstract class ServerTableEngineBase {
       this.preActionEngine.removePlayer(this.tableId, userId);
       this.chipContinuity.forget(userId);
     }
+    this.applyParkedTimeBanks(nextRoster);
     return replaced;
+  }
+
+  private applyParkedTimeBanks(nextRoster: SeatedPlayer[]): void {
+    // The first authoritative roster binds restored banks to the same stays.
+    // Legacy rows and later seat occupants keep ordinary allowance seeding.
+    for (const seat of nextRoster) {
+      const bank = this.parkedTimeBanks?.[seat.user_id];
+      if (
+        !bank ||
+        bank.occupancyId !== seat.occupancy_id ||
+        this.timeBankEngine.getPlayerBank(this.tableId, seat.user_id)
+      )
+        continue;
+      this.timeBankEngine.initializePlayer(this.tableId, seat.user_id, bank);
+      this.timeBankMeta.set(seat.user_id, {
+        initialSeconds: bank.initialSeconds,
+        baseSeconds: bank.baseSeconds,
+        dbConsumedSeconds: bank.dbConsumedSeconds,
+      });
+    }
+    this.parkedTimeBanks = {};
   }
 
   /** Last time the empty-cluster-table check read the row. See below. */
@@ -4401,6 +4434,7 @@ export abstract class ServerTableEngineBase {
    * too rather than dealing the moment a seat fills mid-break.
    */
   pauseForMaintenance(maxWaitMs: number): void {
+    if (!this.maintenancePaused) this.parkedBankSaveComplete = false;
     this.maintenancePaused = true;
     this.holdBeforeNextHand = true;
     // 2026-09-04 (audit item 2): the break is the restart. Persist the
@@ -4741,17 +4775,65 @@ export abstract class ServerTableEngineBase {
    * resetting it. Called when the break is announced and when the loop
    * parks. Never throws; a miss costs exactly what every boot cost before.
    */
+  protected captureParkedTimeBanks(): Record<string, ParkedTimeBank> {
+    const saved: Record<string, ParkedTimeBank> = { ...this.parkedTimeBanks };
+    for (const seat of this.seatedPlayers) {
+      const bank = this.timeBankEngine.getPlayerBank(this.tableId, seat.user_id);
+      const meta = this.timeBankMeta.get(seat.user_id);
+      if (!seat.occupancy_id || !bank || bank.isActive || !meta) continue;
+      saved[seat.user_id] = {
+        occupancyId: seat.occupancy_id,
+        remainingSeconds: bank.remainingSeconds,
+        usesRemaining: bank.usesRemaining,
+        ...meta,
+      };
+    }
+    return saved;
+  }
+
+  protected async readParkedTimeBanks(): Promise<void> {
+    try {
+      const banks = await loadTimeBanksFromPark(this.tableId, this.handCount);
+      if (this.lifecycleCanMutate()) this.parkedTimeBanks = banks;
+    } catch (error) {
+      reportError(error, 'ServerTableEngine.' + this.tableId + '.time_bank_restore');
+    }
+  }
+
+  /** Existing restart gate must not discard initialized banks before their park write. */
+  isMaintenanceStateDurable(): boolean {
+    const hasBanks =
+      Object.keys(this.parkedTimeBanks ?? {}).length > 0 ||
+      this.seatedPlayers.some((seat) =>
+        this.timeBankEngine.getPlayerBank(this.tableId, seat.user_id)
+      );
+    return !this.maintenancePaused || !hasBanks || this.parkedBankSaveComplete;
+  }
+
   protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {
+    const previous = this.presenceSave ?? Promise.resolve();
+    let finish!: () => void;
+    this.presenceSave = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    // A slow announcement must not land after the final parked snapshot.
+    await previous;
     try {
       const states = this.disconnectEngine.getFsmStatesForTable(this.tableId);
-      if (Object.keys(states).length === 0) return;
-      await savePresenceAtPark({
+      const timeBanks = when === 'parked' ? this.captureParkedTimeBanks() : undefined;
+      if (Object.keys(states).length === 0 && !Object.keys(timeBanks ?? {}).length) return;
+      const saved = await savePresenceAtPark({
         tableId: this.tableId,
         disconnectStates: states,
         engineInstance: `${INSTANCE_ID}:${when}`,
+        handNumber: this.handCount,
+        timeBanks,
       });
+      if (when === 'parked') this.parkedBankSaveComplete = saved;
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');
+    } finally {
+      finish();
     }
   }
 

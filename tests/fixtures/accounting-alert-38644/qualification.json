@@ -1,9 +1,9 @@
 {
   "format_version": 1,
-  "qualification": "SOURCE_REVIEW_ONLY",
-  "execution": "UNRUN_PENDING_PROTECTED_EXECUTION",
+  "qualification": "CLOCK_REPAIR_SOURCE_REVIEW_PENDING_NATIVE",
+  "execution": "REVISED_FIXTURE_UNRUN_PREDECESSOR_FAILED_CLOCK_ADMISSION",
   "financial_mutations_performed": false,
-  "fixture_disposition": "Every local database fixture write rolls back; only approved protected execution may run this regression. No production migration or repair.",
+  "fixture_disposition": "Existing isolated native fixture changes roll back; only the private coordinator clock dependency is temporarily substituted and its exact authority restored. No production migration or repair.",
   "incident": 38644,
   "period_id": "a8e2fed5-e15e-4622-aff6-3177c0b9a1c7",
   "original_sources": 59,
@@ -43,11 +43,11 @@
     "supabase/accounting/weekly-v3/components/20260914162500_standalone_deadlines_follow_their_own_week.sql": "16aacce99cb9debaddc0ba98a9f9db9ff5ae97b7193fe8bba3409079c4082820"
   },
   "fixture_sha256": {
-    "regression.sql": "088d92f8b667847a1b871daba77f7ccedc0dccbe396c801c7ccfa74896a827b6",
+    "regression.sql": "83b3a5b4f50e9fc0e877991d7573a6a5d2f87ecae4b60545a2557b526ab920a5",
     "caller-source-evidence.json": "361724903b7d95010424d92c40a09e21f216ecca21c4bab8c74407f8b3a0dc86",
-    "README.md": "a3ea5fb3db7fae50715576ccd61965883511630a35f94781ba87847a7a3d6d01",
+    "README.md": "e2a82ec53562ce1ccb691751a5fa9006df80f44de4e1cd889bb578bbf4dc4c69",
     "source-evidence.json": "9e4370895e29b35b0ba2b635daad73e8031091813e230bb6a7a95b08d8cde0ed",
-    "coordinator-retry.sql": "40aeaf1c5576a84961c8deeb7d9abea6281ebc508e7652b6f2514f804715e6f8"
+    "coordinator-retry.sql": "55379b922edf42a3b3a46c98b1caa65b182bbf1654db7b922c4c22196b3531eb"
   },
   "pending_execution": {
     "profile": "accounting full native disposable database after complete weekly candidate",
@@ -59,17 +59,14 @@
       "Retained logs, cleanup receipt and check intake",
       "No paid/live outcome inferred from local result",
       "Run before PNL hook seed; no unrelated weekly work in public dispatcher",
-      "Actual clock must satisfy due/unfrozen/pre-minute40 preflight; skips fail",
+      "Deterministic isolated fixture clock; minute45 refusal and due09:20 four-call assertions must pass; no wall-clock waiting",
       "Admit four real public service-role calls and complete source/money/function preservation snapshots"
     ]
   },
   "receipt_regression": "First59 and second59 source attempts must bind returned hand_id/rake_record_id to original raw identities and exact durable receipt/work identities, fingerprints, results and attempts. JSON predicates require IS TRUE. All59 first-attempt full receipt rows are snapshotted as canonical JSON text and compared in both directions after retry. Retry independently requires unknown scope and complete scope equality with the first outcome.",
   "coordinator_retry_successor": {
     "source_base": "3663c03e23a2e11ea6b60caba0590fe2c8a00b24",
-    "received_originals": [
-      40643,
-      40644
-    ],
+    "received_originals": [40643, 40644],
     "financial_original": "edc4602d-2015-474e-9ca6-852ac4ad1610",
     "drift_parent": 38644,
     "entry_file": "tests/fixtures/accounting-alert-38644/regression.sql",
@@ -78,7 +75,7 @@
     "runtime_component_changes": false,
     "original_evidence_changes": false,
     "coordinator": "actual public fn_process_weekly_accounting(NULL) under actual service_role; assertions as owner",
-    "clock": "actual wall clock; historical due date, no maintenance/freeze, minute below40 preflight; skipped or zero-work results fail",
+    "clock": "Existing native scheduler test seam: only private coordinator clock_timestamp() calls are replaced with pg_temp.alert38644_clock(); fixed2026-09-14T09:20Z, exact minute45 negative first; actual maintenance authority remains unchanged; exact original definition/owner/ACL/security restored and compared before rollback.",
     "runner_order": "after lifecycle probes and before independent PNL hook seed",
     "expected_cases": [
       {
@@ -114,6 +111,21 @@
     "synthetic_source_boundary": "null hand identity, no historic attribution/contract/bank certification; actual source processor must record cash_source_identity_or_amount_invalid",
     "preservation": "all original evidence, source/refusal histories, attributions,118 commissions,3.99 period,memberships,ledger/wallet/payment/invoice records and public/auth function authority",
     "identity_boundary": "normalized coordinator failure and financial-original UUID; no drift-incident aggregation or new drift UUID claim",
-    "qualification_boundary": "source review only; no test/build/install/production financial or alert write executed"
+    "qualification_boundary": "Repaired source only, native execution pending; predecessor native log proves original historical assertions passed then wall-clock admission failed before coordinator calls. No production financial or alert write."
+  },
+  "coordinator_clock_repair": {
+    "base_commit": "a3748f43a87a5068218bc0cefbaa502874e05684",
+    "failed_run": "35191433745",
+    "failed_job": "105105322906",
+    "failure_at": "2026-09-17T06:56:03.2979506Z",
+    "failure": "minute56 cannot satisfy former explicit minute<40 preflight; no coordinator call executed",
+    "log_sha256": "e7398b7abb510e37d530d6448393d8a21d9bbd7a64d7a708547a8abe166263b2",
+    "pattern_sources": [
+      "tests/fixtures/unified-weekly-accounting/controls.sql",
+      "tests/fixtures/weekly-accounting-coordinator/regression.sql"
+    ],
+    "runtime_changes": false,
+    "runner_changes": false,
+    "new_clock_fixture_execution": "UNRUN"
   }
 }

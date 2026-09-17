@@ -1,6 +1,7 @@
 -- Source-review candidate only: UNRUN pending protected execution.
 -- Load after the full accounting candidate in a fresh disposable native database.
--- No source function is replaced. All fixture inserts and regression writes roll back.
+-- The included coordinator case substitutes only its clock dependency and restores
+-- the exact function authority. All fixture changes roll back.
 -- This captured evidence is a partial hand projection; missing contributors are
 -- deliberately not synthesized into a seemingly conserved source.
 BEGIN;

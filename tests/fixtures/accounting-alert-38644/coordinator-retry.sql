@@ -2,18 +2,61 @@
 -- UNRUN: include inside regression.sql's rollback transaction, after its exact
 -- 59-source assertions. Requires the complete candidate, actual service role,
 -- and lifecycle template BEFORE the unrelated PNL hook seed. No production use.
--- No public function, clock, agreement, original source or payment is replaced.
+-- Only the private coordinator clock dependency is substituted transactionally,
+-- using the existing scheduler-fixture technique; its exact definition is restored.
+-- No production source, freeze authority, agreement, original source or payment changes.
 SET LOCAL timezone='UTC';
 SET LOCAL statement_timeout='30s';
 SET LOCAL lock_timeout='3s';
 SET LOCAL app.weekly_accounting_attempt_budget='8';
 SET LOCAL app.weekly_accounting_scheduler_started='';
-SELECT pg_temp.alert38644_assert(current_user='postgres'
+SELECT pg_temp.alert38644_assert(current_user='postgres' AND session_user='postgres'
+ AND current_database()='postgres' AND inet_server_addr() IS NULL
+ AND current_setting('server_version_num')::integer>=170000
+ AND current_setting('server_version_num')::integer<180000
  AND current_setting('session_replication_role')='origin'
- AND clock_timestamp()>=public.fn_union_accounting_run_at('2026-09-14 07:00Z')
- AND extract(minute FROM clock_timestamp())<40
+ AND NOT EXISTS(SELECT 1 FROM public.engine_maintenance_break)
+ AND NOT EXISTS(SELECT 1 FROM public.engine_maintenance_thaws),
+ 'coordinator clock seam requires isolated PG17 owner/socket database with no maintenance state');
+
+-- Snapshot the installed authority BEFORE substituting its sole time input.
+-- The service caller still reaches the actual SECURITY DEFINER coordinator;
+-- its postgres owner can resolve this explicitly qualified session temp helper
+-- despite SET search_path=public. No helper EXECUTE grant to service_role.
+CREATE TEMP VIEW alert38644_current_function_authority AS
+ SELECT p.oid,p.proowner,p.proacl,p.prosecdef,p.proconfig,md5(pg_get_functiondef(p.oid)) AS definition_md5
+ FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ WHERE n.nspname IN('public','auth') AND p.prokind IN('f','p');
+CREATE TEMP TABLE alert38644_function_authority_before AS SELECT * FROM alert38644_current_function_authority;
+CREATE TEMP TABLE alert38644_clock_original AS
+ SELECT p.oid,pg_get_functiondef(p.oid) AS definition
+ FROM pg_proc p WHERE p.oid='public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure;
+SET LOCAL test.alert38644_clock='2026-09-14T09:20:00Z';
+CREATE FUNCTION pg_temp.alert38644_clock() RETURNS timestamptz
+ LANGUAGE sql VOLATILE AS $$SELECT current_setting('test.alert38644_clock')::timestamptz$$;
+REVOKE ALL ON FUNCTION pg_temp.alert38644_clock() FROM PUBLIC,anon,authenticated,service_role;
+DO $fixture_clock$
+DECLARE original text;substituted text;installed text;
+BEGIN
+ SELECT definition INTO STRICT original FROM alert38644_clock_original;
+ IF position('clock_timestamp()' IN original)=0
+  OR position('pg_temp.alert38644_clock()' IN original)<>0
+  OR NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid='public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure
+   AND p.prosecdef AND pg_get_userbyid(p.proowner)='postgres'
+   AND p.proconfig @> ARRAY['search_path=public']::text[])
+ THEN RAISE EXCEPTION 'alert38644_clock_predecessor_changed';END IF;
+ substituted:=replace(original,'clock_timestamp()','pg_temp.alert38644_clock()');
+ EXECUTE substituted;
+ SELECT pg_get_functiondef(oid) INTO STRICT installed FROM alert38644_clock_original;
+ IF installed IS DISTINCT FROM substituted
+  OR replace(installed,'pg_temp.alert38644_clock()','clock_timestamp()') IS DISTINCT FROM original
+ THEN RAISE EXCEPTION 'alert38644_clock_substitution_changed_authority';END IF;
+END $fixture_clock$;
+SELECT pg_temp.alert38644_assert(pg_temp.alert38644_clock()=timestamptz '2026-09-14 09:20Z'
+ AND pg_temp.alert38644_clock()>=public.fn_union_accounting_run_at('2026-09-14 07:00Z')
+ AND extract(minute FROM pg_temp.alert38644_clock())<40
  AND public.fn_platform_frozen() IS FALSE,
- 'coordinator requires actual owner setup, due historical week and an admitted pre-minute40 unfrozen window');
+ 'coordinator uses a deterministic due pre-minute40 clock with the actual unfrozen authority');
 SELECT pg_temp.alert38644_assert(NOT EXISTS(SELECT 1 FROM public.unions)
  AND NOT EXISTS(SELECT 1 FROM public.union_accounting_runs)
  AND NOT EXISTS(SELECT 1 FROM public.accounting_payable_earning_sources)
@@ -64,11 +107,6 @@ END $snapshot$;
 CREATE TEMP TABLE alert38644_preserved_before AS SELECT pg_temp.alert38644_preserved_state() AS value;
 CREATE TEMP TABLE alert38644_treasury_before AS
  SELECT chip_treasury FROM public.clubs WHERE id='2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
-CREATE TEMP VIEW alert38644_current_function_authority AS
- SELECT p.oid,p.proowner,p.proacl,p.prosecdef,p.proconfig,md5(pg_get_functiondef(p.oid)) AS definition_md5
- FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
- WHERE n.nspname IN('public','auth') AND p.prokind IN('f','p');
-CREATE TEMP TABLE alert38644_function_authority_before AS SELECT * FROM alert38644_current_function_authority;
 CREATE TEMP TABLE alert38644_scope_before AS
  SELECT public.fn_cash_source_refusals_for_period(NULL,'2a1132b9-5ba2-42e6-9f01-30a7fcffebe3',
   '2026-09-07 07:00Z','2026-09-14 07:00Z') AS value;
@@ -134,8 +172,23 @@ BEGIN
   identity=public.fn_accounting_failure_identity(failure),alerts=v_alerts WHERE stage=p_stage;
 END $check$;
 
+-- The clock seam must preserve the production minute45 gate: the actual public
+-- service entry refuses this window without creating a run, alert or money row.
+SET LOCAL test.alert38644_clock='2026-09-14T09:45:00Z';
+SET LOCAL ROLE service_role;
+SELECT jsonb_build_object('caller',current_user,'result',public.fn_process_weekly_accounting(NULL)) AS observation
+ \gset alert38644_closed_window_
+RESET ROLE;
+SELECT pg_temp.alert38644_assert(:'alert38644_closed_window_observation'::jsonb=jsonb_build_object(
+ 'caller','service_role','result',jsonb_build_object('success',true,'skipped',true,'reason','maintenance_window'))
+ AND NOT EXISTS(SELECT 1 FROM public.union_accounting_runs)
+ AND NOT EXISTS(SELECT 1 FROM public.financial_alerts WHERE source='weekly_club_accounting')
+ AND pg_temp.alert38644_preserved_state()=(SELECT value FROM alert38644_preserved_before),
+ 'actual minute45 coordinator refusal preserves all original state and creates no run or alert');
+SET LOCAL test.alert38644_clock='2026-09-14T09:20:00Z';
+
 -- Actual role transition: caller is captured outside the SECURITY DEFINER
--- invocation. No private EXECUTE grant or coordinator replacement is installed.
+-- invocation. No private EXECUTE grant or dispatch/calculation replacement.
 SET LOCAL ROLE service_role;
 SELECT jsonb_build_object('caller',current_user,'result',public.fn_process_weekly_accounting(NULL)) AS observation
  \gset alert38644_first_
@@ -235,6 +288,16 @@ SELECT pg_temp.alert38644_assert((SELECT value=jsonb_build_object(
  'receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.accounting_cash_source_receipts r WHERE rake_record_id='38644000-0000-4000-8000-000000000001'),
  'work',(SELECT to_jsonb(w) FROM public.accounting_cash_source_work w WHERE rake_record_id='38644000-0000-4000-8000-000000000001'))
  FROM alert38644_synthetic_snapshot),'coordinator leaves even the added synthetic source and its original refusal receipt unchanged');
+-- Restore the original exact definition while still inside the rollback
+-- transaction, then compare every public/auth authority field in both directions.
+DO $restore_clock$
+DECLARE original text;installed text;
+BEGIN
+ SELECT definition INTO STRICT original FROM alert38644_clock_original;
+ EXECUTE original;
+ SELECT pg_get_functiondef(oid) INTO STRICT installed FROM alert38644_clock_original;
+ IF installed IS DISTINCT FROM original THEN RAISE EXCEPTION 'alert38644_clock_restore_mismatch';END IF;
+END $restore_clock$;
 SELECT pg_temp.alert38644_assert((SELECT count(*)=4 FROM alert38644_coordinator_calls)
  AND NOT EXISTS((SELECT * FROM alert38644_function_authority_before EXCEPT SELECT * FROM alert38644_current_function_authority)
  UNION ALL(SELECT * FROM alert38644_current_function_authority EXCEPT SELECT * FROM alert38644_function_authority_before))

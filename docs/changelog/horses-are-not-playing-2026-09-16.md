@@ -101,6 +101,43 @@ this change). This change is the same diff cherry-picked onto the restored
 baseline (2ee0725168) under the owner's 2026-09-17 instruction that each
 task publishes its own work.
 
+## Verified live on 2026-09-17
+
+Merged as df75936396 (#4731) at 06:43 UTC. Its own engine release
+(35191123637) failed on the box for want of build memory, as every engine
+release since 00:44 UTC had; the release of 4a2bff6f (#4737, which lowered
+the bounded build to 640 MB and contains df75936396) built at 07:07 UTC,
+held for the 07:55 window, and cut over at 07:55:34 UTC (run 35192177283,
+sealed, leader 1-95e7589b, `https://engine.smarter.poker/health` version
+4a2bff6f; every job of the release run green). The break ended at 08:02:33
+with 1,746 tables resumed in 8 waves. Measured at 08:09, against 07:33 on
+a0d001e2:
+
+| number                                        | a0d001e2, 07:33                                     | 4a2bff6f, 08:09                                   |
+| --------------------------------------------- | --------------------------------------------------- | ------------------------------------------------- |
+| wait-loop log lines a minute                  | 12,995                                              | 1,319, every one carrying its backoff             |
+| elimination sweep, mean                       | 10.6 s                                              | 1.5 s                                             |
+| elimination queue depth / oldest wait         | 1,022 / 26 min                                      | 258 / 7 min                                       |
+| stalled sweep slots                           | 0                                                   | 0                                                 |
+| horses seated / tables with horses            | 1,548 / 1,323                                       | 1,403 / 1,075 (still refilling after the restart) |
+| seeding cycle                                 | 38 to 39 s, load phase 35 s against the 18 s budget | 26 to 38 s, load phase 19 s                       |
+| tournament lease heartbeat errors / conflicts | 17 / 0                                              | 0 / 0                                             |
+| engine RSS / MemAvailable                     | 2.4 GB / 0.87 GB                                    | 1.3 GB / 1.7 GB                                   |
+
+Also gone with the restart, and kept away by #4626 in this release: 424
+in-memory managers of Spins already COMPLETED in the database were retrying
+their refused blind level every 2 s (12,947 `blind_transition_failed` a
+minute, 217 `fn_publish_tournament_blind_level` calls a second); at 08:09 the
+count is 0 a minute and 4 a second, and managers alive (293) match
+tournaments running (287).
+
+Found while measuring, written up as the next plan
+(`docs/terminal-settlement-lane-per-tournament-plan-2026-09-17.md`): every
+tournament finish takes the platform-wide settlement lane exclusively, and
+a burst of finishes (85 a minute while the restart drained the decided
+Spins) queued 1,589 hand settlements behind it at a p50 of 2.0 s and
+cancelled 52 of them at the 8 s statement timeout in 08:05-08:10.
+
 ## What was not changed
 
 - No repair job finishes the 804 decided tournaments by hand; the sweeps

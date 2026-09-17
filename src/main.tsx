@@ -115,6 +115,64 @@ const bootStatus = initAntiGravity();
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
+/**
+ * THE PRERENDERED LANDING HANDS OVER TO THE REACT TREE (2026-09-17).
+ * scripts/prerender-public-routes.mjs writes the landing page's markup into
+ * index.html as #prerender-landing, a sibling before #root, with #root hidden
+ * while it exists, so a signed-out visitor and every crawler read the page
+ * before the bundle runs. Once React has drawn a page with a heading (the
+ * landing page, or the lobby if a session turned up after all), the block
+ * goes and #root shows: two identical layouts, no shift. The 5 s ceiling
+ * covers a tree that never draws a heading; a bundle that never boots leaves
+ * the words on screen, which is the point.
+ */
+function releasePrerenderedLanding(): void {
+  const block = document.getElementById('prerender-landing');
+  if (!block) return;
+  const rootEl = document.getElementById('root');
+  if (!rootEl) {
+    block.remove();
+    return;
+  }
+  let observer: MutationObserver | null = null;
+  let ceiling: ReturnType<typeof setTimeout> | null = null;
+  const release = () => {
+    block.remove();
+    observer?.disconnect();
+    if (ceiling) clearTimeout(ceiling);
+  };
+  // Two conditions, so the swap is between two FINISHED layouts: the React
+  // tree has drawn a heading, and every web font it asked for has arrived
+  // (a swap while Cinzel or Inter is still loading reflows the new tree a
+  // frame later, which is a visible jump; measured 0.06 CLS on a phone).
+  const fontsSettled = () =>
+    typeof document.fonts === 'undefined' || document.fonts.status === 'loaded';
+  let armed = false;
+  const tryRelease = () => {
+    if (armed || !rootEl.querySelector('h1')) return;
+    armed = true;
+    // The heading is in the tree but has not been laid out yet, and it is
+    // layout that asks for the fonts it needs. Let one frame pass so those
+    // requests exist, then wait for them; measured: releasing on the
+    // mutation itself swapped in a one-line heading that reflowed to two
+    // lines 130 ms later.
+    requestAnimationFrame(() => {
+      if (fontsSettled()) {
+        release();
+        return;
+      }
+      document.fonts.ready.then(() => {
+        if (document.getElementById('prerender-landing')) release();
+      });
+    });
+  };
+  tryRelease();
+  if (!document.getElementById('prerender-landing')) return;
+  observer = new MutationObserver(tryRelease);
+  observer.observe(rootEl, { childList: true, subtree: true });
+  ceiling = setTimeout(release, 5000);
+}
+
 // NATIVE ONLY: the session may need putting back into the webview's storage
 // from the app's own store before anything reads it (src/lib/native/sessionMirror).
 // On the web this function body runs synchronously to completion - there is
@@ -193,6 +251,7 @@ function bootReactTree(): void {
         </BrowserRouter>
       </ErrorBoundary>
     );
+    releasePrerenderedLanding();
 
     // NATIVE ONLY: hide the splash, style the status bar, tell the OTA updater
     // this bundle booted. Compile-time constant, so the web bundle carries

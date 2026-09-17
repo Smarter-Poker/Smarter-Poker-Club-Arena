@@ -1220,6 +1220,16 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
 
+      - name: Tournament blinds publish atomically across the field
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-atomic-tournament-blinds-pg17.py
+
+      - name: Played tournament launch recovery preserves the original field
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-played-mtt-launch-pg17.py
+
       - name: Agent downline rake stays in overseer clubs
         env:
           PGBIN: /usr/lib/postgresql/17/bin

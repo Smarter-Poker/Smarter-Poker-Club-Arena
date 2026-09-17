@@ -283,6 +283,61 @@ class SessionEnvironmentTests(unittest.TestCase):
                 self.assertRaisesRegex(RuntimeError, 'unexpected SQL failure'):
             session.json('SELECT original_observation;')
 
+    def test_cleanup_observes_server_exit_after_terminal_clients_without_extending_deadline(self):
+        session = object.__new__(self.lib.Session)
+        clock = [10.0]
+        events = {}
+        samples = [{'backends': 1, 'locks': 5}, {'backends': 0, 'locks': 0}]
+        def observe(_sql):
+            clock[0] += 0.005
+            return samples.pop(0)
+        def wait(seconds):
+            clock[0] += seconds
+        with patch.object(session, 'json', side_effect=observe) as query, \
+                patch.object(self.lib.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(self.lib.time, 'sleep', side_effect=wait) as pause:
+            self.lib.observe_backend_cleanup(session, '20445,20443,20441', 10.03, events)
+        self.assertEqual(query.call_count, 2)
+        self.assertEqual(query.call_args_list[0], query.call_args_list[1])
+        sql = query.call_args.args[0]
+        self.assertIn('WHERE datname=current_database() AND pid<>pg_backend_pid()', sql)
+        self.assertIn('FROM pg_locks WHERE pid IN (20445,20443,20441)', sql)
+        self.assertNotIn('pg_terminate_backend', sql)
+        self.assertEqual(events['backend_cleanup_observations'],
+                         [{'backends': 1, 'locks': 5}, {'backends': 0, 'locks': 0}])
+        self.assertEqual(events['backend_cleanup'], {'backends': 0, 'locks': 0})
+        pause.assert_called_once_with(0.01)
+        self.assertLess(clock[0], 10.03)
+
+    def test_cleanup_deadline_fails_with_remaining_backends_or_late_zero(self):
+        for late_zero in (False, True):
+            with self.subTest(late_zero=late_zero):
+                session = object.__new__(self.lib.Session)
+                clock = [10.0]
+                events = {}
+                def observe(_sql):
+                    if late_zero:
+                        clock[0] = 10.02
+                        return {'backends': 0, 'locks': 0}
+                    return {'backends': 1, 'locks': 5}
+                def wait(seconds):
+                    clock[0] += seconds
+                with patch.object(session, 'json', side_effect=observe) as query, \
+                        patch.object(self.lib.time, 'monotonic', side_effect=lambda: clock[0]), \
+                        patch.object(self.lib.time, 'sleep', side_effect=wait) as pause, \
+                        self.assertRaisesRegex(TimeoutError, 'before cleanup deadline'):
+                    self.lib.observe_backend_cleanup(session, '20445,20443,20441', 10.015, events)
+                self.assertEqual(query.call_count, 1 if late_zero else 2)
+                self.assertEqual(events['backend_cleanup_observations'],
+                                 [{'backends': 0, 'locks': 0}] if late_zero else
+                                 [{'backends': 1, 'locks': 5}] * 2)
+                self.assertEqual(events['backend_cleanup'], events['backend_cleanup_observations'][-1])
+                self.assertNotIn('cleanup_verified', events)
+                if late_zero:
+                    pause.assert_not_called()
+                else:
+                    self.assertAlmostEqual(sum(call.args[0] for call in pause.call_args_list), 0.015)
+
     def test_begin_requires_observed_service_role_without_a_user_identity(self):
         session = object.__new__(self.lib.Session)
         original_transaction = ("BEGIN; SET LOCAL statement_timeout='8s'; "

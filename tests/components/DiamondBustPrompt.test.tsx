@@ -53,13 +53,27 @@ describe('Diamond Spins bust invitation', () => {
   it('removes a dismissed offer when session storage is unavailable', () => {
     state.retainExit = true;
     state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
-    // Happy DOM's instance access can return a bound method instead of an
-    // instance spy. Replace the owning Storage method so this fault really fires.
-    const write = vi
-      .spyOn(Object.getPrototypeOf(sessionStorage), 'setItem')
-      .mockImplementation(() => {
-        throw new Error('Storage unavailable');
-      });
+    // Happy DOM binds Storage methods on first access; Node's native Storage
+    // has different ownership. Inject the same fault at the global read used
+    // by the component, independent of either implementation's method binding.
+    const storage = sessionStorage;
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage')!;
+    const write = vi.fn(() => {
+      throw new Error('Storage unavailable');
+    });
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.getItem(key),
+        setItem: write,
+        removeItem: (key: string) => storage.removeItem(key),
+        clear: () => storage.clear(),
+        key: (index: number) => storage.key(index),
+        get length() {
+          return storage.length;
+        },
+      } satisfies Storage,
+    });
     try {
       const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
       fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
@@ -68,7 +82,7 @@ describe('Diamond Spins bust invitation', () => {
       rerender(<DiamondBustPrompt clubId="club-a" />);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     } finally {
-      write.mockRestore();
+      Object.defineProperty(globalThis, 'sessionStorage', descriptor);
     }
   });
 

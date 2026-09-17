@@ -7,3 +7,5 @@ The existing authenticated tournament channel now returns the current manager's 
 The channel listener is installed before requesting the snapshot. Shared consumers retain independent release ownership. Existing pause, barrier, blind, ranking and payment decisions are unchanged. No database field, polling or background repair is introduced.
 
 Connected regression coverage exercises the actual manager presentation, channel join/rejoin, shared client subscription, detail banner and table HUD. Original-source controls fail the missing-disclosure assertions. Local and protected release evidence is recorded by the owning task; this source record alone does not claim deployment.
+
+The connected overview fixture now supplies the tournament subscription boundary. The existing Diamond dismissal fault fixture injects its throwing storage writer at the component's global read, avoiding the different method-binding behavior of Node native storage and Happy DOM. Its exact storage-key and dismissal assertions remain intact; no Diamond application behavior changed.

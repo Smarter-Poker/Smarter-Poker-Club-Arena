@@ -17,6 +17,9 @@ case "$("$PGBIN/postgres" --version)" in
 esac
 test -x "$PGBIN/initdb"
 test -x "$PGBIN/psql"
+# Exercise the real join/cancel race in its own disposable database. This is
+# part of the existing accounting check, not a separate release workflow.
+PGBIN="$PGBIN" python3 "$repo/scripts/dev/probe-cash-game-admission-lock.py"
 # Homebrew may place support files inside the keg rather than the compiled path.
 departure_share="$("$PGBIN/pg_config" --sharedir)"
 if [[ ! -f "$departure_share/postgres.bki" && -f "$PGBIN/../share/postgresql/postgres.bki" ]]; then

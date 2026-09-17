@@ -38,8 +38,8 @@
     },
     {
       "path": "scripts/qualification/cash-pot-check-evidence.sql",
-      "bytes": 28558,
-      "sha256": "ad15d596f294df9c0a5481dc845fa17ac757ab8e8780dcc3b96885f2a5cabaa3"
+      "bytes": 28808,
+      "sha256": "dca937ea5e505d4ad6da7384a4162a7e9b0490211149fa034a58697ed7eb0c1b"
     },
     {
       "path": "scripts/qualification/cash-pot-check-evidence-concurrency.spec",

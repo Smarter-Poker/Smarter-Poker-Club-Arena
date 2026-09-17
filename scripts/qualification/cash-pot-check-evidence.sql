@@ -288,7 +288,8 @@ SELECT cash_qualification.assert_true(EXISTS(
  '10000 admitted identities complete');
 CREATE TEMP TABLE before_overflow AS SELECT count(*) h,sum(anomaly_rows) d,
  (SELECT count(*) FROM public.operational_alert_events) q,
- (SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM public.financial_alerts f) f
+ (SELECT jsonb_agg(to_jsonb(financial_row) ORDER BY financial_row.id)
+   FROM public.financial_alerts financial_row) financial_snapshot
  FROM public.ca_cash_pot_check_evidence;
 INSERT INTO public.hand_history VALUES('c4053802-0000-4000-8000-000000010001',NULL,NULL,now(),NULL,1,0,0,'[]');
 INSERT INTO case_result VALUES('row_limit_error',cash_qualification.expect_error(
@@ -301,7 +302,9 @@ SELECT cash_qualification.assert_true(
  AND (SELECT h=(SELECT count(*) FROM public.ca_cash_pot_check_evidence)
    AND d=(SELECT sum(anomaly_rows) FROM public.ca_cash_pot_check_evidence)
    AND q=(SELECT count(*) FROM public.operational_alert_events)
-   AND f IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM public.financial_alerts f)
+   AND financial_snapshot IS NOT DISTINCT FROM
+     (SELECT jsonb_agg(to_jsonb(financial_row) ORDER BY financial_row.id)
+       FROM public.financial_alerts financial_row)
    FROM before_overflow),
  '10001 fails with own invocation and no false complete receipt');
 ROLLBACK TO case_rowlimit;
@@ -310,7 +313,8 @@ SAVEPOINT case_byte_limit;
 TRUNCATE public.hand_history;
 CREATE TEMP TABLE before_byte_overflow AS SELECT
  (SELECT count(*) FROM public.operational_alert_events) q,
- (SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM public.financial_alerts f) f;
+ (SELECT jsonb_agg(to_jsonb(financial_row) ORDER BY financial_row.id)
+   FROM public.financial_alerts financial_row) financial_snapshot;
 -- Large numeric scale makes narrow typed rows large, without raw cards/user
 -- profiles. Totals round once. Native admission must measure this resource case.
 INSERT INTO public.hand_history(id,created_at,pot_size,rake_amount,bbj_amount,winners)
@@ -326,7 +330,9 @@ SELECT cash_qualification.assert_true(
  AND (SELECT count(*)=1 FROM public.ca_cash_pot_check_evidence)
  AND (SELECT count(*)=21 FROM public.ca_cash_pot_check_anomalies)
  AND (SELECT q=(SELECT count(*) FROM public.operational_alert_events)
-   AND f IS NOT DISTINCT FROM (SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM public.financial_alerts f)
+   AND financial_snapshot IS NOT DISTINCT FROM
+     (SELECT jsonb_agg(to_jsonb(financial_row) ORDER BY financial_row.id)
+       FROM public.financial_alerts financial_row)
    FROM before_byte_overflow),
  '8MiB overflow no partial identities/header/queue');
 ROLLBACK TO case_byte_limit;

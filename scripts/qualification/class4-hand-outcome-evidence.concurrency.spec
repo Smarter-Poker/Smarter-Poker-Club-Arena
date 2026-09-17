@@ -9,7 +9,7 @@ setup
     IF current_user<>'postgres' OR current_database() IS DISTINCT FROM
       'class4_native_'||replace(current_setting('app.class4_execution_uuid',true),'-','')
       OR current_setting('app.class4_execution_uuid',true) !~
-      '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      ('^'||repeat('[0-9a-f]',8)||'-'||repeat('[0-9a-f]',4)||'-'||repeat('[0-9a-f]',4)||'-'||repeat('[0-9a-f]',4)||'-'||repeat('[0-9a-f]',12)||'$')
       OR md5(pg_get_functiondef('public.fn_resolve_settled_financial_alerts(boolean,integer)'::regprocedure))
          IS DISTINCT FROM 'edd4397b2daeadade433cd01a26a1c70'
       OR EXISTS(SELECT 1 FROM public.financial_alerts)
@@ -22,15 +22,18 @@ setup
     stack_result,post_commit_payload,post_commit_request_hash,post_commit_payload_hash,
     post_commit_completed_at,post_commit_result)
   VALUES('71000000-0000-4000-8000-000000000001',7100001,
-    '71000000-0000-4000-8000-000000000002',repeat('a',64),'{}',
-    '{"version":1}',repeat('b',64),
-    encode(extensions.digest(convert_to('{"version":1}'::jsonb::text,'UTF8'),'sha256'),'hex'),
+    '71000000-0000-4000-8000-000000000002',repeat('a',64),jsonb_build_object(),
+    jsonb_build_object('version',1),repeat('b',64),
+    encode(extensions.digest(convert_to(jsonb_build_object('version',1)::text,'UTF8'),'sha256'),'hex'),
     '2026-09-15T04:32:28.138880Z',
-    '{"ok":true,"hand_id":"71000000-0000-4000-8000-000000000002","hand_number":7100001}');
+    jsonb_build_object('ok',true,'hand_id','71000000-0000-4000-8000-000000000002','hand_number',7100001));
   INSERT INTO public.financial_alerts(id,severity,source,message,context)
   VALUES('71000000-0000-4000-8000-000000000003','critical',
     'ServerTableEngine.authoritative_hand_semantic_refusal','Native Class4 concurrency',
-    '{"channel":"server_rpc","table_id":"71000000-0000-4000-8000-000000000001","hand_number":7100001,"hand_request_identity_v1":{"version":1,"table_id":"71000000-0000-4000-8000-000000000001","hand_number":7100001,"hand_id":"71000000-0000-4000-8000-000000000002","post_commit_required":true}}');
+    jsonb_build_object('channel','server_rpc','table_id','71000000-0000-4000-8000-000000000001',
+      'hand_number',7100001,'hand_request_identity_v1',jsonb_build_object(
+        'version',1,'table_id','71000000-0000-4000-8000-000000000001','hand_number',7100001,
+        'hand_id','71000000-0000-4000-8000-000000000002','post_commit_required',true)));
   SET session_replication_role=origin;
 }
 
@@ -45,7 +48,7 @@ setup { SET statement_timeout='20s'; SET lock_timeout='15s'; }
 step "change_begin" { BEGIN; }
 step "change_identity" {
   UPDATE public.financial_alerts SET context=jsonb_set(context,
-    '{hand_request_identity_v1,hand_id}','"71000000-0000-4000-8000-000000000099"')
+    ARRAY['hand_request_identity_v1','hand_id'],'"71000000-0000-4000-8000-000000000099"')
   WHERE id='71000000-0000-4000-8000-000000000003';
 }
 step "change_commit" { COMMIT; }

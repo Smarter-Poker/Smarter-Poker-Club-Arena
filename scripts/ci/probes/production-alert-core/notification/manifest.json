@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "Isolated composed bridge/raiser/escalator source, malformed identity and actual trigger/mirror/owner notification/inbox chain; no money or connected service proof",
+  "scope": "Isolated composed bridge/raiser/escalator source, malformed identity and actual trigger/mirror/owner notification/inbox chain; no money or connected service proof; cash checker complete-evidence and preserved suppression policy through actual financial trigger graph, with real connected control",
   "historicalBaseline": {
     "sourceManifestSha256": "638d8a1ba6927538d9eede3819112f3754cffa9e778f3a01f1db10b8244f5280",
     "receiptSha256": "1d0988d12d1ab8e950a5c23b103df5b5590cfafc98a111528b80d912027e2f5e",
@@ -105,6 +105,26 @@
       "path": "scripts/ci/probes/production-alert-core/inputs/received-reconcile.sql",
       "sha256": "569a5a22e78dd295427034cc1f77bed12594ed566af9aad1add857868ad68f44",
       "bytes": 2673
+    },
+    "cash_connected": {
+      "path": "scripts/qualification/cash-pot-check-connected.sql",
+      "sha256": "518384ebfd7c0ca0a02b906bf77896d7b4183474b57ef9592e1528909e45dec6",
+      "bytes": 13869
+    },
+    "cash_preimage": {
+      "path": "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql",
+      "sha256": "4f91321bf2d97e99614803b7a05e4c7d4d408071d932e6ea5ae0d9035355d7d2",
+      "bytes": 6135
+    },
+    "cash_component": {
+      "path": "supabase/components/cash-pot-check-evidence.sql",
+      "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014",
+      "bytes": 50456
+    },
+    "cash_rollback": {
+      "path": "supabase/components/cash-pot-check-evidence.rollback.sql",
+      "sha256": "2c60e14442fa14e0933b70e93f3200163812186c5858e41c8f4fcac61a7408ca",
+      "bytes": 50461
     }
   },
   "sequenceContract": {

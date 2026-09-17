@@ -38,6 +38,16 @@ class OwnerNotificationPostgresGuards(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'checkout binding path drift'):
             runner.pinned_sources(Path('/unused'), manifest)
 
+    def test_cash_connected_chain_cannot_be_omitted_from_fixed_inputs(self):
+        for removed in ('cash_connected','cash_preimage','cash_component','cash_rollback'):
+            manifest={
+                'schemaVersion':1,
+                'fixtureFiles':{str(runner.FIXTURE / p):{} for p in runner.LEAVES},
+                'checkoutInputs':{k:{'path':v} for k,v in runner.CHECKOUT_INPUTS.items() if k!=removed},
+            }
+            with self.subTest(removed=removed),self.assertRaisesRegex(RuntimeError,'checkout binding set drift'):
+                runner.pinned_sources(Path('/unused'),manifest)
+
     def test_bigint_sequence_rounding_regression(self):
         exact = {'type': 'bigint', 'start': '1', 'increment': '1', 'minimum': '1',
                  'maximum': '9223372036854775807', 'cache': '1', 'cycle': False}

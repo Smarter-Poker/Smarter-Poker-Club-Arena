@@ -34,6 +34,7 @@ FIXED_INPUTS = ('scripts/ci/build_pg17_isolationtester.py',
  'scripts/qualification/fixtures/spin-repair-evidence/original-40497-40499.sql',
  'scripts/qualification/fixtures/spin-repair-evidence/original-bridge.sql',
  'scripts/qualification/fixtures/spin-repair-evidence/preimage.sql',
+ 'scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql',
  'scripts/qualification/rake-repair-record-evidence.manifest.json',
  'scripts/qualification/rake-repair-record-evidence.md',
  'scripts/qualification/rake-repair-record-evidence.sql',
@@ -206,6 +207,10 @@ def main():
                     label + '-rollback-proof')
                 require(clean.strip() == 't', label + ': fixture rollback incomplete')
             else:
+                command([pg / 'psql', '-X', '-w', '-qAt', '-v', 'ON_ERROR_STOP=1',
+                         '-h', socket, '-p', '5432', '-U', 'postgres', '-d', database,
+                         '-f', ROOT / 'scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql'],
+                        label + '-prepare', env=child_env)
                 spec = (ROOT / 'scripts/qualification/spin-repair-evidence-race.spec').read_text()
                 stdout, stderr = command([isolation, 'host=' + str(socket) +
                     ' port=5432 user=postgres dbname=' + database], label + '-qualification',

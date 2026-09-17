@@ -557,3 +557,46 @@ describe('Class4 evidence uses the same PostgreSQL job', () => {
     );
   });
 });
+
+describe('cash failure intake is exercised by the actual hosted scheduler fixture', () => {
+  it.each([
+    'supabase/components/cash-failed-run-intake.sql',
+    'supabase/components/cash-failed-run-intake.rollback.sql',
+    'supabase/components/cash-pot-check-evidence.sql',
+    'supabase/components/cash-pot-check-evidence.rollback.sql',
+    'scripts/ci/build_pg17_cash_pgcron.py',
+    'scripts/ci/test-cash-failure-pgcron.py',
+    'scripts/ci/test_cash_native_pgcron.py',
+    'scripts/qualification/cash-native-hosted.manifest.json',
+    'scripts/qualification/cash-pot-check-connected.sql',
+    'scripts/ci/probes/production-alert-core/cash-checker-preimage.sql',
+    'scripts/qualification/cash-pot-check-evidence-concurrency.spec',
+    'scripts/qualification/fixtures/cash-native-pgcron/pg_cron-heap-tables.patch',
+    'scripts/qualification/fixtures/cash-pot-check-evidence/preimage.sql',
+  ])('requires accounting and its guard suite for %s', (path) => {
+    const result = classifyChangedPaths([path]);
+    expect(result.server).toBe(true);
+    expect(result.tests).toBe(true);
+  });
+  it('keeps backup files outside the production source match', () => {
+    expect(
+      classifyChangedPaths(['supabase/components/cash-failed-run-intake.sql.bak']).server
+    ).toBe(false);
+  });
+  it('builds and executes the native scheduler without suppressing failure', () => {
+    const job = ci.jobs.accounting_postgres;
+    const build = job.steps.filter((s: { id?: string }) => s.id === 'cash_pgcron_build');
+    const execution = job.steps.filter((s: { id?: string }) => s.id === 'cash_native_failure');
+    expect(job['runs-on']).toBe('ubuntu-latest');
+    expect(job['continue-on-error']).toBeUndefined();
+    expect(build).toHaveLength(1);
+    expect(execution).toHaveLength(1);
+    expect(build[0].run).toBe('python3 scripts/ci/build_pg17_cash_pgcron.py');
+    expect(execution[0].run.trim()).toBe(
+      'python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py\npython3 scripts/ci/test-cash-failure-pgcron.py'
+    );
+    expect(execution[0].if).toBeUndefined();
+    expect(execution[0]['continue-on-error']).toBeUndefined();
+    expect(job.steps.indexOf(build[0])).toBeLessThan(job.steps.indexOf(execution[0]));
+  });
+});

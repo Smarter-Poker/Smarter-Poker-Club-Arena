@@ -13,8 +13,8 @@
   },
   "files": {
     "scripts/ci/test-alert-evidence-postgres.py": {
-      "sha256": "9b4ee222d0e8667d1667a0cbf0438da5aeb3fc575d64dd3cd528c0e827690b16",
-      "bytes": 15634
+      "bytes": 16043,
+      "sha256": "83f446d55f5271998338ddc66bd85ad705bcc44ac13eb836bbf4470c9214c189"
     },
     "scripts/ci/test_alert_evidence_wrapper.py": {
       "sha256": "bc4ccda5e06c7376063a0ebf6a072b5b3dd3d0cbc81fbde9b1ad5f63ee3244ce",
@@ -73,16 +73,16 @@
       "bytes": 19942
     },
     "scripts/qualification/spin-repair-evidence-race.spec": {
-      "sha256": "2940c9940bd04b5baee07cf8fa7523bf7d21e8694afd353398d8f8e776b74dab",
-      "bytes": 66434
+      "bytes": 4679,
+      "sha256": "6ef7008493ea5720b6b15b51df22f4c4bbda7d0204c89d376877a95db6a5883f"
     },
     "scripts/qualification/spin-repair-evidence.manifest.json": {
-      "sha256": "c521a2d97c5a83be3425c0bde95e959d9e80f9ab43e94432f6068415a73b9718",
-      "bytes": 10737
+      "bytes": 11276,
+      "sha256": "6144947996006afbf1e8d509c7b1dc15306f4b9c22ac3c41bf9f1d7b4e337f1b"
     },
     "scripts/qualification/spin-repair-evidence.md": {
-      "sha256": "d78eb2da3781e26d69f460fdf44f7693c5d417a8cfb6a8e2f47e569c82d6c136",
-      "bytes": 12762
+      "bytes": 13141,
+      "sha256": "52ae0055b9312d1db32bfe0235549076693ff9d961fad59d0d324592dcdf5bef"
     },
     "scripts/qualification/spin-repair-evidence.sql": {
       "sha256": "3d5e09cedf03ae34788c4082bc88faf1ec620206e837386cf39bc358a5e31293",
@@ -115,6 +115,10 @@
     "scripts/ci/build_pg17_isolationtester.py": {
       "sha256": "df9e8db08e7fcbd4e18f3c878a0f5fd05efb160777a70ff48e2348efee484317",
       "bytes": 7129
+    },
+    "scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql": {
+      "bytes": 64094,
+      "sha256": "86f5e7f15c7a678f061215f17e42d023fba3ee16774ccc28545f549858c0ddb9"
     }
   },
   "limitations": [

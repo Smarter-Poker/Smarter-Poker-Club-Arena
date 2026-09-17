@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "status": "SOURCE_ONLY_UNRUN",
+  "scope": "Cash positive checker evidence and immediate job259 failed-row intake; real pg_cron SPI fixture, not production financial reconciliation",
+  "sourceDonor": "14898e64111c71ee3f4afbffa412ecce4c641002",
+  "core": {
+    "bridge": "00a43ae03ab12cec9505e2bfed71d937",
+    "raiser": "a6df5f2eef07aa3f606db79d93944590"
+  },
+  "files": {
+    ".github/workflows/ci.yml": {
+      "bytes": 123520,
+      "sha256": "0329a497fe7475b2e4679daea98917ae69d2a9dde509c7ed7119abff25037734"
+    },
+    "scripts/ci/build_pg17_cash_pgcron.py": {
+      "bytes": 6283,
+      "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
+    },
+    "scripts/ci/classify-ci-changes.mjs": {
+      "bytes": 8078,
+      "sha256": "344a74581c51da1af485f121f212c0d91cdca4f5182ccf8139017a0eca9d59dc"
+    },
+    "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
+      "bytes": 6135,
+      "sha256": "4f91321bf2d97e99614803b7a05e4c7d4d408071d932e6ea5ae0d9035355d7d2"
+    },
+    "scripts/ci/probes/production-alert-core/notification/manifest.json": {
+      "bytes": 6239,
+      "sha256": "97c726bae351309dcd5c6e2c4594d00c5deb248fab41f2838e473136c1b12d97"
+    },
+    "scripts/ci/test-cash-failure-pgcron.py": {
+      "bytes": 27806,
+      "sha256": "ed02decc87e8395c2d9c51e72bb6416c718138221af74aae2ff606db3e931656"
+    },
+    "scripts/ci/test-production-alert-core-postgres.py": {
+      "bytes": 17990,
+      "sha256": "f08ada516371fff17aed91e63a07ea6fc644b3ae741f0603c10e961602e131e6"
+    },
+    "scripts/ci/test_cash_native_pgcron.py": {
+      "bytes": 3114,
+      "sha256": "f56a9027668706d793225166057d369c61ab30e5ab9d6061746456cf7b8d288d"
+    },
+    "scripts/ci/test_production_alert_core_postgres.py": {
+      "bytes": 5426,
+      "sha256": "4c7cab76529b12ac4a3127cc6431b5cc102b9847ba90935b3e45eee04d47c38c"
+    },
+    "scripts/operational-alerts/cash-pot-failed-run-intake.md": {
+      "bytes": 1677,
+      "sha256": "f3ffb2bc3a19c46d4b73ec9807dd468f4ce63a0957334328a4ace32b8334a64a"
+    },
+    "scripts/operational-alerts/cash-pot-failed-run-intake.sql": {
+      "bytes": 11540,
+      "sha256": "a8526d6955533b95318f575c3486e475a6a0e926f63685b00741366ab047c750"
+    },
+    "scripts/qualification/cash-pot-check-connected.sql": {
+      "bytes": 13869,
+      "sha256": "518384ebfd7c0ca0a02b906bf77896d7b4183474b57ef9592e1528909e45dec6"
+    },
+    "scripts/qualification/cash-pot-check-evidence-concurrency.spec": {
+      "bytes": 7637,
+      "sha256": "0c465d42787dacb497578030a25e434de240546de18e4fb4b89ce805faf710cf"
+    },
+    "scripts/qualification/cash-pot-check-evidence.manifest.json": {
+      "bytes": 15491,
+      "sha256": "79b2dc6f4a272e1145905747d7b9067567f06f0f465f337516c0518eebe6146c"
+    },
+    "scripts/qualification/cash-pot-check-evidence.md": {
+      "bytes": 16263,
+      "sha256": "56ed6bd6ce7f38fa60414da0e018dc4a176c0705e84e457495d5908855219988"
+    },
+    "scripts/qualification/cash-pot-check-evidence.sql": {
+      "bytes": 28558,
+      "sha256": "ad15d596f294df9c0a5481dc845fa17ac757ab8e8780dcc3b96885f2a5cabaa3"
+    },
+    "scripts/qualification/cash-pot-failed-run-intake.sql": {
+      "bytes": 19643,
+      "sha256": "1d1651261bd34b5c9ce6e12e91139fcfb47f718d3791675fec36f6412418c7b8"
+    },
+    "scripts/qualification/fixtures/cash-native-pgcron/pg_cron-heap-tables.patch": {
+      "bytes": 912,
+      "sha256": "47134f2c718dfb6bdad59da4fde12af4fb82db1f7725c02729aaf7521392bc0c"
+    },
+    "scripts/qualification/fixtures/cash-pot-check-evidence/original-40538.sql": {
+      "bytes": 2324,
+      "sha256": "cf691185d04b52be799a122d9c0ecfa1df76f10701c76a6f111e677350458142"
+    },
+    "scripts/qualification/fixtures/cash-pot-check-evidence/preimage.sql": {
+      "bytes": 25281,
+      "sha256": "9c551cddfe93d80df1b28d91fa65dffc801f8f3deff38a61a01640d84f4d3d52"
+    },
+    "scripts/qualification/fixtures/cash-pot-failed-run-intake/reader-source.sql": {
+      "bytes": 11784,
+      "sha256": "0db1a08ceb7aef5b151cef28bdd02cc94947593364d9293c29821007f3c6b242"
+    },
+    "scripts/qualification/fixtures/cash-pot-failed-run-intake/writer.sql": {
+      "bytes": 957,
+      "sha256": "ce860cf1066ec51dcfaaccaef8cb03c07282c2cef2d766edfa3afc7757e362a8"
+    },
+    "supabase/components/cash-failed-run-intake.rollback.sql": {
+      "bytes": 29776,
+      "sha256": "7afc2116a94177b1f1622d7670a2743320d123e7f52de68354564bc2d5d96411"
+    },
+    "supabase/components/cash-failed-run-intake.sql": {
+      "bytes": 29777,
+      "sha256": "9eaf5855b5c3ee9f164362a9e278e34ac1063ff9d34664499592defe6f705a7d"
+    },
+    "supabase/components/cash-pot-check-evidence.rollback.sql": {
+      "bytes": 50461,
+      "sha256": "2c60e14442fa14e0933b70e93f3200163812186c5858e41c8f4fcac61a7408ca"
+    },
+    "supabase/components/cash-pot-check-evidence.sql": {
+      "bytes": 50456,
+      "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
+    },
+    "tests/unit/fixtureNativeCi.test.ts": {
+      "bytes": 28231,
+      "sha256": "65a4517e85557e265ec82788529fab5e76bb695094595deddb2990fb486e608d"
+    }
+  },
+  "nativePgCron": {
+    "upstreamCommit": "9490f9cc9803f75105f2f7d89839a998f011f8d8",
+    "upstreamArchiveSha256": "52d1850ee7beb85a4cb7185731ef4e5a90d1de216709d8988324b0d02e76af61",
+    "providerPackagingCommit": "93b885ae18c2f3ee9dc271389f7069f09627ee08",
+    "heapPatchSha256": "47134f2c718dfb6bdad59da4fde12af4fb82db1f7725c02729aaf7521392bc0c"
+  },
+  "remainingAcceptance": [
+    "All compilation and native checks unrun in this helper task",
+    "Production provider binary identity not captured; source/schema compatibility only",
+    "Existing positive donor fixture is a narrow synthetic schema; current full financial-trigger graph closure is not proved by this native scheduler test",
+    "Production resource/extension lifecycle behavior unqualified; no production failure injection"
+  ]
+}

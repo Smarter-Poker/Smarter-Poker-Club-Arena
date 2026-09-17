@@ -27,7 +27,7 @@ LEAVES = (
     'readback.sql', 'inputs/owner-notification-catalog-postimage.sql',
     'inputs/linked-invoice-positive.sql', 'inputs/captured-financial-store-policy.sql',
 )
-CHECKOUT_INPUTS = {'component': 'scripts/ci/probes/production-alert-core/inputs/owner-notification-component.sql', 'qualifier': 'scripts/ci/probes/production-alert-core/inputs/owner-notification-qualification.sql', 'core_supplement': 'scripts/ci/probes/production-alert-core/core-catalog-supplement.sql', 'core_component': 'supabase/components/production-alert-identity-and-rake-wording.sql', 'core_rollback': 'supabase/components/production-alert-identity-and-rake-wording.rollback.sql', 'core_identity': 'scripts/qualification/production-alert-core-identity.sql', 'core_connected': 'scripts/qualification/production-alert-core-connected.sql', 'core_readback': 'scripts/ci/probes/production-alert-core/readback.sql', 'core_received_reconcile': 'scripts/ci/probes/production-alert-core/inputs/received-reconcile.sql'}
+CHECKOUT_INPUTS = {'component': 'scripts/ci/probes/production-alert-core/inputs/owner-notification-component.sql', 'qualifier': 'scripts/ci/probes/production-alert-core/inputs/owner-notification-qualification.sql', 'core_supplement': 'scripts/ci/probes/production-alert-core/core-catalog-supplement.sql', 'core_component': 'supabase/components/production-alert-identity-and-rake-wording.sql', 'core_rollback': 'supabase/components/production-alert-identity-and-rake-wording.rollback.sql', 'core_identity': 'scripts/qualification/production-alert-core-identity.sql', 'core_connected': 'scripts/qualification/production-alert-core-connected.sql', 'core_readback': 'scripts/ci/probes/production-alert-core/readback.sql', 'core_received_reconcile': 'scripts/ci/probes/production-alert-core/inputs/received-reconcile.sql', 'cash_connected': 'scripts/qualification/cash-pot-check-connected.sql', 'cash_preimage': 'scripts/ci/probes/production-alert-core/cash-checker-preimage.sql', 'cash_component': 'supabase/components/cash-pot-check-evidence.sql', 'cash_rollback': 'supabase/components/cash-pot-check-evidence.rollback.sql'}
 
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 
@@ -260,6 +260,8 @@ def main():
         sql('core_identity_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
         sql('core_actual_connected_chain', ROOT / CHECKOUT_INPUTS['core_connected'], user='postgres')
         sql('core_connected_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
+        sql('cash_actual_connected_chain', ROOT / CHECKOUT_INPUTS['cash_connected'], user='postgres')
+        sql('cash_connected_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
         final_originals = sql('core_original_notifications_readback', ROOT / FIXTURE / 'readback.sql', user='postgres')
         require(after == final_originals, 'core qualification changed committed original notification/inbox state')
         # This positive commits invoice notifications and pushes. Run it only after

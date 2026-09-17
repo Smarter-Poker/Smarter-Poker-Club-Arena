@@ -195,18 +195,23 @@
     },
     {
       "path": "scripts/qualification/spin-repair-evidence-race.spec",
-      "bytes": 66434,
-      "sha256": "2940c9940bd04b5baee07cf8fa7523bf7d21e8694afd353398d8f8e776b74dab"
+      "bytes": 4679,
+      "sha256": "6ef7008493ea5720b6b15b51df22f4c4bbda7d0204c89d376877a95db6a5883f"
     },
     {
       "path": "scripts/qualification/spin-repair-evidence.md",
-      "bytes": 12762,
-      "sha256": "d78eb2da3781e26d69f460fdf44f7693c5d417a8cfb6a8e2f47e569c82d6c136"
+      "bytes": 13141,
+      "sha256": "52ae0055b9312d1db32bfe0235549076693ff9d961fad59d0d324592dcdf5bef"
     },
     {
       "path": "scripts/qualification/fixtures/spin-repair-evidence/original-bridge.sql",
       "sha256": "ff502ee4e70051c012f7eb1d5051db670a0dd8512748db0822c43e6db4657593",
       "bytes": 6474
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql",
+      "bytes": 64094,
+      "sha256": "86f5e7f15c7a678f061215f17e42d023fba3ee16774ccc28545f549858c0ddb9"
     }
   ],
   "evidence_inputs": [
@@ -266,6 +271,13 @@
     "additional_native_controls": [
       "pre-composition bridge rejected during install",
       "pre-composition bridge rejected during rollback"
-    ]
+    ],
+    "native_sql_transport": {
+      "setup": "scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql",
+      "rollbackFixtureFunction": "public.qualification_spin_restore_preimage()",
+      "rollbackProsrcMd5": "200971a0d5f8a4b720fc7996baf99f84",
+      "status": "SOURCE_ONLY_UNRUN",
+      "permutationUnchanged": true
+    }
   }
 }

@@ -41,7 +41,9 @@
     "owner": "postgres",
     "security_definer": true,
     "acl": "{postgres=X/postgres,service_role=X/postgres}",
-    "proconfig": ["search_path=public, pg_temp"],
+    "proconfig": [
+      "search_path=public, pg_temp"
+    ],
     "source_replay": "exact preimage or exact candidate only, all authority and dependency guards repeated",
     "rollback": "exact guarded source restoration; no evidence deletion or historical status reversal"
   },
@@ -93,8 +95,8 @@
     },
     {
       "path": "scripts/qualification/class4-hand-outcome-evidence.concurrency.spec",
-      "bytes": 4788,
-      "sha256": "50658f4bbaf3400cf174def1983b73062cd009512ad8ce1ff83385424c6bc4e2"
+      "bytes": 4988,
+      "sha256": "685be7c2c927415440482b0028a30ca62f6bbfc0ec47e908921637137171e2e0"
     },
     {
       "path": "scripts/qualification/class4-hand-outcome-evidence.md",
@@ -169,7 +171,10 @@
         "sha256_post": "86c9e978e8d6117d28893279e4073b33b5452e2dc0c54e8a3856f3a81d116f1f"
       }
     ],
-    "modified_segments_only": ["Class4 selection", "Class4 update and actual update count"],
+    "modified_segments_only": [
+      "Class4 selection",
+      "Class4 update and actual update count"
+    ],
     "embedded_inputs": [
       {
         "path": "supabase/components/class4-hand-outcome-evidence.sql",

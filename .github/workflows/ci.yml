@@ -1108,10 +1108,10 @@ jobs:
         run: |
           set -euo pipefail
           pg_ci_build_tools_ready=true
-          for pg_ci_tool in cc make bison flex perl tar bzip2; do
+          for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
             if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
           done
-          if [[ -x /usr/lib/postgresql/17/bin/initdb && "$pg_ci_build_tools_ready" == true ]]; then exit 0; fi
+          if [[ -x /usr/lib/postgresql/17/bin/initdb && -x /usr/lib/postgresql/17/bin/pg_config && -f /usr/include/postgresql/17/server/postgres.h && "$pg_ci_build_tools_ready" == true ]]; then exit 0; fi
           # The hosted image also configures Chrome and Microsoft repositories.
           # An unrelated Chrome index hash mismatch blocked this accounting job.
           # Limit this installation to signed Ubuntu and PostgreSQL sources.
@@ -1131,7 +1131,7 @@ jobs:
             "$pg_ci_codename" > "$pg_ci_sources/pgdg.sources"
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 build-essential bison flex perl bzip2
+          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-server-dev-17 build-essential bison flex perl bzip2 patch
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         timeout-minutes: 6
@@ -1232,6 +1232,32 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/ci -p test_class4_hand_outcome_postgres.py
           python3 scripts/ci/test-class4-hand-outcome-postgres.py --output artifacts/production-alerts-sql/class4
+
+      - name: Build the exact native pg_cron used by cash failure qualification
+        id: cash_pgcron_build
+        timeout-minutes: 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/build_pg17_cash_pgcron.py
+      - name: Cash checker evidence and real scheduler failure intake
+        id: cash_native_failure
+        timeout-minutes: 5
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py
+          python3 scripts/ci/test-cash-failure-pgcron.py
+      - name: Retain cash native scheduler qualification evidence
+        if: always() && steps.cash_pgcron_build.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cash-native-pgcron-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/production-alerts-cash-pgcron-build/*.log
+            artifacts/production-alerts-cash-pgcron-build/receipt.json
+            artifacts/production-alerts-cash-native/
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Retain production alert SQL qualification evidence
         if: always() && steps.hand_index_writer_order.outcome != 'skipped'

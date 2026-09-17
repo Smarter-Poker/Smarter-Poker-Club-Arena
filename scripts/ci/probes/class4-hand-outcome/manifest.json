@@ -113,8 +113,8 @@
     },
     "class4_concurrency": {
       "path": "scripts/qualification/class4-hand-outcome-evidence.concurrency.spec",
-      "bytes": 4788,
-      "sha256": "50658f4bbaf3400cf174def1983b73062cd009512ad8ce1ff83385424c6bc4e2"
+      "bytes": 4988,
+      "sha256": "685be7c2c927415440482b0028a30ca62f6bbfc0ec47e908921637137171e2e0"
     },
     "class4_preimage": {
       "path": "scripts/qualification/fixtures/class4-hand-outcome-evidence.preimage.sql",

@@ -1,0 +1,329 @@
+{
+  "schema_version": 1,
+  "scope": "received cash40538 positive-check evidence loss",
+  "status": "source_only_unrun",
+  "source_base": "0b6ba0aad500082f8138ca66dfe3c0538bda1f33",
+  "source_branch": "fix/rake-alert-evidence-wording",
+  "worktree": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-monitoring-worktree",
+  "owned_paths": [
+    "supabase/components/cash-pot-check-evidence.sql",
+    "supabase/components/cash-pot-check-evidence.rollback.sql",
+    "scripts/qualification/fixtures/cash-pot-check-evidence/preimage.sql",
+    "scripts/qualification/fixtures/cash-pot-check-evidence/original-40538.sql",
+    "scripts/qualification/cash-pot-check-evidence.sql",
+    "scripts/qualification/cash-pot-check-evidence-concurrency.spec",
+    "scripts/qualification/cash-pot-check-evidence.md",
+    "scripts/qualification/cash-pot-check-evidence.manifest.json"
+  ],
+  "files": [
+    {
+      "path": "supabase/components/cash-pot-check-evidence.sql",
+      "bytes": 50456,
+      "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
+    },
+    {
+      "path": "supabase/components/cash-pot-check-evidence.rollback.sql",
+      "bytes": 50461,
+      "sha256": "2c60e14442fa14e0933b70e93f3200163812186c5858e41c8f4fcac61a7408ca"
+    },
+    {
+      "path": "scripts/qualification/fixtures/cash-pot-check-evidence/preimage.sql",
+      "bytes": 25281,
+      "sha256": "9c551cddfe93d80df1b28d91fa65dffc801f8f3deff38a61a01640d84f4d3d52"
+    },
+    {
+      "path": "scripts/qualification/fixtures/cash-pot-check-evidence/original-40538.sql",
+      "bytes": 2324,
+      "sha256": "cf691185d04b52be799a122d9c0ecfa1df76f10701c76a6f111e677350458142"
+    },
+    {
+      "path": "scripts/qualification/cash-pot-check-evidence.sql",
+      "bytes": 28558,
+      "sha256": "ad15d596f294df9c0a5481dc845fa17ac757ab8e8780dcc3b96885f2a5cabaa3"
+    },
+    {
+      "path": "scripts/qualification/cash-pot-check-evidence-concurrency.spec",
+      "bytes": 7637,
+      "sha256": "0c465d42787dacb497578030a25e434de240546de18e4fb4b89ce805faf710cf"
+    },
+    {
+      "path": "scripts/qualification/cash-pot-check-evidence.md",
+      "bytes": 16263,
+      "sha256": "56ed6bd6ce7f38fa60414da0e018dc4a176c0705e84e457495d5908855219988"
+    }
+  ],
+  "manifest_self_hash": "supplied externally in handoff; excluded to avoid self-reference",
+  "definitions": {
+    "captured_pre": {
+      "hash_basis": "literal full pg_get_functiondef-shaped source, not prosrc or installed proof",
+      "bytes": 5325,
+      "md5": "484ca087624199de5a28678a2799ff75",
+      "sha256": "dd885be51e9f46c91932b0b736b6349ab66146dceb33a09e4aff08f94d46272c"
+    },
+    "candidate_post": {
+      "hash_basis": "literal full pg_get_functiondef-shaped source, not prosrc or installed proof",
+      "bytes": 13450,
+      "md5": "a7080e4bdd9a513c2f11c67c51b5d1a6",
+      "sha256": "efddf0a72d971d1d01521f5406f126850413c707da7936a5802f38823df8fbb7"
+    },
+    "guard_definition": {
+      "hash_basis": "literal full pg_get_functiondef-shaped source, not prosrc or installed proof",
+      "bytes": 6450,
+      "md5": "8b1f89fa4c293c62e1df59937783d567",
+      "sha256": "d614dd24af78db9907d650e47d905d91f072251dfd8899e8f2cb380d505f0e2a"
+    }
+  },
+  "original": {
+    "inbox_id": 40538,
+    "financial_id": "33f6a110-4591-4ce7-a249-6311e0584f9b",
+    "original_payload_md5": "fc1b3ce6b6ff24be9cf521c564630f61",
+    "created_at": "2026-09-06T14:34:00.384087Z",
+    "kind": "no_winner_recorded",
+    "chips": 600,
+    "hands": 1,
+    "historical_hand_id": null,
+    "historical_table_id": null,
+    "historical_payment_cause": "unknown; no inference from synthetic fixtures or later clean samples"
+  },
+  "source_authority_md5": {
+    "financial_writer": "264d32bcba8f6430ea68b7ca9738fbc8",
+    "queue_writer": "36601e205494e8768f5a1dce09f4a186",
+    "financial_incident_bridge": "00a43ae03ab12cec9505e2bfed71d937",
+    "guard_watchlist": "92ee208d0887728444bda396d0b4d442"
+  },
+  "objects": {
+    "header": "public.ca_cash_pot_check_evidence",
+    "details": "public.ca_cash_pot_check_anomalies",
+    "guard": "public.fn_ca_cash_pot_evidence_append_only()",
+    "replaced": "public.fn_cash_pot_conservation_check(integer)",
+    "header_kind": "permanent heap table; immutable complete summary and anomalies array",
+    "details_kind": "permanent security_invoker=true read-only view; exactly 16 typed columns",
+    "foreign_keys": [],
+    "caller_constraint_mode_changes": false,
+    "unexpected_old_detail_table": "refuse; no conversion, drop or historical migration",
+    "guarded_replay": "exact function authority, table/view kind, relation ACL, schema, header triggers/policy, view options and normalized definition",
+    "source_shapes": {
+      "header_shape": {
+        "hash_basis": "literal independent model source; actual PG17 catalog normalization unqualified",
+        "bytes": 1058,
+        "sha256": "f66ec365650bde157aaf99de58952e3ef08007706ff04d37f466428a1ced0dfd"
+      },
+      "view_shape": {
+        "hash_basis": "literal independent model source; actual PG17 catalog normalization unqualified",
+        "bytes": 483,
+        "sha256": "6588c2987b9f76c5df73ad47bc7a00a3e16559e60e43e3df7417eec6b715d4ea"
+      }
+    }
+  },
+  "receipt": {
+    "source": "cash-pot-conservation-measurement",
+    "event_key": "server_generated_check_uuid:condition_kind",
+    "target_task_id": "01a09b86-5ba8-7290-8657-1041f13dd3ca",
+    "status": "firing",
+    "alertname": "CashPotConservation:condition_kind",
+    "severity": "existing condition critical or warning",
+    "financial_identity": "exact existing writer return, including explicit NULL; no new/reused claim",
+    "acknowledgement": "positive id AND exact source/key/alertname/status/severity/payload readback",
+    "detail_table_compatibility_key": "retains ca_cash_pot_check_anomalies name; relation is now a typed read-only view"
+  },
+  "bounds": {
+    "status": "UNQUALIFIED",
+    "anomalous_rows": 10000,
+    "narrow_evidence_utf8_bytes": 8388608,
+    "queue_envelope_utf8_bytes": 32768,
+    "preview_rows": 20,
+    "preview_order": [
+      "created_at",
+      "hand_id"
+    ],
+    "complete_pagination_order": [
+      "check_id",
+      "ordinal"
+    ],
+    "logical_byte_basis": "exact UTF-8 serialized summary JSON text plus complete anomalies array JSON text, including every evidence_bytes field, separators and brackets",
+    "memory_or_WAL_cap_proved": false,
+    "exact_8MiB_equality_edge_proved": false,
+    "no_upper_source_timestamp_bound": true,
+    "element_evidence_bytes_basis": "exact UTF-8 element JSON text excluding its own evidence_bytes field; this is not the full-array storage total",
+    "staging": "admit each narrow object before array_append into jsonb[]; convert once to JSONB and compare exact serialized bytes; full native allocation/copy/CPU costs unproved",
+    "exact_8MiB_equality_edge_source": "guard-only copy pads summary to 8388608 accepted and 8388609 rejected; UNRUN, not normal checker-generated padded metadata",
+    "stored_omitted_count": "0 only after complete single-row insertion and reconciliation; overflow aborts whole check"
+  },
+  "failure": {
+    "overflow_sqlstate": "54000",
+    "overflow_primary_message": "cash_pot_check_evidence_limit",
+    "error_detail": "actual invocation UUID, limit_kind, maximum, observed_lower_bound, partial=true; only known downstream if actually retained",
+    "transaction": "entire caller check fails and rolls back; independent later-transaction failed-cron intake mandatory",
+    "same_key_collision": "exact payload mismatch raises, no acknowledgement of another payload"
+  },
+  "qualifications": {
+    "primary_sql": "UNRUN",
+    "concurrency_spec": "UNRUN",
+    "syntax_or_typecheck": "NOT_RUN",
+    "actual_postimage": "NOT_CAPTURED",
+    "provider_closure": "NOT_PROVIDED",
+    "protected_execution_uuid": "NOT_PROVIDED",
+    "resource_admission": "NOT_PROVIDED",
+    "actual_stopped_cleanup_receipt": "NOT_PROVIDED",
+    "caller_constraint_mode": "default and ALL IMMEDIATE baseline/candidate success plus unrelated immediate sentinel source cases; UNRUN",
+    "object_drift": "unexpected old table, view security/filter changes, schema/ACL/dependency and retaining rollback/replay sources; UNRUN",
+    "concurrency_distinction": "exact checker and guard bodies; explicit fixture-only source view with volatile unchanged-pot barrier, not production source-table plan or resource proof"
+  },
+  "release_blockers": [
+    "Protected pipeline source-job admission not qualified; no approved execution/provider/resource/cleanup receipts.",
+    "Single-row design removes deferred-FK coupling in source, but actual PG17 default/ALL IMMEDIATE caller parity and unchanged unrelated constraint mode remain UNRUN.",
+    "Positive-only runtime cannot activate without the immediate terminal-row and natively co-qualified failed-cron intake; queue-only rollout prohibited.",
+    "Full actual financial trigger and caller graph composition, financial invariants, queue ownership and failed-run receipt behavior are not qualified by the narrow fixture.",
+    "10000/8MiB caps, exact byte equality edge, buffer/serialization/guard/view expansion copies, full 48h source costs, large winner/numeric inputs and concurrent scheduled load need measured qualification.",
+    "Committed cross-backend spec is not WAL/restart/power-loss proof; actual process/provider/durability and terminal cleanup remain absent.",
+    "Complete source replay and rollback table/view/guard catalog comparisons require native PG17 proof and independent actual installed postimage capture."
+  ],
+  "bundle_dependency": {
+    "owner": "parent and alert_sources",
+    "required_before_positive_activation": true,
+    "native_coqualification": false,
+    "scheduler_observed": false,
+    "source_pins": [
+      {
+        "path": "scripts/operational-alerts/cash-pot-failed-run-intake.md",
+        "bytes": 1677,
+        "sha256": "f3ffb2bc3a19c46d4b73ec9807dd468f4ce63a0957334328a4ace32b8334a64a"
+      },
+      {
+        "path": "scripts/operational-alerts/cash-pot-failed-run-intake.sql",
+        "bytes": 11540,
+        "sha256": "a8526d6955533b95318f575c3486e475a6a0e926f63685b00741366ab047c750"
+      },
+      {
+        "path": "scripts/qualification/fixtures/cash-pot-failed-run-intake/reader-source.sql",
+        "bytes": 11784,
+        "sha256": "0db1a08ceb7aef5b151cef28bdd02cc94947593364d9293c29821007f3c6b242"
+      },
+      {
+        "path": "scripts/qualification/fixtures/cash-pot-failed-run-intake/writer.sql",
+        "bytes": 957,
+        "sha256": "ce860cf1066ec51dcfaaccaef8cb03c07282c2cef2d766edfa3afc7757e362a8"
+      },
+      {
+        "path": "scripts/qualification/cash-pot-failed-run-intake.sql",
+        "bytes": 19643,
+        "sha256": "1d1651261bd34b5c9ce6e12e91139fcfb47f718d3791675fec36f6412418c7b8"
+      }
+    ],
+    "full_bundle_admission_manifest": "NOT_PROVIDED; parent must bind both source packets and complete native catalog"
+  },
+  "evidence_root": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence",
+  "evidence_pins": [
+    {
+      "path": "helper-alert-intake-cash-40538-authority-0246.json",
+      "bytes": 40378,
+      "sha256": "e8a04b1f40452e2e564b7c0fbea584503800945593340a4fab3b237f110e0503"
+    },
+    {
+      "path": "helper-alert-intake-cash-40538-source-contract-0321.json",
+      "bytes": 15184,
+      "sha256": "bcaade968e5105771c2db6929e463987918045b33b4ae3239a2bf19f24241bc1"
+    },
+    {
+      "path": "helper-alert-intake-cash-40538-design-revision-0319.md",
+      "bytes": 11104,
+      "sha256": "3808368e3d0b2eae6de4833295240ef224939bd8b7320f5d3a57fbf76d1dc00a"
+    },
+    {
+      "path": "helper-alert-intake-money-40497-40538-retained-and-pins-0220.json",
+      "bytes": 54812,
+      "sha256": "a1c6badda0780a97edad6b868564eea1eb111c556f6047ded1ea8ee645f84697"
+    },
+    {
+      "path": "helper-alert-intake-money-40497-40538-readonly-0220.json",
+      "bytes": 93773,
+      "sha256": "fe7540e12971cb387393b2fd70602c313371a548a8fdc5ddd735db4344e8e3a4"
+    },
+    {
+      "path": "helper-alert-intake-cash-40538-callers-local-0322.json",
+      "bytes": 138634,
+      "sha256": "68d8dc8d898e8f33ca756f3345216c497bf847bc26ab703fe01567eed2fbc6c4"
+    },
+    {
+      "path": "helper-alert-intake-cash-40538-callers-live-0322.json",
+      "bytes": 84599,
+      "sha256": "f1c6d8b55d916ae17300d6fac89074fcf08fcf80e1ea568b0cfe484024ced6a4"
+    },
+    {
+      "path": "helper-alert-intake-cash-40538-callers-history-0322.json",
+      "bytes": 124743,
+      "sha256": "0b5cbff04d34eda358f3bd126b1362246dd991d687badbe513b39ccbcc15699a"
+    },
+    {
+      "path": "helper-alert-intake-cash-40538-callers-and-revision-0322.md",
+      "bytes": 9657,
+      "sha256": "56ae512958587120881a16c63703bd1a52433e3f1bb1748b97f8ca308b3ec72a"
+    },
+    {
+      "path": "helper-alert-intake-cash-40538-callers-pins-0322.json",
+      "bytes": 905,
+      "sha256": "3d91dc4f76af8235d32fa4406726a5381c2a3547e2d6d316862474adb9b03dcc"
+    }
+  ],
+  "rollback": {
+    "guarded": true,
+    "retains_headers_details_queue_and_financial_history": true,
+    "drops_evidence": false,
+    "changes_future_checker_definition_only": true,
+    "inflight_calls_cancelled": false,
+    "installed_receipt": null,
+    "retains_complete_array_table_and_typed_readonly_view": true,
+    "automatic_old_candidate_schema_conversion": false
+  },
+  "actions_performed": [
+    "owned source edits",
+    "manual source review",
+    "read-only source authority capture",
+    "source-byte hashing"
+  ],
+  "actions_not_performed": [
+    "test execution",
+    "syntax check",
+    "typecheck",
+    "build",
+    "dependency installation",
+    "SQL application",
+    "financial or status mutation",
+    "stage",
+    "commit",
+    "GitHub",
+    "runtime activation",
+    "publication"
+  ],
+  "source_revision": {
+    "design": "single_immutable_complete_array_and_typed_readonly_view",
+    "supersedes_uninstalled_manifest_sha256": "6d960d41278423cfd4c58887794769195e396248670c02eb4a738cd638a86606",
+    "production_application": false
+  },
+  "caller_inventory": {
+    "complete": false,
+    "exact_function": "public.fn_cash_pot_conservation_check(integer)",
+    "one_literal_live_caller": "cron.job 259; 34 */6 * * *",
+    "pg_stat_statements_queryid": "7631287357514282263",
+    "retained_calls": 20,
+    "deallocations": 59,
+    "limits": "bounded local roots/history/catalog/statistics; external service/operator/dynamic caller modes remain unknown",
+    "same_candidate_relations_present_in_readonly_capture": false,
+    "effect_on_redesign": "no reliance on caller FK mode; no mode change; success cases still require native proof"
+  },
+  "parent_custody_formatting": {
+    "scope": "ordinary formatting of owned documentation and manifest; one trailing empty line removed from failed-reader writer fixture; SQL definition bodies unchanged",
+    "prior_helper_manifest_sha256": "e7d279c8357850c230048098dbe03f94b27a538e9c7e8161b271204e23698f30",
+    "execution_status": "all native qualification unrun"
+  },
+  "source_composition": {
+    "donor": "14898e64111c71ee3f4afbffa412ecce4c641002",
+    "checker_postimage_unchanged": true,
+    "strict_dependencies": {
+      "bridge": "00a43ae03ab12cec9505e2bfed71d937",
+      "raiser": "264d32bcba8f6430ea68b7ca9738fbc8"
+    },
+    "future_failure_entrypoint": "Existing real pg_cron job259 terminal row, not a heartbeat",
+    "qualification": "UNRUN; existing accounting job native driver proposal"
+  }
+}

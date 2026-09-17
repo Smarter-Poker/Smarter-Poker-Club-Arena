@@ -28,6 +28,9 @@ const alertEvidence =
 const class4HandOutcome =
   /^(supabase\/components\/class4-hand-outcome-evidence(?:\.rollback)?\.sql$|scripts\/qualification\/(?:class4-hand-outcome-evidence\.(?:sql|drift\.sql|concurrency\.spec|md|manifest\.json)$|fixtures\/class4-hand-outcome-evidence\.(?:preimage|candidate|originals)\.sql$)|scripts\/ci\/(?:test-class4-hand-outcome-postgres\.py$|test_class4_hand_outcome_postgres\.py$|probes\/class4-hand-outcome\/))/;
 
+const cashEvidence =
+  /^(supabase\/components\/(?:cash-pot-check-evidence|cash-failed-run-intake)(?:\.rollback)?\.sql$|scripts\/operational-alerts\/cash-pot-failed-run-intake\.(?:sql|md)$|scripts\/qualification\/(?:cash-native-hosted\.manifest\.json$|cash-pot-check-connected\.sql$|cash-pot-check-evidence(?:\.sql|\.md|\.manifest\.json|-concurrency\.spec)$|cash-pot-failed-run-intake\.sql$|fixtures\/(?:cash-pot-check-evidence|cash-pot-failed-run-intake|cash-native-pgcron)\/)|scripts\/ci\/(?:build_pg17_cash_pgcron|test-cash-failure-pgcron|test_cash_native_pgcron)\.py$)/;
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
@@ -42,8 +45,8 @@ export function classifyChangedPaths(paths) {
   const spinComparator = matches(/^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/);
   return {
     src: broad || matches(/^src\//),
-    server: broad || nativeIsolationTool || spinRules || horsePriority || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql) || matches(productionAlertCore) || matches(alertEvidence) || matches(class4HandOutcome),
-    tests: broad || nativeIsolationTool || spinRules || spinComparator || memoryMonitoring || horsePriority || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql) || matches(productionAlertCore) || matches(alertEvidence) || matches(class4HandOutcome),
+    server: broad || nativeIsolationTool || spinRules || horsePriority || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql) || matches(productionAlertCore) || matches(alertEvidence) || matches(class4HandOutcome) || matches(cashEvidence),
+    tests: broad || nativeIsolationTool || spinRules || spinComparator || memoryMonitoring || horsePriority || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql) || matches(productionAlertCore) || matches(alertEvidence) || matches(class4HandOutcome) || matches(cashEvidence),
     phase4: matches(phase4),
     fixture: matches(fixture),
   };

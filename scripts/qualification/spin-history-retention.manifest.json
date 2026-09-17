@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "state": "SOURCE_ONLY_UNRUN_UNINSTALLED_PARTIAL_QUALIFICATION",
+  "scope": "FIFO5 preventive pruner eligibility; no historical restore or financial admission",
+  "base_commit": "56115f5239ed735bc238757e4defda45b1edbda4",
+  "worktree": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-fifo5-spin-history-retention-20260917",
+  "branch": "fix/fifo5-spin-history-retention-20260917",
+  "full_definition_md5": {
+    "preimage": "03f156a50f882354f7d09f30fe08afd2",
+    "candidate": "8a5858c8586296d772add9e233abc269"
+  },
+  "files": {
+    "scripts/qualification/fixtures/spin-history-retention/capture-closure.sql": {
+      "bytes": 4747,
+      "sha256": "2937c763e17524524f08663780d5f56d1a53e33742047634d8555f3fc1bbe3a1"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/capture-provider.sql": {
+      "bytes": 4519,
+      "sha256": "32cdb076d35cf22ecd6e01958febc0628f65d95cea9e0d7bdb95456bf7c1d553"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/component-inputs.sql": {
+      "bytes": 23893,
+      "sha256": "315c68b19a24b68098f1ec6cf0ba8ca57e7558fb3edea8bfec4cf5125ec4fd67"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/database-state.sql": {
+      "bytes": 3095,
+      "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/estate.sql": {
+      "bytes": 11883,
+      "sha256": "c36c12c20d9a3b73466919559ab12a240e2a6fd537dfa5174b330ebb53d158be"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/history-writer-authority.json": {
+      "bytes": 30472,
+      "sha256": "03c09b73e983445520333eb6d67253fa2bb5030f5fea0bdcc82f2e55314af129"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/preimage.sql": {
+      "bytes": 3004,
+      "sha256": "9463763301009eba4797273b70ef18f9f14f21fc88c77b4d0dcc76db4a6107f5"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/provider-authority.json": {
+      "bytes": 44315,
+      "sha256": "80d560eb353d301d267352c2058a62a90cd2483542d086918e0dffa8151194f0"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/provider-check.sql": {
+      "bytes": 28275,
+      "sha256": "882864d4164b899df9a98ad5cec395564e9ef9d3cdad2156ac0eeca4c0c9ff5b"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/provider-closure-authority.json": {
+      "bytes": 51168,
+      "sha256": "8fea6c284392af33497c5fe2008d78cb86bf25b8ade4a76095d745fd9a1462e9"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/provider-closure-check.sql": {
+      "bytes": 15309,
+      "sha256": "0f3a43d17955f71a5f7198f131e6cf9099b1469760f0badce30968c2f577fd53"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/provider-closure.sql": {
+      "bytes": 22682,
+      "sha256": "af9f91f2e32333334781277177fb79c627e09fe17de35c8088c63583c1316764"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql": {
+      "bytes": 11447,
+      "sha256": "1ddbac230f062a9d0f5821591495492da832ff4744739bd33d9c5ad3aff53836"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/sequence-authority-capture.json": {
+      "bytes": 4023,
+      "sha256": "354bf61d34564c8f760df35d3aebbf03ca2167909813db93ab41a22e026d3a76"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/sequence-authority.sql": {
+      "bytes": 3905,
+      "sha256": "5d64646e7bb0496bafe7f664cdd4c2d4092d8b7a000070a3e7ed6f3943c1fab4"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/state.sql": {
+      "bytes": 1896,
+      "sha256": "53230395abb2eef42b570614deb1070ca1a9e190cfebd61b6cb087325b6989fc"
+    },
+    "scripts/qualification/spin-history-retention-behavior.sql": {
+      "bytes": 5008,
+      "sha256": "4ddfbb1bd3b082ed27ba0949654be99397f9f179026befce631127d75e70967e"
+    },
+    "scripts/qualification/spin-history-retention.md": {
+      "bytes": 11571,
+      "sha256": "d09fb4c50437aee4dd05a61d3e7ef2419e943ca24c832e5cae4d546e2416344c"
+    },
+    "scripts/qualification/spin-history-retention.sql": {
+      "bytes": 4946,
+      "sha256": "e5d7d3e4afd432716afb0ef72ead85bd69df13a774f25d7cf7ed50654c156773"
+    },
+    "supabase/components/spin-history-retention.rollback.sql": {
+      "bytes": 11816,
+      "sha256": "2832c34897e966d00d92f584e158bd7d335ea707e1c2eabde41d6f30ee533902"
+    },
+    "supabase/components/spin-history-retention.sql": {
+      "bytes": 11817,
+      "sha256": "c219d11b2ae7c337d8425509ce6bed56ffb4d1247945acc8d085d885b74e7048"
+    }
+  },
+  "evidence": {
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/fifo5-retention-provider-capture-20260917.json": {
+      "bytes": 99836,
+      "sha256": "6b0619d74d5d6f2ece287155e24cdf180df68d57ebea23c126e59ee211c6b310"
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/fifo5-mixed-basis-complete-authority-parsed-20260917.json": {
+      "bytes": 1013278,
+      "sha256": "a45e35d26eb0494bd54297fe18be4e0d3a1eb96621ba9b72515c413bc771945b"
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/fifo5-mixed-basis-pruner-reference-20260917.sql": {
+      "bytes": 3152,
+      "sha256": "869bfba2632cfb52ac8e3701047725fafe032d849cc9a968c46f119f3748cd0f"
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-fifo5-retention-proposal-v4-20260917.diff": {
+      "bytes": 1905,
+      "sha256": "132fd4bfafb56e497cdaf931793bd063157e522446a4c06095ecb53a9c8db9cc"
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-fifo5-retention-proposal-v4-20260917.manifest.json": {
+      "bytes": 4670,
+      "sha256": "a3a8550f0b3222ee60b82f0f9576d9c5c0c52f72596120cbafc9985f8f037c42"
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/fifo5-retention-provider-closure-20260917.json": {
+      "bytes": 57718,
+      "sha256": "56be2380a620f654fcbd7277d863db2d95f99524878922e6f2d27fe0f84f183b"
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/fifo5-retention-content-author-sequence-20260917.json": {
+      "bytes": 4024,
+      "sha256": "a959289576b06af1a82a8966fade9f1609363fea245ed70453187893388ce2e4"
+    }
+  },
+  "unchanged_base_bindings": {
+    "scripts/ci/classify-ci-changes.mjs": {
+      "bytes": 8690,
+      "sha256": "286243a8eb84d755cb102b4502c751dbaefbd15899dd0d5b9588aa1e90f62f7e"
+    },
+    "scripts/ci/test-spin-expiry-postgres.py": {
+      "bytes": 46351,
+      "sha256": "f435bf9da6627e16c8dbe8e19ab373c02c2f8fc2be6b9d4004d5d697d360cf9a"
+    },
+    ".github/workflows/ci.yml": {
+      "bytes": 124398,
+      "sha256": "4871fe2568235642dfa73277aed6a72f028bbe383c5f280c7c6ed55ca76ccb27"
+    },
+    "scripts/qualification/spin-expiry-business-state.sql": {
+      "bytes": 4866,
+      "sha256": "eb052a103771b40e473a34b8b730e3126db7d9a9cbe18ece152b7a0afeab588a"
+    },
+    "scripts/ci/probes/spin-expiry/manifest.json": {
+      "bytes": 3495,
+      "sha256": "8198b7172e7e92821ba1dd4ac1f1e286aac3be7650fbb4b4e521161c8dc7cae2"
+    },
+    "scripts/ci/probes/spin-expiry/inputs/schema.sql": {
+      "bytes": 2709616,
+      "sha256": "5a5966afca3b2c9699aba326baf5f32d6c0e1baa2ad09340feaa3b23f4d9dc0a"
+    },
+    "scripts/ci/probes/spin-expiry/inputs/access.sql": {
+      "bytes": 786489,
+      "sha256": "ad2cb0ddc955bd97c9ef719e9106aad9f55be5cf034e014d04c90b3a1667c541"
+    },
+    "scripts/ci/probes/spin-expiry/inputs/policies.sql": {
+      "bytes": 46690,
+      "sha256": "075254070c905c0bac70a9bc5a0b3e938b5262f0e1a186ee2a56127da0f77698"
+    }
+  },
+  "qualification_gaps": [
+    "All new source/native behavior UNRUN. Existing required runner/classifier integration is root-owned and not included.",
+    "Completed-terminal positive and actual multi-session first-receipt/terminal commit/rollback controls remain pending separate source/native work.",
+    "Captured postcommit delegate financial branches are not invoked or economically qualified by this zero-money projection estate.",
+    "Rows and catalog must roll back exactly; genuine sequence advancement is disclosed, not reset.",
+    "No production install/live preservation/historical restoration proof."
+  ],
+  "classification_limit": "Missing/blank values retained; no arbitrary nonempty unknown-vocabulary validation claimed.",
+  "history_limit": "No proof of historical deletion writer, no full-row restoration or original22 membership claim.",
+  "self_hash_omitted": true,
+  "source_version": 2,
+  "stage_order": [
+    {
+      "role": "fixture_bootstrap",
+      "path": "scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql"
+    },
+    {
+      "role": "postgres",
+      "path": "scripts/qualification/spin-history-retention.sql"
+    },
+    {
+      "role": "postgres",
+      "path": "scripts/qualification/spin-history-retention-behavior.sql"
+    }
+  ],
+  "behavior_contract": {
+    "history_count": 7,
+    "original_deleted": 5,
+    "candidate_deleted": 2,
+    "canonical_zero_entry_cancellations": 2,
+    "synthetic_projection_only": true,
+    "fabricated_success_receipts": false,
+    "table_catalog_rollback_required": true,
+    "sequence_rollback_claimed": false,
+    "completed_terminal_qualified": false,
+    "multi_session_race_qualified": false
+  },
+  "relative_include_graph": {
+    "scripts/qualification/fixtures/spin-history-retention/provider-closure.sql": [
+      "scripts/qualification/fixtures/spin-history-retention/provider-closure-check.sql"
+    ],
+    "scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql": [
+      "scripts/qualification/fixtures/spin-history-retention/sequence-authority.sql",
+      "scripts/qualification/fixtures/spin-history-retention/provider-closure.sql",
+      "scripts/qualification/fixtures/spin-history-retention/provider-check.sql"
+    ],
+    "scripts/qualification/spin-history-retention-behavior.sql": [
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql",
+      "scripts/qualification/fixtures/spin-history-retention/component-inputs.sql",
+      "scripts/qualification/fixtures/spin-history-retention/estate.sql"
+    ],
+    "scripts/qualification/spin-history-retention.sql": [
+      "scripts/qualification/fixtures/spin-history-retention/component-inputs.sql",
+      "scripts/qualification/spin-expiry-business-state.sql",
+      "scripts/qualification/fixtures/spin-history-retention/state.sql"
+    ]
+  }
+}

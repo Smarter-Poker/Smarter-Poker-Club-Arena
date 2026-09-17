@@ -13,7 +13,7 @@ const fixture =
 
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =
-  /^(supabase\/components\/spin-expiry-lock-order(?:\.rollback)?\.sql$|scripts\/qualification\/spin-expiry-|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
+  /^(supabase\/components\/(?:spin-expiry-lock-order|spin-history-retention)(?:\.rollback)?\.sql$|scripts\/qualification\/(?:spin-expiry-|spin-history-retention(?:-behavior\.sql|\.(?:sql|md|manifest\.json))$|fixtures\/spin-history-retention\/)|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
 
 // Production Alert SQL inputs select the existing accounting checks.
 const productionAlertsSql =

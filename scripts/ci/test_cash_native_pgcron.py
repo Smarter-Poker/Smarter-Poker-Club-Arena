@@ -8,6 +8,12 @@ spec.loader.exec_module(module)
 
 
 class NativeCashOracles(unittest.TestCase):
+    def test_current_checkout_matches_every_pinned_cash_input(self):
+        # Run the real preflight before allocating PostgreSQL. This catches a
+        # stale nested manifest when a directly connected qualifier changes.
+        manifest = module.load_inputs()
+        self.assertEqual(set(manifest['files']), set(module.FIXED_INPUTS))
+
     def test_exact_delivered_and_failed_outcomes_are_distinct(self):
         for state in ('delivered','intake_failed'):
             module.validate_outcome({'count':1,'state':state,'same_failure':True,'receipt_exact':True},state)

@@ -17,32 +17,32 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 10042,
-      "sha256": "e1a164a9483488d15570b5caa0dad22ff2be5746ed3a11b5363f03b75c3d948a"
+      "bytes": 10178,
+      "sha256": "30b733864c2d6360a3eda1e029eabb3ecdaa025d47b0e45a39b9a199cc259ed6"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
       "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
-      "bytes": 9681,
-      "sha256": "c124b6e76b595133fdcd392206e13248a4a091eb0f625ec62439bf008c8cdc3f"
+      "bytes": 10378,
+      "sha256": "9f490c9970870e0e6b442e28bddc081768ba0927361aff4539e401eacc8327a3"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 30583,
       "sha256": "8ff722bd3390bc24ad1d273a8cb70647bd960df8fca6dfc48f45d89318c0d94d"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
-      "bytes": 29501,
-      "sha256": "8d235728e58de82f52d8b7bd62180bfa52fee997be8909f573934af378675a29"
+      "bytes": 30159,
+      "sha256": "6ae1a688bcdeea4cb59a29c89129ff10dc4b4d5746d303a7cf3ec4b0fc052c83"
     },
     "scripts/ci/test_cash_native_pgcron.py": {
-      "bytes": 3114,
-      "sha256": "f56a9027668706d793225166057d369c61ab30e5ab9d6061746456cf7b8d288d"
+      "bytes": 3454,
+      "sha256": "032a0942d016fcd97f763e000da4666caa14f464920cb04ef0f243de4cb6d3c8"
     },
     "scripts/ci/test_production_alert_core_postgres.py": {
-      "bytes": 7881,
-      "sha256": "c32c60215e1df5d667d0ef3fda6732f158cbe7d16d8bcda130117df14b5b8393"
+      "bytes": 7903,
+      "sha256": "868cf2000502522cf1374bf4bd3763763e56172d2fb9f8672b885b0970d00589"
     },
     "scripts/operational-alerts/cash-pot-failed-run-intake.md": {
       "bytes": 1677,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 32869,
-      "sha256": "42e67f507bdbf30c3f813c11940d5961216afe20e26a0ac35366acdc80e19daf"
+      "bytes": 34625,
+      "sha256": "63c54c6ab7a36845deef3136f962063e04c268a2c313dda4ee2efa01fb17aa84"
     }
   },
   "nativePgCron": {

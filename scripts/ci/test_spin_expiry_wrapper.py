@@ -27,10 +27,30 @@ PG = Path('/usr/lib/postgresql/17/bin')
 SOURCE = Path('/tmp/spin5-protocol/source')
 
 
+def retention_behavior():
+    # Protocol samples only; actual SQL must produce its own original result.
+    sequences = {name: {'last_value': '1', 'is_called': False} for name in (
+        'public.content_authors_id_seq', 'public.managed_game_contract_versions_id_seq',
+        'smarter_private.f06_lifecycle_seq')}
+    return {'qualification': 'spin_history_retention_behavior', 'old_deleted': 5,
+            'candidate_deleted': 2, 'canonical_cancellation_count': 2,
+            'table_and_catalog_rollback_verified': True, 'sequence_counters_restored': False,
+            'completed_spin_qualified': False, 'multi_session_race_qualified': False,
+            'sequence_before': sequences, 'sequence_after': copy.deepcopy(sequences)}
+
+
+def retention_source_files():
+    root = Path(__file__).resolve().parents[2]
+    names = (*W.RETENTION_INPUTS, 'scripts/qualification/spin-expiry-business-state.sql')
+    return {name: (root / name).read_bytes() for name in names}
+
+
 def receipt(image='candidate'):
     # Tiny protocol observations only, never evidence that SQL or refunds passed.
     source = SOURCE
-    sql = [str(PG / 'psql'), '-v', 'execution_uuid=' + EXECUTION,
+    sql = [str(PG / 'psql'), '-X', '-w', '-A', '-t', '-h', str(source.parent / 'work/socket'),
+           '-p', '5432', '-d', 'qual_spin_expiry_' + EXECUTION.replace('-', ''),
+           '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose', '-v', 'execution_uuid=' + EXECUTION,
            '-v', 'ordinary_user_uuid=' + ORDINARY, '-v', 'tournament_uuid=' + TOURNAMENT]
     sql_inputs = {
         'spin_catalog_before': 'spin-catalog-observer.sql',
@@ -43,6 +63,19 @@ def receipt(image='candidate'):
     stages = [{'stage': name, 'returncode': 0, 'argv': sql + ['-f', str(source / sql_inputs[name])],
                'stdout_sha256': 'e' * 64}
               for name in (catalog + ['install_candidate'] if image == 'candidate' else []) + ['real_funded_paid_seat_fixture']]
+    retention = [
+        ('authentic_settlement_source_authority', 'fixture_bootstrap', 'inputs/settle-source-authority.sql'),
+        ('retention_provider_authority', 'fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
+        ('retention_catalog_rollback', 'postgres', 'scripts/qualification/spin-history-retention.sql'),
+        ('retention_behavior_rollback', 'postgres', 'scripts/qualification/spin-history-retention-behavior.sql'),
+    ]
+    stages[:0] = [{'stage': name, 'returncode': 0, 'stdout_sha256': 'e' * 64,
+        'argv': [str(PG / 'psql'), '-X', '-w', '-A', '-t', '-h', str(source.parent / 'work/socket'),
+                 '-p', '5432', '-U', role, '-d', 'qual_spin_expiry_' + EXECUTION.replace('-', ''),
+                 '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose',
+                 '-v', 'execution_uuid=' + EXECUTION, '-v', 'ordinary_user_uuid=' + ORDINARY,
+                 '-v', 'tournament_uuid=' + TOURNAMENT, '-f', str(source / path)]}
+        for name, role, path in retention]
     endpoint = {'user': 'fixture_bootstrap', 'session_user': 'fixture_bootstrap',
                 'port': '5432', 'address': None, 'listen_addresses': '',
                 'unix_socket_directories': str(source.parent / 'work/socket')}
@@ -70,7 +103,8 @@ def receipt(image='candidate'):
             'full_qualification': False, 'connected_services_qualified': False,
             'execution_backend': 'hosted-owned-pg17-unix-socket',
             'hosted_cleanup_observed': True, 'original_clients_terminal': True,
-            'stages': stages, 'business_cases': records, 'server_endpoint': endpoint}
+            'stages': stages, 'business_cases': records, 'server_endpoint': endpoint,
+            'retention_qualification': retention_behavior()}
 
 
 class SessionEnvironmentTests(unittest.TestCase):
@@ -531,6 +565,7 @@ class FixtureSourceTests(unittest.TestCase):
     def test_staged_inventory_and_postrun_bytes_are_bound(self):
         files = dict(self.files)
         files.update({name: ('current source '+name).encode() for name in W.REPLACEMENTS})
+        files.update(retention_source_files())
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -546,6 +581,65 @@ class FixtureSourceTests(unittest.TestCase):
             W.stage_packet(allocation, {'files':{}}, {})
         self.assertIn('scripts/qualification/spin-expiry-committed-refund-oracle.py',W.REPLACEMENTS)
         self.assertIn('supabase/components/spin-expiry-lock-order.rollback.sql',W.REPLACEMENTS)
+
+
+class RetentionSourceTests(unittest.TestCase):
+    def test_actual_frozen_packet_pins_and_full_relative_include_graph(self):
+        files = retention_source_files()
+        W.validate_retention_sources(files)
+        self.assertEqual(len(W.RETENTION_INPUTS), 22)
+        # The catalog's shared oracle must be staged in addition to the new packet.
+        manifest = json.loads(files[W.RETENTION_MANIFEST])
+        self.assertIn('scripts/qualification/spin-expiry-business-state.sql',
+                      manifest['relative_include_graph']['scripts/qualification/spin-history-retention.sql'])
+
+    def test_missing_leaf_modified_sql_manifest_and_shared_oracle_refuse(self):
+        for mode in ('missing', 'modified', 'manifest', 'shared'):
+            files = retention_source_files()
+            name = 'scripts/qualification/fixtures/spin-history-retention/provider-closure-check.sql'
+            if mode == 'missing': del files[name]
+            if mode == 'modified': files[name] += b'\n'
+            if mode == 'manifest': files[W.RETENTION_MANIFEST] += b'\n'
+            if mode == 'shared': files['scripts/qualification/spin-expiry-business-state.sql'] += b'\n'
+            with self.subTest(mode=mode), self.assertRaises(RuntimeError): W.validate_retention_sources(files)
+
+    def test_actual_include_graph_must_match_declared_graph_even_with_rebound_manifest(self):
+        files = retention_source_files()
+        manifest = json.loads(files[W.RETENTION_MANIFEST])
+        manifest['relative_include_graph']['scripts/qualification/spin-history-retention.sql'].pop()
+        files[W.RETENTION_MANIFEST] = json.dumps(manifest).encode()
+        with patch.object(W, 'RETENTION_MANIFEST_SHA256', W.digest(files[W.RETENTION_MANIFEST])):
+            with self.assertRaisesRegex(RuntimeError, 'include graph'):
+                W.validate_retention_sources(files)
+
+    def test_original_psql_output_requires_one_strict_result_and_catalog_marker(self):
+        marker = W.RETENTION_CATALOG_MARKER.encode() + b'\n'
+        raw = json.dumps(retention_behavior()).encode() + b'\n'
+        self.assertEqual(W.retention_output(b'BEGIN\nROLLBACK\n' + marker, b'SET\n' + raw), retention_behavior())
+        for catalog, behavior in ((b'', raw), (marker * 2, raw), (marker, b'SET\n'),
+                                  (marker, raw * 2), (marker, b'{bad JSON}'),
+                                  (marker, b'{"qualification":1,"qualification":2}')):
+            with self.subTest(catalog=catalog, behavior=behavior), self.assertRaises((RuntimeError, ValueError)):
+                W.retention_output(catalog, behavior)
+
+    def test_wrong_deletion_counts_overclaims_and_lossy_sequence_observations_refuse(self):
+        changes = [('old_deleted', 2), ('candidate_deleted', 5), ('canonical_cancellation_count', 0),
+                   ('table_and_catalog_rollback_verified', False), ('sequence_counters_restored', True),
+                   ('completed_spin_qualified', True), ('multi_session_race_qualified', True),
+                   ('candidate_deleted', 2.0)]
+        for key, value in changes:
+            wrong = retention_behavior(); wrong[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(RuntimeError):
+                W.validate_retention_behavior(wrong)
+        for mode in ('missing', 'numeric', 'overflow', 'called', 'extra'):
+            wrong = retention_behavior(); observed = wrong['sequence_after']
+            row = observed['public.content_authors_id_seq']
+            if mode == 'missing': observed.pop('smarter_private.f06_lifecycle_seq')
+            if mode == 'numeric': row['last_value'] = 1
+            if mode == 'overflow': row['last_value'] = '9223372036854775808'
+            if mode == 'called': row['is_called'] = 1
+            if mode == 'extra': wrong['invented_success'] = True
+            with self.subTest(mode=mode), self.assertRaises(RuntimeError): W.validate_retention_behavior(wrong)
 
 
 class ReceiptTests(unittest.TestCase):
@@ -609,6 +703,26 @@ class ReceiptTests(unittest.TestCase):
             if mode == 'wrong-source': qualification['argv'][-1] = '/old-provider/qualifier.sql'
             if mode == 'preimage': value = receipt('preimage'); value['catalog_slice_passed'] = True
             with self.subTest(mode=mode), self.assertRaises(RuntimeError): self.validate(value)
+
+    def test_retention_stages_require_exact_role_order_identity_and_original_success(self):
+        for name in ('authentic_settlement_source_authority', 'retention_provider_authority',
+                     'retention_catalog_rollback', 'retention_behavior_rollback'):
+            for mode in ('missing', 'repeated', 'early', 'late', 'failed', 'role', 'endpoint', 'source', 'hash'):
+                value = receipt(); stages = value['stages']
+                stage = next(item for item in stages if item['stage'] == name)
+                if mode == 'missing': stages.remove(stage)
+                if mode == 'repeated': stages.append(copy.deepcopy(stage))
+                if mode == 'early': stages.remove(stage); stages.insert(0, stage)
+                if mode == 'late': stages.remove(stage); stages.append(stage)
+                if mode == 'failed': stage['returncode'] = 1
+                if mode == 'role': stage['argv'][stage['argv'].index('-U') + 1] = 'service_role'
+                if mode == 'endpoint': stage['argv'][stage['argv'].index('-h') + 1] = '127.0.0.1'
+                if mode == 'source': stage['argv'][-1] = '/old/retention.sql'
+                if mode == 'hash': stage.pop('stdout_sha256')
+                with self.subTest(stage=name, mode=mode), self.assertRaises(RuntimeError): self.validate(value)
+        for value in (None, {}, dict(retention_behavior(), table_and_catalog_rollback_verified=False)):
+            with self.subTest(result=value), self.assertRaises(RuntimeError):
+                self.validate(dict(receipt(), retention_qualification=value))
 
     def test_original_business_cli_is_bound_to_exact_image_and_fixture(self):
         for marker, replacement in (('--execution', ORDINARY), ('--tournament', ORDINARY),

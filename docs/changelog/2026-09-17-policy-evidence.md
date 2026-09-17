@@ -1,0 +1,7 @@
+# Policy evidence and instruction-only verification
+
+Version 2.9 consolidates four shared policy topics, with reviewed hashes and a portable full-content reader. Exact Git candidate classification, next-action scenarios, honest evidence reports and provider timing are directly invoked tools. The normal pre-push hook records its actual result and remaining hosted/publication/live proof. The existing required compiler job runs integrity and scenarios; its existing verdict summary records exact-revision results. No new publisher, scheduler or approval gate is introduced.
+
+The instruction-only optimization admits exactly the four policy Markdown files and their hash manifest. These are not inputs to the isolated chip-journal runner: its connected inputs are SQL migrations, Python/native scripts, Node fixtures and locked packages. Any edit, deletion or rename outside the five-file allowlist, including changes to that runner or this classifier, uses the original replay route. Missing Git evidence also runs the replay. Compilation remains independent of the changes job; it classifies the actual checked merge tree itself. All compiler/repository guards and the full client suite, including source-reading document contracts, remain enabled. This omits one unchanged SQL replay; it does not claim a measured end-to-end speed guarantee.
+
+The fixture regression uses actual committed old/new paths. Renames are staged in one commit instead of spawning Git once per file, preserving coverage while removing the demonstrated local timeout cause.

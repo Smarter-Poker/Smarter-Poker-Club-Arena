@@ -109,6 +109,7 @@ jobs:
       tests: ${{ steps.f.outputs.tests }}
       phase4: ${{ steps.f.outputs.phase4 }}
       fixture: ${{ steps.f.outputs.fixture }}
+      instructions_only: ${{ steps.f.outputs.instructions_only }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -286,6 +287,11 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Agent policy integrity and delivery scenarios
+        run: |
+          node docs/agent-policy/agent-policy.mjs check
+          node --test docs/agent-policy/agent-policy.test.mjs
+
       - name: Native fixture gate rejects missing and skipped proof
         run: node --test tests/operations/fixture-required-ci.test.mjs
 
@@ -314,7 +320,18 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
+      - name: Classify the actual checked compiler tree
+        id: compile_scope
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.sha }}
+        run: node scripts/ci/classify-ci-changes.mjs
+
+      # Only the exact five-file instruction allowlist can omit this unchanged
+      # SQL/native fixture. Keep all compiler, invariant and source-contract checks.
+      # Unavailable classification always executes the existing replay.
       - name: Chip journal transactions survive failures and replays
+        if: steps.compile_scope.outputs.instructions_only != 'true'
         run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
 
       - name: TypeScript Check
@@ -1640,6 +1657,12 @@ jobs:
     if: always()
     needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
     steps:
+      - uses: actions/checkout@v4
+      - name: Exact revision evidence summary
+        env:
+          POLICY_CI_NEEDS: ${{ toJSON(needs) }}
+          POLICY_CI_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node docs/agent-policy/agent-policy.mjs ci-report >> "$GITHUB_STEP_SUMMARY"
       - name: Say what ran, and what did not
         run: |
           UNIT='${{ needs.unit.result }}'

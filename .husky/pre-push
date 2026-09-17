@@ -130,6 +130,19 @@ fi
 # owned checkout read-only; never install into a shared symlink from a hook.
 # Missing dependencies refuse the affected check instead of deferring it to CI.
 CA_TREE_TOP="$(git rev-parse --show-toplevel)"
+# Direct policy verification and one actual-result receipt in this worktree's
+# private Git metadata. A failed check keeps its original failing exit status.
+POLICY_PRECHECK_STARTED=$(date +%s)
+policy_precheck_result() {
+  policy_exit=$?
+  trap - EXIT
+  node "$CA_TREE_TOP/docs/agent-policy/agent-policy.mjs" hook-report "$POLICY_PRECHECK_STARTED" "$policy_exit" || policy_exit=1
+  exit "$policy_exit"
+}
+trap policy_precheck_result EXIT
+node "$CA_TREE_TOP/docs/agent-policy/agent-policy.mjs" check
+node --test "$CA_TREE_TOP/docs/agent-policy/agent-policy.test.mjs"
+
 CLIENT_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP")
 SERVER_DEPENDENCY_MODE=local
 if [ -f "$CA_TREE_TOP/server/package.json" ]; then

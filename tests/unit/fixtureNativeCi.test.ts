@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -561,7 +561,9 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
         for (const [index, path] of spinExpiryAccountingPaths.entries()) {
           if (operation === 'modified') write(path, 'changed qualification input');
           if (operation === 'deleted') rmSync(join(directory, path));
-          if (operation === 'renamed') git('mv', '--', path, relocated[index]);
+          // Stage once in commit(); preserve real Git old/new paths without one process per file.
+          if (operation === 'renamed')
+            renameSync(join(directory, path), join(directory, relocated[index]));
         }
         const result = classifyGitChanges({ cwd: directory, base, head: commit() });
         expect(result.complete).toBe(true);
@@ -1086,4 +1088,68 @@ describe('restored provider accounting qualification', () => {
     expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-results');
     expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-activation');
   });
+});
+
+describe('instruction-only verification preserves source contracts without replaying unchanged SQL', () => {
+  it('admits only the exact maintained policy prose and hash manifest', async () => {
+    const { instructionOnlyPaths } = await import('../../scripts/ci/classify-ci-changes.mjs');
+    const allowed = [
+      'OWNER-POLICY.md',
+      'OPERATING-LAW.md',
+      'HARDENING.md',
+      'REFERENCE-INDEX.md',
+      'policy-manifest.json',
+    ].map((p) => `docs/agent-policy/${p}`);
+    expect(instructionOnlyPaths(allowed)).toBe(true);
+    expect(classifyChangedPaths(allowed)).toMatchObject({
+      tests: true,
+      src: false,
+      server: false,
+      fixture: false,
+    });
+    for (const path of [
+      'CLAUDE.md',
+      'docs/changelog/rollback.sql',
+      'docs/agent-policy/agent-policy.mjs',
+      'src/App.tsx',
+      'server/src/index.ts',
+      'supabase/migrations/fix.sql',
+      '.github/workflows/ci.yml',
+      'scripts/ci/classify-ci-changes.mjs',
+      'docs/agent-policy/../other.md',
+    ]) {
+      expect(instructionOnlyPaths([...allowed, path]), path).toBe(false);
+    }
+    expect(instructionOnlyPaths([])).toBe(false);
+    expect(instructionOnlyPaths(null)).toBe(false);
+  });
+  it('the existing required compiler route invokes policy checks and fails closed for missing classification', () => {
+    const ci = readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8');
+    expect(ci).toContain('node docs/agent-policy/agent-policy.mjs check');
+    expect(ci).toContain('node --test docs/agent-policy/agent-policy.test.mjs');
+    expect(ci).toContain("if: steps.compile_scope.outputs.instructions_only != 'true'");
+    expect(ci).toContain('npx tsc --noEmit');
+    expect(ci).toContain('npx vitest run tests/ --shard=${{ matrix.shard }}/4');
+  });
+});
+
+it('the actual replay condition executes for missing output and non-instruction diffs', () => {
+  const condition = ci.jobs.typecheck_compile.steps.find(
+    (step: { name: string }) =>
+      step.name === 'Chip journal transactions survive failures and replays'
+  ).if;
+  const evaluate = new Function('steps', `return (${condition});`);
+  for (const value of ['true', 'false', undefined, '']) {
+    expect(evaluate({ compile_scope: { outputs: { instructions_only: value } } })).toBe(
+      value !== 'true'
+    );
+  }
+  const classifier = ci.jobs.typecheck_compile.steps.find(
+    (step: { id: string }) => step.id === 'compile_scope'
+  );
+  expect(classifier.run).toBe('node scripts/ci/classify-ci-changes.mjs');
+  expect(classifier.env.CI_HEAD_SHA).toBe('${{ github.sha }}');
+  expect(classifier['continue-on-error']).toBeUndefined();
+  expect(ci.jobs.typecheck_compile.needs).toBeUndefined();
+  expect(ci.jobs.typecheck_compile.if).toBe("github.event_name == 'pull_request'");
 });

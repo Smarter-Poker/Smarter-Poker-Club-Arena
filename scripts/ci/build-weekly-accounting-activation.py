@@ -145,6 +145,9 @@ BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='300s';
 SELECT pg_advisory_xact_lock(hashtextextended('accounting-authority-install',0));
+-- Acquire the terminal DDL lock before components can lock chip_ledger.
+-- An active terminal writer must refuse installation before that lock inversion.
+LOCK TABLE public.tournament_terminal_settlements IN ACCESS EXCLUSIVE MODE NOWAIT;
 '''
 sql=header+'\n'.join(parts)+'\nCOMMIT;\n'
 assert len(re.findall(r'^BEGIN;\s*$',sql,re.M))==1

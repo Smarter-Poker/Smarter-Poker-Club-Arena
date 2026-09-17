@@ -56,6 +56,12 @@ import {
 import { horseRebuyAllowance } from '../services/FreeBuy.js';
 import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from './bustOrder.js';
 
+/** A verified close and exact engine retirement, never an attempted move. */
+export interface TournamentBalanceProgress {
+  kind: 'table-retired';
+  tableId: string;
+}
+
 interface FinalTableDealConsensus {
   reviewId: string | null;
   reviewState: 'none' | 'requested' | 'reviewing' | 'completed' | 'cancelled' | 'expired';
@@ -1374,12 +1380,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // only run after the same maintenance predicate used by the table
         // engines has proved the platform thawed.
         if (!isMaintenanceFrozen()) {
-          await this.checkTableBalance();
-          if (sweepStopped()) return;
-          // Balancing can yield after an admitted move/read consumes the
-          // budget. Its void helper has not proved the stage complete; keep
-          // this cursor so the next admission finishes consolidating tables.
-          if (this.eliminationWorkBudgetExpired()) return;
+          let progress: TournamentBalanceProgress | void;
+          do {
+            progress = await this.checkTableBalance();
+            if (sweepStopped()) return;
+            // A slow move/read still owns this stage on the next admission.
+            if (this.eliminationWorkBudgetExpired()) return;
+            // Only a fully receipted retirement permits another fresh plan
+            // inside this admission. Unknown/blocked work returns through the
+            // remaining stages, so the next sweep can process new busts and
+            // release their reserved roster chairs. Each success removes one
+            // table; the existing deadline bounds even a changing field.
+          } while (progress?.kind === 'table-retired' && !isMaintenanceFrozen());
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
@@ -5082,7 +5094,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   // ── Implemented by TournamentManager (layer 3/3) ──
-  protected abstract checkTableBalance(): Promise<void>;
+  protected abstract checkTableBalance(): Promise<TournamentBalanceProgress | void>;
   protected abstract processSatelliteAwards(
     tournament: any,
     winnerId: string

@@ -15,7 +15,10 @@ import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
-import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
+import {
+  TournamentManagerEliminations,
+  type TournamentBalanceProgress,
+} from './TournamentManagerEliminations.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
@@ -585,7 +588,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     });
   }
 
-  protected async checkTableBalance(): Promise<void> {
+  protected async checkTableBalance(): Promise<TournamentBalanceProgress | void> {
     if (!this.eliminationMutationAllowed()) return;
     if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
     const pendingRetirement = this.pendingTableBreakRetirement;
@@ -603,6 +606,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           movedPlayers,
           reason: 'table_break',
         });
+        return { kind: 'table-retired', tableId };
       }
       return;
     }
@@ -836,12 +840,12 @@ export class TournamentManager extends TournamentManagerEliminations {
           // don't immediately re-create the table we just broke.
           this.breakOccurredThisCycle = true;
 
-          // One break per pass is intentional because balancerTables is now
-          // stale. Re-enter promptly with fresh rows (also announces a final
-          // table immediately when this break collapsed the field to one).
+          // This snapshot is stale after the break. The admitted caller may
+          // continue with fresh rows while its existing budget allows; retain
+          // the coalesced wake if the deadline ends the stage first.
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
 
-          break; // One break per cycle to avoid stale data
+          return { kind: 'table-retired', tableId: bt.tableId };
         }
       }
     }

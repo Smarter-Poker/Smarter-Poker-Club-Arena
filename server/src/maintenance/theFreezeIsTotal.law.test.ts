@@ -230,10 +230,13 @@ describe('the tournament balancer does not move players during the break', () =>
     const balance = at(src, 'await this.checkTableBalance();', 'balance call');
     const expansionCall = 'await this.checkDynamicTableExpansion()';
     const expand = at(src, expansionCall, 'expansion call');
-    const balanceBlock = sliceEnclosingBlock(src, 'await this.checkTableBalance();', 0, 1);
+    const balanceBlock = sliceEnclosingBlock(src, 'await this.checkTableBalance();', 0, 2);
     const expansionBlock = sliceEnclosingBlock(src, expansionCall, 0, 1);
     expect(balanceBlock, 'the balance call is not inside an isMaintenanceFrozen() guard').toMatch(
-      /^\{\s*await this\.checkTableBalance\(\);/
+      /^\{\s*let progress: TournamentBalanceProgress \| void;\s*do \{\s*progress = await this\.checkTableBalance\(\);/
+    );
+    expect(balanceBlock, 'continuation must re-check the freeze before another plan').toContain(
+      "} while (progress?.kind === 'table-retired' && !isMaintenanceFrozen());"
     );
     expect(
       expansionBlock,

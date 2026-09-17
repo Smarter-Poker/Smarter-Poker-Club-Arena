@@ -49,7 +49,7 @@ vi.mock('../../src/lib/supabase', () => ({
 
 const CLUB = '11111111-2222-3333-4444-555555555555';
 const OTHER = '99999999-8888-7777-6666-555555555555';
-const LABELS = ['Settings', 'Players', 'Cashier', 'Market', 'Data', 'Stats'];
+const LABELS = ['Diamond Spins', 'Players', 'Cashier', 'Market', 'Data', 'Stats'];
 
 function seedClubs(ids: string[] = [CLUB], last: string | null = CLUB, userId = authState.userId) {
   writeCachedQuickLinkClubs(
@@ -75,7 +75,11 @@ const hrefs = () => links().map((link) => link.getAttribute('href'));
 
 describe('activeTabForPath', () => {
   it.each([
-    [`/clubs/${CLUB}/settings`, 'profile'],
+    [`/clubs/${CLUB}/wheel`, 'diamond-spins'],
+    [`/clubs/${CLUB}/mines`, 'diamond-spins'],
+    [`/clubs/${CLUB}/crossing`, 'diamond-spins'],
+    [`/clubs/${CLUB}/earn-diamonds`, 'diamond-spins'],
+    [`/clubs/${CLUB}/settings`, null],
     [`/clubs/${CLUB}/members`, 'players'],
     [`/clubs/${CLUB}/cashier`, 'cashier'],
     ['/marketplace', 'marketplace'],
@@ -103,7 +107,7 @@ describe('ClubBottomNav approved footer contract', () => {
 
   it('always exposes exactly the six approved controls in approved order', async () => {
     seedClubs();
-    await renderAt(`/clubs/${CLUB}/settings`, CLUB);
+    await renderAt(`/clubs/${CLUB}/wheel`, CLUB);
 
     expect(labels()).toEqual(LABELS);
     expect(screen.getAllByRole('listitem')).toHaveLength(6);
@@ -130,7 +134,7 @@ describe('ClubBottomNav approved footer contract', () => {
     await renderAt('/', CLUB);
 
     expect(hrefs()).toEqual([
-      `/clubs/${CLUB}/settings`,
+      `/clubs/${CLUB}/wheel`,
       `/clubs/${CLUB}/members`,
       `/clubs/${CLUB}/cashier`,
       `/marketplace?club=${CLUB}`,
@@ -143,14 +147,14 @@ describe('ClubBottomNav approved footer contract', () => {
     seedClubs([OTHER], CLUB);
     await renderAt('/stats');
 
-    expect(hrefs()).toContain(`/clubs/${OTHER}/settings`);
+    expect(hrefs()).toContain(`/clubs/${OTHER}/wheel`);
     expect(hrefs().some((href) => href?.includes(CLUB))).toBe(false);
   });
 
   it('does not retain the previous account club after an in-app account switch', async () => {
     seedClubs([OTHER], OTHER, 'user-1');
     const view = await renderAt('/stats');
-    expect(hrefs()).toContain(`/clubs/${OTHER}/settings`);
+    expect(hrefs()).toContain(`/clubs/${OTHER}/wheel`);
 
     authState.userId = 'user-2';
     view.rerender(
@@ -160,42 +164,37 @@ describe('ClubBottomNav approved footer contract', () => {
     );
 
     expect(hrefs().some((href) => href?.includes(OTHER))).toBe(false);
-    expect(hrefs()).toContain('/settings');
+    expect(hrefs()).toContain('/clubs');
   });
 
   it('uses the current route club before a stale cached club', async () => {
     seedClubs([OTHER], OTHER);
     await renderAt(`/clubs/${CLUB}/cashier`);
 
-    expect(hrefs()).toContain(`/clubs/${CLUB}/settings`);
+    expect(hrefs()).toContain(`/clubs/${CLUB}/wheel`);
     expect(hrefs().some((href) => href?.includes(OTHER))).toBe(false);
   });
 
   it('keeps an explicit club override ahead of the current route', async () => {
     await renderAt(`/clubs/${CLUB}/cashier`, OTHER);
 
-    expect(hrefs()).toContain(`/clubs/${OTHER}/settings`);
+    expect(hrefs()).toContain(`/clubs/${OTHER}/wheel`);
     expect(hrefs().some((href) => href?.includes(CLUB))).toBe(false);
   });
 
   it('uses real top-level fallbacks when no club can be resolved', async () => {
     await renderAt('/stats');
 
-    expect(hrefs()).toEqual([
-      '/settings',
-      '/players',
-      '/cashier',
-      '/marketplace',
-      '/data',
-      '/stats',
-    ]);
+    expect(hrefs()).toEqual(['/clubs', '/players', '/cashier', '/marketplace', '/data', '/stats']);
     expect(hrefs().some((href) => href?.includes('/clubs//'))).toBe(false);
   });
 
   it('renders the exact approved artwork with reserved intrinsic dimensions', async () => {
     await renderAt('/', CLUB);
 
-    const artwork = screen.getByRole('presentation');
+    const artwork = screen
+      .getAllByRole('presentation')
+      .find((img) => img.getAttribute('src') === '/images/club-footer/club-arena-footer-v2.webp');
     expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v2.webp');
     expect(artwork).toHaveAttribute('width', '1916');
     expect(artwork).toHaveAttribute('height', '256');

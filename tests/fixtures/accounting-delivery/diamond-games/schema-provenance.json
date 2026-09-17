@@ -1,0 +1,178 @@
+{
+  "status": "source_prepared_not_executed",
+  "scope": "Exact additive table metadata for Diamond Promo-to-Main-Bank payout invoice delivery",
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "capture_observed_at": "2026-09-16T06:23:31.43967+00:00",
+  "capture_server_version": "17.6",
+  "capture_transaction_read_only": "on",
+  "capture_sql_sha256": "17015b71f31cc42a20bf6ba3741fc446b48720235f6d9cb7665a42e2ea7aff85",
+  "capture_sql": "BEGIN READ ONLY;\nSET LOCAL statement_timeout='8s';\nSET LOCAL lock_timeout='1s';\nWITH wanted(name) AS (VALUES ('accounting_conversations'),('accounting_invoice_counters'),('accounting_invoice_deliveries'),('agents'),('credit_invoices'),('credit_payments'),('notifications'),('push_outbox'),('settlement_invoices'),('settlement_periods'),('social_conversation_participants'),('social_conversations'),('social_messages'),('social_pages')),\nrels AS (SELECT w.name,c.oid,c.relkind,c.relowner,c.relacl,c.relrowsecurity,c.relforcerowsecurity,c.relpersistence,c.reloptions FROM wanted w LEFT JOIN pg_catalog.pg_namespace n ON n.nspname='public' LEFT JOIN pg_catalog.pg_class c ON c.relnamespace=n.oid AND c.relname=w.name)\nSELECT jsonb_build_object(\n'observed_at',clock_timestamp(),'server_version',current_setting('server_version'),'transaction_read_only',current_setting('transaction_read_only'),\n'functions',(SELECT jsonb_agg(jsonb_build_object('oid',p.oid,'schema',n.nspname,'name',p.proname,'signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl,'config',p.proconfig,'security_definer',p.prosecdef) ORDER BY n.nspname,p.proname,p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.prokind='f' AND (p.oid IN (SELECT t.tgfoid FROM pg_trigger t JOIN rels r ON r.oid=t.tgrelid WHERE NOT t.tgisinternal) OR (n.nspname='public' AND p.proname IN ('fn_invoice_accounting_ledger_transfer','fn_deliver_accounting_invoice','fn_accounting_party_users','fn_accounting_next_invoice_number','fn_accounting_document_immutable','fn_accounting_conversation_audience_guard','fn_accounting_invoice_deliver_on_insert','fn_accounting_discussion_observed','fn_notification_action_url','fn_url_encode_segment')))),\n'tables',(SELECT jsonb_agg(jsonb_build_object(\n'name',r.name,'exists',r.oid IS NOT NULL,'kind',r.relkind,'owner',pg_get_userbyid(r.relowner),'acl',r.relacl,'rls',r.relrowsecurity,'force_rls',r.relforcerowsecurity,'persistence',r.relpersistence,'options',r.reloptions,\n'columns',(SELECT jsonb_agg(jsonb_build_object('position',a.attnum,'name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'type_schema',tn.nspname,'type_name',t.typname,'type_kind',t.typtype,'not_null',a.attnotnull,'identity',a.attidentity,'generated',a.attgenerated,'default',pg_get_expr(d.adbin,d.adrelid),'collation',CASE WHEN a.attcollation<>0 THEN a.attcollation::regcollation::text END,'acl',a.attacl) ORDER BY a.attnum) FROM pg_attribute a JOIN pg_type t ON t.oid=a.atttypid JOIN pg_namespace tn ON tn.oid=t.typnamespace LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=r.oid AND a.attnum>0 AND NOT a.attisdropped),\n'constraints',(SELECT jsonb_agg(jsonb_build_object('name',c.conname,'type',c.contype,'definition',pg_get_constraintdef(c.oid,true),'validated',c.convalidated,'deferrable',c.condeferrable,'initially_deferred',c.condeferred,'referenced_relation',NULLIF(c.confrelid,0)::regclass::text) ORDER BY c.conname) FROM pg_constraint c WHERE c.conrelid=r.oid),\n'indexes',(SELECT jsonb_agg(jsonb_build_object('name',ic.relname,'definition',pg_get_indexdef(i.indexrelid),'valid',i.indisvalid,'ready',i.indisready,'unique',i.indisunique,'primary',i.indisprimary) ORDER BY ic.relname) FROM pg_index i JOIN pg_class ic ON ic.oid=i.indexrelid WHERE i.indrelid=r.oid),\n'triggers',(SELECT jsonb_agg(jsonb_build_object('name',t.tgname,'definition',pg_get_triggerdef(t.oid,true),'enabled',t.tgenabled,'internal',t.tgisinternal,'function',t.tgfoid::regprocedure::text,'function_oid',t.tgfoid,'constraint',NULLIF(t.tgconstraint,0),'deferrable',t.tgdeferrable,'initially_deferred',t.tginitdeferred) ORDER BY t.tgname) FROM pg_trigger t WHERE t.tgrelid=r.oid),\n'policies',(SELECT jsonb_agg(jsonb_build_object('name',p.polname,'command',p.polcmd,'permissive',p.polpermissive,'roles',(SELECT jsonb_agg(CASE WHEN x=0 THEN 'PUBLIC' ELSE pg_get_userbyid(x) END) FROM unnest(p.polroles) x),'using',pg_get_expr(p.polqual,p.polrelid),'with_check',pg_get_expr(p.polwithcheck,p.polrelid)) ORDER BY p.polname) FROM pg_policy p WHERE p.polrelid=r.oid),\n'parents',(SELECT jsonb_agg(i.inhparent::regclass::text) FROM pg_inherits i WHERE i.inhrelid=r.oid),\n'partitions',(SELECT jsonb_agg(jsonb_build_object('name',i.inhrelid::regclass::text,'bound',pg_get_expr(c.relpartbound,c.oid))) FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid WHERE i.inhparent=r.oid),\n'sequences',(SELECT jsonb_agg(jsonb_build_object('name',sc.oid::regclass::text,'owner',pg_get_userbyid(sc.relowner),'acl',sc.relacl,'column',a.attname,'type',format_type(s.seqtypid,NULL),'start',s.seqstart,'increment',s.seqincrement,'minimum',s.seqmin,'maximum',s.seqmax,'cache',s.seqcache,'cycle',s.seqcycle)) FROM pg_depend d JOIN pg_class sc ON sc.oid=d.objid AND sc.relkind='S' JOIN pg_sequence s ON s.seqrelid=sc.oid JOIN pg_attribute a ON a.attrelid=r.oid AND a.attnum=d.refobjsubid WHERE d.refobjid=r.oid AND d.classid='pg_class'::regclass AND d.refclassid='pg_class'::regclass AND d.deptype IN ('a','i'))\n) ORDER BY r.name) FROM rels r)) AS snapshot;\nROLLBACK;\n",
+  "source_catalog": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+  "source_catalog_sha256": "56c793c9c22afc4a2e6c657af8e567a302c811dd49bfd16aa00693ced6d68676",
+  "totals": {
+    "tables": 14,
+    "columns": 212,
+    "constraints": 84,
+    "indexes": 69,
+    "triggers": 30,
+    "policies": 26
+  },
+  "tables": [
+    {
+      "name": "accounting_conversations",
+      "columns": 7,
+      "indexes": 1,
+      "constraints": 4,
+      "noninternal_triggers": 0,
+      "policies": 0,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "accounting_invoice_counters",
+      "columns": 2,
+      "indexes": 1,
+      "constraints": 2,
+      "noninternal_triggers": 0,
+      "policies": 0,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "accounting_invoice_deliveries",
+      "columns": 6,
+      "indexes": 3,
+      "constraints": 8,
+      "noninternal_triggers": 0,
+      "policies": 1,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "agents",
+      "columns": 30,
+      "indexes": 5,
+      "constraints": 14,
+      "noninternal_triggers": 12,
+      "policies": 3,
+      "role": "read_only_or_FK_target_no_rows_inserted_by_probe"
+    },
+    {
+      "name": "credit_invoices",
+      "columns": 12,
+      "indexes": 4,
+      "constraints": 6,
+      "noninternal_triggers": 2,
+      "policies": 1,
+      "role": "read_only_or_FK_target_no_rows_inserted_by_probe"
+    },
+    {
+      "name": "credit_payments",
+      "columns": 9,
+      "indexes": 3,
+      "constraints": 5,
+      "noninternal_triggers": 1,
+      "policies": 1,
+      "role": "read_only_or_FK_target_no_rows_inserted_by_probe"
+    },
+    {
+      "name": "notifications",
+      "columns": 15,
+      "indexes": 11,
+      "constraints": 4,
+      "noninternal_triggers": 4,
+      "policies": 4,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "push_outbox",
+      "columns": 19,
+      "indexes": 9,
+      "constraints": 6,
+      "noninternal_triggers": 1,
+      "policies": 1,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "settlement_invoices",
+      "columns": 30,
+      "indexes": 11,
+      "constraints": 16,
+      "noninternal_triggers": 2,
+      "policies": 3,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "settlement_periods",
+      "columns": 20,
+      "indexes": 4,
+      "constraints": 4,
+      "noninternal_triggers": 2,
+      "policies": 3,
+      "role": "read_only_or_FK_target_no_rows_inserted_by_probe"
+    },
+    {
+      "name": "social_conversation_participants",
+      "columns": 10,
+      "indexes": 3,
+      "constraints": 4,
+      "noninternal_triggers": 1,
+      "policies": 2,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "social_conversations",
+      "columns": 11,
+      "indexes": 2,
+      "constraints": 2,
+      "noninternal_triggers": 0,
+      "policies": 2,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "social_messages",
+      "columns": 11,
+      "indexes": 4,
+      "constraints": 3,
+      "noninternal_triggers": 5,
+      "policies": 3,
+      "role": "invoice_delivery_write_path"
+    },
+    {
+      "name": "social_pages",
+      "columns": 30,
+      "indexes": 8,
+      "constraints": 7,
+      "noninternal_triggers": 0,
+      "policies": 2,
+      "role": "read_only_or_FK_target_no_rows_inserted_by_probe"
+    }
+  ],
+  "retained_state": "All existing accepted Diamond fixture files preserved; new tables created strictly without IF NOT EXISTS or replacement of existing definitions.",
+  "load_order": [
+    "existing accepted Diamond fixture and migrations",
+    "invoice-schema.sql",
+    "invoice-functions.sql (owned by function agent)",
+    "invoice-constraints.sql",
+    "invoice-triggers.sql",
+    "parent-owned bank fallback rollback probe"
+  ],
+  "limitations": [
+    "Source generation only; no PostgreSQL execution or runtime assertion pass yet.",
+    "Table RLS policies, original table grants and every noninternal trigger are emitted unchanged from catalog. Fixture owner scope remains postgres, so production JWT/RLS/client admission is not certified.",
+    "Read-only agent/credit/period/social-pages tables and tournament-reminder trigger branches are retained but not activated by this scoped probe. No worker consumes push_outbox."
+  ],
+  "output_files": {
+    "invoice-schema.sql": {
+      "bytes": 10774,
+      "sha256": "18e8ad69f0165e5bba370f7cad6170d87aa3167063701f7292e24ddf19b3e6b9"
+    },
+    "invoice-constraints.sql": {
+      "bytes": 19569,
+      "sha256": "26c91abd3edec427eae5db2eeb03774dbc645d318c9d4bc009278a1dff099586"
+    },
+    "invoice-triggers.sql": {
+      "bytes": 94582,
+      "sha256": "1487876516e84405d382b31360e8c6027e77cbd6d640ff0f3ecdb1c3dd85126c"
+    }
+  },
+  "application_or_database_execution": false,
+  "production_mutations": false
+}

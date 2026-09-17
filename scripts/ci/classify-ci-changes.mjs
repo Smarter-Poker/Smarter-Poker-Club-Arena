@@ -58,6 +58,12 @@ export function classifyChangedPaths(paths) {
   const spinComparator = matches(
     /^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/
   );
+  // Diamond request/receipt changes and retained real SQL probes must reach
+  // the existing required PostgreSQL accounting job.
+  const diamondGames = matches(
+    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/
+  );
+
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
   // Script/fixture-only edits must admit accounting and its routing tests.
@@ -68,13 +74,14 @@ export function classifyChangedPaths(paths) {
     src: broad || matches(/^src\//),
     server:
       broad ||
+      diamondGames ||
       phase4Changed ||
       commitmentAudit ||
       nativeIsolationTool ||
       spinRules ||
       horsePriority ||
       matches(
-        /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
+        /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
       ) ||
       matches(spinExpiry) ||
       matches(productionAlertsSql) ||
@@ -84,7 +91,9 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence),
     tests:
       broad ||
+      diamondGames ||
       commitmentAudit ||
+      matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       nativeIsolationTool ||
       spinRules ||
       spinComparator ||

@@ -1291,6 +1291,11 @@ jobs:
           path: artifacts/spin-expiry/
           retention-days: 7
           if-no-files-found: warn
+      - name: Diamond entries, claimed daily spins and Promo to Main Bank payouts
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: /tmp
+        run: bash scripts/dev/test-accounting-delivery.sh
 
       - name: PKO heads follow exact accepted knockout dependencies
         env:

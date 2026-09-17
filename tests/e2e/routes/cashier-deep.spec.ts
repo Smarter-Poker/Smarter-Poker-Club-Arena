@@ -10,6 +10,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
+import { openTradeRecord } from '../support/cashierRecords';
 
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const HAS_AUTH = Boolean(process.env.SP_EMAIL && process.env.SP_PASS);
@@ -56,7 +57,7 @@ test.describe('Cashier Trade — deep authenticated UX', () => {
     page,
   }) => {
     const tablist = await openTradeCashier(page);
-    await tablist.getByRole('tab', { name: 'Trade Record', exact: true }).click();
+    await openTradeRecord(page, tablist);
     const panel = page.getByRole('tabpanel', { name: 'Trade Record' });
     await expect(panel).toBeVisible();
 

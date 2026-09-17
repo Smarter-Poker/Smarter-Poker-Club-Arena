@@ -31,3 +31,12 @@ passed afterward with zero retries. All 317 cases in the five affected
 certification/preflight and CI-classification suites passed on the final code. The exact amended read-only Cashier SQL contract passed on
 production without any financial write or migration. Final hosted checks,
 protected integration and the production browser verdict are separate evidence.
+
+The same production run finished with 291 broad cases passed, one skipped and
+one Cashier Trade Record failure. Its retained snapshot has loaded ledger rows,
+while the test had already selected its empty-state assertion during hydration.
+The previous comparable run35249791396 passed this same case. Observe the actual
+ledger response caused by opening the tab and wait for its existing busy flag
+to clear before classifying rows, empty or retry. Every terminal-state and receipt
+assertion remains. The delayed-response regression fails before this causal
+wait and passes afterward; no application or ledger behavior changes.

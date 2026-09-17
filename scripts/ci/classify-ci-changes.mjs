@@ -21,7 +21,7 @@ const productionAlertsSql =
 
 // These alert components and their exact inputs run in the same accounting job.
 const productionAlertCore =
-  /^(supabase\/components\/(?:production-alert-identity-and-rake-wording(?:\.rollback)?|direct-operational-source-intake(?:\.(?:rollback|authority|functions|postimage))?)\.sql$|scripts\/qualification\/(?:production-alert-core-(?:identity|connected)\.sql$|direct-operational-source-intake\.sql$|fixtures\/direct-operational-source-intake\/)|scripts\/ci\/(?:test-production-alert-core-postgres\.py$|test_production_alert_core_postgres\.py$|probes\/production-alert-core\/))/;
+  /^(supabase\/components\/(?:production-alert-identity-and-rake-wording(?:\.rollback)?|direct-operational-source-legacy-envelope(?:\.rollback)?|direct-operational-source-intake(?:\.(?:rollback|authority|functions|postimage))?)\.sql$|scripts\/qualification\/(?:production-alert-core-(?:identity|connected)\.sql$|direct-operational-source-(?:intake|legacy-envelope)\.sql$|fixtures\/direct-operational-source-intake\/)|scripts\/ci\/(?:test-production-alert-core-postgres\.py$|test_production_alert_core_postgres\.py$|probes\/production-alert-core\/))/;
 const alertEvidence =
   /^(supabase\/components\/(?:duplicate-structure-record-evidence(?:\.rollback)?|rake-repair-record-evidence(?:-rollback)?|spin-repair-evidence(?:\.rollback)?)\.sql$|scripts\/qualification\/(?:alert-evidence-hosted\.manifest\.json$|(?:duplicate-structure-record-evidence|rake-repair-record-evidence|spin-repair-evidence)(?:\.manifest\.json|\.md|\.sql|-race\.spec)$|fixtures\/(?:duplicate-structure-record-evidence|rake-repair-record-evidence|spin-repair-evidence)\/)|scripts\/ci\/(?:test-alert-evidence-postgres|test_alert_evidence_wrapper)\.py$)/;
 

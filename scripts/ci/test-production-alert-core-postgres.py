@@ -45,6 +45,9 @@ CHECKOUT_INPUTS.update({
     'direct_financial_race': 'scripts/qualification/fixtures/direct-operational-source-intake/financial-race.sql',
     'direct_state': 'scripts/qualification/fixtures/direct-operational-source-intake/state.sql',
     'direct_retained': 'scripts/qualification/fixtures/direct-operational-source-intake/retained.sql',
+    'legacy_envelope_component': 'supabase/components/direct-operational-source-legacy-envelope.sql',
+    'legacy_envelope_rollback': 'supabase/components/direct-operational-source-legacy-envelope.rollback.sql',
+    'legacy_envelope_qualifier': 'scripts/qualification/direct-operational-source-legacy-envelope.sql',
 })
 
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
@@ -419,6 +422,9 @@ def main():
                 'real local-storage failure diagnostic was not observed')
         require(direct_before == sql('direct_source_after_cases', ROOT / CHECKOUT_INPUTS['direct_state'], user='postgres'),
                 'rollback-scoped cases changed any committed selected source/evidence row')
+        sql('direct_source_legacy_import_cases', ROOT / CHECKOUT_INPUTS['legacy_envelope_qualifier'], user='postgres')
+        require(direct_before == sql('direct_source_after_legacy_import', ROOT / CHECKOUT_INPUTS['direct_state'], user='postgres'),
+                'legacy envelope qualification changed committed source or evidence rows')
         final_originals = sql('core_original_notifications_readback', ROOT / FIXTURE / 'readback.sql', user='postgres')
         require(after == final_originals, 'core qualification changed committed original notification/inbox state')
         # Subsequent cases intentionally commit source evidence in this disposable

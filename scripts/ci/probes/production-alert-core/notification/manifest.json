@@ -200,6 +200,21 @@
       "path": "scripts/qualification/fixtures/direct-operational-source-intake/retained.sql",
       "sha256": "c6418b7cb55fc89d72928e5af8bac31e343017b683b1b9f2039494f0c09a70f4",
       "bytes": 5107
+    },
+    "legacy_envelope_component": {
+      "path": "supabase/components/direct-operational-source-legacy-envelope.sql",
+      "bytes": 4295,
+      "sha256": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d"
+    },
+    "legacy_envelope_rollback": {
+      "path": "supabase/components/direct-operational-source-legacy-envelope.rollback.sql",
+      "bytes": 4294,
+      "sha256": "ac682b1b56db0a1270f1cde8c5aed9d5ab701f108895868938224a33a755a6b3"
+    },
+    "legacy_envelope_qualifier": {
+      "path": "scripts/qualification/direct-operational-source-legacy-envelope.sql",
+      "bytes": 7533,
+      "sha256": "6f3de33e5f574d48f6d992885897a62ba446736cf55d25a86b852f4fc8d4f553"
     }
   },
   "sequenceContract": {

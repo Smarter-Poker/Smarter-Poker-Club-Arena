@@ -49,8 +49,8 @@ class OwnerNotificationPostgresGuards(unittest.TestCase):
                 runner.pinned_sources(Path('/unused'),manifest)
 
     def test_direct_source_chain_cannot_omit_an_executed_input(self):
-        direct = [key for key in runner.CHECKOUT_INPUTS if key.startswith('direct_')]
-        self.assertEqual(len(direct), 15)
+        direct = [key for key in runner.CHECKOUT_INPUTS if key.startswith(('direct_', 'legacy_envelope_'))]
+        self.assertEqual(len(direct), 18)
         for removed in direct:
             manifest = {
                 'schemaVersion': 1,

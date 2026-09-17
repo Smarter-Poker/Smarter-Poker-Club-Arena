@@ -1,6 +1,7 @@
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import type {
   NormalisedBlindLevel,
   TournamentTabProps,
@@ -15,16 +16,20 @@ vi.mock('../../src/components/tournament/details/useSatellites', () => ({
     retry: vi.fn(),
   }),
 }));
-vi.mock('../../src/services/TournamentService', () => ({
-  tournamentService: {
-    getCurrentLevelState: () => ({
-      levelIndex: 0,
-      currentLevel: null,
-      nextLevel: null,
-      timeRemainingSeconds: 0,
-    }),
+// Keep the real level reader: a mocked answer cannot expose projection/alias
+// disagreement between the overview, the current-blinds card and stack BBs.
+const { busHandlers } = vi.hoisted(() => ({
+  busHandlers: new Map<string, (payload: any) => void>(),
+}));
+vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
+  useMasterBusSubscription: (name: string, handler: (payload: any) => void) => {
+    busHandlers.set(name, handler);
   },
 }));
+vi.mock('../../src/components/tournament/details/useDownlineIds', () => ({
+  useDownlineIds: () => ({ downlineIds: new Set(), carriesDownline: false }),
+}));
+vi.mock('../../src/components/common/Toast', () => ({ useToast: () => ({ info: vi.fn() }) }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/services/MysteryBountyService', () => ({
   activationStatusLine: () => '',
@@ -41,6 +46,8 @@ vi.mock('../../src/components/tournament/HandForHandBanner', () => ({
 }));
 
 import DetailOverviewTab from '../../src/components/tournament/details/DetailOverviewTab';
+import BlindsTab from '../../src/components/tournament/details/BlindsTab';
+import RankingTab from '../../src/components/tournament/details/RankingTab';
 
 afterEach(cleanup);
 const level = (duration: number, bigBlind = 50, isBreak = false): NormalisedBlindLevel => ({
@@ -50,6 +57,273 @@ const level = (duration: number, bigBlind = 50, isBreak = false): NormalisedBlin
   ante: 0,
   duration,
   isBreak,
+});
+
+describe('live tournament tabs share the committed blind amounts', () => {
+  const epoch = Date.parse('2026-09-17T18:11:00Z');
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(epoch);
+    busHandlers.clear();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  function running(snapshot: unknown, index = 369): TournamentTabProps {
+    const levels = Array.from({ length: 40 }, (_, i) => ({
+      ...level(8, i === 39 ? 4_000_000 : 200),
+      level: i + 1,
+      ante: i === 39 ? 500_000 : 20,
+    }));
+    const input = props(10_000, levels);
+    return {
+      ...input,
+      currentUserId: 'hero',
+      tournament: Object.freeze({
+        ...input.tournament,
+        status: 'RUNNING',
+        started_at: new Date(epoch - 86_400_000).toISOString(),
+        level_started_at: new Date(epoch - 60_000).toISOString(),
+        current_level: index,
+        blind_level_state: snapshot,
+        // Include both spellings with the old schedule values. Current amount
+        // normalization must not leave the overview's snake aliases stale.
+        blind_structure: levels.map((row) => ({
+          ...row,
+          duration: row.duration * 60,
+          small_blind: row.smallBlind,
+          big_blind: row.bigBlind,
+        })),
+      }) as TournamentTabProps['tournament'],
+      entries: [
+        {
+          id: 'entry',
+          user_id: 'hero',
+          username: 'Player',
+          avatar_url: null,
+          status: 'playing',
+          chips: 1_050_000,
+        },
+      ],
+    };
+  }
+
+  const views = [
+    { name: 'Overview', Component: DetailOverviewTab },
+    { name: 'Blinds', Component: BlindsTab },
+    { name: 'Ranking', Component: RankingTab },
+  ];
+  const snapshot = { index: 369, small_blind: 52_500, big_blind: 105_000, ante: 105_000 };
+
+  function expectAmounts(name: string, container: HTMLElement, known: boolean) {
+    if (name === 'Overview') {
+      const hero = container.querySelector('.dov-hero')!;
+      expect(within(hero as HTMLElement).getByText('Level 370 Ends In')).toBeInTheDocument();
+      expect(hero.querySelector('.dov-blind__value')?.textContent).toBe(known ? '53K / 105K' : '-');
+      if (known) expect(within(hero as HTMLElement).getByText('Ante 105K')).toBeInTheDocument();
+      else
+        expect(
+          within(hero as HTMLElement).getByText('Current Blinds Unavailable')
+        ).toBeInTheDocument();
+    } else if (name === 'Blinds') {
+      const card = screen.getByRole('heading', { name: 'Current Level' }).closest('section')!;
+      expect(within(card).getByText('Level 370')).toBeInTheDocument();
+      if (known) {
+        expect(card.querySelectorAll('.blinds-tab__blind-value')[0]?.textContent).toBe('52,500');
+        expect(card.querySelectorAll('.blinds-tab__blind-value')[1]?.textContent).toBe('105,000');
+        expect(card.querySelectorAll('.blinds-tab__blind-value')[2]?.textContent).toBe('105,000');
+      } else expect(within(card).getByText('Current Blinds Unavailable')).toBeInTheDocument();
+      expect(card.textContent).not.toContain('4,000,000');
+      expect(within(card).getByText('7:00')).toBeInTheDocument();
+    } else {
+      expect(
+        screen.getByText('Big Blinds').parentElement?.querySelector('.tl-num')?.textContent
+      ).toBe(known ? '10' : '-');
+      expect(screen.queryByText('0 BB')).toBeNull();
+      if (known) expect(screen.getAllByText('10 BB').length).toBeGreaterThan(0);
+    }
+  }
+
+  for (const { name, Component } of views) {
+    it(`${name} displays the matching committed overflow instead of the final schedule row`, () => {
+      const input = running(snapshot);
+      const original = JSON.stringify(input);
+      const rendered = render(
+        <MemoryRouter>
+          <Component {...input} />
+        </MemoryRouter>
+      );
+      expectAmounts(name, rendered.container, true);
+      expect(JSON.stringify(input)).toBe(original);
+    });
+
+    it.each([undefined, { ...snapshot, index: 368 }])(
+      `${name} does not label a missing or stale overflow snapshot as current`,
+      (state) => {
+        const rendered = render(
+          <MemoryRouter>
+            <Component {...running(state)} />
+          </MemoryRouter>
+        );
+        expectAmounts(name, rendered.container, false);
+      }
+    );
+  }
+
+  it('refreshes ranking BBs when a receipt changes without a level-index change', () => {
+    const input = running(snapshot);
+    const rendered = render(
+      <MemoryRouter>
+        <RankingTab {...input} />
+      </MemoryRouter>
+    );
+    expectAmounts('Ranking', rendered.container, true);
+    rendered.rerender(
+      <MemoryRouter>
+        <RankingTab {...running({ ...snapshot, big_blind: 210_000 })} />
+      </MemoryRouter>
+    );
+    expect(
+      screen.getByText('Big Blinds').parentElement?.querySelector('.tl-num')?.textContent
+    ).toBe('5');
+  });
+
+  it.each([
+    { state: undefined, sb: '100', bb: '200', ante: '20', stackBb: '5,250' },
+    {
+      state: { index: 0, small_blind: 50, big_blind: 100, ante: 0 },
+      sb: '50',
+      bb: '100',
+      ante: '0',
+      stackBb: '10,500',
+    },
+  ])(
+    'preserves legacy in-ladder amounts and honors a matching receipt with zero ante',
+    ({ state, sb, bb, ante, stackBb }) => {
+      const input = running(state, 0);
+      const overview = render(<DetailOverviewTab {...input} />);
+      expect(overview.container.querySelector('.dov-blind__value')?.textContent).toBe(
+        `${sb} / ${bb}`
+      );
+      expect(overview.container.querySelector('.dov-blind__ante')?.textContent).toBe(
+        ante === '0' ? 'No Ante' : `Ante ${ante}`
+      );
+      overview.unmount();
+
+      const blinds = render(<BlindsTab {...input} />);
+      const card = screen.getByRole('heading', { name: 'Current Level' }).closest('section')!;
+      expect(
+        [...card.querySelectorAll('.blinds-tab__blind-value')].map((node) => node.textContent)
+      ).toEqual([sb, bb, ante]);
+      expect(within(card).getByText('Level 1')).toBeInTheDocument();
+      blinds.unmount();
+
+      render(
+        <MemoryRouter>
+          <RankingTab {...input} />
+        </MemoryRouter>
+      );
+      expect(
+        screen.getByText('Big Blinds').parentElement?.querySelector('.tl-num')?.textContent
+      ).toBe(stackBb);
+    }
+  );
+
+  it.each(
+    ['PAUSED', 'LATE_REG', 'COMPLETED'].flatMap((status) =>
+      ['receipt', 'legacy'].map((amountSource) => ({ status, amountSource }))
+    )
+  )(
+    'preserves $status current amounts from $amountSource independently of the running clock',
+    ({ status, amountSource }) => {
+      const input = running(
+        amountSource === 'receipt'
+          ? { index: 5, small_blind: 250, big_blind: 500, ante: 0 }
+          : undefined,
+        5
+      );
+      const levels = input.blindLevels.map((row, index) =>
+        index === 5 ? { ...row, smallBlind: 500, bigBlind: 1_000, ante: 100 } : row
+      );
+      const atCurrentLevel: TournamentTabProps = {
+        ...input,
+        blindLevels: levels,
+        tournament: {
+          ...input.tournament,
+          status,
+          blind_structure: levels.map((row) => ({ ...row, duration: row.duration * 60 })),
+        } as TournamentTabProps['tournament'],
+      };
+      const blinds = render(<BlindsTab {...atCurrentLevel} />);
+      const card = screen.getByRole('heading', { name: 'Current Level' }).closest('section')!;
+      expect(within(card).getByText('Level 6')).toBeInTheDocument();
+      expect(
+        [...card.querySelectorAll('.blinds-tab__blind-value')].map((node) => node.textContent)
+      ).toEqual(amountSource === 'receipt' ? ['250', '500', '0'] : ['500', '1,000', '100']);
+      if (status === 'PAUSED') expect(card.querySelector('.tl-clock--paused')).not.toBeNull();
+      if (status === 'COMPLETED') expect(within(card).getByText('Complete')).toBeInTheDocument();
+      blinds.unmount();
+      render(
+        <MemoryRouter>
+          <RankingTab {...atCurrentLevel} />
+        </MemoryRouter>
+      );
+      expect(
+        screen.getByText('Big Blinds').parentElement?.querySelector('.tl-num')?.textContent
+      ).toBe(amountSource === 'receipt' ? '2,100' : '1,050');
+    }
+  );
+
+  it('does not relabel a prior receipt when a level-only bus event precedes the row', () => {
+    const rendered = render(<BlindsTab {...running(snapshot)} />);
+    act(() =>
+      busHandlers.get('BLIND_LEVEL_CHANGE')?.({ tournamentId: 'structure-event', level: 371 })
+    );
+    const card = screen.getByRole('heading', { name: 'Current Level' }).closest('section')!;
+    expect(within(card).getByText('Level 371')).toBeInTheDocument();
+    expect(within(card).getByText('Current Blinds Unavailable')).toBeInTheDocument();
+    rendered.rerender(<BlindsTab {...running({ ...snapshot, index: 370 }, 370)} />);
+    expect(within(card).getByText('52,500')).toBeInTheDocument();
+    expect(within(card).queryByText('Current Blinds Unavailable')).toBeNull();
+  });
+
+  it('preserves table-backed ranking BBs when no ladder or receipt exists', () => {
+    const input = running(undefined, 0);
+    const withoutLadder: TournamentTabProps = {
+      ...input,
+      tournament: { ...input.tournament, blind_structure: [] },
+      blindLevels: [],
+      tables: [
+        {
+          id: 'table',
+          name: 'Table 1',
+          status: 'running',
+          max_players: 9,
+          current_players: 1,
+          small_blind: 250,
+          big_blind: 500,
+        },
+      ],
+    };
+    const rendered = render(
+      <MemoryRouter>
+        <RankingTab {...withoutLadder} />
+      </MemoryRouter>
+    );
+    expect(
+      screen.getByText('Big Blinds').parentElement?.querySelector('.tl-num')?.textContent
+    ).toBe('2,100');
+    rendered.rerender(
+      <MemoryRouter>
+        <RankingTab {...withoutLadder} tables={[]} />
+      </MemoryRouter>
+    );
+    expect(
+      screen.getByText('Big Blinds').parentElement?.querySelector('.tl-num')?.textContent
+    ).toBe('-');
+  });
 });
 function props(startingChips: number, blindLevels: NormalisedBlindLevel[]): TournamentTabProps {
   return {

@@ -29,8 +29,8 @@
       "sha256": "9329120862da8c38e3be0ac1053fd93c07877a5d4bc76bc19d0e5291c29e476c"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
-      "bytes": 29995,
-      "sha256": "811a38ca34517f1d06fe337b88dfc5f65477e621d24fbb1ffc8587e422801f72"
+      "bytes": 30583,
+      "sha256": "8ff722bd3390bc24ad1d273a8cb70647bd960df8fca6dfc48f45d89318c0d94d"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
       "bytes": 17990,

@@ -236,7 +236,11 @@ def main():
         run([pg/'psql','-X','-w','-qAt','-v','ON_ERROR_STOP=1','-h',sock,'-p','5432','-U','postgres','-d',db], 'prepare-real-checker',text=prep,env=env)
         psql('DROP DATABASE postgres;','remove-empty-default-database',database='template1',user='supabase_admin')
         psql('ALTER DATABASE '+db+' RENAME TO postgres;','bind-metadata-database',database='template1',user='supabase_admin')
-        psql('ALTER ROLE postgres NOSUPERUSER CREATEDB CREATEROLE; GRANT anon,authenticated,service_role TO postgres;','native-caller-authority',user='supabase_admin')
+        # Production postgres inherits pg_monitor while remaining a non-superuser
+        # without supabase_admin membership. The installer reads protected cron
+        # settings through pg_read_all_settings inherited from that monitor role.
+        psql('ALTER ROLE postgres NOSUPERUSER CREATEDB CREATEROLE; GRANT anon,authenticated,service_role,pg_monitor TO postgres;','native-caller-authority',user='supabase_admin')
+        require(psql("SELECT NOT rolsuper AND pg_has_role(current_user,'pg_read_all_settings','USAGE') AND NOT pg_has_role(current_user,'supabase_admin','USAGE') FROM pg_roles WHERE rolname=current_user;",'native-settings-authority')=='t','Native caller must retain production settings visibility without extension-owner authority')
         run([pg/'pg_ctl','-D',data,'-w','-t','20','stop','-m','fast'],'stop-before-extension');started=False
         with (data/'postgresql.conf').open('a') as f:
             f.write("\nshared_preload_libraries='pg_cron'\ncron.database_name='postgres'\ncron.use_background_workers=off\ncron.log_run=on\ncron.host='"+str(sock)+"'\n")

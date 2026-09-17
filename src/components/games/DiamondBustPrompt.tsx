@@ -38,9 +38,14 @@ export default function DiamondBustPrompt({ clubId }: { clubId: string | null | 
       /* In-memory dismissal still works. */
     }
   };
+  const isOpen = Boolean(user?.id && clubId && eligible && dismissed !== key && !stored);
+  // A dismissed invitation must stop covering the lobby even if its exit
+  // animation stalls. Keep this component mounted for account-scoped dismissal
+  // and chip-replenishment resets, but remove the Modal's presence boundary.
+  if (!isOpen) return null;
   return (
     <Modal
-      isOpen={Boolean(user?.id && clubId && eligible && dismissed !== key && !stored)}
+      isOpen={isOpen}
       onClose={close}
       ariaLabel="Diamond Spins"
       showCloseButton={false}

@@ -1,3 +1,4 @@
+import { channelHub } from './hub/ChannelHub.js';
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 /**
@@ -2237,10 +2238,16 @@ export class GameServer {
    */
   private lastDbSkewMs: number | null = null;
 
+  public replayMaintenancePresentation(tableId: string): void {
+    this.maintenanceBreak.replay(tableId);
+  }
+
   private readonly maintenanceBreak = new MaintenanceBreak({
     engines: () => this.tableEngines.entries(),
     isRunning: () => this.running,
     emit: (tableId, payload) => tableStateHub.emitEvent(tableId, payload),
+    emitPresentation: (payload) =>
+      channelHub.broadcastToLobby({ type: 'LOBBY_UPDATE', kind: 'maintenance', payload }),
     store: createSupabaseMaintenanceBreakStore(ENGINE_RELEASE_IDENTITY.version),
     // Whoever paused a table is responsible for resuming it. A tournament
     // add-on break runs up to ten minutes, so one starting near :55 outlives

@@ -139,6 +139,11 @@ export interface PausableTableEngine {
 }
 
 export type MaintenanceBreakPhase = 'last_hand' | 'counting_down';
+export type MaintenancePresentationPhase =
+  | MaintenanceBreakPhase
+  | 'finalizing'
+  | 'resuming'
+  | 'idle';
 
 export interface PersistedMaintenanceBreak {
   phase: MaintenanceBreakPhase;
@@ -236,6 +241,8 @@ export interface MaintenanceBreakDeps {
   isRunning(): boolean;
   /** Discrete per-table event frame to every subscriber of that table. */
   emit(tableId: string, payload: Record<string, unknown>): void;
+  /** Presentation only, emitted at the owning transition to existing lobby subscribers. */
+  emitPresentation?: (presentation: Record<string, unknown>) => void;
   store: MaintenanceBreakStore;
   /**
    * "Is somebody ELSE still holding this table paused?"
@@ -418,6 +425,10 @@ export class MaintenanceBreak {
    */
   private resumeWaves: ResumeWavesProgress | null = null;
   private breakEndsAt = 0;
+  // Presentation never changes persisted identity, thaw credits or restart gates.
+  private certifiedResumeAt = 0;
+  private completedAnnouncementAt = 0;
+  private pendingResumeTables = new Set<string>();
   private reason = 'Scheduled Engine Maintenance';
   private ownershipToken: string = randomUUID();
 
@@ -686,6 +697,8 @@ export class MaintenanceBreak {
     this.breakStartedAt = this.now();
     this.breakEndsAt = window.endsAt;
     this.resumeWaves = null;
+    this.certifiedResumeAt = 0;
+    this.pendingResumeTables.clear();
     setMaintenanceFrozen(true);
 
     console.warn(
@@ -865,6 +878,7 @@ export class MaintenanceBreak {
     this.breakStartedAt =
       saved.breakStartedAt ?? saved.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
     this.breakEndsAt = endsAt;
+    this.certifiedResumeAt = 0;
     setMaintenanceFrozen(true);
 
     console.log(
@@ -915,7 +929,7 @@ export class MaintenanceBreak {
   adopt(tableId: string, engine: PausableTableEngine): void {
     if (!this.acceptingLifecycleWork || !this.isActive()) return;
     engine.pauseForMaintenance(this.remainingParkBudgetMs());
-    this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
+    this.deps.emit(tableId, this.eventPayload(tableId));
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1031,6 +1045,8 @@ export class MaintenanceBreak {
     // The previous rollout's record has been readable on /health for an
     // hour; the next one starts from nothing.
     this.resumeWaves = null;
+    this.certifiedResumeAt = 0;
+    this.pendingResumeTables.clear();
     // Freeze the engine's own sweeps from the announcement, not the countdown:
     // a horse standing up at :54 under a "Last Hand" banner is the same tell
     // as one standing up at :56, and nothing these sweeps do cannot wait.
@@ -1207,6 +1223,7 @@ export class MaintenanceBreak {
     this.announcedAt = 0;
     this.breakStartedAt = 0;
     this.breakEndsAt = releaseAt;
+    this.certifiedResumeAt = releaseAt;
     this.durableConfirmed = false;
     this.reason = 'Restoring every frozen table clock';
     setMaintenanceFrozen(true);
@@ -1226,6 +1243,10 @@ export class MaintenanceBreak {
       if (currentBoundary === null) return;
       if (!Number.isFinite(currentBoundary) || currentBoundary <= 0) {
         throw new MaintenanceThawError('maintenance_release_boundary_invalid', false);
+      }
+      if (boundary !== currentBoundary) {
+        this.certifiedResumeAt = currentBoundary;
+        this.broadcast('counting_down');
       }
       boundary = currentBoundary;
       // A fast host clock cannot release while the database still reports a
@@ -1265,6 +1286,7 @@ export class MaintenanceBreak {
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || this.phase === 'idle' || this.ending) return;
     this.ending = true;
+    if (this.resumeExpectedAt() <= this.now()) this.broadcast('finalizing');
 
     let reconnectFreezeStartedAt = this.breakStartedAt;
     let thawOk: boolean | null = null;
@@ -1313,6 +1335,8 @@ export class MaintenanceBreak {
           return;
         }
         assertMaintenanceThawRelease(request, release);
+        this.certifiedResumeAt = release.creditedThroughAt;
+        this.broadcast('counting_down');
         await this.waitForCertifiedRelease(release.creditedThroughAt, generation);
         reconnectFreezeStartedAt = request.freezeStartedAt;
         thawOk = true;
@@ -1363,6 +1387,7 @@ export class MaintenanceBreak {
      * is luck, not design. So: the break goes idle FIRST, then the tables
      * are woken. The outcome was captured above, so the record stays honest.
      */
+    this.completedAnnouncementAt = this.announcedAt;
     this.phase = 'idle';
     this.durableConfirmed = false;
     this.lastDurableState = null;
@@ -1397,7 +1422,6 @@ export class MaintenanceBreak {
             : 'at ' + new Date(outcome.readyForRestartAtMs).toISOString()
         }.`
     );
-    this.broadcastEnded();
     if (!releasedByV3 && completedState) await this.safeClear(completedState);
     /* A countdown or an adoption upgrade that never became durable leaves the
        earlier row in the database, and that row freezes entries until it is
@@ -1431,7 +1455,7 @@ export class MaintenanceBreak {
     return n;
   }
 
-  private resumeEveryEngine(reconnectFreezeStartedAt?: number): number {
+  private resumeEveryEngine(reconnectFreezeStartedAt?: number, publish = true): number {
     // Collect the tables this break is responsible for resuming.
     // EVERY table gets resumeFromMaintenance(), including one another
     // authority is still holding. This used to `continue` past those, and
@@ -1483,6 +1507,8 @@ export class MaintenanceBreak {
       gapMs: MaintenanceBreak.RESUME_WAVE_GAP_MS,
     };
     this.resumeWaves = progress;
+    this.pendingResumeTables = new Set(resumable.map(([id]) => id));
+    if (publish) this.broadcast('resuming');
 
     const fireWave = (index: number): void => {
       for (const [tableId, engine] of waves[index]) {
@@ -1491,6 +1517,8 @@ export class MaintenanceBreak {
             completeTableReconnectFreeze(tableId, reconnectFreezeStartedAt, this.now());
           }
           engine.resumeFromMaintenance();
+          this.pendingResumeTables.delete(tableId);
+          if (publish) this.broadcastEnded(tableId);
         } catch (err) {
           // One table that refuses to resume must not strand the rest of its
           // wave, and never the waves behind it.
@@ -1499,7 +1527,10 @@ export class MaintenanceBreak {
         progress.tablesResumed++;
       }
       progress.done = index + 1;
-      if (progress.done === progress.total) progress.finishedAt = this.now();
+      if (progress.done === progress.total) {
+        progress.finishedAt = this.now();
+        if (publish) this.publishPresentation();
+      }
     };
 
     // Wave 0 resumes NOW, synchronously: a small fleet (and every test fleet)
@@ -1688,16 +1719,55 @@ export class MaintenanceBreak {
     return 0;
   }
 
-  private eventPayload(tableId: string, phase: MaintenanceBreakPhase) {
-    const resumeAt = this.resumeExpectedAt();
+  presentation(tableId?: string) {
+    const active = this.isActive();
+    const resuming = tableId
+      ? this.pendingResumeTables.has(tableId)
+      : this.pendingResumeTables.size > 0;
+    const expected = this.certifiedResumeAt || this.resumeExpectedAt();
+    const phase: MaintenancePresentationPhase = active
+      ? this.phase === 'last_hand'
+        ? 'last_hand'
+        : expected > this.now()
+          ? 'counting_down'
+          : 'finalizing'
+      : resuming
+        ? 'resuming'
+        : 'idle';
+    return {
+      active: active || resuming,
+      phase,
+      break_id: (active ? this.announcedAt : this.completedAnnouncementAt) || null,
+      break_ends_at: active && expected > this.now() ? expected : null,
+      scheduled_ends_at: this.resumeExpectedAt() || null,
+      reason: this.reason,
+      timestamp: this.now(),
+    };
+  }
+
+  /** Authenticated rejoin/RESYNC asks for current state, including explicit idle. */
+  replay(tableId: string): void {
+    if (!this.acceptingLifecycleWork) return;
+    if (this.presentation(tableId).active) {
+      this.deps.emit(tableId, this.eventPayload(tableId));
+    } else {
+      this.broadcastEnded(tableId);
+    }
+  }
+
+  private eventPayload(tableId: string) {
+    const presentation = this.presentation(tableId);
+    const resumeAt = presentation.break_ends_at ?? 0;
     return {
       type: 'maintenance_break',
       table_id: tableId,
-      phase,
+      phase: presentation.phase,
+      break_id: presentation.break_id,
+      scheduled_ends_at: presentation.scheduled_ends_at,
       // Absolute epoch ms, not a duration. The client ticks its own countdown
       // from this so it keeps counting through the restart, when there is no
       // engine to ask and no socket to ask it on.
-      break_ends_at: this.breakEndsAt > 0 ? this.breakEndsAt : null,
+      break_ends_at: presentation.break_ends_at,
       duration_ms: MaintenanceBreak.BREAK_DURATION_MS,
       /* ═══ THE RESTART HANDOFF (Realtime Phase 4, 2026-09-05) ═════════════
          Two numbers the RECONNECT LADDER needs, as opposed to the countdown
@@ -1727,27 +1797,35 @@ export class MaintenanceBreak {
     };
   }
 
-  private broadcast(phase: MaintenanceBreakPhase): void {
+  private broadcast(_phase: MaintenancePresentationPhase): void {
+    this.publishPresentation();
     for (const [tableId] of this.deps.engines()) {
       try {
-        this.deps.emit(tableId, this.eventPayload(tableId, phase));
+        this.deps.emit(tableId, this.eventPayload(tableId));
       } catch (err) {
         console.warn(`[MaintenanceBreak] could not announce to table ${tableId}`, err);
       }
     }
   }
 
-  private broadcastEnded(): void {
-    for (const [tableId] of this.deps.engines()) {
-      try {
-        this.deps.emit(tableId, {
-          type: 'maintenance_break_ended',
-          table_id: tableId,
-          timestamp: this.now(),
-        });
-      } catch (err) {
-        console.warn(`[MaintenanceBreak] could not signal break end to table ${tableId}`, err);
-      }
+  private publishPresentation(): void {
+    try {
+      this.deps.emitPresentation?.(this.presentation());
+    } catch (err) {
+      console.warn(`[MaintenanceBreak] could not publish presentation`, err);
+    }
+  }
+
+  private broadcastEnded(tableId: string): void {
+    try {
+      this.deps.emit(tableId, {
+        type: 'maintenance_break_ended',
+        table_id: tableId,
+        break_id: this.completedAnnouncementAt || null,
+        timestamp: this.now(),
+      });
+    } catch (err) {
+      console.warn(`[MaintenanceBreak] could not signal break end to table ${tableId}`, err);
     }
   }
 
@@ -1971,6 +2049,7 @@ export class MaintenanceBreak {
     for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
     this.resumeWaveTimers.clear();
 
+    this.completedAnnouncementAt = this.announcedAt;
     this.phase = 'idle';
     this.durableConfirmed = false;
     this.announcedAt = 0;
@@ -1978,8 +2057,7 @@ export class MaintenanceBreak {
     this.breakEndsAt = 0;
     this.ending = false;
     setMaintenanceFrozen(false);
-    this.resumeEveryEngine();
-    if (wasVisible) this.broadcastEnded();
+    this.resumeEveryEngine(undefined, wasVisible);
 
     // Compare-and-delete each state this process may have committed. The
     // store implementation includes every field in the DELETE predicate, so
@@ -2068,6 +2146,7 @@ export class MaintenanceBreak {
       readyForRestart: this.readyForRestart(),
       reason: this.reason,
       resumeWaves: this.resumeWaves,
+      presentation: this.presentation(),
     };
   }
 }

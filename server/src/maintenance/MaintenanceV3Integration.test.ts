@@ -88,16 +88,21 @@ function harness() {
     row = null;
     return receipt(args);
   });
+  const emit = vi.fn();
+  const emitPresentation = vi.fn();
   const owner = new MaintenanceBreak({
     store,
     engines: () => new Map([['table', engine]]),
     isRunning: () => true,
-    emit: vi.fn(),
+    emit,
+    emitPresentation,
     thaw: (request, signal) => runMaintenanceThawV3(request, rpc, { signal }),
   });
   owners.push(owner);
   return {
     owner,
+    emit,
+    emitPresentation,
     engine,
     store,
     rpc,
@@ -126,6 +131,7 @@ describe('real maintenance owner consumes the current v3 contract', () => {
   it('holds through a future receipt and a fast host clock until the database releases', async () => {
     const h = harness();
     await ready(h);
+    expect(h.owner.presentation()).toMatchObject({ active: true, phase: 'finalizing' });
     const end = Date.now() + 2_000;
     h.boundary = end;
     h.rpc.mockImplementation(async (args) => {
@@ -135,14 +141,37 @@ describe('real maintenance owner consumes the current v3 contract', () => {
     const ending = h.owner.end();
     await flush();
     expect(h.engine.paused).toBe(true);
+    expect(h.owner.presentation()).toMatchObject({
+      active: true,
+      phase: 'counting_down',
+      break_ends_at: end,
+    });
+    expect(h.emit).toHaveBeenCalledWith(
+      'table',
+      expect.objectContaining({ type: 'maintenance_break', break_ends_at: end })
+    );
     vi.setSystemTime(end + 10_000);
     await vi.advanceTimersByTimeAsync(2_000);
     expect(h.engine.resumes).toBe(0);
     expect(h.owner.isActive()).toBe(true);
+    expect(h.owner.presentation()).toMatchObject({
+      active: true,
+      phase: 'finalizing',
+      break_ends_at: null,
+    });
     h.dbNow = end;
     await vi.advanceTimersByTimeAsync(250);
     await ending;
     expect(h.engine.resumes).toBe(1);
+    expect(h.emitPresentation).toHaveBeenLastCalledWith(
+      expect.objectContaining({ active: false, phase: 'idle' })
+    );
+    h.emit.mockClear();
+    h.owner.replay('table');
+    expect(h.emit).toHaveBeenCalledWith(
+      'table',
+      expect.objectContaining({ type: 'maintenance_break_ended' })
+    );
     expect(h.engine.independentPause).toBe(true);
     expect(h.store.clear).not.toHaveBeenCalled();
   });

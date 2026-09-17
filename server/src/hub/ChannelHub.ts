@@ -65,6 +65,7 @@ interface TournamentEventMsg {
 
 interface LobbyUpdateMsg {
   type: 'LOBBY_UPDATE';
+  kind?: 'maintenance';
   payload: unknown;
 }
 

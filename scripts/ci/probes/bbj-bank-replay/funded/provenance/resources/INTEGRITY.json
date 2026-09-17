@@ -1,0 +1,97 @@
+{
+  "packet": "internal-ledger-native-fixture-0007",
+  "sealed_at": "2026-09-14T00:01:42.912062+00:00",
+  "source_only": true,
+  "files": [
+    {
+      "path": "FIXTURE-INPUTS.json",
+      "sha256": "bcec4a8d2da5c56d22c37d89a865b66d7aba7d917edb2231976c88f837fef579",
+      "bytes": 3796
+    },
+    {
+      "path": "FROZEN-SOURCE-REUSE.json",
+      "sha256": "8af5437a66715c6af159d36becff2245d5431edd5f5de9c3f54f0604958c0852",
+      "bytes": 2144
+    },
+    {
+      "path": "HANDOFF.json",
+      "sha256": "a5d1d3ffc0a7aa0e55bc40e60a4b15729b98bf0975ae550cfa84823e3b0a5ce2",
+      "bytes": 3298
+    },
+    {
+      "path": "LOCAL-STATUS.json",
+      "sha256": "41459c005e214de8612b3a77b8bbd2a786b91b26a4e8e085d6f2a975b477c9b2",
+      "bytes": 621
+    },
+    {
+      "path": "PREDECESSOR-ATTEMPT.json",
+      "sha256": "aa01507d1c7251e6dd92b6c362029e501e2972a848aff0b2820a543df9d7ffa6",
+      "bytes": 2042
+    },
+    {
+      "path": "PRESEAL-REVIEW-RESOLUTIONS.json",
+      "sha256": "67318d5933b3706b98bd4e34ac1fe7fa526e0b929486bab9b1271ecd6aaea6e4",
+      "bytes": 947
+    },
+    {
+      "path": "PRIMARY-SOURCE-REFERENCES.json",
+      "sha256": "b00327278f6ec82c2da248b86d31c32b359640ead24893a0fb1333e0fd50cbd8",
+      "bytes": 977
+    },
+    {
+      "path": "REVIEW.md",
+      "sha256": "0aebc2db272a55bfae1ceda898dbfffd6855744896904f0934df7fd2281eef8f",
+      "bytes": 5733
+    },
+    {
+      "path": "RUN-INSTRUCTIONS.md",
+      "sha256": "1c602a79bd52be544523f70cd311f40a951f5f64989aac2f8456c5f3122a3e40",
+      "bytes": 2061
+    },
+    {
+      "path": "SEED-IDENTITY-REVIEW.json",
+      "sha256": "192d461f3fd1ec2d56fcaf3fa236cafd71550edc7f158ce0d402fc3645e74bec",
+      "bytes": 12195
+    },
+    {
+      "path": "SOURCE-CHECKS.json",
+      "sha256": "dc7edd0be1b0061a1569d3f7a6f57f7b05d44af0830f4f55c915b3afe9885a47",
+      "bytes": 1588
+    },
+    {
+      "path": "SOURCE-DELTA.patch",
+      "sha256": "7440b9eb8a960c8f4037ccb1f57e6bd22747dd8bfd25c3afde471fb4c1e1fd2f",
+      "bytes": 27546
+    },
+    {
+      "path": "SOURCE-MANIFEST.json",
+      "sha256": "54e16f9c411f95c624127ce2e8323bb0c71098f533128d0764702ae566b43912",
+      "bytes": 1814
+    },
+    {
+      "path": "STORAGE-CONTRACT.json",
+      "sha256": "c0049120f815d26442e5a4d57f6f8742c1160ba9d0b9143dbaccf8d0d32ed75e",
+      "bytes": 2685
+    },
+    {
+      "path": "check_source.py",
+      "sha256": "a814c55ef6d1360b46f2aa6ef4f47959becf2fb8268391a2fd9d4ce7747ebdbd",
+      "bytes": 6231
+    },
+    {
+      "path": "resource_safety.py",
+      "sha256": "8a2c60c55eca8c972dd868aa42682a9835f173f14c279e620f39e6305851510e",
+      "bytes": 3114
+    },
+    {
+      "path": "run_fixture.py",
+      "sha256": "c2c33781dd56c748825c91fb76744d74d0ff35155d43bd4dd735f96b1a63df00",
+      "bytes": 20245
+    },
+    {
+      "path": "seed.sql",
+      "sha256": "51967e20d0a839fa693e3adee98889bf018e632b4c952a681b3cca3213df1306",
+      "bytes": 4852
+    }
+  ]
+}

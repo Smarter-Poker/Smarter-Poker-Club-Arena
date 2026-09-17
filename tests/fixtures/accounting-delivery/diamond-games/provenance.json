@@ -1,0 +1,1440 @@
+{
+  "sources": {
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/table-catalog.json": "ac6f15cb503b0ac5cce85e1bff57f2038a00577434a8967ea624ae1e735531f3",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/financial-support-tables.json": "241c1fa73cc716b72e7737ff257b1ef44e864ce5d5d6f77b52d3e11b544ff4bb",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-support-catalog.json": "1b7f78198707dc12bcdedb8964a975755b3301354aa6a98b2bde5ed201d7abfb",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/declaration-support-catalog.json": "9e14626eff4b978e63f301d76d188e9991f66dc849e46d058054155c1d281fb4",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/remaining-support-catalog.json": "22cb0b42c3b4ef6ff60b12e7031f54e35b293763e2a2e3f96173466bd6bba4d1",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/round-book-tables.json": "b0a994c9d87041274fdbfafaf2ede478bb5d48b1519d9cb713f4d513db37fec0",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/round-book-parent.json": "dfbe320308d1196042d1818347bf9564c6276dbb0376e0bf26d8ff29eea554c1",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json": "8cc58c2782b675f084792fc7e09a5a63a6d0040f7e750fd146feb9d3515e29a9",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json": "4c4c5eeb0a77dea45ebafec94c35a64c499d1aeea556fe83b9470742c7e2d863",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/missing-support-catalog.json": "f2e4ed8025545bf45bbad46d8bd4329c459707c2a38296df0839a0a87f537fc7",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/financial-support-functions.json": "9a3c33decae0cd5403cfa79a240cbc517698b84a67cdf20697699332684a9bfd",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json": "d18f9172a13b0863fefa517192d45469061ebaeae6e71173ae74622d6c010b1c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/wallet-authority-functions.json": "ca46f4b70904f66da94a534103149afed71b763d86764f1b90adee9b2d21a0e1",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/existing-authority-functions.json": "38efeade721a13dc6039ef24c8fa123cf83e51408c41e68307ed394b7ba7a559",
+    "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json": "a6746904438dcc32fcd4c5c3b71fa7b4d40ef239f589ff2b6951eae85fb9b3db",
+    "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json": "c7ae302627dbdfebcb1980b02f973754a1909e6094d46b653e5366627906c329",
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/scripts/dev/fixtures/heads-up-funding/support-schema.json": "289e9f6e2e7b23f6571cbc0bf9a0529ef87fe01e898b5a2c9877206506d16c94",
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/scripts/dev/fixtures/heads-up-funding/dependencies.json": "d69dd24fec72c79d51995befa1d0a830c57379f04bd69a3069edada35cd4a094",
+    "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/fn_diamond_games_spent_today.sql": "a88d3e6688bad74d833a9747283467aaba862a7924cd64eb9608083033b5c591",
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260908114533_a_horse_may_play_in_the_arena.sql": "1dd2c1b769afdc63766edb5aed78acdfbbf90e76e855f19c8a647b773ab14ca9",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/all-sequences-exact.json": "4d757b32ef2c728f352539d0c296f5f0f8d56db56dae6e328b0cf2d25f59f93a",
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260831143501_ca_ledger_hardening.sql": "574345cd9b446e8435f984bf324be1079b02b2dd22b5b915f0eb93f218244398",
+    "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-support-schema.sql": "807af539f5c30125a56e17b80d7ce8e52ae9ad13b911a55e6c29f257447f1370",
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/scripts/dev/fixtures/heads-up-funding/columns.json": "64cc7b1c5aca6ae5b8c35dc35f5f00a52ca4ee3288cd7100bce2868e3d9609bb",
+    "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-support-indexes.sql": "01b01db1f8d2704a473ba221b89aaf70d9c5389984a2a77a6b6fa053ab9f48ab",
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914102113_road_crossing_and_mines_keep_each_round_under_seal.sql": "99178bac1d5fb9539d6f8b33eb7d7ba65b5b3ea5035b5e5862ff0926eeaea72b",
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260907233833_the_diamond_wheel.sql": "55202b0fab5c76d6eaaaf98e22237fe828d301bd9d3e928967d4f2e00e9198e2",
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260907234436_the_daily_club_arena_bonus_has_a_ledger.sql": "f546c0938d7762e82ffbaea06d6fbc3619a94113732cbaa55a31796e8123ba88",
+    "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-support-data.json": "b0d7b20bd398ad22aee38ca537be92952aaee08b5015d36cfff4560bebf9c947"
+  },
+  "tables": [
+    "ca_bridge_rate",
+    "ca_cert_accounts",
+    "ca_chip_store_coverage",
+    "ca_daily_bonus_refusals",
+    "ca_declared_money_triggers",
+    "ca_diamond_balance_audit",
+    "ca_diamond_engine_spend",
+    "ca_diamond_incidents",
+    "ca_diamond_rule_modes",
+    "ca_financial_epochs",
+    "ca_incident_recipients",
+    "ca_ledger_write_failures",
+    "ca_mint_ledger",
+    "ca_money_rpc_registry",
+    "ca_payout_freeze",
+    "chip_ledger",
+    "chip_ledger_idem",
+    "chip_transactions",
+    "club_members",
+    "club_wallet_transactions",
+    "clubs",
+    "crash_rounds",
+    "diamond_bonus_entries",
+    "diamond_choice_rounds",
+    "diamond_debts",
+    "diamond_engine_daily_caps",
+    "diamond_game_commits",
+    "diamond_game_configs",
+    "diamond_game_pools",
+    "diamond_purchase_lots",
+    "diamond_reward_budgets",
+    "diamond_reward_catalog",
+    "diamond_reward_catalog_history",
+    "diamond_transactions",
+    "diamond_user_daily_awards",
+    "diamond_wallets",
+    "engine_maintenance_break",
+    "engine_maintenance_thaws",
+    "financial_alerts",
+    "plinko_drops",
+    "profiles",
+    "training_streak_milestone_claims",
+    "union_admins",
+    "union_wallet_transactions",
+    "union_wallets",
+    "unions",
+    "user_diamond_balance",
+    "user_diamonds",
+    "wheel_config_history"
+  ],
+  "functions": [
+    "add_diamonds_to_balance",
+    "award_diamonds_v2",
+    "deduct_diamonds",
+    "enforce_chip_ledger_performed_by",
+    "fn_accounting_transfer_document_on_insert",
+    "fn_active_maintenance_release_boundary",
+    "fn_admin_holds_no_player_wallet",
+    "fn_block_browser_balance_inserts",
+    "fn_block_browser_balance_writes",
+    "fn_ca_attested_day_is_restated",
+    "fn_ca_audit_diamond_change",
+    "fn_ca_autoledger",
+    "fn_ca_block_browser_money_table",
+    "fn_ca_bridge_rate",
+    "fn_ca_caller_is_management",
+    "fn_ca_capture_tournament_charge_entitlement",
+    "fn_ca_chip_ledger_enrich",
+    "fn_ca_chip_store_declared",
+    "fn_ca_consume_purchase_lots",
+    "fn_ca_current_epoch",
+    "fn_ca_daily_bonus_budget_check",
+    "fn_ca_daily_bonus_caps",
+    "fn_ca_daily_bonus_claim",
+    "fn_ca_daily_bonus_claimed_from",
+    "fn_ca_daily_bonus_claims_append_only",
+    "fn_ca_daily_bonus_eligibility",
+    "fn_ca_daily_bonus_open_day",
+    "fn_ca_daily_bonus_refuse",
+    "fn_ca_daily_bonus_roll_lucky",
+    "fn_ca_daily_bonus_roll_mystery",
+    "fn_ca_daily_bonus_status",
+    "fn_ca_daily_bonus_velocity_check",
+    "fn_ca_declare_ledger",
+    "fn_ca_diamond_born_with_balance",
+    "fn_ca_diamond_catalog_history",
+    "fn_ca_diamond_earn_ledger",
+    "fn_ca_diamond_engine_of",
+    "fn_ca_diamond_incident",
+    "fn_ca_diamond_journal_classifier",
+    "fn_ca_diamond_journal_is_transfer",
+    "fn_ca_diamond_journal_origin",
+    "fn_ca_diamond_register_follows_journal",
+    "fn_ca_diamond_rule_mode",
+    "fn_ca_diamond_transfer_names_its_counterparty",
+    "fn_ca_engine_spend_append_only",
+    "fn_ca_escrow_on_overlay_leg",
+    "fn_ca_escrow_on_reserve_leg",
+    "fn_ca_escrow_on_seat_transfer_leg",
+    "fn_ca_house_board_allows_automation",
+    "fn_ca_is_cert_account",
+    "fn_ca_is_fixture_account",
+    "fn_ca_issuance_leg_is_registered",
+    "fn_ca_journal_append_only",
+    "fn_ca_mint",
+    "fn_ca_mint_issued_24h",
+    "fn_ca_mint_register_append_only",
+    "fn_ca_mint_supply",
+    "fn_ca_noncirculating_chip_stores",
+    "fn_ca_register_diamond_journal_row",
+    "fn_ca_register_issuance_leg",
+    "fn_ca_touch_updated_at",
+    "fn_caller_is_engine",
+    "fn_cancelled_tournament_evidence_is_immutable",
+    "fn_check_anti_farming_gift_cap",
+    "fn_club_members_ledger_writer",
+    "fn_club_settlement_frozen",
+    "fn_diamond_balance_mirrors_canonical",
+    "fn_diamond_game_cover_lock",
+    "fn_diamond_game_fund_promo",
+    "fn_diamond_game_owner",
+    "fn_diamond_game_pay_chips",
+    "fn_diamond_game_pay_diamonds",
+    "fn_diamond_game_reserved_cover_guard",
+    "fn_diamond_games_spent_today",
+    "fn_diamond_side_tables_follow_profiles",
+    "fn_enforce_anti_farming_caps",
+    "fn_freeze_bypass_active",
+    "fn_get_streak_multiplier",
+    "fn_guard_profile_privileged_columns",
+    "fn_is_service_context",
+    "fn_is_union_overseer",
+    "fn_membership_starts_with_zero_chips",
+    "fn_platform_frozen",
+    "fn_refuse_operator_move_while_settling",
+    "fn_refuse_while_frozen",
+    "fn_satellite_transfer_ledger_is_immutable",
+    "fn_terminal_tournament_evidence_is_immutable",
+    "fn_union_can_manage_wallets",
+    "fn_wheel_append_only",
+    "fn_wheel_can_operate",
+    "fn_wheel_commit",
+    "fn_wheel_config_history",
+    "fn_wheel_host",
+    "fn_wheel_purchased_available",
+    "fn_wheel_segments_audit",
+    "fn_wheel_spin_core",
+    "fn_wheel_spin_result",
+    "fn_wheel_welcome_room",
+    "fn_wheel_welcome_spent",
+    "fn_wheel_welcome_spin",
+    "fn_wheel_welcome_state",
+    "guard_wallet_balance_write",
+    "trg_union_rake_weekly",
+    "zz_chip_ledger_key_is_claimed_once"
+  ],
+  "missing_function_definitions": [],
+  "selected_triggers": [
+    {
+      "name": "trg_ca_mint_register_append_only",
+      "enabled": "O",
+      "function": "fn_ca_mint_register_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_mint_register_append_only BEFORE DELETE OR UPDATE ON ca_mint_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_mint_register_append_only()",
+      "function_oid": "20918336",
+      "initially_deferred": false,
+      "table": "ca_mint_ledger"
+    },
+    {
+      "name": "diamond_game_club_reserves",
+      "enabled": "O",
+      "function": "fn_diamond_game_reserved_cover_guard()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER diamond_game_club_reserves BEFORE UPDATE OF promo_balance, chip_treasury ON clubs FOR EACH ROW EXECUTE FUNCTION fn_diamond_game_reserved_cover_guard()",
+      "function_oid": "31385453",
+      "initially_deferred": false,
+      "table": "clubs"
+    },
+    {
+      "name": "trg_block_browser_treasury_writes",
+      "enabled": "O",
+      "function": "fn_block_browser_balance_writes()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_block_browser_treasury_writes BEFORE UPDATE ON clubs FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_writes()",
+      "function_oid": "16548913",
+      "initially_deferred": false,
+      "table": "clubs"
+    },
+    {
+      "name": "trg_ca_autoledger",
+      "enabled": "O",
+      "function": "fn_ca_autoledger()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF chip_treasury, chip_pool, promo_balance, insurance_balance ON clubs FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('chip_treasury=club_treasury', 'chip_pool=club_treasury', 'promo_balance=promo_wallet', 'insurance_balance=insurance_bank')",
+      "function_oid": "18108466",
+      "initially_deferred": false,
+      "table": "clubs"
+    },
+    {
+      "name": "trg_guard_clubs_chip_pool_ins",
+      "enabled": "O",
+      "function": "guard_wallet_balance_write()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_guard_clubs_chip_pool_ins BEFORE INSERT ON clubs FOR EACH ROW WHEN (new.chip_pool IS NOT NULL AND new.chip_pool <> 0::numeric) EXECUTE FUNCTION guard_wallet_balance_write()",
+      "function_oid": "4651784",
+      "initially_deferred": false,
+      "table": "clubs"
+    },
+    {
+      "name": "trg_guard_clubs_chip_pool_upd",
+      "enabled": "O",
+      "function": "guard_wallet_balance_write()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_guard_clubs_chip_pool_upd BEFORE UPDATE OF chip_pool ON clubs FOR EACH ROW WHEN (new.chip_pool IS DISTINCT FROM old.chip_pool) EXECUTE FUNCTION guard_wallet_balance_write()",
+      "function_oid": "4651784",
+      "initially_deferred": false,
+      "table": "clubs"
+    },
+    {
+      "name": "zz_freeze_guard",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE UPDATE ON clubs FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('chip_pool', 'total_rake')",
+      "function_oid": "18645625",
+      "initially_deferred": false,
+      "table": "clubs"
+    },
+    {
+      "name": "aa_ca_diamond_journal_classifier",
+      "enabled": "O",
+      "function": "fn_ca_diamond_journal_classifier()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER aa_ca_diamond_journal_classifier BEFORE INSERT ON diamond_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_diamond_journal_classifier()",
+      "function_oid": "23883895",
+      "initially_deferred": false,
+      "table": "diamond_transactions"
+    },
+    {
+      "name": "ab_ca_diamond_transfer_names_its_counterparty",
+      "enabled": "O",
+      "function": "fn_ca_diamond_transfer_names_its_counterparty()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER ab_ca_diamond_transfer_names_its_counterparty BEFORE INSERT ON diamond_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_diamond_transfer_names_its_counterparty()",
+      "function_oid": "27767307",
+      "initially_deferred": false,
+      "table": "diamond_transactions"
+    },
+    {
+      "name": "trg_ca_append_only",
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON diamond_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+      "function_oid": "18104048",
+      "initially_deferred": false,
+      "table": "diamond_transactions"
+    },
+    {
+      "name": "trg_ca_diamond_earn_ledger",
+      "enabled": "O",
+      "function": "fn_ca_diamond_earn_ledger()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_diamond_earn_ledger AFTER INSERT ON diamond_transactions FOR EACH ROW WHEN (new.amount > 0) EXECUTE FUNCTION fn_ca_diamond_earn_ledger()",
+      "function_oid": "19180158",
+      "initially_deferred": false,
+      "table": "diamond_transactions"
+    },
+    {
+      "name": "trg_ca_diamond_register_follows_journal",
+      "enabled": "O",
+      "function": "fn_ca_diamond_register_follows_journal()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_diamond_register_follows_journal AFTER INSERT ON diamond_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_diamond_register_follows_journal()",
+      "function_oid": "21245603",
+      "initially_deferred": false,
+      "table": "diamond_transactions"
+    },
+    {
+      "name": "trg_enforce_anti_farming_caps",
+      "enabled": "O",
+      "function": "fn_enforce_anti_farming_caps()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_enforce_anti_farming_caps BEFORE INSERT ON diamond_transactions FOR EACH ROW EXECUTE FUNCTION fn_enforce_anti_farming_caps()",
+      "function_oid": "5724744",
+      "initially_deferred": false,
+      "table": "diamond_transactions"
+    },
+    {
+      "name": "trg_aa_diamond_balance_mirrors_canonical",
+      "enabled": "O",
+      "function": "fn_diamond_balance_mirrors_canonical()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_aa_diamond_balance_mirrors_canonical BEFORE INSERT OR UPDATE OF diamonds, diamond_balance ON profiles FOR EACH ROW EXECUTE FUNCTION fn_diamond_balance_mirrors_canonical()",
+      "function_oid": "18952182",
+      "initially_deferred": false,
+      "table": "profiles"
+    },
+    {
+      "name": "trg_diamond_side_tables_follow_profiles",
+      "enabled": "O",
+      "function": "fn_diamond_side_tables_follow_profiles()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_diamond_side_tables_follow_profiles AFTER INSERT OR UPDATE OF diamonds ON profiles FOR EACH ROW EXECUTE FUNCTION fn_diamond_side_tables_follow_profiles()",
+      "function_oid": "18952206",
+      "initially_deferred": false,
+      "table": "profiles"
+    },
+    {
+      "name": "trg_guard_profile_privileged_columns",
+      "enabled": "O",
+      "function": "fn_guard_profile_privileged_columns()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_guard_profile_privileged_columns BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION fn_guard_profile_privileged_columns()",
+      "function_oid": "9256739",
+      "initially_deferred": false,
+      "table": "profiles"
+    },
+    {
+      "name": "zz_ca_audit_diamond_change",
+      "enabled": "O",
+      "function": "fn_ca_audit_diamond_change()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_ca_audit_diamond_change AFTER INSERT OR UPDATE OF diamonds ON profiles FOR EACH ROW EXECUTE FUNCTION fn_ca_audit_diamond_change()",
+      "function_oid": "18765296",
+      "initially_deferred": false,
+      "table": "profiles"
+    },
+    {
+      "name": "zz_ca_diamond_born_with_balance",
+      "enabled": "O",
+      "function": "fn_ca_diamond_born_with_balance()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_ca_diamond_born_with_balance AFTER INSERT ON profiles FOR EACH ROW WHEN (new.diamonds IS NOT NULL AND new.diamonds <> 0) EXECUTE FUNCTION fn_ca_diamond_born_with_balance()",
+      "function_oid": "19175951",
+      "initially_deferred": false,
+      "table": "profiles"
+    },
+    {
+      "name": "diamond_game_union_reserves",
+      "enabled": "O",
+      "function": "fn_diamond_game_reserved_cover_guard()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER diamond_game_union_reserves BEFORE UPDATE OF promo_wallet, chip_balance ON union_wallets FOR EACH ROW EXECUTE FUNCTION fn_diamond_game_reserved_cover_guard()",
+      "function_oid": "31385453",
+      "initially_deferred": false,
+      "table": "union_wallets"
+    },
+    {
+      "name": "trg_ca_autoledger",
+      "enabled": "O",
+      "function": "fn_ca_autoledger()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet ON union_wallets FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('chip_balance=union_bank', 'rake_wallet=union_wallet', 'bbj_wallet=union_wallet', 'promo_wallet=union_wallet', 'insurance_wallet=union_wallet', 'spin_reserve_wallet=union_wallet')",
+      "function_oid": "18108466",
+      "initially_deferred": false,
+      "table": "union_wallets"
+    },
+    {
+      "name": "trg_ca_block_browser",
+      "enabled": "O",
+      "function": "fn_ca_block_browser_money_table()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_block_browser BEFORE INSERT OR DELETE OR UPDATE ON union_wallets FOR EACH ROW EXECUTE FUNCTION fn_ca_block_browser_money_table()",
+      "function_oid": "18125267",
+      "initially_deferred": false,
+      "table": "union_wallets"
+    },
+    {
+      "name": "zz_engine_spend_append_only",
+      "enabled": "O",
+      "function": "fn_ca_engine_spend_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_engine_spend_append_only BEFORE DELETE OR UPDATE ON ca_diamond_engine_spend FOR EACH ROW EXECUTE FUNCTION fn_ca_engine_spend_append_only()",
+      "function_oid": "24543860",
+      "initially_deferred": false,
+      "table": "ca_diamond_engine_spend"
+    },
+    {
+      "name": "zz_engine_spend_no_truncate",
+      "enabled": "O",
+      "function": "fn_ca_engine_spend_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_engine_spend_no_truncate BEFORE TRUNCATE ON ca_diamond_engine_spend FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_engine_spend_append_only()",
+      "function_oid": "24543860",
+      "initially_deferred": false,
+      "table": "ca_diamond_engine_spend"
+    },
+    {
+      "name": "zz_touch_updated_at",
+      "enabled": "O",
+      "function": "fn_ca_touch_updated_at()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_touch_updated_at BEFORE INSERT OR UPDATE ON ca_diamond_rule_modes FOR EACH ROW EXECUTE FUNCTION fn_ca_touch_updated_at()",
+      "function_oid": "24559495",
+      "initially_deferred": false,
+      "table": "ca_diamond_rule_modes"
+    },
+    {
+      "name": "zz_touch_updated_at",
+      "enabled": "O",
+      "function": "fn_ca_touch_updated_at()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_touch_updated_at BEFORE INSERT OR UPDATE ON diamond_engine_daily_caps FOR EACH ROW EXECUTE FUNCTION fn_ca_touch_updated_at()",
+      "function_oid": "24559495",
+      "initially_deferred": false,
+      "table": "diamond_engine_daily_caps"
+    },
+    {
+      "name": "trg_ca_diamond_reward_catalog_history",
+      "enabled": "O",
+      "function": "fn_ca_diamond_catalog_history()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_diamond_reward_catalog_history AFTER INSERT OR DELETE OR UPDATE ON diamond_reward_catalog FOR EACH ROW EXECUTE FUNCTION fn_ca_diamond_catalog_history()",
+      "function_oid": "19180160",
+      "initially_deferred": false,
+      "table": "diamond_reward_catalog"
+    },
+    {
+      "name": "aa_ca_capture_tournament_charge_entitlement",
+      "enabled": "O",
+      "function": "fn_ca_capture_tournament_charge_entitlement()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER aa_ca_capture_tournament_charge_entitlement AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.tournament_id IS NOT NULL AND new.from_type = 'player_wallet'::text AND new.to_type = 'prize_liability'::text) EXECUTE FUNCTION fn_ca_capture_tournament_charge_entitlement()",
+      "function_oid": "25581303",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "ab_ca_chip_store_declared",
+      "enabled": "O",
+      "function": "fn_ca_chip_store_declared()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER ab_ca_chip_store_declared BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_store_declared()",
+      "function_oid": "27837353",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "accounting_transfer_document",
+      "enabled": "O",
+      "function": "fn_accounting_transfer_document_on_insert()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER accounting_transfer_document AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.status = 'posted'::text AND ((new.from_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text])) OR new.from_type = 'settlement_suspense'::text AND new.category = 'rakeback'::text) AND (new.to_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text]))) EXECUTE FUNCTION fn_accounting_transfer_document_on_insert()",
+      "function_oid": "31371469",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "enabled": "O",
+      "function": "fn_cancelled_tournament_evidence_is_immutable()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+      "function_oid": "25705777",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "satellite_transfer_ledger_is_immutable",
+      "enabled": "O",
+      "function": "fn_satellite_transfer_ledger_is_immutable()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER satellite_transfer_ledger_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_satellite_transfer_ledger_is_immutable()",
+      "function_oid": "25706091",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "terminal_tournament_evidence_is_immutable",
+      "enabled": "O",
+      "function": "fn_terminal_tournament_evidence_is_immutable()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+      "function_oid": "25706051",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "trg_ca_append_only",
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+      "function_oid": "18104048",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "trg_ca_chip_ledger_enrich",
+      "enabled": "O",
+      "function": "fn_ca_chip_ledger_enrich()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_chip_ledger_enrich BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_ledger_enrich()",
+      "function_oid": "18104075",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "trg_chip_ledger_performed_by",
+      "enabled": "O",
+      "function": "enforce_chip_ledger_performed_by()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_chip_ledger_performed_by BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION enforce_chip_ledger_performed_by()",
+      "function_oid": "4652717",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "zz_ca_attested_day_is_restated_del",
+      "enabled": "O",
+      "function": "fn_ca_attested_day_is_restated()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_del AFTER DELETE ON chip_ledger REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+      "function_oid": "23878193",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "zz_ca_attested_day_is_restated_upd",
+      "enabled": "O",
+      "function": "fn_ca_attested_day_is_restated()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_upd AFTER UPDATE ON chip_ledger REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+      "function_oid": "23878193",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "zz_ca_escrow_overlay_leg",
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_overlay_leg()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_ca_escrow_overlay_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.to_type = 'prize_liability'::text AND (new.category = 'overlay'::text OR new.category = 'correction'::text AND (new.from_type = ANY (ARRAY['union_bank'::text, 'club_treasury'::text])))) EXECUTE FUNCTION fn_ca_escrow_on_overlay_leg()",
+      "function_oid": "21012781",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "zz_ca_escrow_reserve_leg",
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_reserve_leg()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_ca_escrow_reserve_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.category = ANY (ARRAY['spin_entry'::text, 'spin_prize'::text])) EXECUTE FUNCTION fn_ca_escrow_on_reserve_leg()",
+      "function_oid": "21371788",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "zz_ca_escrow_seat_transfer_leg",
+      "enabled": "O",
+      "function": "fn_ca_escrow_on_seat_transfer_leg()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_ca_escrow_seat_transfer_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.to_type = 'prize_liability'::text AND new.idempotency_key ~~ 'tourney:%:seat:%:pool_transfer'::text) EXECUTE FUNCTION fn_ca_escrow_on_seat_transfer_leg()",
+      "function_oid": "21755200",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "zz_ca_issuance_leg_is_registered",
+      "enabled": "O",
+      "function": "fn_ca_issuance_leg_is_registered()",
+      "internal": false,
+      "constraint": "20877280",
+      "deferrable": true,
+      "definition": "CREATE CONSTRAINT TRIGGER zz_ca_issuance_leg_is_registered AFTER INSERT ON chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.from_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])) OR (new.to_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text]))) EXECUTE FUNCTION fn_ca_issuance_leg_is_registered()",
+      "function_oid": "20877265",
+      "initially_deferred": true,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "zz_chip_ledger_key_is_claimed_once",
+      "enabled": "O",
+      "function": "zz_chip_ledger_key_is_claimed_once()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_chip_ledger_key_is_claimed_once BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION zz_chip_ledger_key_is_claimed_once()",
+      "function_oid": "23238946",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "zz_freeze_guard",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()",
+      "function_oid": "18645625",
+      "initially_deferred": false,
+      "table": "chip_ledger"
+    },
+    {
+      "name": "trg_ca_append_only",
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+      "function_oid": "18104048",
+      "initially_deferred": false,
+      "table": "chip_transactions"
+    },
+    {
+      "name": "zz_freeze_guard",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()",
+      "function_oid": "18645625",
+      "initially_deferred": false,
+      "table": "chip_transactions"
+    },
+    {
+      "name": "zz_settlement_freeze_guard",
+      "enabled": "O",
+      "function": "fn_refuse_operator_move_while_settling()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_settlement_freeze_guard BEFORE INSERT ON chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_refuse_operator_move_while_settling()",
+      "function_oid": "21171122",
+      "initially_deferred": false,
+      "table": "chip_transactions"
+    },
+    {
+      "name": "trg_admin_holds_no_player_wallet",
+      "enabled": "O",
+      "function": "fn_admin_holds_no_player_wallet()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_admin_holds_no_player_wallet BEFORE INSERT OR UPDATE OF role, chip_balance ON club_members FOR EACH ROW EXECUTE FUNCTION fn_admin_holds_no_player_wallet()",
+      "function_oid": "20513803",
+      "initially_deferred": false,
+      "table": "club_members"
+    },
+    {
+      "name": "trg_block_browser_balance_inserts",
+      "enabled": "O",
+      "function": "fn_block_browser_balance_inserts()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_block_browser_balance_inserts BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_inserts()",
+      "function_oid": "16548917",
+      "initially_deferred": false,
+      "table": "club_members"
+    },
+    {
+      "name": "trg_block_browser_balance_writes",
+      "enabled": "O",
+      "function": "fn_block_browser_balance_writes()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_block_browser_balance_writes BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_writes()",
+      "function_oid": "16548913",
+      "initially_deferred": false,
+      "table": "club_members"
+    },
+    {
+      "name": "trg_ca_autoledger",
+      "enabled": "O",
+      "function": "fn_ca_autoledger()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF promo_balance ON club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('promo_balance=promo_wallet')",
+      "function_oid": "18108466",
+      "initially_deferred": false,
+      "table": "club_members"
+    },
+    {
+      "name": "trg_ca_autoledger_insert",
+      "enabled": "O",
+      "function": "fn_ca_autoledger()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON club_members FOR EACH ROW WHEN (COALESCE(new.chip_balance, 0::numeric) <> 0::numeric OR COALESCE(new.promo_balance, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_ca_autoledger('chip_balance=player_wallet', 'promo_balance=promo_wallet')",
+      "function_oid": "18108466",
+      "initially_deferred": false,
+      "table": "club_members"
+    },
+    {
+      "name": "trg_club_members_audit_chip_movement",
+      "enabled": "O",
+      "function": "fn_club_members_ledger_writer()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_club_members_audit_chip_movement AFTER UPDATE OF chip_balance ON club_members FOR EACH ROW WHEN (old.chip_balance IS DISTINCT FROM new.chip_balance) EXECUTE FUNCTION fn_club_members_ledger_writer()",
+      "function_oid": "16310787",
+      "initially_deferred": false,
+      "table": "club_members"
+    },
+    {
+      "name": "trg_membership_starts_with_zero_chips",
+      "enabled": "O",
+      "function": "fn_membership_starts_with_zero_chips()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_membership_starts_with_zero_chips BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_starts_with_zero_chips()",
+      "function_oid": "16207168",
+      "initially_deferred": false,
+      "table": "club_members"
+    },
+    {
+      "name": "zz_freeze_guard",
+      "enabled": "O",
+      "function": "fn_refuse_while_frozen()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('chip_balance')",
+      "function_oid": "18645625",
+      "initially_deferred": false,
+      "table": "club_members"
+    },
+    {
+      "name": "trg_ca_append_only",
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON club_wallet_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+      "function_oid": "18104048",
+      "initially_deferred": false,
+      "table": "club_wallet_transactions"
+    },
+    {
+      "name": "trg_ca_append_only",
+      "enabled": "O",
+      "function": "fn_ca_journal_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON union_wallet_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+      "function_oid": "18104048",
+      "initially_deferred": false,
+      "table": "union_wallet_transactions"
+    },
+    {
+      "name": "union_rake_weekly_maintain",
+      "enabled": "O",
+      "function": "trg_union_rake_weekly()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER union_rake_weekly_maintain AFTER INSERT ON union_wallet_transactions FOR EACH ROW EXECUTE FUNCTION trg_union_rake_weekly()",
+      "function_oid": "15125087",
+      "initially_deferred": false,
+      "table": "union_wallet_transactions"
+    },
+    {
+      "name": "trg_ca_daily_bonus_refusals_append_only",
+      "enabled": "O",
+      "function": "fn_ca_daily_bonus_claims_append_only()",
+      "internal": false,
+      "constraint": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_ca_daily_bonus_refusals_append_only BEFORE DELETE OR UPDATE ON ca_daily_bonus_refusals FOR EACH ROW EXECUTE FUNCTION fn_ca_daily_bonus_claims_append_only()",
+      "function_oid": "23955911",
+      "initially_deferred": false,
+      "table": "ca_daily_bonus_refusals"
+    }
+  ],
+  "unexercised_trigger_branches_not_expanded": [
+    "fn_ca_attested_day_is_restated",
+    "fn_ca_capture_tournament_charge_entitlement",
+    "fn_ca_escrow_on_overlay_leg",
+    "fn_ca_escrow_on_reserve_leg",
+    "fn_ca_escrow_on_seat_transfer_leg",
+    "fn_ca_journal_append_only",
+    "fn_ca_mint_register_append_only",
+    "fn_cancelled_tournament_evidence_is_immutable",
+    "fn_satellite_transfer_ledger_is_immutable",
+    "fn_terminal_tournament_evidence_is_immutable",
+    "trg_union_rake_weekly"
+  ],
+  "probe_source": {
+    "diamond-games-funding-identity.sql": {
+      "original_staged_sha256": "0d34e71443a6997ce8acaf66b3606f93e38a92937c1708028a33b306d6026400",
+      "maintained_sha256": "0d34e71443a6997ce8acaf66b3606f93e38a92937c1708028a33b306d6026400"
+    },
+    "diamond-spins-claimed-daily-bonus.sql": {
+      "original_staged_sha256": "2f4a88ad14dd405a396a7f4e24cb8b6e5614a66b6d0b32d96e1491d978cc6ea1",
+      "maintained_sha256": "be8d87f50c6f4a9bbcbb252ae0655e5fe9c8154a4329aa80553348d8aec464fe"
+    }
+  },
+  "function_witnesses": [
+    {
+      "name": "add_diamonds_to_balance",
+      "body_sha256": "bf12296402133e7917d61c91ba0e9328f01606287349cf6d8cd096513467fe3d",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "award_diamonds_v2",
+      "body_sha256": "568a58bf86a8fc7a159feb9708f11b6e83170f630d713afab53f459f1870bdc4",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "deduct_diamonds",
+      "body_sha256": "fd840332ec2cdcf62856eb6befcee071fff1b6108b4426b669d3c10267820334",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "enforce_chip_ledger_performed_by",
+      "body_sha256": "13753ad5849313d8751bf581bbb26bd1833ec499edb4ae7c6941da9c54ecb579",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_accounting_transfer_document_on_insert",
+      "body_sha256": "589cd51f30a11ea8048b827aecf085a8d58699e7ee76ee1e32aae5e49c05fc11",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_active_maintenance_release_boundary",
+      "body_sha256": "4d35241aa431aa58e133ca9d09c50b8fa911cec26d464a3362cff3cec92c20a7",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/existing-authority-functions.json"
+    },
+    {
+      "name": "fn_admin_holds_no_player_wallet",
+      "body_sha256": "aaf5de457136c46a2f61873ca16466f99f641c2d1802614f3f412778684c7a57",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_block_browser_balance_inserts",
+      "body_sha256": "519fd388a2fa086df616f12f7c4c9da4dc6496214206876e32536f690b3f16a1",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_block_browser_balance_writes",
+      "body_sha256": "0e03602303656386a72c9965519340f4a19a95bbec248aee34212aca5376aabd",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_attested_day_is_restated",
+      "body_sha256": "cf28683f98003403a9088e8a4a9a2814cbd749d4fee43658dd462b4f0dee7d8e",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_audit_diamond_change",
+      "body_sha256": "24d3425702fb3c6db168beff6f862046a6273226f31e8248789db2be5f505204",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_autoledger",
+      "body_sha256": "c6cb4c3b195b7b4f3ffcdc6316f546721c3a5f57ff00511d2548640a53272fdc",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_block_browser_money_table",
+      "body_sha256": "418746f26e4130d20c22fc776e2ab4f763e305c58f85f85ec94ada62c164641b",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_bridge_rate",
+      "body_sha256": "565cd049a710d23206b3d6723ce6b289b02ee87562e3cead2a8bdabedabf4f1b",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_caller_is_management",
+      "body_sha256": "114b15fd953d361cbe362451410a5d072c9083b58dab4b8d609041d33f4d7995",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/wallet-authority-functions.json"
+    },
+    {
+      "name": "fn_ca_capture_tournament_charge_entitlement",
+      "body_sha256": "99549b35b5ddb15a56962c1993c116843958bfa1d691793bee385736cfe6a16a",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_chip_ledger_enrich",
+      "body_sha256": "666b9070facf98c98f2a147a155d9d265130aaa7a7171d5c7e555a2801cfb8ff",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_chip_store_declared",
+      "body_sha256": "9f9689c319dd49298ee2472520cdc667342b7f59c11a82970d7aba419753291a",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_consume_purchase_lots",
+      "body_sha256": "be740f60e823db33a4bf63293470fa4204d6622d6497efb7455977ef44fb19b6",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_current_epoch",
+      "body_sha256": "470a97d97e628d7466bc1d1be0898d02faa7a17054e88a1d18d371903e48b54c",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_budget_check",
+      "body_sha256": "18c6aa15f9a05243191c260bbd66dd944f06abfe2fdac1a7775d3d3434683f42",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_caps",
+      "body_sha256": "9d3bba72212911e9511e2db975aa52c4669fa3ec6f02bae4ce28bc24205c69ed",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_claim",
+      "body_sha256": "51bf1d42e3f24e8d0ff45829f293c85986300e727f650c4130bfeafac5abf7c7",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_claimed_from",
+      "body_sha256": "793ed2e07f5da78ff419a4146a79377435de3160336dba4abc07ffad6f44880e",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_claims_append_only",
+      "body_sha256": "1d5bbc3b7af73187409d3384cd31e64b7d463b254e802ea89ef2a6c6d865fcdc",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_eligibility",
+      "body_sha256": "fa342350ef9c1d147f6f489386d73a1a34f604d3c41a12c8239d0386150a4dd0",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_open_day",
+      "body_sha256": "2180756a80d39350b79ff50b9b6f0b108f5c566bae849bb62fed3f326c76f87c",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_refuse",
+      "body_sha256": "3b4375ea68cb8d2c3a1ec2e82a52a1c75a4bb5bd732b4e31deb3847ab98597f4",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_roll_lucky",
+      "body_sha256": "d9c4c4385a81304b52308451a28d1fa091c2fb03058e039e284ffad92669c2fe",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_roll_mystery",
+      "body_sha256": "da1ddfaed2ca1fdcab352f9e2a5f0aa79be0aef7371af0f5cc7276f7af27fb5c",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_status",
+      "body_sha256": "96c48dc9f7be954173d918b490bee7dd45f272f1260cccd7afc22b044422ae63",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_daily_bonus_velocity_check",
+      "body_sha256": "74a0775b6e1c17dbad1cc114450f2685b695f78cd4f06a446a96d4b0f351e3f0",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_ca_declare_ledger",
+      "body_sha256": "bf736f3db4a8c68934eb978347e82195cd80f2e9172afd8c5a7327f6e2f00a11",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_born_with_balance",
+      "body_sha256": "ab360a6131e7eef7d20e3487e5ef3c94da7c9db8ef8c53ae16fce79fd261dcee",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_catalog_history",
+      "body_sha256": "eb4ad708935d66d874ffaef1a3968f4a7c0f921eba236bd0e463b4efacf7c44e",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/financial-support-functions.json"
+    },
+    {
+      "name": "fn_ca_diamond_earn_ledger",
+      "body_sha256": "d081c4264d1c271360c3c7ed0941064b53169d5a027a0ad4e652045f935334c5",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_engine_of",
+      "body_sha256": "d2d106cb00aaf98e1356d8af5ea6ede68c9d6d0d48fd8517b376578f7a7a2fac",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_incident",
+      "body_sha256": "a4c45f2540f51f0b9fcd2fbe96f146f914ad8f39ed382ebfff45f19621078270",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_journal_classifier",
+      "body_sha256": "8270ad0a51698ebc13e5a7b91c816585f6e9ceb605a5a5bafb28337aee25c09e",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_journal_is_transfer",
+      "body_sha256": "fae09364ee42d53ba61415da8c11d259e4e52d5a580df6373f9a2f243f77e575",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_journal_origin",
+      "body_sha256": "91d39733c339ad529ab7f5b85ac9f886ef732c498938b538f9e382f51e9873cb",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_register_follows_journal",
+      "body_sha256": "91e4d30ba2cbd7366bb33d6f98d8fa36631029f12636c32ef088072ae5a6b65a",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_rule_mode",
+      "body_sha256": "72bfd8bbfceae0429578e592b79b39b06add4e9e66775d1a3751853cf1016805",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_ca_diamond_transfer_names_its_counterparty",
+      "body_sha256": "936be6489e51cb9cd75aec328dbb006a92eb46998133fb68ccb780982332070b",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_engine_spend_append_only",
+      "body_sha256": "4501e69ce37ee0654f40001c63c39cff8b637713b4ed19fa53b811af733d685e",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/financial-support-functions.json"
+    },
+    {
+      "name": "fn_ca_escrow_on_overlay_leg",
+      "body_sha256": "5e28e22236e98d5dfed07eafd55cebc64c2383479edc6115489fbd394243699c",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_escrow_on_reserve_leg",
+      "body_sha256": "86f9f7917a724b1695bb9df32bc261ab6934d68cb9a33bfed61c4882be7c25ee",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_escrow_on_seat_transfer_leg",
+      "body_sha256": "3e932f2a75b1b08702d4d92faa3b8e13b60e740ad8fbf76c366d242a2e90a0b0",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_house_board_allows_automation",
+      "body_sha256": "58d587852dc2043463d0ee00ca8ba1cb8105e743af27d029e7b3045207c0650b",
+      "source": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260908114533_a_horse_may_play_in_the_arena.sql"
+    },
+    {
+      "name": "fn_ca_is_cert_account",
+      "body_sha256": "5a09dfad40d5019977b883ffdff3ba9d0e1b59d3ad252c40381123ebb8271ea3",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_ca_is_fixture_account",
+      "body_sha256": "b504b225a25868de686d0ce4ffd9140902aef3d722336b4d6966e0384aac5639",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_ca_issuance_leg_is_registered",
+      "body_sha256": "66324f56b85879639a1388226f63e0047d9f4dd53665627aa2f75c8a9c80dde1",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_ca_journal_append_only",
+      "body_sha256": "b5acbe01ca773e3de3521abf897f37a9cc9d2cb1db36388d2ef6482d21d8792e",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_mint",
+      "body_sha256": "0acf220f35c73d97906c4daa0d096cb6ba7d2acba974c35b3ba3f0a3c712a8cb",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_mint_issued_24h",
+      "body_sha256": "7204f2f5c4f0f85be9a84c2431661a78f6fcd6b0f0a5abe72f42eef324b15fa0",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_ca_mint_register_append_only",
+      "body_sha256": "3175db53bd3e1506a2ca79efc92abf498b0d1f79fc0ec2335074d68a0151358c",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_mint_supply",
+      "body_sha256": "dc70eda89c90cd22c5b9cd04a6128ded298505a90bbbe8e8f7753daabc2cc0e7",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_ca_noncirculating_chip_stores",
+      "body_sha256": "32ab42fa2fcf417430bc87a8fc724f81bfe6b672c34c59ada1378fe0972a72f5",
+      "source": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/scripts/dev/fixtures/heads-up-funding"
+    },
+    {
+      "name": "fn_ca_register_diamond_journal_row",
+      "body_sha256": "b85d1a8bc345820ea5a550d464b70d662b872e834149f3820de5cd20ef540a56",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_ca_register_issuance_leg",
+      "body_sha256": "959f670972ef49b812daf6b34e036efdc5674443ed43109af0ae1da8045aa397",
+      "source": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/scripts/dev/fixtures/heads-up-funding"
+    },
+    {
+      "name": "fn_ca_touch_updated_at",
+      "body_sha256": "807101d3537080bc746ef96448d5657ff72f33f8ea428f3b1f37cac0cf86d39c",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/financial-support-functions.json"
+    },
+    {
+      "name": "fn_caller_is_engine",
+      "body_sha256": "f45d32b0cf924cca73d2c7576abf603d48599fd5a9cb844b1fb508bed5bde448",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/wallet-authority-functions.json"
+    },
+    {
+      "name": "fn_cancelled_tournament_evidence_is_immutable",
+      "body_sha256": "582fca6e850bd6d330ea1bf53f931b5477bca0f7682ca50074866a86999f92e3",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_check_anti_farming_gift_cap",
+      "body_sha256": "018c78e947b7be614b475277a20b5fd47c2a55e05042ff62fbd921cf53625ffc",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_club_members_ledger_writer",
+      "body_sha256": "14fe1b7cb9a89d53483f58c7d3019545c6431d5ba3d72ee4c57cbed96948a7fd",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_club_settlement_frozen",
+      "body_sha256": "242d76e28ff8c579a5c44767057e7bf982ba4bd58a07229dc4c9ce5679a6dc26",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/existing-authority-functions.json"
+    },
+    {
+      "name": "fn_diamond_balance_mirrors_canonical",
+      "body_sha256": "4944cd8e23cfa75af853afe8a39092e2cdab84360484ab547bde2b52f1969f1a",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_diamond_game_cover_lock",
+      "body_sha256": "d97e0a1a41d6d6b9619b29636e62301b0770e4e314e7f6ab291c4e64e9f9f9bd",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_diamond_game_fund_promo",
+      "body_sha256": "b5bd04484bba8ebf66ff6f492b5fa6e9c783ceb9b533fcbbc9c4915826bf0d52",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_diamond_game_owner",
+      "body_sha256": "9243ec27a8e4c4ed6fdf077f24e0d6c507d062a4e241ee512b8734edd79ae9ea",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_diamond_game_pay_chips",
+      "body_sha256": "c8332e221246567a15a4964cfb5feeb5f2015f5d2adeb8ce4855f980eeca0fd9",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_diamond_game_pay_diamonds",
+      "body_sha256": "3ef6b278e277d85d28db12270419581d49ee5bb65489f7525d8b33a3dde90762",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_diamond_game_reserved_cover_guard",
+      "body_sha256": "7e0a8a30f16f216f28704e706e46cc4b9a6287aa19b7e6ee45277fc54ae80908",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_diamond_games_spent_today",
+      "body_sha256": "f97acfd741abc176f516528d28ae7b07f569222eaf1a4dac0a3bb9eb8c9d0c18",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/fn_diamond_games_spent_today.sql"
+    },
+    {
+      "name": "fn_diamond_side_tables_follow_profiles",
+      "body_sha256": "edf18b2d9984cce0f09cedbd6ec8f6f2c58a8d42ff64c3cc13353fa27103fd7c",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_enforce_anti_farming_caps",
+      "body_sha256": "17f085dc1785ca9905cfce97aa524207b8c48708d203a0f09f57b999b18a66c5",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_freeze_bypass_active",
+      "body_sha256": "f865d4069c59e23b4beda52ab0a93ad0b870349c681b9b197a25956e0d105aa6",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_get_streak_multiplier",
+      "body_sha256": "38952d40e6956341ebda840983f7715ee9fd61c6d268d6adcdcfdc295d77a0b1",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_guard_profile_privileged_columns",
+      "body_sha256": "e5d615211610d9b00ca897b5b7643eeec414f4e935f2b95ff5432332d888e278",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_is_service_context",
+      "body_sha256": "a453ebe6f653f3df4554fc5386abaf4e294d640088633af0069790de76ca1053",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_is_union_overseer",
+      "body_sha256": "6d0849af55a3003e9baf7e210dd3d31218c5470a0ee6282700e34ab6f09b4e38",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/existing-authority-functions.json"
+    },
+    {
+      "name": "fn_membership_starts_with_zero_chips",
+      "body_sha256": "519a7ac92103bf51663b56dbbc2231444cfc7225232d18c4fed42d51a26dbee0",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_platform_frozen",
+      "body_sha256": "83e8dbd760894cd61c39ce1113b0448d2609ac378cb6018f2d231f09b409c96d",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/direct-support-catalog.json"
+    },
+    {
+      "name": "fn_refuse_operator_move_while_settling",
+      "body_sha256": "2728d45c93638d3b7358d6a4f2929fe7a1861717e3ccfc9695d9997ad7d03a4f",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_refuse_while_frozen",
+      "body_sha256": "f74f74e785c9588947fd2fb2c5a1d9e1d2b8102eb35de8ce8556353d8a319915",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "fn_satellite_transfer_ledger_is_immutable",
+      "body_sha256": "e7c0990e417619b03d9cc945556bbf242eed1cb1a4bda87e9fe17cbc79ef9724",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_terminal_tournament_evidence_is_immutable",
+      "body_sha256": "d1f0b930944f5f1ad4825fdb4788e0fac2facf413f797bfbe2fb99a7bdc39062",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "fn_union_can_manage_wallets",
+      "body_sha256": "3326ec726f7b3c4646b9df55559c353ba63347333b1d7a66e7343d9368a6560c",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/wallet-authority-functions.json"
+    },
+    {
+      "name": "fn_wheel_append_only",
+      "body_sha256": "c68048e2419dff42a28e03eb7718a6dd51de001c4ee08ac75c8ba09237db21e9",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_wheel_can_operate",
+      "body_sha256": "05f571e74fbf9c5d876cd96c5eb1e9bdd820e02fec6c834c9a4cbd6ca3bc5b71",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_wheel_commit",
+      "body_sha256": "dd989a258e5b458592e256da4fb85552393f68c790d102b713b91cab9defdeb7",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_wheel_config_history",
+      "body_sha256": "3bd837735fe272cbba5b2b4a8c53f2fe4ce2cd9bf75844a81c2953a042e458fd",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_wheel_host",
+      "body_sha256": "9bf302c8a617a05e7f045f6f1fa66283fb8c21f436840f120c6e8c5f78b682f1",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_wheel_purchased_available",
+      "body_sha256": "7505ff8f50ba2fa6f2b799f3754da6e423ab64d4b1bf150ff186a7b51cd703fe",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_wheel_segments_audit",
+      "body_sha256": "4a180d22278418bdaf8d7e2d97eb2d8d76bb4c71906aef602bd65f934f17257b",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_wheel_spin_core",
+      "body_sha256": "b09a88dc1ddd2d1f2cdb922497640d2afaff4c5fa1341392a621ede6c7271101",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_wheel_spin_result",
+      "body_sha256": "3d4aa7dc65e509d3994f32f8ed00ca7468e08d71ec5ac15230cc1c0fea942661",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_wheel_welcome_room",
+      "body_sha256": "651aedfce74d97503c366a54dd879f1ff3a343be9473f39cc0948e72605ada9d",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_wheel_welcome_spent",
+      "body_sha256": "fa4353c1d4b8fdbfdc0f6ede24e847a92d127d547a32436ac560ee6f66636032",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/current-functions.json"
+    },
+    {
+      "name": "fn_wheel_welcome_spin",
+      "body_sha256": "a351b1b85ec61c3d89b25a8f6450f58f5be459d6713316f20715507792c090cf",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "fn_wheel_welcome_state",
+      "body_sha256": "d5531e7f943f9e93bf9d119cb379cb7f04753fa2691d307a6e5decd43806bbe3",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/work/daily-spin-live-functions.json"
+    },
+    {
+      "name": "guard_wallet_balance_write",
+      "body_sha256": "d79082b2fd27ce2b9974b46a9e0f04e54f44e4e221b3dda9dbe634cfb89cc32b",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/production-metadata-20260916/function-catalog.json"
+    },
+    {
+      "name": "trg_union_rake_weekly",
+      "body_sha256": "6234d4fbf6ec6bb350adf8dbe846d932eff55f62bd91e4c3f777e9c8cd9c325d",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    },
+    {
+      "name": "zz_chip_ledger_key_is_claimed_once",
+      "body_sha256": "540a91a39157f4bbff88c516a04cca29d1c32f59c974b94f9ca5cd3f0de3b87d",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
+    }
+  ],
+  "bank_fallback_extension": {
+    "schema_provenance": "schema-provenance.json",
+    "function_provenance": "function-provenance.json",
+    "probe": "tests/sql/diamond-games-bank-fallback.sql",
+    "scope": "Actual bank payout invoice/delivery closure; original accepted table/function witnesses remain preserved below."
+  }
+}

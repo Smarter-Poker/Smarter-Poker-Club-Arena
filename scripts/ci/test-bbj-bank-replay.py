@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""PG17 replay/refusal regression; no native funding or journal qualification."""
+"""Original PG17 replay/refusal checks followed by isolated PG17.11 funded BBJ cases."""
 from pathlib import Path
-import argparse, hashlib, json, os, re, shutil, signal, subprocess, tempfile
+import argparse, hashlib, importlib.util, json, os, re, shutil, signal, subprocess, tempfile, unittest, sys
 
 ROOT=Path(__file__).resolve().parents[2]
 parser=argparse.ArgumentParser(description=__doc__)
@@ -58,6 +58,76 @@ receipt={'scope':'isolated PG17 branch and installation proof only','steps':[],'
 receipt['inputHashes']=expected_hashes
 owned=None;started=False
 
+def funded_source_custody():
+ # Source custody is a separate stage; it never imports a retained financial adapter.
+ stage={'status':'ATTEMPTED','expected_tests':6,'discovered_tests':0,'executed_tests':0,
+        'runtime_verified':False,'financial_execution_authorized':False,'funded_cases_executed':[]}
+ receipt['fundedSourceCustody']=stage
+ directory=fixture_path.parent/'funded'
+ expected_names={
+  'test_original_inputs_are_preserved_and_do_not_authorize_execution',
+  'test_historical_admission_is_never_an_executable_input',
+  'test_unknown_original_reference_has_no_external_fallback',
+  'test_modified_source_is_rejected_at_use_not_only_initial_inventory',
+  'test_noncanonical_and_symlink_paths_are_rejected',
+  'test_duplicate_manifest_json_fields_are_rejected',
+ }
+ def retain():
+  # Retain this original attempt before allocation, including an interrupted stage.
+  with (W/'funded-source-custody.json').open('w') as evidence:
+   evidence.write(json.dumps(stage,indent=2)+'\n');evidence.flush();os.fsync(evidence.fileno())
+ def load(name,filename):
+  path=directory/filename
+  stage.setdefault('input_hashes',{})[filename]=digest(path.read_bytes())
+  spec=importlib.util.spec_from_file_location(name,path)
+  require(spec is not None and spec.loader is not None,'Missing fixed custody module loader')
+  module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  return module
+ retain()
+ try:
+  custody=load('bbj_replay_funded_custody','custody.py').FundedSourceCustody()
+  stage['custody']=custody.receipt()
+  require(stage['custody']['runtime_verified'] is False and
+          stage['custody']['financial_execution_authorized'] is False and
+          stage['custody']['funded_cases_executed']==[], 'Custody cannot qualify funded execution')
+  retain()
+  tests=load('bbj_replay_funded_custody_tests','test_custody.py')
+  loader=unittest.TestLoader()
+  require(issubclass(tests.CustodyBoundaryTests,unittest.TestCase),'Exact custody TestCase required')
+  names=loader.getTestCaseNames(tests.CustodyBoundaryTests)
+  suite=loader.loadTestsFromTestCase(tests.CustodyBoundaryTests)
+  stage['discovered_test_names']=names;stage['discovered_tests']=suite.countTestCases()
+  require(not loader.errors and len(names)==6 and set(names)==expected_names and
+          stage['discovered_tests']==6,'All six exact custody regressions must be loaded')
+  retain()
+  observed=[]
+  def make_result(*arguments,**keywords):
+   result=unittest.TextTestResult(*arguments,**keywords);observed.append(result);return result
+  with (W/'funded-source-custody.log').open('x') as log:
+   try:
+    result=unittest.TextTestRunner(stream=log,verbosity=2,resultclass=make_result).run(suite)
+   finally:
+    # Preserve partial counts/classifications even when an interrupt prevents return.
+    if observed:
+     result=observed[0]
+     stage['executed_tests']=result.testsRun
+     stage['failures']=[{'test':test.id(),'detail':detail} for test,detail in result.failures]
+     stage['errors']=[{'test':test.id(),'detail':detail} for test,detail in result.errors]
+     stage['skipped']=[{'test':test.id(),'reason':reason} for test,reason in result.skipped]
+     stage['expected_failures']=[{'test':test.id(),'detail':detail} for test,detail in result.expectedFailures]
+     stage['unexpected_successes']=[test.id() for test in result.unexpectedSuccesses]
+     stage['successful']=result.wasSuccessful()
+    log.flush();os.fsync(log.fileno())
+  require(result.testsRun==6 and stage['successful'] is True and
+          all(stage[key]==[] for key in ('failures','errors','skipped','expected_failures','unexpected_successes')),
+          'Custody regressions must execute six successes without skipped or expected failures')
+  stage['status']='PASSED_SOURCE_CUSTODY_ONLY'
+ except BaseException as error:
+  stage.update(status='FAILED',error_type=type(error).__name__,error=str(error))
+  raise
+ finally:
+  retain()
+
 def run(args,name,data=None,expected=0):
  r=subprocess.run([str(x) for x in args],input=data,text=True,capture_output=True,timeout=45,env=child_env)
  (W/(name+'.log')).write_text(r.stdout+r.stderr)
@@ -66,6 +136,7 @@ def run(args,name,data=None,expected=0):
  if r.returncode!=expected:raise RuntimeError(name+': '+r.stderr[-1200:])
  return r.stdout
 try:
+ funded_source_custody()
  require(re.search(r'PostgreSQL\) 17\.', run([PG/'postgres','--version'],'version')), 'PostgreSQL major 17 required')
  owned=Path(tempfile.mkdtemp(prefix='bbj-replay-',dir=short_temp));owned.chmod(0o700);(owned/'socket').mkdir(mode=0o700)
  receipt['ownedCluster']=str(owned)
@@ -127,3 +198,39 @@ finally:
  (W/'RESULTS.json').write_text(json.dumps(receipt,indent=2)+'\n')
  if cleanup_failed:
   raise RuntimeError('Owned cluster cleanup failed: '+(cleanup_error or 'cluster not confirmed stopped and removed'))
+
+# Replay/refusal assertions and their cleanup above remain the original gate.
+# The funded fixtures have separate current-operation, evidence and cluster lifetimes.
+funded_stage={'status':'ATTEMPTED_OUTCOME_UNCERTAIN','financial_qualification':False}
+receipt['fundedQualification']=funded_stage
+funded_names=('custody','deadline','current_ci','retained','execution','checks','caller')
+funded_directory=fixture_path.parent/'funded'
+previous_bytecode=sys.dont_write_bytecode
+try:
+ require(receipt['passed'] is True,'Original19 replay and cleanup must pass before funded cases')
+ require(not any(name in sys.modules for name in funded_names),'Conflicting funded caller module name')
+ sys.dont_write_bytecode=True
+ sys.path.insert(0,str(funded_directory))
+ try:
+  spec=importlib.util.spec_from_file_location('bbj_current_funded_caller',funded_directory/'caller.py')
+  caller=importlib.util.module_from_spec(spec);spec.loader.exec_module(caller)
+  funded_stage=caller.execute_funded_cases(ROOT,PG,W/'funded',Path(short_temp))
+  receipt['fundedQualification']=funded_stage
+  require(funded_stage.get('financial_qualification') is True,'Funded selected cases remain unqualified')
+ finally:
+  require(sys.path[0]==str(funded_directory),'Funded source import path ownership changed')
+  sys.path.pop(0)
+except BaseException as error:
+ receipt['passed']=False
+ if hasattr(error,'funded_report'):funded_stage=error.funded_report
+ funded_stage.update(status='FAILED_OR_UNCERTAIN',financial_qualification=False,error=str(error),error_type=type(error).__name__)
+ receipt['fundedQualification']=funded_stage
+ raise
+finally:
+ for name in funded_names:
+  module=sys.modules.get(name)
+  if module is not None and getattr(module,'__file__',None) and Path(module.__file__).resolve().is_relative_to(funded_directory):
+   del sys.modules[name]
+ sys.dont_write_bytecode=previous_bytecode
+ with (W/'RESULTS.json').open('w') as evidence:
+  evidence.write(json.dumps(receipt,indent=2)+'\n');evidence.flush();os.fsync(evidence.fileno())

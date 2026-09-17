@@ -51,7 +51,10 @@
   "expected_relation_count": 47,
   "all_columns": true,
   "complete_chip_ledger_before_after": true,
-  "separate_real_configuration_outputs": ["public.audit_trail", "public.game_management_events"],
+  "separate_real_configuration_outputs": [
+    "public.audit_trail",
+    "public.game_management_events"
+  ],
   "expected_financial_changes_only": [
     "public.clubs: bank100000 to99900 plus genuine config fields",
     "public.bbj_pools: one new actual main100 row",
@@ -66,6 +69,9 @@
     "signup diamonds and vip ledger",
     "all unrelated cash balances"
   ],
-  "detector_outputs_recorded_separately": ["ca_account_snapshots", "ca_currency_meter"],
+  "detector_outputs_recorded_separately": [
+    "ca_account_snapshots",
+    "ca_currency_meter"
+  ],
   "sequence_note": "Record natural sequence advancement separately; it may survive rollback and is not money. Never erase DDL/event/chain evidence to create a cleaner fingerprint."
 }

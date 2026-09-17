@@ -35,3 +35,9 @@ server/src/gto/contracts/solver-policy.v1.schema.json
 server/src/gto/contracts/fixtures/chart-policy.v1.json
 server/src/gto/contracts/fixtures/exact-policy.v1.json
 server/src/gto/contracts/fixtures/chart-policy-artifact.v1.json
+
+# Retained financial qualification inputs are checked against their original
+# exact-byte seals. Their source capture, not Prettier, owns formatting.
+scripts/ci/probes/bbj-bank-replay/funded/source/
+scripts/ci/probes/bbj-bank-replay/funded/regressions/original/
+scripts/ci/probes/bbj-bank-replay/funded/provenance/

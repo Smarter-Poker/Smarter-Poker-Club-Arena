@@ -8,24 +8,96 @@
   "producer_signature": "fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric)",
   "call_count": 1,
   "parameters_in_exact_order": [
-    ["p_club_id", "uuid", "7beef002-0002-4000-8000-000000000002"],
-    ["p_operation_id", "uuid", "<root-owned stable operation UUID>"],
-    ["p_tagline", "text", "Original owner BBJ readiness"],
-    ["p_rake_percent", "numeric", "-1"],
-    ["p_rake_cap_bb", "numeric", "-1"],
-    ["p_bbj_enabled", "boolean", true],
-    ["p_bbj_seed", "numeric", "100.00"],
-    ["p_spins_enabled", "boolean", false],
-    ["p_spin_seed", "numeric", "0"],
-    ["p_spin_max_stake", "numeric", "1"],
-    ["p_promo_enabled", "boolean", false],
-    ["p_promo_type", "text", "milestone"],
-    ["p_promo_name", "text", null],
-    ["p_promo_description", "text", null],
-    ["p_promo_budget", "numeric", "0"],
-    ["p_leaderboard_rewards_enabled", "boolean", false],
-    ["p_leaderboard_metric", "text", "profit"],
-    ["p_leaderboard_prize_budget", "numeric", "0"]
+    [
+      "p_club_id",
+      "uuid",
+      "7beef002-0002-4000-8000-000000000002"
+    ],
+    [
+      "p_operation_id",
+      "uuid",
+      "<root-owned stable operation UUID>"
+    ],
+    [
+      "p_tagline",
+      "text",
+      "Original owner BBJ readiness"
+    ],
+    [
+      "p_rake_percent",
+      "numeric",
+      "-1"
+    ],
+    [
+      "p_rake_cap_bb",
+      "numeric",
+      "-1"
+    ],
+    [
+      "p_bbj_enabled",
+      "boolean",
+      true
+    ],
+    [
+      "p_bbj_seed",
+      "numeric",
+      "100.00"
+    ],
+    [
+      "p_spins_enabled",
+      "boolean",
+      false
+    ],
+    [
+      "p_spin_seed",
+      "numeric",
+      "0"
+    ],
+    [
+      "p_spin_max_stake",
+      "numeric",
+      "1"
+    ],
+    [
+      "p_promo_enabled",
+      "boolean",
+      false
+    ],
+    [
+      "p_promo_type",
+      "text",
+      "milestone"
+    ],
+    [
+      "p_promo_name",
+      "text",
+      null
+    ],
+    [
+      "p_promo_description",
+      "text",
+      null
+    ],
+    [
+      "p_promo_budget",
+      "numeric",
+      "0"
+    ],
+    [
+      "p_leaderboard_rewards_enabled",
+      "boolean",
+      false
+    ],
+    [
+      "p_leaderboard_metric",
+      "text",
+      "profit"
+    ],
+    [
+      "p_leaderboard_prize_budget",
+      "numeric",
+      "0"
+    ]
   ],
   "pool_identity": "Natural generated BBJ pool ID from the actual sole committed row; require it differs from club ID. No prescribed ID or UPDATE to manufacture aliases.",
   "why_smallest": "Current BBJ minimum is 100. The opening function can fund one BBJ pool without promotion, Spin, paid leaderboard or game outcome. Club promo uses the same entry but adds an active promotion and its dependencies. BBJ main has a ready real funding route; accepted bank/member/agent subsets and pending Spin are not repeated.",

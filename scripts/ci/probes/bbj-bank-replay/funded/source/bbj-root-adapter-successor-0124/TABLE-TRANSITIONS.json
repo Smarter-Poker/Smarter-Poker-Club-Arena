@@ -383,7 +383,9 @@
         {
           "name": "bbj_pools_select",
           "check": null,
-          "roles": ["public"],
+          "roles": [
+            "public"
+          ],
           "using": "true",
           "command": "r",
           "permissive": true
@@ -777,7 +779,9 @@
         {
           "name": "bbj_pools_select",
           "check": null,
-          "roles": ["public"],
+          "roles": [
+            "public"
+          ],
           "using": "true",
           "command": "r",
           "permissive": true
@@ -1128,7 +1132,9 @@
         {
           "name": "club_lb_settings_read",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "is_club_member(club_id, ( SELECT auth.uid() AS uid))",
           "command": "r",
           "permissive": true
@@ -1474,7 +1480,9 @@
         {
           "name": "club_lb_settings_read",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "is_club_member(club_id, ( SELECT auth.uid() AS uid))",
           "command": "r",
           "permissive": true
@@ -1685,7 +1693,9 @@
         {
           "name": "club_opening_funding_owner_read",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_opening_setup_funding.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'superadmin'::text, 'god'::text]))))))",
           "command": "r",
           "permissive": true
@@ -1886,7 +1896,9 @@
         {
           "name": "club_opening_funding_owner_read",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_opening_setup_funding.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'superadmin'::text, 'god'::text]))))))",
           "command": "r",
           "permissive": true
@@ -2294,7 +2306,9 @@
         {
           "name": "club_opening_setups_owner_read",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_opening_setups.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'superadmin'::text, 'god'::text]))))))",
           "command": "r",
           "permissive": true
@@ -2692,7 +2706,9 @@
         {
           "name": "club_opening_setups_owner_read",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_opening_setups.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'superadmin'::text, 'god'::text]))))))",
           "command": "r",
           "permissive": true
@@ -3125,7 +3141,9 @@
         {
           "name": "Leaderboard Reward Programs Are Public After Publication",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "(status = 'published'::text)",
           "command": "r",
           "permissive": true
@@ -3548,7 +3566,9 @@
         {
           "name": "Leaderboard Reward Programs Are Public After Publication",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "(status = 'published'::text)",
           "command": "r",
           "permissive": true
@@ -3684,7 +3704,9 @@
         {
           "name": "mini_tiers_are_public_reading",
           "check": null,
-          "roles": ["public"],
+          "roles": [
+            "public"
+          ],
           "using": "true",
           "command": "r",
           "permissive": true
@@ -3811,7 +3833,9 @@
         {
           "name": "mini_tiers_are_public_reading",
           "check": null,
-          "roles": ["public"],
+          "roles": [
+            "public"
+          ],
           "using": "true",
           "command": "r",
           "permissive": true

@@ -1,6 +1,9 @@
 [
   {
-    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
     "argument_types": [],
     "body_md5": "ad6aca0f391fd3f9b0afc94fb8aa56ac",
     "cost": 100,
@@ -15,13 +18,18 @@
     "returns_set": false,
     "rows": 0,
     "security_definer": true,
-    "settings": ["search_path=public"],
+    "settings": [
+      "search_path=public"
+    ],
     "strict": false,
     "support": "-",
     "volatility": "v"
   },
   {
-    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
     "argument_types": [],
     "body_md5": "6bc2058752433fc729fbd1d9331c1d0d",
     "cost": 100,
@@ -36,7 +44,9 @@
     "returns_set": false,
     "rows": 0,
     "security_definer": true,
-    "settings": ["search_path=public"],
+    "settings": [
+      "search_path=public"
+    ],
     "strict": false,
     "support": "-",
     "volatility": "v"

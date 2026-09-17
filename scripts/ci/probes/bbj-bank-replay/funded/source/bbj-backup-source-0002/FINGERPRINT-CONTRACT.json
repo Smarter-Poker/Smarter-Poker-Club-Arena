@@ -1,5 +1,8 @@
 {
-  "detectors": ["public.ca_account_snapshots", "public.ca_currency_meter"],
+  "detectors": [
+    "public.ca_account_snapshots",
+    "public.ca_currency_meter"
+  ],
   "financial_and_control_relations": [
     "auth.users",
     "public.agent_commission_settlements",
@@ -77,5 +80,8 @@
   ],
   "original_47_unchanged": true,
   "original_51_raw_unchanged": true,
-  "separate_real_configuration_outputs": ["public.audit_trail", "public.game_management_events"]
+  "separate_real_configuration_outputs": [
+    "public.audit_trail",
+    "public.game_management_events"
+  ]
 }

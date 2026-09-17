@@ -319,7 +319,9 @@
         "command": "r",
         "name": "bbj_pools_select",
         "permissive": true,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "true"
       }
     ],
@@ -942,7 +944,9 @@
         "command": "r",
         "name": "Users can view their own transactions",
         "permissive": true,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "((( SELECT auth.uid() AS uid) = performed_by) OR (( SELECT auth.uid() AS uid) = from_entity_id) OR (( SELECT auth.uid() AS uid) = to_entity_id))"
       }
     ],

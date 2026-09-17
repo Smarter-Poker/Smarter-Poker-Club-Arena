@@ -84,28 +84,138 @@
     "policies": null,
     "acl_is_null": false,
     "acl_entries": [
-      ["postgres", "anon", "r", false],
-      ["postgres", "anon", "t", false],
-      ["postgres", "anon", "x", false],
-      ["postgres", "authenticated", "r", false],
-      ["postgres", "authenticated", "t", false],
-      ["postgres", "authenticated", "x", false],
-      ["postgres", "postgres", "D", false],
-      ["postgres", "postgres", "a", false],
-      ["postgres", "postgres", "d", false],
-      ["postgres", "postgres", "m", false],
-      ["postgres", "postgres", "r", false],
-      ["postgres", "postgres", "t", false],
-      ["postgres", "postgres", "w", false],
-      ["postgres", "postgres", "x", false],
-      ["postgres", "service_role", "D", false],
-      ["postgres", "service_role", "a", false],
-      ["postgres", "service_role", "d", false],
-      ["postgres", "service_role", "m", false],
-      ["postgres", "service_role", "r", false],
-      ["postgres", "service_role", "t", false],
-      ["postgres", "service_role", "w", false],
-      ["postgres", "service_role", "x", false]
+      [
+        "postgres",
+        "anon",
+        "r",
+        false
+      ],
+      [
+        "postgres",
+        "anon",
+        "t",
+        false
+      ],
+      [
+        "postgres",
+        "anon",
+        "x",
+        false
+      ],
+      [
+        "postgres",
+        "authenticated",
+        "r",
+        false
+      ],
+      [
+        "postgres",
+        "authenticated",
+        "t",
+        false
+      ],
+      [
+        "postgres",
+        "authenticated",
+        "x",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "D",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "a",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "d",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "m",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "r",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "t",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "w",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "x",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "D",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "a",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "d",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "m",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "r",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "t",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "w",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "x",
+        false
+      ]
     ]
   },
   "declarations": [
@@ -261,5 +371,9 @@
     }
   ],
   "rows_epoch": "Exact25 initial migration declarations; not a current production row capture.",
-  "required_selected_stores": ["issuance_reserve", "club_treasury", "player_wallet"]
+  "required_selected_stores": [
+    "issuance_reserve",
+    "club_treasury",
+    "player_wallet"
+  ]
 }

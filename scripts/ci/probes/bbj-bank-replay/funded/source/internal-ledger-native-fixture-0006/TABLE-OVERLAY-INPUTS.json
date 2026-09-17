@@ -616,7 +616,9 @@
       {
         "name": "acs_agent_reads_own",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(user_id = ( SELECT auth.uid() AS uid))",
         "command": "r",
         "permissive": true
@@ -624,7 +626,9 @@
       {
         "name": "acs_service_only",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "(( SELECT auth.role() AS role) = 'service_role'::text)",
         "command": "*",
         "permissive": true
@@ -632,7 +636,9 @@
       {
         "name": "acs_union_overseer_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
         "command": "r",
         "permissive": true
@@ -974,7 +980,9 @@
       {
         "name": "agent_commissions_service_only",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "(( SELECT auth.role() AS role) = 'service_role'::text)",
         "command": "*",
         "permissive": true
@@ -982,7 +990,9 @@
       {
         "name": "agent_reads_own_commissions",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(user_id = ( SELECT auth.uid() AS uid))",
         "command": "r",
         "permissive": true
@@ -990,7 +1000,9 @@
       {
         "name": "union_overseer_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
         "command": "r",
         "permissive": true
@@ -1201,7 +1213,9 @@
     "policies": [],
     "triggers": [],
     "force_rls": false,
-    "reloptions": ["security_invoker=true"],
+    "reloptions": [
+      "security_invoker=true"
+    ],
     "constraints": [],
     "view_definition": " SELECT id,\n    club_id,\n    user_id,\n    amount,\n    commission_rate,\n    source_type,\n    source_id,\n    notes,\n    created_at,\n    settled_at\n   FROM agent_commissions ac\n  WHERE ((settled_at IS NULL) AND (NOT (EXISTS ( SELECT 1\n           FROM agent_commission_settlements s\n          WHERE ((s.club_id = ac.club_id) AND (s.user_id = ac.user_id) AND (ac.created_at >= s.period_start) AND (ac.created_at < s.period_end))))));",
     "observed_at": "2026-09-13 19:58:49.90803+00",
@@ -1556,7 +1570,9 @@
       {
         "name": "agents_cashier_scoped_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "((user_id = ( SELECT auth.uid() AS uid)) OR (fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'all'::text) OR ((fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'downline'::text) AND fn_club_cashier_can_transact(club_id, ( SELECT auth.uid() AS uid), user_id)))",
         "command": "r",
         "permissive": true
@@ -1564,7 +1580,9 @@
       {
         "name": "agents_svc",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -1572,7 +1590,9 @@
       {
         "name": "union_overseer_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
         "command": "r",
         "permissive": true
@@ -2035,7 +2055,9 @@
       {
         "name": "bbj_pools_select",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "true",
         "command": "r",
         "permissive": true
@@ -4384,7 +4406,9 @@
       {
         "name": "ca_mint_ledger_admin_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'god'::text, 'superadmin'::text])))))",
         "command": "r",
         "permissive": true
@@ -4575,7 +4599,9 @@
       {
         "name": "ca_mint_policy_admin_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'god'::text, 'superadmin'::text])))))",
         "command": "r",
         "permissive": true
@@ -5369,7 +5395,9 @@
       {
         "name": "Users can view their own transactions",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "((( SELECT auth.uid() AS uid) = performed_by) OR (( SELECT auth.uid() AS uid) = from_entity_id) OR (( SELECT auth.uid() AS uid) = to_entity_id))",
         "command": "r",
         "permissive": true
@@ -5900,7 +5928,9 @@
       {
         "name": "chip_transactions_select_own",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "((( SELECT auth.uid() AS uid) = from_user_id) OR (( SELECT auth.uid() AS uid) = to_user_id))",
         "command": "r",
         "permissive": true
@@ -5908,7 +5938,9 @@
       {
         "name": "union_overseer_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
         "command": "r",
         "permissive": true
@@ -5935,7 +5967,9 @@
       }
     ],
     "force_rls": false,
-    "reloptions": ["autovacuum_freeze_max_age=150000000"],
+    "reloptions": [
+      "autovacuum_freeze_max_age=150000000"
+    ],
     "constraints": [
       {
         "name": "chip_transactions_pkey",
@@ -6507,7 +6541,9 @@
       {
         "name": "Club staff can read club rosters",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(is_club_admin(club_id, ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_members.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))",
         "command": "r",
         "permissive": true
@@ -6515,7 +6551,9 @@
       {
         "name": "Members can read own club memberships",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(user_id = ( SELECT auth.uid() AS uid))",
         "command": "r",
         "permissive": true
@@ -6523,7 +6561,9 @@
       {
         "name": "Service role manages",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -6531,7 +6571,9 @@
       {
         "name": "Users can join clubs",
         "check": "((user_id = ( SELECT auth.uid() AS uid)) AND (COALESCE(credit_limit, (0)::numeric) = (0)::numeric) AND (COALESCE(credit_used, (0)::numeric) = (0)::numeric) AND (agent_id IS NULL) AND (parent_agent_id IS NULL) AND ((role = ANY (ARRAY['member'::text, 'player'::text])) OR is_club_admin(club_id, ( SELECT auth.uid() AS uid))))",
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": null,
         "command": "a",
         "permissive": true
@@ -6539,7 +6581,9 @@
       {
         "name": "cashier_downline_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "((fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'downline'::text) AND fn_club_cashier_can_transact(club_id, ( SELECT auth.uid() AS uid), user_id))",
         "command": "r",
         "permissive": true
@@ -6547,7 +6591,9 @@
       {
         "name": "club_members_update",
         "check": "(is_club_admin(club_id, ( SELECT auth.uid() AS uid)) OR ((user_id = ( SELECT auth.uid() AS uid)) AND (role = ANY (ARRAY['member'::text, 'player'::text])) AND (COALESCE(credit_limit, (0)::numeric) = (0)::numeric) AND (COALESCE(credit_used, (0)::numeric) = (0)::numeric) AND (agent_id IS NULL) AND (parent_agent_id IS NULL)))",
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "((user_id = ( SELECT auth.uid() AS uid)) OR is_club_admin(club_id, ( SELECT auth.uid() AS uid)))",
         "command": "w",
         "permissive": true
@@ -6555,7 +6601,9 @@
       {
         "name": "union_overseer_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
         "command": "r",
         "permissive": true
@@ -7898,7 +7946,9 @@
       {
         "name": "Anyone can view clubs",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "true",
         "command": "r",
         "permissive": true
@@ -7906,7 +7956,9 @@
       {
         "name": "Authenticated users can create clubs",
         "check": "(owner_id = ( SELECT auth.uid() AS uid))",
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": null,
         "command": "a",
         "permissive": true
@@ -7914,7 +7966,9 @@
       {
         "name": "Owners can update clubs",
         "check": "(owner_id = ( SELECT auth.uid() AS uid))",
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(owner_id = ( SELECT auth.uid() AS uid))",
         "command": "w",
         "permissive": true
@@ -8439,7 +8493,9 @@
       {
         "name": "financial_alerts_service_only",
         "check": "true",
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -8726,7 +8782,9 @@
       {
         "name": "Service role inserts",
         "check": "true",
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": null,
         "command": "a",
         "permissive": true
@@ -8734,7 +8792,9 @@
       {
         "name": "Users can delete own notifications",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "(( SELECT auth.uid() AS uid) = user_id)",
         "command": "d",
         "permissive": true
@@ -8742,7 +8802,9 @@
       {
         "name": "Users can update own notifications",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "(( SELECT auth.uid() AS uid) = user_id)",
         "command": "w",
         "permissive": true
@@ -8750,7 +8812,9 @@
       {
         "name": "Users can view own notifications",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "(( SELECT auth.uid() AS uid) = user_id)",
         "command": "r",
         "permissive": true
@@ -10099,7 +10163,9 @@
       {
         "name": "profiles_delete",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "(( SELECT auth.uid() AS uid) = id)",
         "command": "d",
         "permissive": true
@@ -10107,7 +10173,9 @@
       {
         "name": "profiles_insert_self",
         "check": "(( SELECT auth.uid() AS uid) = id)",
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": null,
         "command": "a",
         "permissive": true
@@ -10115,7 +10183,9 @@
       {
         "name": "profiles_select",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "true",
         "command": "r",
         "permissive": true
@@ -10123,7 +10193,9 @@
       {
         "name": "profiles_update",
         "check": "(( SELECT auth.uid() AS uid) = id)",
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "(( SELECT auth.uid() AS uid) = id)",
         "command": "w",
         "permissive": true
@@ -10483,7 +10555,9 @@
       {
         "name": "club owners read own club rakeback",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(club_id IN ( SELECT c.id\n   FROM clubs c\n  WHERE (c.owner_id = ( SELECT auth.uid() AS uid))))",
         "command": "r",
         "permissive": true
@@ -10491,7 +10565,9 @@
       {
         "name": "service_role full access",
         "check": "true",
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -10828,7 +10904,9 @@
       {
         "name": "rakeback_read",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = rakeback_periods.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)))))",
         "command": "r",
         "permissive": true
@@ -10836,7 +10914,9 @@
       {
         "name": "rakeback_svc",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -11173,7 +11253,9 @@
       {
         "name": "Anon read access",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "true",
         "command": "r",
         "permissive": true
@@ -11181,7 +11263,9 @@
       {
         "name": "spin_bonus_pools_service",
         "check": "true",
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -11624,7 +11708,9 @@
       {
         "name": "Public read access",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "true",
         "command": "r",
         "permissive": true
@@ -11632,7 +11718,9 @@
       {
         "name": "Service role manages",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -11640,7 +11728,9 @@
       {
         "name": "union_overseer_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND (EXISTS ( SELECT 1\n   FROM tables t\n  WHERE ((t.id = table_seats.table_id) AND fn_is_union_overseer(t.union_id, ( SELECT auth.uid() AS uid))))))",
         "command": "r",
         "permissive": true
@@ -13752,7 +13842,9 @@
       {
         "name": "poker_arena_diamond_tables",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = tables.club_id) AND (c.asset = 'diamonds'::text)))) AND fn_poker_can_read_games(club_id))",
         "command": "r",
         "permissive": true
@@ -13760,7 +13852,9 @@
       {
         "name": "poker_arena_table_access",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(((club_id IS NULL) AND (union_id IS NULL)) OR (COALESCE(union_id, club_id) IN ( SELECT c.id\n   FROM clubs c\n  WHERE fn_poker_can_read_games(c.id))))",
         "command": "r",
         "permissive": false
@@ -13768,7 +13862,9 @@
       {
         "name": "poker_arena_table_guest_access",
         "check": null,
-        "roles": ["anon"],
+        "roles": [
+          "anon"
+        ],
         "using": "((club_id IS NULL) AND (union_id IS NULL))",
         "command": "r",
         "permissive": false
@@ -13776,7 +13872,9 @@
       {
         "name": "tables_insert_owner_or_admin",
         "check": "fn_can_create_games(club_id, ( SELECT auth.uid() AS uid))",
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": null,
         "command": "a",
         "permissive": true
@@ -13784,7 +13882,9 @@
       {
         "name": "tables_select_scoped",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "((COALESCE(is_private, false) = false) OR (club_id IS NULL) OR is_club_member(club_id, ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = tables.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
         "command": "r",
         "permissive": true
@@ -15448,7 +15548,9 @@
       {
         "name": "Service role manages",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -15456,7 +15558,9 @@
       {
         "name": "poker_arena_diamond_tournaments",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = tournaments.club_id) AND (c.asset = 'diamonds'::text)))) AND fn_poker_can_read_games(club_id))",
         "command": "r",
         "permissive": true
@@ -15464,7 +15568,9 @@
       {
         "name": "poker_arena_tournament_access",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(((club_id IS NULL) AND (union_id IS NULL)) OR (COALESCE(union_id, club_id) IN ( SELECT c.id\n   FROM clubs c\n  WHERE fn_poker_can_read_games(c.id))))",
         "command": "r",
         "permissive": false
@@ -15472,7 +15578,9 @@
       {
         "name": "poker_arena_tournament_guest_access",
         "check": null,
-        "roles": ["anon"],
+        "roles": [
+          "anon"
+        ],
         "using": "((club_id IS NULL) AND (union_id IS NULL))",
         "command": "r",
         "permissive": false
@@ -15480,7 +15588,9 @@
       {
         "name": "tournaments_select_scoped",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "((COALESCE(is_private, false) = false) OR (club_id IS NULL) OR is_club_member(club_id, ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = tournaments.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))",
         "command": "r",
         "permissive": true
@@ -16091,7 +16201,9 @@
       {
         "name": "union_clubs_read",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "((EXISTS ( SELECT 1\n   FROM union_admins ua\n  WHERE ((ua.union_id = union_clubs.union_id) AND (ua.user_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = union_clubs.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = union_clubs.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid))))))",
         "command": "r",
         "permissive": true
@@ -16099,7 +16211,9 @@
       {
         "name": "union_clubs_svc",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -16354,7 +16468,9 @@
       {
         "name": "union_wallets_admin_read",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "((EXISTS ( SELECT 1\n   FROM union_admins ua\n  WHERE ((ua.union_id = union_wallets.union_id) AND (ua.user_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM unions u\n  WHERE ((u.id = union_wallets.union_id) AND (u.owner_id = ( SELECT auth.uid() AS uid))))))",
         "command": "r",
         "permissive": true
@@ -16362,7 +16478,9 @@
       {
         "name": "union_wallets_service_only",
         "check": "true",
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -16907,7 +17025,9 @@
       {
         "name": "unions_public_browse",
         "check": null,
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "using": "(is_public IS NOT FALSE)",
         "command": "r",
         "permissive": true
@@ -16915,7 +17035,9 @@
       {
         "name": "unions_read",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "((owner_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM union_admins ua\n  WHERE ((ua.union_id = unions.id) AND (ua.user_id = ( SELECT auth.uid() AS uid))))))",
         "command": "r",
         "permissive": true
@@ -16923,7 +17045,9 @@
       {
         "name": "unions_svc",
         "check": null,
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "using": "true",
         "command": "*",
         "permissive": true
@@ -17100,7 +17224,9 @@
       {
         "name": "vip_points_select_own",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "(( SELECT auth.uid() AS uid) = user_id)",
         "command": "r",
         "permissive": true
@@ -17241,7 +17367,9 @@
       {
         "name": "vip_points_ledger_select_own",
         "check": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "using": "(( SELECT auth.uid() AS uid) = user_id)",
         "command": "r",
         "permissive": true

@@ -280,6 +280,9 @@ jobs:
       - name: Mac dependency policy keeps Linux enforcement
         run: node --test tests/operations/local-dependency-policy.test.mjs
 
+      - name: Money-trigger CI caller preserves independent authority
+        run: node --test tests/money-trigger-ci-caller.test.mjs
+
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
       # jobs: this install runs --ignore-scripts, and a scripts-less tree must
@@ -831,6 +834,9 @@ jobs:
       # declaration is enforced where the trigger is WRITTEN. The last
       # unreviewed one broke a third of all hand settlements.
       - name: Supabase Invariants - A Money Trigger Declares Itself
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MONEY_TRIGGER_REPORTER_APP_ID: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}
         run: |
           set -o pipefail
           echo "## Money Trigger Declarations" >> $GITHUB_STEP_SUMMARY
@@ -838,15 +844,27 @@ jobs:
           if node scripts/ci/check-money-trigger-declared.mjs 2>&1 | tee /tmp/trigdecl.log; then
             echo "OK - every trigger created on a money table declares itself." >> $GITHUB_STEP_SUMMARY
           else
-            code=$?
-            if [ "$code" = "2" ]; then
+            pipeline_status=("${PIPESTATUS[@]}")
+            code="${pipeline_status[0]}"
+            if [ "${pipeline_status[1]}" != "0" ]; then
+              echo "COULD NOT TELL - declaration log capture failed. No recovery delegated." >> $GITHUB_STEP_SUMMARY
+              exit 1
+            elif [ "$code" = "1" ]; then
+              # Only an actual policy refusal can use the original recovery route.
+              # This asserts required protection, never a migration verdict.
+              if node scripts/ci/assert-money-trigger-protection.mjs; then
+                echo "DEFERRED - historical recovery needs the independently required exact-head App verdict." >> $GITHUB_STEP_SUMMARY
+              else
+                echo "BLOCKED - independent App-bound declaration authority is not established." >> $GITHUB_STEP_SUMMARY
+                exit 1
+              fi
+            elif [ "$code" = "2" ]; then
               echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+              exit 1
             else
-              echo "A migration creates a trigger on a money table without declaring it" >> $GITHUB_STEP_SUMMARY
-              echo "in the same migration. Add the ca_declared_money_triggers row there;" >> $GITHUB_STEP_SUMMARY
-              echo "a declaration in a later migration is a promise, not a declaration." >> $GITHUB_STEP_SUMMARY
+              echo "COULD NOT TELL - declaration checker failed with exit $code. No recovery delegated." >> $GITHUB_STEP_SUMMARY
+              exit 1
             fi
-            exit 1
           fi
 
       # NO BAND-AIDS (CLAUDE.md 10.12, Dan 2026-09-07). 10.11 had already said a

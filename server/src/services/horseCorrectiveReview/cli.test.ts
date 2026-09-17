@@ -64,16 +64,17 @@ function setup(archive = false) {
   };
 }
 describe('private journal archive admission and read-only selection', () => {
+  const configurationDirectory = join(tmpdir(), 'horse-journal-config');
   it.each(['', '0', '-1', '1.5', '1e9', '0x400', ' 10', '10 ', '9007199254740992'])(
     'refuses malformed resource allocation before starting a writer: %s',
     (value) => {
       expect(() =>
-        runtimeHorseJournalArchiveOptions('/private/journal', {
+        runtimeHorseJournalArchiveOptions(configurationDirectory, {
           HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES: value,
         })
       ).toThrow('Invalid Horse archive resource allocation');
       expect(() =>
-        runtimeHorseJournalArchiveOptions('/private/journal', {
+        runtimeHorseJournalArchiveOptions(configurationDirectory, {
           HORSE_DECISION_JOURNAL_ARCHIVE_MAX_SEGMENTS: value,
         })
       ).toThrow('Invalid Horse archive resource allocation');
@@ -81,13 +82,17 @@ describe('private journal archive admission and read-only selection', () => {
   );
   it('keeps allocation explicit and under the existing persistent journal directory', () => {
     expect(
-      runtimeHorseJournalArchiveOptions('/private/journal', {
+      runtimeHorseJournalArchiveOptions(configurationDirectory, {
         HORSE_DECISION_JOURNAL_ARCHIVE_MAX_BYTES: '4096',
         HORSE_DECISION_JOURNAL_ARCHIVE_MAX_SEGMENTS: '2',
       })
-    ).toEqual({ directory: '/private/journal/archive', maxBytes: 4096, maxSegments: 2 });
+    ).toEqual({
+      directory: join(configurationDirectory, 'archive'),
+      maxBytes: 4096,
+      maxSegments: 2,
+    });
     expect(() =>
-      runtimeHorseJournalArchiveOptions('/private/journal', {
+      runtimeHorseJournalArchiveOptions(configurationDirectory, {
         HORSE_DECISION_JOURNAL_ARCHIVE_MAX_SEGMENTS: '500001',
       })
     ).toThrow();

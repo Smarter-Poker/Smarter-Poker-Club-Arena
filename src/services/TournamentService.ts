@@ -10,7 +10,12 @@ export {
   SPIN_BLIND_STRUCTURE,
   PAYOUT_STRUCTURES,
 } from '../config/blindStructures';
-import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE, type BlindLevel } from '../config/blindStructures';
+import {
+  BLIND_STRUCTURES,
+  SPIN_BLIND_STRUCTURE,
+  assertNoNewMttBreakRows,
+  type BlindLevel,
+} from '../config/blindStructures';
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR } from '../config/spinSpec';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -387,6 +392,8 @@ const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
   bounty_must_be_whole: 'Bounty amount must be a whole number of chips, with no decimals.',
   max_players_must_be_positive: 'Set a maximum number of players. Zero means nobody can register.',
   blind_structure_required: 'Choose a blind structure.',
+  custom_level_breaks_not_supported:
+    'Custom Level Breaks Are Not Supported. Remove Break Rows And Use The Synchronized Break Setting.',
   payout_structure_required: 'Choose a payout structure.',
   payouts_must_total_100: 'Payout percentages have to add up to 100%.',
   more_paid_places_than_players:
@@ -852,6 +859,7 @@ class TournamentService {
     if (config.type !== 'sng' && config.type !== 'spin' && config.maxPlayers > 2) {
       validateMttBlindStructure(config.blindStructure, config.startingStack);
     }
+    assertNoNewMttBreakRows(config.blindStructure, config.type);
     const clampInt = (v: number, lo: number, hi: number) =>
       Math.min(hi, Math.max(lo, Math.round(Number(v) || 0)));
 
@@ -969,6 +977,7 @@ class TournamentService {
    * Create a new tournament
    */
   async createTournament(clubId: string, config: TournamentConfig): Promise<Tournament> {
+    assertNoNewMttBreakRows(config.blindStructure, config.type);
     // Union governance: member-club staff lose every tournament-creation path,
     // including private tournaments. Union owners/admins remain authorized by
     // fn_game_creation_access and create against a selected host club.

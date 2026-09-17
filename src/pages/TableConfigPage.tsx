@@ -1402,7 +1402,7 @@ export default function TableConfigPage({
               label="Synchronized Breaks"
               value={config.synchronizedBreaks}
               onChange={(v) => updateConfig('synchronizedBreaks', v)}
-              tooltip="All Tables Break At The Same Time"
+              tooltip="Eligible Tournaments Break Together At :55 Each Hour. Turning This Off Does Not Disable Platform Maintenance Or Add-On Pauses."
             />
           </>
         )}

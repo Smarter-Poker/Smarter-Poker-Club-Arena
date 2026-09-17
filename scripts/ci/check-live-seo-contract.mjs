@@ -75,7 +75,8 @@ export function inspectHead(html) {
     }
   }
   const h1 = /<h1[\s>]/i.test(html);
-  return { title, robots, canonical, description, ld, ldError, h1 };
+  const ogImage = attr(html, /<meta\s+property="og:image"\s+content="([^"]*)"/i);
+  return { title, robots, canonical, description, ld, ldError, h1, ogImage };
 }
 
 export function ldTypes(ld) {
@@ -158,6 +159,21 @@ async function checkRoute(entry) {
       `${where}: only ${words} words of prerendered content in <body> (the landing lives in #prerender-landing, every other route in #root)`
     );
   notes.push(`${entry.route}: ok (${head.title}; ${ldTypes(head.ld).join(', ')}; ${words} words)`);
+  return head;
+}
+
+/**
+ * The share card the landing page names must exist and be an image
+ * (discoverability phase 6, 2026-09-17): Poker Arena's card is served by the
+ * World Hub, a different deployment, so only the live site can prove it.
+ */
+async function checkShareImage(head) {
+  if (!head?.ogImage) return fail('/: no og:image in the static HTML');
+  const { status, headers } = await get(head.ogImage);
+  const type = headers.get('content-type') || '';
+  if (status !== 200 || !type.startsWith('image/'))
+    return fail(`share image ${head.ogImage}: HTTP ${status} ${type || '(no content-type)'}, expected 200 image/*`);
+  notes.push(`share image ${head.ogImage}: ok (${type})`);
 }
 
 async function main() {
@@ -173,7 +189,10 @@ async function main() {
   const routes = manifest.routes || [];
   if (routes.length < 5)
     fail(`prerender-manifest.json lists ${routes.length} routes; expected at least 5`);
-  for (const entry of routes) await checkRoute(entry);
+  for (const entry of routes) {
+    const head = await checkRoute(entry);
+    if (entry.route === '/') await checkShareImage(head);
+  }
 
   const sm = await get(`${BASE}/sitemap.xml`);
   if (sm.status !== 200) fail(`sitemap.xml: HTTP ${sm.status}`);

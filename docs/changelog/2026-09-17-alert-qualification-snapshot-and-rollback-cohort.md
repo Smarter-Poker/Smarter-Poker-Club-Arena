@@ -54,6 +54,10 @@ It retains all dismissal assertions, additionally proves the write threw and
 persisted no hint, and restores the getter in finally. The unchanged storage
 test failed with zero intercepted writes; the corrected file passes all four
 tests, and all 49 cashout tests pass. No product dismissal behavior changed.
+The later source-reading gate identified four more formatting-only mismatches
+in three existing tests. Their exact club/owner bindings, scope props, and
+unavailable-message requirements remain; only whitespace, JSX grouping, and an
+optional trailing comma are accepted. All 28 tests in those files pass.
 
 A connected review of the current tournament terminal found a separate defect:
 the receipt installer could accept a terminal/places cohort that its matching

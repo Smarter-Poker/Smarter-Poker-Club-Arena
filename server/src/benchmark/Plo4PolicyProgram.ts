@@ -19,6 +19,8 @@ import {
   type OmahaEquityResult,
 } from './OmahaEquityOracle.js';
 import { plo4PublicRanges } from './Plo4PublicRanges.js';
+import { horsePolicyDealtPlayers } from '../engine/multiway/DealtSeatCensus.js';
+import { captureOfflineOmahaPolicyInput } from './OfflineOmahaPolicyInput.js';
 export type Plo4PolicyMode = 'off' | 'shadow' | 'candidate';
 export interface Plo4PolicyInput {
   hero: SeatPlayer;
@@ -52,13 +54,12 @@ export interface Plo4PolicyReceipt {
   livePolicy: Plo4LiveReceipt | null;
 }
 export async function evaluatePlo4Policy(
-  input: Plo4PolicyInput,
+  supplied: Plo4PolicyInput,
   shouldContinue = () => true
 ): Promise<Plo4PolicyReceipt> {
   const start = performance.now();
-  const { hero, baseline } = input;
-  // Offline fixtures may carry extra private fields. Never forward/read them.
-  const s = { ...input.state, players: input.state.players.map((p) => ({ ...p, cards: [] })) };
+  const input = captureOfflineOmahaPolicyInput(supplied);
+  const { hero, baseline, state: s } = input;
   const mode = input.mode ?? 'shadow';
   const receipt: Plo4PolicyReceipt = {
     packVersion: PLO4_POLICY_PACK.version,
@@ -118,7 +119,9 @@ export async function evaluatePlo4Policy(
   receipt.made = omahaMadeClass(hero.cards, s.communityCards);
   receipt.draws = omahaDrawQuality(hero.cards, s.communityCards, false);
   receipt.nuts = omahaNutStatus(hero.cards, s.communityCards);
-  const seats = s.players.filter((p) => !p.is_sitting_out);
+  // Evidence must price the same dealt population as the live policy. Away
+  // all-ins retain their pot rights, and folded dealt seats still remove cards.
+  const seats = horsePolicyDealtPlayers(s.players, hero.seat, s.dealtSeatIds);
   if (
     input.opponentRanges &&
     (Object.keys(input.opponentRanges).length !== seats.length - 1 ||

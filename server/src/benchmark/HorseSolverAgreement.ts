@@ -116,7 +116,9 @@ export interface AgreementDecisionState {
 
 export interface AgreementDecision {
   stateKey: string;
-  /** Complete canonical input receipt used to recreate this deterministic probe. */
+  /** Abstract chart coordinate under the installed schema. Reproduction also
+   * requires this generator's exact source, seed mapping and runtime inputs;
+   * schemaVersion 1 alone does not pin those or permit cross-version comparison. */
   decisionState: AgreementDecisionState;
   kind: AgreementSpot['kind'];
   gameType: 'Cash' | 'Tournament';
@@ -171,7 +173,7 @@ export function buildSpots(): AgreementSpot[] {
   const spots: AgreementSpot[] = [];
   for (const isTournament of [true, false]) {
     for (const stackBB of [8, 12, GTO_OPEN_JAM_MAX_BB]) {
-      for (const position of ['UTG', 'CO', 'BTN', 'SB']) {
+      for (const position of ['UTG', 'MP', 'CO', 'BTN', 'SB']) {
         for (const hand of hands) {
           spots.push({ kind: 'open_jam', position, stackBB, hand, isTournament });
         }
@@ -217,6 +219,7 @@ export function stateForSpot(spot: AgreementSpot): { hero: SeatPlayer; gs: Horse
       hero,
       gs: {
         players: [sb, hero],
+        dealtSeatIds: [1, 2],
         communityCards: [],
         pot: stack + bb,
         currentBet: stack,
@@ -242,21 +245,27 @@ export function stateForSpot(spot: AgreementSpot): { hero: SeatPlayer; gs: Horse
     };
   }
   // open jam: hero is first in, everyone before has folded
-  const seatOf: Record<string, number> = { UTG: 3, CO: 4, BTN: 5, SB: 6 };
-  const heroSeat = seatOf[spot.position] ?? 3;
-  const hero = mkPlayer(heroSeat, { cards, stack, totalInvested: 0 });
-  const players: SeatPlayer[] = [
-    mkPlayer(1, { bet: bb / 2, totalInvested: bb / 2, stack: 100 }),
-    mkPlayer(2, { bet: bb, totalInvested: bb, stack: 100 }),
-  ];
-  for (let s = 3; s <= 6; s++) {
-    if (s === heroSeat) players.push(hero);
-    else players.push(mkPlayer(s, { is_folded: s < heroSeat }));
-  }
+  const seatOf: Record<string, number> = { UTG: 3, MP: 4, CO: 5, BTN: 6, SB: 1 };
+  const heroSeat = seatOf[spot.position];
+  if (heroSeat === undefined) throw new Error('solver_agreement_invalid_position');
+  const preflopOrder = [3, 4, 5, 6, 1, 2];
+  const folded = preflopOrder.slice(0, preflopOrder.indexOf(heroSeat));
+  const players = [1, 2, 3, 4, 5, 6].map((seat) => {
+    const posted = seat === 1 ? bb / 2 : seat === 2 ? bb : 0;
+    return mkPlayer(seat, {
+      stack: stack - posted,
+      bet: posted,
+      totalInvested: posted,
+      cards: seat === heroSeat ? cards : [],
+      is_folded: folded.includes(seat),
+    });
+  });
+  const hero = players.find((player) => player.seat === heroSeat)!;
   return {
     hero,
     gs: {
       players,
+      dealtSeatIds: [1, 2, 3, 4, 5, 6],
       communityCards: [],
       pot: bb * 1.5,
       currentBet: bb,
@@ -267,7 +276,14 @@ export function stateForSpot(spot: AgreementSpot): { hero: SeatPlayer; gs: Horse
       dealerSeat: 6,
       gameMode: spot.isTournament ? ('tournament' as const) : ('cash' as const),
       format: spot.isTournament ? 'mtt' : 'cash',
-      actionHistory: [],
+      actionHistory: folded.map((seat, timestamp) => ({
+        seat,
+        userId: `probe-${seat}`,
+        action: 'fold',
+        amount: 0,
+        timestamp,
+        stage: 'preflop',
+      })),
     } as unknown as HorseGameStateV2,
   };
 }
@@ -331,11 +347,17 @@ export function solverAdvice(spot: AgreementSpot): {
   };
 }
 
-/** Map a horse decision onto the solver's vocabulary. */
+/** Only equivalent actions may use the chart's vocabulary. A min-raise is
+ * not a jam and a limp is not a fold. The installed receipt schema only
+ * represents binary chart actions; reject the whole run rather than omit a
+ * decision from its denominator or publish a fabricated action receipt. */
 export function actionLabel(kind: AgreementSpot['kind'], action: string): string {
   if (action === 'fold') return 'fold';
-  if (kind === 'open_jam') return action === 'all_in' || action === 'raise' ? 'push' : 'fold';
-  return action === 'call' || action === 'all_in' ? 'call' : 'fold';
+  if (kind === 'open_jam' && action === 'all_in') return 'push';
+  // In the constructed heads-up defend state the opponent is already all in
+  // for hero's full initial stack, so all_in can only call that exact wager.
+  if (kind === 'bb_defend' && (action === 'call' || action === 'all_in')) return 'call';
+  throw new Error(`solver_agreement_action_outside_reference:${kind}:${action}`);
 }
 
 /**
@@ -344,6 +366,8 @@ export function actionLabel(kind: AgreementSpot['kind'], action: string): string
  * inside the live engine process and must not move the live stream.
  */
 export function scoreSolverAgreement(maxSpots = 600): AgreementResult {
+  if (!Number.isSafeInteger(maxSpots) || maxSpots < 1)
+    throw new Error('solver_agreement_invalid_sample_budget');
   if (solverPolicyArtifactStatus().charts.count === 0) {
     return {
       spots: 0,
@@ -359,7 +383,7 @@ export function scoreSolverAgreement(maxSpots = 600): AgreementResult {
     };
   }
   const all = buildSpots();
-  const step = Math.max(1, Math.floor(all.length / maxSpots));
+  const sampleCount = Math.min(all.length, maxSpots);
   const rngBefore = saveFastRandom();
   const sandbox = HorseMind.createSandbox();
   let scored = 0;
@@ -369,7 +393,8 @@ export function scoreSolverAgreement(maxSpots = 600): AgreementResult {
   let regretEligibleSpots = 0;
   const decisions: AgreementDecision[] = [];
   try {
-    for (let i = 0; i < all.length; i += step) {
+    for (let sample = 0; sample < sampleCount; sample++) {
+      const i = Math.floor((sample * all.length) / sampleCount);
       const spot = all[i];
       const advice = solverAdvice(spot);
       if (!advice) continue;

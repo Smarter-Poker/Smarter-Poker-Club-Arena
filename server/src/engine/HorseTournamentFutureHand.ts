@@ -13,7 +13,7 @@ import {
 } from './HorseTournamentContinuation.js';
 
 export const FUTURE_HAND_POLICY = Object.freeze({
-  version: 'funded-nlh-future-hands-v1',
+  version: 'funded-nlh-future-hands-v2',
   maxHands: 1,
   maxSeats: 10,
   maxIcmTrials: 128,
@@ -241,7 +241,8 @@ export function simulateTournamentFutureHands(args: {
         cards: [] as Card[],
         is_folded: false,
         is_all_in: false,
-        is_sitting_out: false,
+        // No reconnect probability is invented by the one-hand model.
+        is_sitting_out: p.is_sitting_out,
         totalInvested: 0,
         bet: 0,
         deadInvested: 0,
@@ -322,7 +323,9 @@ export function simulateTournamentFutureHands(args: {
       }
     };
     const order = players.slice(bb + 1).concat(players.slice(0, bb + 1));
-    const strength = new Map(players.map((p) => [p.user_id, draw.seats.get(p.user_id)!.preflop]));
+    const strength = new Map(
+      players.map((p) => [p.user_id, p.is_sitting_out ? 0 : draw.seats.get(p.user_id)!.preflop])
+    );
     // One open, then fold/call responses; a short stack can fund only its own all-in.
     const opener = order.find((p) => !p.is_all_in && strength.get(p.user_id)! >= 0.72);
     const price = opener

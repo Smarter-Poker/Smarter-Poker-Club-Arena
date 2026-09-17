@@ -1,0 +1,21 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {createDailyReviewSource} from '../../../services/horseDailyCorrectiveReview/source.ts';
+import {DAY,page} from './fixture.mjs';
+const env={SUPABASE_URL:'https://synthetic.invalid',SUPABASE_SERVICE_ROLE_KEY:'synthetic-not-a-secret'};
+afterEach(()=>vi.useRealTimers());
+for(const url of ['http://synthetic.invalid','https://user:pass@synthetic.invalid','https://synthetic.invalid/path','https://synthetic.invalid?x=1','https://synthetic.invalid#x',' https://synthetic.invalid','https://synthetic.invalid:443',''])it(`invalid origin refuses before request ${url}`,()=>{const fetcher=vi.fn();expect(()=>createDailyReviewSource({...env,SUPABASE_URL:url},fetcher)).toThrow('daily_source_configuration_unavailable');expect(fetcher).not.toHaveBeenCalled();});
+it('fixed private RPC and exact request with one call',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify(page())));await createDailyReviewSource(env,fetcher)({day:DAY,after:null});const [url,opts]=fetcher.mock.calls[0];expect(url).toBe('https://synthetic.invalid/rest/v1/rpc/fn_horse_commitment_review_page');expect(opts.redirect).toBe('error');expect(opts.cache).toBe('no-store');expect(opts.credentials).toBe('omit');expect(new Request(url,opts).cache).toBe('no-store');expect(opts.headers['x-smarter-data-protocol']).toBe('1');expect(JSON.parse(opts.body)).toEqual({p_day:DAY,p_after_played_at:null,p_after_hand_id:null,p_after_horse_user_id:null,p_limit:8});expect(fetcher).toHaveBeenCalledTimes(1);});
+for(const kind of ['no_length','false_length','empty_chunk','invalid_utf8','private_error','encoded_size'])it(`bounded source ${kind}`,async()=>{
+ let response;
+ if(kind==='no_length'||kind==='false_length')response=new Response(new Uint8Array(65537),{headers:kind==='false_length'?{'content-length':'1'}:{}});
+ if(kind==='empty_chunk')response=new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(0));c.close();}}));
+ if(kind==='invalid_utf8')response=new Response(new Uint8Array([255]));
+ if(kind==='private_error')response=new Response('private-cards-and-secret',{status:500});
+ if(kind==='encoded_size')response=new Response(JSON.stringify(page()),{headers:{'content-length':'1','content-encoding':'gzip'}});
+ const fetcher=vi.fn(async()=>response);const promise=createDailyReviewSource(env,fetcher)({day:DAY,after:null});
+ if(kind==='encoded_size')expect((await promise).rows).toEqual([]);else await expect(promise).rejects.toThrow('daily_source_unavailable');expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('stalled decoded body times out locally, cancels once and never retries',async()=>{vi.useFakeTimers();const cancel=vi.fn();const fetcher=vi.fn(async()=>new Response(new ReadableStream({pull(){return new Promise(()=>{});},cancel})));const promise=createDailyReviewSource(env,fetcher)({day:DAY,after:null});const check=expect(promise).rejects.toThrow('daily_source_unavailable');await vi.advanceTimersByTimeAsync(5001);await check;expect(fetcher).toHaveBeenCalledTimes(1);expect(cancel).toHaveBeenCalledTimes(1);});
+it('small identity body with wrong length refuses equality independently of the cap',async()=>{const fetcher=vi.fn(async()=>new Response(JSON.stringify(page()),{headers:{'content-length':'1','content-encoding':'identity'}}));await expect(createDailyReviewSource(env,fetcher)({day:DAY,after:null})).rejects.toThrow('daily_source_unavailable');});
+it('encoded metadata cannot bypass the actual decoded byte limit',async()=>{const fetcher=vi.fn(async()=>new Response(new Uint8Array(65537),{headers:{'content-length':'1','content-encoding':'gzip'}}));await expect(createDailyReviewSource(env,fetcher)({day:DAY,after:null})).rejects.toThrow('daily_source_unavailable');});
+it('Buffer chunk cannot mutate already captured bytes during next read',async()=>{const bytes=Buffer.from(JSON.stringify(page()));let calls=0;const reader={read:async()=>{if(calls++===0)return {done:false,value:bytes};bytes[0]=33;return {done:true};},cancel:vi.fn(async()=>{}),releaseLock:vi.fn()};const fetcher=vi.fn(async()=>({ok:true,headers:new Headers(),body:{getReader:()=>reader}}));expect((await createDailyReviewSource(env,fetcher)({day:DAY,after:null})).rows).toEqual([]);expect(calls).toBe(2);expect(reader.cancel).toHaveBeenCalledTimes(1);});

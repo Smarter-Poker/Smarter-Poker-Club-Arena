@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as TournamentPreflop from './HorseTournamentPreflop.js';
 
 import { decidePreflopV7, type PreflopCtx } from './HorsePreflop.js';
 import {
@@ -1433,108 +1434,139 @@ describe('Phase 6 live wiring', () => {
     }
   });
 
-  it('does not classify forced blind all-ins as a voluntary multiway all-in branch', () => {
-    enableBrainTelemetry();
-    drainFires();
-    const hero = {
-      seat: 1,
-      user_id: 'phase6-button',
-      username: 'Phase 6 Button',
-      stack: 2000,
-      bet: 0,
-      totalInvested: 0,
-      cards: [
-        { rank: 'A', suit: 'spades' },
-        { rank: 'K', suit: 'spades' },
-      ],
-      is_folded: false,
-      is_all_in: false,
-      is_sitting_out: false,
-    };
-    const smallBlind = {
-      ...hero,
-      seat: 2,
-      user_id: 'phase6-short-sb',
-      username: 'Phase 6 Short SB',
-      stack: 0,
-      bet: 50,
-      totalInvested: 50,
-      cards: [],
-      is_all_in: true,
-    };
-    const bigBlind = {
-      ...hero,
-      seat: 3,
-      user_id: 'phase6-short-bb',
-      username: 'Phase 6 Short BB',
-      stack: 0,
-      bet: 100,
-      totalInvested: 100,
-      cards: [],
-      is_all_in: true,
-    };
-    const m = buildTournamentMState({
-      stackChips: hero.stack,
-      smallBlind: 50,
-      bigBlind: 100,
-      ante: 0,
-      anteType: 'none',
-      playersAtTable: 3,
-      nextSmallBlind: 75,
-      nextBigBlind: 150,
-      nextAnte: 0,
-      minutesToNextLevel: 5,
-      opponentStacks: [
-        { userId: smallBlind.user_id, stackChips: smallBlind.stack },
-        { userId: bigBlind.user_id, stackChips: bigBlind.stack },
-      ],
-    });
-    HorseLogic.decide(
-      hero as never,
-      {
-        players: [hero, smallBlind, bigBlind],
-        communityCards: [],
-        pot: 150,
-        currentBet: 100,
-        minRaise: 100,
-        stage: 'preflop',
-        gameVariant: 'nlh',
-        gameMode: 'tournament',
-        format: 'mtt',
+  it.each([false, true].flatMap((voluntary) => [false, true].map((away) => ({ voluntary, away }))))(
+    'keeps voluntary all-in branches and effective depth independent of away status: %j',
+    ({ voluntary, away }) => {
+      enableBrainTelemetry();
+      drainFires();
+      const hero = {
+        seat: 1,
+        user_id: 'phase6-button',
+        username: 'Phase 6 Button',
+        stack: 2000,
+        bet: 0,
+        totalInvested: 0,
+        cards: [
+          { rank: 'A', suit: 'spades' },
+          { rank: 'K', suit: 'spades' },
+        ],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      };
+      const smallBlind = {
+        ...hero,
+        seat: 2,
+        user_id: 'phase6-short-sb',
+        username: 'Phase 6 Short SB',
+        stack: 0,
+        bet: voluntary ? 500 : 50,
+        totalInvested: voluntary ? 500 : 50,
+        cards: [],
+        is_all_in: true,
+        is_sitting_out: away,
+      };
+      const bigBlind = {
+        ...hero,
+        seat: 3,
+        user_id: 'phase6-short-bb',
+        username: 'Phase 6 Short BB',
+        stack: 0,
+        bet: voluntary ? 1500 : 100,
+        totalInvested: voluntary ? 1500 : 100,
+        cards: [],
+        is_all_in: true,
+        is_sitting_out: away,
+      };
+      const m = buildTournamentMState({
+        stackChips: hero.stack,
+        smallBlind: 50,
         bigBlind: 100,
         ante: 0,
-        bigBlindAnte: false,
-        dealerSeat: 1,
-        actionHistory: [],
-        tournament: {
-          schemaVersion: 1,
-          contextStatus: 'complete',
-          contextIssues: [],
-          playersAtTable: 3,
-          playersLeft: 10,
-          spotsPaid: 3,
-          avgStackChips: 2000,
-          currentSmallBlind: 50,
-          currentBigBlind: 100,
-          currentAnte: 0,
-          anteType: 'none',
-          nextSmallBlind: 75,
-          nextBigBlind: 150,
-          nextAnte: 0,
-          nextBlindInMin: 5,
-          nextBlindMult: 1.5,
-          m,
-          stacks: [2000, 100, 50],
-          payoutPct: [50, 30, 20],
-          satellite: false,
-        },
-      } as never,
-      'balanced',
-      {},
-      { telemetry: true, mind: false, v27GtoCharts: false }
-    );
-    const features = new Set(drainFires().map((row) => row.feature));
-    expect(features.has('phase6_branch_unopened')).toBe(true);
-    expect(features.has('phase6_branch_multiway_all_in')).toBe(false);
-  });
+        anteType: 'none',
+        playersAtTable: 3,
+        nextSmallBlind: 75,
+        nextBigBlind: 150,
+        nextAnte: 0,
+        minutesToNextLevel: 5,
+        opponentStacks: [
+          { userId: smallBlind.user_id, stackChips: smallBlind.stack },
+          { userId: bigBlind.user_id, stackChips: bigBlind.stack },
+        ],
+      });
+      const policySpy = vi.spyOn(TournamentPreflop, 'tournamentPreflopPolicy');
+      HorseLogic.decide(
+        hero as never,
+        {
+          players: [hero, smallBlind, bigBlind],
+          communityCards: [],
+          pot: smallBlind.bet + bigBlind.bet,
+          currentBet: bigBlind.bet,
+          minRaise: voluntary ? 1000 : 100,
+          stage: 'preflop',
+          gameVariant: 'nlh',
+          gameMode: 'tournament',
+          format: 'mtt',
+          bigBlind: 100,
+          ante: 0,
+          bigBlindAnte: false,
+          dealerSeat: 1,
+          actionHistory: voluntary
+            ? [
+                {
+                  seat: smallBlind.seat,
+                  userId: smallBlind.user_id,
+                  action: 'all_in',
+                  amount: 500,
+                  stage: 'preflop',
+                  timestamp: 1,
+                  isFullRaise: true,
+                },
+                {
+                  seat: bigBlind.seat,
+                  userId: bigBlind.user_id,
+                  action: 'all_in',
+                  amount: 1500,
+                  stage: 'preflop',
+                  timestamp: 2,
+                  isFullRaise: true,
+                },
+              ]
+            : [],
+          tournament: {
+            schemaVersion: 1,
+            contextStatus: 'complete',
+            contextIssues: [],
+            playersAtTable: 3,
+            playersLeft: 10,
+            spotsPaid: 3,
+            avgStackChips: 2000,
+            currentSmallBlind: 50,
+            currentBigBlind: 100,
+            currentAnte: 0,
+            anteType: 'none',
+            nextSmallBlind: 75,
+            nextBigBlind: 150,
+            nextAnte: 0,
+            nextBlindInMin: 5,
+            nextBlindMult: 1.5,
+            m,
+            stacks: [2000, bigBlind.bet, smallBlind.bet],
+            payoutPct: [50, 30, 20],
+            satellite: false,
+          },
+        } as never,
+        'balanced',
+        {},
+        { telemetry: true, mind: false, v27GtoCharts: false }
+      );
+      const policyInputs = policySpy.mock.calls.map(([input]) => input);
+      policySpy.mockRestore();
+      const features = new Set(drainFires().map((row) => row.feature));
+      expect(features.has('phase6_branch_unopened')).toBe(!voluntary);
+      expect(features.has('phase6_branch_multiway_all_in')).toBe(voluntary);
+      expect(policyInputs).toHaveLength(1);
+      expect(policyInputs[0].stackBB).toBe(voluntary ? 15 : 20);
+    }
+  );
 });

@@ -13,8 +13,9 @@
  * refreshed into memory), CONSUMER (the function that reads it) and RECEIPT
  * (the telemetry that proves the read happened). A datum with a source and no
  * consumer is dead data; a consumer with no receipt is a layer nobody can
- * prove is running. HorseDataLedger.test.ts turns both into failing tests by
- * reading the engine source, and fn_audit_data_receipts turns the receipts
+ * prove is running. HorseDataLedger.test.ts checks source coverage; source presence alone
+ * does not prove execution. Behavioral tests and accepted-action receipts
+ * must separately prove use, and fn_audit_data_receipts turns the receipts
  * into daily findings by reading horse_brain_telemetry.
  *
  * "Compile, do not query": the engine reads memory (the game state it is
@@ -43,9 +44,9 @@ export type LedgerKind =
   /** a telemetry key; `*` suffix = a family sharing a prefix */
   | 'receipt'
   /** a leak tag the review system emits, with the code that READS it
-   *  (2026-09-05). A tag with consumer 'measurement' is counted and read by
-   *  nobody, on purpose, and says why. The daily audit raises tag_unread for
-   *  any tag that is neither. */
+   *  (2026-09-05). A tag with consumer 'measurement' is recorded/reported but
+   *  has no decision or candidate-adjustment reader. The daily audit keeps
+   *  reporting high-volume measurement gaps; a helper definition is not use. */
   | 'tag';
 
 export type LedgerCadence =
@@ -166,7 +167,7 @@ const table = (
  * TAG CONSUMERS (2026-09-05). Dan: "there is absolutely no point to keep
  * upgrading and enhancing the logic of the horses if nothing reads the tags."
  * Every tag HorseHandReview.detectLeaks can emit is a row here with the code
- * that reads it. EveryTagHasAConsumer.law.test.ts reads the detector source
+ * that reads it, with measurement and diagnostic proposal boundaries explicit. EveryTagHasAConsumer.law.test.ts reads the detector source
  * and fails on a tag with no row; the daily audit (fn_audit_tag_consumers)
  * reads this table and raises tag_unread on a tag with rows this week whose
  * consumer is 'measurement'. A measurement row must say why it is one.
@@ -180,9 +181,13 @@ const tag = (key: string, consumer: string, note: string, since: string): Ledger
   kind: 'tag',
   source:
     'horse_hand_reviews.leak_tags (HorseHandReview.detectLeaks at settlement); horse_review_rollup.leak_counts nightly',
-  cadence: 'per_hand',
+  cadence: 'nightly',
   consumer,
-  note,
+  note:
+    note +
+    (consumer === 'measurement'
+      ? '; measurement: nightly counts/study diagnostics only; no candidate-adjustment reader; no policy authority'
+      : '; diagnostic proposal: runSelfTune reads rollups and calls diagnoseAndNudge; observational adapter retains the profile; no policy authority'),
   since,
 });
 
@@ -206,93 +211,63 @@ const sqlTag = (key: string, consumer: string, note: string, since: string): Led
 });
 
 export const TAG_CONSUMERS: LedgerEntry[] = [
-  // Omaha stack-offs -> V40 pressure cap (PLO_STACKOFF_TAGS) + tuner dials
+  // Omaha stack-off diagnostics; proposals do not authorize policy adjustments.
   tag(
     'nonnut_flush_stackoff',
-    'HorseLogic.ploStackoffLoad / nlhStackoffLoad; HorseSelfTuner (stackoff gate)',
+    'HorseSelfTuner.diagnoseAndNudge',
     'Omaha: cat-6 with two better flushes live; hold em: any better flush live',
     'V13'
   ),
   tag(
     'second_nut_flush_stackoff',
-    'HorseLogic.ploStackoffLoad; HorseSelfTuner (stackoff gate)',
+    'HorseSelfTuner.diagnoseAndNudge',
     'Omaha cat-6 with one better flush live',
     'V13'
   ),
   tag(
     'dominated_straight_stackoff',
-    'HorseLogic.ploStackoffLoad; HorseSelfTuner (stackoff gate)',
+    'HorseSelfTuner.diagnoseAndNudge',
     'Omaha non-nut straight at showdown',
     'V13'
   ),
-  tag(
-    'coldcall_stackoff',
-    'HorseLogic.ploStackoffLoad / nlhStackoffLoad / tourneyStackoffLoad',
-    'cold-called a raise, lost 40bb+',
-    'V23'
-  ),
+  tag('coldcall_stackoff', 'measurement', 'cold-called a raise, lost 40bb+', 'V23'),
   tag(
     'plo_naked_trips_stackoff',
-    'HorseLogic.ploStackoffLoad / tourneyStackoffLoad',
+    'measurement',
     'trips on a paired board, no redraw, 100bb+',
     'V38'
   ),
-  tag(
-    'plo_toppair_no_redraw_stackoff',
-    'HorseLogic.ploStackoffLoad / tourneyStackoffLoad',
-    'top pair no redraw, 100bb+',
-    'V38'
-  ),
-  // hold em stack-offs -> V41 heat into the V20 cap (NLH_STACKOFF_TAGS)
+  tag('plo_toppair_no_redraw_stackoff', 'measurement', 'top pair no redraw, 100bb+', 'V38'),
+  // Hold em stack-off diagnostics (NLH_STACKOFF_TAGS).
   tag(
     'top_pair_weak_kicker_stackoff',
-    'HorseLogic.nlhStackoffLoad / tourneyStackoffLoad',
+    'measurement',
     'top pair, kicker nine or worse, 40bb+',
     'V24'
   ),
-  tag(
-    'weak_kicker_trips_stackoff',
-    'HorseLogic.nlhStackoffLoad / tourneyStackoffLoad',
-    'board trips, dominated kicker, 40bb+',
-    'V24'
-  ),
+  tag('weak_kicker_trips_stackoff', 'measurement', 'board trips, dominated kicker, 40bb+', 'V24'),
   tag(
     'straight_into_flush_stackoff',
-    'HorseLogic.nlhStackoffLoad (hold em only; measurement-only in Omaha)',
+    'measurement',
     'straight on a three-flush board - since 2026-09-13 also flagged in Omaha, where it is recorded and reviewed but deliberately NOT in PLO_STACKOFF_TAGS',
     'V21'
   ),
-  tag(
-    'nonnut_straight_stackoff',
-    'HorseLogic.nlhStackoffLoad',
-    'non-nut straight at showdown',
-    'V21'
-  ),
-  tag('underfull_stackoff', 'HorseLogic.nlhStackoffLoad', 'bottom boat', 'V21'),
-  // river wars -> V41 respect + war gate (RIVER_WAR_TAGS)
-  tag(
-    'river_raise_war',
-    'HorseLogic.riverWarLoad',
-    'two or more aggressive river actions, lost',
-    'V21'
-  ),
-  tag(
-    'river_raise_paidoff',
-    'HorseLogic.riverWarLoad',
-    'bet the river, called a raise, lost',
-    'V23'
-  ),
-  // limped pots -> V41 limped-pot cap (LIMP_BLOAT_TAGS)
-  tag('limped_pot_bloat', 'HorseLogic.limpBloatLoad', 'entered for one blind, lost 40bb+', 'V23'),
-  // preflop -> tuner tightness + V41 tournament premium
+  tag('nonnut_straight_stackoff', 'measurement', 'non-nut straight at showdown', 'V21'),
+  tag('underfull_stackoff', 'measurement', 'bottom boat', 'V21'),
+  // River escalation diagnostics (RIVER_WAR_TAGS).
+  tag('river_raise_war', 'measurement', 'two or more aggressive river actions, lost', 'V21'),
+  tag('river_raise_paidoff', 'measurement', 'bet the river, called a raise, lost', 'V23'),
+  // Limped-pot diagnostics (LIMP_BLOAT_TAGS).
+  tag('limped_pot_bloat', 'measurement', 'entered for one blind, lost 40bb+', 'V23'),
+  // Preflop audit proposals, including the historical tournament premium.
   tag(
     'preflop_stackoff',
-    'HorseSelfTuner (preflop gate); HorseLogic.tourneyStackoffLoad',
+    'HorseSelfTuner.diagnoseAndNudge',
     '40bb+ in with no postflop action',
     'V13'
   ),
   // fold family -> tuner bluff dial
-  tag('big_bet_fold', 'HorseSelfTuner (big-bet-fold gate)', 'invested 20bb+ then folded', 'V13'),
+  tag('big_bet_fold', 'HorseSelfTuner.diagnoseAndNudge', 'invested 20bb+ then folded', 'V13'),
   // measurement-only, with the reason
   tag(
     'big_fold_river',
@@ -315,7 +290,7 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   tag(
     'river_aggr_lost',
     'measurement',
-    'ordinary value bets that ran into the top of the range; judged on EV with river_aggr_won by fn_audit_river_aggression_ev, not as a leak',
+    'ordinary value bets that ran into the top of the range; outcome totals compared with river_aggr_won by fn_audit_river_aggression_ev; those totals do not establish counterfactual EV',
     'V13'
   ),
   tag(
@@ -327,13 +302,13 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   tag(
     'plo_underfull_stackoff',
     'measurement',
-    'Omaha bottom boat, 100bb+; three baseline days then a V40 decision (2026-09-04 analysis)',
+    'Omaha bottom boat, 100bb+; historical V40 study category; no validated causal adjustment reader',
     'V40'
   ),
   tag(
     'plo_set_stackoff',
     'measurement',
-    'split from plo_naked_trips on an unpaired board; measurement until the baseline says whether it belongs in the V40 loop',
+    'split from plo_naked_trips on an unpaired board; recorded for investigation; no validated causal adjustment reader',
     'V40'
   ),
 
@@ -343,19 +318,14 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   // tuner cannot disagree about what a leak is.
   sqlTag(
     'freq_too_loose',
-    'fn_audit_frequency_leaks; HorseSelfTuner (vpip band)',
+    'fn_audit_frequency_leaks',
     'VPIP over 32% across 1,000+ cash hands',
     'V49'
   ),
-  sqlTag(
-    'freq_too_tight',
-    'fn_audit_frequency_leaks; HorseSelfTuner (vpip band)',
-    'VPIP under 19%',
-    'V49'
-  ),
+  sqlTag('freq_too_tight', 'fn_audit_frequency_leaks', 'VPIP under 19%', 'V49'),
   sqlTag(
     'freq_limp',
-    'fn_audit_frequency_leaks; HorseSelfTuner (pfrOfVpip band)',
+    'fn_audit_frequency_leaks',
     'under 55% of voluntary entries were raises - the rest are limps and cold calls',
     'V49'
   ),
@@ -367,31 +337,26 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   ),
   sqlTag(
     'freq_over_fold_3bet',
-    'fn_audit_frequency_leaks; HorseSelfTuner (foldTo3Bet band)',
+    'fn_audit_frequency_leaks',
     'folds over 62% of the time to a 3-bet',
     'V49'
   ),
-  sqlTag(
-    'freq_sticky_vs_3bet',
-    'fn_audit_frequency_leaks; HorseSelfTuner (foldTo3Bet band)',
-    'folds under 35% to a 3-bet',
-    'V49'
-  ),
+  sqlTag('freq_sticky_vs_3bet', 'fn_audit_frequency_leaks', 'folds under 35% to a 3-bet', 'V49'),
   sqlTag(
     'freq_surrender_flops',
-    'fn_audit_frequency_leaks; HorseSelfTuner (wwsf band)',
+    'fn_audit_frequency_leaks',
     'wins under 40% of the flops it sees',
     'V49'
   ),
   sqlTag(
     'freq_passive_postflop',
-    'fn_audit_frequency_leaks; HorseSelfTuner (af band)',
+    'fn_audit_frequency_leaks',
     'postflop aggression factor under 1.2',
     'V49'
   ),
   sqlTag(
     'freq_spewy_postflop',
-    'fn_audit_frequency_leaks; HorseSelfTuner (af band)',
+    'fn_audit_frequency_leaks',
     'postflop aggression factor over 3.5',
     'V49'
   ),
@@ -580,7 +545,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'v41Leaks',
-    'the rest of the tag table reaches a decision: hold em stack-off load, river-war load, limp-bloat load, by variant family',
+    'diagnostic telemetry for ignored historical review fields; never authorizes policy or sampling changes',
     'V41'
   ),
 
@@ -598,17 +563,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       ['thinkRange', 'think-time band for V9 timing'],
       ['callRespect', 'variant call respect offset (HorseVariantProfile)'],
       ['familyBias', 'V18 sizing family hashed from the horse id'],
-      [
-        'ploStackoffLoad',
-        'V40: this horse own Omaha stack-off tag rate (profile leaks / leaksHands)',
-      ],
-      ['nlhStackoffLoad', 'V41: this horse own hold em stack-off tag rate (leaksHoldem)'],
-      ['riverWarLoad', 'V41: river raise-war / paid-off tag rate for this hand family'],
-      ['limpBloatLoad', 'V41: limped-pot bloat tag rate for this hand family'],
-      [
-        'tourneyLeakPremium',
-        'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)',
-      ],
     ] as const
   ).map(
     ([key, note]): LedgerEntry => ({
@@ -618,17 +572,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       cadence: 'per_action',
       consumer: 'HorseLogic.decide / HorsePreflop.decidePreflopV7',
       note,
-      since:
-        key === 'ploStackoffLoad'
-          ? 'V40'
-          : key === 'nlhStackoffLoad' ||
-              key === 'riverWarLoad' ||
-              key === 'limpBloatLoad' ||
-              key === 'tourneyLeakPremium'
-            ? 'V41'
-            : key === 'familyBias'
-              ? 'V18'
-              : 'V2',
+      since: key === 'familyBias' ? 'V18' : 'V2',
     })
   ),
 
@@ -676,7 +620,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
         key === 'persona'
           ? 'HorsePersona.resolvePersona (ServerTableEngineDealing straddle round); HorseLogic.followsSolver (the GTO consult)'
           : key.startsWith('leaks')
-            ? 'HorseLogic.leakLoad'
+            ? 'HorseLogic.leakLoad (diagnostic only); HorseLogic.decide (ignored-evidence receipt)'
             : 'HorseLogic.decide',
       note,
       since,
@@ -814,6 +758,41 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // TABLES. What the services compile and where it goes.
   // ─────────────────────────────────────────────────────────────────────────
   table(
+    'horse_observation_discovery_epochs',
+    'minute',
+    'HorseObservationDiscovery via fn_discover_horse_observation_requests; fn_prune_horse_observation_discovery',
+    'private bounded source-window discovery progress and retained gaps; roster discovery does not establish observation-time coverage, journal completion or model activation',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_discovery_segments',
+    'minute',
+    'fn_discover_horse_observation_requests; fn_prune_horse_observation_discovery',
+    'private source snapshots, atomic-hand and actor digests, frozen novel actors and bounded admission cursor; pending membership survives source removal and restart',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_discovery_members',
+    'minute',
+    'fn_discover_horse_observation_requests through canonical fn_admit_horse_observation_capture; fn_prune_horse_observation_discovery',
+    'private deduplicated actor-to-original-window request references; admission and membership commit together without financial or policy writes',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_capture_work',
+    'minute',
+    'HorseObservationCapture via fn_claim_horse_observation_capture; HorseLearningQueueHealth via fn_horse_learning_work_health',
+    'private durable actor/window acquisition requests; bounded sequential cursor recovery in one queue slot and retained gaps; not source coverage or model activation',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_capture_receipts',
+    'minute',
+    'HorseObservationCapture via fn_finish_horse_observation_capture_witness and legacy fn_finish_horse_observation_capture; HorseCaptureEvidence via fn_horse_observation_capture_evidence; fn_prune_horse_observation_captures',
+    'private immutable accepted-slice acknowledgments; exact source-read witnesses commit with journal admission and cursor advance; bounded revision-fenced evidence recovery compares independent journal receipts; legacy missing witnesses and unfinished gaps stay explicit without establishing source coverage',
+    'Phase14'
+  ),
+  table(
     'horse_mind_stats',
     'boot',
     'HorseMindPersistence (load at boot, save on a timer)',
@@ -848,7 +827,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_review_rollup',
     'nightly',
-    'HorseSelfTuner (leak counts -> dials and the V40 leak profile)',
+    'HorseSelfTuner (unapplied review proposals); HorseTunerObservationalAudit (preserved profile)',
     'per horse/day/variant tag counts',
     'V18',
     { dayColumn: 'day', freshnessDays: 2 }
@@ -880,23 +859,65 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_self_tune_log',
     'nightly',
-    'HorseDailyAudit (instrument liveness); the panel',
-    'what the tuner did to each horse and why',
+    'fn_complete_horse_tuner_study via HorseTunerStudyCompletion; HorseDailyAudit; the panel',
+    'what the tuner did to each horse and why; an individual row is only partial nightly progress',
     'V8',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
   table(
     'horse_brain_telemetry',
     'nightly',
-    'fn_audit_layer_silence_and_coverage, fn_audit_layer_drift, fn_audit_data_receipts (BrainTelemetryFlush writes through fn_brain_telemetry_add)',
+    'fn_audit_layer_silence_and_coverage, fn_audit_layer_drift, fn_audit_data_receipts (BrainTelemetryFlush writes through fn_horse_brain_flush_receipt)',
     'per-day fire counts per layer (BrainTelemetryFlush)',
     'V15',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(
+    'horse_commitment_audit_days',
+    'nightly',
+    'fn_horse_commitment_audit_step',
+    'durable eligibility-sweep counters and cursor; repeated recent-day passes are not complete source watermarks or completed GTO reviews',
+    'Phase14'
+  ),
+  table(
+    'horse_commitment_reviews',
+    'nightly',
+    'fn_horse_commitment_audit_step',
+    'strictly over10BB cumulative commitment including refunds, or unknown eligibility; private diagnostics with unmatched replay/reference and no policy authority',
+    'Phase14'
+  ),
+  table(
+    'horse_commitment_audit_gaps',
+    'nightly',
+    'fn_horse_commitment_audit_step',
+    'retained source/identity/fact gaps and conflicts observed during the independent daily eligibility sweep; no financial-source mutation',
+    'Phase14'
+  ),
+  table(
+    'horse_brain_flush_receipts',
+    'nightly',
+    'fn_horse_brain_flush_receipt via BrainTelemetryFlush and HorseBrainTelemetryPublisher',
+    'private atomic batch deduplication with source identity; accepted batches only, not a complete decision ledger',
+    'Phase15'
+  ),
+  table(
+    'horse_journaled_model_sweep',
+    'nightly',
+    'fn_claim_horse_journaled_model and fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
+    'private leased cursor for bounded journal-only diagnostic reconstruction; not a source watermark',
+    'Phase14'
+  ),
+  table(
+    'horse_journaled_opponent_models',
+    'nightly',
+    'fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
+    'private latest scoped frequency and holdout reports; no causal EV, source completeness or activation authority',
+    'Phase14'
+  ),
+  table(
     'horse_decision_latency',
     'nightly',
-    'the panel; fn_horse_decision_latency_add (BrainTelemetryFlush writes through the RPC)',
+    'the panel; fn_horse_brain_flush_receipt (BrainTelemetryFlush atomically writes counters and latency with source receipts)',
     'per-day decision latency histograms',
     'V28',
     { dayColumn: 'day', freshnessDays: 1 }
@@ -975,6 +996,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'findings + agent analysis per day',
     'V13',
     { dayColumn: 'day', freshnessDays: 2 }
+  ),
+  table(
+    'horse_tuner_write_receipts',
+    'nightly',
+    'fn_horse_tuner_recorded_horses via HorseTunerStudyCompletion',
+    'immutable per-horse daily writes let an interrupted study resume without retuning accepted horses',
+    'Phase14'
+  ),
+  table(
+    'horse_tuner_study_rosters',
+    'nightly',
+    'fn_prepare_horse_tuner_study via HorseTunerStudyCompletion',
+    'durable original eligible membership prevents a resumed study from silently dropping unfinished horses',
+    'Phase14'
+  ),
+  table(
+    'horse_tuner_study_completions',
+    'nightly',
+    'HorseLeague / HorseSelfTuner',
+    'one execution receipt after every member of the captured eligible cohort has an atomic audit receipt; not causal validation',
+    'Phase14'
   ),
   table(
     'horse_job_runs',
@@ -1477,11 +1519,17 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   receipt(
     'v38_preflop_allin_price',
-    'HorsePreflop (V38)',
-    'preflop all-in priced by EV',
+    'HorseLogic.decidePreflop',
+    'preflop all-in priced against the complete committed population with actor-aligned range bands',
     'V38',
     'decide',
     0.002
+  ),
+  receipt(
+    'v38_preflop_price_unavailable',
+    'HorseLogic.decidePreflop',
+    'the committed-population price read failed or exceeded physical card capacity; range fallback retained without inventing an opponent or neutral equity',
+    'V38'
   ),
   receipt(
     'v39_outlook_*',
@@ -1523,23 +1571,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'decide_omaha',
     0.0001
   ),
+
   receipt(
-    'v40_leak_profile_read',
-    'HorseLogic (V40)',
-    'the horse own review tags changed a decision; needs tuner-written leaks',
-    'V40'
-  ),
-  receipt(
-    'v41_nlh_leak_read',
-    'HorseLogic (V41)',
-    'a hold em horse tagged for stack-offs read a single big bet as pressure; needs tuner-written leaksHoldem',
-    'V41'
-  ),
-  receipt(
-    'v41_river_war_read',
-    'HorseLogic (V41)',
-    'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
-    'V41'
+    'phase14_review_signal_ignored',
+    'HorseLogic.decide',
+    'historical review fields were present and excluded from decision adjustments; diagnostic only',
+    'Phase14'
   ),
   receipt(
     'phase5_canonical_state',
@@ -1987,8 +2024,15 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'phase8_fired',
     'HorseTournamentPostflop',
-    'completed bounded continuation evaluations',
+    'continuation evaluations before final legality and time-budget gates',
     'Phase8'
+  ),
+  receipt(
+    'phase8_completed',
+    'HorseLogic -> HorseTournamentPostflop',
+    'useful continuation survives final legality and time-budget gates; not controller acceptance',
+    'Phase8',
+    'phase8_eligible'
   ),
   receipt(
     'phase8_shadow_changed',
@@ -2019,7 +2063,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'phase8_objective_*',
     'HorseTournamentPostflop',
-    'objective partitions completed candidate evaluations',
+    'objective partitions evaluated candidate attempts before final gates',
     'Phase8',
     'phase8_fired',
     0.99
@@ -2131,11 +2175,85 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   receipt(
     'v44_second_look',
-    'ServerTableEngineTurns.scheduleHorseAction',
-    'a close call/fold/all-in was replayed at 6x the equity sample inside the think time. When this reads 0, the v44_declined_* receipts below say WHICH gate closed - they partition every decision, so they and this one sum to `decide`',
+    'HorseDecisionWorkerRuntime.executeDeep',
+    'a second look completed at increased equity depth with the original HorseMind reads; declined, missing-read, cancelled and failed work is not a completed evaluation',
     'V44',
     'decide',
     0.001
+  ),
+  receipt(
+    'phase15_hand_binding_*',
+    'HorseCommittedDecisionTracker',
+    'private memory-only decision-to-accepted-hand reconciliation; bound names the exact committed UUID and unfiltered action ordinal, while gaps/conflicts stay unavailable; not durable capture, source completeness or GTO correctness',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_journal_*',
+    'HorseDecisionJournalPublisher',
+    'private host-local journal capture, queue admission, exact disk acknowledgement or explicit gap; enqueued is not durable, recorded is not complete coverage, full replay or a GTO verdict',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_telemetry_batch_expired',
+    'BrainTelemetryFlush.flush',
+    'a retained pending telemetry batch exceeded the 32-day receipt window and was explicitly refused without aggregation; this is an evidence gap',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_brain_exception',
+    'HorseLogic.decide',
+    'a policy exception produced an explicit check/fold liveness fallback; the private error is not part of the action receipt',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_second_look_reads_unavailable',
+    'HorseDecisionWorkerRuntime.executeFast and executeDeep',
+    'private original-read capture was refused, or a second-look frame was missing, invalid, expired, evicted, ambiguous, consumed or identity-mismatched; preserve the valid fast action and refuse a missing-read second look recoverably',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_reference_plans_retired',
+    'HorseDecisionWorkerRuntime.executeFast',
+    'reference-layer future-street plans were discarded because their exact wager did not survive the final policy selection',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_graph_*',
+    'HorsePolicyGraph.run/finish',
+    'live outer graph started, completed or failed; no claim of full internal distribution coverage or authoritative table execution',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_node_*',
+    'HorsePolicyGraph.run',
+    'eight finite outer nodes count entry, completion, failure and produced/changed/retained actions; component duration is published through the existing bounded latency flush; invocation is not candidate eligibility',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_policy_*',
+    'HorseLogic.decide',
+    'finite registered variant outcomes: reference, disabled, computed, outside_domain or unavailable; unregistered input refuses before policy execution',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_deep_brain_exception_retired',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a failed deep evaluation was retired while the original fast decision and its execution authority were retained',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_execution_*',
+    'HorseExecutionWitness.countFinal',
+    'one terminal memory-witness outcome per returned decision, bound to the controller accepted record; not a durable decision ledger',
+    'Phase15'
+  ),
+  ...(['fast', 'deep', 'worker_fallback'] as const).map((lane) =>
+    receipt(
+      `phase15_${lane}_execution_*`,
+      'HorseExecutionWitness.countFinal',
+      `terminal execution-witness outcomes from the ${lane} lane; failed or discarded computation is distinct from accepted policy intent`,
+      'Phase15'
+    )
   ),
   receipt(
     'v44_second_look_flipped',
@@ -2155,9 +2273,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
    * 0.1% expectation being wrong), so guessing between them is how a layer
    * stays dark for a week.
    *
-   * They partition every horse decision: the gates are checked in order and
-   * exactly one receipt fires per declined decision, so the five counts plus
-   * v44_second_look sum to `decide`. No expectation is declared on any of
+   * The planning gates are checked in order and exactly one receipt fires
+   * per declined plan. An eligible plan can still be cancelled, fail or lose
+   * its original read view, so those declines plus completed second looks do
+   * not partition all decisions. No expectation is declared on any of
    * them - a decline is an observation, not a promise.
    */
   receipt(
@@ -2226,18 +2345,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a river big bet was priced by its tempo; needs a player with five snap or tank showdowns',
     'V43'
   ),
-  receipt(
-    'v41_tourney_leak_read',
-    'HorseLogic (V41)',
-    'a horse tagged for event stack-offs paid extra ICM premium; tournament volume only, needs tuner-written leaksTournament',
-    'V41'
-  ),
-  receipt(
-    'v41_limp_bloat_*',
-    'HorseLogic (V41)',
-    'read / cap: a horse tagged for limped-pot bloat, in a limped pot, facing a big bet; needs tuner-written leaks',
-    'V41'
-  ),
+
   // TAGS. Every leak tag the review system emits, with its reader.
   ...TAG_CONSUMERS,
 ];

@@ -1,11 +1,20 @@
+import {
+  horsePlanBatchBindingFromRequest,
+  horsePlanContextFromDecision,
+} from '../HorsePlanHandIdentity.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import type {
+  FastHorseDecisionResult,
   HorseDecisionWorkerReady,
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
 import { buildHorseDecisionKey } from './protocol.js';
+import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
+import { settleHorseExecutionWitness } from '../HorseExecutionWitness.js';
+import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
+import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import {
   HorseDecisionAbortedError,
   HorseDecisionExpiredError,
@@ -51,7 +60,24 @@ class FakeWorker implements WorkerLike {
     return Promise.resolve(0);
   }
 
-  emitMessage(message: HorseDecisionWorkerResponse): void {
+  emitMessage(message: any): void {
+    // Fixture-only producer migration: derive new metadata from the exact sent
+    // job. This fake ACK/transport harness does not prove worker issue ownership.
+    const request = [...this.sent]
+      .reverse()
+      .find((item: any) => item?.requestId === message?.requestId) as any;
+    if (
+      message?.type === 'FAST_RESULT' &&
+      request?.type === 'DECIDE_FAST' &&
+      message.planBinding === undefined
+    )
+      message = { ...message, planBinding: horsePlanBatchBindingFromRequest(request) };
+    if (
+      message?.type === 'DEEP_RESULT' &&
+      request?.type === 'DECIDE_DEEP' &&
+      message.planContext === undefined
+    )
+      message = { ...message, planContext: horsePlanContextFromDecision(request) };
     this.messageListener?.(message);
   }
 
@@ -177,9 +203,10 @@ const ready = {
   },
 };
 
-const fastResult = (requestId: number, fence: string) => ({
+const fastResult = (requestId: number, fence: string): FastHorseDecisionResult => ({
   type: 'FAST_RESULT' as const,
   requestId,
+  planBinding: undefined as any, // Filled by the actual sent-job fixture adapter above.
   generation: 7,
   fence,
   decision: { action: 'fold' as const, thinkTime: 1500 },
@@ -190,7 +217,734 @@ const fastResult = (requestId: number, fence: string) => ({
   effects: [],
 });
 
+// Priority-order controls use an explicitly synthetic empty FAST batch. Actual
+// issue/acceptance/application is qualified separately by the new worker chain.
+function transportOnlyCommitFixture(): FastHorseDecisionResult {
+  const request = { ...snapshot('accepted-action'), type: 'DECIDE_FAST' as const, requestId: 1 };
+  return {
+    ...fastResult(1, request.fence),
+    planBinding: horsePlanBatchBindingFromRequest(request),
+    effects: [],
+  };
+}
+
 describe('LiveHorseDecisionWorkerClient', () => {
+  it.each([true, false])(
+    'transports private accepted-discard evidence only when journal configured=%s',
+    async (configured) => {
+      const worker = new FakeWorker();
+      const prior = process.env.HORSE_DECISION_JOURNAL_DIR;
+      if (configured) process.env.HORSE_DECISION_JOURNAL_DIR = '/synthetic-horse-journal';
+      else delete process.env.HORSE_DECISION_JOURNAL_DIR;
+      let client: LiveHorseDecisionWorkerClient;
+      try {
+        client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      } finally {
+        if (prior === undefined) delete process.env.HORSE_DECISION_JOURNAL_DIR;
+        else process.env.HORSE_DECISION_JOURNAL_DIR = prior;
+      }
+      worker.emitMessage(ready);
+      const tableId = '11111111-1111-4111-8111-111111111111';
+      const actorId = '22222222-2222-4222-8222-222222222222';
+      const request: HorseDiscardExecutionObservation['request'] = {
+        type: 'DECIDE_DISCARD',
+        requestId: 44,
+        generation: 7,
+        fence: '',
+        gameVariant: 'pineapple',
+        cards: [
+          { rank: 'A', suit: 'spades' },
+          { rank: 'K', suit: 'spades' },
+          { rank: 'Q', suit: 'hearts' },
+        ],
+        communityCards: [
+          { rank: '2', suit: 'clubs' },
+          { rank: '3', suit: 'clubs' },
+          { rank: '4', suit: 'clubs' },
+        ],
+        journalContext: {
+          version: 1,
+          tableId,
+          actorId,
+          handNumber: 12,
+          seat: 1,
+          leaseGeneration: '99',
+          requestedAtMs: 900,
+          lane: 'choice',
+          priorActions: captureHorseHandJournalContext([])!,
+        },
+      };
+      request.fence = [
+        tableId,
+        12,
+        'pineapple-discard',
+        1,
+        '99',
+        7,
+        request.cards.map((c) => `${c.rank}:${c.suit}`).join('|'),
+        request.communityCards.map((c) => `${c.rank}:${c.suit}`).join('|'),
+      ].join(':');
+      const execution: HorseDiscardExecutionObservation = {
+        version: 1,
+        request,
+        selectedIndex: 2,
+        acceptedActionOrdinal: 0,
+        priorActions: captureHorseHandJournalContext([])!,
+        controller: {
+          seat: 1,
+          actorId,
+          chosenIndex: 2,
+          originalCards: structuredClone(request.cards),
+          discardedCard: { ...request.cards[2] },
+          retainedCards: structuredClone(request.cards.slice(0, 2)),
+          communityCards: structuredClone(request.communityCards),
+          acceptedRecord: {
+            seat: 1,
+            userId: actorId,
+            action: 'discard',
+            amount: 0,
+            stage: 'pineapple_discard',
+            timestamp: 1000,
+          },
+        },
+      };
+      client.observeDiscardExecution(execution);
+      expect(worker.sent).toHaveLength(configured ? 1 : 0);
+      if (configured) {
+        expect(worker.sent[0]).toEqual({
+          type: 'OBSERVE_DISCARD_EXECUTION',
+          requestId: 1,
+          generation: 7,
+          fence: request.fence,
+          execution,
+        });
+        request.cards[0].rank = '2';
+        execution.selectedIndex = 0;
+        expect((worker.sent[0] as any).execution.request.cards[0].rank).toBe('A');
+        expect((worker.sent[0] as any).execution.selectedIndex).toBe(2);
+        worker.emitMessage({
+          type: 'ACK',
+          requestId: 1,
+          generation: 7,
+          fence: request.fence,
+          operation: 'OBSERVE_DISCARD_EXECUTION',
+        });
+        expect(client.status().phase).toBe('ready');
+      }
+      const stop = client.stop();
+      worker.emitMessage({ type: 'STOPPED' });
+      await stop;
+    }
+  );
+  it('queues one immutable finalized execution for the configured private journal', async () => {
+    const worker = new FakeWorker();
+    const prior = process.env.HORSE_DECISION_JOURNAL_DIR;
+    process.env.HORSE_DECISION_JOURNAL_DIR = '/synthetic-horse-journal';
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    if (prior === undefined) delete process.env.HORSE_DECISION_JOURNAL_DIR;
+    else process.env.HORSE_DECISION_JOURNAL_DIR = prior;
+    worker.emitMessage(ready);
+    const input = snapshot('journal-fence'),
+      pending = client.decideFast(input);
+    worker.emitMessage(fastResult(1, input.fence));
+    const result = await pending;
+    settleHorseExecutionWitness(result.decision.executionWitness, {
+      applied: true,
+      acceptedActions: [
+        {
+          record: {
+            seat: 1,
+            userId: 'horse-1',
+            action: 'fold',
+            amount: 0,
+            stage: input.gameState.stage,
+            timestamp: 1000,
+          },
+          intended: true,
+        },
+      ],
+    });
+    expect(worker.sent[1]).toMatchObject({
+      type: 'OBSERVE_EXECUTION',
+      requestId: 2,
+      fence: input.fence,
+      witness: { executionStatus: 'intended', identity: { requestId: 1 } },
+    });
+    result.decision.executionWitness!.committedHand = {
+      status: 'unavailable',
+      reason: 'tracking_expired',
+    };
+    expect((worker.sent[1] as any).witness.committedHand).not.toEqual(
+      result.decision.executionWitness!.committedHand
+    );
+    settleHorseExecutionWitness(result.decision.executionWitness, {
+      applied: false,
+      acceptedActions: [],
+    });
+    expect(worker.sent).toHaveLength(2);
+    worker.emitMessage({
+      type: 'ACK',
+      requestId: 2,
+      generation: 7,
+      fence: input.fence,
+      operation: 'OBSERVE_EXECUTION',
+    });
+    const stop = client.stop();
+    worker.emitMessage({ type: 'STOPPED' });
+    await stop;
+  });
+  it('joins the actual returned and settled witness when the committed producer enters the FIFO', async () => {
+    const table = '11111111-1111-4111-8111-111111111111';
+    const horse = '22222222-2222-4222-8222-222222222222';
+    const hand = '33333333-3333-4333-8333-333333333333';
+    const input = snapshot(`${table}:12:1:99:7`);
+    input.player.user_id = horse;
+    input.handJournalContext = captureHorseHandJournalContext([]);
+    input.decisionKey = buildHorseDecisionKey(input);
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(input);
+    worker.emitMessage(fastResult(1, input.fence));
+    const result = await pending;
+    const record = {
+      seat: 1,
+      userId: horse,
+      action: 'fold' as const,
+      amount: 0,
+      timestamp: 1_800_001,
+      stage: input.gameState.stage,
+    };
+    settleHorseExecutionWitness(result.decision.executionWitness, {
+      applied: true,
+      acceptedActions: [{ record, intended: true }],
+    });
+    const observation = client.observeCompletedHand({
+      generation: 12,
+      fence: `${table}:12:99:observe`,
+      handKey: `${table}:12`,
+      committedHandId: hand,
+      bigBlind: 2,
+      actions: [
+        {
+          ...record,
+          origin: 'horse_policy',
+          publicNode: {
+            version: 1,
+            status: 'captured',
+            actorSeat: 1,
+            street: record.stage,
+          } as never,
+          observationIdentity: {
+            version: 1,
+            status: 'bound',
+            handId: hand,
+            observationId: `${hand}:0`,
+            actionOrdinal: 0,
+            sessionKey: 'a'.repeat(64),
+          },
+        },
+      ],
+    });
+    expect(result.decision.executionWitness?.committedHand).toEqual({
+      status: 'bound',
+      committedHandId: hand,
+      observationId: `${hand}:0`,
+      actionOrdinal: 0,
+      sessionKey: 'a'.repeat(64),
+    });
+    expect(worker.sent[1]).toMatchObject({ type: 'OBSERVE_COMPLETED_HAND', committedHandId: hand });
+    worker.emitMessage({
+      type: 'ACK',
+      requestId: 2,
+      generation: 12,
+      fence: `${table}:12:99:observe`,
+      operation: 'OBSERVE_COMPLETED_HAND',
+    });
+    await observation;
+    const stopped = client.stop();
+    worker.emitMessage({ type: 'STOPPED' });
+    await stopped;
+  });
+  it.each([10, 11])(
+    'accepts plans only for the original reference wager (final amount %s)',
+    async (amount) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('effect-reference');
+      input.gameState.stage = 'flop';
+      input.fence =
+        '33333333-3333-4333-8333-333333333333:1000100:1:44444444-4444-4444-8444-444444444444:7';
+      input.gameState.actionHistory = [
+        {
+          timestamp: 12,
+          userId: 'poster',
+          stage: 'preflop',
+          seat: 2,
+          action: 'post_bb',
+          amount: 2,
+        } as any,
+      ];
+      input.decisionKey = buildHorseDecisionKey(input);
+      const pending = client.decideFast(input);
+      void pending.catch(() => undefined);
+      const reply = fastResult(1, input.fence);
+      const graph = new HorsePolicyGraph(() => 0);
+      let value: typeof reply.decision | null = null;
+      for (const node of HORSE_POLICY_ORDER)
+        value = graph.run(node, value, () => ({
+          decision: {
+            action: 'bet' as const,
+            amount: node === 'reference' ? 10 : amount,
+            thinkTime: 0,
+          },
+        })).decision;
+      reply.decision = graph.finish(value!);
+      reply.effects = [
+        {
+          type: 'plan',
+          handKey: 'plan-hand-v1:33333333-3333-4333-8333-333333333333:1000100',
+          userId: 'horse-1',
+          barrelIntent: true,
+        },
+      ];
+      worker.emitMessage(reply);
+      if (amount === 10) {
+        expect(await pending).toMatchObject({
+          effects: reply.effects,
+          decision: { action: 'bet', amount: 10 },
+        });
+        const stopping = client.stop();
+        worker.emitMessage({ type: 'STOPPED' });
+        await stopping;
+      } else {
+        expect(client.status().phase).toBe('failed');
+        await expect(pending).rejects.toThrow('invalid decision effects');
+      }
+    }
+  );
+  it.each([
+    'other_horse',
+    'other_hand',
+    'other_street',
+    'missing',
+    'malformed',
+    'brain_fallback',
+  ] as const)(
+    'refuses speculative effects with %s provenance before table execution',
+    async (fault) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('effect-owner');
+      input.gameState.stage = 'flop';
+      input.fence =
+        '33333333-3333-4333-8333-333333333333:1000100:1:44444444-4444-4444-8444-444444444444:7';
+      input.gameState.actionHistory = [
+        {
+          timestamp: 12,
+          userId: 'poster',
+          stage: 'preflop',
+          seat: 2,
+          action: 'post_bb',
+          amount: 2,
+        } as any,
+      ];
+      input.decisionKey = buildHorseDecisionKey(input);
+      const pending = client.decideFast(input);
+      void pending.catch(() => undefined);
+      const reply = fastResult(1, input.fence);
+      const originGraph = new HorsePolicyGraph(() => 0);
+      let originDecision: typeof reply.decision | null = null;
+      for (const node of HORSE_POLICY_ORDER)
+        originDecision = originGraph.run(node, originDecision, () => ({
+          decision: { action: 'bet' as const, amount: 10, thinkTime: 0 },
+        })).decision;
+      reply.decision = originGraph.finish(originDecision!);
+      reply.effects = [
+        {
+          type: 'raise_plan',
+          handKey: 'plan-hand-v1:33333333-3333-4333-8333-333333333333:1000100',
+          userId: 'horse-1',
+          street: 'flop',
+          plan: 'callOnce',
+        },
+      ];
+      if (fault === 'other_horse') reply.effects[0].userId = 'horse-2';
+      if (fault === 'other_hand') reply.effects[0].handKey = '13:poster';
+      if (fault === 'other_street') (reply.effects[0] as any).street = 'turn';
+      if (fault === 'missing') reply.effects = undefined as any;
+      if (fault === 'malformed') reply.effects.push(null as any);
+      if (fault === 'brain_fallback') reply.decision.policyFallback = 'brain_exception';
+      worker.emitMessage(reply);
+      expect(client.status().phase).toBe('failed');
+      await expect(pending).rejects.toThrow('invalid decision effects');
+      expect(client.status().completedJobs).toBe(0);
+    }
+  );
+  it.each([null, undefined, 3, 'FAST_RESULT', [], {}])(
+    'contains a malformed response envelope: %j',
+    async (message) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('bad-envelope'));
+      void pending.catch(() => undefined);
+      expect(() => worker.emitMessage(message as any)).not.toThrow();
+      await expect(pending).rejects.toThrow('invalid response envelope');
+      expect(client.status()).toMatchObject({ phase: 'failed', completedJobs: 0, queueDepth: 0 });
+    }
+  );
+  it('preserves zero compute time, full uint32 states and stale but valid governor readings', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage({
+      ...ready,
+      governor: {
+        ...ready.governor,
+        enabled: false,
+        stale: true,
+        scale: 1,
+        sampledAt: 0,
+        p50Ms: 0,
+        p99Ms: 0,
+        timerLateMs: 0,
+        throttledForS: 0,
+      },
+    });
+    const pending = client.decideFast(snapshot('valid-boundaries'));
+    worker.emitMessage({
+      ...fastResult(1, 'valid-boundaries'),
+      rngBefore: 0,
+      rngAfter: 0xffffffff,
+      computeMs: 0,
+      governorScale: 1,
+    });
+    expect(await pending).toMatchObject({ rngBefore: 0, rngAfter: 0xffffffff, computeMs: 0 });
+    expect(client.status()).toMatchObject({
+      phase: 'ready',
+      completedJobs: 1,
+      governor: { stale: true, enabled: false, scale: 1 },
+    });
+    const stopping = client.stop();
+    worker.emitMessage({ type: 'STOPPED' });
+    await stopping;
+  });
+  it.each(['fast', 'deep', 'discard'] as const)(
+    'rejects invalid %s compute metadata before recording completion',
+    async (lane) => {
+      for (const [key, bad] of [
+        ['computeMs', NaN],
+        ['computeMs', Infinity],
+        ['computeMs', -1],
+        ['governorScale', NaN],
+        ['governorScale', 0],
+        ['governorScale', 1.01],
+      ] as const) {
+        const worker = new FakeWorker();
+        const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+        worker.emitMessage(ready);
+        const input = snapshot('bad-metadata');
+        const pending =
+          lane === 'fast'
+            ? client.decideFast(input)
+            : lane === 'deep'
+              ? client.decideDeep({ ...input, rngBefore: 11, deepEquity: 6 })
+              : client.decideDiscard({
+                  ...input,
+                  cards: [],
+                  communityCards: [],
+                  gameVariant: 'pineapple',
+                });
+        void pending.catch(() => undefined);
+        const reply: any =
+          lane === 'discard'
+            ? {
+                type: 'DISCARD_RESULT',
+                requestId: 1,
+                generation: 7,
+                fence: input.fence,
+                cardIndex: 1,
+                computeMs: 4,
+                governorScale: 0.35,
+              }
+            : {
+                ...fastResult(1, input.fence),
+                type: lane === 'fast' ? 'FAST_RESULT' : 'DEEP_RESULT',
+              };
+        reply[key] = bad;
+        worker.emitMessage(reply);
+        expect(client.status().phase, `${lane}:${key}:${bad}`).toBe('failed');
+        await expect(pending).rejects.toThrow('invalid compute metadata');
+        expect(client.status().completedJobs).toBe(0);
+        expect(worker.terminateCalls).toBe(1);
+      }
+    }
+  );
+  it.each(['rngBefore', 'rngAfter'] as const)(
+    'rejects an invalid %s before a fast result reaches the table',
+    async (key) => {
+      for (const bad of [-1, 0.5, 4294967296, NaN, undefined]) {
+        const worker = new FakeWorker();
+        const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+        worker.emitMessage(ready);
+        const pending = client.decideFast(snapshot('bad-rng'));
+        void pending.catch(() => undefined);
+        const reply: any = fastResult(1, 'bad-rng');
+        reply[key] = bad;
+        worker.emitMessage(reply);
+        expect(client.status().phase).toBe('failed');
+        await expect(pending).rejects.toThrow('invalid sampling state');
+      }
+    }
+  );
+  it.each([-1, 3, 0.5, NaN, undefined])(
+    'rejects discard index %s at the client boundary',
+    async (cardIndex) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const pending = client.decideDiscard({
+        generation: 7,
+        fence: 'discard',
+        cards: [],
+        communityCards: [],
+        gameVariant: 'pineapple',
+      });
+      void pending.catch(() => undefined);
+      worker.emitMessage({
+        type: 'DISCARD_RESULT',
+        requestId: 1,
+        generation: 7,
+        fence: 'discard',
+        cardIndex,
+        computeMs: 0,
+        governorScale: 1,
+      } as any);
+      expect(client.status().phase).toBe('failed');
+      await expect(pending).rejects.toThrow('invalid discard index');
+    }
+  );
+  it('rejects the active status promise before removing corrupt status from the queue', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending: Promise<unknown> = (client as any).enqueue(
+      { type: 'STATUS', requestId: 1, generation: 0, fence: 'worker:status' },
+      'STATUS_RESULT'
+    );
+    let terminal = 'pending';
+    void pending.then(
+      () => {
+        terminal = 'resolved';
+      },
+      () => {
+        terminal = 'rejected';
+      }
+    );
+    worker.emitMessage({
+      ...ready,
+      type: 'STATUS_RESULT',
+      requestId: 1,
+      generation: 0,
+      fence: 'worker:status',
+      solverStores: { ...ready.solverStores, postflopV31Dataset: null },
+    });
+    await Promise.resolve();
+    expect(client.status().phase).toBe('failed');
+    expect(terminal).toBe('rejected');
+    expect(client.status().completedJobs).toBe(0);
+  });
+  it.each(['ready', 'status'] as const)('refuses corrupt governor fields in %s', async (kind) => {
+    for (const [key, bad] of [
+      ['scale', NaN],
+      ['scale', 0],
+      ['p99Ms', -1],
+      ['p50Ms', Infinity],
+      ['sampledAt', NaN],
+      ['throttledForS', -1],
+      ['timerLateMs', -1],
+      ['stale', undefined],
+      ['enabled', 'true'],
+    ] as const) {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      let pending: Promise<unknown>;
+      if (kind === 'ready') pending = client.ready();
+      else {
+        worker.emitMessage(ready);
+        pending = (client as any).enqueue(
+          { type: 'STATUS', requestId: 1, generation: 0, fence: 'worker:status' },
+          'STATUS_RESULT'
+        );
+      }
+      void pending.catch(() => undefined);
+      const message =
+        kind === 'ready'
+          ? { ...ready }
+          : {
+              ...ready,
+              type: 'STATUS_RESULT',
+              requestId: 1,
+              generation: 0,
+              fence: 'worker:status',
+            };
+      message.governor = { ...ready.governor, [key]: bad };
+      worker.emitMessage(message as any);
+      expect(client.status().phase, `${kind}:${key}`).toBe('failed');
+      await expect(pending).rejects.toThrow('invalid governor');
+    }
+  });
+
+  it('rejects internally consistent policy ownership for the wrong request variant', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const input = snapshot('wrong-owner');
+    input.gameState.gameVariant = 'plo4';
+    const pending = client.decideFast(input);
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, 'wrong-owner');
+    reply.decision.policyOwnership = {
+      version: 'horse-policy-ownership-v1',
+      variant: 'nlh',
+      owner: 'reference',
+      packVersion: null,
+      mode: 'reference',
+      outcome: 'reference',
+      reason: null,
+    };
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+  });
+  it.each(['fast', 'deep'] as const)(
+    'rejects malformed %s policy graphs inside the failure boundary',
+    async (lane) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('invalid-graph');
+      const pending =
+        lane === 'fast'
+          ? client.decideFast(input)
+          : client.decideDeep({ ...input, rngBefore: 11, deepEquity: 6 });
+      void pending.catch(() => undefined);
+      const reply = fastResult(1, 'invalid-graph');
+      reply.decision.policyGraph = { version: 'horse-policy-order-v1', transitions: null } as any;
+      expect(() =>
+        worker.emitMessage(lane === 'fast' ? reply : { ...reply, type: 'DEEP_RESULT' })
+      ).not.toThrow();
+      await expect(pending).rejects.toThrow('invalid policy receipt');
+      expect(client.status().phase).toBe('failed');
+      expect(worker.terminateCalls).toBe(1);
+    }
+  );
+  it.each([
+    'discontinuity',
+    'wrong_final',
+    'private_field',
+    'invalid_action',
+    'invalid_clock',
+  ] as const)('rejects a returned decision with %s', async (fault) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(snapshot('invalid-receipt'));
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, 'invalid-receipt');
+    const graph = new HorsePolicyGraph(() => 0);
+    for (const node of HORSE_POLICY_ORDER)
+      graph.run(node, node === 'reference' ? null : reply.decision, () => ({
+        decision: reply.decision,
+      }));
+    reply.decision = graph.finish(reply.decision);
+    if (fault === 'discontinuity')
+      reply.decision.policyGraph!.transitions[2].before!.action = 'raise';
+    if (fault === 'wrong_final') reply.decision.action = 'check';
+    if (fault === 'private_field')
+      Object.assign(reply.decision.policyGraph!.transitions[1], { cards: ['private-input'] });
+    if (fault === 'invalid_action') reply.decision.action = 'invalid' as any;
+    if (fault === 'invalid_clock') reply.decision.thinkTime = NaN;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+  });
+  it('keeps the brain failure provenance in the exact private execution witness', async () => {
+    const worker = new FakeWorker(),
+      client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(snapshot('brain-exception'));
+    const reply = fastResult(1, 'brain-exception');
+    reply.decision.policyFallback = 'brain_exception';
+    worker.emitMessage(reply);
+    const result = await pending;
+    expect(result.decision.executionWitness).toMatchObject({
+      policyFallback: 'brain_exception',
+      identity: { lane: 'fast' },
+    });
+  });
+  it.each([
+    null,
+    [],
+    { action: 'fold', thinkTime: 1, policyFallback: 'unknown' },
+    { action: 'fold', thinkTime: 1, policyFallback: true },
+  ])(
+    'rejects malformed decision provenance without throwing from the message handler: %j',
+    async (decision) => {
+      const worker = new FakeWorker(),
+        client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('bad-provenance'));
+      const rejected = expect(pending).rejects.toThrow('invalid fallback provenance');
+      expect(() =>
+        worker.emitMessage({ ...fastResult(1, 'bad-provenance'), decision } as any)
+      ).not.toThrow();
+      await rejected;
+      expect(client.status().phase).toBe('failed');
+    }
+  );
+
+  it.each(['fast', 'deep'] as const)(
+    'binds the %s response to its canonical request without copying private inputs',
+    async (lane) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('witness');
+      const pending =
+        lane === 'fast'
+          ? client.decideFast(input)
+          : client.decideDeep({ ...input, rngBefore: 11, deepEquity: 6 });
+      const reply = fastResult(1, 'witness');
+      worker.emitMessage(lane === 'fast' ? reply : { ...reply, type: 'DEEP_RESULT' });
+      const result = await pending;
+      expect(result.decision.executionWitness).toMatchObject({
+        identity: {
+          decisionKey: input.decisionKey,
+          requestId: 1,
+          generation: input.generation,
+          fence: input.fence,
+          decisionTimeMs: input.decisionTimeMs,
+          lane,
+          variant: 'nlh',
+          stage: 'preflop',
+        },
+        selected: { action: 'fold', amount: null },
+        executionStatus: 'pending',
+        executedAction: null,
+        executedAmount: null,
+        retirementReason: null,
+        computeMs: 4,
+        governorScale: 0.35,
+      });
+      const encoded = JSON.stringify(result.decision.executionWitness);
+      for (const forbidden of ['cards', 'spades', 'horse-1', 'rngBefore', 'rngAfter']) {
+        expect(encoded).not.toContain(forbidden);
+      }
+    }
+  );
   it('holds work behind READY and, pinned to a window of one, posts exactly one FIFO job at a time', async () => {
     const worker = new FakeWorker();
     const client = new LiveHorseDecisionWorkerClient({
@@ -239,7 +993,13 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
     // The synchronous worker may finish before it sees CANCEL. Its result is
     // consumed only to release the lane and can never resolve the stale job.
-    worker.emitMessage(fastResult(1, 'active'));
+    const discarded = fastResult(1, 'active');
+    worker.emitMessage(discarded);
+    expect(discarded.decision.executionWitness).toMatchObject({
+      executionStatus: 'not_executed',
+      retirementReason: 'caller_settled',
+      executedAction: null,
+    });
     expect(client.status()).toMatchObject({ phase: 'ready', queueDepth: 0 });
   });
 
@@ -410,12 +1170,18 @@ describe('LiveHorseDecisionWorkerClient', () => {
         lastExpiredPhase: 'active',
         lastError: null,
       });
-      expect(worker.sent.at(-1)).toEqual({ type: 'CANCEL', requestId: 2 });
+      expect(worker.sent.at(-1)).toEqual({ type: 'CANCEL', requestId: 2, reason: 'expired' });
       expect(worker.terminateCalls).toBe(0);
       expect(onFatal).not.toHaveBeenCalled();
 
       const successor = client.decideFast(snapshot('successor'));
-      worker.emitMessage(fastResult(2, 'near-deadline'));
+      const expired = fastResult(2, 'near-deadline');
+      worker.emitMessage(expired);
+      expect(expired.decision.executionWitness).toMatchObject({
+        executionStatus: 'not_executed',
+        retirementReason: 'caller_settled',
+        executedAction: null,
+      });
       expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
       worker.emitMessage(fastResult(3, 'successor'));
       await expect(successor).resolves.toMatchObject({ fence: 'successor' });
@@ -554,9 +1320,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
     client.runWithDispatchBarrier(() => {
       successor = client.decideFast(snapshot('successor'));
-      committed = client.commitDecisionEffects({ generation: 7, fence: 'accepted-action' }, [
-        { type: 'plan', handKey: 'h', userId: 'horse-1', barrelIntent: true },
-      ]);
+      committed = client.commitDecisionEffects(transportOnlyCommitFixture());
     });
 
     worker.emitMessage(fastResult(1, 'active'));
@@ -994,7 +1758,7 @@ describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
       // a worker that has run it for only 45 ms is not wedged.
       await vi.advanceTimersByTimeAsync(45);
       await behindExpired;
-      expect(worker.sent.at(-1)).toEqual({ type: 'CANCEL', requestId: 2 });
+      expect(worker.sent.at(-1)).toEqual({ type: 'CANCEL', requestId: 2, reason: 'expired' });
       expect(onFatal).not.toHaveBeenCalled();
       expect(client.status()).toMatchObject({
         phase: 'ready',
@@ -1034,9 +1798,7 @@ describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
 
     client.runWithDispatchBarrier(() => {
       successor = client.decideFast(snapshot('successor'));
-      committed = client.commitDecisionEffects({ generation: 7, fence: 'accepted-action' }, [
-        { type: 'plan', handKey: 'h', userId: 'horse-1', barrelIntent: true },
-      ]);
+      committed = client.commitDecisionEffects(transportOnlyCommitFixture());
     });
     expect(requestIds(worker)).toEqual([1, 2]);
 

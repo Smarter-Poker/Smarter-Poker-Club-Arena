@@ -1,5 +1,27 @@
+import {
+  horsePlanBatchBindingIsValid,
+  horsePlanBatchBindingMatchesRequest,
+  horsePlanContextFromDecision,
+  horsePlanContextMatchesRequest,
+} from '../HorsePlanHandIdentity.js';
+import { horsePhase6AttributionMatchesSnapshot } from '../HorsePhase6Attribution.js';
 import { Worker } from 'node:worker_threads';
+import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
+import { noteFire } from '../BrainTelemetry.js';
+import { horseDecisionJournalConfigured } from '../../services/HorseDecisionJournal.js';
+import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
+import { isHorseLifecycleRequest } from '../../services/horseDecisionJournal/lifecycle.js';
+import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
+import {
+  horseDecisionEffectsMatchRequest,
+  horseReferenceWagerWasRetained,
+} from '../HorseDecisionEffects.js';
 
+import {
+  createHorseExecutionWitness,
+  retireHorseExecutionWitness,
+  onHorseExecutionFinalized,
+} from '../HorseExecutionWitness.js';
 import type {
   CommitDecisionEffectsRequest,
   CompletedHandObservation,
@@ -20,7 +42,12 @@ import type {
   HorseDecisionWorkerStatusResult,
 } from './protocol.js';
 import { horseDecisionSolverStoresAreValid } from './protocol.js';
-import type { HorseMindDecisionEffect } from '../HorseMind.js';
+import {
+  horseDecisionReceiptIsValid,
+  horseGovernorSnapshotIsValid,
+  horseComputeMetadataIsValid,
+  horseSamplingStateIsValid,
+} from './responseValidation.js';
 
 export interface WorkerLike {
   postMessage(message: HorseDecisionWorkerRequest): void;
@@ -218,6 +245,10 @@ function errorMessage(error: unknown): string {
  * or its governor's sampler.
  */
 export class LiveHorseDecisionWorkerClient {
+  private readonly journalConfigured = horseDecisionJournalConfigured();
+  private retirementCaptureCount = 0;
+  private retirementCaptureBytes = 0;
+  private readonly committedDecisions = new HorseCommittedDecisionTracker();
   private static readonly DEFAULT_READY_TIMEOUT_MS = 90_000;
   private static readonly DEFAULT_JOB_TIMEOUT_MS = 8_000;
   /**
@@ -454,6 +485,14 @@ export class LiveHorseDecisionWorkerClient {
     observation: CompletedHandObservation,
     signal?: AbortSignal
   ): Promise<HorseDecisionWorkerAck> {
+    // The accepted producer calls here only after its authoritative commit.
+    // This local reconciliation does not await I/O or delay worker dispatch.
+    try {
+      this.committedDecisions.observe(observation);
+    } catch {
+      // Incomplete audit evidence cannot suppress the committed-hand learner.
+      noteFire('phase15_hand_binding_internal_error');
+    }
     const request = {
       ...observation,
       type: 'OBSERVE_COMPLETED_HAND' as const,
@@ -462,16 +501,25 @@ export class LiveHorseDecisionWorkerClient {
     return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', signal);
   }
 
-  commitDecisionEffects(
-    authority: { generation: number; fence: string },
-    effects: readonly HorseMindDecisionEffect[]
-  ): Promise<HorseDecisionWorkerAck> {
+  commitDecisionEffects(result: FastHorseDecisionResult): Promise<HorseDecisionWorkerAck> {
+    if (
+      !horsePlanBatchBindingIsValid(result.planBinding) ||
+      result.planBinding.fastRequestId !== result.requestId ||
+      result.planBinding.generation !== result.generation ||
+      result.planBinding.fence !== result.fence
+    ) {
+      return Promise.reject(new Error('Horse plan commit lacks its original FAST binding'));
+    }
     const request: CommitDecisionEffectsRequest = {
-      ...authority,
+      generation: result.generation,
+      fence: result.fence,
       type: 'COMMIT_DECISION_EFFECTS',
       requestId: this.nextRequestId++,
-      effects: structuredClone([...effects]),
+      planBinding: structuredClone(result.planBinding),
+      effects: structuredClone(result.effects),
     };
+    // Worker issue ownership is checked separately. This transport method does
+    // not certify table acceptance; Turns retains its exact accepted-wager gate.
     return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', undefined, true);
   }
 
@@ -485,6 +533,27 @@ export class LiveHorseDecisionWorkerClient {
       requestId: this.nextRequestId++,
     };
     return this.enqueue<PineappleDiscardResult>(request, 'DISCARD_RESULT', signal);
+  }
+
+  /** Private audit evidence from the controller's actual accepted discard. */
+  observeDiscardExecution(execution: HorseDiscardExecutionObservation): void {
+    if (!this.journalConfigured) return;
+    try {
+      void this.enqueue<HorseDecisionWorkerAck>(
+        {
+          type: 'OBSERVE_DISCARD_EXECUTION',
+          requestId: this.nextRequestId++,
+          generation: execution.request.generation,
+          fence: execution.request.fence,
+          execution: structuredClone(execution),
+        },
+        'ACK',
+        undefined,
+        true
+      ).catch(() => noteFire('phase15_discard_capture_unavailable'));
+    } catch {
+      noteFire('phase15_discard_capture_unavailable');
+    }
   }
 
   /**
@@ -611,7 +680,47 @@ export class LiveHorseDecisionWorkerClient {
     const index = this.queue.indexOf(job);
     if (index >= 0) this.queue.splice(index, 1);
     this.clearJobDeadline(job);
+    this.observeUndispatchedRetirement(job, 'cancelled');
     this.maybeDispatch();
+  }
+
+  /** Only an actual admitted client job can enter this route. It reports the
+   * observed queue retirement and never asks the worker to decide expired work.
+   * Admission and terminal evidence remain best effort within explicit bounds. */
+  private observeUndispatchedRetirement(job: QueuedJob, outcome: 'cancelled' | 'expired'): void {
+    if (!this.journalConfigured || !isHorseLifecycleRequest(job.request)) return;
+    try {
+      const encoded = horseJournalJson(job.request);
+      const bytes = Buffer.byteLength(encoded);
+      if (
+        this.retirementCaptureCount >= 64 ||
+        this.retirementCaptureBytes + bytes > 4 * 1024 * 1024
+      ) {
+        noteFire('phase15_journal_queue_capacity');
+        return;
+      }
+      const retiredRequest = JSON.parse(encoded);
+      this.retirementCaptureCount++;
+      this.retirementCaptureBytes += bytes;
+      void this.enqueue<HorseDecisionWorkerAck>(
+        {
+          type: 'OBSERVE_REQUEST_RETIREMENT',
+          requestId: this.nextRequestId++,
+          generation: retiredRequest.generation,
+          fence: retiredRequest.fence,
+          retiredRequest,
+          outcome,
+        },
+        'ACK'
+      )
+        .catch(() => noteFire('phase15_journal_capture_unavailable'))
+        .finally(() => {
+          this.retirementCaptureCount--;
+          this.retirementCaptureBytes -= bytes;
+        });
+    } catch {
+      noteFire('phase15_journal_capture_unavailable');
+    }
   }
 
   private maybeDispatch(): void {
@@ -661,6 +770,15 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private onMessage(message: HorseDecisionWorkerResponse): void {
+    if (
+      !message ||
+      typeof message !== 'object' ||
+      Array.isArray(message) ||
+      typeof message.type !== 'string'
+    ) {
+      this.fail(new Error('horse decision worker returned an invalid response envelope'));
+      return;
+    }
     if (message.type === 'READY') {
       if (this.phase !== 'starting' && this.phase !== 'stopping') {
         this.fail(new Error(`unexpected READY while worker is ${this.phase}`));
@@ -668,6 +786,10 @@ export class LiveHorseDecisionWorkerClient {
       }
       if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
         this.fail(new Error('live horse decision worker returned invalid solver-store identity'));
+        return;
+      }
+      if (!horseGovernorSnapshotIsValid(message.governor)) {
+        this.fail(new Error('live horse decision worker returned invalid governor'));
         return;
       }
       this.readyAt = Date.now();
@@ -771,11 +893,17 @@ export class LiveHorseDecisionWorkerClient {
     }
     if (message.type === 'ACK') {
       const expectedOperation =
-        active.request.type === 'OBSERVE_COMPLETED_HAND'
-          ? 'OBSERVE_COMPLETED_HAND'
-          : active.request.type === 'COMMIT_DECISION_EFFECTS'
-            ? 'COMMIT_DECISION_EFFECTS'
-            : null;
+        active.request.type === 'OBSERVE_REQUEST_RETIREMENT'
+          ? 'OBSERVE_REQUEST_RETIREMENT'
+          : active.request.type === 'OBSERVE_COMPLETED_HAND'
+            ? 'OBSERVE_COMPLETED_HAND'
+            : active.request.type === 'OBSERVE_EXECUTION'
+              ? 'OBSERVE_EXECUTION'
+              : active.request.type === 'OBSERVE_DISCARD_EXECUTION'
+                ? 'OBSERVE_DISCARD_EXECUTION'
+                : active.request.type === 'COMMIT_DECISION_EFFECTS'
+                  ? 'COMMIT_DECISION_EFFECTS'
+                  : null;
       if (message.operation !== expectedOperation) {
         this.fail(
           new Error(
@@ -784,6 +912,121 @@ export class LiveHorseDecisionWorkerClient {
         );
         return;
       }
+    }
+
+    // Validate while the active promise is still owned by the FIFO. Removing
+    // STATUS before validation stranded that promise when fail() drained only
+    // its successors. No malformed result may count as completed work.
+    if (message.type === 'STATUS_RESULT') {
+      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
+        this.fail(new Error('live horse decision worker status lost solver-store identity'));
+        return;
+      }
+      if (!horseGovernorSnapshotIsValid(message.governor)) {
+        this.fail(new Error('live horse decision worker status returned invalid governor'));
+        return;
+      }
+    }
+    if (
+      message.type === 'FAST_RESULT' ||
+      message.type === 'DEEP_RESULT' ||
+      message.type === 'DISCARD_RESULT'
+    ) {
+      if (!horseComputeMetadataIsValid(message)) {
+        this.fail(new Error('horse decision worker returned invalid compute metadata'));
+        return;
+      }
+    }
+    if (
+      message.type === 'FAST_RESULT' &&
+      (!horseSamplingStateIsValid(message.rngBefore) ||
+        !horseSamplingStateIsValid(message.rngAfter))
+    ) {
+      this.fail(new Error('horse decision worker returned invalid sampling state'));
+      return;
+    }
+    if (
+      message.type === 'DISCARD_RESULT' &&
+      (!Number.isInteger(message.cardIndex) || message.cardIndex < 0 || message.cardIndex > 2)
+    ) {
+      this.fail(new Error('horse decision worker returned invalid discard index'));
+      return;
+    }
+
+    if (
+      message.type === 'FAST_RESULT' &&
+      active.request.type === 'DECIDE_FAST' &&
+      (!horsePlanBatchBindingMatchesRequest(message.planBinding, active.request) ||
+        !horseDecisionEffectsMatchRequest(message.effects, {
+          userId: active.request.player.user_id,
+          history: active.request.gameState.actionHistory,
+          street: active.request.gameState.stage,
+          brainFallback: message.decision?.policyFallback === 'brain_exception',
+          planContext: horsePlanContextFromDecision(active.request),
+        }) ||
+        (message.effects.length > 0 &&
+          (!message.decision || !horseReferenceWagerWasRetained(message.decision))))
+    ) {
+      this.fail(new Error('horse decision worker returned invalid decision effects'));
+      return;
+    }
+
+    if (
+      message.type === 'DEEP_RESULT' &&
+      active.request.type === 'DECIDE_DEEP' &&
+      !horsePlanContextMatchesRequest(message.planContext, active.request)
+    ) {
+      this.fail(new Error('horse decision worker returned invalid plan context'));
+      return;
+    }
+
+    if (
+      (message.type === 'FAST_RESULT' && active.request.type === 'DECIDE_FAST') ||
+      (message.type === 'DEEP_RESULT' && active.request.type === 'DECIDE_DEEP')
+    ) {
+      if (
+        !message.decision ||
+        typeof message.decision !== 'object' ||
+        Array.isArray(message.decision) ||
+        (message.decision.policyFallback !== undefined &&
+          message.decision.policyFallback !== 'brain_exception')
+      ) {
+        this.fail(new Error('horse decision worker returned invalid fallback provenance'));
+        return;
+      }
+      if (
+        !horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant) ||
+        !horsePhase6AttributionMatchesSnapshot(message.decision, active.request)
+      ) {
+        this.fail(new Error('horse decision worker returned invalid policy receipt'));
+        return;
+      }
+      const witness = createHorseExecutionWitness(active.request, message.decision, {
+        requestId: message.requestId,
+        lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',
+        computeMs: message.computeMs,
+        governorScale: message.governorScale,
+      });
+      message.decision.executionWitness = witness;
+      this.committedDecisions.track(witness);
+      if (this.journalConfigured)
+        onHorseExecutionFinalized(witness, (record) => {
+          void this.enqueue<HorseDecisionWorkerAck>(
+            {
+              type: 'OBSERVE_EXECUTION',
+              requestId: this.nextRequestId++,
+              generation: record.identity.generation,
+              fence: record.identity.fence,
+              witness: structuredClone(record),
+            },
+            'ACK',
+            undefined,
+            true
+          ).catch(() => noteFire('phase15_journal_capture_unavailable'));
+        });
+      // A result received after abort/expiry is never delivered to the table.
+      // Retire it here; an executor callback cannot account for this response.
+      if (active.settled) retireHorseExecutionWitness(witness, 'caller_settled');
     }
 
     this.retireHead(active);
@@ -797,10 +1040,6 @@ export class LiveHorseDecisionWorkerClient {
       this.lastComputeMs = message.computeMs;
       if (this.governor) this.governor = { ...this.governor, scale: message.governorScale };
     } else if (message.type === 'STATUS_RESULT') {
-      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
-        this.fail(new Error('live horse decision worker status lost solver-store identity'));
-        return;
-      }
       this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
@@ -890,11 +1129,12 @@ export class LiveHorseDecisionWorkerClient {
       // full-fleet restart when a 7.8-second queue wait left a healthy request
       // only milliseconds of the enqueue deadline to compute. CANCEL lets the
       // worker skip it if it is still waiting behind older posted work.
-      this.safePost({ type: 'CANCEL', requestId: job.request.requestId });
+      this.safePost({ type: 'CANCEL', requestId: job.request.requestId, reason: 'expired' });
       return;
     }
     const index = this.queue.indexOf(job);
     if (index >= 0) this.queue.splice(index, 1);
+    this.observeUndispatchedRetirement(job, 'expired');
     this.maybeDispatch();
   }
 

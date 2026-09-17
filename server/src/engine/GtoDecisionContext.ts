@@ -9,6 +9,7 @@
  */
 
 import type { ActionRecord, HandStage, SeatPlayer } from '../types.js';
+import { validateDealtSeatCensus } from './multiway/DealtSeatCensus.js';
 
 export type GtoV31NodeRole =
   | 'open'
@@ -175,8 +176,17 @@ export function gtoV31Position(args: {
   seat: number;
   dealerSeat?: number;
   players: SeatPlayer[];
+  dealtSeatIds?: number[];
 }): { position: GtoV31Position; tableSize: number } | null {
-  const seats = gtoV31DealtInSeats(args.players, args.seat);
+  let seats: number[];
+  try {
+    seats =
+      args.dealtSeatIds === undefined
+        ? gtoV31DealtInSeats(args.players, args.seat)
+        : validateDealtSeatCensus(args.players, args.seat, args.dealtSeatIds);
+  } catch {
+    return null;
+  }
   if (
     args.dealerSeat === undefined ||
     !Number.isInteger(args.dealerSeat) ||

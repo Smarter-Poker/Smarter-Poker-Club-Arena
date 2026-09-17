@@ -827,8 +827,9 @@ fi
 # ── THE SERVER GATE (2026-08-25) ──
 #
 # server/ is its OWN vitest project: server/vitest.config.ts includes
-# 'src/**/*.test.ts', while the root config includes only 'tests/**'. So the
-# gate above — which runs the ROOT vitest — can never execute a single one of
+# 'src/**/*.test.ts' and 'src/testing/horseRegression/**/*.test.mjs', while
+# the root config includes only 'tests/**'. So the gate above — which runs
+# the ROOT vitest — can never execute a single one of
 # the 137 server test files, whatever it is handed. A changed
 # server/src/x.test.ts matched no branch at all, and a changed server/src/x.ts
 # was passed to `vitest related` in a project that does not know those tests
@@ -847,9 +848,9 @@ if [ -f server/package.json ]; then
   for f in $FILES; do
     [ -f "$f" ] || continue
     case "$f" in
-      server/src/*.test.ts|server/src/**/*.test.ts)
+      server/src/*.test.ts|server/src/**/*.test.ts|server/src/*.test.mjs|server/src/**/*.test.mjs)
         SRV_TESTS="$SRV_TESTS ${f#server/}" ;;
-      server/src/*.ts|server/src/**/*.ts)
+      server/src/*.ts|server/src/**/*.ts|server/src/*.mjs|server/src/**/*.mjs)
         case "$f" in
           *.d.ts) ;;
           *) SRV_SRC="$SRV_SRC ${f#server/}" ;;

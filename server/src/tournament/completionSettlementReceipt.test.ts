@@ -198,3 +198,120 @@ describe('verifyTournamentCompletionReceipt', () => {
     ).not.toBeNull();
   });
 });
+
+function deferredReceipt(): any {
+  const value = receipt();
+  value.receipt_version = 2;
+  value.rake.destination = `chip_retirement:${SEAT_A_ID}`;
+  value.rake.attributed = false;
+  value.rake.attributed_users = 0;
+  value.rake.attributed_at = null;
+  value.rake.accounting = {
+    accounting_version: 2,
+    tournament_id: TOURNAMENT_ID,
+    status: 'banked_accrual_deferred',
+    reason: 'tournament_fee_sources_require_reconciliation',
+    bank_amount: 3,
+    banked_at: value.rake.settled_at,
+    bank_club_id: SEAT_A_ID,
+    bank_union_id: null,
+    bank_receipt_kind: 'chip_ledger',
+    bank_receipt_id: TABLE_ID,
+    source_fingerprint: 'a'.repeat(32),
+    payable: false,
+    recognized_source_count: 0,
+  };
+  return value;
+}
+describe('version 2 separates paid prizes from deferred rake accounting', () => {
+  it('accepts completed custody with an exact deferred bank receipt and reports the deferral', () => {
+    const result = verifyTournamentCompletionReceipt(
+      deferredReceipt(),
+      TOURNAMENT_ID,
+      'places',
+      WINNER_ID
+    );
+    expect(result?.rake).toMatchObject({
+      attributedAt: null,
+      attributedUsers: 0,
+      accountingState: 'banked_accrual_deferred',
+      accountingReason: 'tournament_fee_sources_require_reconciliation',
+    });
+  });
+  it.each([
+    ['bank amount differs', (r: any) => (r.rake.accounting.bank_amount = 2.99)],
+    [
+      'bank timestamp differs',
+      (r: any) => (r.rake.accounting.banked_at = '2026-09-08T05:00:01.000Z'),
+    ],
+    ['bank identity missing', (r: any) => (r.rake.accounting.bank_receipt_id = null)],
+    ['wrong bank destination', (r: any) => (r.rake.accounting.bank_club_id = TABLE_ID)],
+    [
+      'treasury destination impersonates private retirement',
+      (r: any) => (r.rake.destination = `club_treasury:${SEAT_A_ID}`),
+    ],
+    ['wrong event', (r: any) => (r.rake.accounting.tournament_id = WINNER_ID)],
+    ['unknown accounting version', (r: any) => (r.rake.accounting.accounting_version = 1)],
+    ['pretends payable', (r: any) => (r.rake.accounting.payable = true)],
+    ['partial source recognition', (r: any) => (r.rake.accounting.recognized_source_count = 1)],
+    ['false attribution stamp', (r: any) => (r.rake.attributed_at = r.rake.settled_at)],
+    ['false attributed users', (r: any) => (r.rake.attributed_users = 1)],
+    ['unknown deferral reason', (r: any) => (r.rake.accounting.reason = 'ignore me')],
+    ['missing source fingerprint', (r: any) => (r.rake.accounting.source_fingerprint = null)],
+    ['legacy version with deferred payload', (r: any) => (r.receipt_version = 1)],
+    ['unpaid prize disguised by accounting', (r: any) => (r.cash_payout_total = 99)],
+    ['money remains in custody', (r: any) => (r.escrow.fee_balance = 3)],
+  ])('refuses %s', (_name, mutate) => {
+    const value = deferredReceipt();
+    mutate(value);
+    expect(verifyTournamentCompletionReceipt(value, TOURNAMENT_ID, 'places', WINNER_ID)).toBeNull();
+  });
+  it('requires exact bank proof even for newly recognized version2 receipts', () => {
+    const value = deferredReceipt();
+    value.rake.attributed = true;
+    value.rake.attributed_at = value.rake.settled_at;
+    value.rake.attributed_users = 2;
+    value.rake.accounting.status = 'recognized';
+    value.rake.accounting.payable = true;
+    value.rake.accounting.recognized_source_count = 2;
+    value.rake.accounting.reason = null;
+    expect(
+      verifyTournamentCompletionReceipt(value, TOURNAMENT_ID, 'places', WINNER_ID)?.rake
+        .accountingState
+    ).toBe('recognized');
+    value.rake.accounting.bank_receipt_id = null;
+    expect(verifyTournamentCompletionReceipt(value, TOURNAMENT_ID, 'places', WINNER_ID)).toBeNull();
+  });
+  it('preserves exact union bank receipts', () => {
+    const value = deferredReceipt();
+    value.rake.destination = `union:${SEAT_B_ID}`;
+    value.rake.accounting.bank_union_id = SEAT_B_ID;
+    value.rake.accounting.bank_receipt_kind = 'union_wallet_transaction';
+    expect(
+      verifyTournamentCompletionReceipt(value, TOURNAMENT_ID, 'places', WINNER_ID)
+    ).not.toBeNull();
+    value.rake.destination = `chip_retirement:${SEAT_A_ID}`;
+    expect(verifyTournamentCompletionReceipt(value, TOURNAMENT_ID, 'places', WINNER_ID)).toBeNull();
+  });
+  it('preserves zero-fee completion without inventing a bank movement', () => {
+    const value = deferredReceipt();
+    Object.assign(value.rake, {
+      amount: 0,
+      destination: 'none',
+      attributed: true,
+      attributed_at: value.rake.settled_at,
+    });
+    Object.assign(value.rake.accounting, {
+      status: 'cancelled',
+      reason: null,
+      bank_amount: 0,
+      bank_receipt_kind: 'none',
+      bank_receipt_id: null,
+    });
+    expect(
+      verifyTournamentCompletionReceipt(value, TOURNAMENT_ID, 'places', WINNER_ID)
+    ).not.toBeNull();
+    value.rake.accounting.bank_receipt_id = TABLE_ID;
+    expect(verifyTournamentCompletionReceipt(value, TOURNAMENT_ID, 'places', WINNER_ID)).toBeNull();
+  });
+});

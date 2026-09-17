@@ -292,3 +292,17 @@ test('test-only engine source does not request activation and unknown inputs req
     'inspect-unclassified-inputs-and-contracts'
   );
 });
+
+test('invoking the actual checker through a symlink cannot silently skip validation', (t) => {
+  const root = temporary(t),
+    bundle = join(root, 'bundle'),
+    alias = join(root, 'alias');
+  cpSync(dir, bundle, { recursive: true });
+  symlinkSync(bundle, alias, 'dir');
+  writeFileSync(join(bundle, 'OPERATING-LAW.md'), 'stale policy');
+  const result = spawnSync(process.execPath, [join(alias, 'agent-policy.mjs'), 'check'], {
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Policy drift/);
+});

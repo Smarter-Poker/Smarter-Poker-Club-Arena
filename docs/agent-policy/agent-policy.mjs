@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, renameSync, lstatSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  renameSync,
+  lstatSync,
+  realpathSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -479,7 +486,7 @@ export function cli(args) {
     hookReport(process.cwd(), ...values);
   } else throw new Error('Commands: check, read, plan, report, timing, ci-report, hook-report');
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     cli(process.argv.slice(2));
   } catch (error) {

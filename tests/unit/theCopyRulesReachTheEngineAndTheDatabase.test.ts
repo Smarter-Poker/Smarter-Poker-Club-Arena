@@ -217,12 +217,15 @@ describe('the two gaps in how work reaches production', () => {
     const jobs = parseWorkflow(CI).jobs;
     expect(jobs.server.needs).toContain('server_shards');
     expect(jobs.server.if).toBe('always()');
-    expect(jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(jobs.server.needs).toContain('accounting_postgres');
     expect(jobs.accounting_postgres.if).toBe(jobs.server_shards.if);
-    expect(jobs.server_shards.steps).toContainEqual(
+    expect(jobs.server_shards.needs).toBe('changes');
+    expect(jobs.server.steps).toContainEqual(
       expect.objectContaining({
-        if: "needs.accounting_postgres.result != 'success'",
-        run: expect.stringContaining('exit 1'),
+        env: expect.objectContaining({
+          ACCOUNTING_RESULT: '${{ needs.accounting_postgres.result }}',
+        }),
+        run: expect.stringContaining('"accounting:$ACCOUNTING_RESULT"'),
       })
     );
     expect(jobs.accounting_postgres.steps).toContainEqual(

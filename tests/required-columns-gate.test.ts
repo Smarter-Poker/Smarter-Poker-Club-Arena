@@ -133,7 +133,7 @@ describe('the two writes that were broken now supply what they must', () => {
       /!account\.clubId\s*\|\|\s*account\.userId\s*!==\s*actor\s*\|\|\s*account\.agentId\s*!==\s*agentId/
     );
     expect(request).toMatch(
-      /creditRequestService\.submitRequest\(actor,\s*\{\s*clubId:\s*account\.clubId,\s*approverId:\s*owner\.owner_id/
+      /creditRequestService\s*\.submitRequest\(\s*actor,\s*\{\s*clubId:\s*account\.clubId,\s*approverId:\s*owner\.owner_id/
     );
     expect(request).not.toMatch(/\.from\('credit_requests'\)/);
     const insert = sliceMethod(

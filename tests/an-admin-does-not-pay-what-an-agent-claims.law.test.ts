@@ -116,7 +116,7 @@ describe('it shows verified club weekly records rather than individual claims', 
   it('bounds the visible issued records without presenting them as a current bank balance', () => {
     expect(READER).toMatch(/CLUB_WEEKLY_STATEMENT_LIMIT\s*=\s*50/);
     expect(SUMMARY).toMatch(
-      /readClubWeeklyStatements\(\{\s*clubId,\s*userId:\s*user\.id,\s*limit:\s*CLUB_WEEKLY_STATEMENT_LIMIT,\s*isCurrent:\s*current\s*\}\)/
+      /readClubWeeklyStatements\(\{\s*clubId,\s*userId:\s*user\.id,\s*limit:\s*CLUB_WEEKLY_STATEMENT_LIMIT,\s*isCurrent:\s*current,?\s*\}\)/
     );
     expect(SUMMARY).toContain(
       'Latest Up To {CLUB_WEEKLY_STATEMENT_LIMIT} Issued Weekly Summaries.'
@@ -146,7 +146,7 @@ describe('it shows verified club weekly records rather than individual claims', 
       /if\s*\(current\(\)\)\s*setObservation\(\{\s*scope,\s*read,\s*phase:\s*'unavailable',\s*rows:\s*\[\]\s*\}\)/
     );
     expect(SUMMARY).toMatch(
-      /unavailable\s*&&\s*<p\s+role="alert">Weekly Summaries Are Unavailable/
+      /unavailable\s*&&\s*\(?\s*<p\s+role="alert">\s*Weekly Summaries Are Unavailable/
     );
     expect(SUMMARY).toMatch(/!loading\s*&&\s*!unavailable\s*&&\s*current\?\.phase\s*===\s*'ready'/);
     expect(SUMMARY).toContain('No Issued Weekly Summaries Were Found For This Club.');

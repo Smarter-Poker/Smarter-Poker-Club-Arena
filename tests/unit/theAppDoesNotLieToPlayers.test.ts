@@ -71,7 +71,7 @@ describe('automatic accounting does not offer a browser money button', () => {
     const page = readCode('pages/SettlementPage.tsx');
     const workspace = readCode('components/accounting/WeeklyAccountingWorkspace.tsx');
     expect(page).toContain('<WeeklyAccountingWorkspace');
-    expect(page).toContain('scopeKind={kind} scopeRef={reference}');
+    expect(page.replace(/\s+/g, ' ')).toContain('scopeKind={kind} scopeRef={reference}');
     expect(workspace).toContain(
       'Weekly Accounting Runs Automatically. Select A Week To Read Its Recorded Status.'
     );

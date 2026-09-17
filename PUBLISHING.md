@@ -79,6 +79,8 @@ Push ready changes, run checks, complete protected merge, build and stage as soo
 | Client and engine together                                                              | Validate compatibility; stage both promptly and identify the exact dependency before exposing behavior that requires the new engine | Only the dependent behavior and engine activation; unrelated client work remains independent |
 | Database or financial change                                                            | Applicable database/financial qualification and installation safeguards                                                             | Existing DDL/freeze restrictions where applicable, not a blanket client publication hold     |
 
+Required engine unit tests and isolated PostgreSQL accounting qualification run in parallel. The existing required Server Engine check joins both results and refuses failure, cancellation, missing results or unexplained skips. Starting independent checks together removes an unnecessary sequencing delay without relaxing the merge requirements.
+
 CI classification and deployment selection are separate. A client financial change may correctly require database/server tests without requiring an engine restart. Do not rename files or weaken checks to evade that qualification. A docs-only or client-only merge can invoke the lightweight engine detector; a verified unchanged engine tree must produce no engine deployment request. Provider runner queues and the static publisher's own serialization are not hourly maintenance gates.
 
 ## Before submission

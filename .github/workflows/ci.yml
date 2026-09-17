@@ -1487,6 +1487,8 @@ jobs:
         run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 
   server_shards:
+    # Independent engine tests run alongside isolated PostgreSQL qualification.
+    # The required server aggregate below still refuses unless both pass.
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -1494,7 +1496,7 @@ jobs:
     # when it takes twenty seconds.
     # 78% of pull requests never touch server/. This suite is two billed
     # minutes and cannot be broken by a file outside it.
-    needs: [changes, accounting_postgres]
+    needs: changes
     # FAILS CLOSED, and this is the whole point.
     #
     # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
@@ -1529,13 +1531,6 @@ jobs:
         working-directory: server
 
     steps:
-      - name: Require successful real PostgreSQL accounting tests
-        if: needs.accounting_postgres.result != 'success'
-        working-directory: ${{ github.workspace }}
-        run: |
-          echo "::error::The required isolated PostgreSQL accounting tests did not pass."
-          exit 1
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -1590,30 +1585,35 @@ jobs:
   # Preserve the required check name. A cancelled/failed matrix, or an
   # unexplained skip, must never satisfy branch protection through one shard.
   server:
-    needs: [changes, server_shards]
+    needs: [changes, server_shards, accounting_postgres]
     if: always()
     name: Server Engine (typecheck + tests)
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every shard passed
+      - name: Every shard and real PostgreSQL accounting passed
         env:
           MATRIX_RESULT: ${{ needs.server_shards.result }}
+          ACCOUNTING_RESULT: ${{ needs.accounting_postgres.result }}
           DIFF_RESULT: ${{ needs.changes.result }}
           SERVER_CHANGED: ${{ needs.changes.outputs.server }}
           CI_EVENT_NAME: ${{ github.event_name }}
         run: |
-          case "$MATRIX_RESULT" in
-            success) echo 'All four server shards passed.' ;;
-            skipped)
-              if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
-                echo 'Server tests skipped: the checked diff does not change the server.'
-              else
-                echo '::error::Required server tests were unexpectedly skipped.'
-                exit 1
-              fi ;;
-            *) echo "::error::The server matrix did not pass ($MATRIX_RESULT)."; exit 1 ;;
-          esac
+          for dependency in "server:$MATRIX_RESULT" "accounting:$ACCOUNTING_RESULT"; do
+            suite="${dependency%%:*}"
+            result="${dependency#*:}"
+            case "$result" in
+              success) echo "Required $suite checks passed." ;;
+              skipped)
+                if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
+                  echo "$suite checks skipped: the checked diff does not change the server."
+                else
+                  echo "::error::Required $suite checks were unexpectedly skipped."
+                  exit 1
+                fi ;;
+              *) echo "::error::Required $suite checks did not pass ($result)."; exit 1 ;;
+            esac
+          done
 
   # ═══════════════════════════════════════════════════════════════════════════
   #  WHAT DID THIS RUN ACTUALLY VERIFY?
@@ -1873,6 +1873,13 @@ jobs:
       - name: Route Performance Budget
         if: success()
         run: npm run test:performance
+
+      # The public arena (every prerendered route) is audited with axe-core
+      # at a phone and a desktop viewport; a serious or critical violation
+      # fails the build (discoverability phase 6, 2026-09-17).
+      - name: Public Arena Accessibility
+        if: success()
+        run: npm run test:a11y
 
   # ───────────────────────────────────────────────────────────────────────────
   # LIVE PRODUCTION E2E (split out of `Production Build` 2026-08-22).

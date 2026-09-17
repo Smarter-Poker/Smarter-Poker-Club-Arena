@@ -122,8 +122,9 @@ describe('blind structure', () => {
     }
   );
 
-  it('applies the level length to playing levels and leaves breaks alone', () => {
+  it('applies the level length to a new playing-only draft', () => {
     const c = buildTournamentConfig({ ...base, blindsUpMinutes: 12 }, 'nlh');
+    expect(c.blindStructure.some((l) => l.isBreak)).toBe(false);
     const playing = c.blindStructure.filter((l) => !l.isBreak);
     expect(playing.length).toBeGreaterThan(0);
     for (const lvl of playing) expect(lvl.durationMinutes).toBe(12);

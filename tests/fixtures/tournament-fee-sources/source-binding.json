@@ -4,13 +4,13 @@
   "historical_assertion_executions": 105,
   "tournament_component": {
     "path": "supabase/accounting/weekly-v3/components/20260914135530_tournament_fees_share_one_recorded_earning_authority.sql",
-    "sha256": "ce7cd50b787bb884fce4d781a16c63645fd3646223e7547f1cd4719362ba1808",
+    "sha256": "05d526016c76ec8b1545b3263e22cbbefb547edbeea028da243475d835693138",
     "sections": {
       "tournament-fee-receipts-draft.sql": "f28b58c128476c46e6c91b8603436378048b6fd89e8efa7461a72c874d66dfa3",
       "tournament-fee-producer-adapter-draft.sql": "aa4ed185484fce462dcbc7a4921ad5ac1131e7653cabfe3f4ba61d235721e811",
       "tournament-fee-recognition-draft.sql": "01a345699aaad313873de0aff75f08f4cd1ce33499f5fe62c3655abef5839b92",
       "tournament-fee-terminal-common-draft.sql": "b51ee2d9e08d47fa97e68ff87e848c7b0f0a4791025ec8107a46d148f2c4189e",
-      "tournament-fee-settle-adapter-draft.sql": "ad0fa36ce4f5cbd034273251f399e13d22470f8a1458c205a289c6e20e20e829",
+      "tournament-fee-settle-adapter-draft.sql": "d2561ea89a849754735a7fc0fc7f59353799f9e068b20a6add647480072c8bff",
       "tournament-fee-terminal-gates-draft.sql": "b3e4e902d6c38f5e058ffed245124a04c620d985d3183206835d2edac9afc7a8",
       "tournament-fee-satellite-gates-draft.sql": "864df770ee938e42716b764fd1370283cddf62a44ff6ef37c172184fa1029c17",
       "tournament-fee-cancellation-adapter-draft.sql": "f8d0af0dded367b00055d63118fa2a4e0a87bc81c5df358d6b88b88f143b1617",

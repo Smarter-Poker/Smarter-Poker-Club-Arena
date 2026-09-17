@@ -923,7 +923,7 @@ BEGIN
     PERFORM pg_sleep(CASE v_attempt WHEN 1 THEN 0.1 WHEN 2 THEN 0.3 ELSE 0.6 END);
    END;
   END LOOP;
-  IF v_att->>'status' IS DISTINCT FROM CASE WHEN v_net>0 THEN 'recognized' ELSE 'cancelled' END
+  IF v_att->>'status' IS DISTINCT FROM (CASE WHEN v_net>0 THEN 'recognized' ELSE 'cancelled' END)
    OR (v_att->>'attributed_chips')::numeric IS DISTINCT FROM v_net
    OR (v_net>0 AND COALESCE((v_att->>'attributed_users')::int,0)<1) THEN
    RAISE EXCEPTION 'tournament % rake attribution incomplete: canonical source receipt',p_tournament_id USING ERRCODE='P0404';

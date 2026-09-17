@@ -1,6 +1,6 @@
 -- 2026-09-17-the-finish-lane-is-exclusive-among-finishes.rollback.sql
 --
--- Rollback of 20260917082500_the_finish_lane_is_exclusive_among_finishes.sql:
+-- Rollback of 20260917113717_the_finish_lane_is_exclusive_among_finishes.sql:
 -- restores every definition it replaced, byte for byte as captured from
 -- production on 2026-09-17 08:30 UTC, and drops the finish lane. One
 -- transaction, one schema-cache reload.

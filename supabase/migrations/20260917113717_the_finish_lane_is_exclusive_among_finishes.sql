@@ -1,7 +1,8 @@
--- 20260917082500_the_finish_lane_is_exclusive_among_finishes.sql
+-- 20260917113717_the_finish_lane_is_exclusive_among_finishes.sql
 --
--- Version reserved by scripts/new-migration.mjs against origin/main and every
--- remote branch, so it cannot collide with another agent's in-flight work.
+-- Version 20260917082500 was reserved by scripts/new-migration.mjs; the file
+-- carries the version the Supabase MCP recorded when it applied this at
+-- 11:37:17 UTC on 2026-09-17, so schema_migrations and this name agree.
 --
 -- THE FINISH LANE IS EXCLUSIVE AMONG FINISHES AND SHARED WITH EVERYONE ELSE.
 --
@@ -272,7 +273,10 @@ END;
 $function$;
 
 -- Same grants as the other lane helpers: the owner and the engine's role.
-REVOKE ALL ON FUNCTION public.fn_ca_lock_settlement_lane_for_finish(uuid) FROM PUBLIC;
+-- (Applied as FROM PUBLIC; the schema's default privileges had also granted
+-- authenticated, revoked in the same minute, so the installed ACL is
+-- {postgres, service_role} like the other lane helpers.)
+REVOKE ALL ON FUNCTION public.fn_ca_lock_settlement_lane_for_finish(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_lock_settlement_lane_for_finish(uuid) TO service_role;
 
 -- ---------------------------------------------------------------------------

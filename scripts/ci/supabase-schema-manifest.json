@@ -2028,6 +2028,7 @@
     "fn_ca_leg_accounts_since_snapshot",
     "fn_ca_legacy_period_maturity",
     "fn_ca_legacy_round3_wallet_receipt",
+    "fn_ca_lock_settlement_lane_for_finish",
     "fn_ca_lock_settlement_lane_for_tournament",
     "fn_ca_lock_settlement_lane_global",
     "fn_ca_lock_tournament_contract_from_entitlement",

@@ -11,7 +11,36 @@ const ORIGIN = `http://${HOST}:${PORT}`;
 // AuthGuard correctly hands signed-out users to the World Hub's /auth/login,
 // which is outside Vite preview. Exercise two public in-SPA routes here so the
 // gate measures rendered Club Arena rather than a missing local Hub shell.
-const routes = ['/hub/club-arena/legal', '/hub/club-arena/health'];
+//
+// DISCOVERABILITY PHASE 5 (2026-09-17): the public arena, the pages Google
+// ranks, is measured too. Every route in dist/prerender-manifest.json (the
+// landing, Help Center and the legal documents, whatever the prerender
+// emits) is loaded the way production serves it: the prerendered HTML first,
+// then the bundle hydrating over it. Vite preview serves dist/<route>/index.html
+// at the trailing-slash path, which is what the World Hub rewrite reaches in
+// production, so the gate measures the same bytes a visitor gets. A route the
+// manifest gains is measured the next time this runs; nothing is hand-listed.
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const MANIFEST = path.join(ROOT, process.env.CA_DIST || 'dist', 'prerender-manifest.json');
+
+export function prerenderedRoutes(manifestPath = MANIFEST) {
+  if (!existsSync(manifestPath)) return [];
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  return (manifest.routes || []).map((entry) =>
+    entry.route === '/' ? '/hub/club-arena/' : `/hub/club-arena${entry.route}/`
+  );
+}
+
+const publicRoutes = prerenderedRoutes();
+if (publicRoutes.length === 0) {
+  console.error('[route-performance] FAILED: dist/prerender-manifest.json has no routes; the public arena was not prerendered.');
+  process.exit(1);
+}
+const routes = [...publicRoutes, '/hub/club-arena/legal', '/hub/club-arena/health'];
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 834, height: 1112 },

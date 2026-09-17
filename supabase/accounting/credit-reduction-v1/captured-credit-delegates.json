@@ -3,9 +3,15 @@
     "catalog": {
       "functions": [
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "cf7af5fd327c68c935a58e864537cc7a",
@@ -25,9 +31,14 @@
           }
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "2ee5fa22748b07166f2dba6e16706c61",
@@ -47,9 +58,15 @@
           }
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=pg_catalog, public, auth"],
+          "config": [
+            "search_path=pg_catalog, public, auth"
+          ],
           "result": "boolean",
           "strict": false,
           "body_md5": "36e18a86ba143ac90e90648b0bc020ea",
@@ -69,9 +86,15 @@
           }
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "text",
           "strict": false,
           "body_md5": "d5a0014edd6ebab23dbb5620ff600117",
@@ -91,9 +114,15 @@
           }
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "boolean",
           "strict": false,
           "body_md5": "a0cc4f8ffcd889e40a27053c60630f74",
@@ -113,9 +142,15 @@
           }
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, extensions"],
+          "config": [
+            "search_path=public, extensions"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "0ab9271f0678917b937c6ffa8bb4cbe4",
@@ -135,9 +170,15 @@
           }
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres",
+            "authenticated=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "boolean",
           "strict": false,
           "body_md5": "7f93571e2638c7a86d9fd3720f70d03b",
@@ -157,9 +198,15 @@
           }
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres",
+            "authenticated=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "boolean",
           "strict": false,
           "body_md5": "a8d8672e0201c8036e326989ea82d05c",

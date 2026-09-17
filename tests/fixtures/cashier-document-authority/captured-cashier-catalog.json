@@ -2,9 +2,14 @@
   "scope": "Missing cashier metadata only; no financial function invoked and no transaction rows read",
   "functions": [
     {
-      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public, pg_temp"],
+      "config": [
+        "search_path=public, pg_temp"
+      ],
       "signature": "fn_ensure_agent_row(uuid,uuid,text)",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_ensure_agent_row(p_club_id uuid, p_user_id uuid, p_role text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare\n  v_id    uuid;\n  v_union uuid;\n  v_min   numeric;\n  v_role  text;\n  v_staff boolean;\nbegin\n  select a.id into v_id\n    from agents a\n   where a.club_id = p_club_id and a.user_id = p_user_id\n   for update;\n  if v_id is not null then\n    return v_id;\n  end if;\n\n  -- agents.role CHECK still admits only the three agent tiers, so a staff\n  -- wallet holder is stored as 'super_agent'. The data lies about who holds the\n  -- wallet; club_members.role is the truth and every rule reads it. Recorded as\n  -- P3 debt for phase 7, not fixed here, because relaxing that CHECK is a table\n  -- lock on agents and this migration deliberately takes none.\n  v_role := case when p_role in ('super_agent', 'agent', 'sub_agent') then p_role\n                 else 'super_agent' end;\n\n  v_staff := exists (\n    select 1 from club_members cm\n     where cm.club_id = p_club_id and cm.user_id = p_user_id\n       and cm.role in ('co_owner', 'admin'));\n\n  select coalesce(uc.union_id, c.union_id) into v_union\n    from clubs c\n    left join union_clubs uc on uc.club_id = c.id\n   where c.id = p_club_id\n   limit 1;\n\n  -- A rate nobody chose is the bug phase 0 removed from the promotion path.\n  -- Staff earn nothing by law, so minting them at the union minimum invented a\n  -- commission AND tripped the band on the way back down to zero.\n  v_min := case when v_staff then 0\n                when v_union is null then 0\n                else public.fn_union_setting(v_union, 'min_agent_commission', 0) end;\n\n  -- Prepaid with no line: a wallet that appears because somebody was sent chips\n  -- must not also arrive able to borrow. A credit line is granted deliberately,\n  -- through the promotion screen or the agent panel, never as a side effect.\n  insert into agents (user_id, club_id, role, status,\n                      agent_wallet_balance, promo_wallet_balance,\n                      commission_rate, player_rakeback_rate,\n                      credit_limit, credit_used, is_prepaid)\n  values (p_user_id, p_club_id, v_role, 'active', 0, 0, v_min, 0, 0, 0, true)\n  on conflict (user_id, club_id) do nothing;\n\n  select a.id into v_id\n    from agents a\n   where a.club_id = p_club_id and a.user_id = p_user_id\n   for update;\n  return v_id;\nend\n$function$\n",
       "prosrc_md5": "95ea37fdc89cd68957a8c9aaa37e8ff1",
@@ -13,9 +18,14 @@
       "security_definer": true
     },
     {
-      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public, pg_temp"],
+      "config": [
+        "search_path=public, pg_temp"
+      ],
       "signature": "fn_expire_stale_cashouts(integer)",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_expire_stale_cashouts(p_ttl_hours integer DEFAULT 72)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare\n  v_expired integer := 0;\n  r         record;\n  v_escrow  record;\n  v_after   numeric;\nbegin\n  for r in\n    select id, club_id, player_id, amount\n      from public.cashout_requests\n     where status = 'pending'\n       and created_at < now() - make_interval(hours => p_ttl_hours)\n     for update\n  loop\n    select * into v_escrow\n      from public.chip_escrow\n     where cashout_request_id = r.id\n     for update;\n\n    if not found or v_escrow.released_at is not null then\n      update public.cashout_requests\n         set status = 'expired', updated_at = now()\n       where id = r.id;\n      continue;\n    end if;\n\n    update public.club_members\n       set chip_balance = coalesce(chip_balance, 0) + v_escrow.amount,\n           updated_at   = now()\n     where club_id = r.club_id and user_id = r.player_id\n     returning chip_balance into v_after;\n    if v_after is null then\n      insert into public.club_members (club_id, user_id, role, chip_balance, status, is_active)\n      values (r.club_id, r.player_id, 'player', v_escrow.amount, 'active', true)\n      on conflict (club_id, user_id) do update\n        set chip_balance = coalesce(club_members.chip_balance, 0) + excluded.chip_balance,\n            updated_at = now()\n      returning chip_balance into v_after;\n    end if;\n\n    update public.chip_escrow\n       set released_at  = now(),\n           release_type = 'expired'\n     where id = v_escrow.id;\n\n    update public.cashout_requests\n       set status     = 'expired',\n           updated_at = now(),\n           agent_note = coalesce(agent_note, '')\n                        || ' [Auto Expired After ' || p_ttl_hours::text || 'h. Escrow Refunded]'\n     where id = r.id;\n\n    insert into public.chip_transactions (\n      id, club_id, from_user_id, to_user_id, amount,\n      transaction_type, notes, related_cashout_id, metadata, balance_after, created_at\n    ) values (\n      gen_random_uuid(), r.club_id, null, r.player_id, v_escrow.amount,\n      'cashout_expired_refund',\n      'Cash Out Expired After ' || p_ttl_hours::text || 'h. Escrowed Chips Returned To Player',\n      r.id,\n      jsonb_build_object('op_id', v_escrow.id, 'expired_after_hours', p_ttl_hours),\n      v_after,\n      now()\n    );\n\n    insert into public.notifications (user_id, type, title, message, metadata)\n    values (r.player_id, 'settlement', 'Cash Out Expired',\n            'Your Cash Out Request Expired And '\n              || trim(to_char(v_escrow.amount, 'FM999,999,999,990'))\n              || ' Chips Are Back In Your Wallet',\n            jsonb_build_object('clubId', r.club_id, 'cashoutId', r.id,\n                               'amount', v_escrow.amount));\n\n    v_expired := v_expired + 1;\n  end loop;\n\n  return v_expired;\nend;\n$function$\n",
       "prosrc_md5": "89baa68d5724a8b1446e08a84bd77913",
@@ -24,9 +34,14 @@
       "security_definer": true
     },
     {
-      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public, pg_temp"],
+      "config": [
+        "search_path=public, pg_temp"
+      ],
       "signature": "fn_guard_retired_club_mutation()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_retired_club_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_club_id uuid;\n  v_old_club_id uuid;\n  v_maintenance boolean :=\n    auth.uid() IS NULL\n    AND coalesce(current_setting('app.club_retirement_maintenance', true), '') = 'on';\nBEGIN\n  IF v_maintenance THEN\n    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n    RETURN NEW;\n  END IF;\n\n  IF TG_OP = 'DELETE' THEN\n    IF TG_TABLE_NAME = 'unions' THEN\n      v_club_id := OLD.id;\n    ELSIF TG_TABLE_NAME = 'table_seats' THEN\n      SELECT t.club_id INTO v_club_id FROM public.tables t WHERE t.id = OLD.table_id;\n    ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n      SELECT t.club_id INTO v_club_id FROM public.tournaments t\n       WHERE t.id = OLD.tournament_id;\n    ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n      SELECT cr.club_id INTO v_club_id FROM public.cashout_requests cr\n       WHERE cr.id = OLD.cashout_request_id;\n    ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n      SELECT a.club_id INTO v_club_id FROM public.agents a WHERE a.id = OLD.agent_id;\n    ELSE\n      v_club_id := OLD.club_id;\n    END IF;\n  ELSE\n    IF TG_TABLE_NAME = 'unions' THEN\n      v_club_id := NEW.id;\n    ELSIF TG_TABLE_NAME = 'table_seats' THEN\n      SELECT t.club_id INTO v_club_id FROM public.tables t WHERE t.id = NEW.table_id;\n    ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n      SELECT t.club_id INTO v_club_id FROM public.tournaments t\n       WHERE t.id = NEW.tournament_id;\n    ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n      SELECT cr.club_id INTO v_club_id FROM public.cashout_requests cr\n       WHERE cr.id = NEW.cashout_request_id;\n    ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n      SELECT a.club_id INTO v_club_id FROM public.agents a WHERE a.id = NEW.agent_id;\n    ELSE\n      v_club_id := NEW.club_id;\n    END IF;\n\n    -- On UPDATE, check the source scope too. Moving a retained row to an active\n    -- club must not become an escape hatch from a retired club's write freeze.\n    IF TG_OP = 'UPDATE' THEN\n      IF TG_TABLE_NAME = 'unions' THEN\n        v_old_club_id := OLD.id;\n      ELSIF TG_TABLE_NAME = 'table_seats' THEN\n        SELECT t.club_id INTO v_old_club_id FROM public.tables t WHERE t.id = OLD.table_id;\n      ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n        SELECT t.club_id INTO v_old_club_id FROM public.tournaments t\n         WHERE t.id = OLD.tournament_id;\n      ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n        SELECT cr.club_id INTO v_old_club_id FROM public.cashout_requests cr\n         WHERE cr.id = OLD.cashout_request_id;\n      ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n        SELECT a.club_id INTO v_old_club_id FROM public.agents a WHERE a.id = OLD.agent_id;\n      ELSE\n        v_old_club_id := OLD.club_id;\n      END IF;\n    END IF;\n  END IF;\n\n  -- A union row can use a club UUID without an FK back to clubs. Serialize\n  -- that conversion with the retirement RPC so it cannot create a union\n  -- identity from a club that became retired in the same instant.\n  IF TG_TABLE_NAME = 'unions' AND v_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('cashier-hierarchy:' || v_club_id::text, 0)\n    );\n  END IF;\n\n  IF (v_club_id IS NOT NULL OR v_old_club_id IS NOT NULL) AND EXISTS (\n    SELECT 1 FROM public.clubs c\n     WHERE c.id IN (v_club_id, v_old_club_id) AND c.lifecycle_status = 'retired'\n  ) THEN\n    RAISE EXCEPTION 'CLUB_RETIRED: gameplay and cashier records are read-only'\n      USING ERRCODE = '55000';\n  END IF;\n\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND\n$function$\n",
       "prosrc_md5": "f056528dab49bf3260faed436a1dee71",
@@ -35,9 +50,14 @@
       "security_definer": true
     },
     {
-      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public, extensions"],
+      "config": [
+        "search_path=public, extensions"
+      ],
       "signature": "fn_notify_agent_on_cashout()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_notify_agent_on_cashout()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n    v_player_name TEXT;\n    v_club_name TEXT;\nBEGIN\n    -- Get player name\n    SELECT display_name INTO v_player_name\n    FROM profiles\n    WHERE id = NEW.player_id;\n\n    -- Get club name\n    SELECT name INTO v_club_name\n    FROM clubs\n    WHERE id = NEW.club_id;\n\n    -- Create notification for agent\n    INSERT INTO notifications (user_id, type, title, message, data, created_at)\n    VALUES (\n        NEW.agent_id,\n        'cashout_request',\n        'Cashout Request',\n        v_player_name || ' requested a cashout of ' || NEW.amount || ' chips in ' || v_club_name,\n        jsonb_build_object(\n            'cashout_id', NEW.id,\n            'player_id', NEW.player_id,\n            'club_id', NEW.club_id,\n            'amount', NEW.amount\n        ),\n        NOW()\n    );\n\n    -- Create a club message notification for agent\n    INSERT INTO messages (\n        conversation_id,\n        sender_id,\n        receiver_id,\n        content,\n        is_read,\n        created_at\n    )\n    SELECT \n        c.id,\n        NEW.player_id,\n        NEW.agent_id,\n        'Cashout Request: ' || NEW.amount || ' Chips. Please Review In Your Agent Dashboard.',\n        FALSE,\n        NOW()\n    FROM conversations c\n    WHERE c.participant_ids @> ARRAY[NEW.player_id, NEW.agent_id]\n      AND c.club_id = NEW.club_id\n      AND c.category = 'club'\n    LIMIT 1;\n\n    RETURN NEW;\nEND;\n$function$\n",
       "prosrc_md5": "a6fb52f7974b303670203f222465709a",
@@ -169,7 +189,9 @@
         {
           "name": "chip_escrow_service_only",
           "check": "true",
-          "roles": ["service_role"],
+          "roles": [
+            "service_role"
+          ],
           "using": "true",
           "command": "*",
           "permissive": true
@@ -177,7 +199,9 @@
         {
           "name": "escrow_read",
           "check": null,
-          "roles": ["PUBLIC"],
+          "roles": [
+            "PUBLIC"
+          ],
           "using": "(player_id = ( SELECT auth.uid() AS uid))",
           "command": "r",
           "permissive": true
@@ -185,7 +209,9 @@
         {
           "name": "escrow_read_scoped",
           "check": null,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "((player_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM cashout_requests cr\n  WHERE ((cr.id = chip_escrow.cashout_request_id) AND ((cr.agent_id = ( SELECT auth.uid() AS uid)) OR (fn_club_bank_role(cr.club_id) = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text])))))))",
           "command": "r",
           "permissive": true

@@ -6,9 +6,15 @@
     "registry": null,
     "functions": [
       {
-        "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "signature": "ca_can_oversee_union(uuid)",
         "definition": "CREATE OR REPLACE FUNCTION public.ca_can_oversee_union(p_union_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_uid uuid := auth.uid();\nBEGIN\n  IF v_uid IS NULL OR p_union_id IS NULL THEN RETURN false; END IF;\n  IF fn_is_union_overseer(p_union_id, v_uid) THEN RETURN true; END IF;\n  RETURN EXISTS (SELECT 1 FROM profiles p\n                  WHERE p.id = v_uid AND COALESCE(p.is_admin, false));\nEND;\n$function$\n",
         "source_md5": "e515d46b96bdc60c09d6af38228cfa7e",
@@ -20,9 +26,15 @@
         "authenticated_execute": true
       },
       {
-        "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "signature": "ca_can_view_club(uuid)",
         "definition": "CREATE OR REPLACE FUNCTION public.ca_can_view_club(p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT\n    session_user IN ('postgres', 'supabase_admin')\n    OR coalesce(auth.role(), '') = 'service_role'\n    OR (\n      auth.uid() IS NOT NULL\n      AND (\n        EXISTS (\n          SELECT 1 FROM club_members cm\n          WHERE cm.club_id = p_club_id\n            AND cm.user_id = auth.uid()\n            AND coalesce(cm.status, 'active') NOT IN ('banned', 'suspended')\n        )\n        OR EXISTS (\n          SELECT 1 FROM clubs c WHERE c.id = p_club_id AND c.owner_id = auth.uid()\n        )\n        OR EXISTS (\n          SELECT 1 FROM profiles pr\n          WHERE pr.id = auth.uid() AND coalesce(pr.is_admin, false)\n        )\n      )\n    );\n$function$\n",
         "source_md5": "9ddbe589c28096058ea2d5e7356bcd22",
@@ -34,9 +46,14 @@
         "authenticated_execute": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "signature": "fn_accounting_party_users(text,uuid)",
         "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_party_users(p_kind text, p_id uuid)\n RETURNS TABLE(user_id uuid)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n SELECT DISTINCT p.id FROM public.profiles p WHERE p.id IN (\n  SELECT p_id WHERE p_kind IN('agent','player')\n  UNION SELECT c.owner_id FROM public.clubs c WHERE p_kind='club' AND c.id=p_id\n  UNION SELECT m.user_id FROM public.club_members m WHERE p_kind='club' AND m.club_id=p_id\n   AND m.role IN('owner','co_owner','admin') AND COALESCE(m.status,'active') IN('active','approved')\n  UNION SELECT u.owner_id FROM public.unions u WHERE p_kind='union' AND u.id=p_id\n  UNION SELECT a.user_id FROM public.union_admins a WHERE p_kind='union' AND a.union_id=p_id\n   AND public.fn_is_union_overseer(p_id,a.user_id)\n );\n$function$\n",
         "source_md5": "f6bc6c55e49c6f72ffb0336a405885a1",
@@ -48,9 +65,15 @@
         "authenticated_execute": false
       },
       {
-        "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "signature": "fn_union_accounting_run_at(timestamp with time zone)",
         "definition": "CREATE OR REPLACE FUNCTION public.fn_union_accounting_run_at(p_period_end timestamp with time zone)\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public'\nAS $function$\n  SELECT (((p_period_end AT TIME ZONE 'America/Chicago')::date + time '04:00')\n           AT TIME ZONE 'America/Chicago');\n$function$\n",
         "source_md5": "1256826ade994f8b96430227bf61a594",
@@ -62,9 +85,15 @@
         "authenticated_execute": true
       },
       {
-        "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, extensions"],
+        "config": [
+          "search_path=public, extensions"
+        ],
         "signature": "fn_union_week_start(timestamp with time zone)",
         "definition": "CREATE OR REPLACE FUNCTION public.fn_union_week_start(p_at timestamp with time zone DEFAULT now())\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT date_trunc('week', (p_at AT TIME ZONE 'America/Los_Angeles'))\n           AT TIME ZONE 'America/Los_Angeles';\n$function$\n",
         "source_md5": "271c8a1269dc2e570ee20bd781493e9d",
@@ -509,7 +538,9 @@
           {
             "cmd": "SELECT",
             "qual": "(is_club_admin(club_id, ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_members.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))",
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "tablename": "club_members",
             "permissive": "PERMISSIVE",
             "policyname": "Club staff can read club rosters",
@@ -519,7 +550,9 @@
           {
             "cmd": "SELECT",
             "qual": "(user_id = ( SELECT auth.uid() AS uid))",
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "tablename": "club_members",
             "permissive": "PERMISSIVE",
             "policyname": "Members can read own club memberships",
@@ -529,7 +562,9 @@
           {
             "cmd": "ALL",
             "qual": "true",
-            "roles": ["service_role"],
+            "roles": [
+              "service_role"
+            ],
             "tablename": "club_members",
             "permissive": "PERMISSIVE",
             "policyname": "Service role manages",
@@ -539,7 +574,9 @@
           {
             "cmd": "INSERT",
             "qual": null,
-            "roles": ["public"],
+            "roles": [
+              "public"
+            ],
             "tablename": "club_members",
             "permissive": "PERMISSIVE",
             "policyname": "Users can join clubs",
@@ -549,7 +586,9 @@
           {
             "cmd": "SELECT",
             "qual": "((fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'downline'::text) AND fn_club_cashier_can_transact(club_id, ( SELECT auth.uid() AS uid), user_id))",
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "tablename": "club_members",
             "permissive": "PERMISSIVE",
             "policyname": "cashier_downline_read",
@@ -559,7 +598,9 @@
           {
             "cmd": "UPDATE",
             "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR is_club_admin(club_id, ( SELECT auth.uid() AS uid)))",
-            "roles": ["public"],
+            "roles": [
+              "public"
+            ],
             "tablename": "club_members",
             "permissive": "PERMISSIVE",
             "policyname": "club_members_update",
@@ -569,7 +610,9 @@
           {
             "cmd": "SELECT",
             "qual": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "tablename": "club_members",
             "permissive": "PERMISSIVE",
             "policyname": "union_overseer_read",
@@ -1772,7 +1815,9 @@
           {
             "cmd": "SELECT",
             "qual": "true",
-            "roles": ["public"],
+            "roles": [
+              "public"
+            ],
             "tablename": "clubs",
             "permissive": "PERMISSIVE",
             "policyname": "Anyone can view clubs",
@@ -1782,7 +1827,9 @@
           {
             "cmd": "INSERT",
             "qual": null,
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "tablename": "clubs",
             "permissive": "PERMISSIVE",
             "policyname": "Authenticated users can create clubs",
@@ -1792,7 +1839,9 @@
           {
             "cmd": "UPDATE",
             "qual": "(owner_id = ( SELECT auth.uid() AS uid))",
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "tablename": "clubs",
             "permissive": "PERMISSIVE",
             "policyname": "Owners can update clubs",
@@ -2372,7 +2421,9 @@
           {
             "cmd": "SELECT",
             "qual": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = settlement_periods.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)) AND (cm.role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text, 'agent'::text])))))",
-            "roles": ["public"],
+            "roles": [
+              "public"
+            ],
             "tablename": "settlement_periods",
             "permissive": "PERMISSIVE",
             "policyname": "settlement_read",
@@ -2382,7 +2433,9 @@
           {
             "cmd": "ALL",
             "qual": "true",
-            "roles": ["service_role"],
+            "roles": [
+              "service_role"
+            ],
             "tablename": "settlement_periods",
             "permissive": "PERMISSIVE",
             "policyname": "settlement_svc",
@@ -2392,7 +2445,9 @@
           {
             "cmd": "SELECT",
             "qual": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "tablename": "settlement_periods",
             "permissive": "PERMISSIVE",
             "policyname": "union_overseer_read",
@@ -2601,7 +2656,9 @@
           {
             "cmd": "SELECT",
             "qual": "ca_can_oversee_union(union_id)",
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "tablename": "union_accounting_runs",
             "permissive": "PERMISSIVE",
             "policyname": "union_accounting_runs_scoped_read",
@@ -2773,7 +2830,9 @@
           {
             "cmd": "SELECT",
             "qual": "(user_id = ( SELECT auth.uid() AS uid))",
-            "roles": ["public"],
+            "roles": [
+              "public"
+            ],
             "tablename": "union_admins",
             "permissive": "PERMISSIVE",
             "policyname": "union_admins_read",
@@ -2783,7 +2842,9 @@
           {
             "cmd": "ALL",
             "qual": "true",
-            "roles": ["service_role"],
+            "roles": [
+              "service_role"
+            ],
             "tablename": "union_admins",
             "permissive": "PERMISSIVE",
             "policyname": "union_admins_svc",

@@ -67,7 +67,10 @@
   },
   "function_acl": [
     {
-      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "signature": "fn_union_settle_player_pnl(uuid,timestamp with time zone,timestamp with time zone,boolean)"
     }
   ],

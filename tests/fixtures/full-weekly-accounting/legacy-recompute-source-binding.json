@@ -17,7 +17,10 @@
     "security_definer": true,
     "return_type": "jsonb",
     "parameters": "p_period_start date DEFAULT NULL::date, p_period_end date DEFAULT NULL::date",
-    "configuration": ["search_path=public", "statement_timeout=600s"]
+    "configuration": [
+      "search_path=public",
+      "statement_timeout=600s"
+    ]
   },
   "access": {
     "full_production_owner_captured": true,
@@ -25,7 +28,10 @@
     "effective_acl_currently_reverified": true,
     "observed_at": "2026-09-15 01:01:08.623296+00",
     "owner": "postgres",
-    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
     "definition_md5": "7b626bf398892a294e95e6050073431c",
     "source_md5": "94bccb645adfde96a32b2405603cf514",
     "effective_execute": {

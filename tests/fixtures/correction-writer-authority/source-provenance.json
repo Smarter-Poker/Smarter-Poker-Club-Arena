@@ -37,7 +37,10 @@
     "owner-seeded-regression.sql"
   ],
   "acceptance_capture": "accepted-authority-supplement.sql",
-  "separate_phase14": ["concurrency-setup.sql", "concurrency-regression.py"],
+  "separate_phase14": [
+    "concurrency-setup.sql",
+    "concurrency-regression.py"
+  ],
   "execution": "Not run; no source submission or publication authorized by this manifest.",
   "acceptance_policy_order": [
     "captured-store-policy.sql",

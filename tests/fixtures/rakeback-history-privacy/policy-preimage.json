@@ -11,7 +11,9 @@
         {
           "cmd": "SELECT",
           "qual": "(club_id IN ( SELECT c.id\n   FROM clubs c\n  WHERE (c.owner_id = ( SELECT auth.uid() AS uid))))",
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "tablename": "rakeback_period_payouts",
           "permissive": "PERMISSIVE",
           "policyname": "club owners read own club rakeback",
@@ -21,7 +23,9 @@
         {
           "cmd": "ALL",
           "qual": "true",
-          "roles": ["service_role"],
+          "roles": [
+            "service_role"
+          ],
           "tablename": "rakeback_period_payouts",
           "permissive": "PERMISSIVE",
           "policyname": "service_role full access",
@@ -31,7 +35,9 @@
         {
           "cmd": "SELECT",
           "qual": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = rakeback_periods.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)))))",
-          "roles": ["public"],
+          "roles": [
+            "public"
+          ],
           "tablename": "rakeback_periods",
           "permissive": "PERMISSIVE",
           "policyname": "rakeback_read",
@@ -41,7 +47,9 @@
         {
           "cmd": "ALL",
           "qual": "true",
-          "roles": ["service_role"],
+          "roles": [
+            "service_role"
+          ],
           "tablename": "rakeback_periods",
           "permissive": "PERMISSIVE",
           "policyname": "rakeback_svc",

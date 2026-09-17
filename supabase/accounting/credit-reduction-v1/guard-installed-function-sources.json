@@ -10,8 +10,14 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=public, extensions"],
-    "acl": ["authenticated=X/postgres", "postgres=X/postgres", "service_role=X/postgres"],
+    "config": [
+      "search_path=public, extensions"
+    ],
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": true,
@@ -31,8 +37,12 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog"],
-    "acl": ["postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
@@ -52,8 +62,13 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["authenticated=X/postgres", "postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": true,
@@ -73,8 +88,13 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["authenticated=X/postgres", "postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": true,
@@ -94,8 +114,12 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog"],
-    "acl": ["postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
@@ -115,8 +139,12 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
@@ -136,8 +164,12 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
@@ -157,8 +189,12 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
@@ -178,8 +214,12 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
@@ -199,8 +239,12 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
@@ -220,8 +264,12 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
@@ -241,8 +289,13 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["authenticated=X/postgres", "postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": true,
@@ -262,8 +315,13 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": ["search_path=pg_catalog, public"],
-    "acl": ["authenticated=X/postgres", "postgres=X/postgres"],
+    "config": [
+      "search_path=pg_catalog, public"
+    ],
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres"
+    ],
     "effective_execute": {
       "anon": false,
       "authenticated": true,

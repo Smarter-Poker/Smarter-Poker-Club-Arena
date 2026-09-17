@@ -4,9 +4,14 @@
       "scope": "fn_ca_post_leg, atomic_deduct_wallet_and_log, three named relations direct noninternal trigger functions, and one static public-callee layer; dynamic or further indirect callers remain unproven.",
       "functions": [
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, extensions, pg_temp"],
+          "config": [
+            "search_path=public, extensions, pg_temp"
+          ],
           "result": "boolean",
           "strict": false,
           "is_root": true,
@@ -28,9 +33,14 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "is_root": true,
@@ -52,9 +62,14 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "boolean",
           "strict": false,
           "is_root": true,
@@ -76,9 +91,14 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "trigger",
           "strict": false,
           "is_root": true,
@@ -100,9 +120,15 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres",
+            "authenticated=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "boolean",
           "strict": false,
           "is_root": false,
@@ -132,7 +158,9 @@
             "service_role=X/postgres"
           ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "boolean",
           "strict": false,
           "is_root": false,
@@ -154,9 +182,14 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "trigger",
           "strict": false,
           "is_root": true,
@@ -185,7 +218,9 @@
             "service_role=X/postgres"
           ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "boolean",
           "strict": false,
           "is_root": false,
@@ -207,9 +242,15 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "uuid",
           "strict": false,
           "is_root": false,
@@ -231,9 +272,14 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "trigger",
           "strict": false,
           "is_root": true,
@@ -255,9 +301,15 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "uuid",
           "strict": false,
           "is_root": false,
@@ -279,9 +331,14 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "is_root": true,
@@ -442,7 +499,9 @@
             {
               "cmd": "SELECT",
               "qual": "(agent_id IN ( SELECT a.id\n   FROM agents a\n  WHERE (a.user_id = ( SELECT auth.uid() AS uid))))",
-              "roles": ["public"],
+              "roles": [
+                "public"
+              ],
               "tablename": "credit_invoices",
               "permissive": "PERMISSIVE",
               "policyname": "credit_invoices_select_own",
@@ -636,7 +695,9 @@
             {
               "cmd": "SELECT",
               "qual": "(invoice_id IN ( SELECT ci.id\n   FROM (credit_invoices ci\n     JOIN agents a ON ((a.id = ci.agent_id)))\n  WHERE (a.user_id = ( SELECT auth.uid() AS uid))))",
-              "roles": ["public"],
+              "roles": [
+                "public"
+              ],
               "tablename": "credit_payments",
               "permissive": "PERMISSIVE",
               "policyname": "credit_payments_select_own",
@@ -801,7 +862,9 @@
             {
               "cmd": "ALL",
               "qual": "true",
-              "roles": ["service_role"],
+              "roles": [
+                "service_role"
+              ],
               "tablename": "wallets",
               "permissive": "PERMISSIVE",
               "policyname": "Service role full access wallets",
@@ -811,7 +874,9 @@
             {
               "cmd": "INSERT",
               "qual": null,
-              "roles": ["public"],
+              "roles": [
+                "public"
+              ],
               "tablename": "wallets",
               "permissive": "PERMISSIVE",
               "policyname": "Users can insert own wallets",
@@ -821,7 +886,9 @@
             {
               "cmd": "SELECT",
               "qual": "(( SELECT auth.uid() AS uid) = user_id)",
-              "roles": ["public"],
+              "roles": [
+                "public"
+              ],
               "tablename": "wallets",
               "permissive": "PERMISSIVE",
               "policyname": "Users can read own wallets",

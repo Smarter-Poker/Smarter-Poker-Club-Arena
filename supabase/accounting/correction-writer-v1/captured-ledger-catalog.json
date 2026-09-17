@@ -5,7 +5,9 @@
         {
           "name": "anon",
           "login": false,
-          "config": ["statement_timeout=3s"],
+          "config": [
+            "statement_timeout=3s"
+          ],
           "inherit": true,
           "create_db": false,
           "superuser": false,
@@ -16,7 +18,9 @@
         {
           "name": "authenticated",
           "login": false,
-          "config": ["statement_timeout=8s"],
+          "config": [
+            "statement_timeout=8s"
+          ],
           "inherit": true,
           "create_db": false,
           "superuser": false,
@@ -242,7 +246,10 @@
         {
           "name": "postgres",
           "login": true,
-          "config": ["search_path=\"\\$user\", public, extensions", "statement_timeout=2min"],
+          "config": [
+            "search_path=\"\\$user\", public, extensions",
+            "statement_timeout=2min"
+          ],
           "inherit": true,
           "create_db": true,
           "superuser": false,
@@ -253,7 +260,9 @@
         {
           "name": "service_role",
           "login": false,
-          "config": ["statement_timeout=8s"],
+          "config": [
+            "statement_timeout=8s"
+          ],
           "inherit": true,
           "create_db": false,
           "superuser": false,
@@ -338,7 +347,9 @@
         {
           "name": "supabase_read_only_user",
           "login": true,
-          "config": ["default_transaction_read_only=on"],
+          "config": [
+            "default_transaction_read_only=on"
+          ],
           "inherit": true,
           "create_db": false,
           "superuser": false,
@@ -371,7 +382,10 @@
         {
           "name": "supabase_storage_admin",
           "login": true,
-          "config": ["search_path=storage", "log_statement=none"],
+          "config": [
+            "search_path=storage",
+            "log_statement=none"
+          ],
           "inherit": false,
           "create_db": false,
           "superuser": false,
@@ -1704,7 +1718,9 @@
             {
               "cmd": "SELECT",
               "qual": "((( SELECT auth.uid() AS uid) = performed_by) OR (( SELECT auth.uid() AS uid) = from_entity_id) OR (( SELECT auth.uid() AS uid) = to_entity_id))",
-              "roles": ["public"],
+              "roles": [
+                "public"
+              ],
               "tablename": "chip_ledger",
               "permissive": "PERMISSIVE",
               "policyname": "Users can view their own transactions",
@@ -2020,11 +2036,15 @@
               "function_definition_md5": "91f3ff61ee7527b0688ce1a1f11db752"
             },
             {
-              "acl": ["postgres=X/postgres"],
+              "acl": [
+                "postgres=X/postgres"
+              ],
               "name": "aa_ca_capture_tournament_charge_entitlement",
               "type": 5,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_capture_tournament_charge_entitlement()",
               "internal": false,
@@ -2037,11 +2057,17 @@
               "function_definition_md5": "01e84bcd7825d2e905fef3ec220b3a47"
             },
             {
-              "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "authenticated=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "ab_ca_chip_store_declared",
               "type": 7,
               "owner": "postgres",
-              "config": ["search_path=public, pg_temp"],
+              "config": [
+                "search_path=public, pg_temp"
+              ],
               "enabled": "O",
               "function": "fn_ca_chip_store_declared()",
               "internal": false,
@@ -2054,11 +2080,16 @@
               "function_definition_md5": "d5b08956826e56a0d414db4bfd022d3b"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "accounting_transfer_document",
               "type": 5,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_accounting_transfer_document_on_insert()",
               "internal": false,
@@ -2071,11 +2102,15 @@
               "function_definition_md5": "bf9d870bfc52d44c1d2cc33860dfd71a"
             },
             {
-              "acl": ["postgres=X/postgres"],
+              "acl": [
+                "postgres=X/postgres"
+              ],
               "name": "cancelled_tournament_evidence_is_immutable",
               "type": 31,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_cancelled_tournament_evidence_is_immutable()",
               "internal": false,
@@ -2088,11 +2123,15 @@
               "function_definition_md5": "55061034adb7416d401622572397c7d2"
             },
             {
-              "acl": ["postgres=X/postgres"],
+              "acl": [
+                "postgres=X/postgres"
+              ],
               "name": "satellite_transfer_ledger_is_immutable",
               "type": 31,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_satellite_transfer_ledger_is_immutable()",
               "internal": false,
@@ -2105,11 +2144,15 @@
               "function_definition_md5": "b2affe52c4e95101c985c30c483d5127"
             },
             {
-              "acl": ["postgres=X/postgres"],
+              "acl": [
+                "postgres=X/postgres"
+              ],
               "name": "terminal_tournament_evidence_is_immutable",
               "type": 31,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_terminal_tournament_evidence_is_immutable()",
               "internal": false,
@@ -2122,11 +2165,16 @@
               "function_definition_md5": "a129e4214f59e7f95ffe397e2245bbd0"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_ca_append_only",
               "type": 27,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_journal_append_only()",
               "internal": false,
@@ -2139,11 +2187,16 @@
               "function_definition_md5": "ac9d66e60d077d886981c428c71e5c3c"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_ca_chip_ledger_enrich",
               "type": 7,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_chip_ledger_enrich()",
               "internal": false,
@@ -2156,11 +2209,16 @@
               "function_definition_md5": "5931f47d922eea26ab1ea2b12f3f7c8c"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_chip_ledger_performed_by",
               "type": 7,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "enforce_chip_ledger_performed_by()",
               "internal": false,
@@ -2173,11 +2231,17 @@
               "function_definition_md5": "ce4ab3013be283d66ab9afd1e861b552"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "zz_ca_attested_day_is_restated_del",
               "type": 8,
               "owner": "postgres",
-              "config": ["search_path=public", "TimeZone=UTC"],
+              "config": [
+                "search_path=public",
+                "TimeZone=UTC"
+              ],
               "enabled": "O",
               "function": "fn_ca_attested_day_is_restated()",
               "internal": false,
@@ -2190,11 +2254,17 @@
               "function_definition_md5": "268e0f244b2df7f88b933530b1cad822"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "zz_ca_attested_day_is_restated_upd",
               "type": 16,
               "owner": "postgres",
-              "config": ["search_path=public", "TimeZone=UTC"],
+              "config": [
+                "search_path=public",
+                "TimeZone=UTC"
+              ],
               "enabled": "O",
               "function": "fn_ca_attested_day_is_restated()",
               "internal": false,
@@ -2207,11 +2277,16 @@
               "function_definition_md5": "268e0f244b2df7f88b933530b1cad822"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "zz_ca_escrow_overlay_leg",
               "type": 5,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_escrow_on_overlay_leg()",
               "internal": false,
@@ -2224,11 +2299,16 @@
               "function_definition_md5": "1b916fb576271d94c481099c11ca8b93"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "zz_ca_escrow_reserve_leg",
               "type": 5,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_escrow_on_reserve_leg()",
               "internal": false,
@@ -2241,11 +2321,16 @@
               "function_definition_md5": "0d7f735d58aadeb6fe03e9daf5e21a92"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "zz_ca_escrow_seat_transfer_leg",
               "type": 5,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_escrow_on_seat_transfer_leg()",
               "internal": false,
@@ -2258,11 +2343,16 @@
               "function_definition_md5": "e9c56f9c21635b21c7cf0d456eb18b8a"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "zz_ca_issuance_leg_is_registered",
               "type": 5,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_issuance_leg_is_registered()",
               "internal": false,
@@ -2275,11 +2365,16 @@
               "function_definition_md5": "7a41ac630bad489e02f05f47ff5ffa1e"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "zz_chip_ledger_key_is_claimed_once",
               "type": 7,
               "owner": "postgres",
-              "config": ["search_path=public, pg_temp"],
+              "config": [
+                "search_path=public, pg_temp"
+              ],
               "enabled": "O",
               "function": "zz_chip_ledger_key_is_claimed_once()",
               "internal": false,
@@ -2292,11 +2387,16 @@
               "function_definition_md5": "57a2b2eb1bc5b1c5ac36394c2ac23bcd"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "zz_freeze_guard",
               "type": 31,
               "owner": "postgres",
-              "config": ["search_path=public, pg_temp"],
+              "config": [
+                "search_path=public, pg_temp"
+              ],
               "enabled": "O",
               "function": "fn_refuse_while_frozen()",
               "internal": false,
@@ -2315,7 +2415,9 @@
             {
               "name": "chip_ledger_amount_check",
               "type": "c",
-              "columns": [9],
+              "columns": [
+                9
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (amount > 0::numeric)",
@@ -2326,7 +2428,9 @@
             {
               "name": "chip_ledger_category_check",
               "type": "c",
-              "columns": [10],
+              "columns": [
+                10
+              ],
               "validated": false,
               "deferrable": false,
               "definition": "CHECK (category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'rake'::text, 'commission'::text, 'transfer'::text, 'player_funding'::text, 'agent_funding'::text, 'mint'::text, 'burn'::text, 'legacy_seed_reconcile'::text, 'rakeback'::text, 'settlement'::text, 'tournament_buyin'::text, 'tournament_prize'::text, 'bounty'::text, 'adjustment'::text, 'refund'::text, 'addon'::text, 'rebuy'::text, 'table_cashout'::text, 'tournament_refund'::text, 'bbj_contribution'::text, 'bbj_payout'::text, 'promo'::text, 'promo_release'::text, 'promo_send'::text, 'credit_draw'::text, 'credit_repayment'::text, 'insurance'::text, 'spin_entry'::text, 'spin_prize'::text, 'overlay'::text, 'correction'::text, 'reversal'::text, 'escrow_hold'::text, 'escrow_release'::text, 'treasury_transfer'::text, 'horse_funding'::text, 'fee'::text, 'eco'::text, 'pnl_settlement'::text, 'union_send'::text, 'cashier_send'::text, 'cashier_claim_back'::text, 'ticket_issue'::text, 'ticket_redeem'::text, 'club_opening_allocation'::text, 'leaderboard_payout'::text, 'club_bank_send'::text, 'club_bank_claim'::text, 'agent_send'::text, 'agent_claim'::text, 'union_settlement'::text, 'wheel_prize'::text, 'plinko_prize'::text, 'crash_prize'::text, 'crossing_prize'::text, 'mines_prize'::text])) NOT VALID",
@@ -2337,7 +2441,9 @@
             {
               "name": "chip_ledger_exact_scale",
               "type": "c",
-              "columns": [9],
+              "columns": [
+                9
+              ],
               "validated": false,
               "deferrable": false,
               "definition": "CHECK (amount = round(amount, 2)) NOT VALID",
@@ -2348,7 +2454,9 @@
             {
               "name": "chip_ledger_from_type_check",
               "type": "c",
-              "columns": [3],
+              "columns": [
+                3
+              ],
               "validated": false,
               "deferrable": false,
               "definition": "CHECK (from_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text])) NOT VALID",
@@ -2359,7 +2467,9 @@
             {
               "name": "chip_ledger_no_diamond_category_check",
               "type": "c",
-              "columns": [10],
+              "columns": [
+                10
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (category !~* '^diamond'::text AND category !~* '_diamond'::text)",
@@ -2370,18 +2480,24 @@
             {
               "name": "chip_ledger_performed_by_fkey",
               "type": "f",
-              "columns": [2],
+              "columns": [
+                2
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "FOREIGN KEY (performed_by) REFERENCES auth.users(id)",
-              "foreign_columns": [2],
+              "foreign_columns": [
+                2
+              ],
               "initially_deferred": false,
               "referenced_relation": "auth.users"
             },
             {
               "name": "chip_ledger_pkey",
               "type": "p",
-              "columns": [1],
+              "columns": [
+                1
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "PRIMARY KEY (id)",
@@ -2392,7 +2508,9 @@
             {
               "name": "chip_ledger_positive_amount",
               "type": "c",
-              "columns": [9],
+              "columns": [
+                9
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (amount > 0::numeric)",
@@ -2403,7 +2521,9 @@
             {
               "name": "chip_ledger_status_check",
               "type": "c",
-              "columns": [30],
+              "columns": [
+                30
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (status = ANY (ARRAY['posted'::text, 'correction'::text, 'reversal'::text]))",
@@ -2414,7 +2534,9 @@
             {
               "name": "chip_ledger_to_type_check",
               "type": "c",
-              "columns": [6],
+              "columns": [
+                6
+              ],
               "validated": false,
               "deferrable": false,
               "definition": "CHECK (to_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text])) NOT VALID",
@@ -2425,7 +2547,9 @@
             {
               "name": "chk_post_from_balance_is_two_decimal_places",
               "type": "c",
-              "columns": [27],
+              "columns": [
+                27
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (post_from_balance IS NULL OR post_from_balance = round(post_from_balance, 2))",
@@ -2436,7 +2560,9 @@
             {
               "name": "chk_post_to_balance_is_two_decimal_places",
               "type": "c",
-              "columns": [29],
+              "columns": [
+                29
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (post_to_balance IS NULL OR post_to_balance = round(post_to_balance, 2))",
@@ -2447,7 +2573,9 @@
             {
               "name": "chk_pre_from_balance_is_two_decimal_places",
               "type": "c",
-              "columns": [26],
+              "columns": [
+                26
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (pre_from_balance IS NULL OR pre_from_balance = round(pre_from_balance, 2))",
@@ -2458,7 +2586,9 @@
             {
               "name": "chk_pre_to_balance_is_two_decimal_places",
               "type": "c",
-              "columns": [28],
+              "columns": [
+                28
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (pre_to_balance IS NULL OR pre_to_balance = round(pre_to_balance, 2))",
@@ -2469,7 +2599,10 @@
             {
               "name": "ck_whole_cents",
               "type": "c",
-              "columns": [18, 9],
+              "columns": [
+                18,
+                9
+              ],
               "validated": false,
               "deferrable": false,
               "definition": "CHECK (created_at < '2026-09-07 22:00:00+00'::timestamp with time zone OR amount = round(amount, 2)) NOT VALID",
@@ -2551,7 +2684,10 @@
           }
         },
         {
-          "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
           "rls": true,
           "kind": "r",
           "name": "chip_ledger_idem",
@@ -2678,7 +2814,9 @@
             {
               "name": "chip_ledger_idem_pkey",
               "type": "p",
-              "columns": [1],
+              "columns": [
+                1
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "PRIMARY KEY (idempotency_key)",
@@ -3052,3 +3190,4 @@
     }
   }
 ]
+

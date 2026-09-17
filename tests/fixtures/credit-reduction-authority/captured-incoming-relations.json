@@ -159,7 +159,9 @@
           "policies": [
             {
               "name": "commission_rate_audit_service_role_all",
-              "roles": ["service_role"],
+              "roles": [
+                "service_role"
+              ],
               "using": "true",
               "command": "*",
               "permissive": true,
@@ -415,7 +417,9 @@
           "policies": [
             {
               "name": "service_role full access",
-              "roles": ["service_role"],
+              "roles": [
+                "service_role"
+              ],
               "using": "true",
               "command": "*",
               "permissive": true,
@@ -423,7 +427,9 @@
             },
             {
               "name": "union_overseer_read",
-              "roles": ["authenticated"],
+              "roles": [
+                "authenticated"
+              ],
               "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
               "command": "r",
               "permissive": true,
@@ -828,7 +834,9 @@
           "policies": [
             {
               "name": "agents read own sub_agents",
-              "roles": ["authenticated"],
+              "roles": [
+                "authenticated"
+              ],
               "using": "((parent_agent_id IN ( SELECT a.id\n   FROM agents a\n  WHERE (a.user_id = ( SELECT auth.uid() AS uid)))) OR (user_id = ( SELECT auth.uid() AS uid)))",
               "command": "r",
               "permissive": true,
@@ -836,7 +844,9 @@
             },
             {
               "name": "service_role full access",
-              "roles": ["service_role"],
+              "roles": [
+                "service_role"
+              ],
               "using": "true",
               "command": "*",
               "permissive": true,
@@ -844,7 +854,9 @@
             },
             {
               "name": "union_overseer_read",
-              "roles": ["authenticated"],
+              "roles": [
+                "authenticated"
+              ],
               "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
               "command": "r",
               "permissive": true,
@@ -1038,14 +1050,20 @@
       "server_version": "17.6",
       "trigger_functions": [
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
           "signature": "fn_poker_reject_diamond_hierarchy()",
           "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_reject_diamond_hierarchy()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF EXISTS (SELECT 1 FROM public.clubs WHERE id=NEW.club_id AND asset='diamonds') THEN\n    RAISE EXCEPTION 'Diamond Arena Has No Agents Or Commissions' USING ERRCODE='23514';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
           "definition_md5": "49037a2bf4322d2a327bc9141a7a7a89"
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "owner": "postgres",
           "signature": "touch_sub_agents()",
           "definition": "CREATE OR REPLACE FUNCTION public.touch_sub_agents()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN NEW.updated_at = NOW(); RETURN NEW; END;\n$function$\n",

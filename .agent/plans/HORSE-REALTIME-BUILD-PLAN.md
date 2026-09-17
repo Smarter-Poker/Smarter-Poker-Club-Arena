@@ -22,7 +22,7 @@ A phase is DONE only when: tsc clean, full server suite green, the phase's
 own scenario tests green, no TODO/stub/dead code in the diff, every new datum
 in the ledger with a consumer and a receipt, migration applied via the
 Supabase MCP and declared in scripts/ci/schema-manifest.d/, PR merged by
-Autopilot, and the change PROVEN LIVE (telemetry, a DB row, or a panel read).
+protected merge, and the change PROVEN LIVE (telemetry, a DB row, or a panel read).
 Then and only then: "READY FOR PHASE N+1 OF 10".
 
 Rules every phase obeys:

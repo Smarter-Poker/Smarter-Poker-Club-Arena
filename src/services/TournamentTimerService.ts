@@ -182,6 +182,7 @@ class TournamentTimerServiceClass {
        * to the value that reaches the database.
        */
       const newLevel = levelState.levelIndex;
+      if (!levelState.currentLevel) return;
 
       // Check if level changed. `timer.currentLevel` starts at -1 precisely so
       // that a genuine level 0 registers as a change on the first tick.
@@ -215,6 +216,7 @@ class TournamentTimerServiceClass {
     levelState: ReturnType<typeof tournamentService.getCurrentLevelState>
   ): Promise<void> {
     const { currentLevel } = levelState;
+    if (!currentLevel) return; // No confirmed amounts to broadcast.
     const displayLevel = newLevel + 1;
 
     // Client no longer writes to the database (engine is authoritative).
@@ -468,6 +470,7 @@ class TournamentTimerServiceClass {
     if (!tournament) return null;
 
     const levelState = tournamentService.getCurrentLevelState(tournament);
+    if (!levelState.currentLevel) return null;
     // Handle blind_structure being a JSON string (Supabase REST returns JSONB as string)
     let blindStructure: any[];
     const rawBlinds: unknown = tournament.blind_structure;

@@ -82,6 +82,31 @@ CI 35185295828 supplies the reproduced false-positive failure.
 
 ## Work still assigned
 
+Production elimination queries compared every candidate ID with a VOLATILE
+resolver, causing repeated accepted-hand reads across approximately 95,000
+candidate rows while tournament locks were held. Migration
+`20260917054818_resolve_elimination_candidate_once.sql` resolves the UUID once
+at the existing locked boundary in three authorities, then uses its primary
+key. Resolver volatility, public refusal/replay behavior and financial guards
+remain intact. Full definition, owner, security, search-path and ACL guards
+protect installation. The supported public caller proves the candidate before
+the private core; a malformed direct owner-only core call can now reach the
+existing resolver error earlier than its old generic missing-time refusal.
+
+The real PostgreSQL regression reproduced 1,002 resolver calls for ordinary
+elimination and passes with two calls, one per authority. The positive PKO
+claim uses one call; replay and missing-history refusal pass. The existing
+required ranking probe retains all 27 earlier scenarios and adds the direct
+call-count regression plus body/ACL/resolver-ACL/postimage rejection with exact
+rollback. Its reduced financial fixture is explicitly documented; the separate
+captured-authority qualification proves PKO claim admission, not cash payment.
+
+The configured migration provider installed the exact reviewed SQL at
+05:48:18 UTC on September 17. Readback at 05:48:35 matched its ledger SQL MD5
+`ca3cb2afc80c242170cefd6b3002d072`, all three postimages and unchanged resolver
+authority. No tournament, player, balance or payout was manually changed.
+Live progress and financial completion remain separate verification steps.
+
 The existing deployed-page MTT checks also exposed delayed initial WebSocket
 readiness. An anonymous, bounded record on each existing subscription now
 separates authorization return, table acquisition, acknowledgement and first

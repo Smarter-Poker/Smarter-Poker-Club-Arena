@@ -1062,14 +1062,7 @@ export class MaintenanceBreak {
         }
         return 'busy' as const;
       }
-      if (
-        this.recoveryReadPending ||
-        this.releaseBoundaryOnly ||
-        this.thawRequest ||
-        this.pendingResumeTables.size > 0 ||
-        this.certifiedResumeAt > this.now()
-      )
-        return 'busy' as const;
+      if (this.recoveryWindowIsBusy()) return 'busy' as const;
       if (
         this.completedAnnouncementAt === announcedAt ||
         this.now() >= announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS
@@ -1105,6 +1098,18 @@ export class MaintenanceBreak {
     if (!this.durableConfirmed || this.announcedAt !== announcedAt)
       return { status: 'unavailable' };
     return { status: 'accepted', announcedAt, endsAt: this.endsAt() };
+  }
+
+  /** Readiness to reserve an announcement; database authority is checked on request. */
+  private recoveryWindowIsBusy(): boolean {
+    return Boolean(
+      this.ending ||
+      this.recoveryReadPending ||
+      this.releaseBoundaryOnly ||
+      this.thawRequest ||
+      this.pendingResumeTables.size > 0 ||
+      this.certifiedResumeAt > this.now()
+    );
   }
 
   private async announceBreak(announcedAt: number, reason: string): Promise<void> {
@@ -2224,6 +2229,17 @@ export class MaintenanceBreak {
       recoveryWindowProtocol: this.deps.assertRecoveryWindowContract
         ? 'engine-recovery-window-v1'
         : null,
+      // The release owner must not spend its one immutable announcement while
+      // the previous break is still thawing or resuming tables. The endpoint
+      // rechecks this after its database contract read to close races.
+      recoveryWindowReady: Boolean(
+        this.startOperation &&
+        this.deps.assertRecoveryWindowContract &&
+        this.lifecycleIsCurrent(this.lifecycleGeneration) &&
+        this.deps.isRunning() &&
+        !this.isActive() &&
+        !this.recoveryWindowIsBusy()
+      ),
       phase: this.phase,
       durableConfirmed: this.isActive() && this.durableConfirmed,
       breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,

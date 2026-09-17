@@ -32,7 +32,7 @@ function deferred() {
   });
   return { promise, resolve };
 }
-function harness() {
+function harness(tableCount = 1) {
   let row: PersistedMaintenanceBreak | null = null;
   let boundary: number | null = null;
   let dbNow = epoch;
@@ -51,6 +51,13 @@ function harness() {
     isBetweenHands: () => true,
     isRunning: () => true,
   };
+  const engines = new Map(
+    Array.from(
+      { length: tableCount },
+      (_, index) =>
+        [index === 0 ? 'table' : `table-${index}`, index === 0 ? engine : { ...engine }] as const
+    )
+  );
   const store: MaintenanceBreakStore = {
     load: vi.fn(async () => row && { ...row }),
     loadReleaseBoundary: vi.fn(async () =>
@@ -94,7 +101,7 @@ function harness() {
   const owner = new MaintenanceBreak({
     store,
     assertRecoveryWindowContract: contract,
-    engines: () => new Map([['table', engine]]),
+    engines: () => engines,
     isRunning: () => true,
     emit,
     emitPresentation,
@@ -350,6 +357,23 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     });
     expect(h.contract).toHaveBeenCalledTimes(1);
     expect(h.owner.remainingMs()).toBe(290_000);
+  });
+
+  it('does not advertise recovery readiness until every table finishes its resume wave', async () => {
+    const h = harness(50);
+    await h.owner.start();
+    expect(h.owner.snapshot()).toMatchObject({ recoveryWindowReady: true });
+    await h.owner.requestRecoveryWindow(Date.now());
+    await vi.advanceTimersByTimeAsync(420_000);
+    expect(h.owner.snapshot()).toMatchObject({
+      active: false,
+      recoveryWindowReady: false,
+      presentation: { active: true, phase: 'resuming' },
+    });
+    expect((await h.owner.requestRecoveryWindow(Date.now())).status).toBe('busy');
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.RESUME_WAVE_GAP_MS);
+    expect(h.owner.snapshot()).toMatchObject({ recoveryWindowReady: true });
+    expect((await h.owner.requestRecoveryWindow(Date.now())).status).toBe('accepted');
   });
 
   it('recovers a committed announcement with a lost response under the same identity', async () => {

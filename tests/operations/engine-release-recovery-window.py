@@ -12,19 +12,21 @@ SOURCE = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
 RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_break_deadline() {')]
 
 
-def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=False, minute=30):
+def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=False, minute=30, ready=True, becomes_ready=False):
     with tempfile.TemporaryDirectory(prefix='recovery-owner-') as temp:
         events = Path(temp) / 'events'
         health = json.dumps({'running': True, 'maintenance': {'active': active,
-            'recoveryWindowProtocol': 'engine-recovery-window-v1' if capability else None}})
+            'recoveryWindowProtocol': 'engine-recovery-window-v1' if capability else None,
+            'recoveryWindowReady': ready}})
         script = f'''
 set -euo pipefail
 EVENTS={shlex.quote(str(events))}
 SHA={'b' * 40}; RUN_ID=900-2; REPO_DIR=/fixture; CONTAINER=fixture; RELEASE_SEAL=fixture-seal
 LOCK_HELD=0
+HEALTH={shlex.quote(health)}
 record() {{ printf '%s\\n' "$*" >> "$EVENTS"; }}
 date() {{ echo {1800000000 + minute * 60}; }}
-curl() {{ printf '%s' {shlex.quote(health)}; }}
+curl() {{ printf '%s' "$HEALTH"; }}
 die() {{ record "DIE:$*"; exit 1; }}
 acquire_engine_lock() {{ [ "$LOCK_HELD" = 0 ]; LOCK_HELD=1; record LOCK; }}
 release_engine_lock() {{ [ "$LOCK_HELD" = 1 ]; LOCK_HELD=0; record UNLOCK; }}
@@ -45,6 +47,7 @@ timeout() {{
 }}
 {RECOVERY}
 request_recovery_window
+{'HEALTH=' + shlex.quote(json.dumps({'running': True, 'maintenance': {'active': False, 'recoveryWindowProtocol': 'engine-recovery-window-v1', 'recoveryWindowReady': True}})) if becomes_ready else ':'}
 request_recovery_window
 [ "$LOCK_HELD" = 0 ]
 '''
@@ -55,6 +58,11 @@ request_recovery_window
 class RecoveryWindowTests(unittest.TestCase):
     def test_eligible_release_reserves_and_requests_once_inside_lock(self):
         result, events = invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'REQUEST', 'UNLOCK'])
+
+    def test_unchanged_transaction_can_request_after_prior_resume_finishes(self):
+        result, events = invoke(ready=False, becomes_ready=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE', 'REQUEST', 'UNLOCK'])
 
@@ -75,8 +83,8 @@ class RecoveryWindowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, ['LOCK', 'SOURCE', 'ALREADY'])
 
-    def test_old_engine_or_active_break_or_hourly_overlap_never_requests(self):
-        for inputs in ({'capability': False}, {'active': True}, {'minute': 48}, {'minute': 1}):
+    def test_old_engine_active_break_unfinished_thaw_or_hourly_overlap_never_requests(self):
+        for inputs in ({'capability': False}, {'active': True}, {'minute': 48}, {'minute': 1}, {'ready': False}):
             with self.subTest(inputs=inputs):
                 result, events = invoke(**inputs)
                 self.assertEqual(result.returncode, 0, result.stderr)

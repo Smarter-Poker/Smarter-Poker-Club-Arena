@@ -436,7 +436,7 @@ request_recovery_window() {
   printf '%s' "$health" | python3 -c '
 import json,sys
 d=json.load(sys.stdin); m=d.get("maintenance") or {}
-raise SystemExit(0 if d.get("running") is True and m.get("active") is False and m.get("recoveryWindowProtocol")=="engine-recovery-window-v1" else 1)
+raise SystemExit(0 if d.get("running") is True and m.get("active") is False and m.get("recoveryWindowReady") is True and m.get("recoveryWindowProtocol")=="engine-recovery-window-v1" else 1)
 ' || return 0
   acquire_engine_lock 'one recovery announcement'
   source_target_is_current

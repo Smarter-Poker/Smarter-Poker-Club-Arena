@@ -47,6 +47,7 @@ import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
@@ -3874,7 +3875,7 @@ export class TournamentRecurringService {
             payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
-            late_reg_mins: 10, // Legacy fallback
+            late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, 10),
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
@@ -4112,7 +4113,7 @@ export class TournamentRecurringService {
             payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg
-            late_reg_mins: 8, // Legacy fallback
+            late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, 8),
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',

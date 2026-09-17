@@ -130,6 +130,7 @@ def receipt(image='candidate', source=SOURCE):
         for name, role, path in retention]
     endpoint = {'user': 'fixture_bootstrap', 'session_user': 'fixture_bootstrap',
                 'port': '5432', 'address': None, 'listen_addresses': '',
+                'autovacuum': 'off',
                 'unix_socket_directories': str(source.parent / 'work/socket')}
     stages.insert(0, {'stage': 'server_endpoint_readback', 'returncode': 0,
                       'argv': W.server_endpoint_command(PG, source.parent / 'work/socket')})
@@ -856,10 +857,22 @@ class ReceiptTests(unittest.TestCase):
 
 
 class HostedLifecycleTests(unittest.TestCase):
+    def test_private_fixture_requires_observed_background_maintenance_off(self):
+        socket_path = SOURCE.parent / 'work/socket'
+        for setting in (None, 'on'):
+            value = dict(receipt('preimage')['server_endpoint'])
+            value.pop('autovacuum', None)
+            if setting is not None:
+                value['autovacuum'] = setting
+            with self.subTest(autovacuum=setting), self.assertRaises(RuntimeError):
+                W.validate_server_endpoint(value, socket_path)
+        self.assertIn("'autovacuum',current_setting('autovacuum')", W.SERVER_ENDPOINT_QUERY)
+
     def test_bootstrap_endpoint_preserves_listener_socket_and_diagnostic_identity_controls(self):
         socket_path = SOURCE.parent / 'work/socket'
         value = dict(user='fixture_bootstrap', session_user='fixture_bootstrap',
                      port='5432', address=None, listen_addresses='',
+                     autovacuum='off',
                      unix_socket_directories=str(socket_path))
         W.validate_server_endpoint(value, socket_path)
         for key, changed in [('listen_addresses','127.0.0.1'), ('unix_socket_directories','/tmp'),

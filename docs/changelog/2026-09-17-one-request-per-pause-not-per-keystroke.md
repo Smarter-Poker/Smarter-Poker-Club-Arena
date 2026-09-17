@@ -19,8 +19,17 @@
    `server/scripts/install-caddy-websocket-log-redaction.sh`): nothing in the
    repository deploys it, so this reaches production only when the operator
    adds the line to the `engine.smarter.poker` block and runs `caddy reload`.
-3. **`@types/md5` moved to devDependencies.** A type package in runtime
-   dependencies; the lockfile now marks it `dev`.
+3. **`@types/md5` to devDependencies: deferred, on purpose.** It was in this
+   change and is now not. `scripts/ci/classify-ci-changes.mjs` treats any
+   touch of `package.json` or `package-lock.json` as `wide`, which sets every
+   CI flag true and runs the full fourteen-job suite including the four
+   Server Engine shards. On a repository where `main` advances every few
+   minutes and `scripts/stamp-build-provenance.mjs` refuses a build that is
+   even one commit behind it, a cosmetic dependency move was the single thing
+   forcing the longest possible run, and it lost the race three times while
+   the actual change waited behind it. The move is correct and costs nothing;
+   it belongs in a dependency-only pull request that can afford the full
+   suite, not bolted to a client fix.
 4. **334 `server/vitest.config.ts.timestamp-*.mjs` files deleted** from the
    canonical clone and its sibling. Vitest writes one per crashed config load;
    they are gitignored and were never in the repository.

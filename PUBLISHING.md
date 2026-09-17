@@ -40,6 +40,10 @@ Require successful publication and matching client revision/build provenance at 
 
 Record the actual publisher run and selected revision. Preserve the origin's append-only assets; do not create a second publisher or copy the bundle into World Hub.
 
+In `post-deploy-e2e.yml`, read the **Client browser verification** job separately from **Live-table and engine verification**. The client job has no dependency on an engine revision, maintenance certificate or live-table job. Both jobs retain their required reports, isolated-account cleanup and exact client provenance. The live-table job continues to run after every client publication, using the exact healthy engine currently serving that client, with protected-main ancestry and unchanged engine identity throughout its actual-hand/reconnect checks. A later unshipped engine commit on main is not its target. Engine-triggered certification instead requires the exact immutable engine SHA in the release event and refuses a different serving version.
+
+Verify the jobs and affected behavior applicable to the assigned change. A client change to table transport or gameplay presentation still needs its live-table interoperability proof against the serving engine. An unrelated engine-certificate failure remains visible and must not be described as passing, but it is not a maintenance hold on an independent page, style or client release. Neither separate job may skip its own required checks to obtain a successful verdict.
+
 ## Club Arena engine and other changed components
 
 For engine changes, use the existing **stage-engine-release.yml** followed by **auto-deploy-hetzner.yml**. Preserve the hosted engine checks, production-door checks, Hetzner build, maintenance cutover, concurrency, sealed receipt and applicable post-deployment verification.

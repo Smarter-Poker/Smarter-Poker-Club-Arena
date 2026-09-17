@@ -59,6 +59,8 @@ import {
   resolvePayoutStructure,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
+import { useMaintenanceBreak } from '../../../hooks/useMaintenanceBreak';
+import { serverNow } from '../../../utils/serverClock';
 import { reportError } from '../../../utils/errorReporter';
 import { formatBuyIn, money } from '../../../utils/buyIn';
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
@@ -181,6 +183,39 @@ export default function DetailOverviewTab({
   const status = String(tournament?.status || '').toUpperCase();
   const isRunning = status === 'RUNNING';
   const isCompleted = status === 'COMPLETED';
+  const { maintenanceBreak } = useMaintenanceBreak();
+  const eventPaused = isRunning && tournament?.on_break === true;
+  const [observedPause, setObservedPause] = useState<{
+    id: string;
+    index: number;
+    anchor: number | null;
+  } | null>(null);
+  const clockAnchor = Date.parse(tournament?.level_started_at || '');
+  const clockIndex = Number(tournament?.current_level);
+  const pauseForThisEvent = observedPause?.id === tournament?.id ? observedPause : null;
+  const creditedClock = Boolean(
+    pauseForThisEvent &&
+    ((Number.isFinite(clockAnchor) &&
+      (pauseForThisEvent.anchor === null || clockAnchor > pauseForThisEvent.anchor)) ||
+      (Number.isInteger(clockIndex) && clockIndex > pauseForThisEvent.index))
+  );
+  // The engine clears on_break before it persists the resumed level anchor.
+  // Hold an observed pause through that gap; neither deadline expiry nor a
+  // global maintenance release can credit this tournament's clock.
+  const waitingForClock = isRunning && Boolean(pauseForThisEvent) && !creditedClock;
+  const clockPaused = eventPaused || waitingForClock;
+  useEffect(() => {
+    if (eventPaused) {
+      setObservedPause({
+        id: tournament.id,
+        index: Number.isInteger(clockIndex) ? clockIndex : -1,
+        anchor: Number.isFinite(clockAnchor) ? clockAnchor : null,
+      });
+    } else if (!isRunning || observedPause?.id !== tournament?.id || creditedClock) {
+      setObservedPause(null);
+    }
+  }, [eventPaused, tournament?.id, clockIndex, clockAnchor, isRunning, creditedClock]);
+
   const isSatellite =
     String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
     String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
@@ -268,6 +303,7 @@ export default function DetailOverviewTab({
     const fallback = {
       index: Math.max(0, Number(tournament?.current_level) || 0),
       isBreak: false,
+      amountsKnown: false,
       sb: opening?.smallBlind ?? 0,
       bb: opening?.bigBlind ?? 0,
       ante: opening?.ante ?? 0,
@@ -285,6 +321,7 @@ export default function DetailOverviewTab({
       return {
         index: ls.levelIndex,
         isBreak: Boolean(cur?.isBreak),
+        amountsKnown: cur != null,
         sb: sbOf(cur),
         bb: bbOf(cur),
         ante: anteOf(cur),
@@ -365,8 +402,8 @@ export default function DetailOverviewTab({
       {
         key: 'blindsup',
         label: 'Blinds Up',
-        value: isRunning ? clockText(level.remaining) : '-',
-        tone: isRunning && level.remaining <= 60 ? 'warn' : undefined,
+        value: clockPaused ? 'Paused' : isRunning ? clockText(level.remaining) : '-',
+        tone: isRunning && !clockPaused && level.remaining <= 60 ? 'warn' : undefined,
       },
       { key: 'latereg', label: 'Late Reg', value: lateRegText },
       {
@@ -384,6 +421,7 @@ export default function DetailOverviewTab({
     level,
     isRunning,
     isCompleted,
+    clockPaused,
     lateRegText,
     prize,
     tournament?.max_players,
@@ -621,21 +659,60 @@ export default function DetailOverviewTab({
     level.duration > 0
       ? Math.min(100, Math.max(0, (1 - level.remaining / level.duration) * 100))
       : 0;
-  const urgent = isRunning && level.remaining > 0 && level.remaining <= 60;
+  const urgent = isRunning && !clockPaused && level.remaining > 0 && level.remaining <= 60;
+  const eventDeadline = Date.parse(tournament.break_ends_at || '');
+  const expectedResumeAt = maintenanceBreak.active
+    ? maintenanceBreak.phase === 'counting_down'
+      ? maintenanceBreak.breakEndsAtMs
+      : null
+    : Number.isFinite(eventDeadline)
+      ? eventDeadline
+      : null;
+  const resumeSeconds =
+    expectedResumeAt === null ? 0 : Math.max(0, Math.ceil((expectedResumeAt - serverNow()) / 1000));
+  const pauseLabel =
+    maintenanceBreak.active && maintenanceBreak.phase === 'last_hand'
+      ? 'Last Hand In Play'
+      : maintenanceBreak.active && maintenanceBreak.phase === 'finalizing'
+        ? 'Finalizing Maintenance'
+        : maintenanceBreak.active && maintenanceBreak.phase === 'resuming'
+          ? 'Resuming Tables'
+          : eventPaused && resumeSeconds > 0
+            ? 'Expected Resume In'
+            : 'Waiting For Resume';
+  const maintenanceNote =
+    !isRunning || !maintenanceBreak.active
+      ? null
+      : maintenanceBreak.phase === 'last_hand'
+        ? 'Maintenance Break Starting. Tables Are Finishing Their Current Hand.'
+        : maintenanceBreak.phase === 'finalizing'
+          ? 'Finalizing Maintenance. Play Resumes When Ready.'
+          : maintenanceBreak.phase === 'resuming'
+            ? 'Maintenance Complete. Tables Are Resuming.'
+            : 'Maintenance Break In Progress. Seats And Chips Are Safe.';
 
-  const heroTime = isRunning
-    ? clockText(level.remaining)
-    : isCompleted
-      ? '-'
-      : untilText(secondsToStart);
-  const heroEyebrow = isRunning
-    ? level.isBreak
-      ? 'Break Ends In'
-      : `Level ${level.index + 1} Ends In`
-    : 'Starts In';
-  const heroNote = isRunning
-    ? `Running Since ${shortDate(tournament.started_at)}`
-    : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`;
+  const heroTime = clockPaused
+    ? pauseLabel === 'Expected Resume In'
+      ? clockText(resumeSeconds)
+      : '-'
+    : isRunning
+      ? clockText(level.remaining)
+      : isCompleted
+        ? '-'
+        : untilText(secondsToStart);
+  const heroEyebrow = clockPaused
+    ? pauseLabel
+    : isRunning
+      ? level.isBreak
+        ? 'Break Ends In'
+        : `Level ${level.index + 1} Ends In`
+      : 'Starts In';
+  const heroNote = clockPaused
+    ? `Level ${level.index + 1} Clock Paused`
+    : maintenanceNote ||
+      (isRunning
+        ? `Running Since ${shortDate(tournament.started_at)}`
+        : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
 
   return (
     <section className="dov" aria-label="Tournament Overview">
@@ -698,12 +775,17 @@ export default function DetailOverviewTab({
               <span className="dov-hero__eyebrow">{heroEyebrow}</span>
               <span
                 className={`tl-clock dov-hero__time${urgent ? ' tl-clock--urgent' : ''}${
-                  isRunning ? '' : ' tl-clock--paused'
+                  isRunning && !clockPaused ? '' : ' tl-clock--paused'
                 }`}
               >
                 {heroTime}
               </span>
-              <span className="dov-hero__note">{heroNote}</span>
+              <span
+                className="dov-hero__note"
+                role={clockPaused || maintenanceNote ? 'status' : undefined}
+              >
+                {heroNote}
+              </span>
             </div>
             <div className="dov-hero__blinds">
               <div className="dov-blind">
@@ -711,10 +793,16 @@ export default function DetailOverviewTab({
                   {isRunning ? (level.isBreak ? 'On Break' : 'Blinds') : 'Opening Blinds'}
                 </span>
                 <span className="dov-blind__value">
-                  {chipsCompact(level.sb)} / {chipsCompact(level.bb)}
+                  {level.amountsKnown
+                    ? `${chipsCompact(level.sb)} / ${chipsCompact(level.bb)}`
+                    : '-'}
                 </span>
                 <span className="dov-blind__ante">
-                  {level.ante > 0 ? `Ante ${chipsCompact(level.ante)}` : 'No Ante'}
+                  {!level.amountsKnown
+                    ? 'Current Blinds Unavailable'
+                    : level.ante > 0
+                      ? `Ante ${chipsCompact(level.ante)}`
+                      : 'No Ante'}
                 </span>
               </div>
               <div className="dov-blind dov-blind--next">
@@ -728,12 +816,14 @@ export default function DetailOverviewTab({
             </div>
           </div>
           {/* Decoration: the hero clock above it IS the value. */}
-          <div className="tl-meter dov-hero__meter" aria-hidden="true">
-            <div
-              className={`tl-meter__fill${urgent ? ' tl-meter__fill--under' : ''}`}
-              style={{ width: `${levelProgress}%` }}
-            />
-          </div>
+          {!clockPaused && (
+            <div className="tl-meter dov-hero__meter" aria-hidden="true">
+              <div
+                className={`tl-meter__fill${urgent ? ' tl-meter__fill--under' : ''}`}
+                style={{ width: `${levelProgress}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 

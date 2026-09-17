@@ -551,16 +551,18 @@ export abstract class TournamentManagerBase {
    * How far ahead of the advertised `start_time` this start() ran, in ms, or 0
    * for a start at or past it. GameServer discovers a timed event
    * TOURNAMENT_PRESEAT_LEAD_MS early so the field is SEATED before the clock;
-   * this number is what stops the poker moving with it. Two consumers, both in
-   * start(): the `holdDealingUntil` deadline on every table, and the level
-   * clock, which is armed after this lead rather than at seating so level 1 is
-   * a full level of cards instead of a minute of waiting plus nine of poker.
+   * this number describes the launch lead. The immutable admitted timestamp
+   * holds every dealer and the first level clock, including after a break or
+   * manager replacement, so level 1 is a full level of cards rather than
+   * waiting time plus a shortened level of poker.
    *
    * Read it as "time the felt owes the clock", not as a state — nothing outside
    * start() branches on it, and it is 0 for every seat-first game and for every
    * event started late.
    */
   protected preStartLeadMs: number = 0;
+  /** One first-level wake, distinct from an already running level clock. */
+  private blindStartTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * ═════════════════════════════════════════════════════════════════════════
    *  THE SPIN REVEAL IS ANCHORED TO THE THIRD PAYMENT (2026-08-27)
@@ -956,6 +958,7 @@ export abstract class TournamentManagerBase {
 
   /** A replacement inherits every pause authority before it can deal. */
   private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
+    this.holdManagedTableUntilBookedStart(engine);
     if (this.addOnBreakActive && this.addOnBreakEndsAtMs > Date.now()) {
       // The absolute hold is independent of hand-for-hand's pause flag, so a
       // barrier resume cannot deal through an overlapping add-on break.
@@ -1246,6 +1249,7 @@ export abstract class TournamentManagerBase {
   ): void {
     const lifecycle = this.lifecycleEpoch.current();
     const tableId = this.tableIdForManagedEngine(engine);
+    this.holdManagedTableUntilBookedStart(engine);
     const operation = (async () => {
       if (!lifecycle || !tableId || !this.tournamentLeaseGeneration)
         throw new Error('f06_engine_admission_identity_missing');
@@ -1419,6 +1423,12 @@ export abstract class TournamentManagerBase {
     );
   }
 
+  /** The completed launch receipt survives dealer and manager replacement. */
+  private holdManagedTableUntilBookedStart(engine: ServerTableEngine): void {
+    const bookedStartMs = Date.parse(String(this.tournamentCache?.started_at ?? ''));
+    if (bookedStartMs > Date.now()) engine.holdDealingUntil(bookedStartMs);
+  }
+
   /** Bind a delayed manager mutation to the exact lifecycle that scheduled it. */
   protected setLifecycleTimeout(
     callback: () => void | Promise<unknown>,
@@ -1469,6 +1479,7 @@ export abstract class TournamentManagerBase {
     for (const timer of this.lifecycleIntervals) clearInterval(timer);
     this.lifecycleTimeouts.clear();
     this.lifecycleIntervals.clear();
+    this.blindStartTimer = null;
     this.breakResumeRetryTimer = null;
     this.pendingBlindTransition = null;
   }
@@ -1818,6 +1829,10 @@ export abstract class TournamentManagerBase {
    * Every entry into a break now goes through this.
    */
   protected suspendLevelClock(): void {
+    if (this.blindStartTimer) {
+      this.clearLifecycleTimeout(this.blindStartTimer);
+      this.blindStartTimer = null;
+    }
     /**
      * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
      * inside `if (this.blindTimer)`, so a break that landed while no timer was
@@ -4398,7 +4413,7 @@ export abstract class TournamentManagerBase {
        * arming its own longer hold a few lines below cannot be shortened by
        * this one, and this cannot be shortened by it.
        *
-       * `preStartLeadMs` is what the level clock reads at the bottom of start():
+       * The level clock uses this same absolute receipt timestamp after setup:
        * arming it here would spend the first minute of level 1 on an empty
        * felt, and a 10-minute level would be a 9-minute level for everybody.
        *
@@ -4697,15 +4712,9 @@ export abstract class TournamentManagerBase {
       // hand. Setup can extend that hold, and completion can consume it: use
       // the admitted absolute deadline after those awaits, never a fresh full
       // reveal delay. Other formats keep their advertised pre-seat lead.
-      const blindStartDelayMs =
-        spinFirstDealHoldUntil > 0
-          ? Math.max(0, spinFirstDealHoldUntil - Date.now())
-          : this.preStartLeadMs;
-      if (blindStartDelayMs > 0) {
-        const structure = tournament.blind_structure || [];
-        this.setLifecycleTimeout(() => {
-          this.startBlindTimer(structure);
-        }, blindStartDelayMs);
+      const blindStartAtMs = spinFirstDealHoldUntil > 0 ? spinFirstDealHoldUntil : launchStartMs;
+      if (blindStartAtMs > Date.now()) {
+        this.scheduleBlindClockStart(tournament.blind_structure || [], blindStartAtMs);
       } else {
         this.startBlindTimer(tournament.blind_structure || []);
       }
@@ -6415,9 +6424,37 @@ export abstract class TournamentManagerBase {
     }, delayMs);
   }
 
+  /** A waiting first level cannot spend time, persist an anchor or survive a newer arm. */
+  private scheduleBlindClockStart(blindStructure: any[], notBeforeMs: number): void {
+    if (this.blindStartTimer) this.clearLifecycleTimeout(this.blindStartTimer);
+    const timer = this.setLifecycleTimeout(
+      () => {
+        if (this.blindStartTimer !== timer) return;
+        this.blindStartTimer = null;
+        // The pause owner will arm the full first level when it releases play.
+        if (this.isOnBreak()) return;
+        this.startBlindTimer(blindStructure);
+      },
+      Math.max(0, notBeforeMs - Date.now())
+    );
+    this.blindStartTimer = timer;
+  }
+
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (this.blindClockTerminalCommitted) return;
     if (blindStructure.length === 0) return;
+    // RUNNING may mean prepared and seated before the immutable launch start.
+    // Break release and replacement managers must honor the same receipt as
+    // the first dealer. Waiting time never consumes the first blind level.
+    const bookedStartMs = Date.parse(String(this.tournamentCache?.started_at ?? ''));
+    if (bookedStartMs > Date.now()) {
+      this.scheduleBlindClockStart(blindStructure, bookedStartMs);
+      return;
+    }
+    if (this.blindStartTimer) {
+      this.clearLifecycleTimeout(this.blindStartTimer);
+      this.blindStartTimer = null;
+    }
     // Never leave two level clocks running for the same tournament. Callers
     // normally arrive with blindTimer already null (it has just fired, or
     // pauseForBreak cleared it), but a double-arm doubles the escalation rate
@@ -6485,6 +6522,10 @@ export abstract class TournamentManagerBase {
       this.blindClockTerminalCommitted
     )
       return;
+    if (Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()) {
+      this.startBlindTimer(blindStructure);
+      return;
+    }
     this.blindTransitionInFlight = true;
     let committed: { level: any; startedAt: number } | null = null;
     let deferredWakeMs: number | undefined;

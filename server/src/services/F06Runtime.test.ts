@@ -197,8 +197,13 @@ it('actual Manager shared admission starts only after resolved projection and pr
     const manager: any = Object.create(TournamentManagerBase.prototype);
     const order: string[] = [];
     const token = {};
+    const bookedStartMs = Date.now() + 60_000;
     const engine = {
       ready: Promise.resolve(true),
+      holdDealingUntil: (deadline: number) => {
+        expect(deadline).toBe(bookedStartMs);
+        order.push('booked-start-held');
+      },
       installF06Allocator: () => {},
       installF06HandAdmission: () => order.push('installed'),
       start: async () => {
@@ -207,6 +212,7 @@ it('actual Manager shared admission starts only after resolved projection and pr
     };
     Object.assign(manager, {
       tournamentId: id(3),
+      tournamentCache: { started_at: new Date(bookedStartMs).toISOString() },
       tournamentLeaseGeneration: id(5),
       lifecycleEpoch: { current: () => token },
       lifecycleIsCurrent: () => true,
@@ -239,7 +245,11 @@ it('actual Manager shared admission starts only after resolved projection and pr
     manager.startManagedTableEngine(engine, 'test');
     await Promise.all([...manager.tableEngineRunJobs]);
     spy.mockRestore();
-    expect(order).toEqual(unresolved ? ['recovery'] : ['installed', 'started']);
+    expect(order).toEqual(
+      unresolved
+        ? ['booked-start-held', 'recovery']
+        : ['booked-start-held', 'installed', 'started']
+    );
   }
 });
 it('actual Base no-start drain retains original permit until exact custody evidence finishes', async () => {

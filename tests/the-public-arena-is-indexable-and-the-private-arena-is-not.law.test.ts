@@ -155,3 +155,38 @@ describe('the Help Center FAQPage schema', () => {
     expect(resolveSeo('/help').title).toBe('Help Center');
   });
 });
+
+describe('the public arena is measured and light (discoverability phase 5, 2026-09-17)', () => {
+  const ROOT = join(__dirname, '..');
+
+  it('the route performance gate measures every prerendered public route, taken from the manifest', () => {
+    const gate = readFileSync(join(ROOT, 'scripts/ci/route-performance.mjs'), 'utf8');
+    expect(gate).toContain("'prerender-manifest.json'");
+    expect(gate).toContain('export function prerenderedRoutes(');
+    expect(gate).toContain(
+      "entry.route === '/' ? '/hub/club-arena/' : `/hub/club-arena${entry.route}/`"
+    );
+    expect(gate).toContain(
+      "const routes = [...publicRoutes, '/hub/club-arena/legal', '/hub/club-arena/health']"
+    );
+    // An empty manifest fails the gate rather than silently measuring nothing.
+    expect(gate).toContain('has no routes; the public arena was not prerendered');
+    expect(gate).toContain("violations.push('transfer > 3MB')");
+  });
+
+  it('the landing page records a view and each way in, through the consent-gated analytics path', () => {
+    const page = readFileSync(join(ROOT, 'src/pages/PokerArenaLandingPage.tsx'), 'utf8');
+    expect(page).toContain("import { capture } from '../lib/analytics'");
+    expect(page).toContain("capture(LANDING_VIEWED, { product: 'poker_arena'");
+    for (const call of [
+      "trackCta('sign_up', 'hero')",
+      "trackCta('sign_in', 'hero')",
+      "trackCta('sign_up', 'closing')",
+      "trackCta('sign_in', 'closing')",
+    ]) {
+      expect(page).toContain(call);
+    }
+    // The page still fetches nothing of its own: a crawler and a person get the same markup.
+    expect(page).not.toMatch(/\bfetch\(/);
+  });
+});

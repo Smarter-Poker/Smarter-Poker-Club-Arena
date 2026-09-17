@@ -33,6 +33,7 @@ function engine(occupancy = stay) {
   e.lifecycleCanMutate = () => true;
   e.tableInfo = { id: table, tournament_id: null };
   e.handCount = 12;
+  e.parkWriteRetryMs = 0;
   e.adoptSeatRoster([{ user_id: user, occupancy_id: occupancy, seat_number: 2, stack: 25 }]);
   return e;
 }
@@ -54,6 +55,90 @@ beforeEach(() => {
   data.rpc.mockReset();
 });
 describe('a marked parked bank survives only its own unchanged stay and hand boundary', () => {
+  it('never bills an active allocation twice across its parked snapshot and restart', async () => {
+    data.rpc.mockResolvedValue({ data: { success: true, shortfall_seconds: 0 }, error: null });
+    const old = engine();
+    old.timeBankEngine.initializePlayer(table, user, { remainingSeconds: 30, usesRemaining: 2 });
+    old.timeBankMeta.set(user, { initialSeconds: 80, baseSeconds: 40, dbConsumedSeconds: 10 });
+    old.timeBankEngine.configure(table, { secondsPerUse: 20 });
+    expect(old.timeBankEngine.activate(table, user, () => undefined)).toBe(true);
+    try {
+      await old.persistPresenceForRestart('parked');
+      old.timeBankEngine.playerActed(table, user);
+      const next = engine();
+      await next.readParkedTimeBanks();
+      next.adoptSeatRoster(next.seatedPlayers);
+      next.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
+      expect(data.rpc.mock.calls.filter(([name]) => name === 'fn_consume_time_bank')).toEqual([
+        ['fn_consume_time_bank', { p_user_id: user, p_seconds: 20 }],
+      ]);
+      expect(next.timeBankMeta.get(user).dbConsumedSeconds).toBe(30);
+      expect(old.timeBankEngine.getPlayerBank(table, user).isActive).toBe(false);
+    } finally {
+      old.timeBankEngine.dispose(table);
+    }
+  });
+  it('does not certify an initialized bank that cannot be restored', async () => {
+    const e = engine();
+    e.timeBankEngine.initializePlayer(table, user, { remainingSeconds: 30, usesRemaining: 2 });
+    e.pauseForMaintenance(120000);
+    await e.presenceSave;
+    await e.persistPresenceForRestart('parked');
+    expect(e.isMaintenanceStateDurable()).toBe(false);
+    expect(data.row).toBeNull();
+  });
+  it.each(['pending', 'refused', 'thrown', 'missing-receipt', 'stale-break'])(
+    'requires the active-bank debit acknowledgment for the same break (%s)',
+    async (outcome) => {
+      let acknowledge!: (value: unknown) => void;
+      let reject!: (error: Error) => void;
+      data.rpc.mockReturnValue(
+        new Promise((resolve, fail) => {
+          acknowledge = resolve;
+          reject = fail;
+        })
+      );
+      const e = engine();
+      e.timeBankEngine.initializePlayer(table, user, { remainingSeconds: 30, usesRemaining: 2 });
+      e.timeBankMeta.set(user, { initialSeconds: 80, baseSeconds: 40, dbConsumedSeconds: 10 });
+      e.timeBankEngine.configure(table, { secondsPerUse: 20 });
+      expect(e.timeBankEngine.activate(table, user, () => undefined)).toBe(true);
+      e.pauseForMaintenance(120000);
+      await e.presenceSave;
+      const parked = e.persistPresenceForRestart('parked');
+      await Promise.resolve();
+      expect(e.isMaintenanceStateDurable()).toBe(false);
+      expect(data.row).toBeNull();
+      expect(data.rpc).toHaveBeenCalledTimes(1);
+      e.onTimeBankAccounting({ type: 'TIME_BANK_STOPPED', tableId: table, playerId: user });
+      expect(data.rpc).toHaveBeenCalledTimes(1);
+      if (outcome === 'stale-break') {
+        e.resumeFromMaintenance();
+        e.pauseForMaintenance(120000);
+      }
+      if (outcome === 'thrown') reject(new Error('acknowledgment lost'));
+      else
+        acknowledge({
+          data: outcome === 'missing-receipt' ? null : { success: outcome !== 'refused' },
+          error: null,
+        });
+      await parked;
+      await e.presenceSave;
+      expect(e.isMaintenanceStateDurable()).toBe(outcome === 'pending');
+      if (outcome === 'pending') {
+        expect(data.row.time_bank_snapshot.players[user]).toMatchObject({
+          remainingSeconds: 10,
+          dbConsumedSeconds: 30,
+        });
+      } else expect(data.row).toBeNull();
+      if (outcome === 'stale-break') {
+        await e.persistPresenceForRestart('parked');
+        expect(e.isMaintenanceStateDurable()).toBe(true);
+      }
+      expect(data.rpc).toHaveBeenCalledTimes(1);
+      e.timeBankEngine.dispose(table);
+    }
+  );
   it('preserves seven remaining seconds and the billed basis across a new engine', async () => {
     await saved();
     const next = engine();
@@ -168,6 +253,7 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
         await Promise.resolve();
         expect(e.isMaintenanceStateDurable()).toBe(false);
         expect(e.handForHandResolve).toBe(existingGate);
+        data.beforeWrite = null;
         release();
         await e.presenceSave;
         expect(e.isMaintenanceStateDurable()).toBe(!refused);

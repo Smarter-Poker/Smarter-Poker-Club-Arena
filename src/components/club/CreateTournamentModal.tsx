@@ -29,10 +29,19 @@ import WeeklyScheduleEditor, {
   type WeeklyScheduleValue,
 } from '../tournament/WeeklyScheduleEditor';
 import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
-import type { BlindLevel } from '../../config/blindStructures';
+import { manualTournamentBlindPreset, type BlindLevel } from '../../config/blindStructures';
 import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { provisionalMttPayoutStructure } from '../../../server/src/tournament/mttPayoutDepth';
+import {
+  MTT_CREATION_PROFILES,
+  type MttCreationProfileId,
+} from '../../../server/src/tournament/mttCreationProfiles';
+import { manualMttCreationProfile, selectedManualMttProfile } from '../../lib/mttCreationProfile';
+import {
+  describeStoredMttStructure,
+  mttClockDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 
 interface Props {
   clubId: string;
@@ -156,8 +165,11 @@ export default function CreateTournamentModal({
   const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack' | 'custom'>(
     'turbo'
   );
-  /* Only read when blindSpeed === 'custom'. Seeded from the Regular preset by
-     the builder itself, so it is never empty when it is used. */
+  // An explicit selection applies the shared new-draft profile. Mounting the
+  // modal keeps the existing custom draft, and fixed-seat formats keep theirs.
+  const [mttPreset, setMttPreset] = useState<MttCreationProfileId | 'custom' | null>(null);
+  /* Seeded from the builder's existing template on first opening. Keep that
+     editor mounted after use so switching presets never discards custom work. */
   const [customBlinds, setCustomBlinds] = useState<BlindLevel[]>([]);
   const [guaranteedPrize, setGuaranteedPrize] = useState('0');
 
@@ -366,9 +378,13 @@ export default function CreateTournamentModal({
     return provisionalMttPayoutStructure();
   }, [maxPlayers, format]);
 
+  const isSngOrSpin = format === 'sng' || format === 'spin';
+  const showCustomBlinds =
+    !isSngOrSpin && mttPreset !== null ? mttPreset === 'custom' : blindSpeed === 'custom';
+
   // The selected custom blind ladder is used only while its control is on.
   const effectiveBlinds = useMemo(() => {
-    if (blindSpeed === 'custom') return customBlinds;
+    if (showCustomBlinds) return customBlinds;
     /* A SPIN GETS THE SPIN LADDER (2026-08-31). This read `BLIND_STRUCTURES[
        blindSpeed]` for every format, and `blindSpeed` defaults to 'turbo' and
        is never touched when the format becomes a Spin — so a Spin created here
@@ -378,8 +394,32 @@ export default function CreateTournamentModal({
        `tournamentFromTableConfig` has always picked the spin ladder for spins;
        this screen was the one that did not. */
     if (format === 'spin') return SPIN_BLIND_STRUCTURE;
+    if (!isSngOrSpin && mttPreset && mttPreset !== 'custom') {
+      const values = manualMttCreationProfile(mttPreset);
+      return manualTournamentBlindPreset(values.blindStructure).map((level) =>
+        level.isBreak ? level : { ...level, durationMinutes: values.blindsUpMinutes }
+      );
+    }
+    if (blindSpeed === 'custom') return customBlinds;
     return BLIND_STRUCTURES[blindSpeed];
-  }, [blindSpeed, customBlinds, format]);
+  }, [blindSpeed, customBlinds, format, isSngOrSpin, mttPreset, showCustomBlinds]);
+  const mttPresetSelection = showCustomBlinds
+    ? 'custom'
+    : mttPreset && mttPreset !== 'custom'
+      ? selectedManualMttProfile({
+          ...manualMttCreationProfile(mttPreset),
+          startingChips: parseInt(startingChips),
+        })
+      : 'custom';
+  // Preview the same whole-chip input the existing submit path serializes.
+  const structureFacts = describeStoredMttStructure(effectiveBlinds, parseInt(startingChips));
+
+  const applyMttPreset = (selection: MttCreationProfileId | 'custom') => {
+    setMttPreset(selection);
+    if (selection !== 'custom') {
+      setStartingChips(String(manualMttCreationProfile(selection).startingChips));
+    }
+  };
   const effectivePayouts = useMemo(
     () => capPaidPlaces(payoutStructure, fieldCap),
     [payoutStructure, fieldCap]
@@ -395,8 +435,6 @@ export default function CreateTournamentModal({
   );
   const payoutsValid = Math.abs(payoutsTotal - 100) < 0.5;
   const blindsValid = Array.isArray(effectiveBlinds) && effectiveBlinds.length > 0;
-
-  const isSngOrSpin = format === 'sng' || format === 'spin';
 
   /* The payout editor prices places against a pool that does not exist yet.
      For an SNG or a Spin the field size is exact - the game starts when the
@@ -1237,36 +1275,86 @@ export default function CreateTournamentModal({
                 at the cap, so the cap has to be a number the operator chooses. */}
               <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>
-                    Speed <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <select
-                    className={styles.select}
-                    value={blindSpeed}
-                    onChange={(e) =>
-                      setBlindSpeed(e.target.value as 'turbo' | 'regular' | 'deepStack' | 'custom')
-                    }
-                  >
-                    <option value="turbo">Turbo (3M)</option>
-                    <option value="regular">Regular (8M)</option>
-                    <option value="deepStack">Deep Stack (15M)</option>
-                    <option value="custom">Custom Structure</option>
-                  </select>
+                  {isSngOrSpin ? (
+                    <>
+                      <label>
+                        Speed <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <select
+                        className={styles.select}
+                        value={blindSpeed}
+                        onChange={(e) =>
+                          setBlindSpeed(
+                            e.target.value as 'turbo' | 'regular' | 'deepStack' | 'custom'
+                          )
+                        }
+                      >
+                        <option value="turbo">Turbo (3M)</option>
+                        <option value="regular">Regular (8M)</option>
+                        <option value="deepStack">Deep Stack (15M)</option>
+                        <option value="custom">Custom Structure</option>
+                      </select>
+                    </>
+                  ) : (
+                    <>
+                      <label htmlFor="club-mtt-setup-preset">Setup Preset</label>
+                      <select
+                        id="club-mtt-setup-preset"
+                        className={styles.select}
+                        value={
+                          showCustomBlinds
+                            ? 'custom'
+                            : mttPresetSelection === 'custom'
+                              ? 'custom_setup'
+                              : mttPresetSelection
+                        }
+                        onChange={(event) =>
+                          applyMttPreset(event.target.value as MttCreationProfileId | 'custom')
+                        }
+                      >
+                        <option value="custom_setup" disabled>
+                          Custom Setup
+                        </option>
+                        {MTT_CREATION_PROFILES.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.label} · {profile.depthBB} BB · {profile.minutes} Min
+                          </option>
+                        ))}
+                        <option value="custom">Custom Structure</option>
+                      </select>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            {blindSpeed === 'custom' && (
-              <div className={styles.formGroup}>
-                <span className={styles.sectionLabel}>Blind Structure</span>
-                <span className={styles.helperText}>
-                  Levels Are Sent Exactly As Shown, Breaks Included.
-                </span>
-                <BlindStructureBuilder
-                  onChange={setCustomBlinds}
-                  startingChips={parseInt(startingChips) || 10000}
-                />
+            {!isSngOrSpin && (
+              <div className={styles.helperText} aria-label="MTT Structure Preview">
+                {mttClockDescription(structureFacts)} ·{' '}
+                {structureFacts.startingDepthBB === null
+                  ? 'Opening Depth Unconfirmed'
+                  : `${structureFacts.startingDepthBB.toLocaleString(undefined, { maximumFractionDigits: 2 })} Big Blinds At Start`}
               </div>
+            )}
+
+            {(showCustomBlinds || customBlinds.length > 0) && (
+              <fieldset
+                hidden={!showCustomBlinds}
+                disabled={!showCustomBlinds}
+                aria-label="Custom Blind Structure"
+                style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+              >
+                <div className={styles.formGroup}>
+                  <span className={styles.sectionLabel}>Blind Structure</span>
+                  <span className={styles.helperText}>
+                    Levels Are Sent Exactly As Shown, Breaks Included.
+                  </span>
+                  <BlindStructureBuilder
+                    onChange={setCustomBlinds}
+                    startingChips={parseInt(startingChips) || 10000}
+                  />
+                </div>
+              </fieldset>
             )}
 
             <div className={styles.row}>
@@ -1329,10 +1417,11 @@ export default function CreateTournamentModal({
             <div className={styles.row}>
               <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>
+                  <label htmlFor="tournament-starting-chips">
                     Starting Chips <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
+                    id="tournament-starting-chips"
                     type="number"
                     className={styles.input}
                     value={startingChips}

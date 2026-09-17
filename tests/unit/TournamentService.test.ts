@@ -9,7 +9,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRpc, mockEmit, mockUuid, mockTournamentRead } = vi.hoisted(() => ({
+const { mockRpc, mockEmit, mockUuid, mockTournamentRead, mockSelect } = vi.hoisted(() => ({
+  mockSelect: vi.fn(),
   mockRpc: vi.fn(),
   mockTournamentRead: vi.fn(async () => ({ data: null, error: null as unknown })),
   mockEmit: vi.fn(),
@@ -22,6 +23,11 @@ vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
     const handler: ProxyHandler<any> = {
       get: (_target, prop) => {
+        if (prop === 'select')
+          return (columns: string) => {
+            mockSelect(columns);
+            return new Proxy({}, handler);
+          };
         if (prop === 'maybeSingle' || prop === 'single') return mockTournamentRead;
         if (prop === 'then')
           return (resolve: (v: any) => void) => resolve({ data: null, error: null });
@@ -249,6 +255,12 @@ describe('TournamentService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('getTournament', () => {
+    it('requests the committed blind snapshot on initial load and refresh', async () => {
+      await tournamentService.getTournament('event');
+      expect(mockSelect.mock.calls[0][0].split(',').map((s: string) => s.trim())).toContain(
+        'blind_level_state'
+      );
+    });
     it('distinguishes an unavailable snapshot from a verified missing tournament', async () => {
       const error = { message: 'Network Unavailable' };
       mockTournamentRead.mockResolvedValue({ data: null, error });
@@ -570,7 +582,7 @@ describe('TournamentService', () => {
       // because that is the number the money gates and the SQL RPC compare.
       const s = tournamentService.getCurrentLevelState(running(9));
       expect(s.levelIndex).toBe(9);
-      expect(s.currentLevel.bigBlind).toBe(400); // last known row
+      expect(s.currentLevel).toBeNull(); // The old last row cannot describe level 10.
       expect(s.nextLevel).toBeNull();
     });
 
@@ -591,6 +603,98 @@ describe('TournamentService', () => {
       } as never);
       expect(s.levelIndex).toBe(0);
       expect(s.currentLevel.bigBlind).toBe(50);
+    });
+  });
+
+  describe('committed current blinds', () => {
+    const lastLevel = {
+      level: 40,
+      smallBlind: 2_000_000,
+      bigBlind: 4_000_000,
+      small_blind: 2_000_000,
+      big_blind: 4_000_000,
+      ante: 500_000,
+      durationMinutes: 5,
+    };
+    const event = (snapshot: unknown, index = 369) =>
+      ({
+        id: 'event',
+        status: 'RUNNING',
+        current_level: index,
+        started_at: new Date(Date.now() - 86_400_000).toISOString(),
+        level_started_at: new Date(Date.now() - 60_000).toISOString(),
+        blind_structure: [lastLevel],
+        blind_level_state: snapshot,
+      }) as never;
+
+    it('displays the committed amounts beyond the ladder instead of its last row', () => {
+      const state = tournamentService.getCurrentLevelState(
+        event({
+          index: 369,
+          small_blind: 52_500,
+          big_blind: 105_000,
+          ante: 105_000,
+        })
+      );
+      expect(state.currentLevel).toMatchObject({
+        level: 370,
+        smallBlind: 52_500,
+        bigBlind: 105_000,
+        ante: 105_000,
+        small_blind: 52_500,
+        big_blind: 105_000,
+      });
+      expect(state.levelIndex).toBe(369);
+      expect(state.timeRemainingSeconds).toBeGreaterThanOrEqual(239);
+      expect(state.timeRemainingSeconds).toBeLessThanOrEqual(240);
+      expect(state.nextLevel).toBeNull();
+      expect(lastLevel.bigBlind).toBe(4_000_000);
+    });
+
+    it('keeps events with identical ladders independent, including zero antes', () => {
+      const first = event({ index: 369, small_blind: 52_500, big_blind: 105_000, ante: 0 });
+      const second = event({ index: 10, small_blind: 1_500, big_blind: 3_000, ante: 300 }, 10);
+      expect(tournamentService.getCurrentLevelState(first).currentLevel).toMatchObject({
+        smallBlind: 52_500,
+        bigBlind: 105_000,
+        ante: 0,
+      });
+      expect(tournamentService.getCurrentLevelState(second).currentLevel).toMatchObject({
+        smallBlind: 1_500,
+        bigBlind: 3_000,
+        ante: 300,
+      });
+      expect(tournamentService.getCurrentLevelState(first).currentLevel?.bigBlind).toBe(105_000);
+    });
+
+    it('uses the engine snapshot when chip limits change an in-ladder amount', () => {
+      expect(
+        tournamentService.getCurrentLevelState(
+          event(
+            {
+              index: 0,
+              small_blind: 50,
+              big_blind: 100,
+              ante: 10,
+            },
+            0
+          )
+        ).currentLevel
+      ).toMatchObject({ smallBlind: 50, bigBlind: 100, ante: 10 });
+    });
+
+    it.each([
+      null,
+      undefined,
+      { index: 368, small_blind: 50, big_blind: 100, ante: 0 },
+      { index: 369, small_blind: '50', big_blind: 100, ante: 0 },
+      { index: 369, small_blind: 50, big_blind: Infinity, ante: 0 },
+      { index: 369, small_blind: 50, big_blind: 100, ante: -1 },
+      { index: 369, small_blind: 200, big_blind: 100, ante: 0 },
+    ])('does not invent overflow blinds from an absent or invalid snapshot: %j', (snapshot) => {
+      const state = tournamentService.getCurrentLevelState(event(snapshot));
+      expect(state.levelIndex).toBe(369);
+      expect(state.currentLevel).toBeNull();
     });
   });
 

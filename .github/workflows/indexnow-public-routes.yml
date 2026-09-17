@@ -1,0 +1,34 @@
+name: IndexNow Public Routes
+
+# After a successful Publish Club Arena run, tell Bing (and, through Bing's
+# index, Copilot, DuckDuckGo and Yandex) that the arena's public pages on
+# smarter.poker changed. World Hub pings IndexNow for its own merges and
+# never sees an arena publish. Event-driven off the publish (workflow_run),
+# not a schedule; best effort, never red. AEO phase 1, 2026-09-17.
+
+on:
+  workflow_run:
+    workflows: ['Publish Club Arena']
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    name: Submit the arena's public URLs to IndexNow
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The default branch, not the publish's own commit: the script reads
+      # what the publish put on the public address, so it does not have to
+      # exist at that commit (the first run checked out a publish older than
+      # the script and found nothing to run).
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Submit
+        continue-on-error: true
+        run: node scripts/indexnow-public-routes.mjs

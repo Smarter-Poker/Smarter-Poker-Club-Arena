@@ -46,7 +46,8 @@ import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
-import { shouldShowClubFooterFor } from './components/club/clubFooterVisibility';
+import { shouldShowClubFooterForVisitor } from './components/club/clubFooterVisibility';
+import { useUserStore } from './stores/useUserStore';
 import { applyArenaScheme, arenaSchemeFor } from './lib/arenaScheme';
 import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTabLobbySurface';
 
@@ -322,6 +323,9 @@ function FullApp() {
   const location = useLocation();
   const inTabLobbyActive = useInTabLobbyActive();
   const inTabLobbyClubId = useInTabLobbyClubId();
+  /* A signed-out visitor on a public page (landing, Help Center, legal) is
+     not shown the authenticated footer; see shouldShowClubFooterForVisitor. */
+  const footerVisitorSignedIn = useUserStore((state) => state.isAuthenticated);
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
@@ -2275,7 +2279,12 @@ function FullApp() {
           </Suspense>
           {/* Route OR in-tab lobby: the "+" lobby lives on /table/<id>, and the
               footer is owed to the lobby, not to the URL (inTabLobbySurface). */}
-          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive, inTabLobbyClubId) && (
+          {shouldShowClubFooterForVisitor(
+            location.pathname,
+            inTabLobbyActive,
+            inTabLobbyClubId,
+            footerVisitorSignedIn
+          ) && (
             <ClubFooterMount
               clubId={inTabLobbyActive ? (inTabLobbyClubId ?? undefined) : undefined}
             />

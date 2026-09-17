@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import {
   shouldShowClubFooter,
   shouldShowClubFooterFor,
+  shouldShowClubFooterForVisitor,
 } from '../src/components/club/clubFooterVisibility';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
@@ -31,6 +32,19 @@ describe('the lobby always has its footer', () => {
     expect(shouldShowClubFooterFor('/clubs/club-jaqk', false)).toBe(true);
   });
 
+  it('a signed-out visitor on a public page is not shown the authenticated footer; a signed-in player is', () => {
+    for (const path of ['/help', '/help/', '/legal/tos', '/legal/privacy']) {
+      expect(shouldShowClubFooterForVisitor(path, false, undefined, false)).toBe(false);
+    }
+    expect(shouldShowClubFooterForVisitor('/help', false, undefined, true)).toBe(true);
+    expect(shouldShowClubFooterForVisitor('/legal/tos', false, undefined, true)).toBe(false);
+    // A private route keeps its footer whatever the store says: AuthGuard,
+    // not the footer, is what turns a signed-out visitor away.
+    expect(shouldShowClubFooterForVisitor('/clubs/club-jaqk', false, undefined, false)).toBe(true);
+    // The lobby tab on a table wins regardless.
+    expect(shouldShowClubFooterForVisitor('/table/abc', true, undefined, false)).toBe(true);
+  });
+
   it('keeps chip navigation off every Diamond Arena route', () => {
     expect(shouldShowClubFooter('/clubs/diamond-arena')).toBe(false);
     expect(shouldShowClubFooter('/clubs/diamond-arena/finance')).toBe(false);
@@ -41,9 +55,13 @@ describe('the lobby always has its footer', () => {
   it('the app root reads both inputs', () => {
     const app = read('src/App.tsx');
     expect(app).toContain('useInTabLobbyActive()');
-    expect(app).toContain(
-      'shouldShowClubFooterFor(location.pathname, inTabLobbyActive, inTabLobbyClubId)'
+    // Discoverability phase 5 (2026-09-17): the visitor-aware wrapper reads the
+    // same two inputs plus whether anyone is signed in, and defers to
+    // shouldShowClubFooterFor for every signed-in or lobby case.
+    expect(app).toMatch(
+      /shouldShowClubFooterForVisitor\(\s*location\.pathname,\s*inTabLobbyActive,\s*inTabLobbyClubId,\s*footerVisitorSignedIn\s*\)/
     );
+    expect(app).toContain('useUserStore((state) => state.isAuthenticated)');
   });
 
   it('the container publishes only the tab on screen, and clears on unmount', () => {

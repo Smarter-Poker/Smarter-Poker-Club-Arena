@@ -307,6 +307,8 @@ esac
     expect(runSeal(['get', 'desired-legacy-unlabelled']).stdout).toBe('true');
   });
 
+  // Thirteen subprocess operations share this fixture; use the same aggregate
+  // allowance as the other multi-process cases below. Production deadlines stay intact.
   it('executes candidates with restart=no and desired recovery with restart=always', () => {
     expect(
       runSeal([
@@ -486,7 +488,7 @@ exit 1
       expect(readFileSync(runLog, 'utf8')).toBe('');
       expect(readFileSync(retainedPath)).toEqual(retainedBytes);
     }
-  });
+  }, 15_000);
 
   it('requires journal-capable images to use durable storage without breaking legacy recovery', () => {
     const proof = spawnSync(

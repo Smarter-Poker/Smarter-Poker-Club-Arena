@@ -1,5 +1,6 @@
 """Finite current-route identity/attempt regressions; no SQL or application execution."""
 import copy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -14,7 +15,7 @@ from unittest.mock import patch
 import current_ci as ci
 from execution import finish_owned_teardown
 from custody import FundedSourceCustody
-from retained import RetainedModules
+from retained import RetainedModules, INSTALLER_PREFIX, literal_installer_transport
 
 
 class CurrentAccountingIdentityTests(unittest.TestCase):
@@ -35,6 +36,112 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
     def identity(self, environment=None, event=None, parents=None):
         return ci.identity(environment or self.env, event or self.event, self.commit,
                            [self.source, 'c'*40] if parents is None else parents, self.workspace)
+
+    def _original_driver_transport(self, bound, budget, writes, *, eof=False, on_write=None):
+        """Use the literal original Psql methods with modeled pipes; no process/SQL."""
+        driver = bound.driver
+        queues = []
+        class BufferedQueue(queue.Queue):
+            def __init__(self):
+                super().__init__()
+                queues.append(self)
+        def write(payload):
+            writes.append(payload)
+            if on_write is not None:
+                on_write()
+            marker = payload.rsplit('\\echo ',1)[-1].rstrip('\n')
+            queues[0].put(None if eof else marker)
+            return len(payload)
+        process = SimpleNamespace(stdin=SimpleNamespace(write=write,flush=lambda:None),
+                                  stdout=iter(()),stderr=iter(()),pid=42,poll=lambda:0)
+        driver.queue = SimpleNamespace(Queue=BufferedQueue,Empty=queue.Empty)
+        driver.subprocess = SimpleNamespace(Popen=lambda *a,**k:process,PIPE=-1)
+        driver.threading = SimpleNamespace(Thread=lambda **kw:SimpleNamespace(start=lambda:None))
+        original = (driver.Psql,driver.Psql.sql,driver.Psql.one,driver.Psql.close)
+        selected = deadline.install_driver_deadline(driver,budget,literal_dispatch=bound.literal_dispatch)
+        self.assertEqual((selected,selected.sql,selected.one,selected.close),original)
+        records = []
+        return selected(['modeled-only'],{},'installer_transport',records),records
+
+    def test_original_installer_transport_preserves_sealed_query_and_barrier(self):
+        bound = RetainedModules(FundedSourceCustody(),None,ci.CASES[0])
+        source = next(row['sql'] for row in bound.custody.read_json('supplement/AUDIT-EXPECTED.json')['dispatches']
+                      if row['sql'].startswith(INSTALLER_PREFIX))
+        budget,_ = self.budget(300,90)
+        writes = []
+        with self.alarms():
+            connection,records = self._original_driver_transport(bound,budget,writes)
+            self.assertEqual(connection.sql(source),[])
+            for query in ('SELECT 1','ROLLBACK'):
+                self.assertEqual(connection.sql(query),[])
+        wire = writes[0]
+        self.assertTrue(wire.startswith(INSTALLER_PREFIX+'\nSELECT $bbj_literal_'))
+        start = len(INSTALLER_PREFIX+'\nSELECT ')
+        end = wire.index('$',start+1)+1
+        tag = wire[start:end]
+        body,suffix = wire[end:].split(tag,1)
+        self.assertEqual(INSTALLER_PREFIX+body,source)
+        self.assertEqual(suffix,'\n\\gexec\n\\echo '+records[0]['barrier']+'\n')
+        self.assertEqual(records[0]['sql'],source)
+        self.assertEqual(records[0]['status'],'BARRIER_REACHED')
+        for query,wire,record in zip(('SELECT 1','ROLLBACK'),writes[1:],records[1:]):
+            self.assertEqual(wire,query+';\n\\echo '+record['barrier']+'\n')
+        transport = [row for row in budget.events if row['operation']=='persistent_transport']
+        self.assertEqual(transport[0]['payload'],source.rstrip().rstrip(';')+';\n\\echo '+records[0]['barrier']+'\n')
+        self.assertEqual(transport[0]['wire_payload'],writes[0])
+        self.assertFalse(transport[0]['cleanup'])
+        self.assertTrue(transport[-1]['cleanup'])
+
+    def test_installer_transport_refuses_changed_source_or_barrier_before_write(self):
+        bound = RetainedModules(FundedSourceCustody(),None,ci.CASES[0])
+        source = next(row['sql'] for row in bound.custody.read_json('supplement/AUDIT-EXPECTED.json')['dispatches']
+                      if row['sql'].startswith(INSTALLER_PREFIX))
+        budget,_ = self.budget(300,90)
+        writes = []
+        with self.alarms():
+            connection,records = self._original_driver_transport(bound,budget,writes)
+            with self.assertRaisesRegex(RuntimeError,'Unrecognized original installer'):
+                connection.sql(source.replace('-- SCRATCH','-- CHANGED',1))
+        self.assertEqual(writes,[])
+        self.assertEqual(records[0]['status'],'ATTEMPTED')
+        original = source.rstrip().rstrip(';')+';\n\\echo '
+        for barrier in ('g8_barrier_short\n','g8_barrier_'+'a'*32+'\nSELECT 1;\n','g8_barrier_'+'A'*32+'\n'):
+            with self.subTest(barrier=barrier),self.assertRaisesRegex(RuntimeError,'Exact original installer barrier'):
+                bound.literal_dispatch(original+barrier)
+        for changed in (source.replace('1000ms','999ms',1),source.replace('15000ms','16000ms',1),source[:-1]):
+            with self.subTest(source_boundary=changed[:75]),self.assertRaises(RuntimeError):
+                literal_installer_transport(changed)
+        audit = bound.custody.read_json('supplement/AUDIT-EXPECTED.json')
+        original_read = bound.custody.read_json
+        for mutation in ('hash','metadata'):
+            changed = copy.deepcopy(audit)
+            installer = next(row for row in changed['dispatches'] if row['sql'].startswith(INSTALLER_PREFIX))
+            if mutation == 'hash':installer['sha256']='0'*64
+            else:
+                installer['sql']=installer['sql'].replace('-- SCRATCH','-- CHANGED',1)
+                installer['sha256']=hashlib.sha256(installer['sql'].encode()).hexdigest()
+            with self.subTest(authority=mutation),patch.object(bound.custody,'read_json',side_effect=lambda name:
+                    changed if name=='supplement/AUDIT-EXPECTED.json' else original_read(name)):
+                with self.assertRaises(RuntimeError):RetainedModules(bound.custody,None,ci.CASES[0])
+
+    def test_installer_transport_error_or_late_write_never_reaches_a_barrier(self):
+        for late in (False,True):
+            with self.subTest(late=late):
+                bound = RetainedModules(FundedSourceCustody(),None,ci.CASES[0])
+                source = next(row['sql'] for row in bound.custody.read_json('supplement/AUDIT-EXPECTED.json')['dispatches']
+                              if row['sql'].startswith(INSTALLER_PREFIX))
+                budget,clock = self.budget(300,90)
+                writes = []
+                with self.alarms():
+                    connection,records = self._original_driver_transport(bound,budget,writes,eof=True,
+                        on_write=(lambda:clock.advance(61)) if late else None)
+                    with self.assertRaises(deadline.DeadlineExpired if late else RuntimeError):connection.sql(source)
+                self.assertEqual(len(writes),1)
+                self.assertEqual(records[0]['sql'],source)
+                self.assertEqual(records[0]['status'],'ATTEMPTED' if late else 'PSQL_EXIT')
+                if late:
+                    self.assertTrue(budget.execution_refused)
+                    self.assertGreater(budget.remaining(True),0)
 
     def _run_audit_selection_boundary(self, bound, models, choice):
         """Model only the real installer-to-planner connection; never execute SQL."""

@@ -14,6 +14,9 @@ from checks import run_retained_regressions
 
 HERE = Path(__file__).resolve().parent
 IDENTITY_TESTS = {
+    'test_original_installer_transport_preserves_sealed_query_and_barrier',
+    'test_installer_transport_refuses_changed_source_or_barrier_before_write',
+    'test_installer_transport_error_or_late_write_never_reaches_a_barrier',
     'test_complete_collector_preimage_reaches_original_audit_plan',
     'test_complete_preimage_binding_refuses_missing_or_changed_builtin_observations',
     'test_real_checkout_and_current_pr_identity_are_both_recorded',

@@ -180,7 +180,7 @@ class CaseDeadline:
                 'timeout_is_cancellation': False, 'automatic_retry': False}
 
 
-def install_driver_deadline(driver, budget):
+def install_driver_deadline(driver, budget, *, literal_dispatch=None):
     """Bound original Psql I/O without replacing its class, sql, one or close.
 
     The financial case requires literal original Psql type/method identity.
@@ -235,7 +235,10 @@ def install_driver_deadline(driver, budget):
             try:
                 with budget.bounded('persistent_write', statement_cap, cleanup,
                                     absolute_end=self.state['statement_end']):
-                    returned = self.stream.write(payload)
+                    wire = literal_dispatch(payload) if literal_dispatch is not None else payload
+                    if wire != payload:
+                        row['wire_payload'] = wire
+                    returned = self.stream.write(wire)
                 row['status'] = 'WRITTEN_RESPONSE_UNCONFIRMED'
                 return returned
             except BaseException as error:

@@ -9,6 +9,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 from types import ModuleType
 
@@ -35,6 +36,37 @@ def imports(values):
 
 def obsolete(*args, **kwargs):
     raise RuntimeError('Historical admission is not a current accounting CI permit')
+
+
+INSTALLER_PREFIX = "SET LOCAL lock_timeout = '1000ms';\nSET LOCAL statement_timeout = '15000ms';"
+
+
+def literal_installer_transport(source):
+    """Frame one authenticated installer; psql must not strip its audit comments.
+
+    The two original SET statements still execute first on the same connection.
+    gexec sends its single returned text value literally, including the complete
+    original DO query's whitespace/comments. It does not interpret its contents
+    as psql commands or variables. The caller supplies sealed source, never a
+    query observed from a previous run.
+    """
+    require(source.startswith(INSTALLER_PREFIX), 'Exact original installer SET order required')
+    body = source[len(INSTALLER_PREFIX):]
+    require(body.startswith('\n-- ') and '\nDO $install$\n' in body and body.endswith('$install$;\n'),
+            'Complete original installer DO source required')
+    tag = '$bbj_literal_' + hashlib.sha256(body.encode()).hexdigest() + '$'
+    require(tag not in body, 'Installer literal delimiter collision')
+    original = source.rstrip().rstrip(';') + ';\n\\echo '
+
+    def frame(payload):
+        if not payload.startswith(INSTALLER_PREFIX):
+            return payload
+        require(payload.startswith(original), 'Unrecognized original installer transport payload')
+        barrier = payload[len(original):]
+        require(re.fullmatch(r'g8_barrier_[0-9a-f]{32}\n', barrier) is not None,
+                'Exact original installer barrier required')
+        return INSTALLER_PREFIX + '\nSELECT ' + tag + body + tag + '\n\\gexec\n\\echo ' + barrier
+    return frame
 
 
 class RetainedModules:
@@ -96,6 +128,16 @@ class RetainedModules:
         self.supplement.verify_sources = self.supplement_sources
         self.supplement.libraries = lambda unused: (
             self.preflight, self.binding, self.registry, supplemental, self.queries, self.backup)
+        audit = custody.read_json('supplement/AUDIT-EXPECTED.json')
+        installers = [row for row in audit['dispatches'] if row['sql'].startswith(INSTALLER_PREFIX)]
+        require(len(installers) == 1, 'One sealed original installer dispatch required')
+        installer = installers[0]
+        require(hashlib.sha256(installer['sql'].encode()).hexdigest() == installer['sha256'],
+                'Original installer dispatch hash differs')
+        models = custody.read_json('supplement/EXPECTED.json')
+        statements = [sql for item in models['functions'] for sql in item['statements']]
+        require(statements.count(installer['sql']) == 1, 'Installer must match original metadata source')
+        self.literal_dispatch = literal_installer_transport(installer['sql'])
         group = 'backup_adapter' if selected == 'SEQ08_BBJ_BACKUP_POSITIVE_MAIN_TRANSFER_25' else 'promo_adapter'
         self.adapter_binding = ModuleType('current_bbj_adapter_binding')
         self.adapter_binding.CASE = selected

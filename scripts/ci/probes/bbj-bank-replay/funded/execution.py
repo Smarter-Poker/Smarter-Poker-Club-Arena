@@ -75,7 +75,7 @@ def execute_retained_case(binding, review, evidence, pg_bin, temp_parent, regres
     seed_path=binding.custody.source_path('resources/seed.sql')
     driver=binding.driver
     preflight=binding.preflight
-    Psql=install_driver_deadline(driver,budget)
+    Psql=install_driver_deadline(driver,budget,literal_dispatch=binding.literal_dispatch)
     check,check_prerequisites,check_expression_identity=(preflight.check,preflight.check_prerequisites,preflight.check_expression_identity)
     assert_complete_preflight=binding.binding.assert_complete_preflight
     runid=review['case_attempt_id']

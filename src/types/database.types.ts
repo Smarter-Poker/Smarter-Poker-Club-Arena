@@ -350,6 +350,13 @@ export interface Tournament {
   late_reg_mins?: number;
   late_reg_levels?: number;
   current_level?: number;
+  /** Amounts committed by the engine for exactly this zero-based level. */
+  blind_level_state?: {
+    index: number;
+    small_blind: number;
+    big_blind: number;
+    ante: number;
+  } | null;
   started_at?: string;
   ended_at?: string;
   created_at: string;

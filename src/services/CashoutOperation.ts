@@ -28,7 +28,9 @@ export interface CashoutOperationIntent<K extends CashoutKind = CashoutKind> {
   /** Original account/view scope, independent of ordinary row refresh. */
   receiptViewCurrent?: () => boolean;
 }
-type CanonicalCashoutIntent = Readonly<Omit<CashoutOperationIntent, 'isCurrent' | 'receiptViewCurrent'>>;
+type CanonicalCashoutIntent = Readonly<
+  Omit<CashoutOperationIntent, 'isCurrent' | 'receiptViewCurrent'>
+>;
 declare const preparedBrand: unique symbol;
 declare const startBrand: unique symbol;
 export interface PreparedCashoutOperation<K extends CashoutKind = CashoutKind> {
@@ -41,7 +43,9 @@ export interface CashoutStart<K extends CashoutKind = CashoutKind> {
   readonly clubId: string;
   readonly [startBrand]: true;
 }
-export type CashoutOperationResult<K extends CashoutKind> = K extends 'cashout_request' ? CashoutRequest : true;
+export type CashoutOperationResult<K extends CashoutKind> = K extends 'cashout_request'
+  ? CashoutRequest
+  : true;
 export type CashoutRecoveryResult<K extends CashoutKind> =
   | { found: true; result: CashoutOperationResult<K> }
   | { found: false };
@@ -65,21 +69,27 @@ interface Start {
 }
 const preparations = new WeakMap<PreparedCashoutOperation, Preparation>();
 const starts = new WeakMap<CashoutStart, Start>();
-const submissions = new Map<string, {
-  result: Promise<CashoutRequest | true>;
-  isCurrent: () => boolean;
-}>();
+const submissions = new Map<
+  string,
+  {
+    result: Promise<CashoutRequest | true>;
+    isCurrent: () => boolean;
+  }
+>();
 
 function canonicalUUID(value: unknown): string {
-  if (typeof value !== 'string' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ||
-      value === '00000000-0000-0000-0000-000000000000') {
+  if (
+    typeof value !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ||
+    value === '00000000-0000-0000-0000-000000000000'
+  ) {
     throw new Error('The Cashout Account Or Club Could Not Be Verified');
   }
   return value.toLowerCase();
 }
 function assertCurrent(isCurrent: () => boolean): void {
-  if (!isCurrent()) throw new Error('The Account Or Cashout Changed. Refresh To Check Its Outcome.');
+  if (!isCurrent())
+    throw new Error('The Account Or Cashout Changed. Refresh To Check Its Outcome.');
 }
 function accountAndViewGuard(userId: string, viewCurrent: () => boolean): () => boolean {
   if (typeof viewCurrent !== 'function') throw new Error('The Cashout View Could Not Be Verified');
@@ -101,25 +111,41 @@ export async function prepareCashoutOperation<K extends CashoutKind>(
   const targetId = canonicalUUID(captured.targetId);
   const isCurrent = accountAndViewGuard(userId, captured.isCurrent);
   const receiptScope = captured.receiptViewCurrent
-    ? accountAndViewGuard(userId, captured.receiptViewCurrent) : isCurrent;
+    ? accountAndViewGuard(userId, captured.receiptViewCurrent)
+    : isCurrent;
   assertCurrent(isCurrent);
   assertCurrent(receiptScope);
   assertChipAmount(captured.amount);
-  if (!['cashout_request', 'cashout_approve', 'cashout_decline', 'cashout_cancel'].includes(captured.kind) ||
-      typeof captured.clubId !== 'string' || !captured.clubId.trim() ||
-      (captured.note !== undefined && typeof captured.note !== 'string')) {
+  if (
+    !['cashout_request', 'cashout_approve', 'cashout_decline', 'cashout_cancel'].includes(
+      captured.kind
+    ) ||
+    typeof captured.clubId !== 'string' ||
+    !captured.clubId.trim() ||
+    (captured.note !== undefined && typeof captured.note !== 'string')
+  ) {
     throw new Error('The Cashout Intent Could Not Be Verified');
   }
   const note = (captured.note ?? '').trim();
-  if ((captured.kind === 'cashout_request' && (userId !== playerId || targetId !== playerId)) ||
-      (captured.kind === 'cashout_cancel' && (userId !== playerId || note !== '')) ||
-      ((captured.kind === 'cashout_approve' || captured.kind === 'cashout_decline') && userId === playerId)) {
+  if (
+    (captured.kind === 'cashout_request' && (userId !== playerId || targetId !== playerId)) ||
+    (captured.kind === 'cashout_cancel' && (userId !== playerId || note !== '')) ||
+    ((captured.kind === 'cashout_approve' || captured.kind === 'cashout_decline') &&
+      userId === playerId)
+  ) {
     throw new Error('The Cashout Action Does Not Match Its Original Player');
   }
   const clubId = canonicalUUID(await resolveClubUUIDStrict(captured.clubId));
   assertCurrent(isCurrent);
-  const intent: CanonicalCashoutIntent = Object.freeze({ userId, playerId, targetId, clubId,
-    kind: captured.kind, amount: captured.amount, note });
+  const intent: CanonicalCashoutIntent = Object.freeze({
+    userId,
+    playerId,
+    targetId,
+    clubId,
+    kind: captured.kind,
+    amount: captured.amount,
+    note,
+  });
   const operation = await prepareAgentCashoutOperation(intent, isCurrent);
   assertCurrent(isCurrent);
   assertCurrent(receiptScope);
@@ -144,7 +170,12 @@ export function captureCashoutStart<K extends CashoutKind>(
   assertCurrent(isCurrent);
   const operation = captureAgentCashoutStart(preparation.operation, isCurrent);
   const start = Object.freeze({ kind: prepared.kind, clubId: prepared.clubId }) as CashoutStart<K>;
-  starts.set(start, { intent: preparation.intent, operation, isCurrent, receiptScope: preparation.receiptScope });
+  starts.set(start, {
+    intent: preparation.intent,
+    operation,
+    isCurrent,
+    receiptScope: preparation.receiptScope,
+  });
   return start;
 }
 
@@ -154,16 +185,27 @@ export function captureCashoutStart<K extends CashoutKind>(
  * This handle can never dispatch a payer, including after exact absence.
  */
 export function captureCashoutReceiptCheck<K extends CashoutKind>(
-  original: CashoutStart<K>, viewCurrent: () => boolean
+  original: CashoutStart<K>,
+  viewCurrent: () => boolean
 ): CashoutStart<K> {
   const prior = starts.get(original);
-  if (!prior || prior.intent.kind === 'cashout_request' || typeof viewCurrent !== 'function') throw new Error('The Original Terminal Cashout Is Unavailable');
+  if (!prior || prior.intent.kind === 'cashout_request' || typeof viewCurrent !== 'function')
+    throw new Error('The Original Terminal Cashout Is Unavailable');
   assertCurrent(prior.receiptScope);
-  const scope = accountAndViewGuard(prior.intent.userId, () => prior.receiptScope() && viewCurrent());
+  const scope = accountAndViewGuard(
+    prior.intent.userId,
+    () => prior.receiptScope() && viewCurrent()
+  );
   assertCurrent(scope);
   const operation = captureAgentCashoutReceiptCheck(prior.operation, scope);
   const check = Object.freeze({ kind: original.kind, clubId: original.clubId }) as CashoutStart<K>;
-  starts.set(check, { intent: prior.intent, operation, isCurrent: scope, receiptScope: scope, receiptOnly: true });
+  starts.set(check, {
+    intent: prior.intent,
+    operation,
+    isCurrent: scope,
+    receiptScope: scope,
+    receiptOnly: true,
+  });
   return check;
 }
 
@@ -194,18 +236,35 @@ export async function recoverCashoutOperation<K extends CashoutKind>(
 }
 
 async function observeCashoutReceipt(captured: Start): Promise<CashoutRecoveryResult<CashoutKind>> {
-  const admitted = captured.admitted ?? await admitAgentCashoutStart(captured.operation);
+  const admitted = captured.admitted ?? (await admitAgentCashoutStart(captured.operation));
   assertCurrent(captured.isCurrent);
   captured.admitted = admitted;
   const intent = captured.intent;
-  const kind = intent.kind === 'cashout_request' ? 'hold' : intent.kind === 'cashout_approve' ? 'approval'
-    : intent.kind === 'cashout_decline' ? 'decline' : 'cancellation';
-  const lookup = await cashoutService.lookupCashoutOperation(intent.userId, admitted.operationId,
-    { clubId: intent.clubId, amount: intent.amount, playerId: intent.playerId, isCurrent: captured.isCurrent },
-    kind, kind === 'hold' ? undefined : intent.targetId, intent.note || undefined);
+  const kind =
+    intent.kind === 'cashout_request'
+      ? 'hold'
+      : intent.kind === 'cashout_approve'
+        ? 'approval'
+        : intent.kind === 'cashout_decline'
+          ? 'decline'
+          : 'cancellation';
+  const lookup = await cashoutService.lookupCashoutOperation(
+    intent.userId,
+    admitted.operationId,
+    {
+      clubId: intent.clubId,
+      amount: intent.amount,
+      playerId: intent.playerId,
+      isCurrent: captured.isCurrent,
+    },
+    kind,
+    kind === 'hold' ? undefined : intent.targetId,
+    intent.note || undefined
+  );
   assertCurrent(captured.isCurrent);
   const outcome: CashoutRecoveryResult<CashoutKind> = lookup.found
-    ? { found: true, result: kind === 'hold' ? lookup.request : true } : { found: false };
+    ? { found: true, result: kind === 'hold' ? lookup.request : true }
+    : { found: false };
   if (outcome.found) {
     await acknowledgeAgentCashoutStart(admitted);
     assertCurrent(captured.isCurrent);
@@ -224,12 +283,19 @@ export async function confirmCashoutOperation(
   start: CashoutStart<'cashout_request'>
 ): Promise<CashoutRecoveryResult<'cashout_request'>> {
   const captured = starts.get(start);
-  if (!captured || captured.intent.kind !== 'cashout_request' || captured.receiptOnly || !captured.admitted || captured.execution) {
+  if (
+    !captured ||
+    captured.intent.kind !== 'cashout_request' ||
+    captured.receiptOnly ||
+    !captured.admitted ||
+    captured.execution
+  ) {
     throw new Error('The Original Cashout Confirmation Could Not Be Verified');
   }
   assertCurrent(captured.isCurrent);
   if (!captured.confirmationObserved) {
-    if (!captured.recovered || captured.recovered.found) throw new Error('Check The Original Cashout Before Confirming It');
+    if (!captured.recovered || captured.recovered.found)
+      throw new Error('Check The Original Cashout Before Confirming It');
     captured.confirmationObserved = true;
     captured.recovered = undefined;
     captured.recovery = observeCashoutReceipt(captured);
@@ -243,18 +309,41 @@ async function submitCashout(start: Start, operationId: string): Promise<Cashout
   const intent = start.intent;
   assertCurrent(start.isCurrent);
   if (intent.kind === 'cashout_request') {
-    return cashoutService.requestCashout(intent.playerId, intent.clubId, intent.amount,
-      intent.note || undefined, operationId, start.isCurrent);
+    return cashoutService.requestCashout(
+      intent.playerId,
+      intent.clubId,
+      intent.amount,
+      intent.note || undefined,
+      operationId,
+      start.isCurrent
+    );
   }
-  const context = { clubId: intent.clubId, amount: intent.amount, playerId: intent.playerId,
-    isCurrent: start.isCurrent };
+  const context = {
+    clubId: intent.clubId,
+    amount: intent.amount,
+    playerId: intent.playerId,
+    isCurrent: start.isCurrent,
+  };
   // This transport selection contains no financial rules. The existing service
   // and database still own eligibility, exact receipt validation and all writes.
-  const result = intent.kind === 'cashout_cancel'
-    ? await cashoutService.cancelCashout(intent.targetId, intent.userId, operationId, context)
-    : intent.kind === 'cashout_approve'
-      ? await cashoutService.approveCashout(intent.targetId, intent.userId, intent.note || undefined, operationId, context)
-      : await cashoutService.rejectCashout(intent.targetId, intent.userId, intent.note || undefined, operationId, context);
+  const result =
+    intent.kind === 'cashout_cancel'
+      ? await cashoutService.cancelCashout(intent.targetId, intent.userId, operationId, context)
+      : intent.kind === 'cashout_approve'
+        ? await cashoutService.approveCashout(
+            intent.targetId,
+            intent.userId,
+            intent.note || undefined,
+            operationId,
+            context
+          )
+        : await cashoutService.rejectCashout(
+            intent.targetId,
+            intent.userId,
+            intent.note || undefined,
+            operationId,
+            context
+          );
   if (result !== true) throw new Error('The Cashout Receipt Was Not Confirmed');
   return true;
 }
@@ -270,16 +359,26 @@ export async function runCashoutOperation<K extends CashoutKind>(
   const captured = starts.get(start);
   if (!captured) throw new Error('Prepare And Capture The Cashout Before Starting It');
   assertCurrent(captured.isCurrent);
-  if (captured.receiptOnly) throw new Error('This Action Can Only Check The Original Cashout Receipt');
-  if (!captured.admitted || !captured.recovered) throw new Error('Check The Exact Cashout Outcome Before New Payment Checks');
+  if (captured.receiptOnly)
+    throw new Error('This Action Can Only Check The Original Cashout Receipt');
+  if (!captured.admitted || !captured.recovered)
+    throw new Error('Check The Exact Cashout Outcome Before New Payment Checks');
   if (captured.recovered.found) return captured.recovered.result as CashoutOperationResult<K>;
   if (!captured.execution) {
     captured.execution = (async () => {
       const admitted = captured.admitted!;
       assertCurrent(captured.isCurrent);
       const intent = captured.intent;
-      const key = JSON.stringify([admitted.operationId, intent.userId, intent.clubId, intent.targetId,
-        intent.playerId, intent.kind, intent.amount.toFixed(2), intent.note]);
+      const key = JSON.stringify([
+        admitted.operationId,
+        intent.userId,
+        intent.clubId,
+        intent.targetId,
+        intent.playerId,
+        intent.kind,
+        intent.amount.toFixed(2),
+        intent.note,
+      ]);
       let submission = submissions.get(key);
       if (!submission || !submission.isCurrent()) {
         // A reopened view can explicitly recover the same operation while an

@@ -44,8 +44,20 @@ interface Op {
 }
 
 const ops: Op[] = [];
-let pendingCashoutRows: Array<{ id: string; club_id: string; player_id: string; amount: string; status: string }> = [];
-const row = (id: string) => ({ id, club_id: 'club-1', player_id: 'player-1', amount: '12.34', status: 'pending' });
+let pendingCashoutRows: Array<{
+  id: string;
+  club_id: string;
+  player_id: string;
+  amount: string;
+  status: string;
+}> = [];
+const row = (id: string) => ({
+  id,
+  club_id: 'club-1',
+  player_id: 'player-1',
+  amount: '12.34',
+  status: 'pending',
+});
 let accountCurrent = true;
 let pendingCashoutError: unknown = null;
 let leaveRpc: { data: unknown; error: unknown } = {
@@ -53,12 +65,15 @@ let leaveRpc: { data: unknown; error: unknown } = {
   error: null,
 };
 
-const cancelCashout = vi.fn(async (_id: string, _userId: string, _opId?: string, _intent?: unknown) => true);
+const cancelCashout = vi.fn(
+  async (_id: string, _userId: string, _opId?: string, _intent?: unknown) => true
+);
 
 vi.mock('../../src/services/CashoutService', () => ({
   captureCashoutAccountGuard: () => () => accountCurrent,
   cashoutService: {
-    cancelCashout: (id: string, userId: string, opId: string, intent: unknown) => cancelCashout(id, userId, opId, intent),
+    cancelCashout: (id: string, userId: string, opId: string, intent: unknown) =>
+      cancelCashout(id, userId, opId, intent),
   },
 }));
 
@@ -76,14 +91,21 @@ vi.mock('../../src/services/CashoutOperation', () => ({
   assertCashoutStartCurrent: (intent: any) => {
     if (!intent.isCurrent()) throw new Error('Account Changed');
   },
-  captureCashoutReceiptCheck: (original: any, isCurrent: () => boolean) => ({ ...original, isCurrent }),
+  captureCashoutReceiptCheck: (original: any, isCurrent: () => boolean) => ({
+    ...original,
+    isCurrent,
+  }),
   recoverCashoutOperation: async (intent: any) => {
     if (!intent.isCurrent()) throw new Error('Cashout Changed');
     return { found: false };
   },
-  runCashoutOperation: (intent: any) => cancelCashout(intent.targetId, intent.userId, 'retained-operation', {
-    clubId: intent.clubId, amount: intent.amount, playerId: intent.playerId, isCurrent: intent.isCurrent,
-  }),
+  runCashoutOperation: (intent: any) =>
+    cancelCashout(intent.targetId, intent.userId, 'retained-operation', {
+      clubId: intent.clubId,
+      amount: intent.amount,
+      playerId: intent.playerId,
+      isCurrent: intent.isCurrent,
+    }),
 }));
 
 vi.mock('../../src/lib/supabase', () => {
@@ -174,8 +196,23 @@ describe('leaveClub closes a pending cashout through the refunding path', () => 
     await leaveClub('club-1');
 
     expect(cancelCashout).toHaveBeenCalledTimes(2);
-    expect(cancelCashout).toHaveBeenCalledWith('cashout-a', 'player-1', 'retained-operation', expect.objectContaining({ clubId: 'club-1', amount: 12.34, playerId: 'player-1', isCurrent: expect.any(Function) }));
-    expect(cancelCashout).toHaveBeenCalledWith('cashout-b', 'player-1', 'retained-operation', expect.objectContaining({ clubId: 'club-1', amount: 12.34, playerId: 'player-1' }));
+    expect(cancelCashout).toHaveBeenCalledWith(
+      'cashout-a',
+      'player-1',
+      'retained-operation',
+      expect.objectContaining({
+        clubId: 'club-1',
+        amount: 12.34,
+        playerId: 'player-1',
+        isCurrent: expect.any(Function),
+      })
+    );
+    expect(cancelCashout).toHaveBeenCalledWith(
+      'cashout-b',
+      'player-1',
+      'retained-operation',
+      expect.objectContaining({ clubId: 'club-1', amount: 12.34, playerId: 'player-1' })
+    );
   });
 
   it('does not call the cashout RPC when there is nothing pending', async () => {
@@ -206,15 +243,21 @@ describe('leaveClub closes a pending cashout through the refunding path', () => 
 });
 
 // These stop before treasury departure and do not reinterpret an unknown refund as success.
-it.each(['amount', 'club_id', 'player_id', 'status'])('refuses an unverified pending cashout %s', async field => {
-  pendingCashoutRows = [{ ...row('cashout-a'), [field]: 'unverified' }];
-  await expect(leaveClub('club-1')).rejects.toThrow('Could Not Verify');
-  expect(cancelCashout).not.toHaveBeenCalled();
-  expect(supabase.rpc).not.toHaveBeenCalledWith('fn_member_leave_to_treasury', expect.anything());
-});
+it.each(['amount', 'club_id', 'player_id', 'status'])(
+  'refuses an unverified pending cashout %s',
+  async (field) => {
+    pendingCashoutRows = [{ ...row('cashout-a'), [field]: 'unverified' }];
+    await expect(leaveClub('club-1')).rejects.toThrow('Could Not Verify');
+    expect(cancelCashout).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalledWith('fn_member_leave_to_treasury', expect.anything());
+  }
+);
 it('stops after a refund response if the captured account changed', async () => {
   pendingCashoutRows = [row('cashout-a')];
-  cancelCashout.mockImplementationOnce(async () => { accountCurrent = false; return true; });
+  cancelCashout.mockImplementationOnce(async () => {
+    accountCurrent = false;
+    return true;
+  });
   await expect(leaveClub('club-1')).rejects.toThrow('Account Changed');
   expect(supabase.rpc).not.toHaveBeenCalledWith('fn_member_leave_to_treasury', expect.anything());
 });

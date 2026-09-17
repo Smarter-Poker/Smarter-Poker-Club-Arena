@@ -1960,6 +1960,17 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Reserve disk for browser checks
+        # This browser-only job does not invoke the separate Android build.
+        # Keep its fixtures and failure evidence; reclaim the unused hosted SDK.
+        run: |
+          df -h /
+          if [ -d /usr/local/lib/android/sdk ]; then
+            sudo du -sh /usr/local/lib/android/sdk
+            sudo rm -rf -- /usr/local/lib/android/sdk
+          fi
+          df -h /
+
       - name: Checkout
         uses: actions/checkout@v4
         with:

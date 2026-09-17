@@ -55,6 +55,17 @@ function withGitFixture(check: (fixture: GitFixture) => void) {
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/dev/probe-causal-pko-predecessors-pg17.sh',
+    'scripts/dev/fixtures/causal-pko-predecessors/qualification.sql',
+    'scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh',
+    'scripts/dev/probe-committed-payout-terms-pg17.py',
+    'scripts/dev/probe-tournament-create-payout-depth-pg17.py',
+    'tests/operations/pko-probe-cleanup.test.py',
+  ])('selects the existing accounting job for MTT regression input %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
+  it.each([
     'operations/release/fixture/safeupdate-provider.mjs',
     'operations/release/native/component-observation-client.mjs',
     'operations/release/ci/fixture-smoke.py',

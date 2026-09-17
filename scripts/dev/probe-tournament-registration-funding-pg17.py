@@ -193,7 +193,7 @@ with (root/'results.log').open('w') as log:
         version=subprocess.check_output([str(pg/'postgres'),'--version'],text=True)
         assert ' 17.' in version,version
         run([str(pg/'initdb'),'-D',str(cluster),'-U','registration_test','--auth=trust','--no-locale'])
-        run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses=','-w','start'])
+        run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses= -c max_wal_size=64MB -c min_wal_size=32MB','-w','start'])
         started=True
 
         if '--heads-up-payout-only' in sys.argv:

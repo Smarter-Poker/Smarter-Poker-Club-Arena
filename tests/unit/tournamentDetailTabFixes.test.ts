@@ -191,17 +191,17 @@ describe('the satellite mapper reads real columns', () => {
     // hours. blindLevelMinutes reads the canonical keys first for exactly this.
     const spin = { ...row, blind_structure: JSON.stringify([{ level: 1, duration: 180 }]) };
     expect(firstLevelMinutes(spin.blind_structure)).toBe(3);
-    expect(mapSatelliteRowToCard(spin).blindStructure).toBe('Hyper');
+    expect(mapSatelliteRowToCard(spin).blindStructure).toBe('Turbo');
   });
 
   it('labels the structure from the real level length, never a hardcoded "regular"', () => {
-    expect(speedLabel(3)).toBe('Hyper');
+    expect(speedLabel(2)).toBe('Hyper Turbo');
+    expect(speedLabel(3)).toBe('Turbo');
     expect(speedLabel(5)).toBe('Turbo');
     expect(speedLabel(10)).toBe('Regular');
-    expect(speedLabel(20)).toBe('Deep Stack');
-    // Unknown is honestly "Regular", but only when the structure cannot say --
-    // the old mapper asserted it unconditionally.
-    expect(speedLabel(0)).toBe('Regular');
+    expect(speedLabel(20)).toBe('Slow');
+    // Unknown duration is not evidence of regular speed.
+    expect(speedLabel(0)).toBe('Unconfirmed');
     expect(mapSatelliteRowToCard(row).blindStructure).toBe('Turbo');
   });
 
@@ -209,6 +209,30 @@ describe('the satellite mapper reads real columns', () => {
     // `hasLateReg` in TournamentLobbyCard reads late_reg_levels / late_reg_mins.
     // Neither was passed, so no satellite card has ever shown late reg.
     expect(mapSatelliteRowToCard(row).late_reg_levels).toBe(6);
+  });
+
+  it('preserves null fallback, explicit zero, level zero and finalized-pool closure', () => {
+    const mapped = mapSatelliteRowToCard({
+      ...row,
+      late_reg_levels: 0,
+      rebuy_levels: 6,
+      current_level: 0,
+      prize_pool_finalized: true,
+      started_at: '2026-09-14T10:00:00Z',
+    });
+    expect(mapped).toMatchObject({
+      late_reg_levels: 0,
+      rebuy_levels: 6,
+      current_level: 0,
+      prize_pool_finalized: true,
+      started_at: '2026-09-14T10:00:00Z',
+    });
+    expect(mapSatelliteRowToCard({ ...row, late_reg_levels: null, rebuy_levels: 6 })).toMatchObject(
+      { late_reg_levels: null, rebuy_levels: 6 }
+    );
+    for (const field of ['rebuy_levels', 'prize_pool_finalized', 'started_at', 'current_level']) {
+      expect(SATELLITE_COLUMNS.split(',').map((v) => v.trim())).toContain(field);
+    }
   });
 
   it('selects named columns, not everything', () => {

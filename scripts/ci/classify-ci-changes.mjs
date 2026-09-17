@@ -19,7 +19,7 @@ export function classifyChangedPaths(paths) {
   const broad = matches(wide);
   return {
     src: broad || matches(/^src\//),
-    server: broad || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
+    server: broad || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/),
     tests: broad || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
     phase4: matches(phase4),
     fixture: matches(fixture),

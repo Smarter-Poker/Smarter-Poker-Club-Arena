@@ -142,8 +142,12 @@ describe('WIRING - the registration pool actually consults it', () => {
     expect(TOURNEY).toContain(
       'const walletPool = pool.filter((horse) => !ticketHintIds.has(horse.id));'
     );
+    expect(TOURNEY).toContain(': orderedTickets.concat(orderedWallets).slice(0, count);');
     expect(TOURNEY).toContain(
-      'const horses = orderedTickets.concat(orderedWallets).slice(0, count);'
+      'const recoveryTickets = orderedTickets.slice(0, Math.max(count, 25));'
+    );
+    expect(TOURNEY).toContain(
+      'orderedWallets.slice(0, Math.max(0, count - recoveryTickets.length))'
     );
     expect(TOURNEY).not.toMatch(/const horses = eligible\.slice\(rot\)/);
   });

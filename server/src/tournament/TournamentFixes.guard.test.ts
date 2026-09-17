@@ -651,7 +651,7 @@ describe('a seat-first top-up is measured in seats, not registrations', () => {
     // missing horse was never seated and the start gate never opened. Five
     // Spins were deadlocked that way, the oldest for 486 minutes.
     expect(code(RECURRING)).not.toContain('const shortfall = targetPlayers - (liveCount || 0);');
-    expect(code(RECURRING)).toContain('const shortfall = targetPlayers - liveCount;');
+    expect(code(RECURRING)).toContain('const shortfall = Math.max(0, targetPlayers - liveCount);');
   });
 
   it('does not run an idle count reconciler when there is nothing to add', () => {
@@ -659,7 +659,11 @@ describe('a seat-first top-up is measured in seats, not registrations', () => {
     // top-up pass has no write authority and the private AFTER-seat helper is
     // deliberately not exposed to service_role.
     expect(code(RECURRING)).not.toContain('if (shortfall <= 0) return 0;');
-    expect(code(RECURRING)).toContain('if (shortfall <= 0) {');
+    // Only MTT ticket recovery may continue with no ordinary funding shortfall.
+    // Seat-first games still return without an idle count mutation.
+    expect(code(RECURRING)).toContain(
+      'if (shortfall === 0 && (seatFirst || opts.redeemTickets !== true)) {'
+    );
     expect(code(RECURRING)).not.toContain("supabase.rpc('fn_sync_seat_first_player_count'");
   });
 });

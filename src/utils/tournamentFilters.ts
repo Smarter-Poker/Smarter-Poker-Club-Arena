@@ -1,3 +1,4 @@
+import { tournamentEntryWindowOpen, type TournamentEntryWindowRow } from './tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * Tournament lobby filters
@@ -21,7 +22,7 @@
 export type TournamentSubFilter = 'all' | 'running' | 'registering' | 'late_reg' | 'starting_soon';
 export type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
 
-export interface FilterableTournament {
+export interface FilterableTournament extends TournamentEntryWindowRow {
   name: string;
   /**
    * The row's real variant. Optional because some callers still hand over
@@ -88,36 +89,9 @@ export function matchesVariant(t: FilterableTournament, variant: TournVariant): 
   return tournamentVariant(t) === variant;
 }
 
-/**
- * Is this tournament still inside its late-registration window?
- * Derived from late_reg_mins / late_reg_levels because no status carries it.
- */
+/** Display the same selected window the engine closes; entry still uses its RPC. */
 export function isInLateRegistration(t: FilterableTournament, now: number): boolean {
-  const s = (t.status || '').toUpperCase();
-  if (s === 'LATE_REG' || s === 'LATE_REGISTRATION') return true;
-  if (!isRunning(s)) return false;
-
-  const lateMins = Number(t.late_reg_mins) || 0;
-  if (lateMins > 0) {
-    const begun = new Date(t.started_at || t.start_time).getTime();
-    if (Number.isFinite(begun) && now - begun <= lateMins * 60000) return true;
-  }
-
-  /**
-   * `current_level` is a 0-BASED index into blind_structure (the engine's
-   * TournamentManagerBase.currentLevel starts at 0), so "late reg through
-   * level N" is indices 0..N-1 and the cutoff is index N. This read `<=`,
-   * which kept the lobby advertising late registration for one whole level
-   * after the engine had closed it, finalized the prize pool, and told every
-   * client so — the badge stayed lit and the Register button stayed live on a
-   * tournament whose RPC now answers `registration_closed`.
-   *
-   * Matches TournamentManagerBase.isLateRegClosed: `currentLevel >= cap`.
-   */
-  const lateLevels = Number(t.late_reg_levels) || 0;
-  if (lateLevels > 0 && Number(t.current_level || 0) < lateLevels) return true;
-
-  return false;
+  return tournamentEntryWindowOpen(t, now);
 }
 
 /** Does a tournament belong under the given status sub-filter? */

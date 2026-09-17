@@ -182,7 +182,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "7fc0edd742f55ba4451352131aad712974f5487748beec690fe7544981a39557",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "6fcb9cc035bcdd62a0538e1c5693ff563dd984ab2017cdd0ca8a43134d32c154",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "ac707a0183b4ccd510fb28a49fe5286afdebb4503b66624308c993137c666d4e",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "c22fb1db89314be0b65e2ccab874e4299679db2bda20f131a3e9d90798f639ad",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -952,5 +952,22 @@
     ],
     "historical_capture_data": "Unchanged. Two maintained capture-query implementations are explicit successors; their previous source hashes remain recorded.",
     "native_status": "UNRUN for final composition; protected PostgreSQL17 required; noUnionproductionmutation"
+  },
+  "protected_main_ratchet_binding": {
+    "base_commit": "6e3b5eac1e28a52cd981bd3a09c65b6f67e2e319",
+    "merged_main_commit": "df75936396f60d9bc9dfdd89b11a19a94337e16e",
+    "prior_binding_sha256": "ca912136d7d309374bb99357a7e07b645d93bca764d39260d1d9ef032ccf7bbc",
+    "failed_run": 35191041251,
+    "failed_job": 105103577795,
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "ac707a0183b4ccd510fb28a49fe5286afdebb4503b66624308c993137c666d4e",
+        "sha256": "c22fb1db89314be0b65e2ccab874e4299679db2bda20f131a3e9d90798f639ad"
+      }
+    ],
+    "reason": "Protected main removed the obsolete WaitlistService discarded-read allowance after its canonical join/recovery path began checking readError. Preserve that zero-new-read rule together with every existing Union ratchet tightening. Only this measured repository input changed; all 29 captured fixture entries and other 229 repository entries remain identical.",
+    "regression": "Existing tests/unit/discardedErrorReadRatchet.test.ts: audited surfaces remain zero; no source file exceeds its frozen allowance and new files start clean. No test assertion removed by this rebinding.",
+    "qualification": "Binding revalidation is source evidence only; the existing native full37 composition still requires its hosted check."
   }
 }

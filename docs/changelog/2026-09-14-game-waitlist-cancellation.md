@@ -1,0 +1,5 @@
+# Leaving a game waiting list releases its seat offers
+
+The game cancellation door previously reported success while its physical-table seat offer stayed active. Cancellation now locks the same game row as joining and retires both queue records in one transaction. The ordinary table cancellation door delegates to it for a clustered game; standalone tables retain their existing scope. Neither operation changes seated stays, stacks, wallets, or delivered history.
+
+The exact old production definitions reproduced the surviving-offer defect in disposable PostgreSQL 17.11. The complete migration, including baseline guards and grants, applies twice in the existing departure fixture. All 157 native transaction tests pass, including new cancellation retry, identity/permission, rollback, unrelated-player/game/history, concurrent join, and both offer/cancel commit-order cases. Server TypeScript also passes. The added migration remains a separate installation fact from source and CI; this change alone does not certify Must-Move release readiness.

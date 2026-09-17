@@ -130,6 +130,35 @@ jobs:
           fs.appendFileSync(output, 'should_run=true\n');
           NODE
 
+  # DISCOVERABILITY PHASE 3 (2026-09-17). What a crawler gets from production,
+  # checked against what the deployed bundle says it published: build-info,
+  # the prerender manifest, every prerendered route's head and words, the
+  # sitemap and every URL in it, and the shell behind a deep link. Independent
+  # of the engine certificate below on purpose: the public pages do not need
+  # the engine, and an engine release lagging main must not hide a broken head.
+  # No route list lives here; scripts/ci/check-live-seo-contract.mjs reads it
+  # from the site.
+  seo-contract:
+    needs: publication-gate
+    if: needs.publication-gate.outputs.should_run == 'true' && github.event_name == 'workflow_run'
+    name: The Live SEO Contract Holds
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the published commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Read production as Googlebot and hold it to the contract
+        run: node scripts/ci/check-live-seo-contract.mjs --sha "${{ github.event.workflow_run.head_sha }}"
+
   production-e2e:
     needs: publication-gate
     # A verified publish and a safe forward stand-down both certify the live

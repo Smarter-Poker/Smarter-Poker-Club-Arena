@@ -30,7 +30,7 @@
     "legacy-recompute-definition.sql": "2ffbef17dabe2cd79dbc1b9d6181086a088b8a4cf5ff65ad3614b5c2e812fb57",
     "legacy-recompute-access-assumptions.sql": "fc8c07ed0d27a4f7687e782b371c9d6a948207ba8e9d47a9d16357f1eebf2d75",
     "legacy-recompute-source-binding.json": "f6d40a56c4f86167edbc20e664543c7e1b3599e017f1ead60b88afd1a6e64f5b",
-    "capture-rollback-state.sql": "4dbd2ea034ef34fee6accbd18e0205b072110b71d5e554530f361c0ddbcaf349",
+    "capture-rollback-state.sql": "26ad0aba3d16bc257a61934c82cba11b2c953fb5979a24806469dbff154d9e71",
     "README.md": "bf85e5a6a9e760cab02342baecece42bdd89c5ce78542775254da4853118979c",
     "legacy-period-writers-definitions.sql": "20472455faa4dd0683f7e948a59106c057b72a5b9ae22a28806a314cfe6e4a4d",
     "legacy-period-writers-access.sql": "4688b010897520ed769f991b0fd04a3318edee6a936b6df1d0445fa24942ad98",
@@ -38,7 +38,7 @@
     "supplemental-function-access.json": "e5c2ff642ff2b5dd51e2d17c2c84a49ef583670fdc2373c32619488f8e804194",
     "supplemental-function-access.sql": "ae96c94f26e0d9074e2dc6868473bc31b623614543225bdea91ea65861de160c",
     "capture-rollback-roles.sql": "991d9d489d9b2416002b670abab0eebda3f3474a2574bc4f2a98b91d943d1f9c",
-    "capture-accepted-authority.sql": "7a6128e0de75febd48815b8e816eab2d89a06fc245a3fdc5ae280f7a61136562"
+    "capture-accepted-authority.sql": "6f65090e14cc6d0cf0d325acf772c053daee2e2ed43666531a1464a8044b2d64"
   },
   "historical_assertion_executions": 126,
   "limits": [
@@ -189,20 +189,20 @@
     "tests/fixtures/correction-writer-authority/captured-store-policy.sql": "53981484d6bde436c6d861323aed05a23d57dfec84986e7bc015596f8a991ac4",
     "tests/fixtures/correction-writer-authority/catalog-bootstrap.sql": "384640d2b67794cd4b95d8dd5852215778bb23aaf12bbf016e9ba4c54e942edf",
     "tests/fixtures/correction-writer-authority/concurrency-regression.py": "4fb949a903acdc2a5ebf8f5f943b0e2adab611ab113bb02e9ef60d988688998b",
-    "tests/fixtures/correction-writer-authority/concurrency-session.sql": "5431d4ffc45054b2f2f417c5c199d5aac1d0e64f56d042a7641cef69b2ce6d2b",
+    "tests/fixtures/correction-writer-authority/concurrency-session.sql": "4a78119ade0f7720a9e573b8007018e2d16aca2eb7bd9b7c865d6b18d179425a",
     "tests/fixtures/correction-writer-authority/concurrency-setup.sql": "f54914994709a7f2d78e5194567f30aca1e7d4ee55bf8cb6417175116104b7d4",
     "tests/fixtures/correction-writer-authority/deferred-overlay-regression.sql": "8df691c22b7cac7cb5b5d853cbc262824901536335169e0352944e2d48619a44",
-    "tests/fixtures/correction-writer-authority/legacy-before-candidate.sql": "5ebc7aae24dd0e6e6f1c346a0dade149796453caa220b57c0d0d8c90cb0a1e6e",
+    "tests/fixtures/correction-writer-authority/legacy-before-candidate.sql": "7f76162008e52c31bd3f94a198dbe07fd7f28feb0f9ea80a3ae764663bca817c",
     "tests/fixtures/correction-writer-authority/legacy-replay-and-input-assertions.sql": "f62cf231579436bd19cf55973d5e49b8c6bf3eb2ff316c9cb6f637423005bec2",
     "tests/fixtures/correction-writer-authority/lifecycle-seed-after-activation.sql": "207ab33a49fbe2951553df90f0c298241181578c617f69714b6062d8d53dfdba",
     "tests/fixtures/correction-writer-authority/owner-fixture.sql": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9",
     "tests/fixtures/correction-writer-authority/owner-seeded-regression.sql": "20849eeacb19d5bb09334ab64fc2e1c66d89a49daf2fe0f6ea3bd2800cbddd3e",
-    "tests/fixtures/correction-writer-authority/regression.sql": "2764f44b5eff43472d87c481cdebe0bdf5babbb4d75023dfee52a0ec8aeddf11",
+    "tests/fixtures/correction-writer-authority/regression.sql": "ef66b164083ff08a02d9c932d20f1aced66bc154caaa22d3f0bd4c0bef7ccba2",
     "tests/fixtures/correction-writer-authority/source-provenance.json": "e371bd283ded64a8b8c2ffcc22fbd83502b99e909354ecc2dbaea6200db697ec",
     "supabase/accounting/correction-writer-v1/captured-ledger-catalog.json": "c10ee920625aa982d9af361094dbc93e29075bc6162e091747dd1825c116bba8",
     "supabase/accounting/correction-writer-v1/captured-ledger-catalog.query.sql": "94eb5d4abf7e65c66e1f05ed142316e0ceb8e729dce0b75ff73013c0c6d1b42e",
-    "supabase/accounting/correction-writer-v1/guard-function-sources.json": "40090dd6761b456aaa1a20d0947f95466e32d639f51aac5800069d0e2d1a5720",
-    "supabase/accounting/correction-writer-v1/guard-relation-sources.json": "a013327adac0f0eb590cfd16aa0d29c1b4276424c5c342e58d0092893e5b984d",
+    "supabase/accounting/correction-writer-v1/guard-function-sources.json": "d12da19b9ef25c0c5ad00f39d95e70be887ed6de49e34fd90b2211ebea784991",
+    "supabase/accounting/correction-writer-v1/guard-relation-sources.json": "a13271897bc8aacc8875010e36f83682322c5f0ceffcbc44354ba60bcbf14d55",
     "supabase/accounting/correction-writer-v1/owner-README.md": "9fadbeb75120b5e3ba2cc604bf02ac66b4444905ec11219a1636bd16ae75e83c",
     "supabase/accounting/correction-writer-v1/owner-SOURCE-CUSTODY.json": "1d7e5e5ff07522ca9b67ed6238772a6a25fdfb52297e6693d52516ba2dd0d666",
     "supabase/accounting/correction-writer-v1/owner-fixture.sql": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9",
@@ -253,10 +253,10 @@
     "tests/fixtures/credit-reduction-authority/captured-payment-closure.query.sql": "252de5030cb7bf859835e85e399d05cb98bc4e5a6821cdb4dd911e6c471a9e4c",
     "tests/fixtures/credit-reduction-authority/catalog-bootstrap.sql": "ad42ea06ed5e5f766b77bf3463807f053130de27333d0a75f76706f4854e5b8e",
     "tests/fixtures/credit-reduction-authority/concurrency-regression.py": "11bff1bd9a4188861ab1958bf5ceb68d0030b34dfc29e1a8a1dcc55e8213f2cf",
-    "tests/fixtures/credit-reduction-authority/concurrency-session.sql": "cc58c015ee169b63a00250a29da7773f512242e4ea5cdddf232d423943e638bb",
+    "tests/fixtures/credit-reduction-authority/concurrency-session.sql": "9f6ba47f612e29ef8b91989b9dda513239627b98fa500332d1b93d44ca98a9b1",
     "tests/fixtures/credit-reduction-authority/concurrency-setup.sql": "0e0e922f5788e44c2336226f95b888c9c8582b8309ed86bb2d899f2b0f7e50a5",
     "tests/fixtures/credit-reduction-authority/delivery-failure-regression.sql": "eeaa31725724c55d9753120dcea36a40374956139cc5d89648c7acc1e14512df",
-    "tests/fixtures/credit-reduction-authority/helpers.sql": "1c16f5dcd8529346f7005a3372fd854fe3464f4d47e55f5713a5983a076c3cc4",
+    "tests/fixtures/credit-reduction-authority/helpers.sql": "6ce12b7131a4e833c92f2834d64c500a6155a859fc21d11e5dd0e832d6791463",
     "tests/fixtures/credit-reduction-authority/isolation-cases.sql": "42aa78411e289300cb275336fff811653f60ed154b09d97d2593e2ebbd42a651",
     "tests/fixtures/credit-reduction-authority/isolation-regression.sql": "6f42602a95ac13594c50b4cf840e08c70f72d5a345fcf8ac92a1249d3c7b2aec",
     "tests/fixtures/credit-reduction-authority/refusal-replay-regression.sql": "cdb9c94f1d4d9e68fb1084083425b4320b49665e72eb5597a2ebecb3fed59786",
@@ -276,7 +276,7 @@
     "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.json": "2a16360c3268ac1e7197110845096e1bc30ef20b75a53a7d9935b7207596cfd7",
     "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.query.sql": "d6cbff7c7c9caecf2170b4312e057674c33a947e37f49eeaa67c429c2b20bd7f",
     "tests/fixtures/tournament-fee-lifecycle/current-settlement-predecessor.sql": "5362494ea3001eb9c998a482a6f09d8343e8e809962c2e7c7de70ab12a1874a1",
-    "tests/fixtures/union-provider-preimages-20260917/README.md": "4f4c97cc41da4ceab14a188576ead0acfeaef6d2763efab4f6c7a8018c3e3ccd",
+    "tests/fixtures/union-provider-preimages-20260917/README.md": "3917ffd5e8ede22b217cbcf98355020c29ab77182ec3f967ce3deca62bda359f",
     "tests/fixtures/union-provider-preimages-20260917/alerts-and-ledger.sql": "be3106d8f0451b49fc6861bb2f7733f0d5d79ccbe0653fd96181e04ac6d6c527",
     "tests/fixtures/union-provider-preimages-20260917/captured-authority.json": "7151693f43246b4b0a6a132665239d427c049ed3844d51acd1d581c018d71696",
     "tests/fixtures/union-provider-preimages-20260917/owner-notification-coexistence.sql": "8e8bed52245d8b10ec0c21f5f422562acc03652ea5ef144e3eec1d556c25c08e",
@@ -286,7 +286,13 @@
     "tests/fixtures/rakeback-write-authority/stats-batch-catalog.json": "f4f4f0039d4752e4f2a38ee59f8a9b5f6d8de47e6f4c740a5ef41a518afdc25c",
     "tests/fixtures/rakeback-write-authority/stats-batch-catalog.query.sql": "ea03e1abcd85b9e2f965a636913605cc48259bac06fff16e39333f50dc9f9f88",
     "tests/fixtures/rakeback-write-authority/stats-batch-catalog.raw.txt": "73dbaecba66cc34f69afac6411c4a249dff21496176325a002e74dc6757f5082",
-    "tests/fixtures/rakeback-write-authority/precursor-predecessor-catalog.json": "86aed90d4a6ebe1c11c963ac0fa8640bce66cbefcdd671b321ab8310067b5483"
+    "tests/fixtures/rakeback-write-authority/precursor-predecessor-catalog.json": "86aed90d4a6ebe1c11c963ac0fa8640bce66cbefcdd671b321ab8310067b5483",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-prerequisites.sql": "c018943a1a03d04f163cef8935ff0952dd512d91c795a0931d029763d3fa694e",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-installed.sql": "7f7020ee71fe1bd6475dff8de572cd96e7cac888c3923245f7fbc54e8ff161dd",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-authority.raw.txt": "03765137a209e8ef548213cc96455a657339abca67e6b118af532722f85d6964",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-installation-receipt.raw.txt": "8b20b76b0bb09cee7003f1bae3b8488eb0a371b8820bd5e02736d08f3ecfe8de",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-provenance.json": "133671eab10758d77d8e65a885f19b44eea2a20db579a1b241fe92c3b0e23f5c",
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "70995c3cb1de856fcee2bc1ed16f541eb7e39c562c06c752a3914bc1bb149f1b"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -868,5 +874,83 @@
     "reason": "The old positive deferred terminal block emitted10 assertions. Complete attribution now requires exact P0404 and every-public-row rollback for both initial and retry calls (4), unchanged180/20 custody/no completion(1), unchanged original manifests/no fabricated recognition(1), unchanged supply/treasury/no retirement(1):7. Unchanged prefix21 yields28. Financial/refusal assertions are preserved; historical126 remains distinct.",
     "changed_bindings": [],
     "assertions_log_sha256": "a1d1c2688c20e90fb3e5af228953be5b3268fdb38e5207d39e1764de928f8753"
+  },
+  "direct_intake_successor_binding": {
+    "base_commit": "6ee9dde69141656d0f33e8ae5e77c5ef58f92240",
+    "installed_migration": "20260917062322",
+    "installed_packet_sha256": "7f7020ee71fe1bd6475dff8de572cd96e7cac888c3923245f7fbc54e8ff161dd",
+    "reason": "Actual newly installed source hooks participate synchronously in monetary incident writes. Preserve literal installed authority and include private snapshots/deliveries in rollback evidence. Update only observed incident trigger inventories and pin exact existing13helper/recorder authorities.",
+    "changed_existing_bindings": [
+      {
+        "binding": "fixtures",
+        "path": "capture-rollback-state.sql",
+        "previous_sha256": "4dbd2ea034ef34fee6accbd18e0205b072110b71d5e554530f361c0ddbcaf349",
+        "sha256": "26ad0aba3d16bc257a61934c82cba11b2c953fb5979a24806469dbff154d9e71"
+      },
+      {
+        "binding": "fixtures",
+        "path": "capture-accepted-authority.sql",
+        "previous_sha256": "7a6128e0de75febd48815b8e816eab2d89a06fc245a3fdc5ae280f7a61136562",
+        "sha256": "6f65090e14cc6d0cf0d325acf772c053daee2e2ed43666531a1464a8044b2d64"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/correction-writer-authority/concurrency-session.sql",
+        "previous_sha256": "5431d4ffc45054b2f2f417c5c199d5aac1d0e64f56d042a7641cef69b2ce6d2b",
+        "sha256": "4a78119ade0f7720a9e573b8007018e2d16aca2eb7bd9b7c865d6b18d179425a"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/correction-writer-authority/legacy-before-candidate.sql",
+        "previous_sha256": "5ebc7aae24dd0e6e6f1c346a0dade149796453caa220b57c0d0d8c90cb0a1e6e",
+        "sha256": "7f76162008e52c31bd3f94a198dbe07fd7f28feb0f9ea80a3ae764663bca817c"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/correction-writer-authority/regression.sql",
+        "previous_sha256": "2764f44b5eff43472d87c481cdebe0bdf5babbb4d75023dfee52a0ec8aeddf11",
+        "sha256": "ef66b164083ff08a02d9c932d20f1aced66bc154caaa22d3f0bd4c0bef7ccba2"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+        "previous_sha256": "40090dd6761b456aaa1a20d0947f95466e32d639f51aac5800069d0e2d1a5720",
+        "sha256": "d12da19b9ef25c0c5ad00f39d95e70be887ed6de49e34fd90b2211ebea784991"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "supabase/accounting/correction-writer-v1/guard-relation-sources.json",
+        "previous_sha256": "a013327adac0f0eb590cfd16aa0d29c1b4276424c5c342e58d0092893e5b984d",
+        "sha256": "a13271897bc8aacc8875010e36f83682322c5f0ceffcbc44354ba60bcbf14d55"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/credit-reduction-authority/concurrency-session.sql",
+        "previous_sha256": "cc58c015ee169b63a00250a29da7773f512242e4ea5cdddf232d423943e638bb",
+        "sha256": "9f6ba47f612e29ef8b91989b9dda513239627b98fa500332d1b93d44ca98a9b1"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/credit-reduction-authority/helpers.sql",
+        "previous_sha256": "1c16f5dcd8529346f7005a3372fd854fe3464f4d47e55f5713a5983a076c3cc4",
+        "sha256": "6ce12b7131a4e833c92f2834d64c500a6155a859fc21d11e5dd0e832d6791463"
+      },
+      {
+        "binding": "repository_fixtures",
+        "path": "tests/fixtures/union-provider-preimages-20260917/README.md",
+        "previous_sha256": "4f4c97cc41da4ceab14a188576ead0acfeaef6d2763efab4f6c7a8018c3e3ccd",
+        "sha256": "3917ffd5e8ede22b217cbcf98355020c29ab77182ec3f967ce3deca62bda359f"
+      }
+    ],
+    "new_inputs": [
+      "direct-intake-prerequisites.sql",
+      "direct-intake-installed.sql",
+      "direct-intake-authority.raw.txt",
+      "direct-intake-installation-receipt.raw.txt",
+      "direct-intake-provenance.json",
+      "direct-intake-current-function-guards.json"
+    ],
+    "historical_capture_data": "Unchanged. Two maintained capture-query implementations are explicit successors; their previous source hashes remain recorded.",
+    "native_status": "UNRUN for final composition; protected PostgreSQL17 required; noUnionproductionmutation"
   }
 }

@@ -46,7 +46,7 @@ CREATE FUNCTION pg_temp.cw_book() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINE
  SET search_path=pg_catalog,public SET TimeZone='UTC' SET DateStyle='ISO,YMD' AS $$
 DECLARE r record;rows_json jsonb;result jsonb:='{}';BEGIN
  FOR r IN SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-  WHERE n.nspname IN('public','smarter_private','auth') AND c.relkind IN('r','p') AND NOT c.relispartition
+  WHERE n.nspname IN('public','smarter_private','auth','operational_source_intake') AND c.relkind IN('r','p') AND NOT c.relispartition
   ORDER BY n.nspname,c.relname LOOP
   EXECUTE format('SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),''[]''::jsonb) FROM %I.%I t',r.nspname,r.relname) INTO rows_json;
   result:=result||jsonb_build_object(r.nspname||'.'||r.relname,rows_json);

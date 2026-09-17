@@ -8,7 +8,7 @@ DECLARE relation_record record;observed_count bigint;observed_digest text;
 BEGIN
  FOR relation_record IN SELECT n.nspname,c.relname FROM pg_class c
   JOIN pg_namespace n ON n.oid=c.relnamespace
-  WHERE n.nspname IN('public','auth','cron') AND c.relkind IN('r','p')
+  WHERE n.nspname IN('public','auth','cron','operational_source_intake') AND c.relkind IN('r','p')
   ORDER BY n.nspname,c.relname LOOP
   EXECUTE format('SELECT count(*),md5(COALESCE(jsonb_agg(x.record_value ORDER BY x.record_value::text)::text,''[]''))
     FROM (SELECT to_jsonb(t) AS record_value FROM %I.%I t)x',relation_record.nspname,relation_record.relname)

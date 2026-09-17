@@ -33,9 +33,14 @@ DECLARE relation_name text;rows_json jsonb;result jsonb:='{}';BEGIN
   'social_messages','social_conversations','social_conversation_participants','notifications','push_outbox','push_subscriptions',
   'credit_assignments','accounting_agreement_history','messages','ca_drift_incidents','ca_incident_events','ca_ledger_write_failures',
   'ca_incident_notify_ledger','ca_ledger_day_manifests','ca_ledger_day_manifest_restatements','ca_ledger_mutation_log','ca_mint_ledger',
-  'financial_alerts','tournament_escrow','spin_reserve_ledger','ca_correction_request_intents_v1'] LOOP
+  'financial_alerts','tournament_escrow','spin_reserve_ledger','ca_correction_request_intents_v1',
+  'operational_alert_events','operational_notification_destinations'] LOOP
   EXECUTE format('SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),''[]''::jsonb) FROM public.%I t',relation_name) INTO rows_json;
   result:=result||jsonb_build_object(relation_name,rows_json);
+ END LOOP;
+ FOREACH relation_name IN ARRAY ARRAY['snapshots','deliveries'] LOOP
+  EXECUTE format('SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),''[]''::jsonb) FROM operational_source_intake.%I t',relation_name) INTO rows_json;
+  result:=result||jsonb_build_object('operational_source_intake.'||relation_name,rows_json);
  END LOOP;RETURN result;
 END$$;
 CREATE FUNCTION pg_temp.correction_stores() RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public AS $$

@@ -3200,6 +3200,13 @@
       "policies": [],
       "triggers": [
         {
+          "name": "a00_operational_source_intake",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER a00_operational_source_intake AFTER INSERT OR UPDATE ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION fn_capture_operational_source_event()",
+          "function_oid": "33305538",
+          "function_signature": "fn_capture_operational_source_event()"
+        },
+        {
           "name": "trg_ca_incidents_stay_in_midway",
           "enabled": "O",
           "definition": "CREATE TRIGGER trg_ca_incidents_stay_in_midway BEFORE INSERT ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION fn_ca_incidents_stay_in_midway()",

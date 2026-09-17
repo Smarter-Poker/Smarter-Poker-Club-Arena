@@ -172,7 +172,7 @@
     "tests/unit/FinancialCronService.test.ts": "19b64ce5c9b5c8750f02a4ae6efba06c9514270a3de88bb93be7e75f02bb44e6",
     "tests/components/ClubWeeklyAccountingSummary.test.tsx": "426d3402407e83bfd5e4aaa12e49c84bbdc69966e3f394628eb56c590c5c6392",
     "tests/unit/AccountingObservationService.test.ts": "508cc1b6314d92551cab3aef3669000c44d006465cee723a325baca425499600",
-    "tests/unit/SettlementService.test.ts": "d2acf9bbf488b25610f524debe2873be3b7de976eb105d8f95aa86a513501ca3",
+    "tests/unit/SettlementService.test.ts": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
     "tests/unit/useUnionStore.test.ts": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268",
     "tests/unit/anApprovalCanBeRetried.test.ts": "0b136b353272b3f70276d39a66148ef6780d801cb51da34dc6cad1ce65ff9490",
     "tests/components/UnionAccountingRunStatus.test.tsx": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9",
@@ -847,5 +847,26 @@
       "native_status": "UNRUN; original hosted full-catalog acceptance and rejection phases required",
       "preactivation_session": "Actual old service batch reply retained across full candidate COMMIT; source-bound transition refuses later legacy statistics call."
     }
+  },
+  "scoped_period_read_successor_binding": {
+    "base_commit": "0dc2ad9c2bab229d17d92b85537566fafb02ccb7",
+    "path": "tests/unit/SettlementService.test.ts",
+    "previous_sha256": "d2acf9bbf488b25610f524debe2873be3b7de976eb105d8f95aa86a513501ca3",
+    "sha256": "92390199785906650508d16eea99372e24a6451dd8cd9d108679381ed1ca936d",
+    "reason": "Existing scoped period lookup uses maybeSingle; missing, substituted and errored records still refuse."
+  },
+  "expected_lifecycle_assertion_executions": 123,
+  "lifecycle_count_reconciliation": {
+    "native_run": 35189311096,
+    "native_job": 105098706152,
+    "artifact": 10484080970,
+    "normal": 38,
+    "satellite": 26,
+    "recognized": 31,
+    "missing_history": 28,
+    "previous_missing_history": 31,
+    "reason": "The old positive deferred terminal block emitted10 assertions. Complete attribution now requires exact P0404 and every-public-row rollback for both initial and retry calls (4), unchanged180/20 custody/no completion(1), unchanged original manifests/no fabricated recognition(1), unchanged supply/treasury/no retirement(1):7. Unchanged prefix21 yields28. Financial/refusal assertions are preserved; historical126 remains distinct.",
+    "changed_bindings": [],
+    "assertions_log_sha256": "a1d1c2688c20e90fb3e5af228953be5b3268fdb38e5207d39e1764de928f8753"
   }
 }

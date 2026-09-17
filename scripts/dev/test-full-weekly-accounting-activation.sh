@@ -345,7 +345,7 @@ PY
 python3 - "$fixture/assertions.log" "$work/source-binding.json" <<'PY'
 from pathlib import Path
 import json, re, sys
-expected = json.loads(Path(sys.argv[2]).read_text())['historical_assertion_executions']
+expected = json.loads(Path(sys.argv[2]).read_text())['expected_lifecycle_assertion_executions']
 count = len(re.findall(r'NOTICE:\s+PASS ', Path(sys.argv[1]).read_text()))
 if count != expected:
     raise SystemExit(f'Assertion count changed: expected {expected}, observed {count}')

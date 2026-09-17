@@ -6625,6 +6625,21 @@ export abstract class ServerTableEngineBase {
     state: { hold: 'waiting' | 'posting' | null; agreed?: boolean }
   ): void {
     if (this.isTournamentTable()) return;
+    // Bind before joining the queue: a later roster/table is not this target.
+    const tableId = this.tableId;
+    const matches = this.seatedPlayers.filter((seat) => seat.user_id === userId);
+    const seatId = matches[0]?.seat_id;
+    const occupancyId = matches[0]?.occupancy_id;
+    if (
+      matches.length !== 1 ||
+      typeof seatId !== 'string' || seatId.length === 0 ||
+      typeof occupancyId !== 'string' || occupancyId.length === 0
+    ) {
+      console.warn(
+        `[ServerTableEngine:${tableId}] entry hold write skipped for ${userId.slice(0, 8)}: original seat occupancy unavailable or ambiguous`
+      );
+      return;
+    }
     const patch: Record<string, unknown> = { entry_hold: state.hold };
     if (state.agreed !== undefined) patch.entry_post_agreed = state.agreed;
     /* Promise.resolve() around the builder, deliberately. A PostgREST query
@@ -6640,7 +6655,9 @@ export abstract class ServerTableEngineBase {
           supabase
             .from('table_seats')
             .update(patch)
-            .eq('table_id', this.tableId)
+            .eq('table_id', tableId)
+            .eq('id', seatId)
+            .eq('occupancy_id', occupancyId)
             .eq('user_id', userId)
             .is('left_at', null)
         )
@@ -6648,7 +6665,7 @@ export abstract class ServerTableEngineBase {
       .then(({ error }) => {
         if (error) {
           console.warn(
-            `[ServerTableEngine:${this.tableId}] entry hold write failed for ${userId.slice(0, 8)}: ${error.message}`
+            `[ServerTableEngine:${tableId}] entry hold write failed for ${userId.slice(0, 8)}: ${error.message}`
           );
         }
       })
@@ -6659,7 +6676,7 @@ export abstract class ServerTableEngineBase {
       // lost write costs only restart fidelity.
       .catch((err: unknown) => {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] entry hold write threw for ${userId.slice(0, 8)}:`,
+          `[ServerTableEngine:${tableId}] entry hold write threw for ${userId.slice(0, 8)}:`,
           err
         );
       })

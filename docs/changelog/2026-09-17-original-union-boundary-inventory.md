@@ -1,0 +1,11 @@
+# Original Union boundary inventory
+
+The old Union P&L calculation read current seats and tournament state as if they were original period boundaries. The prospective successor records an initial active inventory and compact immutable before/after facts at the original membership, table, seat, tournament and registration writes. Closed boundaries are reconstructed only from these records; a present balance cannot fill a missing historical boundary.
+
+Capture uses the existing Monday Pacific book helper. Original writes retain a shared transaction lock for the book receiving the observation. A historical reader waits only for completed books and takes a fresh READ COMMITTED snapshot after their writers finish. Current-week gameplay does not wait on the historical reader. Actual current timestamps are assigned by the source trigger, not supplied by a caller.
+
+The initial seed contains all Union club memberships, cash table scopes, active seats, nonterminal tournament scopes and their registrations. Future before/after changes preserve removals and completion. A pre-capture terminal population that reopens remains incomplete. No current profile or horse filter, rake-only population, new scheduler, payout path, commercial formula or hand-history retention change is introduced.
+
+This is original population and boundary evidence. It does not value unallocated tournament pools, infer historical funding ownership or authorize a payment. The monetary reader still must bind original accepted-hand, funding, entry, award and obligation receipts. The prior undocumented week remains blocked.
+
+Focused PostgreSQL17 checks exercise the real trigger/reader, rollback, exact zero values, immutable guards, private privileges, current-state independence and a two-session boundary race. A STABLE negative control reproduces the omitted-commit defect that the VOLATILE reader prevents. Protected checks, installation and production observation remain separate acceptance stages.

@@ -406,3 +406,7 @@ python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regressi
 fi
 finish_fixture
 done
+
+# Original boundary capture is a separate prospective successor, never part of
+# the sealed installed 37-component migration or a replay of it.
+bash "$root/scripts/dev/test-union-pnl-inventory.sh"

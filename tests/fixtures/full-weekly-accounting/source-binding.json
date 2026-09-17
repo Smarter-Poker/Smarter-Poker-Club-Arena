@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "30ed20418cdac4f8fd239ad307464bf49d0025a2fcdaebbbf44405bafb7a2611",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "4d9dcd2258d59712b7df0aae12d8c3bfd45780b10d291094d5f4e7ec05beaa30",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -304,7 +304,14 @@
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-successor-provenance.json": "58289123ad4fee1e1f402b9dd7120ea267dab4cf792bbc608f59d6da1989b23d",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c",
     "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "0c43c6d516c0f72aeb0e5c5ba7c35c70ad16dd3dbe239896bcd83b2b600b21af",
-    "tests/fixtures/union-provider-preimages-20260917/money-registry-ddl-guard.sql": "fb4c7ab0022dcc6c404b31470aa73dc9986e32f8855a61304f2d8418e30f4c46"
+    "tests/fixtures/union-provider-preimages-20260917/money-registry-ddl-guard.sql": "fb4c7ab0022dcc6c404b31470aa73dc9986e32f8855a61304f2d8418e30f4c46",
+    "supabase/migrations/20260917233148_union_pnl_inventory_preserves_original_boundaries.sql": "db7613bbe1929db36423d5c1fb736d0367037b4e98f1421ab5d4b8dc3ce43bc4",
+    "scripts/dev/test-union-pnl-inventory.sh": "2ab14cd9ab5448aaea610f32d813addfd9ab96f0d65490ef2533ba12e5068e3e",
+    "tests/fixtures/union-pnl-inventory/seed.sql": "6d4bb2e904b0c1b0c1f48247a4ab00367b65ef7210d5ba1781d5dc04702c848e",
+    "tests/fixtures/union-pnl-inventory/regression.sql": "37bfad02bbb518377b4d773a15b691690c4af00dc5390fabd2f588bc490f21d1",
+    "tests/fixtures/union-pnl-inventory/concurrency.py": "dcf7768c58d3c6bed77648716fa2822ad5a75037392f7a388b6d686b50df1cf6",
+    "tests/fixtures/union-pnl-inventory/README.md": "489f905127e0578161e062a52f453c5a5f4ae18699c54f255cdac48c3f24565a",
+    "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -1123,5 +1130,11 @@
     },
     "reason": "Preserve the unchanged provider settings guards by reproducing the observed read-only monitoring role in the isolated managed caller; no production privilege changes.",
     "focused_validation": "Exact maintained managed-cron-role-regression.py passed with actual local PostgreSQL17.11 and pg_cron1.6.8 against prior accepted schema: oldLOCK42501, exact source transition and rollback, job272 staleupdate40001, job271 retirementguardrefusal and preserved concurrent rows, final272 timing race40001. No job launched. Full final hosted job remains required."
+  },
+  "original_inventory_successor_20260917": {
+    "migration": "20260917233148",
+    "scope": "Prospective original population and boundary observations only; no monetary basis or historical backfill certification",
+    "triggered_by": "Existing full weekly accounting native runner after its existing clusters",
+    "native_qualification": "Actual PostgreSQL17 producer/reader/rollback/ACL/immutability and two-session closed-book snapshot proof; STABLE negative control fails visibility"
   }
 }

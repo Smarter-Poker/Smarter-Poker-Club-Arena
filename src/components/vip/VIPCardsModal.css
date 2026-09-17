@@ -1,295 +1,191 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * 🎫 VIP CARDS MODAL — Styles
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   VIP INFO MODAL - on the spade console wearing the VIP crest (#ClubArenaConsole)
+
+   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
+   spade master (components/console/SpadeConsole.css); this file only lays the
+   membership's words on the black glass between the rails: the status, then
+   the feature table as rows separated by engraved rules (a black cut with a
+   lit edge above it), in the master's own inks (sc-ink--*). Nothing is
+   drawn: no card, no gradient, no shimmer, no button face. Sizes are cqw
+   against the console so a 320px phone and a 430px one get the same picture.
+   No :hover (tests/no-hover-effects.law.test.ts).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .vip-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.88);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 9999;
-  backdrop-filter: blur(12px);
-}
-
-.vip-modal {
-  background: linear-gradient(180deg, #1a1a2e 0%, #0d0d1a 100%);
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  border-radius: 20px;
-  width: 90%;
-  max-width: 500px;
-  max-height: 90vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
   overflow-y: auto;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.8),
-    0 0 80px rgba(255, 215, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  position: relative;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
 }
 
-/* Holographic shimmer across the modal */
-.vip-modal::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 300%;
-  height: 100%;
-  background: linear-gradient(
-    105deg,
-    transparent 20%,
-    rgba(255, 215, 0, 0.04) 35%,
-    rgba(255, 255, 255, 0.06) 42%,
-    rgba(168, 85, 247, 0.04) 48%,
-    transparent 60%
-  );
-  animation: modalShimmer 8s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 0;
-  border-radius: 20px;
+/* The dialog is the console and nothing else. metallic-popups.css paints a
+   steel shell on every [class$='-modal']; this name is not one, and the
+   longhands below keep it that way should the inventory grow. */
+.vipc {
+  --vipc-rule: 1px solid #000;
+  --vipc-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
+  width: min(100%, 560px);
+  min-width: 0;
+  margin: auto 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: 0;
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color-scheme: dark;
 }
 
-@keyframes modalShimmer {
-  0% {
-    transform: translateX(-30%);
-  }
-  50% {
-    transform: translateX(30%);
-  }
-  100% {
-    transform: translateX(-30%);
-  }
+.vipc__console {
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
 }
 
-.vip-modal__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+/* Chrome type stays the master's own inside a dialog, where the popup
+   chassis would otherwise hand every heading to Rajdhani. */
+.vipc .sc__title,
+.vipc .sc__eyebrow,
+.vipc .sc__pill {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
-.vip-modal__header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: #ffd700;
-  letter-spacing: 2px;
-}
+/* ── Status ─────────────────────────────────────────────────────────────── */
 
-.vip-modal__close {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: rgba(255, 0, 0, 0.2);
-  border: 1px solid rgba(255, 0, 0, 0.4);
-  color: #ff6b6b;
-  font-size: 20px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-/* Duration Selector */
-.vip-modal__duration {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.vip-modal__duration span {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
-}
-
-.vip-modal__duration select {
-  background: rgba(255, 215, 0, 0.1);
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  color: #ffd700;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 16px; /* was 14px; under 16px makes iOS zoom the page on focus */
-  cursor: pointer;
-}
-
-/* Tier Cards */
-.vip-modal__tiers {
+.vipc__status {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  padding: 16px 20px;
+  gap: 1cqw;
+  margin: 0;
+  text-align: center;
 }
 
-.vip-tier-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
+.vipc__status-line {
+  margin: 0;
+  font-size: 4.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── The feature table: rows on the glass ───────────────────────────────── */
+
+.vipc__table {
+  display: grid;
+  margin: 0;
+}
+
+.vipc__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 1fr);
+  gap: 0 3cqw;
   align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
+  padding: 2.6cqw 0;
+  border-top: var(--vipc-rule);
+  box-shadow: var(--vipc-rule-lit);
 }
 
-.vip-tier-card--selected {
-  background: rgba(255, 215, 0, 0.1);
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
+.vipc__row--head {
+  padding-top: 0;
+  border-top: 0;
+  box-shadow: none;
 }
 
-.vip-tier-card__badge {
-  width: 60px;
-  height: 40px;
-  border-radius: 6px;
+.vipc__cell--end {
+  text-align: right;
+}
+
+.vipc__feature {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 3.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vipc__value {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 3.2cqw;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Lifetime ownership is a compact engraved ledger, not another floating card. */
+.vipc__collection {
+  display: grid;
+  gap: 1.5cqw;
+  padding-top: 2.6cqw;
+  border-top: var(--vipc-rule);
+  box-shadow: var(--vipc-rule-lit);
+}
+
+.vipc__collection .sc-label {
+  margin-bottom: 0.5cqw;
+}
+
+/* ── The lit word: CLOSE, for a member with nothing to buy ──────────────── */
+
+.vipc__actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 1.2cqw 3cqw;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  padding-top: 2.6cqw;
+  border-top: var(--vipc-rule);
+  box-shadow: var(--vipc-rule-lit);
 }
 
-.vip-tier-card__icon {
-  font-size: 16px;
-}
-
-.vip-tier-card__label {
-  font-size: 8px;
-  letter-spacing: 1px;
-}
-
-.vip-tier-card__name {
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.vip-tier-card__price {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
-}
-
-/* Features Table */
-.vip-modal__features {
-  padding: 0 20px 16px;
-}
-
-.vip-modal__features table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.vip-modal__features tr {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.vip-modal__features td {
-  padding: 10px 4px;
-  font-size: 12px;
-}
-
-.feature-name {
-  color: rgba(255, 255, 255, 0.8);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.feature-help {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+.vipc-word {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.feature-value {
-  text-align: center;
-  color: rgba(255, 255, 255, 0.6);
-  width: 60px;
-}
-
-.feature-value:has(> .checkmark),
-.feature-value:not(:empty) {
-  color: #4ade80;
-}
-
-.feature-value--highlight {
-  background: rgba(255, 215, 0, 0.1);
-  color: #ffd700 !important;
-  font-weight: 600;
-}
-
-/* Current Status */
-.vip-modal__status {
-  padding: 12px 20px;
-  background: rgba(255, 215, 0, 0.05);
-  text-align: center;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-}
-
-.vip-modal__status strong {
-  color: #ffd700;
-}
-
-/* Purchase Button */
-.vip-modal__purchase {
-  width: calc(100% - 40px);
-  margin: 16px 20px;
-  padding: 14px 24px;
-  border: none;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #000;
-  cursor: pointer;
-  transition: all 0.2s;
+  appearance: none;
+  margin: 0;
+  padding: 1.6cqw 4cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.6cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
 }
-.vip-modal__purchase:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+
+.vipc-word:active {
+  filter: brightness(1.25);
 }
 
-/* Responsive */
-@media (max-width: 480px) {
-  .vip-modal {
-    width: 95%;
-    max-height: 95vh;
-  }
+.vipc-word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.6cqw;
+}
 
-  .vip-modal__tiers {
-    gap: 8px;
-  }
-
-  .vip-tier-card {
-    padding: 8px;
-  }
-
-  .vip-tier-card__badge {
-    width: 50px;
-    height: 35px;
-  }
-
-  .feature-name {
-    font-size: 11px;
-  }
-
-  .feature-value {
-    width: 45px;
-    font-size: 11px;
-  }
+/* metallic-popups.css bevels every button inside a dialog with !important
+   at 0,0,1. A lit word paints nothing, so the longhands are restated here at
+   0,2,1 (SpadeConsole.css does the same for its plates). */
+[role='dialog'] .vipc-word.vipc-word {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
 }

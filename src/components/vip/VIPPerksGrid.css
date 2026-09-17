@@ -1,76 +1,210 @@
-.vip-perks-grid h3 {
-  color: #ffd700;
-  margin: 0 0 20px;
-  font-size: 1.1rem;
+.vip-perks-grid {
+  --vip-perk-title: #f3f6f8;
+  --vip-perk-copy: #aeb8c1;
+  --vip-perk-blue: #45adff;
+  --vip-perk-muted: #9aa5b3;
+  margin-top: clamp(24px, 4vw, 34px);
+  color: var(--vip-perk-title);
+  font-family: var(--club-font-ui, 'Inter', system-ui, sans-serif);
 }
 
-.perks-container {
+.vip-perks-grid__heading {
+  margin: 0 0 16px;
+}
+
+.vip-perks-grid .vip-perks-grid__heading h3 {
+  margin: 0;
+  color: var(--vip-perk-title);
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
+  font-size: clamp(1rem, 2.6vw, 1.2rem);
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  line-height: 1.25;
+  text-shadow:
+    0 1px 0 #fff,
+    0 3px 5px #000;
+}
+
+.vip-perks-grid .perks-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
 }
 
-.perk-card {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 14px;
-  padding: 20px;
-  display: flex;
-  gap: 16px;
+/* The wallet-row master owns the frame and its left icon well. The children
+   only print live perk copy into those already-painted zones. */
+.vip-perks-grid .perk-card {
   position: relative;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-  backdrop-filter: blur(8px) saturate(1.2);
-  -webkit-backdrop-filter: blur(8px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  min-height: 132px;
+  padding: 8px 8px 8px 3px;
+  overflow: hidden;
+  border-style: solid;
+  border-width: 10px 48px 10px 58px;
+  border-image: url('/assets/club-buttons/wallet-row-shell.png') 48 260 48 255 fill / 10px 48px 10px
+    58px stretch;
+  border-radius: 0;
+  background: #030507;
+  box-shadow: none;
 }
 
-.perk-card.locked {
-  opacity: 0.6;
+.vip-perks-grid .perk-card--artwork {
+  grid-template-columns: 88px minmax(0, 1fr);
 }
 
-.perk-icon {
+.vip-perks-grid .perk-card.locked {
+  filter: saturate(0.32) brightness(0.72);
+}
+
+/* The icon sits in the well already present in wallet-row-shell. */
+.vip-perks-grid .perk-visual {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 72px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.vip-perks-grid .perk-visual--artwork {
+  min-height: 88px;
+}
+
+.vip-perks-grid .perk-club-icon {
   width: 48px;
   height: 48px;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 140, 0, 0.2));
-  border-radius: 12px;
+  filter: drop-shadow(0 4px 5px #000);
+}
+
+.vip-perks-grid .perk-artwork {
+  display: block;
+  width: 94%;
+  height: 94%;
+  object-fit: contain;
+  filter: drop-shadow(0 7px 8px #000);
+}
+
+.vip-perks-grid .perk-content {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  flex-shrink: 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-block: 4px;
 }
 
-.perk-content h4 {
-  margin: 0 0 6px;
-  color: #fff;
-  font-size: 1rem;
+.vip-perks-grid .perk-content h4 {
+  margin: 1px 0 7px;
+  color: var(--vip-perk-title);
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
+  font-size: 0.96rem;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  line-height: 1.25;
+  text-wrap: balance;
+  text-shadow: 0 2px 3px #000;
 }
 
-.perk-content p {
+.vip-perks-grid .perk-content p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.85rem;
-  line-height: 1.4;
+  color: var(--vip-perk-copy);
+  font-size: 0.82rem;
+  line-height: 1.46;
 }
 
-.perk-value {
-  display: inline-block;
-  margin-top: 10px;
-  padding: 4px 12px;
-  background: rgba(255, 215, 0, 0.15);
-  color: #ffd700;
-  border-radius: 12px;
-  font-size: 0.85rem;
-  font-weight: 600;
+/* A compact painted action plate replaces the former CSS value pill. */
+.vip-perks-grid .perk-value {
+  display: inline-grid;
+  place-items: center;
+  width: min(100%, 126px);
+  min-width: 104px;
+  aspect-ratio: 348 / 114;
+  margin-top: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 0;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') center / 100% 100%
+    no-repeat;
+  color: #f4f7fb;
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 2px 3px #000;
 }
 
-.lock-overlay {
+.vip-perks-grid .lock-overlay {
   position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.9rem;
+  z-index: 2;
+  top: 7px;
+  right: 9px;
+  display: grid;
+  place-items: center;
+  width: 116px;
+  aspect-ratio: 348 / 114;
+  padding: 0 13px;
+  border: 0;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
+    100% no-repeat;
+  color: #c6cdd3;
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 2px 3px #000;
+}
+
+[data-theme='light'] .vip-perks-grid {
+  --vip-perk-title: #f3f6f8;
+  --vip-perk-copy: #c3cdd4;
+}
+
+@media (max-width: 640px) {
+  .vip-perks-grid .perks-container {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  .vip-perks-grid .perk-card {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 10px;
+    min-height: 120px;
+    padding-right: 1px;
+    border-width: 9px 34px 9px 45px;
+    border-image-width: 9px 34px 9px 45px;
+  }
+
+  .vip-perks-grid .perk-card--artwork {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .vip-perks-grid .perk-visual {
+    min-height: 62px;
+  }
+
+  .vip-perks-grid .perk-visual--artwork {
+    min-height: 76px;
+  }
+
+  .vip-perks-grid .perk-club-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .vip-perks-grid .perk-content h4 {
+    font-size: 0.9rem;
+  }
+
+  .vip-perks-grid .lock-overlay {
+    width: 104px;
+  }
 }

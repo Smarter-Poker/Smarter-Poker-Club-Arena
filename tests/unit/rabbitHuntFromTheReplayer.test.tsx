@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { cleanup, render, waitFor, fireEvent } from '@testing-library/react';
+import { act, cleanup, render, waitFor, fireEvent } from '@testing-library/react';
 import React from 'react';
 
 import {
@@ -141,10 +141,16 @@ import { useRabbitHuntReveal } from '../../src/components/table/useRabbitHuntRev
 
 afterEach(cleanup);
 
-function Harness({ onReveal }: { onReveal: (n?: number) => Promise<never | any> }) {
+function Harness({
+  onReveal,
+  userId = 'u1',
+}: {
+  onReveal: (n?: number) => Promise<never | any>;
+  userId?: string;
+}) {
   const { reveal, cards, hasRevealed, isRevealing } = useRabbitHuntReveal({
     onReveal,
-    userId: 'u1',
+    userId,
   });
   return (
     <div>
@@ -178,5 +184,42 @@ describe('the purchase, driven', () => {
     fireEvent.click(getByText('buy'));
     await waitFor(() => expect(onReveal).toHaveBeenCalledTimes(1));
     expect(getByTestId('state').textContent).toBe('none');
+  });
+
+  it('never paints an old account reveal into the replacement account', async () => {
+    let resolveA!: (value: unknown) => void;
+    let resolveB!: (value: unknown) => void;
+    const requestA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    const requestB = new Promise((resolve) => {
+      resolveB = resolve;
+    });
+    const onReveal = vi.fn().mockReturnValueOnce(requestA).mockReturnValueOnce(requestB);
+
+    const { getByText, getByTestId, rerender } = render(
+      <Harness onReveal={onReveal} userId="account-a" />
+    );
+    fireEvent.click(getByText('buy'));
+    expect(onReveal).toHaveBeenCalledTimes(1);
+
+    rerender(<Harness onReveal={onReveal} userId="account-b" />);
+    await waitFor(() => expect(getByText('buy')).not.toBeDisabled());
+    expect(getByTestId('state').textContent).toBe('none');
+    fireEvent.click(getByText('buy'));
+    expect(onReveal).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveA({ success: true, cards: [{ rank: 'A', suit: 's' }], diamondsSpent: 5 });
+      await requestA;
+    });
+    expect(getByTestId('state').textContent).toBe('none');
+    expect(getByText('buy')).toBeDisabled();
+
+    await act(async () => {
+      resolveB({ success: true, cards: [{ rank: 'K', suit: 'h' }], diamondsSpent: 5 });
+      await requestB;
+    });
+    await waitFor(() => expect(getByTestId('state').textContent).toBe('revealed:1'));
   });
 });

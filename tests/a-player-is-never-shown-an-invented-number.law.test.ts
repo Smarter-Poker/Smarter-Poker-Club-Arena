@@ -70,7 +70,6 @@ const ALLOWED: Record<string, Reason> = {
   'src/pages/CashierTradePage.tsx': 'identifier', // uuid v4 fallback for an idempotency key
   'src/pages/MemberManagementPage.tsx': 'identifier', // request key fallback
   'src/pages/TablePage.tsx': 'jitter', // reconnect jitter and a uuid v4 fallback
-  'src/pages/marketplace/StoreTab.tsx': 'identifier', // request key fallback
   'src/pages/tournament/TournamentDetails.tsx': 'identifier', // request key
 };
 

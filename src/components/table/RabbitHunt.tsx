@@ -8,7 +8,7 @@
  * should ghost run or show the cards that would have appeared if the hand
  * played out. These should ONLY APPEAR TO THE PLAYER WHO CLICKED. VIP members
  * get 100 rabbit hunts a month for free, and they cost 5 diamonds each after
- * that."
+ * that." Lifetime VIP was later upgraded to unlimited Rabbit Hunts.
  *
  * WHAT CHANGED, AND WHY THIS COMPONENT GOT SMALLER
  *
@@ -29,7 +29,6 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { vipService, FEATURE_PRICING } from '../../services/VIPService';
-import { useToast } from '../common/Toast';
 import './RabbitHunt.css';
 import { reportError } from '../../utils/errorReporter';
 /* Dan: "use the actual rabbit hunt dynamic image". Updated to the custom
@@ -114,7 +113,6 @@ export function RabbitHunt({
   registerHotkey,
 }: RabbitHuntProps) {
   const rabbitHuntIcon = useButtonImage('icon-rabbit');
-  const toast = useToast();
 
   /* THE REVEAL ITSELF LIVES IN useRabbitHuntReveal (P5, 2026-09-05), because
      the hand replayer buys the same thing and two implementations of a paid
@@ -122,6 +120,13 @@ export function RabbitHunt({
      badge, the counts and the offer's own visibility. It decides nothing
      about money. */
   const [isVIP, setIsVIP] = useState(false);
+  const [isLifetime, setIsLifetime] = useState(false);
+  const [entitlementStateUserId, setEntitlementStateUserId] = useState<string | null>(
+    userId || null
+  );
+  const entitlementUserRef = useRef<string | null>(null);
+  const activeUserRef = useRef<string | null>(userId || null);
+  activeUserRef.current = userId || null;
   const {
     reveal,
     isRevealing,
@@ -132,6 +137,10 @@ export function RabbitHunt({
     setVipRemaining,
   } = useRabbitHuntReveal({ onReveal, userId, disabled: !isAvailable });
   const handleReveal = useCallback(() => void reveal(), [reveal]);
+  const entitlementBelongsToUser = entitlementStateUserId === (userId || null);
+  const visibleIsVIP = entitlementBelongsToUser && isVIP;
+  const visibleIsLifetime = entitlementBelongsToUser && isLifetime;
+  const visibleVipRemaining = entitlementBelongsToUser ? vipRemaining : null;
 
   // Server price when we have it, the constant only as a fallback.
   const cost =
@@ -155,18 +164,48 @@ export function RabbitHunt({
   // fetched BEFORE the press rather than reported after it.
   useEffect(() => {
     let cancelled = false;
+    const entitlementUser = userId || null;
+    if (entitlementUserRef.current !== entitlementUser) {
+      // A failed refresh may keep the last known status for the same player,
+      // but that status must never cross an account boundary.
+      entitlementUserRef.current = entitlementUser;
+      setEntitlementStateUserId(entitlementUser);
+      setIsVIP(false);
+      setIsLifetime(false);
+      setVipRemaining(null);
+    }
     const checkVIP = async () => {
       if (!userId) {
-        if (!cancelled) setIsVIP(false);
+        if (!cancelled) {
+          setEntitlementStateUserId(null);
+          setIsVIP(false);
+          setIsLifetime(false);
+          setVipRemaining(null);
+        }
         return;
       }
       try {
         const status = await vipService.checkVIPStatus(userId);
-        if (cancelled) return;
+        if (cancelled || activeUserRef.current !== entitlementUser) return;
+        setEntitlementStateUserId(entitlementUser);
         setIsVIP(!!status?.isVIP);
+        const lifetime = status?.status === 'lifetime';
+        setIsLifetime(lifetime);
+        if (lifetime) {
+          // An unlimited entitlement has no countdown. Clearing the previous
+          // user's finite number also prevents stale account-switch paint.
+          setVipRemaining(null);
+          return;
+        }
+        if (!status?.isVIP) {
+          setVipRemaining(null);
+          return;
+        }
         const pool = status?.monthlyLimits?.rabbitHunts;
         if (pool && typeof pool.limit === 'number' && typeof pool.used === 'number') {
           setVipRemaining(Math.max(0, pool.limit - pool.used));
+        } else {
+          setVipRemaining(null);
         }
       } catch (err) {
         /* 2026-08-28: was `setIsVIP(false)`. checkVIPStatus now THROWS when the
@@ -183,7 +222,7 @@ export function RabbitHunt({
     return () => {
       cancelled = true;
     };
-  }, [userId, isAvailable]);
+  }, [userId, isAvailable, setVipRemaining]);
 
   // A new hand's offer must not show the previous hand's cards.
   useEffect(() => {
@@ -216,15 +255,17 @@ export function RabbitHunt({
           do, and a paid tap with no visible price is not an option here. */}
       {!hasRevealed && (
         <button
-          className={`rabbit-hunt__button ${isRevealing ? 'rabbit-hunt__button--loading' : ''} ${isVIP ? 'rabbit-hunt__button--vip' : ''}`}
+          className={`rabbit-hunt__button ${isRevealing ? 'rabbit-hunt__button--loading' : ''} ${visibleIsVIP ? 'rabbit-hunt__button--vip' : ''}`}
           onClick={handleReveal}
           disabled={isRevealing}
           aria-label={
             isRevealing
               ? 'Revealing Rabbit Hunt'
-              : isVIP && typeof vipRemaining === 'number' && vipRemaining > 0
-                ? `Rabbit Hunt, ${vipRemaining} Free This Month`
-                : `Rabbit Hunt, ${cost} Diamonds`
+              : visibleIsLifetime
+                ? 'Rabbit Hunt, Unlimited With Lifetime VIP'
+                : visibleIsVIP && typeof visibleVipRemaining === 'number' && visibleVipRemaining > 0
+                  ? `Rabbit Hunt, ${visibleVipRemaining} Free This Month`
+                  : `Rabbit Hunt, ${cost} Diamonds`
           }
           title="Rabbit Hunt (B)"
           aria-keyshortcuts="b"
@@ -252,16 +293,24 @@ export function RabbitHunt({
               bottom-right corner. The word does not fit and does not need to;
               the aria-label above still says "N Free This Month" in full, so
               nothing is lost to a screen reader. */}
-          {!isRevealing && typeof (vipRemaining ?? packRemaining) === 'number' && (
-            <span className="rabbit-hunt__remaining">{vipRemaining ?? packRemaining}</span>
-          )}
+          {!visibleIsLifetime &&
+            !isRevealing &&
+            typeof (visibleVipRemaining ?? packRemaining) === 'number' && (
+              <span className="rabbit-hunt__remaining">{visibleVipRemaining ?? packRemaining}</span>
+            )}
           {!isRevealing && (
             <span
-              className={`rabbit-hunt__cost ${isVIP && vipRemaining !== 0 ? 'rabbit-hunt__cost--free' : ''}`}
+              className={`rabbit-hunt__cost ${visibleIsLifetime || (visibleIsVIP && visibleVipRemaining !== 0) ? 'rabbit-hunt__cost--free' : ''}`}
             >
               {/* A VIP whose monthly pool is spent pays like anyone else, so the
                   label has to stop saying FREE the moment it runs out. */}
-              {isVIP && vipRemaining === 0 ? `${cost}` : isVIP ? 'FREE' : `${cost}`}
+              {visibleIsLifetime
+                ? 'Unlimited'
+                : visibleIsVIP && visibleVipRemaining === 0
+                  ? `${cost}`
+                  : visibleIsVIP
+                    ? 'Free'
+                    : `${cost}`}
             </span>
           )}
         </button>

@@ -115,7 +115,11 @@ describe('every BEM className resolves on the route that renders it', () => {
    * three references resolve. Baseline lowered in the same commit, per the
    * paragraph above.
    */
-  const BASELINE = 41;
+  // 2026-09-17: 41 -> 40. `toast__instrument-mark` was a raw class on an SVG
+  // grouping element with no stylesheet rule or visual role. Removing the
+  // unresolved hook leaves the instrument paths and their painted classes
+  // unchanged, and keeps this ratchet moving only downward.
+  const BASELINE = 40;
 
   it(`has no more than ${BASELINE} unresolved BEM class names`, () => {
     expect(unresolved.length).toBeLessThanOrEqual(BASELINE);

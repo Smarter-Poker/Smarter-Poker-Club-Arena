@@ -55,10 +55,11 @@ describe('LAW: a stale read never lands', () => {
 
   it('PlayerNotesPanel resets the form when the target changes and refuses to save over an unread note', () => {
     const panel = read('src/components/gameplay/PlayerNotesPanel.tsx');
-    const load = panel.slice(
-      panel.indexOf('const loadSingleNote = async'),
-      panel.indexOf('const loadAllNotes = async')
+    const loadStart = panel.lastIndexOf(
+      'useEffect(() => {',
+      panel.indexOf('const loadSingleNote = async')
     );
+    const load = panel.slice(loadStart, panel.indexOf('const loadAllNotes = async'));
     // Reset BEFORE the read, so no previous player's note survives a miss.
     const resetAt = load.indexOf("setCurrentNote('')");
     const readAt = load.indexOf(".from('player_notes')");
@@ -66,13 +67,13 @@ describe('LAW: a stale read never lands', () => {
     expect(resetAt).toBeLessThan(readAt);
     expect(load).toContain('setSelectedTags([])');
     expect(load).toContain("setSelectedColor('none')");
-    expect(load).toMatch(/if \(isCancelled\(\)\) return;/);
+    expect(load).toMatch(/if \(!isCurrent\(\)\) return;/);
     expect(load).toContain('setNoteLoadFailed(true)');
     const save = panel.slice(
       panel.indexOf('const saveNote = async'),
       panel.indexOf('const toggleTag')
     );
-    expect(save).toMatch(/if \(noteLoadFailed\) \{[\s\S]*?return;/);
+    expect(save).toMatch(/if \(visibleLoadFailed\) \{[\s\S]*?return;/);
   });
 
   it('AgentManagementPage drops an agents read whose ticket is no longer current', () => {

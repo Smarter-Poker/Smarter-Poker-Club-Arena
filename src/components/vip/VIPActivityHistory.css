@@ -1,156 +1,205 @@
-/* VIPActivityHistory — Activity timeline with monthly summaries */
-
 .vip-activity-history {
+  --activity-blue: #45adff;
+  --activity-gold: #ffd700;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
   margin: 24px 0;
+  color: #edf9ff;
+  font-family: var(--club-font-ui, 'Inter', system-ui, sans-serif);
 }
 
-/* Header */
-.activity-header {
+.vip-activity-history .activity-header {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-.activity-header h3 {
-  font-size: 24px;
+.vip-activity-history .activity-header h3,
+.vip-activity-history .monthly-summary h4 {
+  margin: 0;
+  color: #edf9ff;
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.95);
-  margin: 0;
+  text-shadow:
+    0 1px 0 #fff,
+    0 3px 5px #000;
 }
 
-.activity-header p {
+.vip-activity-history .activity-header h3 {
+  font-size: 24px;
+}
+
+.vip-activity-history .activity-header p,
+.vip-activity-history .activity-state p,
+.vip-activity-history .no-activity p {
+  margin: 0;
+  color: #9db1bc;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  margin: 0;
 }
 
-/* Summary Stats */
-.activity-summary {
+.vip-activity-history .activity-state,
+.vip-activity-history .no-activity {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  place-items: center;
+  min-height: 120px;
+  padding: 22px 44px;
+  border: 12px solid transparent;
+  border-image: url('/assets/club-buttons/club-nav-shell.webp') 88 150 fill / 12px stretch;
+  color: #bed5df;
+  background: #03070a;
+  text-align: center;
 }
 
-.summary-card {
-  padding: 16px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
-  border: 1px solid rgba(255, 215, 0, 0.1);
-  border-radius: 8px;
+.vip-activity-history .activity-state--error {
+  color: #ff7b88;
+}
+
+.vip-activity-history .activity-retry,
+.vip-activity-history .filter-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  aspect-ratio: 348 / 114;
+  padding: 0 19px;
+  border: 0;
+  border-radius: 0;
+  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
+    100% no-repeat;
+  color: #dcecf3;
+  cursor: pointer;
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 2px 3px #000;
+}
+
+.vip-activity-history .activity-retry {
+  width: 196px;
+}
+
+.vip-activity-history .activity-retry:focus-visible,
+.vip-activity-history .filter-tab:focus-visible {
+  outline: 2px solid #8ce8ff;
+  outline-offset: 3px;
+}
+
+.vip-activity-history .activity-retry:active,
+.vip-activity-history .filter-tab:active {
+  filter: brightness(1.12);
+  transform: translateY(1px);
+}
+
+.vip-activity-history .activity-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vip-activity-history .summary-card,
+.vip-activity-history .month-card {
+  border: 12px solid transparent;
+  border-image: url('/assets/club-buttons/club-utility-shell.webp') 130 fill / 12px stretch;
+  background: #030507;
+}
+
+.vip-activity-history .summary-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  gap: 7px;
+  min-height: 96px;
+  padding: 13px 15px;
 }
 
-.summary-label {
+.vip-activity-history .summary-label,
+.vip-activity-history .diamonds-label,
+.vip-activity-history .balance-label,
+.vip-activity-history .stat-label {
+  color: #8fa5af;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
   font-weight: 600;
 }
 
-.summary-value {
-  font-size: 22px;
+.vip-activity-history .summary-value {
+  color: #d9edf6;
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
+  font-size: 23px;
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
+  text-shadow: 0 2px 3px #000;
 }
 
-.summary-card.earned .summary-value {
-  color: #4ade80;
+.vip-activity-history .summary-card.earned .summary-value,
+.vip-activity-history .diamonds-value.earned,
+.vip-activity-history .stat-value.earned {
+  color: var(--activity-blue);
 }
 
-.summary-card.spent .summary-value {
-  color: #ffd700;
+.vip-activity-history .summary-card.spent .summary-value,
+.vip-activity-history .diamonds-value.spent,
+.vip-activity-history .diamonds-value.redeemed,
+.vip-activity-history .stat-value.spent {
+  color: var(--activity-gold);
 }
 
-.summary-card.count .summary-value {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-/* Activity Filters */
-.activity-filters {
+.vip-activity-history .activity-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.filter-tab {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 215, 0, 0.1);
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  font-weight: 500;
+.vip-activity-history .filter-tab {
+  width: 186px;
 }
 
-.filter-tab.active {
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 215, 0, 0.05));
-  border-color: rgba(255, 215, 0, 0.4);
-  color: #ffd700;
-  box-shadow: 0 0 12px rgba(255, 215, 0, 0.2);
+.vip-activity-history .filter-tab.active {
+  color: #f4f7fb;
+  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png');
 }
 
-.filter-count {
+.vip-activity-history .filter-count {
+  min-width: 22px;
+  color: #92dff8;
   font-size: 11px;
-  background: rgba(255, 215, 0, 0.2);
-  padding: 2px 6px;
-  border-radius: 3px;
-  display: inline-block;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Activity Timeline */
-.activity-timeline {
+.vip-activity-history .activity-timeline {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 215, 0, 0.1);
-  border-radius: 8px;
+  gap: 9px;
   max-height: 500px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 215, 0, 0.2) transparent;
-}
-
-.activity-timeline::-webkit-scrollbar {
-  width: 6px;
-}
-
-.activity-timeline::-webkit-scrollbar-track {
+  padding: 0;
+  border: 0;
   background: transparent;
+  scrollbar-color: rgba(88, 194, 237, 0.45) transparent;
+  scrollbar-width: thin;
 }
 
-.activity-timeline::-webkit-scrollbar-thumb {
-  background: rgba(255, 215, 0, 0.2);
-  border-radius: 3px;
-}
-
-.timeline-item {
+.vip-activity-history .timeline-item {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 16px;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: center;
-  padding: 12px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
-  border: 1px solid rgba(255, 215, 0, 0.08);
-  border-radius: 8px;
-  animation: vIPActivityHistorySlideInLeft 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  min-height: 92px;
+  padding: 7px 7px 7px 2px;
+  border-style: solid;
+  border-width: 10px 48px 10px 58px;
+  border-image: url('/assets/club-buttons/wallet-row-shell.png') 48 260 48 255 fill / 10px 48px 10px
+    58px stretch;
+  background: #030507;
+  animation: vipActivityReveal 0.3s ease-out both;
   animation-delay: var(--reveal-delay, 0s);
-  transition: all 0.3s ease;
 }
 
-@keyframes vIPActivityHistorySlideInLeft {
+@keyframes vipActivityReveal {
   from {
     opacity: 0;
-    transform: translateX(-12px);
+    transform: translateX(-8px);
   }
   to {
     opacity: 1;
@@ -158,256 +207,174 @@
   }
 }
 
-/* Timeline Marker */
-.timeline-marker {
-  position: relative;
+/* wallet-row-shell already paints this icon well. */
+.vip-activity-history .timeline-marker {
+  display: grid;
+  place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--color), rgba(255, 255, 255, 0.05));
-  border: 2px solid var(--color);
+  border: 0;
+  background: transparent;
+}
+
+.vip-activity-history .timeline-marker img {
+  display: block;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 5px #000);
+}
+
+.vip-activity-history .timeline-content {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 0 12px var(--color);
-}
-
-.marker-icon {
-  font-size: 18px;
-}
-
-/* Timeline Content */
-.timeline-content {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
+  gap: 16px;
+  min-width: 0;
 }
 
-.activity-main {
+.vip-activity-history .activity-main,
+.vip-activity-history .timeline-balance,
+.vip-activity-history .activity-diamonds,
+.vip-activity-history .month-stat {
   display: flex;
   flex-direction: column;
+}
+
+.vip-activity-history .activity-main {
   gap: 4px;
+  min-width: 0;
 }
 
-.activity-description {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+.vip-activity-history .activity-description {
+  color: #dce9ee;
+  font-size: 14px;
+  font-weight: 650;
 }
 
-.activity-date {
+.vip-activity-history .activity-date {
+  color: #82959e;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
 }
 
-.activity-points {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
+.vip-activity-history .activity-diamonds {
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
 }
 
-.points-value {
-  font-size: 16px;
+.vip-activity-history .diamonds-value,
+.vip-activity-history .balance-value,
+.vip-activity-history .stat-value {
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
-  font-family: 'Courier New', monospace;
 }
 
-.points-value.earned {
-  color: #4ade80;
+.vip-activity-history .diamonds-value {
+  font-size: 16px;
 }
 
-.points-value.spent,
-.points-value.redeemed {
-  color: #ffd700;
-}
-
-.points-label {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-}
-
-/* Timeline Balance */
-.timeline-balance {
-  display: flex;
-  flex-direction: column;
+.vip-activity-history .timeline-balance {
   align-items: flex-end;
   gap: 4px;
-  padding-left: 16px;
-  border-left: 1px solid rgba(255, 215, 0, 0.1);
+  min-width: 104px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(115, 188, 218, 0.2);
 }
 
-.balance-label {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.balance-value {
+.vip-activity-history .balance-value {
+  color: #d9edf6;
   font-size: 14px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.8);
 }
 
-/* No Activity State */
-.no-activity {
+.vip-activity-history .monthly-summary {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   gap: 12px;
-  padding: 40px 20px;
-  color: rgba(255, 255, 255, 0.4);
 }
 
-.no-activity-icon {
-  font-size: 40px;
-  opacity: 0.3;
+.vip-activity-history .monthly-summary h4 {
+  font-size: 17px;
 }
 
-.no-activity p {
-  font-size: 13px;
-  margin: 0;
-}
-
-/* Monthly Summary */
-.monthly-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.monthly-summary h4 {
-  font-size: 16px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
-  margin: 0;
-  letter-spacing: 0.3px;
-}
-
-.summary-grid {
+.vip-activity-history .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.month-card {
-  padding: 16px;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.08) 0%, rgba(155, 89, 182, 0.05) 100%);
-  border: 1px solid rgba(255, 215, 0, 0.2);
-  border-radius: 8px;
+.vip-activity-history .month-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  animation: fadeInScale 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  gap: 11px;
+  padding: 12px;
+  animation: vipActivityReveal 0.3s ease-out both;
   animation-delay: var(--reveal-delay, 0s);
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@keyframes fadeInScale {
-  from {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.month-label {
-  font-size: 12px;
+.vip-activity-history .month-label {
+  color: var(--activity-gold);
+  font-family: var(--club-font-number, 'Roboto Condensed', 'Arial Narrow', sans-serif);
   font-weight: 700;
-  color: #ffd700;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
 }
 
-.month-stats {
+.vip-activity-history .month-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.month-stat {
-  display: flex;
-  flex-direction: column;
+.vip-activity-history .month-stat {
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 
-.stat-value {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.stat-value.earned {
-  color: #4ade80;
-}
-
-.stat-value.spent {
-  color: #ffd700;
-}
-
-.stat-label {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.2px;
-}
-
-.month-count {
+.vip-activity-history .month-count {
+  color: #81949d;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
   text-align: center;
 }
 
-/* Responsive */
-@media (max-width: 1024px) {
-  .activity-summary {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .summary-grid {
-    grid-template-columns: repeat(3, 1fr);
+@media (max-width: 850px) {
+  .vip-activity-history .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 768px) {
-  .activity-summary {
+@media (max-width: 680px) {
+  .vip-activity-history .activity-summary,
+  .vip-activity-history .summary-grid {
     grid-template-columns: 1fr;
   }
 
-  .timeline-item {
-    grid-template-columns: auto 1fr;
+  .vip-activity-history .activity-filters {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-items: start;
   }
 
-  .timeline-balance {
-    grid-column: 1 / -1;
-    padding-left: 0;
-    border-left: none;
-    border-top: 1px solid rgba(255, 215, 0, 0.1);
-    padding-top: 8px;
+  .vip-activity-history .timeline-item {
+    grid-template-columns: 38px minmax(0, 1fr);
+    border-width: 9px 34px 9px 45px;
+    border-image-width: 9px 34px 9px 45px;
+  }
+
+  .vip-activity-history .timeline-content {
     align-items: flex-start;
-  }
-
-  .summary-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 480px) {
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .activity-filters {
     flex-direction: column;
   }
 
-  .filter-tab {
-    width: 100%;
+  .vip-activity-history .activity-diamonds {
+    align-items: flex-start;
+  }
+
+  .vip-activity-history .timeline-balance {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    min-width: 0;
+    padding: 9px 0 0;
+    border-top: 1px solid rgba(115, 188, 218, 0.2);
+    border-left: 0;
   }
 }

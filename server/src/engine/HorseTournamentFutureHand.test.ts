@@ -5,6 +5,7 @@ import {
   FUTURE_HAND_POLICY,
   settleFutureHand,
   commitFutureChips,
+  type FutureHandDraw,
 } from './HorseTournamentFutureHand.js';
 import { referenceDeck } from '../benchmark/OmahaReference.js';
 import { calculatePots, determineWinners } from './PokerEngine.js';
@@ -44,6 +45,43 @@ const run = (
   return result;
 };
 describe('Phase 8 funded future-hand transition', () => {
+  it.each([2, 100])(
+    'keeps a sitting-out seat with %i chips blind-funded without reviving voluntary play',
+    (awayStack) => {
+      const players = [player(0, 100), player(1, awayStack), player(2, 100)];
+      players[1].is_sitting_out = true;
+      const drawCache = new Map<string, FutureHandDraw>();
+      const args = {
+        players,
+        vector: [100, awayStack, 100],
+        localIndex: new Map(players.map((p, i) => [p.user_id, i])),
+        heroId: 'p0',
+        dealerSeat: 1,
+        sampleIndex: 27,
+        level: { smallBlind: 5, bigBlind: 10, ante: 3, anteType: 'per_player' as const },
+        drawCache,
+      };
+      // Fix the declared rollout population: everyone has a value hand, and
+      // the away seat would win if eligible. These are synthetic model facts.
+      simulateTournamentFutureHands(args);
+      for (const draw of drawCache.values()) {
+        for (const [id, facts] of draw.seats) {
+          facts.preflop = 0.99;
+          facts.streets.fill(0.99);
+          facts.showdown = id === 'p1' ? 100 : id === 'p0' ? 50 : 25;
+        }
+      }
+      const result = simulateTournamentFutureHands(args)!;
+      expect(result).not.toBeNull();
+      expect(result.forcedPaid).toEqual({ p0: 13, p1: Math.min(awayStack, 3), p2: 8 });
+      // A deep away seat folds to the open; a forced all-in keeps pot rights.
+      if (awayStack === 100) expect(result.vector[1]).toBe(97);
+      else expect(result.vector[1]).toBeGreaterThan(awayStack);
+      expect(result.vector.reduce((a, b) => a + b, 0)).toBe(200 + awayStack);
+      expect(result.conservationError).toBe(0);
+      expect(players[1].stack).toBe(awayStack);
+    }
+  );
   it('keeps reusable synthetic facts independent of player identities and caller mutations', () => {
     const players = [player(0, 100), player(1, 300), player(2, 25)];
     const args = {

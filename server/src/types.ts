@@ -944,6 +944,16 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  /** Private reference lookup/route evidence; not final causal or GTO proof. */
+  tournamentPreflopAttribution?: import('./engine/HorsePhase6Attribution.js').HorsePhase6Attribution;
+  /** Finite private provenance for the brain's last-resort liveness action. */
+  policyFallback?: 'brain_exception';
+  /** Private request-to-executor witness, attached at the live response boundary. */
+  executionWitness?: import('./engine/HorseExecutionWitness.js').HorseExecutionWitness;
+  /** Bounded outer policy-order trace; contains actions only, never cards or seeds. */
+  policyGraph?: import('./engine/HorsePolicyGraph.js').HorsePolicyGraphReceipt;
+  /** Actual registered variant owner and its evaluated/disabled/refused result. */
+  policyOwnership?: import('./engine/HorsePolicyRegistry.js').HorsePolicyOwnership;
   /** Existing catastrophe owner rejected this committed continuation. An
    * uncalibrated later joint proposal cannot reopen its rejected call-off. */
   continuationGuard?: 'multiway_commitment_floor' | 'dominated_commitment_floor';

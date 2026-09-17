@@ -19,6 +19,77 @@ import { HorseLogic } from '../HorseLogic.js';
 
 const variants = ['short_deck', 'pineapple', 'flh', 'flo8'] as const;
 describe('remaining variant first-round core', () => {
+  it.each(variants)('%s excludes an explicitly undealt seat from the sampled deck', (variant) => {
+    const s = remainingVariantSpot(variant, 'turn', 2);
+    s.state.dealtSeatIds = [1, 2];
+    seedFastRandom(220913);
+    const before = sampleRemainingVariantEquity(variant, s.hero, s.state, () => true);
+    s.state.players.push({
+      ...s.state.players[1],
+      user_id: 'undealt',
+      seat: 3,
+      bet: 0,
+      totalInvested: 0,
+      is_sitting_out: true,
+    });
+    seedFastRandom(220913);
+    const after = sampleRemainingVariantEquity(variant, s.hero, s.state, () => true);
+    expect(before).not.toBeNull();
+    expect({ ...after, analysisMs: 0 }).toEqual({ ...before, analysisMs: 0 });
+  });
+  it.each(variants)('%s retains a sitting-out all-in opponent at showdown', (variant) => {
+    const s = remainingVariantSpot(variant, 'turn', 3);
+    s.state.players[2].stack = 0;
+    s.state.players[2].is_all_in = true;
+    seedFastRandom(220913);
+    const before = sampleRemainingVariantEquity(variant, s.hero, s.state, () => true);
+    s.state.players[2].is_sitting_out = true;
+    seedFastRandom(220913);
+    const after = sampleRemainingVariantEquity(variant, s.hero, s.state, () => true);
+    expect(before).not.toBeNull();
+    expect(after).not.toBeNull();
+    expect({ ...after, analysisMs: 0 }).toEqual({ ...before, analysisMs: 0 });
+  });
+  it.each(variants)('%s keeps a sitting-out dealer in the dealt ring', (variant) => {
+    const s = remainingVariantSpot(variant, 'preflop', 3);
+    s.state.dealerSeat = 3;
+    s.state.players[2].is_sitting_out = true;
+    s.state.players[2].is_folded = true;
+    const r = evaluateRemainingVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0);
+    expect(r.receipt.fired).toBe(true);
+    expect(r.receipt.position).toBe('small_blind');
+    expect(r.decision).toBe(s.baseline);
+  });
+  it.each(variants)('%s retains the actual aggressor after an all-in call', (variant) => {
+    const s = remainingVariantSpot(variant, 'river', 3);
+    const caller = s.state.players[2];
+    caller.stack = 0;
+    caller.is_all_in = true;
+    caller.bet = s.state.currentBet;
+    s.state.actionHistory!.push({
+      userId: caller.user_id,
+      seat: caller.seat,
+      action: 'all_in',
+      amount: caller.bet,
+      stage: 'river',
+      timestamp: 2,
+    });
+    const r = evaluateRemainingVariantPolicy(s.hero, s.state, s.baseline, null, 'shadow', () => 0);
+    expect(r.receipt.fired).toBe(true);
+    expect(r.receipt.aggressorPosition).toBe('small_blind');
+  });
+  it.each(variants)('%s keeps a folded seat in the sampled deck when it sits out', (variant) => {
+    const s = remainingVariantSpot(variant, 'turn', 3);
+    s.state.players[2].is_folded = true;
+    seedFastRandom(220913);
+    const before = sampleRemainingVariantEquity(variant, s.hero, s.state, () => true);
+    s.state.players[2].is_sitting_out = true;
+    seedFastRandom(220913);
+    const after = sampleRemainingVariantEquity(variant, s.hero, s.state, () => true);
+    expect(before).not.toBeNull();
+    expect(after).not.toBeNull();
+    expect({ ...after, analysisMs: 0 }).toEqual({ ...before, analysisMs: 0 });
+  });
   it.each(variants)(
     '%s runs through HorseLogic in shadow with identical baseline actions and RNG',
     (variant) => {

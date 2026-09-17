@@ -9,6 +9,7 @@ import {
   type HorseEquityOutcomeSample,
 } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
+import { horsePolicyDealtPlayers } from '../multiway/DealtSeatCensus.js';
 import { omahaVariantEquityFromShowdowns } from './OmahaVariantEquity.js';
 import {
   OMAHA_VARIANT_PACKS,
@@ -29,11 +30,17 @@ export function sampleOmahaVariantEquity(
 ) {
   const started = performance.now();
   const pack = OMAHA_VARIANT_PACKS[variant];
-  const dealt = state.players
-    .filter((p) => !p.is_sitting_out && p.user_id !== hero.user_id)
+  let players: SeatPlayer[];
+  try {
+    players = horsePolicyDealtPlayers(state.players, hero.seat, state.dealtSeatIds);
+  } catch {
+    return null;
+  }
+  const dealt = players
+    .filter((p) => p.user_id !== hero.user_id)
     .slice()
     .sort((a, b) => a.seat - b.seat);
-  const active = dealt.filter((p) => !p.is_folded);
+  const active = dealt.filter((p) => !p.is_folded && (!p.is_sitting_out || p.is_all_in));
   const known = new Set([...hero.cards, ...state.communityCards].map((c) => `${c.rank}:${c.suit}`));
   const deck: Card[] = SUITS.flatMap((suit) => RANKS.map((rank) => ({ rank, suit }))).filter(
     (c) => !known.has(`${c.rank}:${c.suit}`)

@@ -48,6 +48,17 @@ export const JOINT_LEAGUE_PROFILES: readonly Readonly<Plo4LeagueProfile>[] = Obj
         },
         { ...base, id: variant + '-bomb2-cap', seats: cap(2), stackBB: 25, bombBoards: 2 as const },
         { ...base, id: variant + '-bomb3-cap', seats: cap(3), stackBB: 25, bombBoards: 3 as const },
+        ...(variant === 'flh' || variant === 'flo8'
+          ? [
+              {
+                ...base,
+                id: variant + '-legacy-fixed-1000bb',
+                seats: 6,
+                stackBB: 1000,
+                opponentStyle: 'tag' as const,
+              },
+            ]
+          : []),
         ...(variant === 'pineapple'
           ? []
           : [

@@ -55,7 +55,7 @@ describe('nightly jobs - a restart must trigger the run, not prevent it', () => 
     expect(leagueSrc).toContain('alreadyRanToday');
     expect(leagueSrc).toContain("from('horse_league_results')");
     expect(tunerSrc).toContain('alreadyTunedToday');
-    expect(tunerSrc).toContain("from('horse_self_tune_log')");
+    expect(tunerSrc).toContain("from('horse_tuner_study_completions')");
   });
 
   it('a partial league card remains resumable and an active V31 corpus requires evidence', () => {

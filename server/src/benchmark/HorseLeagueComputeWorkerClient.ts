@@ -13,12 +13,14 @@ import { constants as osConstants } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/client.js';
+import { PHASE8_POLICY } from '../engine/HorseTournamentPostflop.js';
 import { horseDecisionSolverStoresAreValid } from '../engine/horseDecision/protocol.js';
 import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
 import {
   pairedConfidence99,
   tournamentRunCanPromote,
   tournamentLeagueEntrants,
+  MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS,
   type TournamentLeagueRequest,
   type TournamentLeagueResult,
 } from './HorseTournamentLeague.js';
@@ -216,6 +218,101 @@ function isFiniteNumber(value: unknown, minimum = -Infinity, maximum = Infinity)
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
+}
+
+const completionRefusalReasons = new Set([
+  'budget_exhausted',
+  'continuation_numerical_error',
+  'continuation_invalid_input',
+  'continuation_no_action_candidates',
+  'continuation_field_reconciliation',
+  'continuation_sample_calibration',
+  'continuation_candidate_settlement',
+  'continuation_recovery_option',
+  'continuation_operation_budget',
+  'continuation_baseline_not_modeled',
+  'illegal_candidate',
+  'conservation_error',
+  'blocker_jam_unproven',
+]);
+const continuationWorkCounts = [
+  'attempts',
+  'candidateCount',
+  'candidatesCompleted',
+  'outcomeSamples',
+  'samplesVisited',
+  'rollouts',
+  'rolloutCacheHits',
+  'estimates',
+  'estimateCacheHits',
+  'levelBounds',
+] as const;
+
+function validTournamentCompletion(r: Record<string, unknown>): boolean {
+  if (
+    r.completionSchemaVersion !== 1 ||
+    !isNonnegativeSafeInteger(r.completed) ||
+    Number(r.completed) > Number(r.fired) ||
+    Number(r.changed) > Number(r.completed) ||
+    !isRecord(r.completionRefusals) ||
+    !Object.entries(r.completionRefusals).every(
+      ([reason, count]) =>
+        completionRefusalReasons.has(reason) && isNonnegativeSafeInteger(count) && count > 0
+    ) ||
+    Number(r.completed) +
+      Object.values(r.completionRefusals).reduce<number>((sum, count) => sum + Number(count), 0) !==
+      r.eligible ||
+    !Array.isArray(r.completionDiagnostics) ||
+    r.completionDiagnostics.length > MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS ||
+    !isNonnegativeSafeInteger(r.completionDiagnosticsDropped) ||
+    r.completionDiagnostics.length + r.completionDiagnosticsDropped !== r.eligible
+  )
+    return false;
+  let observedCompleted = 0;
+  const observedRefusals: Record<string, number> = {};
+  for (const row of r.completionDiagnostics) {
+    if (
+      !isRecord(row) ||
+      !hasExactKeys(row, [
+        'street',
+        'localPlayers',
+        'fieldPlayers',
+        'completed',
+        'reason',
+        'latencyMs',
+        'work',
+      ]) ||
+      !['flop', 'turn', 'river'].includes(String(row.street)) ||
+      !isNonnegativeSafeInteger(row.localPlayers) ||
+      row.localPlayers < 1 ||
+      row.localPlayers > 10 ||
+      !isNonnegativeSafeInteger(row.fieldPlayers) ||
+      row.fieldPlayers < 1 ||
+      typeof row.completed !== 'boolean' ||
+      (row.completed
+        ? !['candidate_changed', 'baseline_retained'].includes(String(row.reason))
+        : !completionRefusalReasons.has(String(row.reason))) ||
+      !isFiniteNumber(row.latencyMs, 0) ||
+      !isRecord(row.work) ||
+      !hasExactKeys(row.work, [...continuationWorkCounts, 'icmMethod', 'budgetStop']) ||
+      !continuationWorkCounts.every((key) =>
+        isNonnegativeSafeInteger((row.work as Record<string, unknown>)[key])
+      ) ||
+      !['exact_mh', 'plackett_luce_mc', 'unavailable'].includes(String(row.work.icmMethod)) ||
+      !['none', 'sample', 'future_rollout', 'icm'].includes(String(row.work.budgetStop))
+    )
+      return false;
+    if (row.completed) observedCompleted++;
+    else observedRefusals[String(row.reason)] = (observedRefusals[String(row.reason)] ?? 0) + 1;
+  }
+  return (
+    observedCompleted <= Number(r.completed) &&
+    Object.entries(observedRefusals).every(
+      ([reason, count]) =>
+        count <= Number((r.completionRefusals as Record<string, unknown>)[reason] ?? 0)
+    ) &&
+    (r.completionDiagnosticsDropped !== 0 || observedCompleted === r.completed)
+  );
 }
 
 function isLeagueBenchmarkComponent(value: unknown): boolean {
@@ -461,6 +558,11 @@ export function horseLeagueComputeResponseIsValid(
           'reference',
           'latencyMs',
           'promotionEligible',
+          'completionSchemaVersion',
+          'completed',
+          'completionRefusals',
+          'completionDiagnostics',
+          'completionDiagnosticsDropped',
         ])
       )
         return false;
@@ -469,7 +571,7 @@ export function horseLeagueComputeResponseIsValid(
         !isNonnegativeSafeInteger(r.pairs) ||
         !isNonnegativeSafeInteger(r.requestedPairs) ||
         (r.pairs as number) > (r.requestedPairs as number) ||
-        r.version !== 'horse-tournament-postflop-round1-v2' ||
+        r.version !== PHASE8_POLICY.version ||
         !['mtt', 'sng', 'spin', 'satellite', 'pko', 'mystery'].includes(String(r.objective)) ||
         typeof r.complete !== 'boolean' ||
         typeof r.promotionEligible !== 'boolean' ||
@@ -511,6 +613,7 @@ export function horseLeagueComputeResponseIsValid(
         Number(r.referenceRegret) < 0
       )
         return false;
+      if (!validTournamentCompletion(r)) return false;
       if (
         !['candidateReturn', 'baselineReturn', 'candidateBustRate', 'baselineBustRate'].every(
           (k) => Number(r[k]) >= 0 && Number(r[k]) <= 1

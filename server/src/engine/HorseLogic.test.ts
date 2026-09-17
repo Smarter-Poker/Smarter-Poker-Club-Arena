@@ -642,6 +642,54 @@ describe('HorseLogic V2 - pineapple discard', () => {
 // ───────────────────────────────────────────────────────────────────────────────────
 
 describe('resolveHorseStyle', () => {
+  it.each(['__proto__', 'constructor'])(
+    'treats inherited dictionary name %s as an unknown authored style',
+    (name) => {
+      const fallback = resolveHorseStyle(null, 'horse-1').style;
+      for (const profile of [name, { style: name }]) {
+        const resolved = resolveHorseStyle(profile, 'horse-1');
+        expect(resolved.style).toBe(fallback);
+        expect(STYLES).toContain(resolved.style);
+      }
+    }
+  );
+
+  it.each(['__proto__', 'constructor'])(
+    'keeps a direct malformed style %s on the legal balanced decision path',
+    (name) => {
+      const hero = mkPlayer(1, { cards: [c('Ah'), c('Ad')], bet: 1 });
+      const opponent = mkPlayer(2, { bet: 2 });
+      const state = {
+        stage: 'preflop' as const,
+        gameVariant: 'nlh',
+        gameMode: 'cash' as const,
+        players: [hero, opponent],
+        communityCards: [],
+        pot: 3,
+        currentBet: 2,
+        bigBlind: 2,
+        smallBlind: 1,
+        minRaise: 2,
+        dealerSeat: 1,
+      };
+      seedFastRandom(765);
+      const expected = HorseLogic.decide(hero, state, 'balanced', {}, { mind: false, v9: false });
+      seedFastRandom(765);
+      const actual = HorseLogic.decide(
+        hero,
+        state,
+        name as HorseStyle,
+        {},
+        { mind: false, v9: false }
+      );
+      expect(actual.policyFallback).toBeUndefined();
+      expect(actual.action).toBe(expected.action);
+      expect(actual.amount).toBe(expected.amount);
+      expect(actual.thinkTime).toBe(expected.thinkTime);
+      expect(actual.policyOwnership).toEqual(expected.policyOwnership);
+    }
+  );
+
   it('resolves plain strings and legacy names', () => {
     expect(resolveHorseStyle('tag', 'x').style).toBe('tag');
     expect(resolveHorseStyle('maniac', 'x').style).toBe('lag');

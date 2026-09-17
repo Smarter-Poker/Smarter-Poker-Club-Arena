@@ -30,6 +30,12 @@ import { reportError } from './errorReporter.js';
 
 const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
 const FLUSH_CHUNK = 400;
+/** A transport success is not proof that every exported row was processed.
+ * These three existing RPCs return a scalar integer count, not a row list. */
+function hasCompleteRowReceipt(value: unknown, expected: number): boolean {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value === expected;
+}
+
 /** Hydrate the most-observed opponents first, matching the engine's own
  *  MAX_TRACKED_PLAYERS cap. */
 const HYDRATE_LIMIT = 4000;
@@ -182,7 +188,7 @@ export async function flushHorseMindPairs(): Promise<{ flushed: number; failed: 
   for (let i = 0; i < rows.length; i += FLUSH_CHUNK) {
     const chunk = rows.slice(i, i + FLUSH_CHUNK);
     try {
-      const { error } = await supabase.rpc('upsert_horse_mind_pairs', {
+      const { data, error } = await supabase.rpc('upsert_horse_mind_pairs', {
         rows: chunk.map(
           (r): DbPairRow => ({
             attacker_id: r.attacker_id,
@@ -195,19 +201,29 @@ export async function flushHorseMindPairs(): Promise<{ flushed: number; failed: 
         ),
       });
       if (error) throw new Error(error.message || 'upsert_horse_mind_pairs failed');
+      if (!hasCompleteRowReceipt(data, chunk.length)) {
+        // Some rows may already have committed. The scalar count cannot name
+        // them. Retain current keys for a later snapshot; do not blindly
+        // repeat this unconfirmed batch through immediate individual writes.
+        HorseMind.requeueDirtyPairs(chunk);
+        failed += chunk.length;
+        reportError(
+          new Error('horse_mind_persistence_receipt_unconfirmed'),
+          'HorseMindPersistence.flushPairs.receipt'
+        );
+        continue;
+      }
       flushed += chunk.length;
     } catch (err) {
-      // V12.3: DO NOT blindly requeue. The chunk is one transaction, so a
-      // single unparseable value aborts all 400 rows — and requeueing resent
-      // the identical payload every 5 minutes forever, failing identically,
-      // with one error report per chunk per cycle and no backoff. Retry the
-      // chunk row by row; a row that fails alone is the poison and is dropped
-      // (its counters are already safe in memory and will be re-offered as it
-      // keeps changing), everything else gets through.
+      // Isolate a failed chunk row by row so unaffected rows can progress.
+      // A failed individual request does not establish a permanent bad row:
+      // transport or service failures can affect every row. Retain only those
+      // keys for a later flush, which exports current counters, not this stale
+      // snapshot. No requeued key is retried again in this invocation.
       let recovered = 0;
       for (const row of chunk) {
         try {
-          const { error } = await supabase.rpc('upsert_horse_mind_pairs', {
+          const { data, error } = await supabase.rpc('upsert_horse_mind_pairs', {
             rows: [
               {
                 attacker_id: row.attacker_id,
@@ -220,9 +236,11 @@ export async function flushHorseMindPairs(): Promise<{ flushed: number; failed: 
             ],
           });
           if (error) throw new Error(error.message);
+          if (!hasCompleteRowReceipt(data, 1))
+            throw new Error('horse_mind_persistence_receipt_unconfirmed');
           recovered++;
         } catch {
-          /* this row is the poison — drop it rather than wedge the queue */
+          HorseMind.requeueDirtyPairs([row]);
         }
       }
       flushed += recovered;
@@ -284,7 +302,7 @@ export async function hydrateHorsePairsFromDb(): Promise<number> {
   }
 }
 
-/** Push every dirty row to the DB. Failed chunks are requeued. */
+/** Push dirty rows; retain individually failed keys for a later flush. */
 export async function flushHorseMind(): Promise<{ flushed: number; failed: number }> {
   const rows = HorseMind.exportDirty();
   if (rows.length === 0) return { flushed: 0, failed: 0 };
@@ -293,24 +311,38 @@ export async function flushHorseMind(): Promise<{ flushed: number; failed: numbe
   for (let i = 0; i < rows.length; i += FLUSH_CHUNK) {
     const chunk = rows.slice(i, i + FLUSH_CHUNK);
     try {
-      const { error } = await supabase.rpc('upsert_horse_mind_stats', {
+      const { data, error } = await supabase.rpc('upsert_horse_mind_stats', {
         rows: chunk.map(toDb),
       });
       if (error) throw new Error(error.message || 'upsert_horse_mind_stats failed');
+      if (!hasCompleteRowReceipt(data, chunk.length)) {
+        // Some rows may already have committed. The scalar count cannot name
+        // them. Retain current keys for a later snapshot; do not blindly
+        // repeat this unconfirmed batch through immediate individual writes.
+        HorseMind.requeueDirty(chunk.map((row) => row.user_id));
+        failed += chunk.length;
+        reportError(
+          new Error('horse_mind_persistence_receipt_unconfirmed'),
+          'HorseMindPersistence.flush.receipt'
+        );
+        continue;
+      }
       flushed += chunk.length;
     } catch (err) {
-      // V12.3: same poison-row isolation as flushHorseMindPairs — a whole-chunk
-      // requeue on a permanently-failing row wedges the flush forever.
+      // Preserve row isolation and retain unresolved keys for a later flush.
+      // Re-marking never restores an older snapshot over concurrent learning.
       let recovered = 0;
       for (const row of chunk) {
         try {
-          const { error } = await supabase.rpc('upsert_horse_mind_stats', {
+          const { data, error } = await supabase.rpc('upsert_horse_mind_stats', {
             rows: [toDb(row)],
           });
           if (error) throw new Error(error.message);
+          if (!hasCompleteRowReceipt(data, 1))
+            throw new Error('horse_mind_persistence_receipt_unconfirmed');
           recovered++;
         } catch {
-          /* drop the offender, keep the queue moving */
+          HorseMind.requeueDirty([row.user_id]);
         }
       }
       flushed += recovered;
@@ -414,22 +446,36 @@ export async function flushHorseMindScoped(): Promise<{ flushed: number; failed:
   for (let i = 0; i < rows.length; i += FLUSH_CHUNK) {
     const chunk = rows.slice(i, i + FLUSH_CHUNK);
     try {
-      const { error } = await supabase.rpc('upsert_horse_mind_stats_scoped', {
+      const { data, error } = await supabase.rpc('upsert_horse_mind_stats_scoped', {
         rows: chunk.map(toScopedDb),
       });
       if (error) throw new Error(error.message || 'upsert_horse_mind_stats_scoped failed');
+      if (!hasCompleteRowReceipt(data, chunk.length)) {
+        // Some rows may already have committed. The scalar count cannot name
+        // them. Retain current keys for a later snapshot; do not blindly
+        // repeat this unconfirmed batch through immediate individual writes.
+        HorseMind.requeueDirtyScoped(chunk);
+        failed += chunk.length;
+        reportError(
+          new Error('horse_mind_persistence_receipt_unconfirmed'),
+          'HorseMindPersistence.flushScoped.receipt'
+        );
+        continue;
+      }
       flushed += chunk.length;
     } catch (err) {
       let recovered = 0;
       for (const row of chunk) {
         try {
-          const { error } = await supabase.rpc('upsert_horse_mind_stats_scoped', {
+          const { data, error } = await supabase.rpc('upsert_horse_mind_stats_scoped', {
             rows: [toScopedDb(row)],
           });
           if (error) throw new Error(error.message);
+          if (!hasCompleteRowReceipt(data, 1))
+            throw new Error('horse_mind_persistence_receipt_unconfirmed');
           recovered++;
         } catch {
-          /* drop the offender, keep the queue moving */
+          HorseMind.requeueDirtyScoped([row]);
         }
       }
       flushed += recovered;

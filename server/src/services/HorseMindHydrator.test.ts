@@ -1,7 +1,20 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-const mock = vi.hoisted(() => ({ from: vi.fn(), observe: vi.fn(), report: vi.fn() }));
+const mock = vi.hoisted(() => ({
+  from: vi.fn(),
+  observe: vi.fn(),
+  report: vi.fn(),
+  scope: null as string | null,
+}));
 vi.mock('./supabase.js', () => ({ supabase: { from: mock.from } }));
-vi.mock('../engine/HorseMind.js', () => ({ HorseMind: { observe: mock.observe } }));
+vi.mock('../engine/HorseMind.js', () => ({
+  HorseMind: {
+    observe: mock.observe,
+    currentScope: () => mock.scope,
+    setDecisionScope: (scope: string | null) => {
+      mock.scope = scope;
+    },
+  },
+}));
 vi.mock('./errorReporter.js', () => ({ reportError: mock.report }));
 import { hydrateHorseMind } from './HorseMindHydrator.js';
 
@@ -11,7 +24,18 @@ const uuid = (n: number) => `aaaaaaaa-aaaa-4aaa-8aaa-${String(n).padStart(12, '0
 const row = (n: number, created_at = stamp) => ({
   id: uuid(n),
   created_at,
-  actions: [{ id: n, action: 'call' }],
+  table_id: uuid(90000),
+  hand_number: 1000000 + n,
+  actions: [
+    {
+      seat: 1,
+      userId: uuid(n),
+      action: 'call',
+      amount: 2,
+      stage: 'preflop',
+      timestamp: NOW - 100000 + n,
+    },
+  ],
 });
 type Row = ReturnType<typeof row>;
 type Query = {
@@ -93,6 +117,7 @@ function source(
 }
 beforeEach(() => {
   queries = [];
+  mock.scope = null;
   mock.from.mockReset();
   mock.observe.mockReset();
   mock.report.mockReset();
@@ -107,11 +132,11 @@ describe('restart history pages retain every tied hand identity', () => {
     await hydrateHorseMind();
     expect(queries).toHaveLength(3);
     expect(mock.observe).toHaveBeenCalledTimes(2500);
-    expect(mock.observe.mock.calls.map(([actions]) => actions[0].id)).toEqual(
-      Array.from({ length: 2500 }, (_, i) => i)
+    expect(mock.observe.mock.calls.map(([actions]) => actions[0].userId)).toEqual(
+      Array.from({ length: 2500 }, (_, i) => uuid(i))
     );
     expect(queries[0]).toMatchObject({
-      select: 'id, actions, created_at',
+      select: 'id, table_id, hand_number, actions, created_at',
       orders: ['created_at', 'id'],
       limit: 1000,
       since: '2026-09-09T18:00:00.000Z',
@@ -128,7 +153,7 @@ describe('restart history pages retain every tied hand identity', () => {
     source([...Array.from({ length: 1000 }, (_, i) => row(i, stamp)), row(2000, older)]);
     await hydrateHorseMind();
     expect(mock.observe).toHaveBeenCalledTimes(1001);
-    expect(mock.observe.mock.calls[0][0][0].id).toBe(2000);
+    expect(mock.observe.mock.calls[0][0][0].userId).toBe(uuid(2000));
     expect(queries[1].cursor).toContain(stamp);
   });
   it('retains the exact 12,000-hand ceiling while selecting the newest ties', async () => {
@@ -136,8 +161,8 @@ describe('restart history pages retain every tied hand identity', () => {
     await hydrateHorseMind();
     expect(queries).toHaveLength(12);
     expect(mock.observe).toHaveBeenCalledTimes(12000);
-    expect(mock.observe.mock.calls[0][0][0].id).toBe(1000);
-    expect(mock.observe.mock.calls.at(-1)![0][0].id).toBe(12999);
+    expect(mock.observe.mock.calls[0][0][0].userId).toBe(uuid(1000));
+    expect(mock.observe.mock.calls.at(-1)![0][0].userId).toBe(uuid(12999));
   });
   it('preserves an exact valid flush cutoff and clamps old, future or malformed cutoffs', async () => {
     const cutoff = '2026-09-12T17:59:58.123456+00:00';
@@ -209,5 +234,66 @@ describe('restart history pages retain every tied hand identity', () => {
     });
     await hydrateHorseMind();
     expect(mock.observe).toHaveBeenCalledTimes(2);
+  });
+});
+
+// New source-only identity laws; original 14 paging cases above are retained.
+describe('restart replay names the actual retained hand without widening legacy identity', () => {
+  it('passes the stored coordinate and restores ambient scope after a failing basic learner', async () => {
+    source([row(1)]);
+    mock.scope = 'omaha:full';
+    mock.observe.mockImplementationOnce((_actions, _players, identity) => {
+      expect(mock.scope).toBeNull();
+      expect(identity).toEqual({ version: 1, tableId: uuid(90000), handNumber: 1000001 });
+      throw Error('injected replay failure');
+    });
+    await hydrateHorseMind();
+    expect(mock.observe).toHaveBeenCalledTimes(1);
+    expect(mock.scope).toBe('omaha:full');
+  });
+  it.each([
+    { table_id: undefined },
+    { hand_number: undefined },
+    { hand_number: 42 },
+    { hand_number: Number.MAX_SAFE_INTEGER + 1 },
+    { table_id: 'legacy-table' },
+  ])('does not replay with missing/ambiguous stored coordinate %#', async (patch) => {
+    source([], () => ({ data: [{ ...row(1), ...patch }], error: null }));
+    await hydrateHorseMind();
+    expect(mock.observe).not.toHaveBeenCalled();
+  });
+  it('projects actual controller actions before deriving sequence positions and does not mutate the row', async () => {
+    const stored = {
+      ...row(1),
+      actions: [
+        {
+          action: 'sb',
+          seat: 1,
+          userId: uuid(1),
+          amount: 1,
+          timestamp: NOW - 200000,
+          stage: 'preflop',
+        },
+        row(1).actions[0],
+        {
+          action: 'return',
+          seat: 1,
+          userId: uuid(1),
+          amount: 1,
+          timestamp: NOW - 50000,
+          stage: 'river',
+        },
+      ],
+    };
+    const before = structuredClone(stored);
+    source([stored]);
+    await hydrateHorseMind();
+    expect(mock.observe.mock.calls[0][0]).toEqual(row(1).actions);
+    expect(mock.observe.mock.calls[0][2]).toEqual({
+      version: 1,
+      tableId: uuid(90000),
+      handNumber: 1000001,
+    });
+    expect(stored).toEqual(before);
   });
 });

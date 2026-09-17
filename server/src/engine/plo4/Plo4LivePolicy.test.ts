@@ -4,6 +4,7 @@ import {
   plo4EntryBars,
   plo4PreflopChoice,
   plo4Role,
+  plo4Position,
 } from './Plo4LivePolicy.js';
 import { plo4CertificationCoordinates, plo4CoverageMatrix } from './Plo4PolicyPack.js';
 import { plo4Cards, plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
@@ -51,6 +52,148 @@ const tournament = (input: ReturnType<typeof plo4ReferenceSpot>) => {
   return input;
 };
 describe('Phase 10 complete bounded PLO4 baseline', () => {
+  it('uses the canonical dealt census for position and rake when an undealt seat is present', () => {
+    const input = plo4ReferenceSpot('non_nut_flush');
+    input.state.dealtSeatIds = [1, 2];
+    input.state.players.push({
+      ...input.state.players[1],
+      user_id: 'undealt',
+      seat: 3,
+      bet: 0,
+      totalInvested: 0,
+      is_sitting_out: true,
+    });
+    expect(plo4Position(2, input.state)).toBe('big_blind');
+    const r = evaluatePlo4LivePolicy(
+      input.hero,
+      input.state,
+      input.baseline,
+      null,
+      'shadow',
+      () => 0
+    );
+    expect(r.receipt.fired).toBe(true);
+    expect(r.receipt.callPrice).toBeCloseTo(20 / 76, 12);
+    input.state.dealtSeatIds = [1];
+    expect(
+      evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, null, 'shadow', () => 0)
+        .receipt.reason
+    ).toBe('canonical_state_unavailable');
+  });
+  it('uses the dealt ring when the dealer or a blind has since sat out', () => {
+    const input = plo4ReferenceSpot('premium_open');
+    input.state.players.push({
+      ...input.state.players[1],
+      user_id: 'away',
+      seat: 3,
+      stack: 100,
+      bet: 0,
+      totalInvested: 0,
+      is_sitting_out: true,
+      is_folded: true,
+    });
+    input.state.dealerSeat = 3;
+    expect(plo4Position(1, input.state)).toBe('small_blind');
+    expect(plo4Position(2, input.state)).toBe('big_blind');
+    const result = evaluatePlo4LivePolicy(
+      input.hero,
+      input.state,
+      input.baseline,
+      null,
+      'shadow',
+      () => 0
+    );
+    expect(result.receipt.fired).toBe(true);
+    expect(result.receipt.position).toBe('small_blind');
+    expect(result.decision).toBe(input.baseline);
+  });
+  it('retains the actual raiser when a later opponent calls all-in', () => {
+    const input = plo4ReferenceSpot('premium_open');
+    input.state.players[1].bet = input.state.players[1].totalInvested = 6;
+    input.state.players.push({
+      ...input.state.players[1],
+      user_id: 'caller',
+      seat: 3,
+      stack: 0,
+      is_all_in: true,
+    });
+    Object.assign(input.state, {
+      currentBet: 6,
+      toCall: 5,
+      pot: 13,
+      minRaiseTo: 10,
+      maxRaiseTo: 24,
+    });
+    input.state.actionHistory = [
+      {
+        userId: 'opponent',
+        seat: 2,
+        stage: 'preflop',
+        action: 'raise',
+        amount: 6,
+        timestamp: 1,
+        isFullRaise: true,
+      },
+      { userId: 'caller', seat: 3, stage: 'preflop', action: 'all_in', amount: 6, timestamp: 2 },
+    ];
+    const result = evaluatePlo4LivePolicy(
+      input.hero,
+      input.state,
+      input.baseline,
+      null,
+      'shadow',
+      () => 0
+    );
+    expect(result.receipt.fired).toBe(true);
+    expect(result.receipt.role).toBe('squeeze');
+    expect(result.receipt.aggressorPosition).toBe('small_blind');
+  });
+  it.each([2, 3, 4])(
+    'classifies %i accepted preflop raises at the correct reraising node',
+    (count) => {
+      const input = plo4ReferenceSpot('premium_open');
+      input.state.actionHistory = Array.from({ length: count }, (_, i) => ({
+        userId: i % 2 ? 'hero' : 'opponent',
+        seat: i % 2 ? 1 : 2,
+        stage: 'preflop',
+        action: 'raise',
+        amount: 6 * 2 ** i,
+        timestamp: i + 1,
+        isFullRaise: true,
+      }));
+      expect(plo4Role(input.hero, input.state)).toBe(count >= 3 ? 'five_bet_plus' : 'four_bet');
+    }
+  );
+  it('refuses a mismatched hero snapshot before generating a proposal', () => {
+    const input = plo4ReferenceSpot('premium_open');
+    input.state.players[0].stack += 1;
+    const result = evaluatePlo4LivePolicy(
+      input.hero,
+      input.state,
+      input.baseline,
+      null,
+      'candidate',
+      () => 0
+    );
+    expect(result.receipt.fired).toBe(false);
+    expect(result.receipt.reason).toBe('canonical_state_unavailable');
+    expect(result.decision).toBe(input.baseline);
+  });
+  it.each([NaN, Infinity])('refuses a non-finite wager bound %s', (amount) => {
+    const input = plo4ReferenceSpot('premium_open');
+    input.state.maxRaiseTo = amount;
+    const result = evaluatePlo4LivePolicy(
+      input.hero,
+      input.state,
+      input.baseline,
+      null,
+      'candidate',
+      () => 0
+    );
+    expect(result.receipt.fired).toBe(false);
+    expect(result.receipt.reason).toBe('invalid_wager_geometry');
+    expect(result.decision).toBe(input.baseline);
+  });
   it('does not mistake the best flush for the nuts on a straight-flush board', () => {
     const input = plo4ReferenceSpot('non_nut_flush');
     input.hero.cards = plo4Cards('As 2s Kc Qd');

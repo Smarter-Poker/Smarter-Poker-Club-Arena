@@ -137,11 +137,11 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
       expect(await loadTimeBanksFromPark(table, hand, now)).toEqual({});
     }
   );
-  it('keeps unreadable state out of the new engine and permits normal allowance seeding', async () => {
+  it('rejects startup on an unreadable bank instead of granting another allowance', async () => {
     await saved();
     data.readError = new Error('unavailable');
     const next = engine();
-    await next.readParkedTimeBanks();
+    await expect(next.readParkedTimeBanks()).rejects.toThrow('unavailable');
     next.adoptSeatRoster(next.seatedPlayers);
     expect(next.timeBankEngine.getPlayerBank(table, user)).toBeNull();
   });

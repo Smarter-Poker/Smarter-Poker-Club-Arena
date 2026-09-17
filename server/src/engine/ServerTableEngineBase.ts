@@ -4797,6 +4797,8 @@ export abstract class ServerTableEngineBase {
       if (this.lifecycleCanMutate()) this.parkedTimeBanks = banks;
     } catch (error) {
       reportError(error, 'ServerTableEngine.' + this.tableId + '.time_bank_restore');
+      // Unknown is not an empty bank: do not seed another allowance after a failed read.
+      throw error;
     }
   }
 

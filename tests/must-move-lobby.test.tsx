@@ -545,9 +545,13 @@ describe('the tab follows the chair', () => {
   const TABLE_PAGE = readFileSync(resolve(__dirname, '../src/pages/TablePage.tsx'), 'utf8');
   const MULTI = readFileSync(resolve(__dirname, '../src/pages/MultiTablePage.tsx'), 'utf8');
 
+  it('route validation preserves whether the caller actually embedded the table', () => {
+    expect(TABLE_PAGE).toContain('{(tableId) => <LiveTablePage key={tableId} {...props} />}');
+  });
+
   it('an embedded TablePage reports the move instead of navigating', () => {
     expect(TABLE_PAGE).toMatch(
-      /case 'SEAT_MOVED': \{[\s\S]*?if \(embeddedTableId\) \{[\s\S]*?onTableInfoUpdate\?\.\(\{ movedToTableId: d\.to_table_id \}\);\s*break;\s*\}\s*navigate\(`\/table\/\$\{d\.to_table_id\}`, \{ replace: true \}\);/
+      /useSeatMoveNavigation\(\{\s*tableId,\s*userId,\s*event: engineLastEvent,[\s\S]*?if \(embeddedTableId\) \{\s*onTableInfoUpdate\?\.\(\{ movedToTableId: destination \}\);\s*return;\s*\}\s*navigate\(`\/table\/\$\{destination\}`, \{ replace: true \}\);/
     );
   });
 

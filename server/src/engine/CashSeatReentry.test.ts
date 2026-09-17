@@ -125,6 +125,7 @@ describe('a new cash occupancy between roster reads', () => {
         max_players: 6,
       } as any);
       vi.spyOn(database, 'loadPresenceFromPark').mockResolvedValue(null);
+      vi.spyOn(database, 'loadTimeBanksFromPark').mockResolvedValue({});
       const rosterRead = vi.spyOn(database, 'loadSeatedPlayers');
       if (mode === 'empty-between')
         rosterRead.mockResolvedValueOnce([prior] as any).mockResolvedValueOnce([]);

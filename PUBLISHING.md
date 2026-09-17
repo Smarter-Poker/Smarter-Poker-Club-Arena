@@ -50,6 +50,6 @@ Continue other authorized work while provider jobs run. Keep the exact pending r
 
 Report the PR, merged revision, applicable checks, installation evidence, successful publisher/deployment, actual live revision and affected-behavior result. Keep submitted, tested, merged, installed, published and verified live separate. Never claim the entire delivery is complete from a push or green build alone. Six minutes remains a performance target, not a guaranteed duration.
 
-The restored production builds use GitHub, Vercel and Hetzner; reasonable provider compute is authorized. The M3/SSD can hold source and owned worktrees. Do not reactivate retired custom/local pipelines, release watchdogs, repair loops or Sentry integrations. A self-hosted build upgrade requires a later explicit owner instruction.
+The restored production builds use GitHub, Vercel and Hetzner; reasonable provider compute is authorized. The M3/SSD can hold source and owned worktrees. Do not reactivate retired custom/local pipelines, release watchdogs, repair loops or the removed external error-telemetry integrations. A self-hosted build upgrade requires a later explicit owner instruction.
 
 On the owner's Mac, also read /Users/smarter.poker/Documents/AGENTS.md and /Users/smarter.poker/Documents/AGENT-HARDENING-STANDARD.md. Preserve later owner instructions and the assigned scope. Never print credentials or copy values from .env files into commands or documents.

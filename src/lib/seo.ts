@@ -23,6 +23,7 @@
  * Only DOM is touched here. No dependency, no context, no React import.
  */
 import { WEB_APP_URL, WEB_ORIGIN } from './appBase';
+import { FAQ_ITEMS } from '../pages/helpContent';
 
 export const SITE_NAME = 'Smarter.Poker';
 export const DEFAULT_OG_IMAGE = `${WEB_ORIGIN}/images/og-default.png`;
@@ -61,6 +62,7 @@ const POKER_ARENA_APP: JsonLd = {
   applicationSubCategory: 'Poker',
   operatingSystem: 'Web, iOS, Android',
   isAccessibleForFree: true,
+  inLanguage: 'en',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
   publisher: { '@id': `${WEB_ORIGIN}/#organization` },
   description:
@@ -94,6 +96,23 @@ function breadcrumbs(items: Array<{ name: string; path: string }>): JsonLd {
 
 const ARENA_CRUMB = { name: 'Poker Arena', path: '/' };
 
+/**
+ * Google's FAQPage rich result for the Help Center, built from the same
+ * FAQ_ITEMS the page (and its prerender) renders, so the schema can never
+ * say something the page does not. Answers are plain text already.
+ */
+function helpFaqPage(): JsonLd {
+  return {
+    '@type': 'FAQPage',
+    '@id': `${canonicalUrl('/help')}#faq`,
+    mainEntity: FAQ_ITEMS.map((item) => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: { '@type': 'Answer', text: item.answer },
+    })),
+  };
+}
+
 /** Public, indexable routes. Everything not listed here is noindex. */
 const PUBLIC_ROUTES: Record<string, Omit<SeoEntry, 'index'>> = {
   '/': {
@@ -108,7 +127,7 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoEntry, 'index'>> = {
     description:
       'Answers To The Most Common Poker Arena Questions: Accounts, Joining And Running Clubs, Cash Games And Tournaments, Rewards, Fair Gaming And Player Safety.',
     canonicalPath: '/help',
-    jsonLd: breadcrumbs([ARENA_CRUMB, { name: 'Help Center', path: '/help' }]),
+    jsonLd: [breadcrumbs([ARENA_CRUMB, { name: 'Help Center', path: '/help' }]), helpFaqPage()],
   },
   '/legal': {
     title: 'Legal Center',
@@ -140,14 +159,14 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoEntry, 'index'>> = {
     ]),
   },
   '/legal/fair-gaming': {
-    title: 'Fair Gaming',
+    title: 'Fair Gaming Policy',
     description:
       'The Fair Gaming Standards Behind Every Poker Arena Table: Server Side Shuffling, Collusion Detection, Anti Cheat Monitoring And Dispute Resolution.',
     canonicalPath: '/legal/fair-gaming',
     jsonLd: breadcrumbs([
       ARENA_CRUMB,
       { name: 'Legal Center', path: '/legal' },
-      { name: 'Fair Gaming', path: '/legal/fair-gaming' },
+      { name: 'Fair Gaming Policy', path: '/legal/fair-gaming' },
     ]),
   },
   '/legal/promotions': {

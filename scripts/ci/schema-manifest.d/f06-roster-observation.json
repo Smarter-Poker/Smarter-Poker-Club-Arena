@@ -1,0 +1,12 @@
+{
+  "_owner": "g8/roster-retirement-release-20260916",
+  "_comment": "public.tables.f06_lifecycle and these three canonical public hand-permit functions were installed by migration 20260912100322_tournament_break_original_custody_and_hand_authority. Catalog observation on kuklfnapbkmacvwxktbh at 2026-09-16T05:52:25.929994Z confirms the column is bigint NOT NULL with default smarter_private.f06_new_lifecycle(). The retained 2026-09-16T06:27:17.976145Z catalog observation confirms the existing seven-argument fn_f06_begin_hand, five-argument fn_f06_finish_hand and ten-argument fn_f06_finish_original_no_start signatures as public functions owned by postgres with service-role execution. This fragment records installed prerequisites omitted from the base snapshot; it requests no DDL and makes no runtime or lifecycle qualification claim.",
+  "functions": [
+    "fn_f06_begin_hand",
+    "fn_f06_finish_hand",
+    "fn_f06_finish_original_no_start"
+  ],
+  "columns": {
+    "tables": ["f06_lifecycle"]
+  }
+}

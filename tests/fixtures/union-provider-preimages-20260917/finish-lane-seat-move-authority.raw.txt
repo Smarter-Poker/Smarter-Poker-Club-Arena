@@ -1,0 +1,16 @@
+{
+  "owner": "postgres",
+  "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+  "body_md5": "f00ad0e9a08496d96f6375cbf6f30678",
+  "identity": "fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)",
+  "proconfig": [
+    "search_path=public, pg_temp",
+    "statement_timeout=30s"
+  ],
+  "definition": "CREATE OR REPLACE FUNCTION public.fn_resolve_committed_tournament_seat_move(p_request_id uuid, p_tournament_id uuid, p_user_id uuid, p_source_table_id uuid, p_destination_table_id uuid, p_destination_seat_number integer, p_source_mode text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n  v_actor text:=NULLIF(current_setting('app.smarter_data_actor',true),'');\n  v_result jsonb;\nBEGIN\n  IF auth.role() IS DISTINCT FROM 'service_role'\n     OR v_actor IS DISTINCT FROM 'service' THEN\n    RAISE EXCEPTION 'committed tournament move receipt requires ordinary service authority'\n      USING ERRCODE='28000';\n  END IF;\n  IF p_request_id IS NULL OR p_tournament_id IS NULL OR p_user_id IS NULL\n     OR p_source_table_id IS NULL OR p_destination_table_id IS NULL\n     OR p_source_table_id=p_destination_table_id\n     OR p_destination_seat_number NOT BETWEEN 1 AND 10\n     OR p_source_mode NOT IN ('live_source','closed_orphan') THEN\n    RAISE EXCEPTION 'invalid committed tournament move receipt identity'\n      USING ERRCODE='22023';\n  END IF;\n\n  -- The writer (fn_move_tournament_player) holds this tournament's lane -\n  -- G shared, T(id) exclusive - from before its first receipt read through\n  -- commit. G shared then T(id) SHARED waits for exactly that writer and for\n  -- terminal authorities (2026-09-10; this was G exclusive, which made every\n  -- authority and hand on the platform queue behind a read-only lookup).\n  -- An absent receipt is deliberately not converted into proof that no write\n  -- can still begin later.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1',0));\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1:'||p_tournament_id::text,0));\n\n  v_result:=public.fn_ca_tournament_seat_move_receipt(p_request_id);\n  IF v_result IS NULL THEN\n    RETURN NULL;\n  END IF;\n  IF (v_result->>'tournament_id')::uuid IS DISTINCT FROM p_tournament_id\n     OR (v_result->>'user_id')::uuid IS DISTINCT FROM p_user_id\n     OR (v_result->>'source_table_id')::uuid IS DISTINCT FROM p_source_table_id\n     OR (v_result->>'destination_table_id')::uuid\n          IS DISTINCT FROM p_destination_table_id\n     OR (v_result->>'destination_seat_number')::integer\n          IS DISTINCT FROM p_destination_seat_number\n     OR v_result->>'source_mode' IS DISTINCT FROM p_source_mode THEN\n    RAISE EXCEPTION 'tournament move request id belongs to another operation'\n      USING ERRCODE='23505';\n  END IF;\n  RETURN v_result||jsonb_build_object('replayed',true);\nEND;\n$function$\n",
+  "anon_execute": false,
+  "definition_md5": "43c53a2b376cb28161584db487bfd17c",
+  "security_definer": true,
+  "service_role_execute": true,
+  "authenticated_execute": false
+}

@@ -25,7 +25,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // The real defect was in WHICH ROWS the query asked for, so a mock that
 // ignores filters could not have caught it and cannot guard against it.
 
-type Row = { id: string; severity: string; source: string; message: string; created_at: string };
+type Row = {
+  id: string;
+  severity: string;
+  source: string;
+  message: string;
+  created_at: string;
+  context?: Record<string, unknown>;
+  resolved?: boolean;
+};
+const alertId = (i: number) => `d0000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`;
 
 let ROWS: Row[] = [];
 const queries: Array<Record<string, unknown>> = [];
@@ -138,7 +147,7 @@ function productionShape(): Row[] {
       created_at: `2026-08-30T${String(i % 24).padStart(2, '0')}:00:00.000Z`,
     });
   }
-  return rows;
+  return rows.map((row, i) => ({ ...row, id: alertId(i), context: {}, resolved: false }));
 }
 
 beforeEach(() => {
@@ -153,9 +162,7 @@ describe('getUnresolved', () => {
 
     expect(criticals).toHaveLength(9);
     // The exact two rows production was hiding.
-    expect(criticals.map((c) => c.id)).toEqual(
-      expect.arrayContaining(['crit-treasury-0821', 'crit-treasury-0824'])
-    );
+    expect(criticals.map((c) => c.id)).toEqual(expect.arrayContaining([alertId(0), alertId(1)]));
   });
 
   it('still honours the page budget for everything else', async () => {

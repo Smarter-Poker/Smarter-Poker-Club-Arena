@@ -1,0 +1,3193 @@
+[
+  {
+    "catalog": {
+      "roles": [
+        {
+          "name": "anon",
+          "login": false,
+          "config": [
+            "statement_timeout=3s"
+          ],
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "authenticated",
+          "login": false,
+          "config": [
+            "statement_timeout=8s"
+          ],
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "authenticator",
+          "login": true,
+          "config": [
+            "session_preload_libraries=safeupdate",
+            "statement_timeout=5min",
+            "lock_timeout=8s",
+            "idle_in_transaction_session_timeout=60s",
+            "pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request"
+          ],
+          "inherit": false,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "cli_login_postgres",
+          "login": true,
+          "config": null,
+          "inherit": false,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "dashboard_user",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": true,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": true,
+          "replication": true
+        },
+        {
+          "name": "pg_checkpoint",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_create_subscription",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_database_owner",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_execute_server_program",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_maintain",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_monitor",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_read_all_data",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_read_all_settings",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_read_all_stats",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_read_server_files",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_signal_backend",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_stat_scan_tables",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_use_reserved_connections",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_write_all_data",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pg_write_server_files",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "pgbouncer",
+          "login": true,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "postgres",
+          "login": true,
+          "config": [
+            "search_path=\"\\$user\", public, extensions",
+            "statement_timeout=2min"
+          ],
+          "inherit": true,
+          "create_db": true,
+          "superuser": false,
+          "bypass_rls": true,
+          "create_role": true,
+          "replication": true
+        },
+        {
+          "name": "service_role",
+          "login": false,
+          "config": [
+            "statement_timeout=8s"
+          ],
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": true,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "supabase_admin",
+          "login": true,
+          "config": [
+            "search_path=\"$user\", public, auth, extensions",
+            "log_statement=none",
+            "statement_timeout=0"
+          ],
+          "inherit": true,
+          "create_db": true,
+          "superuser": true,
+          "bypass_rls": true,
+          "create_role": true,
+          "replication": true
+        },
+        {
+          "name": "supabase_auth_admin",
+          "login": true,
+          "config": [
+            "search_path=auth",
+            "idle_in_transaction_session_timeout=60000",
+            "log_statement=none"
+          ],
+          "inherit": false,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": true,
+          "replication": false
+        },
+        {
+          "name": "supabase_backup_admin",
+          "login": true,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": true,
+          "replication": false
+        },
+        {
+          "name": "supabase_etl_admin",
+          "login": true,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": true,
+          "create_role": false,
+          "replication": true
+        },
+        {
+          "name": "supabase_functions_admin",
+          "login": true,
+          "config": null,
+          "inherit": false,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": true,
+          "replication": false
+        },
+        {
+          "name": "supabase_privileged_role",
+          "login": false,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "supabase_read_only_user",
+          "login": true,
+          "config": [
+            "default_transaction_read_only=on"
+          ],
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": true,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "supabase_realtime_admin",
+          "login": false,
+          "config": null,
+          "inherit": false,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": false
+        },
+        {
+          "name": "supabase_replication_admin",
+          "login": true,
+          "config": null,
+          "inherit": true,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": false,
+          "replication": true
+        },
+        {
+          "name": "supabase_storage_admin",
+          "login": true,
+          "config": [
+            "search_path=storage",
+            "log_statement=none"
+          ],
+          "inherit": false,
+          "create_db": false,
+          "superuser": false,
+          "bypass_rls": false,
+          "create_role": true,
+          "replication": false
+        }
+      ],
+      "relations": [
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=rm/postgres",
+            "authenticated=rm/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "kind": "r",
+          "name": "chip_ledger",
+          "owner": "postgres",
+          "schema": "public",
+          "columns": [
+            {
+              "acl": null,
+              "name": "id",
+              "type": "uuid",
+              "default": "gen_random_uuid()",
+              "ordinal": 1,
+              "identity": "",
+              "not_null": true,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "performed_by",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 2,
+              "identity": "",
+              "not_null": true,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "from_type",
+              "type": "text",
+              "default": null,
+              "ordinal": 3,
+              "identity": "",
+              "not_null": true,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "from_entity_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 4,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "from_label",
+              "type": "text",
+              "default": null,
+              "ordinal": 5,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "to_type",
+              "type": "text",
+              "default": null,
+              "ordinal": 6,
+              "identity": "",
+              "not_null": true,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "to_entity_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 7,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "to_label",
+              "type": "text",
+              "default": null,
+              "ordinal": 8,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "amount",
+              "type": "numeric(15,2)",
+              "default": null,
+              "ordinal": 9,
+              "identity": "",
+              "not_null": true,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "category",
+              "type": "text",
+              "default": "'transfer'::text",
+              "ordinal": 10,
+              "identity": "",
+              "not_null": true,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "description",
+              "type": "text",
+              "default": null,
+              "ordinal": 11,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "notes",
+              "type": "text",
+              "default": null,
+              "ordinal": 12,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "club_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 13,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "union_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 14,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "table_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 15,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "hand_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 16,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "tournament_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 17,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "created_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "ordinal": 18,
+              "identity": "",
+              "not_null": true,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "idempotency_key",
+              "type": "text",
+              "default": null,
+              "ordinal": 19,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "correlation_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 20,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "causation_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 21,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "settlement_id",
+              "type": "text",
+              "default": null,
+              "ordinal": 22,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "epoch_id",
+              "type": "integer",
+              "default": null,
+              "ordinal": 23,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "actor_service",
+              "type": "text",
+              "default": null,
+              "ordinal": 24,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "db_role",
+              "type": "text",
+              "default": null,
+              "ordinal": 25,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "pre_from_balance",
+              "type": "numeric",
+              "default": null,
+              "ordinal": 26,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "post_from_balance",
+              "type": "numeric",
+              "default": null,
+              "ordinal": 27,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "pre_to_balance",
+              "type": "numeric",
+              "default": null,
+              "ordinal": 28,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "post_to_balance",
+              "type": "numeric",
+              "default": null,
+              "ordinal": 29,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "status",
+              "type": "text",
+              "default": "'posted'::text",
+              "ordinal": 30,
+              "identity": "",
+              "not_null": true,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "metadata",
+              "type": "jsonb",
+              "default": null,
+              "ordinal": 31,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "chain_seq",
+              "type": "bigint",
+              "default": null,
+              "ordinal": 32,
+              "identity": "",
+              "not_null": false,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "prev_hash",
+              "type": "text",
+              "default": null,
+              "ordinal": 33,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "row_hash",
+              "type": "text",
+              "default": null,
+              "ordinal": 34,
+              "identity": "",
+              "not_null": false,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": true,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            }
+          ],
+          "indexes": [
+            {
+              "kind": "i",
+              "live": true,
+              "name": "chip_ledger_chain_seq_key",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE UNIQUE INDEX chip_ledger_chain_seq_key ON public.chip_ledger USING btree (chain_seq)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "chip_ledger_pkey",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": true,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE UNIQUE INDEX chip_ledger_pkey ON public.chip_ledger USING btree (id)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_club_created_desc",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_club_created_desc ON public.chip_ledger USING btree (club_id, created_at DESC)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_club_from_created",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_club_from_created ON public.chip_ledger USING btree (club_id, from_entity_id, created_at)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_club_to_created",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_club_to_created ON public.chip_ledger USING btree (club_id, to_entity_id, created_at)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_created_at",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_created_at ON public.chip_ledger USING btree (created_at)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_from_entity_created",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_from_entity_created ON public.chip_ledger USING btree (from_entity_id, created_at DESC)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_overlay_by_tournament",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_overlay_by_tournament ON public.chip_ledger USING btree (tournament_id) INCLUDE (amount) WHERE ((tournament_id IS NOT NULL) AND (category = 'overlay'::text) AND (to_type = 'prize_liability'::text))",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_performed_by",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_performed_by ON public.chip_ledger USING btree (performed_by)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_promo_from",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_promo_from ON public.chip_ledger USING btree (from_entity_id, created_at DESC) WHERE (from_type = 'promo_wallet'::text)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_promo_to",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_promo_to ON public.chip_ledger USING btree (to_entity_id, created_at DESC) WHERE (to_type = 'promo_wallet'::text)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_rebuy_probe",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_rebuy_probe ON public.chip_ledger USING btree (from_entity_id, tournament_id, created_at) WHERE ((category = 'rebuy'::text) AND (from_type = 'player_wallet'::text) AND (to_type = 'prize_liability'::text) AND (status = 'posted'::text))",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_to_entity",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_to_entity ON public.chip_ledger USING btree (to_entity_id)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "idx_chip_ledger_to_entity_created",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX idx_chip_ledger_to_entity_created ON public.chip_ledger USING btree (to_entity_id, created_at DESC)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "ix_chip_ledger_settlement",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE INDEX ix_chip_ledger_settlement ON public.chip_ledger USING btree (settlement_id) WHERE (settlement_id IS NOT NULL)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            },
+            {
+              "kind": "i",
+              "live": true,
+              "name": "ux_chip_ledger_idempotency_key",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": false,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE UNIQUE INDEX ux_chip_ledger_idempotency_key ON public.chip_ledger USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            }
+          ],
+          "options": [
+            "autovacuum_enabled=true",
+            "autovacuum_analyze_scale_factor=0.0",
+            "autovacuum_analyze_threshold=1000",
+            "autovacuum_vacuum_scale_factor=0.0",
+            "autovacuum_vacuum_threshold=1000",
+            "autovacuum_vacuum_cost_delay=2",
+            "autovacuum_vacuum_cost_limit=2000"
+          ],
+          "policies": [
+            {
+              "cmd": "SELECT",
+              "qual": "((( SELECT auth.uid() AS uid) = performed_by) OR (( SELECT auth.uid() AS uid) = from_entity_id) OR (( SELECT auth.uid() AS uid) = to_entity_id))",
+              "roles": [
+                "public"
+              ],
+              "tablename": "chip_ledger",
+              "permissive": "PERMISSIVE",
+              "policyname": "Users can view their own transactions",
+              "schemaname": "public",
+              "with_check": null
+            }
+          ],
+          "triggers": [
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_23237045",
+              "type": 9,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_restrict_del\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_23237045\" AFTER DELETE ON chip_ledger FROM ca_mint_ledger NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_restrict_del\"()",
+              "security_definer": false,
+              "function_body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+              "function_definition_md5": "253aa1f96333ac2ce5f05cd227965091"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_23237046",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_23237046\" AFTER UPDATE ON chip_ledger FROM ca_mint_ledger NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "5909814be8c209a36e3f00dad2047ec7",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+              "function_definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25581286",
+              "type": 9,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_restrict_del\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25581286\" AFTER DELETE ON chip_ledger FROM tournament_refund_entitlements NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_restrict_del\"()",
+              "security_definer": false,
+              "function_body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+              "function_definition_md5": "253aa1f96333ac2ce5f05cd227965091"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25581287",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25581287\" AFTER UPDATE ON chip_ledger FROM tournament_refund_entitlements NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "5909814be8c209a36e3f00dad2047ec7",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+              "function_definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25581500",
+              "type": 9,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_restrict_del\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25581500\" AFTER DELETE ON chip_ledger FROM tournament_refund_tranches NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_restrict_del\"()",
+              "security_definer": false,
+              "function_body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+              "function_definition_md5": "253aa1f96333ac2ce5f05cd227965091"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25581501",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25581501\" AFTER UPDATE ON chip_ledger FROM tournament_refund_tranches NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "5909814be8c209a36e3f00dad2047ec7",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+              "function_definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25705656",
+              "type": 9,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_restrict_del\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25705656\" AFTER DELETE ON chip_ledger FROM tournament_spin_cancellation_unwinds NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_restrict_del\"()",
+              "security_definer": false,
+              "function_body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+              "function_definition_md5": "253aa1f96333ac2ce5f05cd227965091"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25705657",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25705657\" AFTER UPDATE ON chip_ledger FROM tournament_spin_cancellation_unwinds NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "5909814be8c209a36e3f00dad2047ec7",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+              "function_definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25705661",
+              "type": 9,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_restrict_del\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25705661\" AFTER DELETE ON chip_ledger FROM tournament_spin_cancellation_unwinds NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_restrict_del\"()",
+              "security_definer": false,
+              "function_body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+              "function_definition_md5": "253aa1f96333ac2ce5f05cd227965091"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25705662",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25705662\" AFTER UPDATE ON chip_ledger FROM tournament_spin_cancellation_unwinds NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "5909814be8c209a36e3f00dad2047ec7",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+              "function_definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25705671",
+              "type": 9,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_restrict_del\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25705671\" AFTER DELETE ON chip_ledger FROM tournament_spin_cancellation_unwinds NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_restrict_del\"()",
+              "security_definer": false,
+              "function_body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+              "function_definition_md5": "253aa1f96333ac2ce5f05cd227965091"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25705672",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25705672\" AFTER UPDATE ON chip_ledger FROM tournament_spin_cancellation_unwinds NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "5909814be8c209a36e3f00dad2047ec7",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+              "function_definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25705681",
+              "type": 9,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_restrict_del\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25705681\" AFTER DELETE ON chip_ledger FROM tournament_spin_cancellation_unwinds NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_restrict_del\"()",
+              "security_definer": false,
+              "function_body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+              "function_definition_md5": "253aa1f96333ac2ce5f05cd227965091"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_25705682",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_25705682\" AFTER UPDATE ON chip_ledger FROM tournament_spin_cancellation_unwinds NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "5909814be8c209a36e3f00dad2047ec7",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+              "function_definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_31371370",
+              "type": 9,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_del\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_31371370\" AFTER DELETE ON chip_ledger FROM settlement_invoices NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_del\"()",
+              "security_definer": false,
+              "function_body_md5": "7a7359262dcaba833af52c087e0b8e6c",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_del$function$\n",
+              "function_definition_md5": "5a194f0246aa6165fe2ca738a1586a15"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_a_31371371",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_31371371\" AFTER UPDATE ON chip_ledger FROM settlement_invoices NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "5909814be8c209a36e3f00dad2047ec7",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+              "function_definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_c_2618308",
+              "type": 5,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_2618308\" AFTER INSERT ON chip_ledger FROM auth.users NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "security_definer": false,
+              "function_body_md5": "0202d6016df4e8a81b0062a40c6023ec",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_check_ins\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_check_ins$function$\n",
+              "function_definition_md5": "1d61f37aa5d841868619bc5213e05cb7"
+            },
+            {
+              "acl": null,
+              "name": "RI_ConstraintTrigger_c_2618309",
+              "type": 17,
+              "owner": "supabase_admin",
+              "config": null,
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_2618309\" AFTER UPDATE ON chip_ledger FROM auth.users NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "security_definer": false,
+              "function_body_md5": "b95e5133ec61e5d6ef06f767aa556993",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_check_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_check_upd$function$\n",
+              "function_definition_md5": "91f3ff61ee7527b0688ce1a1f11db752"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres"
+              ],
+              "name": "aa_ca_capture_tournament_charge_entitlement",
+              "type": 5,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_capture_tournament_charge_entitlement()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER aa_ca_capture_tournament_charge_entitlement AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.tournament_id IS NOT NULL AND new.from_type = 'player_wallet'::text AND new.to_type = 'prize_liability'::text) EXECUTE FUNCTION fn_ca_capture_tournament_charge_entitlement()",
+              "security_definer": true,
+              "function_body_md5": "90e2944fd1af031edd2cc4c791fa5a5b",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_capture_tournament_charge_entitlement()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_split record;\nBEGIN\n  IF NEW.tournament_id IS NULL\n     OR NEW.from_type IS DISTINCT FROM 'player_wallet'\n     OR NEW.to_type IS DISTINCT FROM 'prize_liability'\n     OR NEW.to_entity_id IS DISTINCT FROM NEW.tournament_id\n     OR lower(COALESCE(NEW.category,'')) NOT IN (\n          'tournament_buyin','rebuy','addon') THEN\n    RETURN NULL;\n  END IF;\n  IF NEW.from_entity_id IS NULL OR NEW.club_id IS NULL THEN\n    RAISE EXCEPTION 'tournament charge ledger omitted player or source club'\n      USING ERRCODE = 'P0404';\n  END IF;\n  SELECT * INTO v_split FROM public.fn_ca_tournament_charge_split(\n    NEW.tournament_id,NEW.category,NEW.amount);\n  INSERT INTO public.tournament_refund_entitlements(\n    tournament_id,user_id,entitlement_kind,charge_category,\n    refund_wallet_club_id,gross,refund_prize,refund_bounty,refund_fee,\n    source_ledger_id,registration_id,source_satellite_id,source_award_place,\n    escrow_bucket,evidence_kind,created_at)\n  VALUES(\n    NEW.tournament_id,NEW.from_entity_id,'wallet_charge',lower(NEW.category),\n    NEW.club_id,round(NEW.amount,2),v_split.refund_prize,\n    v_split.refund_bounty,v_split.refund_fee,NEW.id,NULL,NULL,NULL,\n    'wallet_gross','atomic_wallet_charge',transaction_timestamp());\n  RETURN NULL;\nEND;\n$function$\n",
+              "function_definition_md5": "01e84bcd7825d2e905fef3ec220b3a47"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "authenticated=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "ab_ca_chip_store_declared",
+              "type": 7,
+              "owner": "postgres",
+              "config": [
+                "search_path=public, pg_temp"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_chip_store_declared()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER ab_ca_chip_store_declared BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_store_declared()",
+              "security_definer": true,
+              "function_body_md5": "11d1703e152fa6dfd1f52ddb17ff083b",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_chip_store_declared()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_missing text;\nBEGIN\n  SELECT s INTO v_missing FROM (VALUES (NEW.from_type), (NEW.to_type)) v(s)\n   WHERE s IS NOT NULL\n     AND NOT EXISTS (SELECT 1 FROM public.ca_chip_store_coverage g WHERE g.store = s)\n   LIMIT 1;\n\n  IF v_missing IS NOT NULL THEN\n    RAISE EXCEPTION 'REFUSED: chip store % is not declared in ca_chip_store_coverage', v_missing\n      USING ERRCODE = '23514',\n            DETAIL  = 'A store the supply basis has never heard of would move chips out of the meter '\n                   || 'silently, which is exactly the five supply incidents of 2026-09-11.',\n            HINT    = 'Declare it first: INSERT INTO public.ca_chip_store_coverage (store, treatment, counted_by, notes) '\n                   || 'VALUES (' || quote_literal(v_missing) || ', ''counted''|''noncirculating''|''uncounted'', '\n                   || '<which fn_ca_supply_snapshot component holds it>, <why>). '\n                   || 'If it is counted, add it to the basis in the same migration.';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+              "function_definition_md5": "d5b08956826e56a0d414db4bfd022d3b"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "accounting_transfer_document",
+              "type": 5,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_accounting_transfer_document_on_insert()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER accounting_transfer_document AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.status = 'posted'::text AND ((new.from_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text])) OR new.from_type = 'settlement_suspense'::text AND new.category = 'rakeback'::text) AND (new.to_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text]))) EXECUTE FUNCTION fn_accounting_transfer_document_on_insert()",
+              "security_definer": true,
+              "function_body_md5": "b03d4a18652f34c6ad7aa160e4e2d468",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_transfer_document_on_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n PERFORM public.fn_invoice_accounting_ledger_transfer(NEW.id);\n RETURN NEW;\nEND $function$\n",
+              "function_definition_md5": "bf9d870bfc52d44c1d2cc33860dfd71a"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres"
+              ],
+              "name": "cancelled_tournament_evidence_is_immutable",
+              "type": 31,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_cancelled_tournament_evidence_is_immutable()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+              "security_definer": true,
+              "function_body_md5": "9dc93e1a464e6694f588345f19640869",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_cancelled_tournament_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_tournament_id uuid;\n  v_new_tournament_id uuid;\n  v_tournament_id uuid;\nBEGIN\n  IF TG_OP<>'INSERT' THEN\n    v_old_tournament_id:=NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  END IF;\n  IF TG_OP<>'DELETE' THEN\n    v_new_tournament_id:=NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;\n  END IF;\n  IF TG_OP='UPDATE' AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN\n    RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME\n      USING ERRCODE='55000';\n  END IF;\n  v_tournament_id:=COALESCE(v_new_tournament_id,v_old_tournament_id);\n  IF v_tournament_id IS NULL THEN\n    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n  IF TG_TABLE_NAME='chip_ledger' AND TG_OP<>'INSERT' THEN\n    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'\n      USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='INSERT' THEN\n    PERFORM 1 FROM public.tournaments t\n     WHERE t.id=v_tournament_id FOR KEY SHARE;\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts h\n              WHERE h.tournament_id=v_tournament_id) THEN\n    RAISE EXCEPTION 'cancelled tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE='55000';\n  END IF;\n  IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\nEND;\n$function$\n",
+              "function_definition_md5": "55061034adb7416d401622572397c7d2"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres"
+              ],
+              "name": "satellite_transfer_ledger_is_immutable",
+              "type": 31,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_satellite_transfer_ledger_is_immutable()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER satellite_transfer_ledger_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_satellite_transfer_ledger_is_immutable()",
+              "security_definer": true,
+              "function_body_md5": "6f0c873ffaa7ed73f0936fb681da1a66",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_satellite_transfer_ledger_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_source_ids uuid[] := ARRAY[]::uuid[];\n  v_source_id uuid;\n  v_target_id uuid;\n  v_text text;\n  v_row jsonb;\n  v_status text;\nBEGIN\n  IF TG_OP = 'UPDATE'\n     AND (NEW.tournament_id IS DISTINCT FROM OLD.tournament_id\n       OR NEW.from_entity_id IS DISTINCT FROM OLD.from_entity_id\n       OR NEW.to_entity_id IS DISTINCT FROM OLD.to_entity_id\n       OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key\n       OR (NEW.metadata->>'satellite_id') IS DISTINCT FROM\n          (OLD.metadata->>'satellite_id')) THEN\n    RAISE EXCEPTION 'satellite transfer journal ownership is immutable'\n      USING ERRCODE = '55000';\n  END IF;\n  FOREACH v_row IN ARRAY ARRAY[\n    CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END,\n    CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END\n  ] LOOP\n    IF v_row IS NULL THEN CONTINUE; END IF;\n    v_text := v_row->>'tournament_id';\n    IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      v_source_ids := array_append(v_source_ids,v_text::uuid);\n    END IF;\n    IF v_row->>'from_type' = 'prize_liability' THEN\n      v_text := v_row->>'from_entity_id';\n      IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n        v_source_ids := array_append(v_source_ids,v_text::uuid);\n      END IF;\n    END IF;\n    v_text := split_part(COALESCE(v_row->>'idempotency_key',''),':',2);\n    IF COALESCE(v_row->>'idempotency_key','') LIKE 'tourney:%:seat:%:pool_transfer'\n       AND v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      v_source_ids := array_append(v_source_ids,v_text::uuid);\n    END IF;\n    v_text := v_row->'metadata'->>'satellite_id';\n    IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      v_source_ids := array_append(v_source_ids,v_text::uuid);\n    END IF;\n  END LOOP;\n  IF TG_OP <> 'INSERT' AND cardinality(v_source_ids) > 0 THEN\n    RAISE EXCEPTION 'satellite transfer journal is append-only'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' AND NEW.to_type = 'prize_liability' THEN\n    SELECT t.id INTO v_target_id FROM public.tournaments t\n     WHERE t.id = NEW.to_entity_id;\n    IF v_target_id IS NOT NULL THEN\n      -- The transfer's AFTER trigger writes target escrow, so own the target\n      -- before any source root exactly as fn_settle_satellite_tournament does.\n      SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n        FROM public.tournaments t\n       WHERE t.id = v_target_id FOR SHARE;\n      IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN\n        RAISE EXCEPTION 'terminal target cannot accept a satellite transfer journal'\n          USING ERRCODE = '55000';\n      END IF;\n    END IF;\n  END IF;\n  FOR v_source_id IN\n    SELECT DISTINCT source.id FROM unnest(v_source_ids) source(id)\n     WHERE source.id IS NOT NULL ORDER BY source.id\n  LOOP\n    IF TG_OP = 'INSERT' AND v_source_id IS DISTINCT FROM v_target_id THEN\n      SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n        FROM public.tournaments t\n       WHERE t.id = v_source_id FOR SHARE;\n      IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN\n        RAISE EXCEPTION 'completed satellite transfer journal is immutable'\n          USING ERRCODE = '55000';\n      END IF;\n    END IF;\n    IF public.fn_ca_has_committed_tournament_receipt(v_source_id) THEN\n      RAISE EXCEPTION 'completed satellite transfer journal is immutable'\n        USING ERRCODE = '55000';\n    END IF;\n  END LOOP;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+              "function_definition_md5": "b2affe52c4e95101c985c30c483d5127"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres"
+              ],
+              "name": "terminal_tournament_evidence_is_immutable",
+              "type": 31,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_terminal_tournament_evidence_is_immutable()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+              "security_definer": true,
+              "function_body_md5": "e6fbb738a0528aa0f32e33d004bf2045",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_terminal_tournament_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\n  v_status text;\n  v_receipted boolean := false;\n  v_old_marker timestamptz;\n  v_new_marker timestamptz;\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    v_tournament_id := NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;\n  ELSIF TG_OP = 'UPDATE' THEN\n    IF NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid IS DISTINCT FROM\n       NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid THEN\n      RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME\n        USING ERRCODE = '55000';\n    END IF;\n    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  ELSE\n    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  END IF;\n\n  IF v_tournament_id IS NULL THEN\n    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n    RETURN NEW;\n  END IF;\n  IF TG_OP <> 'INSERT' AND to_jsonb(OLD) ? 'terminal_closed_at' THEN\n    v_old_marker := NULLIF(to_jsonb(OLD)->>'terminal_closed_at','')::timestamptz;\n  END IF;\n  IF TG_OP <> 'DELETE' AND to_jsonb(NEW) ? 'terminal_closed_at' THEN\n    v_new_marker := NULLIF(to_jsonb(NEW)->>'terminal_closed_at','')::timestamptz;\n  END IF;\n  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN\n    RAISE EXCEPTION '% rows cannot supply a terminal marker',TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN\n    RAISE EXCEPTION 'terminal tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN\n    IF public.fn_ca_terminal_marker_transition_is_exact(\n         to_jsonb(OLD),to_jsonb(NEW),v_tournament_id) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION '% terminal marker transition is not canonical',TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  -- A journal row is durable testimony from the instant it names a\n  -- tournament. Refuse its UPDATE/DELETE without taking a child-to-parent\n  -- lock; a row trigger already owns the child tuple at this point. INSERT is\n  -- the only operation that takes the root lock, which preserves the\n  -- parent-to-child order used by both terminal authorities.\n  IF TG_TABLE_NAME = 'chip_ledger' AND TG_OP <> 'INSERT' THEN\n    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' THEN\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id\n     FOR SHARE;\n  ELSE\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id;\n  END IF;\n  SELECT EXISTS (\n           SELECT 1 FROM public.tournament_terminal_settlements h\n            WHERE h.tournament_id = v_tournament_id)\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_satellite_settlements h\n            WHERE h.tournament_id = v_tournament_id)\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_cancellation_receipts h\n            WHERE h.tournament_id = v_tournament_id)\n    INTO v_receipted;\n  IF v_status IN ('COMPLETED','CANCELLED','CANCELED')\n     AND (TG_OP = 'INSERT' OR v_receipted) THEN\n    RAISE EXCEPTION\n      'terminal tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+              "function_definition_md5": "a129e4214f59e7f95ffe397e2245bbd0"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "trg_ca_append_only",
+              "type": 27,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_journal_append_only()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+              "security_definer": true,
+              "function_body_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_journal_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_reason text := NULLIF(current_setting('app.ledger_maintenance', true), '');\n  v_allowed_update boolean := false;\n  v_kind text;\n  v_sev text;\n  v_j jsonb;\nBEGIN\n  IF TG_OP = 'UPDATE' THEN\n    IF TG_TABLE_NAME = 'chip_transactions' THEN\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.transaction_type IS NOT DISTINCT FROM OLD.transaction_type\n        AND NEW.from_user_id IS NOT DISTINCT FROM OLD.from_user_id\n        AND NEW.to_user_id IS NOT DISTINCT FROM OLD.to_user_id\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    ELSIF TG_TABLE_NAME = 'chip_ledger' THEN\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.from_type IS NOT DISTINCT FROM OLD.from_type\n        AND NEW.from_entity_id IS NOT DISTINCT FROM OLD.from_entity_id\n        AND NEW.to_type IS NOT DISTINCT FROM OLD.to_type\n        AND NEW.to_entity_id IS NOT DISTINCT FROM OLD.to_entity_id\n        AND NEW.category IS NOT DISTINCT FROM OLD.category\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at\n        AND NEW.chain_seq IS NOT DISTINCT FROM OLD.chain_seq\n        AND NEW.prev_hash IS NOT DISTINCT FROM OLD.prev_hash\n        AND NEW.row_hash IS NOT DISTINCT FROM OLD.row_hash\n        AND NEW.idempotency_key IS NOT DISTINCT FROM OLD.idempotency_key\n        AND NEW.correlation_id IS NOT DISTINCT FROM OLD.correlation_id\n        AND NEW.settlement_id IS NOT DISTINCT FROM OLD.settlement_id\n        AND NEW.epoch_id IS NOT DISTINCT FROM OLD.epoch_id;\n    ELSIF TG_TABLE_NAME = 'vip_points_ledger' THEN\n      /* Phase 8 (2026-09-08). A VIP leg is written once, final: the award\n         writer no longer inserts 0 and updates it afterwards. Nothing on this\n         table may change. */\n      v_allowed_update := false;\n    ELSIF TG_TABLE_NAME = 'agent_commissions' THEN\n      /* Phase 8. A commission row is what was earned on one hand. The only\n         thing that happens to it afterwards is being settled, once. */\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id\n        AND NEW.source_type IS NOT DISTINCT FROM OLD.source_type\n        AND NEW.source_id IS NOT DISTINCT FROM OLD.source_id\n        AND NEW.commission_rate IS NOT DISTINCT FROM OLD.commission_rate\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at\n        AND (OLD.settled_at IS NULL OR NEW.settled_at IS NOT DISTINCT FROM OLD.settled_at);\n    ELSIF TG_TABLE_NAME = 'rakeback_period_payouts' THEN\n      /* Phase 8. What was paid, to whom, for which period, never changes;\n         status, paid_at, wallet_transaction_id and failure_reason are the\n         payout's own bookkeeping. */\n      v_allowed_update :=\n        NEW.payout_amount IS NOT DISTINCT FROM OLD.payout_amount\n        AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.rakeback_period_id IS NOT DISTINCT FROM OLD.rakeback_period_id\n        AND NEW.currency IS NOT DISTINCT FROM OLD.currency\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    ELSE\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    END IF;\n  END IF;\n\n  IF TG_OP = 'UPDATE' AND v_allowed_update THEN\n    RETURN NEW;\n  END IF;\n\n  /* Phase 8. fn_close_settlement_period inserts a payout row as its\n     idempotency claim BEFORE debiting the treasury and deletes it again on a\n     shortfall, inside the same transaction. That is a compensation, not a\n     mutation of history, so this table's DELETE is allowed - and RECORDED,\n     every time, so a person can tell a compensation from a hand on the\n     table. The meter counts these. */\n  IF TG_OP = 'DELETE' AND TG_TABLE_NAME = 'rakeback_period_payouts' THEN\n    INSERT INTO public.ca_ledger_mutation_log\n      (source_table, operation, db_role, application, reason, old_row, new_row)\n    VALUES (TG_TABLE_NAME, TG_OP, current_user,\n            current_setting('application_name', true),\n            COALESCE(v_reason, 'rakeback-payout-delete: compensation on a treasury shortfall, or maintenance without app.ledger_maintenance'),\n            to_jsonb(OLD), NULL);\n    RETURN OLD;\n  END IF;\n\n  IF v_reason IS NOT NULL THEN\n    INSERT INTO public.ca_ledger_mutation_log\n      (source_table, operation, db_role, application, reason, old_row, new_row)\n    VALUES (TG_TABLE_NAME, TG_OP, current_user,\n            current_setting('application_name', true), v_reason,\n            to_jsonb(OLD), CASE WHEN TG_OP='UPDATE' THEN to_jsonb(NEW) END);\n\n    BEGIN\n      v_kind := split_part(v_reason, ':', 1);\n      -- a routine, recorded maintenance is filed, not shouted about\n      SELECT k.severity INTO v_sev\n        FROM public.ca_ledger_maintenance_kinds k WHERE k.kind = v_kind;\n      v_sev := COALESCE(v_sev, 'warning');\n      /* A REGISTERED MAINTENANCE KIND MARKED `info` IS RECORDED, NOT RAISED\n         (2026-09-10). The row above is already written to\n         ca_ledger_mutation_log, whole, before this point. A kind the\n         registry declares `info` says so deliberately - \"expected,\n         scheduled and reversible: recorded, not alarming\" - so it does not\n         also open a board item once per run, for ever. An UNREGISTERED\n         kind still defaults to warning and still raises. */\n      IF v_sev <> 'info' THEN\n      PERFORM public.fn_ca_raise_drift_incident(\n        'fn_ca_journal_append_only', 'unauthorized_adjustment', v_sev,\n        'journal-bypass:' || TG_TABLE_NAME || ':' || TG_OP || ':' || v_kind,\n        0, NULL, NULL, 'ledger', TG_TABLE_NAME,\n        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,\n        'append-only bypass used on ' || TG_TABLE_NAME || ': ' || TG_OP\n          || ' permitted because app.ledger_maintenance was set to \"' || v_reason\n          || '\". The rows are preserved whole in ca_ledger_mutation_log - this incident'\n          || ' counts them (occurrences) rather than the chips; query that table by'\n          || ' reason for the full inventory. Confirm the maintenance was intended,'\n          || ' then resolve.',\n        true,\n        jsonb_build_object('table', TG_TABLE_NAME, 'operation', TG_OP,\n                           'reason', v_reason, 'reason_kind', v_kind,\n                           'db_role', current_user,\n                           'application', current_setting('application_name', true)));\n      END IF;\n    EXCEPTION WHEN OTHERS THEN NULL;\n    END;\n\n    -- DR5. The diamond journal is deleted from on an hourly cadence by the\n    -- certification fleet. Keep the row and say who took it. Nothing here can\n    -- refuse the DELETE the branch above has already permitted.\n    IF TG_TABLE_NAME = 'diamond_transactions' AND TG_OP = 'DELETE' THEN\n      BEGIN\n        v_j := to_jsonb(OLD);\n        INSERT INTO public.ca_diamond_journal_archive\n          (id, user_id, type, amount, balance_after, description, reference_id, created_at,\n           transaction_type, source, metadata, counterparty, issuance_class,\n           deleted_profile_id, deletion_reason)\n        VALUES\n          ((v_j->>'id')::uuid, (v_j->>'user_id')::uuid, v_j->>'type',\n           (v_j->>'amount')::integer, (v_j->>'balance_after')::integer,\n           v_j->>'description', v_j->>'reference_id', (v_j->>'created_at')::timestamptz,\n           v_j->>'transaction_type', v_j->>'source',\n           COALESCE(v_j->'metadata', '{}'::jsonb),\n           v_j->>'counterparty', v_j->>'issuance_class',\n           (v_j->>'user_id')::uuid, v_reason)\n        ON CONFLICT (id) DO NOTHING;\n\n        PERFORM public.fn_ca_diamond_incident(\n          'DR5:journal_row_deleted_under_maintenance', 'info',\n          (v_j->>'user_id')::uuid, (v_j->>'amount')::numeric,\n          'fn_ca_journal_append_only',\n          jsonb_build_object('reason', v_reason,\n                             'reference_id', v_j->>'reference_id',\n                             'type', v_j->>'type',\n                             'db_role', current_user));\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING 'ca_diamond_journal_archive could not preserve a journal row deleted under maintenance (%): %',\n          v_reason, SQLERRM;\n      END;\n    END IF;\n\n    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n\n  RAISE EXCEPTION\n    '% on % is forbidden: financial journals are append-only. Corrections are new linked rows (category=correction). Set app.ledger_maintenance with an incident reference for authorized maintenance.',\n    TG_OP, TG_TABLE_NAME\n    USING ERRCODE = 'P0403';\nEND $function$\n",
+              "function_definition_md5": "ac9d66e60d077d886981c428c71e5c3c"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "trg_ca_chip_ledger_enrich",
+              "type": 7,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_chip_ledger_enrich()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER trg_ca_chip_ledger_enrich BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_ledger_enrich()",
+              "security_definer": true,
+              "function_body_md5": "f9f8a8946bc474c4dad9941869f69399",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_chip_ledger_enrich()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_prev text;\nBEGIN\n  NEW.amount := round(NEW.amount, 2);\n  NEW.created_at := COALESCE(NEW.created_at, now());\n\n  NEW.epoch_id      := COALESCE(NEW.epoch_id, public.fn_ca_current_epoch());\n  NEW.actor_service := COALESCE(NEW.actor_service,\n                                current_setting('application_name', true));\n  NEW.db_role       := COALESCE(NEW.db_role, current_user);\n  NEW.correlation_id := COALESCE(NEW.correlation_id,\n      NULLIF(current_setting('app.ledger_correlation', true), '')::uuid);\n  NEW.settlement_id  := COALESCE(NEW.settlement_id,\n      NULLIF(current_setting('app.ledger_settlement', true), ''));\n  IF NEW.idempotency_key IS NULL THEN\n    NEW.idempotency_key := NULLIF(current_setting('app.ledger_idempotency_key', true), '');\n    IF NEW.idempotency_key IS NOT NULL THEN\n      -- consume-once: the next row in this transaction must not inherit it\n      PERFORM set_config('app.ledger_idempotency_key', '', true);\n    END IF;\n  END IF;\n\n  /* PHASE 6.4 (2026-09-05): EVERY LEG NAMES ITS HAND OR ITS EVENT. The doors\n     that know the hand say so on app.ledger_hand_id (the rake door and the\n     BBJ drop, since today) or on a 'bbj:<hand>' settlement; the rake\n     settlement is not read for it because it carries a random key when the\n     hand is unknown, and a guessed hand is worse than none; a spin's reserve legs\n     carry the spin on their prize_liability side. Read them here, once, so\n     the hand and the event are columns a per-hand audit can index on rather\n     than strings it has to parse. 231,211 legs a day; 29,617 named a hand\n     and 50,359 an event before this. */\n  IF NEW.hand_id IS NULL THEN\n    NEW.hand_id := NULLIF(current_setting('app.ledger_hand_id', true), '')::uuid;\n    IF NEW.hand_id IS NULL AND NEW.settlement_id ~ '^bbj:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN\n      NEW.hand_id := split_part(NEW.settlement_id, ':', 2)::uuid;\n    END IF;\n  END IF;\n  IF NEW.tournament_id IS NULL THEN\n    NEW.tournament_id := NULLIF(current_setting('app.ledger_tournament_id', true), '')::uuid;\n    /* PHASE 6 GATE (2026-09-05): a prize_liability side IS the event, on every\n       category, not only the two spin ones. This is what the 6.4 measurement\n       missed: 777 tournament rake settlements in three hours (the fee leaving\n       an event to a union rake wallet or a club treasury) and every tournament\n       add-on named nothing. Read against the rows first: all 777 from_entity_id\n       values are real tournaments. The FROM side wins when both sides are\n       prize_liability (a satellite seat's pool transfer, which already stamps\n       the satellite itself). */\n    IF NEW.tournament_id IS NULL THEN\n      IF NEW.from_type = 'prize_liability' THEN NEW.tournament_id := NEW.from_entity_id;\n      ELSIF NEW.to_type = 'prize_liability' THEN NEW.tournament_id := NEW.to_entity_id;\n      END IF;\n    END IF;\n  END IF;\n  /* PHASE 6 GATE: and a table_stack side IS the table. Every cash buy-in,\n     add-on and cash-out carries the table on its felt side (231, 53 and 222\n     of each measured in the same window, every one a real table row) and\n     none of them carried table_id. A cash buy-in is not a hand; the table is\n     the name it has. */\n  IF NEW.table_id IS NULL THEN\n    IF NEW.to_type = 'table_stack' THEN NEW.table_id := NEW.to_entity_id;\n    ELSIF NEW.from_type = 'table_stack' THEN NEW.table_id := NEW.from_entity_id;\n    END IF;\n  END IF;\n\n  -- Tamper evidence: monotone sequence + per-row content checksum. NOT chained\n  -- through the previous row's hash at insert time - that would put a global\n  -- serialization point (and deadlock surface) inside every money transaction,\n  -- which the availability policy forbids. prev_hash is best-effort forensics.\n  NEW.chain_seq := nextval('public.chip_ledger_chain_seq');\n  SELECT row_hash INTO v_prev\n    FROM public.chip_ledger\n   WHERE chain_seq = NEW.chain_seq - 1;\n  NEW.prev_hash := v_prev;\n  NEW.row_hash := encode(extensions.digest(\n      'v1'\n      || '|' || NEW.chain_seq::text\n      || '|' || COALESCE(NEW.epoch_id::text,'')\n      || '|' || NEW.amount::text\n      || '|' || NEW.from_type || ':' || COALESCE(NEW.from_entity_id::text,'')\n      || '|' || NEW.to_type   || ':' || COALESCE(NEW.to_entity_id::text,'')\n      || '|' || NEW.category\n      || '|' || COALESCE(NEW.idempotency_key,'')\n      || '|' || COALESCE(NEW.correlation_id::text,'')\n      || '|' || NEW.created_at::text,\n      'sha256'), 'hex');\n  RETURN NEW;\nEND $function$\n",
+              "function_definition_md5": "5931f47d922eea26ab1ea2b12f3f7c8c"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "trg_chip_ledger_performed_by",
+              "type": 7,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "enforce_chip_ledger_performed_by()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER trg_chip_ledger_performed_by BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION enforce_chip_ledger_performed_by()",
+              "security_definer": false,
+              "function_body_md5": "9b13958f57a83cef5a563bfccbc4e4d9",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.enforce_chip_ledger_performed_by()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF NEW.performed_by = '00000000-0000-0000-0000-000000000000'::uuid THEN\n    RAISE EXCEPTION 'chip_ledger.performed_by must be a real user, got all-zero sentinel'\n      USING ERRCODE = 'invalid_parameter_value';\n  END IF;\n  -- Cross-scope between two non-system entity types requires the operator\n  -- to be identified - this catches callers who forget to thread userId.\n  IF NEW.from_type <> NEW.to_type\n     AND NEW.from_type NOT IN ('system_mint', 'system_burn')\n     AND NEW.to_type   NOT IN ('system_mint', 'system_burn') THEN\n    -- performed_by is already NOT NULL + non-zero here; nothing extra to do.\n    NULL;\n  END IF;\n  RETURN NEW;\nEND; $function$\n",
+              "function_definition_md5": "ce4ab3013be283d66ab9afd1e861b552"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "zz_ca_attested_day_is_restated_del",
+              "type": 8,
+              "owner": "postgres",
+              "config": [
+                "search_path=public",
+                "TimeZone=UTC"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_attested_day_is_restated()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_del AFTER DELETE ON chip_ledger REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+              "security_definer": true,
+              "function_body_md5": "814ac29a8ce63deaade4aa763d1b9ab8",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_attested_day_is_restated()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET \"TimeZone\" TO 'UTC'\nAS $function$\nDECLARE\n  v_reason text := NULLIF(current_setting('app.ledger_maintenance', true), '');\n  r record;\n  v_res jsonb;\nBEGIN\n  IF v_reason IS NULL THEN\n    RETURN NULL;\n  END IF;\n\n  IF TG_OP = 'DELETE' THEN\n    FOR r IN\n      SELECT DISTINCT o.created_at::date AS day\n        FROM old_rows o\n        JOIN public.ca_ledger_day_manifests m ON m.day = o.created_at::date\n       ORDER BY 1\n    LOOP\n      v_res := public.fn_ca_ledger_day_manifest(r.day, 'maintenance:' || v_reason);\n      IF COALESCE((v_res->>'tampered')::boolean, false) THEN\n        RAISE EXCEPTION 'the manifest for % could not be restated after maintenance \"%\": %', r.day, v_reason, v_res\n          USING ERRCODE = 'P0403';\n      END IF;\n    END LOOP;\n  ELSE\n    FOR r IN\n      SELECT DISTINCT d.day\n        FROM (SELECT created_at::date AS day FROM old_rows\n              UNION\n              SELECT created_at::date FROM new_rows) d\n        JOIN public.ca_ledger_day_manifests m ON m.day = d.day\n       ORDER BY 1\n    LOOP\n      v_res := public.fn_ca_ledger_day_manifest(r.day, 'maintenance:' || v_reason);\n      IF COALESCE((v_res->>'tampered')::boolean, false) THEN\n        RAISE EXCEPTION 'the manifest for % could not be restated after maintenance \"%\": %', r.day, v_reason, v_res\n          USING ERRCODE = 'P0403';\n      END IF;\n    END LOOP;\n  END IF;\n\n  RETURN NULL;\nEND $function$\n",
+              "function_definition_md5": "268e0f244b2df7f88b933530b1cad822"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "zz_ca_attested_day_is_restated_upd",
+              "type": 16,
+              "owner": "postgres",
+              "config": [
+                "search_path=public",
+                "TimeZone=UTC"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_attested_day_is_restated()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_upd AFTER UPDATE ON chip_ledger REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+              "security_definer": true,
+              "function_body_md5": "814ac29a8ce63deaade4aa763d1b9ab8",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_attested_day_is_restated()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET \"TimeZone\" TO 'UTC'\nAS $function$\nDECLARE\n  v_reason text := NULLIF(current_setting('app.ledger_maintenance', true), '');\n  r record;\n  v_res jsonb;\nBEGIN\n  IF v_reason IS NULL THEN\n    RETURN NULL;\n  END IF;\n\n  IF TG_OP = 'DELETE' THEN\n    FOR r IN\n      SELECT DISTINCT o.created_at::date AS day\n        FROM old_rows o\n        JOIN public.ca_ledger_day_manifests m ON m.day = o.created_at::date\n       ORDER BY 1\n    LOOP\n      v_res := public.fn_ca_ledger_day_manifest(r.day, 'maintenance:' || v_reason);\n      IF COALESCE((v_res->>'tampered')::boolean, false) THEN\n        RAISE EXCEPTION 'the manifest for % could not be restated after maintenance \"%\": %', r.day, v_reason, v_res\n          USING ERRCODE = 'P0403';\n      END IF;\n    END LOOP;\n  ELSE\n    FOR r IN\n      SELECT DISTINCT d.day\n        FROM (SELECT created_at::date AS day FROM old_rows\n              UNION\n              SELECT created_at::date FROM new_rows) d\n        JOIN public.ca_ledger_day_manifests m ON m.day = d.day\n       ORDER BY 1\n    LOOP\n      v_res := public.fn_ca_ledger_day_manifest(r.day, 'maintenance:' || v_reason);\n      IF COALESCE((v_res->>'tampered')::boolean, false) THEN\n        RAISE EXCEPTION 'the manifest for % could not be restated after maintenance \"%\": %', r.day, v_reason, v_res\n          USING ERRCODE = 'P0403';\n      END IF;\n    END LOOP;\n  END IF;\n\n  RETURN NULL;\nEND $function$\n",
+              "function_definition_md5": "268e0f244b2df7f88b933530b1cad822"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "zz_ca_escrow_overlay_leg",
+              "type": 5,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_escrow_on_overlay_leg()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_ca_escrow_overlay_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.to_type = 'prize_liability'::text AND (new.category = 'overlay'::text OR new.category = 'correction'::text AND (new.from_type = ANY (ARRAY['union_bank'::text, 'club_treasury'::text])))) EXECUTE FUNCTION fn_ca_escrow_on_overlay_leg()",
+              "security_definer": true,
+              "function_body_md5": "d59358cb9ddfc8f84c48aa2469f68897",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_escrow_on_overlay_leg()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  -- Explicit rows only: the autoledger twin (description 'auto-ledgered ...')\n  -- of the same debit is not a second overlay. None has been written since\n  -- the lock trigger was fixed on 09-03; the shadow still skips them.\n  IF COALESCE(NEW.description, '') LIKE 'auto-ledgered%' THEN RETURN NULL; END IF;\n  PERFORM public.fn_ca_escrow_apply(NEW.to_entity_id, 'overlay', p_overlay_in => round(NEW.amount, 2));\n  RETURN NULL;\nEND;\n$function$\n",
+              "function_definition_md5": "1b916fb576271d94c481099c11ca8b93"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "zz_ca_escrow_reserve_leg",
+              "type": 5,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_escrow_on_reserve_leg()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_ca_escrow_reserve_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.category = ANY (ARRAY['spin_entry'::text, 'spin_prize'::text])) EXECUTE FUNCTION fn_ca_escrow_on_reserve_leg()",
+              "security_definer": true,
+              "function_body_md5": "81de14870f02c55604fc56eedfbb9ef9",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_escrow_on_reserve_leg()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF NEW.category = 'spin_entry' THEN\n    PERFORM public.fn_ca_escrow_apply(NEW.from_entity_id, 'spin pool to reserve', p_reserve_out => round(NEW.amount, 2));\n  ELSIF NEW.category = 'spin_prize' THEN\n    PERFORM public.fn_ca_escrow_apply(NEW.to_entity_id, 'spin prize from reserve', p_reserve_in => round(NEW.amount, 2));\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n",
+              "function_definition_md5": "0d7f735d58aadeb6fe03e9daf5e21a92"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "zz_ca_escrow_seat_transfer_leg",
+              "type": 5,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_escrow_on_seat_transfer_leg()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_ca_escrow_seat_transfer_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.to_type = 'prize_liability'::text AND new.idempotency_key ~~ 'tourney:%:seat:%:pool_transfer'::text) EXECUTE FUNCTION fn_ca_escrow_on_seat_transfer_leg()",
+              "security_definer": true,
+              "function_body_md5": "227d11db5fe0b4ad403b2f45d098a166",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_escrow_on_seat_transfer_leg()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF NEW.metadata->>'entry_split_version' = '2' THEN\n    IF round(NEW.amount,2) IS DISTINCT FROM round((NEW.metadata->>'entry_prize')::numeric\n        + (NEW.metadata->>'entry_bounty')::numeric + (NEW.metadata->>'entry_fee')::numeric,2)\n       OR (NEW.metadata->>'entry_prize')::numeric < 0\n       OR (NEW.metadata->>'entry_bounty')::numeric < 0\n       OR (NEW.metadata->>'entry_fee')::numeric < 0 THEN\n      RAISE EXCEPTION 'Satellite transfer does not match its funded split' USING ERRCODE='23514';\n    END IF;\n    PERFORM public.fn_ca_escrow_apply(NEW.to_entity_id, 'satellite split entry',\n      p_gross_in => round(NEW.amount - (NEW.metadata->>'entry_fee')::numeric,2),\n      p_bounty_in => (NEW.metadata->>'entry_bounty')::numeric);\n    RETURN NULL;\n  END IF;\n  PERFORM public.fn_ca_escrow_apply(NEW.to_entity_id, 'satellite seat in', p_satellite_in => round(NEW.amount, 2));\n  RETURN NULL;\nEND;\n$function$\n",
+              "function_definition_md5": "e9c56f9c21635b21c7cf0d456eb18b8a"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "zz_ca_issuance_leg_is_registered",
+              "type": 5,
+              "owner": "postgres",
+              "config": [
+                "search_path=public"
+              ],
+              "enabled": "O",
+              "function": "fn_ca_issuance_leg_is_registered()",
+              "internal": false,
+              "deferrable": true,
+              "definition": "CREATE CONSTRAINT TRIGGER zz_ca_issuance_leg_is_registered AFTER INSERT ON chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.from_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])) OR (new.to_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text]))) EXECUTE FUNCTION fn_ca_issuance_leg_is_registered()",
+              "security_definer": true,
+              "function_body_md5": "c1d8a753e3f9b70d417c6106d4364668",
+              "initially_deferred": true,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_issuance_leg_is_registered()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_outside text[] := public.fn_ca_noncirculating_chip_stores();\n  v_pol public.ca_mint_policy%ROWTYPE;\n  v_24h numeric;\nBEGIN\n  IF NEW.from_type = ANY (v_outside) AND NOT (NEW.to_type = ANY (v_outside))\n     AND NEW.category <> 'correction' THEN\n    SELECT * INTO v_pol FROM public.ca_mint_policy WHERE id = 1;\n    IF NEW.amount > v_pol.per_operation_cap_chips THEN\n      RAISE EXCEPTION 'issuance refused: % chips in one leg is over the per-operation ceiling of % (ca_mint_policy; raise it with a reason through fn_ca_mint_policy_set before a deliberate batch)',\n        NEW.amount, v_pol.per_operation_cap_chips USING ERRCODE = 'P0403';\n    END IF;\n    v_24h := public.fn_ca_mint_issued_24h('chips', NEW.id) + NEW.amount;\n    IF v_24h > v_pol.rolling_24h_cap_chips THEN\n      RAISE EXCEPTION 'issuance refused: this leg would bring the last 24 hours to % chips, over the rolling ceiling of % (ca_mint_policy; raise it with a reason through fn_ca_mint_policy_set before a deliberate batch)',\n        v_24h, v_pol.rolling_24h_cap_chips USING ERRCODE = 'P0403';\n    END IF;\n  END IF;\n  PERFORM public.fn_ca_register_issuance_leg(NEW.id);\n  RETURN NULL;\nEND;\n$function$\n",
+              "function_definition_md5": "7a41ac630bad489e02f05f47ff5ffa1e"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "zz_chip_ledger_key_is_claimed_once",
+              "type": 7,
+              "owner": "postgres",
+              "config": [
+                "search_path=public, pg_temp"
+              ],
+              "enabled": "O",
+              "function": "zz_chip_ledger_key_is_claimed_once()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_chip_ledger_key_is_claimed_once BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION zz_chip_ledger_key_is_claimed_once()",
+              "security_definer": true,
+              "function_body_md5": "0f12b7a71b1920e854850dd713d631c5",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.zz_chip_ledger_key_is_claimed_once()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  /* 99.92% of legs carry no key and this does nothing for them. */\n  IF NEW.idempotency_key IS NULL THEN\n    RETURN NEW;\n  END IF;\n\n  /* No ON CONFLICT: the unique violation IS the refusal, and it must reach the\n     caller exactly as ux_chip_ledger_idempotency_key's does today. Both are\n     live until the cut; either one refusing is the correct outcome. */\n  INSERT INTO public.chip_ledger_idem (idempotency_key, leg_id, created_at)\n  VALUES (NEW.idempotency_key, NEW.id, COALESCE(NEW.created_at, now()));\n\n  RETURN NEW;\nEND;\n$function$\n",
+              "function_definition_md5": "57a2b2eb1bc5b1c5ac36394c2ac23bcd"
+            },
+            {
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
+              "name": "zz_freeze_guard",
+              "type": 31,
+              "owner": "postgres",
+              "config": [
+                "search_path=public, pg_temp"
+              ],
+              "enabled": "O",
+              "function": "fn_refuse_while_frozen()",
+              "internal": false,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()",
+              "security_definer": false,
+              "function_body_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+              "initially_deferred": false,
+              "function_definition": "CREATE OR REPLACE FUNCTION public.fn_refuse_while_frozen()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  col  TEXT;\n  changed BOOLEAN := FALSE;\n  v_claims TEXT;\nBEGIN\n  IF TG_OP = 'UPDATE' AND TG_NARGS > 0 THEN\n    FOREACH col IN ARRAY TG_ARGV LOOP\n      IF to_jsonb(NEW) -> col IS DISTINCT FROM to_jsonb(OLD) -> col THEN\n        changed := TRUE;\n        EXIT;\n      END IF;\n    END LOOP;\n    IF NOT changed THEN\n      RETURN NEW;\n    END IF;\n  END IF;\n\n  -- ONBOARDING NEVER FREEZES (to-do #2563 item 1). A membership row carrying\n  -- no chips is identity, not money. This table, INSERT only, zero balance.\n  IF TG_TABLE_NAME = 'club_members' AND TG_OP = 'INSERT'\n     AND COALESCE((to_jsonb(NEW) ->> 'chip_balance')::numeric, 0) = 0 THEN\n    RETURN NEW;\n  END IF;\n\n  IF public.fn_freeze_bypass_active() THEN\n    RETURN COALESCE(NEW, OLD);\n  END IF;\n\n  -- CHIP STANDARD (2026-09-05): A JOURNAL ROW IS THE RECORD OF A WRITE, NOT A\n  -- WRITE. When a balance write was permitted (a money table outside this\n  -- guard, or a permitted role), its chip_ledger leg is written by the\n  -- autoledger inside that same statement, at trigger depth 2 or more.\n  -- Refusing the leg while the write stands is the one outcome the standard\n  -- cannot allow: 104 BBJ bank moves (9.69 chips) lost their legs this way at :55 and\n  -- :00 up to 09-05 06:58 (ca_ledger_write_failures, sqlstate 55006), each one an unexplained movement on the BBJ meter. A direct\n  -- INSERT on chip_ledger from a client (depth 1) is still refused.\n  IF TG_TABLE_NAME = 'chip_ledger' AND pg_trigger_depth() > 1 THEN\n    RETURN COALESCE(NEW, OLD);\n  END IF;\n\n  BEGIN\n    v_claims := current_setting('request.jwt.claims', TRUE);\n    IF v_claims IS NOT NULL AND v_claims <> ''\n       AND (v_claims::jsonb ->> 'role') = 'service_role' THEN\n      RETURN COALESCE(NEW, OLD);\n    END IF;\n  EXCEPTION WHEN OTHERS THEN\n    NULL;\n  END;\n\n  IF public.fn_platform_frozen() THEN\n    RAISE EXCEPTION\n      'PLATFORM_FROZEN: the platform is on a scheduled maintenance break. % on % was refused; it will succeed when play resumes.',\n      TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55006',\n            HINT = 'Scheduled maintenance breaks run from :55 to :00. Nothing is lost - retry after the break.';\n  END IF;\n\n  RETURN COALESCE(NEW, OLD);\nEND;\n$function$\n",
+              "function_definition_md5": "3a866372172806a8a69cc3d37413f0cc"
+            }
+          ],
+          "force_rls": false,
+          "partition": false,
+          "constraints": [
+            {
+              "name": "chip_ledger_amount_check",
+              "type": "c",
+              "columns": [
+                9
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (amount > 0::numeric)",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chip_ledger_category_check",
+              "type": "c",
+              "columns": [
+                10
+              ],
+              "validated": false,
+              "deferrable": false,
+              "definition": "CHECK (category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'rake'::text, 'commission'::text, 'transfer'::text, 'player_funding'::text, 'agent_funding'::text, 'mint'::text, 'burn'::text, 'legacy_seed_reconcile'::text, 'rakeback'::text, 'settlement'::text, 'tournament_buyin'::text, 'tournament_prize'::text, 'bounty'::text, 'adjustment'::text, 'refund'::text, 'addon'::text, 'rebuy'::text, 'table_cashout'::text, 'tournament_refund'::text, 'bbj_contribution'::text, 'bbj_payout'::text, 'promo'::text, 'promo_release'::text, 'promo_send'::text, 'credit_draw'::text, 'credit_repayment'::text, 'insurance'::text, 'spin_entry'::text, 'spin_prize'::text, 'overlay'::text, 'correction'::text, 'reversal'::text, 'escrow_hold'::text, 'escrow_release'::text, 'treasury_transfer'::text, 'horse_funding'::text, 'fee'::text, 'eco'::text, 'pnl_settlement'::text, 'union_send'::text, 'cashier_send'::text, 'cashier_claim_back'::text, 'ticket_issue'::text, 'ticket_redeem'::text, 'club_opening_allocation'::text, 'leaderboard_payout'::text, 'club_bank_send'::text, 'club_bank_claim'::text, 'agent_send'::text, 'agent_claim'::text, 'union_settlement'::text, 'wheel_prize'::text, 'plinko_prize'::text, 'crash_prize'::text, 'crossing_prize'::text, 'mines_prize'::text])) NOT VALID",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chip_ledger_exact_scale",
+              "type": "c",
+              "columns": [
+                9
+              ],
+              "validated": false,
+              "deferrable": false,
+              "definition": "CHECK (amount = round(amount, 2)) NOT VALID",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chip_ledger_from_type_check",
+              "type": "c",
+              "columns": [
+                3
+              ],
+              "validated": false,
+              "deferrable": false,
+              "definition": "CHECK (from_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text])) NOT VALID",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chip_ledger_no_diamond_category_check",
+              "type": "c",
+              "columns": [
+                10
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (category !~* '^diamond'::text AND category !~* '_diamond'::text)",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chip_ledger_performed_by_fkey",
+              "type": "f",
+              "columns": [
+                2
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (performed_by) REFERENCES auth.users(id)",
+              "foreign_columns": [
+                2
+              ],
+              "initially_deferred": false,
+              "referenced_relation": "auth.users"
+            },
+            {
+              "name": "chip_ledger_pkey",
+              "type": "p",
+              "columns": [
+                1
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "PRIMARY KEY (id)",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chip_ledger_positive_amount",
+              "type": "c",
+              "columns": [
+                9
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (amount > 0::numeric)",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chip_ledger_status_check",
+              "type": "c",
+              "columns": [
+                30
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (status = ANY (ARRAY['posted'::text, 'correction'::text, 'reversal'::text]))",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chip_ledger_to_type_check",
+              "type": "c",
+              "columns": [
+                6
+              ],
+              "validated": false,
+              "deferrable": false,
+              "definition": "CHECK (to_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text])) NOT VALID",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chk_post_from_balance_is_two_decimal_places",
+              "type": "c",
+              "columns": [
+                27
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (post_from_balance IS NULL OR post_from_balance = round(post_from_balance, 2))",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chk_post_to_balance_is_two_decimal_places",
+              "type": "c",
+              "columns": [
+                29
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (post_to_balance IS NULL OR post_to_balance = round(post_to_balance, 2))",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chk_pre_from_balance_is_two_decimal_places",
+              "type": "c",
+              "columns": [
+                26
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (pre_from_balance IS NULL OR pre_from_balance = round(pre_from_balance, 2))",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "chk_pre_to_balance_is_two_decimal_places",
+              "type": "c",
+              "columns": [
+                28
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (pre_to_balance IS NULL OR pre_to_balance = round(pre_to_balance, 2))",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "ck_whole_cents",
+              "type": "c",
+              "columns": [
+                18,
+                9
+              ],
+              "validated": false,
+              "deferrable": false,
+              "definition": "CHECK (created_at < '2026-09-07 22:00:00+00'::timestamp with time zone OR amount = round(amount, 2)) NOT VALID",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "zz_ca_issuance_leg_is_registered",
+              "type": "t",
+              "columns": null,
+              "validated": true,
+              "deferrable": true,
+              "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+              "foreign_columns": null,
+              "initially_deferred": true,
+              "referenced_relation": null
+            }
+          ],
+          "inheritance": null,
+          "partition_key": null,
+          "partition_bound": null,
+          "replica_identity": "d",
+          "effective_privileges": {
+            "anon": {
+              "table": {
+                "DELETE": false,
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "TRIGGER": false,
+                "MAINTAIN": true,
+                "TRUNCATE": false,
+                "REFERENCES": false
+              },
+              "any_column": {
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "REFERENCES": false
+              }
+            },
+            "service_role": {
+              "table": {
+                "DELETE": true,
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "TRIGGER": true,
+                "MAINTAIN": true,
+                "TRUNCATE": true,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "REFERENCES": true
+              }
+            },
+            "authenticated": {
+              "table": {
+                "DELETE": false,
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "TRIGGER": false,
+                "MAINTAIN": true,
+                "TRUNCATE": false,
+                "REFERENCES": false
+              },
+              "any_column": {
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "REFERENCES": false
+              }
+            }
+          }
+        },
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "kind": "r",
+          "name": "chip_ledger_idem",
+          "owner": "postgres",
+          "schema": "public",
+          "columns": [
+            {
+              "acl": null,
+              "name": "idempotency_key",
+              "type": "text",
+              "default": null,
+              "ordinal": 1,
+              "identity": "",
+              "not_null": true,
+              "collation": "\"default\"",
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": false,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": false,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "leg_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 2,
+              "identity": "",
+              "not_null": true,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": false,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": false,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            },
+            {
+              "acl": null,
+              "name": "created_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "ordinal": 3,
+              "identity": "",
+              "not_null": true,
+              "collation": null,
+              "generated": "",
+              "effective_privileges": {
+                "anon": {
+                  "INSERT": false,
+                  "SELECT": false,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                },
+                "service_role": {
+                  "INSERT": true,
+                  "SELECT": true,
+                  "UPDATE": true,
+                  "REFERENCES": true
+                },
+                "authenticated": {
+                  "INSERT": false,
+                  "SELECT": false,
+                  "UPDATE": false,
+                  "REFERENCES": false
+                }
+              }
+            }
+          ],
+          "indexes": [
+            {
+              "kind": "i",
+              "live": true,
+              "name": "chip_ledger_idem_pkey",
+              "owner": "postgres",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": true,
+              "clustered": false,
+              "immediate": true,
+              "definition": "CREATE UNIQUE INDEX chip_ledger_idem_pkey ON public.chip_ledger_idem USING btree (idempotency_key)",
+              "replica_identity": false,
+              "nulls_not_distinct": false
+            }
+          ],
+          "options": null,
+          "policies": null,
+          "triggers": null,
+          "force_rls": false,
+          "partition": false,
+          "constraints": [
+            {
+              "name": "chip_ledger_idem_pkey",
+              "type": "p",
+              "columns": [
+                1
+              ],
+              "validated": true,
+              "deferrable": false,
+              "definition": "PRIMARY KEY (idempotency_key)",
+              "foreign_columns": null,
+              "initially_deferred": false,
+              "referenced_relation": null
+            }
+          ],
+          "inheritance": null,
+          "partition_key": null,
+          "partition_bound": null,
+          "replica_identity": "d",
+          "effective_privileges": {
+            "anon": {
+              "table": {
+                "DELETE": false,
+                "INSERT": false,
+                "SELECT": false,
+                "UPDATE": false,
+                "TRIGGER": false,
+                "MAINTAIN": false,
+                "TRUNCATE": false,
+                "REFERENCES": false
+              },
+              "any_column": {
+                "INSERT": false,
+                "SELECT": false,
+                "UPDATE": false,
+                "REFERENCES": false
+              }
+            },
+            "service_role": {
+              "table": {
+                "DELETE": true,
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "TRIGGER": true,
+                "MAINTAIN": true,
+                "TRUNCATE": true,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "REFERENCES": true
+              }
+            },
+            "authenticated": {
+              "table": {
+                "DELETE": false,
+                "INSERT": false,
+                "SELECT": false,
+                "UPDATE": false,
+                "TRIGGER": false,
+                "MAINTAIN": false,
+                "TRUNCATE": false,
+                "REFERENCES": false
+              },
+              "any_column": {
+                "INSERT": false,
+                "SELECT": false,
+                "UPDATE": false,
+                "REFERENCES": false
+              }
+            }
+          }
+        }
+      ],
+      "captured_at": "2026-09-15 13:50:02.90319+00",
+      "default_acl": [
+        {
+          "acl": [
+            "postgres=rwU/postgres",
+            "anon=rwU/postgres",
+            "authenticated=rwU/postgres",
+            "service_role=rwU/postgres"
+          ],
+          "owner": "postgres",
+          "schema": "public",
+          "object_type": "S"
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "anon=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "schema": "public",
+          "object_type": "f"
+        },
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=arwdxtm/postgres",
+            "authenticated=arwdxtm/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "owner": "postgres",
+          "schema": "public",
+          "object_type": "r"
+        },
+        {
+          "acl": [
+            "postgres=rwU/supabase_admin",
+            "anon=rwU/supabase_admin",
+            "authenticated=rwU/supabase_admin",
+            "service_role=rwU/supabase_admin"
+          ],
+          "owner": "supabase_admin",
+          "schema": "public",
+          "object_type": "S"
+        },
+        {
+          "acl": [
+            "postgres=X/supabase_admin",
+            "anon=X/supabase_admin",
+            "authenticated=X/supabase_admin",
+            "service_role=X/supabase_admin"
+          ],
+          "owner": "supabase_admin",
+          "schema": "public",
+          "object_type": "f"
+        },
+        {
+          "acl": [
+            "postgres=arwdDxtm/supabase_admin",
+            "anon=arwdDxtm/supabase_admin",
+            "authenticated=arwdDxtm/supabase_admin",
+            "service_role=arwdDxtm/supabase_admin"
+          ],
+          "owner": "supabase_admin",
+          "schema": "public",
+          "object_type": "r"
+        }
+      ],
+      "memberships": [
+        {
+          "set": true,
+          "role": "anon",
+          "admin": false,
+          "member": "authenticator",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "anon",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "anon",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "authenticated",
+          "admin": false,
+          "member": "authenticator",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "authenticated",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "authenticated",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "authenticator",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "authenticator",
+          "admin": false,
+          "member": "supabase_storage_admin",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "pg_create_subscription",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_monitor",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_monitor",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_monitor",
+          "admin": false,
+          "member": "supabase_etl_admin",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_monitor",
+          "admin": false,
+          "member": "supabase_read_only_user",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_data",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_data",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_data",
+          "admin": false,
+          "member": "supabase_etl_admin",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_data",
+          "admin": false,
+          "member": "supabase_read_only_user",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_settings",
+          "admin": false,
+          "member": "pg_monitor",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_stats",
+          "admin": false,
+          "member": "pg_monitor",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_signal_backend",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_stat_scan_tables",
+          "admin": false,
+          "member": "pg_monitor",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "postgres",
+          "admin": false,
+          "member": "cli_login_postgres",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "service_role",
+          "admin": false,
+          "member": "authenticator",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "service_role",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "service_role",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": false,
+          "role": "supabase_backup_admin",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "supabase_privileged_role",
+          "admin": false,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "supabase_privileged_role",
+          "admin": false,
+          "member": "supabase_etl_admin",
+          "grantor": "supabase_admin",
+          "inherit": true
+        }
+      ],
+      "lock_timeout": "2s",
+      "server_version": "17.6",
+      "statement_timeout": "10s",
+      "transaction_isolation": "repeatable read",
+      "transaction_read_only": "on"
+    }
+  }
+]
+

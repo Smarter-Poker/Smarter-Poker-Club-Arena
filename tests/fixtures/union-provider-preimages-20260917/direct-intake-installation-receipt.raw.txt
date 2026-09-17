@@ -1,0 +1,53 @@
+{
+  "status": "INSTALLED_EXACT_READBACK_VERIFIED_FINANCIAL_AND_DRIFT_NATURAL_EVENTS_VERIFIED",
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "migration": {
+    "version": "20260917062322",
+    "name": "direct_operational_source_intake"
+  },
+  "qualified_head": "4008d2020f95d411953f77f1fe07bdc2fed6d94c",
+  "qualified_run": 35189029570,
+  "qualified_job": 105097355508,
+  "artifact": 10483587240,
+  "source_packet_sha256": "7f7020ee71fe1bd6475dff8de572cd96e7cac888c3923245f7fbc54e8ff161dd",
+  "readback_at": "2026-09-17T06:23:35.198329+00:00",
+  "all_11_function_authorities_match": true,
+  "private_relations_and_policies_match": true,
+  "three_active_hooks_exact": true,
+  "shared_authority_exact": true,
+  "engine_recorder_full_md5": "3b97b07170b81947137ee2adfc268717",
+  "generic_recorder_full_md5": "36601e205494e8768f5a1dce09f4a186",
+  "native_proof": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/ca4722-direct-core-35189029570/independent-qualification-review.json",
+  "preflight": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-final-preflight-35189029570.json",
+  "installation": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-install-result-35189029570.json",
+  "readback": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-installed-readback-35189029570.json",
+  "ledger": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-installed-ledger-35189029570.json",
+  "writer_exclusion": {
+    "owner": "01a09b86-5ba8-7290-8657-1041f13dd3ca",
+    "acknowledgements": [
+      "01a09bc1-2920-7f53-9031-8ff2218382d4",
+      "01a09f8a-39f1-73f1-b98b-5a9229c55d39",
+      "01a09144-74e7-7ba0-9a51-e3059dbb8017",
+      "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+      "01a0a590-0652-7cd2-87c8-33cfd89c0b5a",
+      "01a09f5d-a7b4-74f0-91fd-119895d94ff1"
+    ],
+    "source": "Explicit replies in current task before final fresh preflight through independent readback; narrow named-object DDL only"
+  },
+  "business_or_synthetic_event_invoked": false,
+  "natural_event_verified": true,
+  "automatic_chat_activation": false,
+  "historical_incident_repaired": false,
+  "natural_financial_and_drift_verified": true,
+  "natural_engine_event_verified": false,
+  "natural_event_evidence": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-natural-arrival-20260917-0630.json",
+  "exact_hydration_evidence": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-natural-exact-hydration-20260917-0631.json",
+  "natural_snapshot_count_at_observation": 6,
+  "all_observed_snapshots_captured": true,
+  "exact_hydrated_event_ids": [
+    43470,
+    43471,
+    43472
+  ],
+  "oldest_incident_status_changed": false
+}

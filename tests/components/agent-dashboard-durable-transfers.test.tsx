@@ -28,12 +28,13 @@ vi.mock('../../src/services/WalletService', () => ({ WalletService: {} }));
 vi.mock('../../src/services/CreditService', () => ({
   CreditService: { setCreditLine: vi.fn(), lowerCreditLine: vi.fn() },
 }));
-vi.mock('../../src/services/CashoutService', () => ({ cashoutService: {}, newOpId: vi.fn() }));
+vi.mock('../../src/services/CashoutService', () => ({ cashoutService: {}, newOpId: vi.fn(), captureCashoutAccountGuard: () => () => true }));
 vi.mock('../../src/components/common/TransactionLedgerView', () => ({ default: () => null }));
 vi.mock('../../src/components/agent/AgentScoreCard', () => ({ default: () => null }));
 vi.mock('../../src/components/agent/AgentBackOffice', () => ({ default: () => null }));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
+    subscribe: () => () => {},
     emit: mocks.emit,
     subscribeDebounced: () => () => {},
     removeRegisteredChannel: vi.fn(),

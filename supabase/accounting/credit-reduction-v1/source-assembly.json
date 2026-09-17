@@ -1,0 +1,67 @@
+{
+  "status": "LITERAL_SOURCE_ASSEMBLY_ONLY_UNRUN",
+  "component_name": "20260915150000_credit_reductions_retain_exact_intent_and_private_records.sql",
+  "component_sha256": "d618181c0043a0608dc71b1e9671215ab388556a561c1c2e62c307dd272118be",
+  "component_bytes": 290252,
+  "header": "-- SOURCE ONLY / UNAPPLIED / UNRUN. Component37 after the preserved36.\n-- Exact accepted credit reductions extend the original credit writer and\n-- existing invoice/Messenger/notification authority. No chip payment is implied.\n-- Native loader, role, concurrency and compatible application checks required.\n-- Maintained fragments and exact assembly are bound in credit-reduction-v1.\nBEGIN;\nSET LOCAL lock_timeout='3s';\nSET LOCAL statement_timeout='300s';\nSELECT pg_advisory_xact_lock(hashtextextended('accounting-authority-install',0));\n",
+  "fragments": [
+    {
+      "name": "preimage-guards.sql",
+      "bytes": 70411,
+      "sha256": "b7b2155ee10bc0be34a854aeea9aa93674f22227437aaf6d2978012108741da7"
+    },
+    {
+      "name": "payment-closure-guards.sql",
+      "bytes": 12921,
+      "sha256": "2ef2dfb44517148d8595f40ebbcf838d1d83465e24dbb9173dc7fe0b9c953298"
+    },
+    {
+      "name": "lock-order-successor.sql",
+      "bytes": 74736,
+      "sha256": "28b141a4011a72d796e9f12bed2e11e1ceab91a68763e45219b903af00717b3d"
+    },
+    {
+      "name": "private-contract.sql",
+      "bytes": 8033,
+      "sha256": "8c96a69c9a96f69e10b17793f3972ae38e597b24795c63ce4811efc97d4c2607"
+    },
+    {
+      "name": "admin-writer-successor.sql",
+      "bytes": 11413,
+      "sha256": "d9c0a9864f061f951238783d153dab0b719b67e5b5a02078b0e10a3a1093cedb"
+    },
+    {
+      "name": "document-authority.sql",
+      "bytes": 19792,
+      "sha256": "7474d51fd28cd5bf4eb8aa2a985dcd7cf2ebfa30064cd99feab298456a397c47"
+    },
+    {
+      "name": "document-delivery-successor.sql",
+      "bytes": 29385,
+      "sha256": "c6dbc18e48e8e721fc9de307a4120af426c091aa146c977c25376c35c5a7b21a"
+    },
+    {
+      "name": "reader-successor.sql",
+      "bytes": 10466,
+      "sha256": "86edde0b6b0a8feb4ba01c560330c3bb843476d907fc8dd23ca3681e2ba50958"
+    },
+    {
+      "name": "server-functions.sql",
+      "bytes": 21950,
+      "sha256": "169d0223890d38c288e4db97e38993c5eb0a04bd1f1d6a3ce85da07377ff4035"
+    },
+    {
+      "name": "postcondition-guards.sql",
+      "bytes": 19114,
+      "sha256": "fe11e18fe27fdb0a4af76a6e1dad8a8c0d07cc3ffe30ddb1c61e6cec12de065c"
+    },
+    {
+      "name": "document-postconditions.sql",
+      "bytes": 11072,
+      "sha256": "c28b1246328d1c2a48824f3f1181167abf20a0039af72aa1ad8769b933d78575"
+    }
+  ],
+  "footer": "COMMIT;\n",
+  "preserved_components": 36,
+  "basis": "Reviewed core25 and private document/reader6 source fragments; no project builder, SQL or test executed. Exact final native qualification and user publication release remain required."
+}

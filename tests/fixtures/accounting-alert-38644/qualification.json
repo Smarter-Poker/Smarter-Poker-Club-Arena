@@ -1,0 +1,131 @@
+{
+  "format_version": 1,
+  "qualification": "CLOCK_REPAIR_SOURCE_REVIEW_PENDING_NATIVE",
+  "execution": "REVISED_FIXTURE_UNRUN_PREDECESSOR_FAILED_CLOCK_ADMISSION",
+  "financial_mutations_performed": false,
+  "fixture_disposition": "Existing isolated native fixture changes roll back; only the private coordinator clock dependency is temporarily substituted and its exact authority restored. No production migration or repair.",
+  "incident": 38644,
+  "period_id": "a8e2fed5-e15e-4622-aff6-3177c0b9a1c7",
+  "original_sources": 59,
+  "shark_beneficiary_credit": "79.89",
+  "dss_banked_rake": "160.00",
+  "dss_disputed_pending_rebate": "3.99",
+  "linked_unsettled_dss_commissions": {
+    "rows": 118,
+    "amount": "54.17",
+    "agent_users": 4
+  },
+  "authority_boundary": "Preserve SHARK attributed and funded seat scope, DSS bank receipts and all disputed liabilities. Recorded funding does not settle the historical payer/rate question.",
+  "period_hash_domains": {
+    "alert_reported_prosrc_md5": "0ebc3947f8b6090ff7228aa5093a69e9",
+    "definition_md5": "2078fb6e89f22704096974ecf933e385",
+    "earlier_definition_md5": "2078fb6e89f22704096974ecf933e385",
+    "captured_definitions_byte_identical": true
+  },
+  "new_financial_patch": "Forward earning-seat provenance reader correction only; no payout writer, bank transfer, historical rewrite or rate change.",
+  "remaining_source_policy_review": [
+    "Legacy all-clubs cron status/delegation review remains assigned to root/Messenger helper.",
+    "Future private source capture now preserves known seat scope or explicit unknown without changing its bank route. Historical cross-club entitlement, agreement and parallel liability disposition remains unresolved."
+  ],
+  "reviewed_source_sha256": {
+    "supabase/migrations/20260914132929_cash_rakeback_reads_observed_earning_evidence.sql": "7211e67bdcb1671f23dee89840a936021bba921d1ad5fae02d17877f8c8e9f37",
+    "supabase/accounting/weekly-v3/components/20260914131539_cash_commissions_account_for_every_contributor_once.sql": "8c6d1a19848f12d7dbe382db32cf50c9a2349efe8cb5b79c5997b0b18576a129",
+    "supabase/accounting/weekly-v3/components/20260914132216_cash_rakeback_periods_require_one_certified_week.sql": "4fadda5764b8d31d529856e6be444b9c2b8902ef87c9aebda6902a8cd6154091",
+    "supabase/accounting/weekly-v3/components/20260914141013_weekly_player_certificates_include_recognized_tournament_fees.sql": "373d0498d75c42887d70ca58e23cf0f3d5618ed33f5f434794cc792520cef7fc",
+    "supabase/accounting/weekly-v3/components/20260914144442_cash_accounting_refusals_are_durable_and_retryable.sql": "b4796c032b394ca2f3f4dfc759ea1e7991167a39b70aec007e20afbb1f3f2fb6",
+    "supabase/accounting/weekly-v3/components/20260914145000_legacy_claims_enter_only_automatic_weekly_accounting.sql": "7451fd5f9b9e66b22684a0b45cf706bf9ff316667c0b444dad3940fc70852f05",
+    "server/src/services/RakebackSettlerService.ts": "31a9394a6e86ba9f693f3f5f1e03d17d7013f258b9e4458c9a97e49e45b32507",
+    "server/src/services/HorseFleetManager.ts": "aab0fc1d31ccb769eb4db9f7322931f2fc892ec62e29ed3a995d80ccd6d00220",
+    "supabase/accounting/weekly-v3/components/20260914160000_private_cash_attribution_preserves_recorded_seat_scope.sql": "755b408b0a26fed68b6bd4f8e0fd89cb6f61de2cbeb3d816911a51e31e96e70a",
+    "supabase/accounting/weekly-v3/components/20260914142600_unions_and_standalone_clubs_share_one_weekly_run_journal.sql": "433c5fa4e530555acc0f961c3d4c20de14b8b08286133a9e57a98b64f4e07e98",
+    "supabase/accounting/weekly-v3/components/20260914152500_unresolved_cash_sources_prevent_weekly_close.sql": "28587dc311b2e2b9103109123683de9dfdeaadecff51916f5f76b45f94422afd",
+    "supabase/accounting/weekly-v3/components/20260914154500_weekly_scheduler_visits_every_accounting_scope_fairly.sql": "31c6ca0b171111200fbcd7e8963691ebf6e95bbbce4d147c1b77a70f33488cb9",
+    "supabase/accounting/weekly-v3/components/20260914162500_standalone_deadlines_follow_their_own_week.sql": "16aacce99cb9debaddc0ba98a9f9db9ff5ae97b7193fe8bba3409079c4082820"
+  },
+  "fixture_sha256": {
+    "regression.sql": "83b3a5b4f50e9fc0e877991d7573a6a5d2f87ecae4b60545a2557b526ab920a5",
+    "caller-source-evidence.json": "361724903b7d95010424d92c40a09e21f216ecca21c4bab8c74407f8b3a0dc86",
+    "README.md": "e2a82ec53562ce1ccb691751a5fa9006df80f44de4e1cd889bb578bbf4dc4c69",
+    "source-evidence.json": "9e4370895e29b35b0ba2b635daad73e8031091813e230bb6a7a95b08d8cde0ed",
+    "coordinator-retry.sql": "55379b922edf42a3b3a46c98b1caa65b182bbf1654db7b922c4c22196b3531eb"
+  },
+  "pending_execution": {
+    "profile": "accounting full native disposable database after complete weekly candidate",
+    "entry_file": "tests/fixtures/accounting-alert-38644/regression.sql",
+    "requirements": [
+      "Protected pipeline installed and execution identity approved",
+      "Exact pinned baseline, component manifest and this fixture digest admitted",
+      "Original runtime trigger states restored before functions execute",
+      "Retained logs, cleanup receipt and check intake",
+      "No paid/live outcome inferred from local result",
+      "Run before PNL hook seed; no unrelated weekly work in public dispatcher",
+      "Deterministic isolated fixture clock; minute45 refusal and due09:20 four-call assertions must pass; no wall-clock waiting",
+      "Admit four real public service-role calls and complete source/money/function preservation snapshots"
+    ]
+  },
+  "receipt_regression": "First59 and second59 source attempts must bind returned hand_id/rake_record_id to original raw identities and exact durable receipt/work identities, fingerprints, results and attempts. JSON predicates require IS TRUE. All59 first-attempt full receipt rows are snapshotted as canonical JSON text and compared in both directions after retry. Retry independently requires unknown scope and complete scope equality with the first outcome.",
+  "coordinator_retry_successor": {
+    "source_base": "3663c03e23a2e11ea6b60caba0590fe2c8a00b24",
+    "received_originals": [40643, 40644],
+    "financial_original": "edc4602d-2015-474e-9ca6-852ac4ad1610",
+    "drift_parent": 38644,
+    "entry_file": "tests/fixtures/accounting-alert-38644/regression.sql",
+    "included_file": "tests/fixtures/accounting-alert-38644/coordinator-retry.sql",
+    "execution": "UNRUN_PENDING_PROTECTED_EXECUTION",
+    "runtime_component_changes": false,
+    "original_evidence_changes": false,
+    "coordinator": "actual public fn_process_weekly_accounting(NULL) under actual service_role; assertions as owner",
+    "clock": "Existing native scheduler test seam: only private coordinator clock_timestamp() calls are replaced with pg_temp.alert38644_clock(); fixed2026-09-14T09:20Z, exact minute45 negative first; actual maintenance authority remains unchanged; exact original definition/owner/ACL/security restored and compared before rollback.",
+    "runner_order": "after lifecycle probes and before independent PNL hook seed",
+    "expected_cases": [
+      {
+        "call": 1,
+        "sources": 59,
+        "run_attempts": 1,
+        "financial_originals": 1,
+        "condition": "original exact59-source historical refusal"
+      },
+      {
+        "call": 2,
+        "sources": 59,
+        "run_attempts": 2,
+        "financial_originals": 1,
+        "condition": "only fixture DSS treasury +1.00; identical failure and full first alert row/UUID"
+      },
+      {
+        "call": 3,
+        "sources": 60,
+        "run_attempts": 3,
+        "financial_originals": 2,
+        "condition": "one new explicitly synthetic malformed source with real durable refusal; distinct failure and second alert UUID, first full row preserved"
+      },
+      {
+        "call": 4,
+        "sources": 60,
+        "run_attempts": 4,
+        "financial_originals": 2,
+        "condition": "unchanged refusal replay preserves both complete alert rows/UUIDs"
+      }
+    ],
+    "synthetic_source_id": "38644000-0000-4000-8000-000000000001",
+    "synthetic_source_boundary": "null hand identity, no historic attribution/contract/bank certification; actual source processor must record cash_source_identity_or_amount_invalid",
+    "preservation": "all original evidence, source/refusal histories, attributions,118 commissions,3.99 period,memberships,ledger/wallet/payment/invoice records and public/auth function authority",
+    "identity_boundary": "normalized coordinator failure and financial-original UUID; no drift-incident aggregation or new drift UUID claim",
+    "qualification_boundary": "Repaired source only, native execution pending; predecessor native log proves original historical assertions passed then wall-clock admission failed before coordinator calls. No production financial or alert write."
+  },
+  "coordinator_clock_repair": {
+    "base_commit": "a3748f43a87a5068218bc0cefbaa502874e05684",
+    "failed_run": "35191433745",
+    "failed_job": "105105322906",
+    "failure_at": "2026-09-17T06:56:03.2979506Z",
+    "failure": "minute56 cannot satisfy former explicit minute<40 preflight; no coordinator call executed",
+    "log_sha256": "e7398b7abb510e37d530d6448393d8a21d9bbd7a64d7a708547a8abe166263b2",
+    "pattern_sources": [
+      "tests/fixtures/unified-weekly-accounting/controls.sql",
+      "tests/fixtures/weekly-accounting-coordinator/regression.sql"
+    ],
+    "runtime_changes": false,
+    "runner_changes": false,
+    "new_clock_fixture_execution": "UNRUN"
+  }
+}

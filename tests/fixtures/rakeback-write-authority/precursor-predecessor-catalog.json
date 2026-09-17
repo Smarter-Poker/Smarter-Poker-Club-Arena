@@ -1,0 +1,113 @@
+{
+  "source_path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-provider-preflight-20260917/03-guarded-function-metadata.json",
+  "source_sha256": "e1c1e8f2033c8ddcec8fdee136672795aea5327f152e341f5e2d5fe819995c51",
+  "captured_at": "2026-09-17T05:17:32.432201+00:00",
+  "transaction_read_only": "on",
+  "selection": "Exact objects for the preactivation canonical-only engine request; no new query or omitted-field transformation.",
+  "functions": [
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "result": "void",
+      "strict": false,
+      "language": "plpgsql",
+      "parallel": "u",
+      "arguments": "p_agent_user_id uuid, p_club_id uuid, p_rake_credit numeric, p_source_type text DEFAULT 'rake_settlement'::text, p_source_id uuid DEFAULT NULL::uuid, p_notes text DEFAULT NULL::text",
+      "leakproof": false,
+      "signature": "public.credit_agent_commission_from_rake(uuid, uuid, numeric, text, uuid, text)",
+      "source_md5": "1583ac138b7687091e7c5a049f0639e9",
+      "volatility": "v",
+      "security_definer": false,
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": false
+      },
+      "full_definition_md5": "2fb58bacd784fb6da12a9ac01443454c"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public", "statement_timeout=300s"],
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "result": "jsonb",
+      "strict": false,
+      "language": "plpgsql",
+      "parallel": "u",
+      "arguments": "p_items jsonb",
+      "leakproof": false,
+      "signature": "public.fn_credit_agent_commissions_batch(jsonb)",
+      "source_md5": "19a0175361a2d68bc15b0d4b22c28b85",
+      "volatility": "v",
+      "security_definer": true,
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": false
+      },
+      "full_definition_md5": "0649a58a4a82bcc1f4835abf63093b43"
+    },
+    {
+      "acl": ["authenticated=X/postgres", "postgres=X/postgres", "service_role=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "grants": [
+        {
+          "role": "authenticated",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "result": "uuid",
+      "strict": false,
+      "language": "plpgsql",
+      "parallel": "u",
+      "arguments": "p_user_id uuid, p_club_hint uuid DEFAULT NULL::uuid, p_table_id uuid DEFAULT NULL::uuid",
+      "leakproof": false,
+      "signature": "public.fn_resolve_player_club_for_agent(uuid, uuid, uuid)",
+      "source_md5": "a05131eb6fff1c2438cb7d24eb2eac1b",
+      "volatility": "s",
+      "security_definer": true,
+      "effective_execute": {
+        "anon": false,
+        "service_role": true,
+        "authenticated": true
+      },
+      "full_definition_md5": "f4e1c9f1b27febee47cb3fc1804ef909"
+    }
+  ]
+}

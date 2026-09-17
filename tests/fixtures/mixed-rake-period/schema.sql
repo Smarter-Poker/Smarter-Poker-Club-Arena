@@ -1,0 +1,11 @@
+ALTER TABLE rake_records ADD COLUMN source text;
+CREATE TABLE accounting_tournament_fee_batches(rake_record_id uuid PRIMARY KEY,tournament_id uuid,source_fingerprint text,status text,rake_amount numeric);
+CREATE TABLE accounting_tournament_fee_sources(id uuid PRIMARY KEY,rake_record_id uuid,tournament_id uuid,player_id uuid,club_id uuid,union_id uuid,coordinator_union_id uuid,charged_at timestamptz,rake_credit numeric,contract jsonb);
+CREATE TABLE accounting_tournament_fee_recognitions(tournament_id uuid PRIMARY KEY,recognized_at timestamptz,status text,net_rake numeric,union_id uuid,bank_club_id uuid,source_fingerprint text,plan jsonb);
+CREATE TABLE accounting_tournament_recognized_sources(source_id uuid PRIMARY KEY,tournament_id uuid,recognized_at timestamptz,disposition text,rake_credit numeric);
+CREATE TABLE tournament_rake_settlements(tournament_id uuid PRIMARY KEY,club_id uuid,union_id uuid,amount numeric,settled_at timestamptz);
+CREATE TABLE tournament_terminal_settlements(tournament_id uuid PRIMARY KEY,settled_at timestamptz,completed_at timestamptz);
+CREATE TABLE tournament_cancellation_receipts(tournament_id uuid PRIMARY KEY,settled_at timestamptz,fee_reversal_ids uuid[],total_rake_after numeric,fees_reversed numeric,total_rake_before numeric);
+CREATE TABLE tournament_satellite_settlements(tournament_id uuid PRIMARY KEY,settled_at timestamptz);
+CREATE TABLE tournament_refund_entitlements(tournament_id uuid,refund_wallet_club_id uuid);
+CREATE TABLE tournament_unregistration_receipts(tournament_id uuid,user_id uuid,fee_reversal_ids uuid[],fee_source_rake_record_ids uuid[]);

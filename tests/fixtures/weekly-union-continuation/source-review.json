@@ -1,0 +1,14 @@
+{
+  "status": "SOURCE_REVIEW_ONLY_UNRUN",
+  "implementation_sha256": "f9b787f5333bd1d60ff77cb8a2c7378cfcd04316519af7936d8d980087662a80",
+  "reviewed_pre_relocation_files": {
+    "load.sql": "e1bc4ad1867bb1f7b0a79063e4c87d07feb2be3b6c947001a5c19febeaa1cc8b",
+    "regression.sql": "06edf7201d4abe591b4ad0e01c7653e76c9c08030a1b5767d17f08c26d8f4ad5",
+    "README.md": "268bdf5a25b7975d05e13eed41ae893f445b51b85a340aa126fc6c2a2be1562e"
+  },
+  "integration_changes": "Loader points at single canonical component; README updated for new location. No source execution.",
+  "findings_fixed": [
+    "NULL receipt predicate cannot be ignored by bool_and",
+    "Exact replay financial and run rows retained except visitation"
+  ]
+}

@@ -1,0 +1,282 @@
+{
+  "status": "SOURCE_ONLY_UNRUN",
+  "base_commit": "aedb5cc9dae3120f4c08bc719c4726cf55d74db2",
+  "component": "supabase/accounting/weekly-v3/components/20260915140000_correction_writer_retains_exact_request_and_journal_intent.sql",
+  "owner_source_root": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration/supabase/accounting/correction-writer-successor-0129",
+  "owner_successor_sha256": "6200b53066002ccf11640baf9c39e6e296a9577ad30106225c67290f8d88ed7b",
+  "owner_private_sha256": "69d5778c84a084062b46f28e31f84b22231a9fe7599c01dcfcaf278d7f42f693",
+  "owner_fixture_sha256": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9",
+  "ledger_capture": {
+    "captured_at": "2026-09-15T13:50:02.90319Z",
+    "project_id": "kuklfnapbkmacvwxktbh",
+    "method": "protected metadata adapter; REPEATABLE READ READ ONLY; statement_timeout 10s; lock_timeout 2s; final ROLLBACK; no financial rows or function invocations",
+    "raw_receipt_path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/accounting-correction-writer-ledger-catalog-continued.raw.json",
+    "raw_sha256": "1f25fd1dd9eff866bdc203117bb02071ed43d13715667e2464e76395a4c94a48"
+  },
+  "references": [
+    {
+      "path": "tests/fixtures/full-weekly-accounting/functions.json",
+      "sha256": "dac3a639372ca1b6e8d5793d01c4c02b17d541dddeb93cea0423cd77ca664311"
+    },
+    {
+      "path": "tests/fixtures/full-weekly-accounting/function-access.json",
+      "sha256": "6a06697a9d6e04479803d11170419ccb7ffad3323d828efcf01422525b796f5c"
+    },
+    {
+      "path": "tests/fixtures/correction-document-authority/captured-dependencies.json",
+      "sha256": "a3f2ca823f8d17df8429aed4973a8258595b6ed4e5a2da8585dddac78795e3f5"
+    },
+    {
+      "path": "tests/fixtures/correction-document-authority/captured-references.json",
+      "sha256": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479"
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914135530_tournament_fees_share_one_recorded_earning_authority.sql",
+      "sha256": "c8ddbbe689086ef955ae72b7023632d1eb440435edb717f8ce0f8698e3a20aa6"
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914164800_correction_documents_preserve_journal_and_payment_meaning.sql",
+      "sha256": "5fbe6a279e68041cdd007636763ae9e51e8b1b5f4e704dba95a1d84dffcb5286"
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914164900_browser_period_controls_retire_to_scoped_observation.sql",
+      "sha256": "cb7ad768cf21d84cf09384e305b396d8e02c9d140bf26ffed7ac9db7ffba1c43"
+    },
+    {
+      "path": "tests/fixtures/correction-writer-authority/catalog-bootstrap.sql",
+      "sha256": "2f1298bf724f86c8fa5a3401c1f0cb878f52e19dfdd401ceeb212cd32b600167",
+      "ownership": "earning_attribution; fixture only;13 ledger plus5 incident indexes,7 options,6 defaults"
+    }
+  ],
+  "copied_or_derived_files": [
+    {
+      "path": "supabase/accounting/correction-writer-v1/captured-ledger-catalog.json",
+      "sha256": "c10ee920625aa982d9af361094dbc93e29075bc6162e091747dd1825c116bba8",
+      "bytes": 152789
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/captured-ledger-catalog.query.sql",
+      "sha256": "94eb5d4abf7e65c66e1f05ed142316e0ceb8e729dce0b75ff73013c0c6d1b42e",
+      "bytes": 5707
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+      "sha256": "a828a6f6aba778138b27e4190bf444097779759ddadac355dffb3c7981e75f54",
+      "bytes": 38669
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/guard-relation-sources.json",
+      "sha256": "2cdd5bc4fbf0475860e0325f59a6a12dd071e4d1af37ebe6bf5922a0b991ac04",
+      "bytes": 124627
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/owner-README.md",
+      "sha256": "9fadbeb75120b5e3ba2cc604bf02ac66b4444905ec11219a1636bd16ae75e83c",
+      "bytes": 9268
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/owner-SOURCE-CUSTODY.json",
+      "sha256": "1d7e5e5ff07522ca9b67ed6238772a6a25fdfb52297e6693d52516ba2dd0d666",
+      "bytes": 2303
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/owner-fixture.sql",
+      "sha256": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9",
+      "bytes": 11184
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/owner-predecessor.sql",
+      "sha256": "e4ab59d45e4cdcadd086ab123c5aa14677f635ead5bf2a0acd38e52cc53633d5",
+      "bytes": 3666
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/owner-private-intent.sql",
+      "sha256": "69d5778c84a084062b46f28e31f84b22231a9fe7599c01dcfcaf278d7f42f693",
+      "bytes": 1691
+    },
+    {
+      "path": "supabase/accounting/correction-writer-v1/owner-successor-definition.sql",
+      "sha256": "6200b53066002ccf11640baf9c39e6e296a9577ad30106225c67290f8d88ed7b",
+      "bytes": 9376
+    }
+  ],
+  "preserved_component_count": 35,
+  "preserved_components": [
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914131539_cash_commissions_account_for_every_contributor_once.sql",
+      "sha256": "8c6d1a19848f12d7dbe382db32cf50c9a2349efe8cb5b79c5997b0b18576a129",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914132216_cash_rakeback_periods_require_one_certified_week.sql",
+      "sha256": "4fadda5764b8d31d529856e6be444b9c2b8902ef87c9aebda6902a8cd6154091",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914132449_rakeback_follows_recorded_hierarchy_in_one_funded_transaction.sql",
+      "sha256": "cbf51b0276f365cc201943c9059c7bafeb414e27d915b1b979d5373d9a150a95",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914133404_routed_invoice_roles_follow_the_recorded_payment.sql",
+      "sha256": "25f54193a5289c89fe1edcb9eb70bfe8ea25600510b159def933ce27150cb68b",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914135008_standalone_clubs_use_the_same_atomic_routed_stages.sql",
+      "sha256": "67fa42f3813b0ab87087b180c57a6157df34d9e47d098e7f2b848158a5241f27",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914135530_tournament_fees_share_one_recorded_earning_authority.sql",
+      "sha256": "c8ddbbe689086ef955ae72b7023632d1eb440435edb717f8ce0f8698e3a20aa6",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914140015_recognized_cash_and_tournament_sources_share_one_payment_route.sql",
+      "sha256": "67ef2df020d058cdc9995be72de79a81b4c7c3e3b43851d9fc5d1228b1d575ca",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914141013_weekly_player_certificates_include_recognized_tournament_fees.sql",
+      "sha256": "373d0498d75c42887d70ca58e23cf0f3d5618ed33f5f434794cc792520cef7fc",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914141800_union_close_matches_recorded_earnings_to_every_bank_credit.sql",
+      "sha256": "1202e0311dfc513f75fee95f5794fd095106cd57e7aa07aee5f1f17dc7148f0a",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914142256_weekly_statements_follow_recorded_union_and_standalone_books.sql",
+      "sha256": "2cda1ff48e005a667430618e39d76e1ff693222558be9b09414c87261ad42d26",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914142600_unions_and_standalone_clubs_share_one_weekly_run_journal.sql",
+      "sha256": "433c5fa4e530555acc0f961c3d4c20de14b8b08286133a9e57a98b64f4e07e98",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914143500_weekly_conservation_requires_recorded_scope_and_payment_receipts.sql",
+      "sha256": "38f18f4101a38abf8a5beecb6ee7aef4d4ec58138c7ed6f74e98d1d30a7a0a00",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914144442_cash_accounting_refusals_are_durable_and_retryable.sql",
+      "sha256": "b4796c032b394ca2f3f4dfc759ea1e7991167a39b70aec007e20afbb1f3f2fb6",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914145000_legacy_claims_enter_only_automatic_weekly_accounting.sql",
+      "sha256": "7451fd5f9b9e66b22684a0b45cf706bf9ff316667c0b444dad3940fc70852f05",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914145706_cash_compatibility_calls_share_durable_source_authority.sql",
+      "sha256": "a9fac16453f2209501374267c30d97880b18368ffd3e94530519c1fd0331a834",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914150500_agent_agreements_preserve_club_scope_and_atomic_role_changes.sql",
+      "sha256": "60405d9f4403d2b4f3856e43b8578799ab32fe5b9d061d0b2026a6534fa7b721",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql",
+      "sha256": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914152500_unresolved_cash_sources_prevent_weekly_close.sql",
+      "sha256": "28587dc311b2e2b9103109123683de9dfdeaadecff51916f5f76b45f94422afd",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql",
+      "sha256": "fee956e82c409682b30ea72c48b0759754ceca3574c28a78901531a2c51cf265",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914154500_weekly_scheduler_visits_every_accounting_scope_fairly.sql",
+      "sha256": "31c6ca0b171111200fbcd7e8963691ebf6e95bbbce4d147c1b77a70f33488cb9",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914155450_captured_cron_enters_the_sealed_accounting_transition.sql",
+      "sha256": "252ee33d1b3aac2990732f9651ab8b2f62ce0c257534c5153125ca05473cd8f0",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914155500_legacy_recompute_uses_the_single_weekly_coordinator.sql",
+      "sha256": "b3a9cd5676cf8b66c8d63b301d52ec93f35e480e37002f407a4e7bcd6bd4fe5f",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914160000_private_cash_attribution_preserves_recorded_seat_scope.sql",
+      "sha256": "755b408b0a26fed68b6bd4f8e0fd89cb6f61de2cbeb3d816911a51e31e96e70a",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914161000_pending_rakeback_writes_require_accounting_authority.sql",
+      "sha256": "d898243f5ed9e39761379ae0de3e6b8d6eb941f0fc85d4ae73fdb3cb554e3251",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914161500_rakeback_history_is_private_to_its_payee.sql",
+      "sha256": "d27af54b50e6e601471b1f6160b32959de2016172980ce34eb5e0f0636ae74ef",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914162000_no_floor_union_completion_preserves_contiguous_work.sql",
+      "sha256": "f9b787f5333bd1d60ff77cb8a2c7378cfcd04316519af7936d8d980087662a80",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914162500_standalone_deadlines_follow_their_own_week.sql",
+      "sha256": "16aacce99cb9debaddc0ba98a9f9db9ff5ae97b7193fe8bba3409079c4082820",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914163000_canonical_cron_wakes_on_the_hour.sql",
+      "sha256": "9a596b7b80b22f019bfae4e41f0e3869e3fa020cdd84b6dd0a309f36015ac1f1",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914163500_messenger_readers_preserve_private_invoices_and_weekly_summaries.sql",
+      "sha256": "e03a8da161a3010ba2c12dd02b89af08463a65b18e8daa3d1829eba2e94ca4b5",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914164000_push_enrollment_changes_endpoint_ownership_atomically.sql",
+      "sha256": "9f43810dfedadcd5819b51886243aad8ee6a825b96afc6aace3e37bb16d9f020",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914164500_push_rotation_preserves_current_subscription_ownership.sql",
+      "sha256": "737c18ee52a5ec3952ccead18f09c087390089be18c5b5a5b07713b3949f198b",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914164600_credit_request_reviews_share_one_credit_authority.sql",
+      "sha256": "d36e6bb79f404d51fd013768b00e31605dca4334a58e6b5bf0a37ba347d9e92d",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914164700_cashier_cashout_documents_share_the_existing_invoice_authority.sql",
+      "sha256": "64a1f64f79d7ac0cebac59b1788dafb7d88ac704a98e6c0366d7211deb8952f5",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914164800_correction_documents_preserve_journal_and_payment_meaning.sql",
+      "sha256": "5fbe6a279e68041cdd007636763ae9e51e8b1b5f4e704dba95a1d84dffcb5286",
+      "matches_explicit_base": true
+    },
+    {
+      "path": "supabase/accounting/weekly-v3/components/20260914164900_browser_period_controls_retire_to_scoped_observation.sql",
+      "sha256": "cb7ad768cf21d84cf09384e305b396d8e02c9d140bf26ffed7ac9db7ffba1c43",
+      "matches_explicit_base": true
+    }
+  ],
+  "boundary": "Source metadata pins are not installed hashes. Source-derived final35 function bodies are marked separately from retained pg_get_functiondef hashes. No execution, deployment, payment, provider delivery or program-completion claim."
+}

@@ -1,0 +1,575 @@
+{
+  "kind": "PRODUCTION_METADATA_ONLY_FIXTURE_SUPPLEMENT",
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "capture_dates": {
+    "core": "2026-09-17T05:18:36.750981+00:00",
+    "owner_dependencies": "2026-09-17T05:22:33.66194+00:00",
+    "owner_closure": "2026-09-17T05:23:18.020664+00:00",
+    "sequence_exact_text": "2026-09-17 05:23:50.073481+00"
+  },
+  "alerts_functions": [
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "signature": "public.fn_ca_financial_alert_to_incident()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_financial_alert_to_incident()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_dedupe text;\n  v_echo_id uuid;\n  v_severity text;\n  v_shape text;\nBEGIN\n  IF NEW.severity <> 'critical' THEN RETURN NEW; END IF;\n  IF NEW.source LIKE 'drift_incident:%' THEN RETURN NEW; END IF;\n\n  /* A REFUSED HAND IS A RATE, NOT AN INCIDENT (2026-09-09). */\n  IF NEW.source = 'ServerTableEngine.authoritative_hand_semantic_refusal'\n     OR COALESCE(NEW.context->>'error', '') LIKE '%authoritative_hand_semantic_refusal%' THEN\n    RETURN NEW;\n  END IF;\n\n  /* A HANDOFF THAT NAMES ITS SUCCESSOR IS NOT AN INCIDENT (2026-09-10). */\n  IF NEW.source = 'ServerTableEngine.post_commit_obligations_pending' THEN\n    RETURN NEW;\n  END IF;\n\n  /* ONE CAUSE IS ONE INCIDENT (2026-09-09). The key is the SHAPE of the\n     finding, not its instance. */\n  v_shape := public.fn_ca_normalize_alert_text(left(NEW.message, 200))\n             || '|' ||\n             public.fn_ca_normalize_alert_text(left(COALESCE(NEW.context->>'error', ''), 200));\n\n  v_dedupe := CASE\n      -- A failed leave can strand this table/hand's stack obligation. Keep its\n      -- exact entity; normalizing hand numbers must not merge another leave.\n      WHEN NEW.source = 'postHandTasks.leave_pending_failed'\n        THEN 'fa:postHandTasks.leave_pending_failed:'\n          || CASE\n              WHEN jsonb_typeof(NEW.context->'table_id') = 'string'\n               AND (NEW.context->>'table_id') ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n               AND jsonb_typeof(NEW.context->'hand_number') = 'number'\n               AND (NEW.context->>'hand_number') ~ '^[1-9][0-9]*$'\n               AND (length(NEW.context->>'hand_number') < 19\n                    OR (length(NEW.context->>'hand_number') = 19\n                        AND (NEW.context->>'hand_number') COLLATE \"C\" <= '9223372036854775807'))\n              THEN 'table:' || (NEW.context->>'table_id')::uuid::text\n                   || ':hand:' || (NEW.context->>'hand_number')\n              ELSE 'alert:' || NEW.id::text\n             END\n          || ':' || md5(v_shape)\n      -- A terminal refusal belongs to one tournament. Normalizing the error\n      -- removes its UUID; shape-only folding then mixes different events.\n      -- Without an entity, retain the original alert as its own unknown.\n      WHEN NEW.source = 'Tournament.atomic_finish_refused'\n        THEN 'fa:Tournament.atomic_finish_refused:'\n          || COALESCE(NULLIF(lower(NEW.context->>'tournament_id'), ''),\n                      'alert:' || NEW.id::text)\n          || ':' || md5(v_shape)\n      WHEN NEW.source ~* 'prize_credit_failed' AND NULLIF(NEW.context->>'tournament_id','') IS NOT NULL\n        THEN 'fa:prize_credit_failed:' || (NEW.context->>'tournament_id')\n      ELSE 'fa:' || NEW.source || ':' || md5(v_shape) END;\n\n  SELECT i.id INTO v_echo_id FROM public.ca_drift_incidents i\n   WHERE i.dedupe_key = v_dedupe AND i.status = 'resolved'\n     AND i.resolved_at > now() - interval '48 hours'\n     AND i.suspected_cause = left(NEW.message, 300)\n   ORDER BY i.resolved_at DESC LIMIT 1;\n  IF v_echo_id IS NOT NULL THEN\n    UPDATE public.ca_drift_incidents SET occurrences = occurrences + 1 WHERE id = v_echo_id;\n    INSERT INTO public.ca_incident_events (incident_id, at, kind, actor_label, detail)\n    VALUES (v_echo_id, now(), 'comment', 'system',\n            jsonb_build_object('note', 'Byte-identical echo of this resolved incident re-reported by '\n              || NEW.source || '; folded without re-paging (alert ' || NEW.id || ').'));\n    RETURN NEW;\n  END IF;\n\n  /* A DRIFT INCIDENT IS CRITICAL WHEN CHIPS ARE AT STAKE (2026-09-10). */\n  v_severity := CASE\n      WHEN NEW.source ~* 'conservation' THEN 'info'\n      /* THE ENGINE ALREADY DECIDED THIS ONE (2026-09-12, incident bf4ef6e0).\n         ServerTableEngineSettlement.runStep raises a financial alert ONLY when\n         its moneyCritical argument is true, so every postHandTasks.* row here\n         is already filtered to \"this moves chips\" - the five steps that move\n         none (promo_playthrough, horse_rebuys, chip_continuity, horse_cashouts,\n         deferred_sitouts) never arrive. Re-deciding it in SQL downgraded all of\n         them, on two broken tests: a source-name scan for money words, which\n         'leave_pending' fails while returning a player's whole stack to their\n         wallet; and COALESCE(discrepancy, amount, 0) = 0 as proof of zero, when\n         runStep writes neither key - 0 of 1,551 alerts in seven days carry one,\n         so the test was unconditionally true and this branch could only ever\n         return info. And info is not a colour: fn_ca_raise_drift_incident opens\n         with IF p_severity = 'info' THEN NULL, so six failures across six\n         tables paged nobody. When the engine asserts moves_chips in the\n         context, that fact decides; absent, critical, because absent must fail\n         toward being seen. Compared as text rather than cast to boolean on\n         purpose: this trigger ends in EXCEPTION WHEN OTHERS ... RETURN NEW, so\n         a bad cast would silently stop creating incidents rather than raise. */\n      WHEN NEW.source LIKE 'postHandTasks.%'\n        THEN CASE WHEN lower(COALESCE(NEW.context->>'moves_chips','true')) IN ('false','f','0')\n                  THEN 'info' ELSE 'critical' END\n      WHEN NEW.source LIKE 'ServerTableEngine.%'\n           AND NOT (NEW.source ~* 'prize|payout|bounty|rake|treasury|guarantee|insurance|bbj|rakeback')\n           AND COALESCE(NULLIF(NEW.context->>'discrepancy','')::numeric,\n                        NULLIF(NEW.context->>'amount','')::numeric, 0) = 0\n        THEN 'info'\n      WHEN NEW.source ~* 'prize_credit_failed'\n           AND NULLIF(NEW.context->>'user_id','') IS NOT NULL\n           AND public.fn_ca_is_cert_account((NEW.context->>'user_id')::uuid) THEN 'info'\n      ELSE 'critical' END;\n\n  PERFORM public.fn_ca_raise_drift_incident(\n    p_source         => 'financial_alerts:' || NEW.source,\n    p_classification => CASE\n        WHEN NEW.source ~* 'rake'                   THEN 'incorrect_rake'\n        WHEN NEW.source ~* 'bbj'                    THEN 'bbj_error'\n        WHEN NEW.source ~* 'rakeback'               THEN 'incorrect_rakeback'\n        WHEN NEW.source ~* 'treasury|guarantee'     THEN 'treasury_error'\n        WHEN NEW.source ~* 'payout|prize|bounty'    THEN 'settlement_error'\n        WHEN NEW.source ~* 'insurance'              THEN 'settlement_error'\n        WHEN NEW.source ~* 'conservation'           THEN 'ledger_imbalance'\n        ELSE 'unknown' END,\n    p_severity       => v_severity,\n    p_dedupe_key     => v_dedupe,\n    p_discrepancy    => COALESCE(NULLIF(NEW.context->>'discrepancy','')::numeric,\n                                 NULLIF(NEW.context->>'amount','')::numeric, 0),\n    p_layer          => 'ledger',\n    p_club_id        => NULLIF(NEW.context->>'club_id','')::uuid,\n    p_tournament_id  => NULLIF(NEW.context->>'tournament_id','')::uuid,\n    p_table_id       => CASE WHEN NEW.source = 'postHandTasks.leave_pending_failed'\n                            THEN CASE WHEN jsonb_typeof(NEW.context->'table_id') = 'string'\n                                       AND (NEW.context->>'table_id') ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n                                      THEN (NEW.context->>'table_id')::uuid\n                                      ELSE NULL::uuid END\n                            ELSE NULLIF(NEW.context->>'table_id','')::uuid END,\n    p_suspected_cause => left(NEW.message, 300),\n    p_metadata       => COALESCE(NEW.context,'{}'::jsonb) ||\n                        jsonb_build_object('alert_id', NEW.id));\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'fn_ca_financial_alert_to_incident failed: %', SQLERRM;\n  RETURN NEW;\nEND $function$\n",
+      "source_md5": "0a4d20fe06d675a9150e9edc9e1acb1c",
+      "definition_md5": "00a43ae03ab12cec9505e2bfed71d937"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "signature": "public.fn_ca_raise_drift_incident(text, text, text, text, numeric, numeric, numeric, text, text, uuid, uuid, uuid, uuid, uuid, uuid, text, uuid[], uuid[], text, boolean, jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_raise_drift_incident(p_source text, p_classification text, p_severity text, p_dedupe_key text, p_discrepancy numeric DEFAULT NULL::numeric, p_expected numeric DEFAULT NULL::numeric, p_actual numeric DEFAULT NULL::numeric, p_layer text DEFAULT NULL::text, p_entity_type text DEFAULT NULL::text, p_entity_id uuid DEFAULT NULL::uuid, p_club_id uuid DEFAULT NULL::uuid, p_union_id uuid DEFAULT NULL::uuid, p_table_id uuid DEFAULT NULL::uuid, p_tournament_id uuid DEFAULT NULL::uuid, p_hand_id uuid DEFAULT NULL::uuid, p_settlement_id text DEFAULT NULL::text, p_wallet_ids uuid[] DEFAULT NULL::uuid[], p_transaction_ids uuid[] DEFAULT NULL::uuid[], p_suspected_cause text DEFAULT NULL::text, p_ledger_balanced boolean DEFAULT NULL::boolean, p_metadata jsonb DEFAULT NULL::jsonb)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_id uuid;\n  v_class text := p_classification;\n  v_sev   text := lower(COALESCE(p_severity,'critical'));\n  v_stable text;\nBEGIN\n  IF NOT public.fn_ca_is_midway_scope(\n    p_union_id, p_club_id, p_table_id, p_tournament_id, p_metadata\n  ) THEN\n    RETURN NULL;\n  END IF;\n  IF EXISTS (SELECT 1 FROM public.ca_detector_registry r WHERE r.source = p_source AND r.status = 'retired') THEN\n    RETURN NULL;\n  END IF;\n  INSERT INTO public.ca_detector_registry (source, owner, sla_hours, note)\n  VALUES (p_source, 'unassigned', 24, 'auto-registered on first sight (Phase 6 gate); give it an owner')\n  ON CONFLICT (source) DO NOTHING;\n\n  IF v_class IS NULL OR v_class NOT IN (\n      'ledger_imbalance','settlement_error','duplicate_payment','missing_payment',\n      'projection_delay','cache_mismatch','reporting_mismatch','delayed_event',\n      'duplicate_event','rounding_error','incorrect_rake','incorrect_weighted_rake',\n      'incorrect_rakeback','bbj_error','treasury_error','credit_line_error',\n      'cross_club_posting','cross_union_posting','unauthorized_adjustment',\n      'historical_migration','unknown') THEN\n    v_class := 'unknown';\n  END IF;\n  IF v_sev NOT IN ('critical','warning','info') THEN v_sev := 'critical'; END IF;\n\n  UPDATE public.ca_drift_incidents\n     SET occurrences  = occurrences + 1,\n         last_seen_at = now(),\n         discrepancy_amount = COALESCE(p_discrepancy, discrepancy_amount),\n         actual_amount      = COALESCE(p_actual, actual_amount),\n         expected_amount    = COALESCE(p_expected, expected_amount),\n         suspected_cause    = COALESCE(p_suspected_cause, suspected_cause),\n         metadata           = COALESCE(p_metadata, metadata)\n   WHERE dedupe_key = p_dedupe_key AND status <> 'resolved'\n   RETURNING id INTO v_id;\n\n  IF v_id IS NOT NULL THEN\n    INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n    VALUES (v_id, 'recurred', jsonb_build_object('source', p_source,\n            'discrepancy', p_discrepancy));\n    RETURN v_id;\n  END IF;\n\n  /* ONE STANDING CONDITION IS ONE INCIDENT (2026-09-06).\n     A sweep that puts the date in its key defeats the exact-match fold above\n     and files a fresh critical every run: sweep:fn_bbj_promo_bank_check:\n     2026-09-02 .. -09-06, five rows, all 6705.21, one condition.\n\n     The amount is what makes this safe. `diamond-unexplained:2026-09-02-18`\n     is an hourly bucket where each bucket is a DIFFERENT event, so folding on\n     the key alone would hide real ones. A standing condition re-reports the\n     same number; a new event reports a new one. Same detector, same key\n     without its period label, same discrepancy - then and only then is it the\n     same finding said twice. */\n  v_stable := public.fn_ca_stable_dedupe_key(p_dedupe_key);\n  IF v_stable <> p_dedupe_key THEN\n    UPDATE public.ca_drift_incidents\n       SET occurrences     = occurrences + 1,\n           last_seen_at    = now(),\n           suspected_cause = COALESCE(p_suspected_cause, suspected_cause),\n           metadata        = COALESCE(p_metadata, metadata)\n     WHERE status <> 'resolved'\n       AND source = p_source\n       AND public.fn_ca_stable_dedupe_key(dedupe_key) = v_stable\n       AND COALESCE(discrepancy_amount,0) = COALESCE(p_discrepancy,0)\n     RETURNING id INTO v_id;\n    IF v_id IS NOT NULL THEN\n      INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n      VALUES (v_id, 'recurred', jsonb_build_object(\n        'source', p_source, 'rotated_key', p_dedupe_key,\n        'note', 'same condition under a new period label; folded rather than re-filed'));\n      RETURN v_id;\n    END IF;\n  END IF;\n\n  /* DETECTOR STORM CAP (2026-09-09). One source cannot own the board.\n     Reached only after the exact-key fold and the stable-key fold above have\n     both declined to absorb this finding, i.e. it really would be a NEW row. */\n  IF (SELECT count(*) FROM public.ca_drift_incidents\n       WHERE source = p_source AND status <> 'resolved') >= 25 THEN\n    UPDATE public.ca_drift_incidents\n       SET occurrences = occurrences + 1, last_seen_at = now()\n     WHERE dedupe_key = 'storm:' || p_source AND status <> 'resolved'\n     RETURNING id INTO v_id;\n    IF v_id IS NULL THEN\n      INSERT INTO public.ca_drift_incidents (\n        classification, severity, layer, source, dedupe_key,\n        discrepancy_amount, suspected_cause, metadata)\n      VALUES ('unknown', v_sev, COALESCE(p_layer,'unknown'), p_source,\n        'storm:' || p_source, 0,\n        'DETECTOR STORM: this source has 25 or more open incidents, so further findings are counted here rather than filed as new rows. See this incident''s event log for the original capped finding keys and reported discrepancies; this branch does not create a separate financial_alerts row for each finding. Fix the detector, or the condition behind it, then resolve this.',\n        jsonb_build_object('storm', true, 'capped_from', p_dedupe_key))\n      ON CONFLICT (dedupe_key) WHERE status <> 'resolved' DO NOTHING\n      RETURNING id INTO v_id;\n      IF v_id IS NULL THEN\n        UPDATE public.ca_drift_incidents\n           SET occurrences = occurrences + 1, last_seen_at = now()\n         WHERE dedupe_key = 'storm:' || p_source AND status <> 'resolved'\n         RETURNING id INTO v_id;\n      END IF;\n    END IF;\n    IF v_id IS NOT NULL THEN\n      INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n      VALUES (v_id, 'recurred', jsonb_build_object(\n        'source', p_source, 'capped_dedupe_key', p_dedupe_key,\n        'discrepancy', p_discrepancy, 'suspected_cause', p_suspected_cause,\n        'note', 'counted on the storm incident: this source is over its open-incident cap'));\n    END IF;\n    RETURN v_id;\n  END IF;\n\n  INSERT INTO public.ca_drift_incidents (\n    classification, severity, layer, source, dedupe_key,\n    union_id, club_id, entity_type, entity_id, table_id, tournament_id,\n    hand_id, settlement_id, wallet_ids, transaction_ids,\n    expected_amount, actual_amount, discrepancy_amount,\n    ledger_balanced, suspected_cause, metadata)\n  VALUES (\n    v_class, v_sev, COALESCE(p_layer,'unknown'), p_source, p_dedupe_key,\n    p_union_id, p_club_id, p_entity_type, p_entity_id, p_table_id, p_tournament_id,\n    p_hand_id, p_settlement_id, p_wallet_ids, p_transaction_ids,\n    p_expected, p_actual, COALESCE(p_discrepancy, 0),\n    p_ledger_balanced, p_suspected_cause, COALESCE(p_metadata,'{}'::jsonb))\n  ON CONFLICT (dedupe_key) WHERE status <> 'resolved' DO NOTHING\n  RETURNING id INTO v_id;\n\n  IF v_id IS NULL THEN\n    UPDATE public.ca_drift_incidents\n       SET occurrences     = occurrences + 1,\n           last_seen_at    = now(),\n           suspected_cause = COALESCE(p_suspected_cause, suspected_cause),\n           metadata        = COALESCE(p_metadata, metadata)\n     WHERE dedupe_key = p_dedupe_key AND status <> 'resolved'\n     RETURNING id INTO v_id;\n    RETURN v_id;\n  END IF;\n\n  INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n  VALUES (v_id, 'created', jsonb_build_object('source', p_source));\n\n  BEGIN\n    PERFORM public.fn_raise_server_financial_alert(\n      v_sev, 'drift_incident:' || p_source,\n      v_class || ' drift ' || COALESCE(p_discrepancy,0)::text || ' chips',\n      jsonb_build_object('incident_id', v_id) || COALESCE(p_metadata,'{}'::jsonb));\n  EXCEPTION WHEN OTHERS THEN NULL;\n  END;\n\n  IF p_severity = 'info' THEN\n    NULL;\n  ELSIF (SELECT count(*) FROM public.ca_drift_incidents\n       WHERE created_at > now() - interval '2 minutes') >= 10 THEN\n    INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n    VALUES (v_id, 'notified', jsonb_build_object('storm_suppressed', true));\n  ELSE\n    PERFORM public.fn_ca_incident_notify(\n      v_id, 'notified',\n      to_char(COALESCE(p_discrepancy,0),'FM999999999990.00') || ' chip drift: ' || v_class,\n      false);\n  END IF;\n\n  RETURN v_id;\nEXCEPTION WHEN OTHERS THEN\n  DECLARE v_state text; v_msg text;\n  BEGIN\n    GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;\n    RAISE WARNING 'fn_ca_raise_drift_incident(%) failed: %', p_source, v_msg;\n    BEGIN\n      INSERT INTO public.ca_incident_file_failures\n        (source, dedupe_key, classification, severity, discrepancy, sqlstate, message)\n      VALUES (p_source, p_dedupe_key, v_class, v_sev, p_discrepancy, v_state, v_msg);\n    EXCEPTION WHEN OTHERS THEN\n      NULL;\n    END;\n    RETURN NULL;\n  END;\nEND $function$\n",
+      "source_md5": "e879b6a510f2dcb12446923ed9d2b93b",
+      "definition_md5": "a6df5f2eef07aa3f606db79d93944590"
+    }
+  ],
+  "owner_functions": [
+    {
+      "acl": ["postgres=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public"],
+      "signature": "public.fn_capture_owner_notification_destination()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_capture_owner_notification_destination()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  IF public.fn_is_owner_operational_notification(NEW.user_id,NEW.type,NEW.title,NEW.data) THEN\n    INSERT INTO public.operational_notification_destinations(notification_id,recipient_user_id,original_notification)\n      VALUES(NEW.id,NEW.user_id,to_jsonb(NEW));\n    PERFORM public.fn_try_record_owner_notification(NEW.id);\n    -- Preserve the original row byte-for-byte, including _push. The DB mirror\n    -- predicate below and gateway destination branch suppress personal sends.\n    -- This also lets the existing administrative reader recover the same exact\n    -- original if the first recorder attempt failed.\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "64b403e0568e933dba4918a09b9b0ace",
+      "definition_md5": "765a320465a49f71c26c4b747d61f1fd"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public"],
+      "signature": "public.fn_is_owner_operational_notification(uuid, text, text, jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_is_owner_operational_notification(p_user uuid, p_type text, p_title text, p_data jsonb)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n  SELECT COALESCE(p_user='47965354-0e56-43ef-931c-ddaab82af765'::uuid AND (\n    p_type IN ('financial_incident','financial_incident_resolved','financial_attestation',\n      'engine_break_failed','engine_break_recovered','guarantee_bank_short',\n      'guarantee_bank_recovered','estate_digest')\n    OR (p_type='system' AND (\n      p_title IN ('Push Health Alert','Notifications May Not Be Reaching This Device')\n      OR p_title ~ '^Horse Fleet (Alert|Recovered): '\n      OR (jsonb_typeof(p_data)='object' AND p_data->>'component'='club-arena-engine'\n        AND jsonb_typeof(p_data->'alertname')='string' AND NULLIF(p_data->>'alertname','') IS NOT NULL)\n    ))\n  ),false);\n$function$\n",
+      "source_md5": "e0743616164c810fac5c9a0af137acfe",
+      "definition_md5": "8c2c62359d92dcbd3b3621a762b981ca"
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public"],
+      "signature": "public.fn_try_record_owner_notification(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_try_record_owner_notification(p_id uuid)\n RETURNS bigint\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE d public.operational_notification_destinations%ROWTYPE; n jsonb; v_id bigint;\n  v_name text; v_status text; v_severity text;\nBEGIN\n  SELECT * INTO STRICT d FROM public.operational_notification_destinations\n    WHERE notification_id=p_id FOR UPDATE;\n  n := d.original_notification;\n  BEGIN\n    IF n->>'id' IS DISTINCT FROM p_id::text OR n->>'user_id' IS DISTINCT FROM d.recipient_user_id::text\n      OR NOT public.fn_is_owner_operational_notification(d.recipient_user_id,n->>'type',n->>'title',n->'data') THEN\n      RAISE EXCEPTION 'operational destination original identity mismatch';\n    END IF;\n    v_name := left(COALESCE(NULLIF(n->'data'->>'alertname',''),(n->>'type')||':'||(n->>'title')),240);\n    v_status := CASE WHEN n->'data'->>'green'='true' OR (n->>'type') ~ '(_resolved|_recovered)$'\n        OR (n->>'type'='system' AND (n->>'title') ~ '^Horse Fleet Recovered: ')\n        THEN 'resolved' ELSE 'firing' END;\n    v_severity := CASE WHEN n->'data'->>'severity' IN ('critical','warning','info')\n        THEN n->'data'->>'severity' ELSE 'warning' END;\n    v_id := d.inbox_event_id;\n    IF v_id IS NULL THEN\n      v_id := public.fn_record_operational_alert('owner-operational-notifications',p_id::text,\n        v_name,v_status,v_severity,\n        jsonb_build_object('original_notification',n,'captured_at',d.captured_at,\n          'target_task_id',d.target_task_id));\n    END IF;\n    IF v_id IS NULL OR NOT EXISTS (\n      SELECT 1 FROM public.operational_alert_events e\n      WHERE e.id=v_id AND e.source='owner-operational-notifications'\n        AND e.event_key=p_id::text AND e.payload->>'target_task_id'=d.target_task_id::text\n        AND e.alertname=v_name AND e.status=v_status AND e.severity=v_severity\n        -- Existing intake preserves an earlier snapshot. Only acknowledgement\n        -- state/timestamps may differ; content, identity and all other fields\n        -- must match. The complete current original remains in the destination.\n        AND ((e.payload->'original_notification')-ARRAY['read','is_read','read_at','updated_at'])\n          =(n-ARRAY['read','is_read','read_at','updated_at'])\n    ) THEN RAISE EXCEPTION 'operational destination receipt mismatch'; END IF;\n    UPDATE public.operational_notification_destinations SET inbox_event_id=v_id,\n      last_attempt_at=clock_timestamp(),last_error=NULL WHERE notification_id=p_id;\n    RETURN v_id;\n  EXCEPTION WHEN OTHERS THEN\n    UPDATE public.operational_notification_destinations SET inbox_event_id=NULL,last_attempt_at=clock_timestamp(),\n      last_error=SQLSTATE||':'||left(SQLERRM,1000) WHERE notification_id=p_id;\n    RETURN NULL;\n  END;\nEND;\n$function$\n",
+      "source_md5": "06985316c9e63080120842b32a6555d2",
+      "definition_md5": "bbc44eb76b74576906f55e9ae370a508"
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "owner": "postgres",
+      "signature": "public.fn_record_operational_alert(text,text,text,text,text,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_record_operational_alert(p_source text, p_event_key text, p_alertname text, p_status text, p_severity text, p_payload jsonb)\n RETURNS bigint\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE v_id bigint;\nBEGIN\n  INSERT INTO public.operational_alert_events(source,event_key,alertname,status,severity,payload)\n  VALUES(p_source,p_event_key,p_alertname,p_status,p_severity,p_payload)\n  ON CONFLICT (source,event_key) DO UPDATE\n  SET last_received_at=clock_timestamp(), delivery_count=operational_alert_events.delivery_count+1\n  RETURNING id INTO v_id;\n  RETURN v_id;\nEND;\n$function$\n",
+      "definition_md5": "36601e205494e8768f5a1dce09f4a186"
+    }
+  ],
+  "relations": [
+    {
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+      "rls": true,
+      "kind": "r",
+      "name": "operational_alert_events",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "bigint",
+          "number": 1,
+          "default": null,
+          "identity": "a",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "source",
+          "type": "text",
+          "number": 2,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "event_key",
+          "type": "text",
+          "number": 3,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "alertname",
+          "type": "text",
+          "number": 4,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "status",
+          "type": "text",
+          "number": 5,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "severity",
+          "type": "text",
+          "number": 6,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "payload",
+          "type": "jsonb",
+          "number": 7,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "number": 8,
+          "default": "clock_timestamp()",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "last_received_at",
+          "type": "timestamp with time zone",
+          "number": 9,
+          "default": "clock_timestamp()",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "delivery_count",
+          "type": "bigint",
+          "number": 10,
+          "default": "1",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "investigation_status",
+          "type": "text",
+          "number": 11,
+          "default": "'new'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "investigation",
+          "type": "jsonb",
+          "number": 12,
+          "default": "'{}'::jsonb",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "operational_alert_events_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX operational_alert_events_pkey ON public.operational_alert_events USING btree (id)"
+        },
+        {
+          "name": "operational_alert_events_source_event_key_key",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX operational_alert_events_source_event_key_key ON public.operational_alert_events USING btree (source, event_key)"
+        },
+        {
+          "name": "operational_alert_pending_idx",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX operational_alert_pending_idx ON public.operational_alert_events USING btree (investigation_status, id)"
+        }
+      ],
+      "options": null,
+      "policies": null,
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "operational_alert_events_alertname_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((length(alertname) >= 1) AND (length(alertname) <= 240)))"
+        },
+        {
+          "name": "operational_alert_events_event_key_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((length(event_key) >= 1) AND (length(event_key) <= 512)))"
+        },
+        {
+          "name": "operational_alert_events_investigation_status_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((investigation_status = ANY (ARRAY['new'::text, 'investigating'::text, 'blocked'::text, 'verified_fixed'::text, 'historical'::text, 'test'::text])))"
+        },
+        {
+          "name": "operational_alert_events_payload_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((jsonb_typeof(payload) = 'object'::text) AND (octet_length((payload)::text) <= 262144)))"
+        },
+        {
+          "name": "operational_alert_events_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "operational_alert_events_severity_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((length(severity) >= 1) AND (length(severity) <= 40)))"
+        },
+        {
+          "name": "operational_alert_events_source_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((length(source) >= 1) AND (length(source) <= 120)))"
+        },
+        {
+          "name": "operational_alert_events_source_event_key_key",
+          "type": "u",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (source, event_key)"
+        },
+        {
+          "name": "operational_alert_events_status_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((status = ANY (ARRAY['firing'::text, 'resolved'::text, 'info'::text])))"
+        }
+      ]
+    },
+    {
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+      "rls": true,
+      "kind": "r",
+      "name": "operational_notification_destinations",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "notification_id",
+          "type": "uuid",
+          "number": 1,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "recipient_user_id",
+          "type": "uuid",
+          "number": 2,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "target_task_id",
+          "type": "uuid",
+          "number": 3,
+          "default": "'01a09b86-5ba8-7290-8657-1041f13dd3ca'::uuid",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "original_notification",
+          "type": "jsonb",
+          "number": 4,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "inbox_event_id",
+          "type": "bigint",
+          "number": 5,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "captured_at",
+          "type": "timestamp with time zone",
+          "number": 6,
+          "default": "clock_timestamp()",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "last_attempt_at",
+          "type": "timestamp with time zone",
+          "number": 7,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "last_error",
+          "type": "text",
+          "number": 8,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "operational_notification_destinations_pending_idx",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX operational_notification_destinations_pending_idx ON public.operational_notification_destinations USING btree (captured_at, notification_id) WHERE (inbox_event_id IS NULL)"
+        },
+        {
+          "name": "operational_notification_destinations_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX operational_notification_destinations_pkey ON public.operational_notification_destinations USING btree (notification_id)"
+        }
+      ],
+      "options": null,
+      "policies": null,
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "operational_notification_destinatio_original_notification_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((jsonb_typeof(original_notification) = 'object'::text))"
+        },
+        {
+          "name": "operational_notification_destinations_inbox_event_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (inbox_event_id) REFERENCES operational_alert_events(id)"
+        },
+        {
+          "name": "operational_notification_destinations_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (notification_id)"
+        },
+        {
+          "name": "operational_notification_destinations_recipient_user_id_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((recipient_user_id = '47965354-0e56-43ef-931c-ddaab82af765'::uuid))"
+        },
+        {
+          "name": "operational_notification_destinations_target_task_id_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((target_task_id = '01a09b86-5ba8-7290-8657-1041f13dd3ca'::uuid))"
+        }
+      ]
+    }
+  ],
+  "sequence": {
+    "acl": [
+      "postgres=rwU/postgres",
+      "anon=rwU/postgres",
+      "authenticated=rwU/postgres",
+      "service_role=rwU/postgres"
+    ],
+    "max": "9223372036854775807",
+    "min": "1",
+    "name": "operational_alert_events_id_seq",
+    "cache": "1",
+    "cycle": false,
+    "owner": "postgres",
+    "start": "1",
+    "data_type": "bigint",
+    "increment": "1",
+    "dependencies": [
+      {
+        "type": "i",
+        "column": 1,
+        "relation": "operational_alert_events"
+      }
+    ]
+  },
+  "ledger_index": {
+    "kind": "i",
+    "live": true,
+    "name": "idx_chip_ledger_tournament_category",
+    "owner": "postgres",
+    "ready": true,
+    "valid": true,
+    "unique": false,
+    "primary": false,
+    "clustered": false,
+    "immediate": true,
+    "definition": "CREATE INDEX idx_chip_ledger_tournament_category ON public.chip_ledger USING btree (tournament_id, category) WHERE (tournament_id IS NOT NULL)",
+    "replica_identity": false,
+    "nulls_not_distinct": false
+  },
+  "notification_triggers": [
+    {
+      "name": "trg_accounting_push_after_delivery",
+      "type": 5,
+      "enabled": "O",
+      "function": "fn_mirror_notification_to_push_outbox()",
+      "predicate": "{OPEXPR :opno 98 :opfuncid 67 :opresulttype 16 :opretset false :opcollid 0 :inputcollid 100 :args ({VAR :varno 2 :varattno 3 :vartype 25 :vartypmod -1 :varcollid 100 :varnullingrels (b) :varlevelsup 0 :varnosyn 2 :varattnosyn 3 :location -1} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 22 [ 88 0 0 0 97 99 99 111 117 110 116 105 110 103 95 105 110 118 111 105 99 101 ]}) :location -1}",
+      "deferrable": true,
+      "definition": "CREATE CONSTRAINT TRIGGER trg_accounting_push_after_delivery AFTER INSERT ON public.notifications DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.type = 'accounting_invoice'::text)) EXECUTE FUNCTION fn_mirror_notification_to_push_outbox()",
+      "pretty_definition": "CREATE CONSTRAINT TRIGGER trg_accounting_push_after_delivery AFTER INSERT ON notifications DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (new.type = 'accounting_invoice'::text) EXECUTE FUNCTION fn_mirror_notification_to_push_outbox()",
+      "initially_deferred": true
+    },
+    {
+      "name": "trg_mirror_notification_to_push_outbox",
+      "type": 5,
+      "enabled": "O",
+      "function": "fn_mirror_notification_to_push_outbox()",
+      "predicate": "{BOOLEXPR :boolop not :args ({FUNCEXPR :funcid 32671289 :funcresulttype 16 :funcretset false :funcvariadic false :funcformat 0 :funccollid 0 :inputcollid 100 :args ({VAR :varno 2 :varattno 2 :vartype 2950 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 2 :varattnosyn 2 :location -1} {VAR :varno 2 :varattno 3 :vartype 25 :vartypmod -1 :varcollid 100 :varnullingrels (b) :varlevelsup 0 :varnosyn 2 :varattnosyn 3 :location -1} {VAR :varno 2 :varattno 4 :vartype 25 :vartypmod -1 :varcollid 100 :varnullingrels (b) :varlevelsup 0 :varnosyn 2 :varattnosyn 4 :location -1} {VAR :varno 2 :varattno 6 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 2 :varattnosyn 6 :location -1}) :location -1}) :location -1}",
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_mirror_notification_to_push_outbox AFTER INSERT ON public.notifications FOR EACH ROW WHEN ((NOT fn_is_owner_operational_notification(new.user_id, new.type, new.title, new.data))) EXECUTE FUNCTION fn_mirror_notification_to_push_outbox()",
+      "pretty_definition": "CREATE TRIGGER trg_mirror_notification_to_push_outbox AFTER INSERT ON notifications FOR EACH ROW WHEN (NOT fn_is_owner_operational_notification(new.user_id, new.type, new.title, new.data)) EXECUTE FUNCTION fn_mirror_notification_to_push_outbox()",
+      "initially_deferred": false
+    },
+    {
+      "name": "trg_notification_fill_action_url",
+      "type": 7,
+      "enabled": "O",
+      "function": "fn_notification_fill_action_url()",
+      "predicate": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_notification_fill_action_url BEFORE INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION fn_notification_fill_action_url()",
+      "pretty_definition": "CREATE TRIGGER trg_notification_fill_action_url BEFORE INSERT ON notifications FOR EACH ROW EXECUTE FUNCTION fn_notification_fill_action_url()",
+      "initially_deferred": false
+    },
+    {
+      "name": "trg_sync_notification_read_state",
+      "type": 23,
+      "enabled": "O",
+      "function": "sync_notification_read_state()",
+      "predicate": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER trg_sync_notification_read_state BEFORE INSERT OR UPDATE ON public.notifications FOR EACH ROW EXECUTE FUNCTION sync_notification_read_state()",
+      "pretty_definition": "CREATE TRIGGER trg_sync_notification_read_state BEFORE INSERT OR UPDATE ON notifications FOR EACH ROW EXECUTE FUNCTION sync_notification_read_state()",
+      "initially_deferred": false
+    },
+    {
+      "name": "zz_capture_owner_notification_destination",
+      "type": 7,
+      "enabled": "O",
+      "function": "fn_capture_owner_notification_destination()",
+      "predicate": null,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER zz_capture_owner_notification_destination BEFORE INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION fn_capture_owner_notification_destination()",
+      "pretty_definition": "CREATE TRIGGER zz_capture_owner_notification_destination BEFORE INSERT ON notifications FOR EACH ROW EXECUTE FUNCTION fn_capture_owner_notification_destination()",
+      "initially_deferred": false
+    }
+  ],
+  "accepted_alerts_source": {
+    "path": "supabase/components/production-alert-identity-and-rake-wording.sql",
+    "sha256": "6622531f15dc53dc532dcba4d7441f5907be06be62decca528baf8d94a235710"
+  },
+  "query_provenance": [
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-provider-preflight-20260917/02-notification-pnl-push.query.sql",
+      "sha256": "4e0bc81d5f5d65f23a2d246995c23844e5b4d452783dcab9ad6250a5552853fe"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-provider-preflight-20260917/06-changed-baseline-definitions.query.sql",
+      "sha256": "d6cbff7c7c9caecf2170b4312e057674c33a947e37f49eeaa67c429c2b20bd7f"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-provider-preflight-20260917/07-guarded-relation-metadata.query.sql",
+      "sha256": "92a4f8e0b39732c22e162c36c37859dccd187e4b2eab759ce0b9e1388626cebc"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-provider-preflight-20260917/14-owner-capture-dependencies.query.sql",
+      "sha256": "764b39ad67cf1ec88f8920ab7fb385b1b1486cebb042db62bd6e7e9c0c6b4ae8"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-provider-preflight-20260917/15-owner-inbox-closure.query.sql",
+      "sha256": "2ead9007d8a6d14d65ccf991d18c7dded970290312c9f0c9d4f0b2908226f41e"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-provider-preflight-20260917/16-sequence-exact-text.query.sql",
+      "sha256": "4d80a888e2ea494f2c78276ca240a96d35b874eacb31a8a7e32caee2d4809089"
+    }
+  ]
+}

@@ -89,6 +89,13 @@ describe('native publishing requires the exact origin verification', () => {
   });
 
   it('preserves the proved-tree client-test fast path', () => {
+    // The proof reads the source PR and its checks with this job's token.
+    // Missing read permissions returns 403 and repeats the already-passed suite.
+    expect(workflow.jobs['publish-needed'].permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'read',
+      checks: 'read',
+    });
     expect(
       eligible(target, {
         'needs.client-tests.result': 'skipped',

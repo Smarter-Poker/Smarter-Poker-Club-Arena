@@ -30,7 +30,7 @@
  *   6. the two other daemons sharing daemon_state are untouched
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 type Op = [string, unknown[]];
 interface Recorded {
@@ -766,7 +766,14 @@ describe('canonical cash source receipts retain the source page until confirmed'
     ]);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('retains memory and durable cursor when the acknowledged checkpoint write fails', async () => {
+    // Compare retries at one controlled instant; preserve the full payload assertion.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-06T20:00:01.000Z'));
     const respond = scenario.current.respond as (r: Recorded) => unknown;
     let failed = false;
     scenario.current.respond = (r: Recorded) => {

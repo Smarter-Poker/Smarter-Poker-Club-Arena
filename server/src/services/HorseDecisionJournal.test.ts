@@ -11,7 +11,8 @@ import {
   mkdirSync,
   linkSync,
 } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -322,6 +323,151 @@ describe('bounded immutable Horse archive custody', () => {
   });
   const catalog = (dir: string) =>
     new DatabaseSync(join(dir, 'archive', 'horse-journal-archive.sqlite'));
+  const recordForHand = (sequence: number, hand: string): HorseJournalRecord =>
+    makeHorseJournalRecord(
+      {
+        producerId: record().producerId,
+        sequence,
+        atMs: 1000,
+        sourceRelease: null,
+        kind: 'decision',
+        handKey: journalHash(hand),
+        turnKey: record().turnKey,
+      },
+      { synthetic: true }
+    );
+  it.each([false, true])(
+    'reads an unrelated committed hand during pending custody (readOnly=%s)',
+    (readOnly) => {
+      const dir = folder(),
+        writer = store(dir, { archive: options(dir) }),
+        native = catalog(dir);
+      const committed = recordForHand(1, 'committed'),
+        pending = recordForHand(2, 'pending');
+      writer.append(committed);
+      try {
+        native.exec(
+          "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+        );
+        expect(() => writer.append(pending)).toThrow('synthetic interruption');
+        const reader = readOnly ? store(dir, { readOnly: true, archive: options(dir) }) : writer;
+        const reserved = reader.storageStats();
+        expect(reader.readHand(committed.handKey)).toEqual([committed]);
+        expect(() => reader.readHand(pending.handKey)).toThrow('Horse archive custody pending');
+        expect(reader.storageStats()).toEqual(reserved);
+        native.exec('DROP TRIGGER fail_index');
+        expect(writer.append(pending)).toBe('replayed');
+        expect(reader.readHand(pending.handKey)).toEqual([pending]);
+        expect(reader.readHand(committed.handKey)).toEqual([committed]);
+      } finally {
+        native.close();
+      }
+    }
+  );
+  it.each([
+    ['compressed', "UPDATE archive_pending SET compressed=x'00'", 'segment corruption'],
+    ['digest', "UPDATE archive_pending SET sha='" + '0'.repeat(64) + "'", 'segment corruption'],
+    ['record count', 'UPDATE archive_pending SET records=17', 'pending exceeds bounds'],
+    [
+      'compressed bound',
+      'UPDATE archive_pending SET compressed=zeroblob(4259841)',
+      'pending exceeds bounds',
+    ],
+  ])('refuses unrelated reads when pending %s is malformed', (_name, sql, failure) => {
+    const dir = folder(),
+      writer = store(dir, { archive: options(dir) }),
+      native = catalog(dir);
+    const committed = recordForHand(1, 'committed');
+    writer.append(committed);
+    try {
+      native.exec(
+        "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+      );
+      expect(() => writer.append(recordForHand(2, 'pending'))).toThrow('synthetic interruption');
+      native.exec(sql);
+      const reader = store(dir, { readOnly: true, archive: options(dir) });
+      expect(() => reader.readHand(committed.handKey)).toThrow(failure);
+      expect(reader.storageStats().archive?.pendingSegments).toBe(1);
+    } finally {
+      native.close();
+    }
+  });
+  it.each(['selected', 'corrupt'] as const)(
+    'validates the second pending segment when it is %s',
+    (second) => {
+      const dir = folder(),
+        writer = store(dir, { archive: options(dir) }),
+        native = catalog(dir);
+      const committed = recordForHand(1, 'committed');
+      writer.append(committed);
+      try {
+        native.exec(
+          "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+        );
+        expect(() => writer.append(recordForHand(2, 'pending'))).toThrow('synthetic interruption');
+        // Populate the second permitted slot with a fully bound synthetic record.
+        // The first slot is valid and unrelated; it cannot authorize early success.
+        const original = horseJournalJson(recordForHand(3, 'committed')) + '\n';
+        const compressed = gzipSync(original);
+        const compressedSha = createHash('sha256').update(compressed).digest('hex');
+        native
+          .prepare('INSERT INTO archive_pending VALUES(2,?,?,?,?,?,?)')
+          .run(
+            journalHash(original),
+            second === 'corrupt' ? '0'.repeat(64) : compressedSha,
+            compressed.length,
+            Buffer.byteLength(original),
+            1,
+            compressed
+          );
+        const reader = store(dir, { readOnly: true, archive: options(dir) });
+        expect(() => reader.readHand(committed.handKey)).toThrow(
+          second === 'selected' ? 'Horse archive custody pending' : 'segment corruption'
+        );
+        expect(reader.storageStats().archive?.pendingSegments).toBe(2);
+      } finally {
+        native.close();
+      }
+    }
+  );
+  it('charges unrelated pending decoding to the existing total read-work budget', () => {
+    const dir = folder(),
+      writer = store(dir, { archive: options(dir) }),
+      native = catalog(dir);
+    const committedKey = journalHash('hand');
+    const rowsForBatch = (batch: number, includeTarget: boolean) => {
+      const rows = includeTarget ? [record(batch * 10 + 1)] : [];
+      for (let i = 2; i <= 8; i++)
+        rows.push(
+          makeHorseJournalRecord(
+            {
+              producerId: record().producerId,
+              sequence: batch * 10 + i,
+              atMs: 1000,
+              sourceRelease: null,
+              kind: 'decision',
+              handKey: journalHash('unrelated'),
+              turnKey: record().turnKey,
+            },
+            { large: 'x'.repeat(490000) }
+          )
+        );
+      return rows;
+    };
+    try {
+      for (let batch = 0; batch < 9; batch++) writer.appendBatch(rowsForBatch(batch, true));
+      expect(writer.readHand(committedKey)).toHaveLength(9);
+      native.exec(
+        "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+      );
+      expect(() => writer.appendBatch(rowsForBatch(9, false))).toThrow('synthetic interruption');
+      const reader = store(dir, { readOnly: true, archive: options(dir) });
+      expect(() => reader.readHand(committedKey)).toThrow('archive read exceeds decode bounds');
+      expect(reader.storageStats().archive?.pendingSegments).toBe(1);
+    } finally {
+      native.close();
+    }
+  });
   it('preserves a full legacy database byte-for-byte and joins original envelopes across restart', () => {
     const dir = folder(),
       legacy = store(dir, { maxRecords: 1 });

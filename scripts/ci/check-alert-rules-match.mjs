@@ -67,14 +67,15 @@ const SPIN_CONTRACT = {
   labels: { severity: 'warning', component: 'spin' },
   annotations: {
     summary: '{{ $value }} Spins remain open with a partially filled field',
-    description: "v_spin_unfilled_waits counts REGISTERING or ANNOUNCED Spins\n"
-      + "with no recorded start and between one live seat and one fewer\n"
-      + "than capacity. It does not filter wait age, policy or booked draws.\n"
-      + "Inspect each board's oldest_seat_at, spin_fill_policy, draw and\n"
-      + "hand evidence, and the actual fn_spin_expire_unfilled result.\n"
-      + "A drawn or played game requires its continuation or settlement\n"
-      + "authority. This count alone proves neither that expiry is due\n"
-      + "nor that the expiry timer failed.\n",
+    description:
+      'v_spin_unfilled_waits counts REGISTERING or ANNOUNCED Spins\n' +
+      'with no recorded start and between one live seat and one fewer\n' +
+      'than capacity. It does not filter wait age, policy or booked draws.\n' +
+      "Inspect each board's oldest_seat_at, spin_fill_policy, draw and\n" +
+      'hand evidence, and the actual fn_spin_expire_unfilled result.\n' +
+      'A drawn or played game requires its continuation or settlement\n' +
+      'authority. This count alone proves neither that expiry is due\n' +
+      'nor that the expiry timer failed.\n',
     runbook: 'https://monitor.smarter.poker/runbooks/spin-unfilled-backlog',
   },
 };
@@ -84,7 +85,7 @@ const SPIN_CONTRACT = {
  * success -> data.groups[] -> {name,file,rules:[{type,name,query,duration,
  * keepFiringFor,labels,annotations,health,...}]}. No fresh live proof is implied.
  */
-export function compareSpinReportingContract(source, response) {
+function spinReportingEvidence(source, response) {
   if (typeof source !== 'string') throw new Error('Spin rule source is unavailable');
   const lines = source.split('\n');
   const starts = [];
@@ -93,9 +94,11 @@ export function compareSpinReportingContract(source, response) {
   }
   if (starts.length !== 1) throw new Error('Spin rule source is missing or ambiguous');
   const start = starts[0];
-  if (lines[start] !== `      - alert: ${SPIN_RULE}`) throw new Error('Spin rule source layout changed');
+  if (lines[start] !== `      - alert: ${SPIN_RULE}`)
+    throw new Error('Spin rule source layout changed');
   const groups = lines.slice(0, start).filter((line) => /^  - name:/.test(line));
-  if (groups.at(-1) !== `  - name: ${SPIN_GROUP}`) throw new Error('Spin rule source group changed');
+  if (groups.at(-1) !== `  - name: ${SPIN_GROUP}`)
+    throw new Error('Spin rule source group changed');
   let end = start + 1;
   while (end < lines.length) {
     const line = lines[end];
@@ -112,7 +115,12 @@ export function compareSpinReportingContract(source, response) {
   }
   const matches = [];
   for (const group of response.data.groups) {
-    if (!group || typeof group.name !== 'string' || typeof group.file !== 'string' || !Array.isArray(group.rules)) {
+    if (
+      !group ||
+      typeof group.name !== 'string' ||
+      typeof group.file !== 'string' ||
+      !Array.isArray(group.rules)
+    ) {
       throw new Error('Prometheus rule group is malformed');
     }
     for (const rule of group.rules) {
@@ -124,13 +132,58 @@ export function compareSpinReportingContract(source, response) {
   }
   if (matches.length !== 1) throw new Error('Loaded Spin rule is missing or ambiguous');
   const { group, rule } = matches[0];
-  if (rule.type !== 'alerting' || rule.health !== 'ok') throw new Error('Loaded Spin rule is not a healthy alerting rule');
   const differences = [];
   if (group.name !== SPIN_GROUP || group.file !== SPIN_FILE) differences.push('group/file');
   for (const [key, expected] of Object.entries(SPIN_CONTRACT)) {
     if (!isDeepStrictEqual(rule[key], expected)) differences.push(key);
   }
+  return { group, rule, differences };
+}
+
+export function compareSpinReportingContract(source, response) {
+  const { rule, differences } = spinReportingEvidence(source, response);
+  if (
+    rule.type !== 'alerting' ||
+    rule.health !== 'ok' ||
+    !(rule.lastError === undefined || rule.lastError === '')
+  ) {
+    throw new Error(
+      `Loaded Spin rule is not a healthy alerting rule: ${JSON.stringify({
+        type: rule.type,
+        health: rule.health,
+        lastError: rule.lastError,
+        lastEvaluation: rule.lastEvaluation,
+      })}`
+    );
+  }
   return differences;
+}
+
+/** A replaced Prometheus rule starts unevaluated even after reload succeeds.
+ * Wait once for its declared 60-second cadence, then read again. This is part
+ * of this explicit verification call: no reload, repair, recurring observer,
+ * or repeated retry. A still-unknown rule fails the unchanged final checks.
+ */
+export async function readEvaluatedSpinRules(
+  source,
+  readRules,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+) {
+  const response = await readRules();
+  const { group, rule, differences } = spinReportingEvidence(source, response);
+  const unevaluated =
+    rule.type === 'alerting' &&
+    rule.health === 'unknown' &&
+    (rule.lastError === undefined || rule.lastError === '') &&
+    rule.lastEvaluation === '0001-01-01T00:00:00Z';
+  if (unevaluated && differences.length === 0 && group.interval === 60) {
+    console.log(
+      '[alert-rules] Exact Spin rule awaits its first evaluation; one declared interval allowed.'
+    );
+    await wait(group.interval * 1000);
+    return readRules();
+  }
+  return response;
 }
 
 /** Which rule files Prometheus is told to load. */
@@ -229,14 +282,19 @@ function ask(url) {
     : null;
   const raw = ssh
     ? execFileSync('ssh', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
-    : execFileSync('curl', ['-sf', '--max-time', '20', url], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    : execFileSync('curl', ['-sf', '--max-time', '20', url], {
+        encoding: 'utf8',
+        maxBuffer: 32 * 1024 * 1024,
+      });
   return JSON.parse(raw);
 }
 
-function main() {
+async function main() {
   const declared = declaredAlerts();
   if (declared.size < 20) {
-    console.error(`[alert-rules] only ${declared.size} alerts parsed out of the repo - the scan is broken, not the box.`);
+    console.error(
+      `[alert-rules] only ${declared.size} alerts parsed out of the repo - the scan is broken, not the box.`
+    );
     process.exit(2);
   }
 
@@ -248,10 +306,11 @@ function main() {
   let seriesNames;
   let spinDifferences;
   try {
-    rules = ask(`${promUrl}/api/v1/rules`);
+    const spinSource = readFileSync(join(MON, 'spin-rules.yml'), 'utf8');
+    rules = await readEvaluatedSpinRules(spinSource, () => ask(`${promUrl}/api/v1/rules`));
     amAlerts = ask(`${amUrl}/api/v2/alerts`);
     seriesNames = ask(`${promUrl}/api/v1/label/__name__/values`);
-    spinDifferences = compareSpinReportingContract(readFileSync(join(MON, 'spin-rules.yml'), 'utf8'), rules);
+    spinDifferences = compareSpinReportingContract(spinSource, rules);
   } catch (err) {
     // COULD NOT ASK IS NOT CLEAN. The whole point of this check is that a
     // monitoring stack nobody can reach looks exactly like one that is fine.
@@ -304,7 +363,9 @@ function main() {
 
   if (spinDifferences.length) {
     bad = true;
-    console.error(`LOADED ${SPIN_RULE} DIFFERS FROM THE REVIEWED SOURCE: ${spinDifferences.join(', ')}`);
+    console.error(
+      `LOADED ${SPIN_RULE} DIFFERS FROM THE REVIEWED SOURCE: ${spinDifferences.join(', ')}`
+    );
   }
 
   if (!canaryFiring) {
@@ -358,7 +419,10 @@ function main() {
     console.log('  it runs on the pull request rather than after the merge.');
   }
 
-  if (!bad) console.log('[alert-rules] OK - the box runs what this repo declares, every rule reads a real series, and the canary is alive.');
+  if (!bad)
+    console.log(
+      '[alert-rules] OK - the box runs what this repo declares, every rule reads a real series, and the canary is alive.'
+    );
   process.exit(bad ? 1 : 0);
 }
 

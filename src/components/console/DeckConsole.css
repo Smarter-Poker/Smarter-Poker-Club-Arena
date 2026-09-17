@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    DECK CONSOLE
 
-   The spade master's deck (popups/buy-in-v1/deck.png, rows 350-1135 of the
+   The spade master's deck (popups/buy-in-v1/deck-d5664b815000.png) of the
    approved master: four bays, two plates, the flat cap) under the console's
    own head and a body on the rails. Each slice paints its own box at its
    own ratio, so the painted bays and plates line up with the DOM printed
@@ -25,7 +25,8 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 627;
-  background: url('/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100% auto no-repeat;
+  background: url('/assets/club-buttons/popups/buy-in-v1/deck-d5664b815000.png') top center / 100%
+    auto no-repeat;
 }
 
 .dk__bay-label {

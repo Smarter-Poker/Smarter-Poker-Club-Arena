@@ -1,0 +1,182 @@
+[
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/CASE-RECIPE.json",
+    "sha256": "17c7513a6c2514ea829325a421391f5c00bfc4306b358c03bb1571434d5171a8"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/FINGERPRINT-CONTRACT.json",
+    "sha256": "a4bc93ffc2a2119ba03a407ea619c04a7683a311456e8aa56b7f6bf1c0944fb1"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/SUPPLEMENTAL-FUNCTIONS.json",
+    "sha256": "5f4d195349bc4f872c8f17d16971187b549f149221904b802b4d7b9d828f658a"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/CURRENT-RELATIONS.json",
+    "sha256": "ee8be1b8fe0feebb9000e1519a08eee8225d1ed924047cea135b2334b9f5a735"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/VALID-PRIZE.json",
+    "sha256": "19e47f2ee5c3edf59e76c782ff1ac4ac0cbf69151d029045dac3c5a8379331ae"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/EXPRESSION-AUDIT.json",
+    "sha256": "fa35317c6da0db2d9baa2802542612e3e52d53523dbd0ce2afed928b1d697fd0"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/DEPENDENCY-DELTA.json",
+    "sha256": "e50453957474f2bdb8c53e4f72b4a40f15ae3fe64dfef23e3ccc9160ed233ee7"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/HISTORICAL-PREIMAGES.json",
+    "sha256": "a8a6510eb17f1558e60a8543a0c99e77ab366ba27dc1edaf3bf0105636a0d1f9"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/RESIDUAL-DEDUPLICATION.json",
+    "sha256": "1e2c60bb24cdfd50d2e2d837f70c888603a3f815582801cd76e9835512e32a4a"
+  },
+  {
+    "role": "recipe",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-bbj-positive-recipe-0002/INTEGRITY.json",
+    "sha256": "32d0b8d1c2603c79f5e79a57b4efc7be0c6aca3fccf01c8608deb770cae136f7"
+  },
+  {
+    "role": "review",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/ledger-bbj-recipe-review-0119/SEAL.json",
+    "sha256": "5be4115763fc1bd0052fbe6583f731d9b2a8542bb02ee9585433c42b0b31f202"
+  },
+  {
+    "role": "review",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/ledger-bbj-recipe-review-0119/HANDOFF.md",
+    "sha256": "a096c85c9d628c571a5c2ceaf3f04237582d7b217ea9b3e9c8beeaba553dce30"
+  },
+  {
+    "role": "review",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/ledger-bbj-recipe-review-0119/DECISION.json",
+    "sha256": "b0988ea0fff58e73b5b0e89fdc334f6152559d60dacc341579e5d396411bd144"
+  },
+  {
+    "role": "review",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/ledger-bbj-successor-review-0122/SEAL.json",
+    "sha256": "89237cdfc5304f073210bde7d1988302c4e2a299fc3791d551de602c5a0ad5f3"
+  },
+  {
+    "role": "review",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/ledger-bbj-successor-review-0122/HANDOFF.md",
+    "sha256": "5f7287393c1bf63965c0e7f6eb742a0d53cce33fe70a6f68621dff289e709796"
+  },
+  {
+    "role": "review",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/ledger-bbj-successor-review-0122/DECISION.json",
+    "sha256": "68daca902eb38b4270444cfbf5cc18d1c4632328e366d52132fb063099f3ead4"
+  },
+  {
+    "role": "base_driver",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/sequence_driver.py",
+    "sha256": "12c1d9b92c8d3ede4caa8cea8aa137faaccb1dcb92eb23a38c22026a4edf65e2"
+  },
+  {
+    "role": "base_checker",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/preflight.py",
+    "sha256": "fb94ef5aa2a98ee266953bd81f1d37521a0c725c5ffbf7d5b21f9a0a31adf3f7"
+  },
+  {
+    "role": "seed",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0007/seed.sql",
+    "sha256": "51967e20d0a839fa693e3adee98889bf018e632b4c952a681b3cca3213df1306"
+  },
+  {
+    "role": "base_fixture",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/INTEGRITY.json",
+    "sha256": "34619b410733949bd6b63269dd5a2bf16bdafd090318aba71c0a35b84545af9c"
+  },
+  {
+    "role": "base_registry",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/REGISTRY-EXPECTED.json",
+    "sha256": "6da171811c3ff9c9c27e4c20577a77412efaeed06d43b7efe931c3df17c38199"
+  },
+  {
+    "role": "pair_support",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-spin-case-preparation-0001/pair_support.py",
+    "sha256": "886140539cd3fda9d5899b207df764ab858995ed4a9676055c9a9ad854d53d5a"
+  },
+  {
+    "role": "sealed_predecessor",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-positive-case-0105/INTEGRITY.json",
+    "sha256": "fb1e3c19bf2fbdf0e0463cd5f75a2a3224a2078880b7d4508f38506ad86fe5c9"
+  },
+  {
+    "role": "sealed_predecessor_0108",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-positive-case-successor-0108/INTEGRITY.json",
+    "sha256": "6875d64ad71b695a2bd95516bff48308ab1b8caab4dd1aedf3e6f634d1a3617c"
+  },
+  {
+    "role": "sealed_predecessor_0110",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-positive-case-successor-0110/INTEGRITY.json",
+    "sha256": "a91d8967023bf14ca76fbdf302ba73695109d2dc9931017b4e1797f218f2d718"
+  },
+  {
+    "role": "oracle_review",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/work/bbj-inherited-oracle-impact-addendum-0122/INTEGRITY.json",
+    "sha256": "5f3475ec3014ad1ea8e145c09a604857616b63c48ede852816ad6a22dbf5cce1"
+  },
+  {
+    "role": "oracle_source_effects",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/work/bbj-inherited-oracle-impact-addendum-0122/SOURCE-EFFECTS.json",
+    "sha256": "8112895101e56f2c8e03b8f1618f225a037ae1cb229bd5f88470447e934e492a"
+  },
+  {
+    "role": "oracle_mutants",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/work/bbj-inherited-oracle-impact-addendum-0122/mutants.py",
+    "sha256": "611908e24414d07d4d2042c04ba7e8b0633e50f7fb4da87ce5f217992cdfb836"
+  },
+  {
+    "role": "oracle_overlay",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/FUNCTION-OVERLAY-INPUTS.json",
+    "sha256": "a7b99f4323253a06375eba61d7f5ea724be081a8f349bc62c6df777584e52db7"
+  },
+  {
+    "role": "oracle_schema_source",
+    "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration/supabase/migrations/20260428000001_audit_trail.sql",
+    "sha256": "1d5b56083b4ba9f9021d239fa11a7276dec4e15836b4108f81cc36a08473e1fe"
+  },
+  {
+    "role": "oracle_schema_source",
+    "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration/supabase/migrations/20260902170000_game_management_realtime_and_observability.sql",
+    "sha256": "23325f78b986093210870d2b602275e64cd916808915d25df5dbdac3ee4af2cc"
+  },
+  {
+    "role": "oracle_schema_source",
+    "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration/supabase/migrations/20260907054244_the_journal_dedupe_survives_a_partition.sql",
+    "sha256": "38a28d2e2cc0597506cc8ee540fb176bb16b3405e14326f151e4a2a2cfeb7a2f"
+  },
+  {
+    "role": "sealed_predecessor_0117",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-oracle-successor-0117/INTEGRITY.json",
+    "sha256": "0be27d23234ff73a1c19f7be4ef4ebef277bc59a5b8b405859eb81a551a861f9"
+  },
+  {
+    "role": "related_detector_review",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/promo-successor-review-0139/SEAL.json",
+    "sha256": "ba61c6e4904f27ba0c01b16f133a3d7b5f35c0c347810c7c77b97dd59d396126"
+  },
+  {
+    "role": "related_detector_findings",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/promo-successor-review-0139/HANDOFF.md",
+    "sha256": "a9fa3348a5da123cca753689b1362e8023601e006e17d947636431b4806046e8"
+  },
+  {
+    "role": "related_detector_mutants",
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work/promo-successor-review-0139/DETECTOR-OUTPUT-MUTANTS.json",
+    "sha256": "c03b5fe1b12ac8433987e407f24bca7ad707e76695d45f6846b81d25752f23d8"
+  }
+]

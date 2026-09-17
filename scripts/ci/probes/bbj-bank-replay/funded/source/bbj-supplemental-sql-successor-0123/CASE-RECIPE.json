@@ -1,0 +1,178 @@
+{
+  "id": "SEQ08-BBJ-MAIN-POSITIVE-OPENING-SETUP",
+  "status": "FINITE_INERT_SOURCE_RECIPE_NOT_NATIVE_NOT_SELF_ACCEPTED",
+  "selected_class": "bbj_pools.main_balance",
+  "amount": "100.00",
+  "owner": "7beef002-0002-4000-8000-000000000001",
+  "club": "7beef002-0002-4000-8000-000000000002",
+  "producer_signature": "fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric)",
+  "call_count": 1,
+  "parameters_in_exact_order": [
+    ["p_club_id", "uuid", "7beef002-0002-4000-8000-000000000002"],
+    ["p_operation_id", "uuid", "<root-owned stable operation UUID>"],
+    ["p_tagline", "text", "Original owner BBJ readiness"],
+    ["p_rake_percent", "numeric", "-1"],
+    ["p_rake_cap_bb", "numeric", "-1"],
+    ["p_bbj_enabled", "boolean", true],
+    ["p_bbj_seed", "numeric", "100.00"],
+    ["p_spins_enabled", "boolean", false],
+    ["p_spin_seed", "numeric", "0"],
+    ["p_spin_max_stake", "numeric", "1"],
+    ["p_promo_enabled", "boolean", false],
+    ["p_promo_type", "text", "milestone"],
+    ["p_promo_name", "text", null],
+    ["p_promo_description", "text", null],
+    ["p_promo_budget", "numeric", "0"],
+    ["p_leaderboard_rewards_enabled", "boolean", false],
+    ["p_leaderboard_metric", "text", "profit"],
+    ["p_leaderboard_prize_budget", "numeric", "0"]
+  ],
+  "pool_identity": "Natural generated BBJ pool ID from the actual sole committed row; require it differs from club ID. No prescribed ID or UPDATE to manufacture aliases.",
+  "why_smallest": "Current BBJ minimum is 100. The opening function can fund one BBJ pool without promotion, Spin, paid leaderboard or game outcome. Club promo uses the same entry but adds an active promotion and its dependencies. BBJ main has a ready real funding route; accepted bank/member/agent subsets and pending Spin are not repeated.",
+  "budget": {
+    "original_chips": "100000.00",
+    "bank_after": "99900.00",
+    "bbj_main_after": "100.00",
+    "counted_total_after": "100000.00",
+    "original_signup_diamonds": "500.00",
+    "new_chip_issuance": "0.00",
+    "new_diamond_issuance": "0.00",
+    "new_owners": 0,
+    "new_clubs": 0,
+    "new_unions": 0,
+    "mint_policy_changes": false
+  },
+  "preconditions": [
+    "Independent recipe/case/adapter acceptance and root-owned serial fixture authorization are required before execution; the case author cannot self-authorize.",
+    "Use a fresh root-owned fixture from original0010/full0006/seed0007. Preserve complete 327-identity/2957-edge/prerequisite/16-registry-check preflight and postflight. Supplemental coverage cannot replace original coverage.",
+    "Exact original owner membership, standalone nonretired club, original 100000 bank grant and 500-Diamond signup. All other original money balances zero. No pre-existing BBJ pool, opening setup/funding, leaderboard settings/program, union membership, promotion or Spin pool for the club.",
+    "bbj_mini_tiers remains the empty historical fixture table; record bounded emptiness rather than copying production tier data. Its real default helper then yields the configuration floor 5000, which is not money or a seed allocation.",
+    "Original request identity only: postgres fixture connection, service_role request claim and original owner subject; capture current_user/session_user/auth.uid/auth.role. This is not direct service_role login or provider proof.",
+    "No inherited ledger autoskip, counterparty-label, correlation, hand, table, tournament, settlement, idempotency or guard-bypass context. Start fresh and observe actual context; do not inject a cleaner counterparty.",
+    "Complete original registry retains declared opening_setup routing. This type is not added to the resolver. No new grant, registry row, unsupported source repair or financial row surgery."
+  ],
+  "steps": [
+    {
+      "id": "BEFORE",
+      "action": "Capture full bounded raw journal and financial fingerprints, seed/mint/policy rows, request identity and BBJ absence. Execute original serialized REPEATABLE READ replay plus meter once using the unchanged complete pair helper. Retain actual treasury baseline and all detector outputs."
+    },
+    {
+      "id": "PRODUCE",
+      "action": "In one fresh real transaction call the exact producer once with these 18 values. Require success true, already_completed false, allocated 100, club_bank_after 99900, bbj_seeded 100, spin_seeded/promo_budget/leaderboard_prize_budget 0, promotion_id NULL, leaderboard_rewards_enabled false and exact operation ID. Capture complete actual result/rows/journal, top-level XID, each row xmin, timestamps and transaction status, then commit once."
+    },
+    {
+      "id": "DURABLE",
+      "action": "Use a fresh connection to read committed pool/club/setup/funding/display-only leaderboard and the complete journal/fingerprints. Require one new BBJ row main100/backup0/promo0/pool_amount0, one bbj_main funding100, one opening setup and one disabled rewards version1 with empty weekly/monthly prizes. No assumed synthetic ledger IDs or dates."
+    },
+    {
+      "id": "ORDINARY-ACCOUNTS",
+      "action": "Derive real t from new ledger created_at. Require exactly these two new entries at t and no unrelated timestamp cohort. Call original fn_ca_leg_accounts(t minus 1 microsecond,t). Require exactly the bank key -100/1/0, pool key +100/1/0 and the unkeyable aggregate 0/2/2. Capture the complete raw result without filtering unkeyable."
+    },
+    {
+      "id": "POOL-IDENTITY",
+      "action": "Require one actual pool row by club_id. Exact account-balance reader with actual pool ID and bbj_pools.main_balance returns100; with original club ID returnsNULL; unrelated absent UUID returnsNULL. Backup/promo reads are0, not positive qualifications. Preserve actual pool ID in the ledger key."
+    },
+    {
+      "id": "FIRST-POSITIVE",
+      "action": "Run the unchanged complete serialized replay/meter pair in a fresh transaction. Record real treasury -100 expected delta if original snapshot helper recognizes its row xmin, and the naturally first positive pool baseline100. Require current monetary total100000 and unchanged financial inputs during detector execution. Retain any original subxid exception/discrepancy as failure; do not turn it into a source change or pool baseline from invented0."
+    },
+    {
+      "id": "STABLE",
+      "action": "Run the same complete pair again with no further money moves; preserve actual baseline IDs/basis/snapshots and readback. Desired stable bank/pool delta0 must be evidenced; unkeyable count2 remains visible while the real rows remain in the26h ordinary window. Do not require/forge unkeyable0, remove routing legs, or infer money loss from count2."
+    },
+    {
+      "id": "POSTFLIGHT",
+      "action": "Collect all original and supplemental metadata, full financial/journal fingerprints and exact mint/cap unchanged proof. Root alone disposes the private owned database using verified database/role OIDs. No cleanup of prior accepted estates."
+    }
+  ],
+  "expected_journal": [
+    {
+      "category": "club_opening_allocation",
+      "amount": "100.00",
+      "from_type": "club_treasury",
+      "from_entity_id": "7beef002-0002-4000-8000-000000000002",
+      "from_label": "clubs.chip_treasury",
+      "to_type": "opening_setup",
+      "to_entity_id": "7beef002-0002-4000-8000-000000000002",
+      "to_label": null,
+      "pre_from_balance": "100000.00",
+      "post_from_balance": "99900.00",
+      "pre_to_balance": null,
+      "post_to_balance": null
+    },
+    {
+      "category": "club_opening_allocation",
+      "amount": "100.00",
+      "from_type": "opening_setup",
+      "from_entity_id": "7beef002-0002-4000-8000-000000000002",
+      "from_label": null,
+      "to_type": "bbj_pool",
+      "to_entity_id": "<actual_pool_id>",
+      "to_label": "bbj_pools.main_balance",
+      "pre_from_balance": null,
+      "post_from_balance": null,
+      "pre_to_balance": "0.00",
+      "post_to_balance": "100.00"
+    }
+  ],
+  "journal_contract": "These are expected semantic fields, not fabricated ledger records. Preserve all actual physical column names, ids, chain/epoch/hash, actor, origin, txid, xmin and timestamps. Existing opening grant remains byte/row unchanged; exactly two new entries expected. Ordinary amount sum200 counts two transfer legs and is not net issuance. The operation ID belongs to setup/funding/program, not an invented ledger idempotency key.",
+  "expected_accounts": [
+    {
+      "account_key": "club_treasury:7beef002-0002-4000-8000-000000000002:clubs.chip_treasury",
+      "account_type": "club_treasury",
+      "entity_id": "7beef002-0002-4000-8000-000000000002",
+      "column_name": "clubs.chip_treasury",
+      "club_id": null,
+      "net": "-100.00",
+      "legs": 1,
+      "unkeyable": 0
+    },
+    {
+      "account_key": "bbj_pool:<actual_pool_id>:bbj_pools.main_balance",
+      "account_type": "bbj_pool",
+      "entity_id": "<actual_pool_id>",
+      "column_name": "bbj_pools.main_balance",
+      "club_id": null,
+      "net": "100.00",
+      "legs": 1,
+      "unkeyable": 0
+    },
+    {
+      "account_key": null,
+      "account_type": "unkeyable",
+      "entity_id": null,
+      "column_name": null,
+      "club_id": null,
+      "net": "0.00",
+      "legs": 2,
+      "unkeyable": 2
+    }
+  ],
+  "genuine_nonfinancial_effects": "The new tagline/settings trigger existing club configuration audit and game_management_events. Capture actual audit_trail/game_management_events deltas separately; do not classify real config effects as unexplained money or blanket-require all business rows unchanged. Display-only leaderboard publish is mandatory in the real opening function, not a paid outcome.",
+  "failure_contract": "Preserve primary SQLSTATE/raw exception and all observations. On any uncommitted failure rollback, then obtain fresh-connection raw/fingerprint proof of rollback. An uncertain commit is retained and fails; never assume rollback. Every connection is registered immediately, all rollback/reset/close attempts run independently despite errors, and their errors are recorded. No committed duplicate call or retry is part of this finite case.",
+  "resource_contract": {
+    "rows_per_relation": 512,
+    "raw_bytes_per_relation": 4194304,
+    "rows_total_per_snapshot": 4096,
+    "raw_bytes_total_per_snapshot": 16777216,
+    "scope": "Read bounds before raw extraction; fail closed when exceeded. Root owns inherited statement/lock/session/run timeouts, output parser limits, serial mutex, private DB identity admission and cleanup. No production business-row scans."
+  },
+  "acceptance_dimensions": {
+    "possible_after_independent_actual_review": [
+      "One actual legal positive BBJ main producer/account reader",
+      "Generated pool ID positive and club ID negative reader behavior",
+      "Exact ordinary-helper unknown-type routing cohort"
+    ],
+    "not_claimed": [
+      "Whole SEQ06",
+      "Whole SEQ08",
+      "Whole replay/unkeyable contract",
+      "Original SEQ05 repair",
+      "All17 classes",
+      "MTT/game outcomes",
+      "Foundation",
+      "Production installation or money",
+      "All projects"
+    ]
+  }
+}

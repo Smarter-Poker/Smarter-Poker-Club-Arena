@@ -1,0 +1,17 @@
+{
+  "files": {
+    "AUTHORIZATION-TEMPLATE.json": "4861c5c79b770be7c7b3a7d9a2bc2d5b8ecce6dbc7e2610c5dc77abc7ba632e4",
+    "CASE-SOURCE.patch": "b36f300584c0865591d99df8d2dca96f249e2622f388d53785e15a35a066d19f",
+    "HANDOFF.md": "58d8f19689ccf9158955a27e66c94130960e2d901b2e9d962f33cc0d112a5c39",
+    "OPERATION.json": "853f06f1749cdd1627a7ddb78fe84a287dab68a418b8cd2de71d15b2fd60567c",
+    "PROTECTED-CHECK-CATALOG.json": "9537edef9fc32e63c0db97e901f3cc8605faba1f61c48b8374f8eda6dfd9b31e",
+    "SOURCE-EDIT-CUSTODY.json": "7fbcd67c17716e2118a5fd55e72c65f3e49a6428336087d7baf66e57e341f84b",
+    "SOURCE-EDITS.json": "bca32fd27dd19211148df7dbe809ea380f48dca4ef244a8d6bed6528ca1adb7d",
+    "SOURCE-PINS.json": "1f632626fd473cabc8e80ca6ea298bf85080d4836f4978bd167eb873bbbb09f5",
+    "SOURCE-REGISTRATION.json": "c5f4d563cea869523bb9cdf5bcb5b68f8cfa43325fc45d0772e125cf36e0b208",
+    "case_module.py": "6b79b2a2b9160264cab33ac42ea2786dad8accad8135f70a9500bf4850b25ee5",
+    "prepare_overlay.py": "114c468211e375a273f6b0c1ac6433d364063279c9f3d6743e94f4897524ccd1"
+  },
+  "native_execution_authorized": false,
+  "publication_authorized": false
+}

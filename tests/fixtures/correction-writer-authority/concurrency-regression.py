@@ -15,11 +15,12 @@ import re
 import selectors
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 
-def main():
+def main(password_file):
     if len(sys.argv) != 5:
         raise SystemExit("qualified psql, isolated Unix socket, port and postgres database required")
     psql, socket_path, port, database = sys.argv[1:]
@@ -30,7 +31,7 @@ def main():
     command = [psql, "-X", "-w", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1",
                "-h", socket_path, "-p", port, "-U", "postgres", "-d", database]
     environment = {"PATH": os.environ.get("PATH", ""), "LC_ALL": "C",
-                   "PGCONNECT_TIMEOUT": "5", "PGPASSFILE": os.devnull}
+                   "PGCONNECT_TIMEOUT": "5", "PGPASSFILE": password_file}
     helpers = Path(__file__).with_name("concurrency-session.sql").read_text()
     config = "SET statement_timeout='25s';SET lock_timeout='20s';SET TimeZone='UTC';SET DateStyle='ISO,YMD';\n"
     expected_run_id = None
@@ -268,4 +269,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # libpq requires a regular private file; /dev/null emits a warning into the
+    # strict backend-identity stream. Never read an ambient credential file.
+    with tempfile.NamedTemporaryFile(prefix="correction-fixture-pgpass-") as password_file:
+        os.fchmod(password_file.fileno(), 0o600)
+        main(password_file.name)

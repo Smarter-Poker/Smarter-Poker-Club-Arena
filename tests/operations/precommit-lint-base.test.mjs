@@ -7,6 +7,10 @@ import { execFileSync } from 'node:child_process';
 import { lintBase } from '../../scripts/ci/precommit-lint-base.mjs';
 
 function fixture(run) {
+  // Hooks export GIT_DIR/GIT_INDEX_FILE and other repository selectors. Never
+  // let an isolated Git fixture initialize or configure the calling checkout.
+  const inheritedGit = Object.entries(process.env).filter(([key]) => key.startsWith('GIT_'));
+  for (const [key] of inheritedGit) delete process.env[key];
   const dir = mkdtempSync(join(tmpdir(), 'commit-scope-'));
   const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const file = (name, value) => writeFileSync(join(dir, name), value);
@@ -17,7 +21,10 @@ function fixture(run) {
     const main = git('rev-parse', 'HEAD'); git('update-ref', 'refs/remotes/origin/main', main); git('switch', '-q', 'feature');
     file('own.md', 'owned\n'); git('add', '.'); git('commit', '-qm', 'own');
     run({ dir, git, file, main });
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    for (const [key, value] of inheritedGit) process.env[key] = value;
+  }
 }
 
 test('ordinary commits retain staged lint selection', () => fixture(({ dir }) => assert.equal(lintBase(dir), null)));

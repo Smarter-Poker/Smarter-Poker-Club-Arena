@@ -1,3 +1,5 @@
+// Run merge-scope regressions in the existing required CI dependency-policy step.
+import './precommit-lint-base.test.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {

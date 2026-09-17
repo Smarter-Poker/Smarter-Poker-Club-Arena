@@ -44,6 +44,7 @@ import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import {
@@ -1210,7 +1211,7 @@ export class ScheduledTournamentService {
       payout_percent: mttPayoutPercent(cfg.payoutPercent),
       start_time: startTime.toISOString(),
       late_reg_levels: lateRegLevels,
-      late_reg_mins: lateRegLevels,
+      late_reg_mins: mttLateRegistrationMinutes(blinds, lateRegLevels),
       is_bounty: isBountyType,
       is_pko: type === 'progressive_bounty',
       is_mystery_bounty: type === 'mystery_bounty',

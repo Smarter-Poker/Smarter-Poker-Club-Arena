@@ -42,3 +42,14 @@ measured `--mtt-ticker-h` clearance, including the safe area. With no ticker,
 the original geometry is retained. The phone sheet and desktop panel retain
 their existing layout. This small CSS correction requires live visual readback,
 not a new test fixture or changes to tournament announcements.
+
+## The lobby owns the keyboard while open
+
+TablePage omitted Must Move from its modal flag, so the shared keyboard hook
+could fold, call, raise, or size a bet behind the open lobby. The same shared
+Escape callback omitted its close setter. Both now use the existing modal
+path. The regression executes the actual TablePage expressions and real
+keyboard hook: all betting and Rabbit Hunt shortcuts stay blocked until the
+lobby closes, Escape closes it, and an in-flight buy-in remains visible. Both
+new cases fail on the prior wiring; all 16 tests in the affected suite pass
+afterward. This does not claim a full live seated-player keyboard test.

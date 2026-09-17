@@ -59,3 +59,7 @@ On the owner's Mac, also read /Users/smarter.poker/Documents/AGENTS.md and /User
 ## Failed or interrupted deployment
 
 Follow the operating law's failure classification immediately. Repair build/test/preflight failures without waiting for a maintenance hour; reattach to an unknown owning operation; verify or recover missing proof without restarting a healthy deployed version. A cutover needs the existing durable maintenance certificate and full proof/rollback budget. Record failure, fix-ready, retry submission, admission and verification times separately. The additional certified engine recovery opportunity is a required implementation improvement, not a capability supplied by these Markdown changes. Do not extend a freeze or reduce safety reserves to force a retry.
+
+## Publication timing
+
+Push ready changes, run checks, complete protected merge, build and stage as soon as their prerequisites pass, throughout the hour. Do not hold these stages until `:55`. World Hub and Club Arena client publication have no hourly gate. Only game-engine activation uses its certified maintenance window; the immutable image must be prepared beforehand, followed by immediate live identity, behavior and rollback-budget verification at cutover. Commander and shared-package delivery retain their own component rules above. See the operating law for failed-attempt recovery.

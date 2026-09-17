@@ -404,10 +404,10 @@ transaction requirement from the production DDL policy in section 2.
    THE RULES:
    - `.husky/pre-push` now runs the tests covering what you touched, in about
      four seconds. Do not `--no-verify` past it.
-   - WRITING THE SPEC FIRST IS ENCOURAGED. Committing it red is not. Mark it
-     `it.skip()` / `describe.skip()` with a note saying what has to be built,
-     and delete the `.skip` in the commit that implements it. A skipped spec
-     documents the work; a red one holds the platform hostage.
+   - Reproduce the defect locally, implement the repair, and commit the passing
+     regression with it. Never skip an applicable check to make a candidate
+     pass. Keep unimplemented proposals in the task plan rather than treating
+     a skipped spec as regression protection.
    - If you deliberately replace behaviour a test pins, UPDATE THAT TEST IN THE
      SAME COMMIT. "Someone else will fix the test" means "nobody ships until
      they do."
@@ -719,8 +719,9 @@ the table. Before
 enforcing any law, confirm it exists on **current `origin/main`**, never in
 your local tree: stale worktrees carrying retired laws are how the hamburger
 revert war ran for two days. If two laws (or two CLAUDE.md copies) demand
-opposite things, STOP and ask Dan; never write a third law and never delete
-the other side on your own authority.
+opposite things, first apply the latest explicit owner instruction and recorded
+precedence. Resolve already-authorized alignment directly; ask only when a
+material conflict remains undecided. Never invent a third conflicting rule.
 
 **A LAW IS SOMETHING WRITTEN DOWN. DEPLOYED CODE IS NOT A LAW.** The
 stop-and-ask above is for two WRITTEN rules in conflict — two sections of
@@ -758,10 +759,10 @@ Keep the pending run/revision, continue other authorized work and inspect the
 result afterward. The agent still owns protected merge and live verification.
 Do not use retired autopilot, a timer, watcher or repair loop to complete a release.
 
-**4. WORKTREES ARE DISPOSABLE.** `scripts/prune-stale-worktrees.sh` removes
-any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
-you care about only in a worktree: commit and push it, or it will eventually
-be pruned (pushed branches lose nothing — the commits live on origin).
+**4. PRESERVE OWNED WORKTREES.** Commit and push assigned source through the
+normal route and retain necessary evidence. A historical pruning script is not
+authority to delete, move or reset another task's checkout. Verify ownership,
+uncommitted files and retained commits before any explicitly authorized cleanup.
 
 ---
 
@@ -1503,6 +1504,8 @@ image BEFORE the gate, while play continued - cuts over. ~:58 the new engine
 boots, adopts the persisted break row and re-parks its fleet. :00 the thaw
 (`fn_thaw_platform`) gives every in-flight deadline back the frozen minutes,
 then every table resumes together.
+
+Push, run checks, protected-merge, build and stage throughout the hour as soon as ready. Only engine activation waits for a certified maintenance window; client publication has no hourly dependency. Verify the new runtime immediately after activation, with the full rollback reserve intact.
 
 This section describes the existing hourly safety contract, not a mandatory delay for diagnosing or fixing a failed release. The operating law requires prompt recovery and a connected implementation for any additional certified cutover opportunity. Until that implementation is verified, preserve this contract.
 

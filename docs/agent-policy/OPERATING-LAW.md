@@ -1,8 +1,8 @@
 # Smarter Poker Agent Operating Law
 
-Version 2.4 — adopted operating instruction, September 17, 2026.
+Version 2.5 — adopted operating instruction, September 17, 2026.
 
-Revision 2.4 incorporates the owner's additional direction on direct delivery ownership, unavailable help and provider queue delays.
+Revision 2.5 includes direct delivery ownership, unavailable help, provider queue delays and the owner's clarification that preparation and publication proceed throughout the hour.
 
 Owner authorized installation and instruction alignment on September 17, 2026. This consolidates the four rules described in the supplied conversation; the earlier full 2.2 document was not supplied.
 
@@ -83,6 +83,8 @@ Record failure time, diagnosis, fix-ready time, corrected submission, cutover el
 **Engine recovery requirement and implementation boundary:** remove the avoidable hourly retry delay in the owning release and maintenance transaction. The required design is an additional bounded, certified recovery opportunity after a corrected failed release, with the same draining, durable freeze, ownership, proof, rollback and thaw guarantees. The reviewed implementation requires 285 seconds remaining in a 300-second hourly window; this instruction alone does not change that guard. Until the connected implementation and relevant installed database contract are verified, use the existing certified window and report the exact admission gap. Never reduce the recovery reserve, extend a live freeze, or restart active games to satisfy a speed target.
 
 ## 4. Be ready for cutover and use waiting time productively
+
+**Push, check, merge, build and stage throughout the hour.** Begin each authorized stage as soon as its actual prerequisites pass. Never hold a ready commit, PR, protected merge, engine image build or release staging until `:55`. World Hub and Club Arena client publication proceed immediately through their own provider routes and have no hourly cutover dependency. For the game engine, prepare and validate the immutable image while the current version serves players; only activation waits for the maintenance owner's certified window. At cutover, activate the prepared version and immediately verify the running identity and required local, public and database proof while preserving rollback time. Pre-cutover build success cannot prove the new version is already running. Do not postpone available verification until the next hour.
 
 Apply this timing rule only to a delivery with an actual maintenance cutover. `:55` refers to the engine's applicable existing route; it is not a new schedule for World Hub, Commander, or client publication. Use the current authorized workflow and readiness evidence to establish the next eligible window. Record its absolute time and time zone; wall-clock time alone does not authorize a restart.
 

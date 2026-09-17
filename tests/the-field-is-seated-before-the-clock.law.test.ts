@@ -101,11 +101,21 @@ describe('ITEM 2 — seating moves, the poker does not', () => {
     // held felt, and every level after it runs a minute out of step with the
     // structure the lobby printed.
     expect(start).toMatch(
-      /const blindStartDelayMs =\s*spinFirstDealHoldUntil > 0\s*\? Math\.max\(0, spinFirstDealHoldUntil - Date\.now\(\)\)\s*: this\.preStartLeadMs;/
+      /const blindStartAtMs =\s*spinFirstDealHoldUntil > 0\s*\? spinFirstDealHoldUntil\s*: launchStartMs;/
     );
     expect(start).toMatch(
-      /if\s*\(blindStartDelayMs\s*>\s*0\)\s*\{\s*const structure[\s\S]{0,200}?setLifecycleTimeout\(\(\) => \{\s*this\.startBlindTimer\(structure\);\s*\}, blindStartDelayMs\);/
+      /if\s*\(blindStartAtMs > Date\.now\(\)\)\s*\{\s*this\.scheduleBlindClockStart\(tournament\.blind_structure \|\| \[\], blindStartAtMs\);/
     );
+    // Setup consumes the lead. The cancellable wake uses the booked deadline,
+    // never the full original delay again, and a pause keeps ownership.
+    const firstLevelWake = baseCode.slice(
+      baseCode.indexOf('private scheduleBlindClockStart('),
+      baseCode.indexOf('protected startBlindTimer(')
+    );
+    expect(firstLevelWake).toContain('Math.max(0, notBeforeMs - Date.now())');
+    expect(firstLevelWake).toContain('if (this.blindStartTimer !== timer) return;');
+    expect(firstLevelWake).toContain('if (this.isOnBreak()) return;');
+    expect(firstLevelWake).toContain('this.startBlindTimer(blindStructure);');
   });
 
   it('started_at is the advertised start, not the seating instant', () => {

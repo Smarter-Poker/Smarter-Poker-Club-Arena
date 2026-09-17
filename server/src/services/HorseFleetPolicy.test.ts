@@ -398,6 +398,29 @@ describe('withheldReason names every cause, in the contract order', () => {
     expect(withheldReason(policy({ variants: ['plo6'] }), full)).toBe('variant_excluded');
   });
 
+  it.each([
+    ['low', 'nlh', null],
+    [' LOW ', 'NLH', null],
+    ['high', 'nlh', 'stake_band_excluded'],
+    ['low', 'plo6', 'variant_excluded'],
+    ['high', 'plo6', 'stake_band_excluded'],
+    [null, 'nlh', 'stake_band_excluded'],
+    ['low', null, 'variant_excluded'],
+  ])('checks both configured restrictions independently (%s, %s)', (stakeBand, variant, reason) => {
+    const p = policy({ stakeBands: ['low'], variants: ['nlh'] });
+    expect(withheldReason(p, { ...full, stakeBand, variant })).toBe(reason);
+  });
+
+  it('does not turn an unasked restriction into a rejection of a supplied coordinate', () => {
+    const p = policy({ stakeBands: ['low'], variants: ['nlh'] });
+    expect(withheldReason(p, { stakeBand: 'low' })).toBeNull();
+    expect(withheldReason(p, { variant: 'nlh' })).toBeNull();
+    expect(withheldReason(p, {})).toBeNull();
+    // The all-coordinate eligibility API still requires both restricted values.
+    expect(horseAllowedByPolicy(p, { stakeBand: 'low' })).toBe(false);
+    expect(horseAllowedByPolicy(p, { variant: 'nlh' })).toBe(false);
+  });
+
   it('the wrong hour', () => {
     const p = policy({ schedule: [{ startHourUTC: 0, endHourUTC: 6 }] });
     expect(withheldReason(p, full)).toBe('outside_schedule');

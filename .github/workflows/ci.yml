@@ -1152,6 +1152,15 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-profile-authority.py
+      - name: Horse commitment audit preserves formats and canonical roster identity
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          python3 -B scripts/ci/test-horse-commitment-audit.py \
+            --pg-bin "$PG_BIN" --source-root "$GITHUB_WORKSPACE" \
+            --allocation-parent /tmp \
+            --output "$GITHUB_WORKSPACE/artifacts/horse-commitment-audit"
       - name: Tournament reminder receipts, rollback and overlapping consumers
         env:
           PGBIN: /usr/lib/postgresql/17/bin

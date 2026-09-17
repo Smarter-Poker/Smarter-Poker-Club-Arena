@@ -85,6 +85,8 @@ const TournamentStartingTicker = lazyWithRetry(
 // Pages (lazy loaded for performance)
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'));
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'));
+// Public landing for signed-out visitors and crawlers at the arena root.
+const PokerArenaLandingPage = lazyWithRetry(() => import('./pages/PokerArenaLandingPage'));
 
 const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
 const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
@@ -292,6 +294,7 @@ import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 import RouterBridge from './components/common/RouterBridge';
+import RouteSeo from './components/seo/RouteSeo';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
 function ClubFooterMount({ clubId }: { clubId?: string }) {
@@ -647,6 +650,9 @@ function FullApp() {
             {/* Hands navigate() to src/lib/routerBridge for deep links and
                 plugin listeners (native). Renders nothing. */}
             <RouterBridge />
+            {/* Per-route title, description, canonical, robots and JSON-LD.
+                Public routes are listed in src/lib/seo.ts; all else is noindex. */}
+            <RouteSeo />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)
@@ -704,11 +710,24 @@ function FullApp() {
                     PROTECTED ROUTES (Auth Required)
                 ═══════════════════════════════════════════════════════════════ */}
 
-              {/* HomePage - Standalone without Shell, requires auth */}
+              {/* HomePage - Standalone without Shell, requires auth.
+                  WEB: signed-out visitors (and Googlebot) get the public
+                  landing page instead of a redirect to login (src/lib/seo.ts).
+                  NATIVE: there is nothing to index inside the app shell and
+                  the in-app AuthPage is the front door, so the guard keeps
+                  routing to it. */}
               <Route
                 path="/"
                 element={
-                  <AuthGuard>
+                  <AuthGuard
+                    publicFallback={
+                      IS_NATIVE_BUILD ? undefined : (
+                        <RouteErrorBoundary>
+                          <PokerArenaLandingPage />
+                        </RouteErrorBoundary>
+                      )
+                    }
+                  >
                     <RouteErrorBoundary>
                       <HomePage />
                     </RouteErrorBoundary>
@@ -1276,14 +1295,14 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* Help Center is public (no AuthGuard), like the legal
+                    pages: the FAQ is the page search engines should find. */}
                 <Route
                   path="help"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Help">
-                        <HelpPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="Help">
+                      <HelpPage />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route

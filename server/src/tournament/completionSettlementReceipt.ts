@@ -86,7 +86,9 @@ export interface VerifiedTournamentCompletionReceipt {
     destination: string;
     attributedUsers: number;
     settledAt: string;
-    attributedAt: string;
+    attributedAt: string | null;
+    accountingState: string;
+    accountingReason: string | null;
   };
   settledAt: string;
 }
@@ -184,7 +186,7 @@ export function verifyTournamentCompletionReceipt(
     receipt.ok !== true ||
     receipt.fully_settled !== true ||
     receipt.status !== 'COMPLETED' ||
-    Number(receipt.receipt_version) !== 1 ||
+    ![1, 2].includes(Number(receipt.receipt_version)) ||
     tournamentId !== expectedTournamentId ||
     winnerId === null ||
     (expectedWinnerId != null && winnerId !== expectedWinnerId) ||
@@ -348,16 +350,70 @@ export function verifyTournamentCompletionReceipt(
   const attributedUsers = nonNegativeInteger(rake.attributed_users);
   const rakeSettledAt = validTimestamp(rake.settled_at);
   const rakeAttributedAt = validTimestamp(rake.attributed_at);
+  const receiptVersion = Number(receipt.receipt_version);
+  const accounting = parseObject(rake.accounting);
+  const accountingState = receiptVersion === 1 ? 'legacy' : accounting.status;
+  const isDeferred = accountingState === 'banked_accrual_deferred';
+  const bankAmount = exactMoney(accounting.bank_amount);
+  const bankedAt = validTimestamp(accounting.banked_at);
+  const bankId = uuid(accounting.bank_receipt_id);
+  const bankClub = uuid(accounting.bank_club_id);
+  const bankUnion = uuid(accounting.bank_union_id);
+  const sourceCount = nonNegativeInteger(accounting.recognized_source_count);
+  const deferredReasons = [
+    'tournament_fee_sources_require_reconciliation',
+    'accounting_terms_not_observed',
+    'accounting_terms_not_active',
+    'tournament_fee_not_captured_by_original_producer',
+  ];
+  const exactBank =
+    bankAmount === 0
+      ? accounting.bank_receipt_kind === 'none' &&
+        accounting.bank_receipt_id === null &&
+        rakeDestination === 'none'
+      : bankId !== null &&
+        bankClub !== null &&
+        (accounting.bank_receipt_kind === 'union_wallet_transaction'
+          ? bankUnion !== null && rakeDestination === `union:${bankUnion}`
+          : accounting.bank_receipt_kind === 'chip_ledger' &&
+            accounting.bank_union_id === null &&
+            rakeDestination === `chip_retirement:${bankClub}`);
+  const exactAccounting =
+    receiptVersion === 1 ||
+    (accounting.accounting_version === 2 &&
+      uuid(accounting.tournament_id) === tournamentId &&
+      bankAmount !== null &&
+      bankAmount === rakeAmount &&
+      bankedAt !== null &&
+      bankedAt === rakeSettledAt &&
+      exactBank &&
+      typeof accounting.source_fingerprint === 'string' &&
+      /^[0-9a-f]{32}$/.test(accounting.source_fingerprint) &&
+      sourceCount !== null &&
+      (isDeferred
+        ? accounting.payable === false &&
+          sourceCount === 0 &&
+          attributedUsers === 0 &&
+          rake.attributed === false &&
+          rake.attributed_at === null &&
+          typeof accounting.reason === 'string' &&
+          deferredReasons.includes(accounting.reason)
+        : (accountingState === 'recognized' &&
+            accounting.payable === true &&
+            bankAmount > 0 &&
+            sourceCount > 0) ||
+          (accountingState === 'cancelled' && accounting.payable === false && bankAmount === 0)));
   if (
     rakeAmount === null ||
     rakeDestination === null ||
     rakeDestination === 'pending' ||
-    rake.attributed !== true ||
+    !exactAccounting ||
+    (!isDeferred && rake.attributed !== true) ||
     attributedUsers === null ||
     rakeSettledAt === null ||
-    rakeAttributedAt === null ||
+    (!isDeferred && rakeAttributedAt === null) ||
     Date.parse(rakeSettledAt) > Date.parse(settledAt) ||
-    Date.parse(rakeAttributedAt) > Date.parse(settledAt)
+    (rakeAttributedAt !== null && Date.parse(rakeAttributedAt) > Date.parse(settledAt))
   ) {
     return null;
   }
@@ -386,6 +442,8 @@ export function verifyTournamentCompletionReceipt(
       attributedUsers,
       settledAt: rakeSettledAt,
       attributedAt: rakeAttributedAt,
+      accountingState: String(accountingState),
+      accountingReason: isDeferred ? String(accounting.reason) : null,
     },
     settledAt,
   };

@@ -35,7 +35,7 @@ export type Plo4NodeRole =
 /** A deliberately labeled heuristic baseline pack. No solver distillation or
  * calibrated win probability is claimed by its hand-quality score. */
 export const PLO4_POLICY_PACK = Object.freeze({
-  version: 'plo4-policy-round1-v2',
+  version: 'plo4-policy-round1-v3',
   source: 'explicit_heuristic_baseline' as const,
   calibratedConfidence: null,
   defaultMode: 'shadow' as const,

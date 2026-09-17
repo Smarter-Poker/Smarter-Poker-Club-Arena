@@ -14,6 +14,7 @@ import { parseTableArenaIdentity } from '../../domain/ArenaContext.js';
 import { assertDiamondCashTable } from '../../domain/DiamondCashBoundary.js';
 import { reportError } from '../errorReporter.js';
 import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
+import { arenaPlayerName, type ArenaNameProfile } from './arenaPlayerName.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine
@@ -143,7 +144,7 @@ interface SeatRow {
   entry_post_agreed?: boolean | null;
 }
 
-interface SeatedProfileRow {
+interface SeatedProfileRow extends ArenaNameProfile {
   id: string;
   display_name: string | null;
   username: string | null;
@@ -165,11 +166,7 @@ function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
     seat_joined_at: seat.joined_at,
     user_id: seat.user_id,
     occupancy_id: seat.occupancy_id,
-    username: profile.is_horse
-      ? profile.display_name || profile.username || 'Player'
-      : profile.use_real_name
-        ? profile.display_name || profile.username || 'Player'
-        : profile.username || profile.display_name || 'Player',
+    username: arenaPlayerName(profile),
     stack: seat.stack,
     seat_number: seat.seat_number || 1,
     is_horse: profile.is_horse || false,

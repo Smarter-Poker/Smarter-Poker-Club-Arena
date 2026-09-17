@@ -1,0 +1,5 @@
+{
+  "_owner": "codex-mustmove-audit-sep14",
+  "_comment": "Migration 20260916044342 was installed and its exact definition, service-role grants and index were verified on September 17. Read-only engine arrival proof for exact active destination occupancies.",
+  "functions": ["fn_cash_seat_move_arrivals"]
+}

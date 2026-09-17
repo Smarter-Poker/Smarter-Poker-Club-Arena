@@ -20,11 +20,26 @@ export function classifyChangedPaths(paths) {
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   const diamondGames = matches(/^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/);
+  // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
+  const phase4Changed = matches(phase4);
+  // Script/fixture-only edits must admit accounting and its routing tests.
+  const commitmentAudit = matches(
+    /^(scripts\/ci\/test-horse-commitment-audit\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
+  );
   return {
     src: broad || matches(/^src\//),
-    server: broad || diamondGames || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/)/),
-    tests: broad || diamondGames || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
-    phase4: matches(phase4),
+    server:
+      broad ||
+      diamondGames ||
+      phase4Changed ||
+      commitmentAudit ||
+      matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/)/),
+    tests:
+      broad ||
+      diamondGames ||
+      commitmentAudit ||
+      matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/),
+    phase4: phase4Changed,
     fixture: matches(fixture),
   };
 }

@@ -151,6 +151,18 @@ function scaleWinnerUnitsForRake(
   return adjusted;
 }
 
+/** Private controller receipt for a Horse audit. Never attach this to HandEvent. */
+export interface HorseDiscardControllerReceipt {
+  readonly seat: number;
+  readonly actorId: string;
+  readonly chosenIndex: number;
+  readonly originalCards: readonly Readonly<Card>[];
+  readonly discardedCard: Readonly<Card>;
+  readonly retainedCards: readonly Readonly<Card>[];
+  readonly communityCards: readonly Readonly<Card>[];
+  readonly acceptedRecord: Readonly<ActionRecord>;
+}
+
 export class HandController {
   private config: HandConfig;
   private state: GameState;
@@ -159,6 +171,53 @@ export class HandController {
   private pineappleDiscardsRemaining: Set<number> = new Set();
   /** Private per-hand knowledge; deliberately absent from public GameState. */
   private pineappleKnownDeadCards = new Map<number, Card>();
+  private pineappleDiscardObservers = new Map<
+    number,
+    (receipt: HorseDiscardControllerReceipt) => void
+  >();
+
+  /** One accepted discard, observed before its public action is emitted. */
+  public observeNextPineappleDiscard(
+    seat: number,
+    observer: (receipt: HorseDiscardControllerReceipt) => void
+  ): () => void {
+    this.pineappleDiscardObservers.set(seat, observer);
+    return () => {
+      if (this.pineappleDiscardObservers.get(seat) === observer)
+        this.pineappleDiscardObservers.delete(seat);
+    };
+  }
+
+  private observeAcceptedPineappleDiscard(
+    player: SeatPlayer,
+    chosenIndex: number,
+    originalCards: readonly Card[],
+    discardedCard: Card,
+    communityCards: readonly Card[],
+    acceptedRecord: Readonly<ActionRecord>
+  ): void {
+    const observer = this.pineappleDiscardObservers.get(player.seat);
+    if (!observer) return;
+    this.pineappleDiscardObservers.delete(player.seat);
+    const detach = (cards: readonly Card[]) =>
+      Object.freeze(cards.map((card) => Object.freeze({ ...card })));
+    const receipt: HorseDiscardControllerReceipt = Object.freeze({
+      seat: player.seat,
+      actorId: player.user_id,
+      chosenIndex,
+      originalCards: detach(originalCards),
+      discardedCard: Object.freeze({ ...discardedCard }),
+      retainedCards: detach(player.cards),
+      communityCards: detach(communityCards),
+      acceptedRecord: Object.freeze({ ...acceptedRecord }),
+    });
+    try {
+      observer(receipt);
+    } catch (error) {
+      // An audit sink cannot interrupt an already accepted card mutation.
+      reportError(error, 'HandController.horse_discard_observer');
+    }
+  }
 
   public getPineappleKnownDeadCards(seat: number): Card[] {
     const card = this.pineappleKnownDeadCards.get(seat);
@@ -952,7 +1011,8 @@ export class HandController {
     seat: number,
     action: ActionType,
     amount?: number,
-    origin: AcceptedActionOrigin = 'unknown'
+    origin: AcceptedActionOrigin = 'unknown',
+    onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
     if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
       return false;
@@ -1103,6 +1163,15 @@ export class HandController {
     });
     this.state.actionHistory.push(record);
 
+    // Observe the exact clamped, validated and cent-snapped action before
+    // broadcasts/advanceGame can change the current street or turn. A receipt
+    // consumer cannot undo an action or interrupt the existing game lifecycle.
+    try {
+      onAccepted?.(record);
+    } catch {
+      /* Optional accounting must not change gameplay. */
+    }
+
     // The stage travels WITH the action. This is the same value just written
     // to actionHistory above, so the persisted hand history and the
     // controller's own record agree by construction rather than by timing.
@@ -1152,9 +1221,28 @@ export class HandController {
       return false; // Invalid card index
     }
 
+    const originalCards = player.cards.map((card) => ({ ...card }));
     // Remove the selected card from the player's hand
     const discarded = player.cards.splice(cardIndex, 1);
     this.pineappleDiscardsRemaining.delete(seat);
+
+    const record: Readonly<ActionRecord> = Object.freeze({
+      seat,
+      userId: player.user_id,
+      action: 'discard',
+      amount: 0,
+      timestamp: Date.now(),
+      stage: this.state.stage,
+    });
+    this.state.actionHistory.push(record);
+    this.observeAcceptedPineappleDiscard(
+      player,
+      cardIndex,
+      originalCards,
+      discarded[0],
+      this.state.communityCards,
+      record
+    );
 
     /* PHASE 4 2026-09-01: the card itself, to the seat that threw it and to
        nobody else. This event is consumed by the engine and written to the
@@ -1194,16 +1282,6 @@ export class HandController {
        isBettingRoundComplete), so a zero-amount 'discard' on a stage none of
        them bet in is inert to all of them - and it makes the in-memory history
        agree with the persisted one, which is what HorseMind hydrates from. */
-    const record: Readonly<ActionRecord> = Object.freeze({
-      seat,
-      userId: player.user_id,
-      action: 'discard',
-      amount: 0,
-      timestamp: Date.now(),
-      stage: this.state.stage,
-    });
-    this.state.actionHistory.push(record);
-
     // Emit discard action for logging
     this.emit({
       type: 'PLAYER_ACTION',
@@ -2135,8 +2213,27 @@ export class HandController {
       this.state.communityCards.length >= 3 ? this.state.stage : ('flop' as HandStage);
     for (const player of pending) {
       const bestIdx = prepared.decisions.get(player.seat) as number;
+      const originalCards = player.cards.map((card) => ({ ...card }));
       const forced = player.cards.splice(bestIdx, 1);
       this.pineappleDiscardsRemaining.delete(player.seat);
+
+      const record: Readonly<ActionRecord> = Object.freeze({
+        seat: player.seat,
+        userId: player.user_id,
+        action: 'discard',
+        amount: 0,
+        timestamp: Date.now(),
+        stage: discardStage,
+      });
+      this.state.actionHistory.push(record);
+      this.observeAcceptedPineappleDiscard(
+        player,
+        bestIdx,
+        originalCards,
+        forced[0],
+        flop.slice(0, 3),
+        record
+      );
 
       /* PHASE 4 2026-09-01: an all-in seat never chose, but the card still
          left their hand and it is still theirs to review. Same private event,
@@ -2165,15 +2262,6 @@ export class HandController {
          CLAUDE.md 10.6 says an animation is owed every time it is owed, not
          on the paths that happen to be convenient. Announced identically here,
          BEFORE the cards go out, so ordering matches performDiscard. */
-      const record: Readonly<ActionRecord> = Object.freeze({
-        seat: player.seat,
-        userId: player.user_id,
-        action: 'discard',
-        amount: 0,
-        timestamp: Date.now(),
-        stage: discardStage,
-      });
-      this.state.actionHistory.push(record);
       this.emit({
         type: 'PLAYER_ACTION',
         seat: player.seat,

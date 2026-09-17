@@ -1,3 +1,5 @@
+**Non-engine delivery: push, publish, verify and finish without waiting for `:55`.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
+
 ## Required reading and precedence
 
 At task start, every resumption/context loss, and before final validation read [the owner policy](docs/agent-policy/OWNER-POLICY.md), [operating law](docs/agent-policy/OPERATING-LAW.md), [hardening standard](docs/agent-policy/HARDENING.md), and [reference index](docs/agent-policy/REFERENCE-INDEX.md), plus the actual task checkpoint and applicable path instructions. On the owner’s Mac read the current shared sources in `/Users/smarter.poker/Documents` as well. Later explicit owner directions take precedence over an older mirror. Use [PUBLISHING.md](PUBLISHING.md) for this repository's delivery route.

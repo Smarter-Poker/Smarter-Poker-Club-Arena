@@ -2,6 +2,14 @@
 
 Revision: 2026-09-17 operating-law alignment. Read `AGENT-OPERATING-LAW.md`, `AGENT-HARDENING-STANDARD.md`, and `AGENT-REFERENCE-INDEX.md` alongside this file. Repository copies are under `docs/agent-policy/` for environments without this Mac path.
 
+## Select the delivery scope before applying maintenance rules
+
+**A non-engine task must push, publish, verify and finish through its normal route without waiting for `:55`.** The engine cutover rule is not a Club Arena-wide release rule. A page, button, style, asset or client behavior using an already supported engine API does not acquire an engine deployment dependency merely because it lives in Club Arena or communicates with the engine. Another task's pending engine upgrade is not this task's blocker.
+
+Inspect the assigned diff and the behavior it requires. Apply an engine activation gate only when the assigned change actually replaces engine runtime/release control or requires an identified new engine contract. Name that specific dependency in the checkpoint before treating it as a blocker; a repository name, unrelated server commit on main, generic engine-health check or hourly clock is not evidence. When dependencies are uncertain, inspect the connected contract promptly instead of defaulting every task to an hourly wait.
+
+For client-only delivery, verify its required checks, protected merge, client publisher, both client build-info endpoints and affected behavior immediately. Then finish that client scope; no new engine SHA, restart certificate, maintenance window or unrelated engine task completion is required. World Hub and Commander follow their own normal publication/verification procedures. For mixed work, record client and engine results separately and release independent compatible portions without a blanket hold; preserve genuine compatibility, financial, schema and maintenance safeguards.
+
 ## Shared 2 TB external SSD access — owner instruction, September 17, 2026
 
 All agents and delegated workers on this Mac may use the mounted 2 TB external SSD within their assigned scope. Its writable working volume is `/Volumes/SmarterWork`; its archive volume is `/Volumes/SmarterArchives`. Use a unique task-owned directory under `/Volumes/SmarterWork/agent-work` for new worktrees, scratch files and authorized caches, and `/Volumes/SmarterArchives/agent-evidence` for retained evidence or source archives. Existing directories may belong to another task: do not overwrite, reset, prune, move or delete them. Verify the volume is mounted and the destination is writable before using it; available space is dynamic and APFS volume quotas may be smaller than the physical 2 TB device.

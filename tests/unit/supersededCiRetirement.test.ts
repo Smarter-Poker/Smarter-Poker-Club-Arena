@@ -94,6 +94,25 @@ describe('current PR event retires only its own obsolete CI', () => {
     const f = fixture({ ignoresForce: true });
     await expect(run(f)).rejects.toThrow('has not confirmed terminal cancellation');
   });
+  it('allows delayed terminal readback without submitting another cancellation', async () => {
+    const f = fixture({ ignoresForce: true });
+    const original = f.request;
+    let forcedReads = 0;
+    f.request = async (method, path) => {
+      const result = await original(method, path);
+      if (
+        method === 'GET' &&
+        path.endsWith('/runs/90') &&
+        f.writes.some((p) => p.endsWith('/force-cancel'))
+      ) {
+        forcedReads++;
+        return { ...result, status: forcedReads >= 3 ? 'completed' : 'in_progress' };
+      }
+      return result;
+    };
+    expect((await run(f)).retired).toEqual([90]);
+    expect(f.writes).toHaveLength(2);
+  });
   it('never forces a run that stopped normally', async () => {
     const f = fixture({ stopsNormally: true });
     await run(f);

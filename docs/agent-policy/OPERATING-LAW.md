@@ -1,8 +1,8 @@
 # Smarter Poker Agent Operating Law
 
-Version 2.5 — adopted operating instruction, September 17, 2026.
+Version 2.6 — adopted operating instruction, September 17, 2026.
 
-Revision 2.5 includes direct delivery ownership, unavailable help, provider queue delays and the owner's clarification that preparation and publication proceed throughout the hour.
+Revision 2.6 makes non-engine completion independent at every entry point, alongside direct ownership, queue recovery and preparation throughout the hour.
 
 Owner authorized installation and instruction alignment on September 17, 2026. This consolidates the four rules described in the supplied conversation; the earlier full 2.2 document was not supplied.
 
@@ -13,6 +13,14 @@ This addendum applies to agents working on smarter.poker / World Hub, Club Arena
 Follow applicable higher-priority instructions and the latest explicit owner directions. On the owner's Mac, the current shared owner policy is `/Users/smarter.poker/Documents/AGENTS.md`; the implementation standard is `/Users/smarter.poker/Documents/AGENT-HARDENING-STANDARD.md`. Club Arena and World Hub use their current `AGENTS.md` and `PUBLISHING.md`. Older playbooks are subordinate where those owner instructions expressly supersede them.
 
 The four rules below are cumulative. Blocker recovery takes priority over optional improvements; useful work during a wait never overrides scope, release readiness, maintenance, ownership, or required checks. A checkpoint records authority already granted; editing it cannot create authority. A one-time exception ends at its stated limit and is not a standing exemption.
+
+## Select the delivery scope before applying maintenance rules
+
+**A non-engine task must push, publish, verify and finish through its normal route without waiting for `:55`.** The engine cutover rule is not a Club Arena-wide release rule. A page, button, style, asset or client behavior using an already supported engine API does not acquire an engine deployment dependency merely because it lives in Club Arena or communicates with the engine. Another task's pending engine upgrade is not this task's blocker.
+
+Inspect the assigned diff and the behavior it requires. Apply an engine activation gate only when the assigned change actually replaces engine runtime/release control or requires an identified new engine contract. Name that specific dependency in the checkpoint before treating it as a blocker; a repository name, unrelated server commit on main, generic engine-health check or hourly clock is not evidence. When dependencies are uncertain, inspect the connected contract promptly instead of defaulting every task to an hourly wait.
+
+For client-only delivery, verify its required checks, protected merge, client publisher, both client build-info endpoints and affected behavior immediately. Then finish that client scope; no new engine SHA, restart certificate, maintenance window or unrelated engine task completion is required. World Hub and Commander follow their own normal publication/verification procedures. For mixed work, record client and engine results separately and release independent compatible portions without a blanket hold; preserve genuine compatibility, financial, schema and maintenance safeguards.
 
 ## 1. Stay within the assigned operation
 

@@ -1,5 +1,7 @@
 # Agent playbook
 
+**Non-engine delivery: push, publish, verify and finish without waiting for `:55`.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
+
 Read [AGENTS.md](AGENTS.md) first, then the full references in [the reference index](docs/agent-policy/REFERENCE-INDEX.md). [The operating law](docs/agent-policy/OPERATING-LAW.md) owns scope, resumption, blocker recovery and productive waiting. [The hardening standard](docs/agent-policy/HARDENING.md) owns implementation and regression protection. [PUBLISHING.md](PUBLISHING.md) owns the approved delivery route. Product and financial rules in `CLAUDE.md`, where present, still apply.
 
 ## Preserve work and authority

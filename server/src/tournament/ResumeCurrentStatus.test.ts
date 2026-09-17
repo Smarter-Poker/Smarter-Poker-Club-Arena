@@ -11,6 +11,7 @@ afterEach(() => vi.restoreAllMocks());
 function fixture(status: unknown = 'RUNNING') {
   const row: any = {
     id: 'resume-current-event',
+    format_contract: 'mtt-v1',
     club_id: 'club',
     status,
     blind_structure: [{ smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 }],
@@ -101,6 +102,15 @@ describe('a discovery row is not authority to resume a completed tournament', ()
     await f.state.resumeLifecycle(1);
     expectNoGameplay(f);
   });
+  it.each([undefined, null, 'future-format'])(
+    'does not admit gameplay from an unknown recorded format %s',
+    async (format) => {
+      const f = fixture();
+      f.row.format_contract = format;
+      await f.state.resumeLifecycle(1);
+      expectNoGameplay(f);
+    }
+  );
   it('still restores a running field and its clock', async () => {
     const f = fixture();
     await f.state.resumeLifecycle(1);

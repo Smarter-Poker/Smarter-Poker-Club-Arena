@@ -1,4 +1,10 @@
 import { channelHub } from './hub/ChannelHub.js';
+import { projectTournamentAdmission } from './tournament/tournamentAdmission.js';
+import {
+  isPersistedUnlimitedMtt,
+  isPersistedSeatFirst,
+  readPersistedTournamentFormatContract,
+} from './tournament/tournamentEntryCapacity.js';
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 /**
@@ -5292,7 +5298,7 @@ export class GameServer {
               // structural question the recovery will ask before it claims the
               // row. See the guard below.
               .select(
-                'id, name, started_at, created_at, payout_structure, variant, tournament_type, spin_multiplier, prize_pool'
+                'format_contract, id, name, started_at, created_at, payout_structure, variant, tournament_type, spin_multiplier, prize_pool'
               )
               .eq('status', 'RUNNING')
               .or(
@@ -5794,7 +5800,8 @@ export class GameServer {
           start_time: string | null;
           current_players: number;
           min_players: number | null;
-          max_players: number;
+          max_players: number | null;
+          format_contract: unknown;
           variant: string | null;
           tournament_type: string | null;
           buy_in_amount: number | null;
@@ -5807,7 +5814,7 @@ export class GameServer {
             let q = supabase
               .from('tournaments')
               .select(
-                'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
+                'format_contract, id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
               )
               .eq('status', 'REGISTERING')
               .order('id', { ascending: true })
@@ -5819,7 +5826,18 @@ export class GameServer {
         );
         // Enumerate by id, then offer the oldest scheduled events first.
         // Invalid dates remain subject to the existing refusal below.
-        const registering = registeringPage.rows;
+        const classified = registeringPage.rows.filter((row) => {
+          try {
+            readPersistedTournamentFormatContract(row);
+            return true;
+          } catch (error) {
+            reportError(error, 'GameServer.tournament_format_unproven', { tournamentId: row.id });
+            return false;
+          }
+        });
+        const registering = registeringPage.complete
+          ? await projectTournamentAdmission(classified)
+          : [];
         registering.sort((a, b) => {
           const aStart = Date.parse(String(a.start_time));
           const bStart = Date.parse(String(b.start_time));
@@ -5860,9 +5878,7 @@ export class GameServer {
         // isSeatFirstFormat exactly. The old \`any sng\` reading made every
         // 3+ seat SNG a structural deadlock: the RPC refused its seat sales
         // (not_a_seat_first_game) while this gate waited for seats forever.
-        const seatFirstRows = (registering || []).filter(
-          (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
-        );
+        const seatFirstRows = (registering || []).filter((t) => isPersistedSeatFirst(t));
         const paidSeatsByTournament = await this.readSeatFirstPaidSeats(seatFirstRows);
 
         /* ONE FLEET READ PER PASS, AND THE TOP-UPS BESIDE THE WALK (2026-09-11).
@@ -5878,10 +5894,7 @@ export class GameServer {
         // One hint scan per pass, not one request per event. The hint never
         // authorizes entry; the existing atomic ticket-first horse door does.
         const ticketEligible = (t: (typeof registering)[number]) =>
-          ['MTT', 'SATELLITE', 'XMTT'].includes(String(t.tournament_type).toUpperCase()) &&
-          t.variant !== 'spin' &&
-          t.variant !== 'sng' &&
-          t.max_players > 2 &&
+          isPersistedUnlimitedMtt(t) &&
           t.prize_pool_finalized !== true &&
           Date.parse(String(t.start_time)) > registeringReadAt &&
           Date.parse(String(t.start_time)) - registeringReadAt <= MTT_PRESTART_RAMP_MS;
@@ -5971,9 +5984,7 @@ export class GameServer {
           // MTT / Bounty / PKO / Mystery: start at scheduled time if min_players met
           // Seat-first = spin or heads-up (2-seat SNG). Must agree with
           // fn_take_seat_and_buy_in / isSeatFirstFormat — see 2026-08-24 audit.
-          const isSngOrSpin =
-            tournament.variant === 'spin' ||
-            (tournament.variant === 'sng' && Number(tournament.max_players) <= 2);
+          const isSngOrSpin = isPersistedSeatFirst(tournament);
 
           /**
            * PAID SEATS, NOT REGISTRATIONS (Dan 2026-08-23, verbatim: "spins can
@@ -5993,10 +6004,13 @@ export class GameServer {
            */
           const paidSeats = paidSeatsByTournament.get(tournament.id) ?? 0;
           const seatFirstReady =
-            isSngOrSpin && tournament.max_players > 0 && paidSeats >= tournament.max_players;
+            isSngOrSpin &&
+            tournament.effective_max_players !== null &&
+            paidSeats >= tournament.effective_max_players;
 
           const maxReached =
-            tournament.max_players > 0 && tournament.current_players >= tournament.max_players;
+            tournament.effective_max_players !== null &&
+            tournament.current_players >= tournament.effective_max_players;
           /**
            * ONE MINUTE EARLY, ON PURPOSE — see TOURNAMENT_PRESEAT_LEAD_MS.
            *
@@ -6058,11 +6072,7 @@ export class GameServer {
           const needsPastStartTopUp =
             !poolFinalized && isPastStart && tournament.current_players < minPlayers;
           if (shouldStart && !needsPastStartTopUp) {
-            const isScheduledMtt =
-              tournament.tournament_type === 'MTT' &&
-              tournament.variant !== 'spin' &&
-              tournament.variant !== 'sng' &&
-              tournament.max_players > 2;
+            const isScheduledMtt = isPersistedUnlimitedMtt(tournament);
             if (isScheduledMtt) {
               // A retained claim or retry still owns capacity. Do not count a
               // single id twice when its retry and current operation overlap.
@@ -6156,7 +6166,8 @@ export class GameServer {
               // drift from it.
               const rampTarget = mttPrestartHorseTarget({
                 msUntilStart,
-                maxPlayers: tournament.max_players ?? 0,
+                maxPlayers: tournament.effective_max_players,
+                format_contract: tournament.format_contract,
                 variant: String(tournament.variant ?? ''),
                 currentPlayers: tournament.current_players ?? 0,
                 /* A GUARANTEED event ramps to whatever covers it, not to the
@@ -6208,7 +6219,7 @@ export class GameServer {
              * sitting at an open table), so asking for max_players fills the
              * event as far as the pool allows and never starves cash games.
              */
-            const target = tournament.max_players > 0 ? tournament.max_players : minPlayers;
+            const target = tournament.effective_max_players ?? minPlayers;
 
             /* At most every 45 s (the ramp's MTT_PRESTART_TICK_MS), and an event
                that keeps coming back empty is asked half as often each time, up
@@ -6984,7 +6995,8 @@ export class GameServer {
       status: string;
       tournament_type: string;
       variant: string | null;
-      max_players: number;
+      max_players: number | null;
+      format_contract: unknown;
       prize_pool_finalized: boolean;
     };
     try {
@@ -6999,7 +7011,7 @@ export class GameServer {
             let query = supabase
               .from('tournaments')
               .select(
-                'id, name, status, tournament_type, variant, max_players, prize_pool_finalized'
+                'format_contract, id, name, status, tournament_type, variant, max_players, prize_pool_finalized'
               )
               .in('id', chunk)
               .eq('status', 'RUNNING')
@@ -7026,7 +7038,7 @@ export class GameServer {
               !chunk.includes(row.id) ||
               typeof row.status !== 'string' ||
               typeof row.prize_pool_finalized !== 'boolean' ||
-              !Number.isInteger(row.max_players)
+              !(row.max_players === null || Number.isInteger(row.max_players))
           ) ||
           new Set(latePage.rows.map((row) => row.id)).size !== latePage.rows.length
         ) {
@@ -7037,10 +7049,7 @@ export class GameServer {
             (row) =>
               row.status === 'RUNNING' &&
               row.prize_pool_finalized === false &&
-              ['MTT', 'SATELLITE', 'XMTT'].includes(row.tournament_type) &&
-              row.variant !== 'spin' &&
-              row.variant !== 'sng' &&
-              row.max_players > 2
+              isPersistedUnlimitedMtt(row)
           )
         );
       }
@@ -8151,7 +8160,9 @@ export class GameServer {
           .from('tournaments')
           // prize_pool_finalized: a board whose pool is finalized has left
           // registration (see the fill gate below), whatever its status says.
-          .select('id, name, max_players, variant, start_time, prize_pool_finalized')
+          .select(
+            'format_contract, id, name, max_players, variant, start_time, prize_pool_finalized'
+          )
           .eq('status', 'REGISTERING')
           .in('variant', ['spin', 'sng']);
         if (registeringErr) {
@@ -8164,9 +8175,7 @@ export class GameServer {
         } else {
           // Same seat-first definition as discoverTournaments and
           // fn_take_seat_and_buy_in: spin, or a 2-seat SNG (heads-up).
-          const seatFirstRows = (registering || []).filter(
-            (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
-          );
+          const seatFirstRows = (registering || []).filter((t) => isPersistedSeatFirst(t));
           const paidSeats = await this.readSeatFirstPaidSeats(seatFirstRows);
           for (const t of seatFirstRows) {
             if (!this.directAdmissionIsCurrent(generation)) break;
@@ -8488,7 +8497,7 @@ export class GameServer {
 
     const { data: running, error: runningErr } = await supabase
       .from('tournaments')
-      .select('id, name, variant, max_players, started_at')
+      .select('format_contract, id, name, variant, max_players, started_at')
       .eq('status', 'RUNNING')
       .in('variant', ['spin', 'sng'])
       .lt('started_at', new Date(now - STUCK_MIN_AGE_MS).toISOString());
@@ -8500,9 +8509,7 @@ export class GameServer {
       return;
     }
 
-    const candidates = (running || []).filter(
-      (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
-    );
+    const candidates = (running || []).filter((t) => isPersistedSeatFirst(t));
     if (candidates.length === 0) return;
 
     for (const t of candidates) {

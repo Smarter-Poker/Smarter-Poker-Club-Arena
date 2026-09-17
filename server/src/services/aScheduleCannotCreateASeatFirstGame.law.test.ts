@@ -61,11 +61,9 @@ describe('a schedule cannot produce a game that has no schedule', () => {
   it('the restart clone refuses them too, for the same reason', () => {
     const body = blankNonCode(sliceMethod(SCHEDULED, 'private async maybeRestartTournament('));
     // ended_at + restart_every_minutes is a scheduled time by construction.
-    expect(body).toContain('clonedVariant');
-    expect(body).toContain('clonedSeats');
-    expect(body).toContain('HEADS_UP_SEATS');
-    // It must bail out, not merely notice.
-    expect(body).toMatch(/if\s*\(\s*clonedVariant[\s\S]{0,120}\)\s*return;/);
+    expect(body).toContain('readPersistedTournamentFormatContract(old)');
+    expect(body).toMatch(/if\s*\(isPersistedSeatFirst\(old\)\) return;/);
+    expect(body).not.toContain('clonedSeats');
   });
 });
 

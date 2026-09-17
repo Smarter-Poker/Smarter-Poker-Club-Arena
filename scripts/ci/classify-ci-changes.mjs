@@ -58,6 +58,10 @@ export function classifyChangedPaths(paths) {
   const spinComparator = matches(
     /^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/
   );
+  // The existing accounting job owns the BBJ runner and its nested fixture inputs.
+  const bbjFixture = matches(
+    /^scripts\/ci\/(?:test-bbj-bank-replay\.py$|probes\/bbj-bank-replay\/)/
+  );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   const diamondGames = matches(
@@ -74,6 +78,7 @@ export function classifyChangedPaths(paths) {
     src: broad || matches(/^src\//),
     server:
       broad ||
+      bbjFixture ||
       diamondGames ||
       phase4Changed ||
       commitmentAudit ||

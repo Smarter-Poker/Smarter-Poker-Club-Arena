@@ -1,0 +1,128 @@
+[
+  {
+    "name": "ca_ddl_watchdog_drop_log",
+    "event": "sql_drop",
+    "enabled": "O",
+    "tags": null,
+    "owner": "postgres",
+    "function_schema": "public",
+    "function_name": "ca_log_ddl_drop"
+  },
+  {
+    "name": "ca_ddl_watchdog_log",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": null,
+    "owner": "postgres",
+    "function_schema": "public",
+    "function_name": "ca_log_ddl_event"
+  },
+  {
+    "name": "issue_graphql_placeholder",
+    "event": "sql_drop",
+    "enabled": "O",
+    "tags": ["DROP EXTENSION"],
+    "owner": "postgres",
+    "function_schema": "extensions",
+    "function_name": "set_graphql_placeholder"
+  },
+  {
+    "name": "issue_pg_cron_access",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE EXTENSION"],
+    "owner": "postgres",
+    "function_schema": "extensions",
+    "function_name": "grant_pg_cron_access"
+  },
+  {
+    "name": "issue_pg_graphql_access",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE FUNCTION"],
+    "owner": "postgres",
+    "function_schema": "extensions",
+    "function_name": "grant_pg_graphql_access"
+  },
+  {
+    "name": "issue_pg_net_access",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE EXTENSION"],
+    "owner": "postgres",
+    "function_schema": "extensions",
+    "function_name": "grant_pg_net_access"
+  },
+  {
+    "name": "pgrst_ddl_watch",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": null,
+    "owner": "postgres",
+    "function_schema": "extensions",
+    "function_name": "pgrst_ddl_watch"
+  },
+  {
+    "name": "pgrst_drop_watch",
+    "event": "sql_drop",
+    "enabled": "O",
+    "tags": null,
+    "owner": "postgres",
+    "function_schema": "extensions",
+    "function_name": "pgrst_drop_watch"
+  },
+  {
+    "name": "trg_autorevoke_privileged_anon",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE FUNCTION", "ALTER FUNCTION", "GRANT"],
+    "owner": "postgres",
+    "function_schema": "public",
+    "function_name": "fn_autorevoke_privileged_anon"
+  },
+  {
+    "name": "trg_new_view_respects_the_caller",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE VIEW", "ALTER VIEW"],
+    "owner": "postgres",
+    "function_schema": "public",
+    "function_name": "fn_new_view_respects_the_caller"
+  },
+  {
+    "name": "trg_reject_retired_solver_option_rpc_ddl",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE FUNCTION", "ALTER FUNCTION"],
+    "owner": "postgres",
+    "function_schema": "public",
+    "function_name": "fn_reject_retired_solver_option_rpc_ddl"
+  },
+  {
+    "name": "trg_rls_on_new_public_table",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE TABLE", "CREATE TABLE AS", "SELECT INTO"],
+    "owner": "postgres",
+    "function_schema": "public",
+    "function_name": "fn_rls_on_new_public_table"
+  },
+  {
+    "name": "trg_strip_client_writes_from_new_views",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE VIEW", "CREATE MATERIALIZED VIEW"],
+    "owner": "postgres",
+    "function_schema": "public",
+    "function_name": "fn_strip_client_writes_from_new_views"
+  },
+  {
+    "name": "xp_ban_guard",
+    "event": "ddl_command_end",
+    "enabled": "O",
+    "tags": ["CREATE TABLE", "ALTER TABLE", "CREATE FUNCTION"],
+    "owner": "postgres",
+    "function_schema": "public",
+    "function_name": "xp_ban_guard_fn"
+  }
+]

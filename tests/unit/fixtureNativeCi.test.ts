@@ -61,6 +61,56 @@ function withGitFixture(check: (fixture: GitFixture) => void) {
   }
 }
 
+describe('BBJ source changes reach their existing accounting verification', () => {
+  it.each([
+    'scripts/ci/test-bbj-bank-replay.py',
+    'scripts/ci/probes/bbj-bank-replay/funded/source/internal-ledger-native-fixture-0006/build/10-historical-schema.sql',
+  ])('runs the accounting job for the individual affected path %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
+  it('keeps unrelated documentation and similarly named scripts outside accounting', () => {
+    for (const path of [
+      'docs/bbj-notes.md',
+      'scripts/ci/test-bbj-bank-replay.py.md',
+      'scripts/ci/probes/bbj-bank-replay-other/fixture.sql',
+    ]) {
+      expect(classifyChangedPaths([path]).server).toBe(false);
+    }
+  });
+
+  it('retains receipts after attempted BBJ execution without converting failures to success', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const invoke = steps.find((step: { id?: string }) => step.id === 'bbj');
+    const receipt = steps.find((step: { id?: string }) => step.id === 'bbj_evidence');
+    const upload = steps.find(
+      (step: { name?: string }) => step.name === 'Retain BBJ accounting receipts'
+    );
+    expect(invoke.run).toContain('test_retain_evidence.py');
+    expect(invoke.run).toContain('python3 scripts/ci/test-bbj-bank-replay.py');
+    expect(invoke['continue-on-error']).toBeUndefined();
+    const timing = steps.find((step: { id?: string }) => step.id === 'bbj_timing');
+    expect(ci.jobs.accounting_postgres.permissions).toEqual({ contents: 'read', actions: 'read' });
+    expect(timing.env.GH_TOKEN).toBe('${{ github.token }}');
+    expect(invoke.env.GH_TOKEN).toBeUndefined();
+    expect(invoke.env.GITHUB_TOKEN).toBeUndefined();
+    expect(invoke.env.BBJ_JOB_TIMING_FILE).toBe(
+      '${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json'
+    );
+
+    expect(receipt.if).toBe(
+      "always() && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')"
+    );
+    expect(receipt.env.BBJ_STEP_OUTCOME).toBe('${{ steps.bbj.outcome }}');
+    expect(upload.if).toBe("always() && steps.bbj_evidence.outputs.ready == 'true'");
+    expect(upload.uses).toBe('actions/upload-artifact@v4');
+    expect(upload.with.path).toBe('artifacts/bbj-bank-replay/');
+    expect(upload.with['if-no-files-found']).toBe('error');
+    expect(upload.with['retention-days']).toBe(3);
+    expect(upload['continue-on-error']).toBeUndefined();
+  });
+});
+
 function withForeignGitContext(directory: string, extended: boolean, check: () => void) {
   // The hostile context points only to a disposable decoy, never the checkout
   // whose pre-push hook may be running this test.
@@ -558,11 +608,10 @@ describe('native PG17 isolation tool is built by the existing accounting job', (
     expect(builders[0].run).toBe('python3 scripts/ci/build_pg17_isolationtester.py');
     expect(builders[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(builders[0]['continue-on-error']).toBeUndefined();
-    expect(steps.indexOf(builders[0])).toBeLessThan(
-      steps.findIndex(
-        (step: { run?: string }) => step.run === 'python3 scripts/ci/test-bbj-bank-replay.py'
-      )
-    );
+    const bbj = steps.filter((step: { id?: string }) => step.id === 'bbj');
+    expect(bbj).toHaveLength(1);
+    expect(bbj[0].run).toContain('python3 scripts/ci/test-bbj-bank-replay.py');
+    expect(steps.indexOf(builders[0])).toBeLessThan(steps.indexOf(bbj[0]));
     const evidence = steps.find(
       (step: { name?: string }) => step.name === 'Retain PostgreSQL isolation tool build evidence'
     );

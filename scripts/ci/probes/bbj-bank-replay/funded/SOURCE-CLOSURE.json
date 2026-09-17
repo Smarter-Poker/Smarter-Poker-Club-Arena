@@ -1,0 +1,943 @@
+{
+  "format": 1,
+  "scope": "Exact retained funded fixture source custody only; no financial execution authority",
+  "source_state": "PORTABLE_PATHS_PREPARED_RUNTIME_AND_OPERATION_BINDING_PENDING",
+  "required_postgresql_version": "17.11",
+  "groups": {
+    "schema": {
+      "path": "source/internal-ledger-native-fixture-0006",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006",
+      "original_integrity_sha256": "0d0cbdcbcb8cf09d1166a057cd4fc6f380ab9c17a1a47bdcbd0d1978147b89db",
+      "historical_seal_path": "provenance/schema/INTEGRITY.json"
+    },
+    "resources": {
+      "path": "source/internal-ledger-native-fixture-0007",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0007",
+      "original_integrity_sha256": "4c6c982bff1866ecdac62c171991529d0e1d74a5926b91177d178072397b3272",
+      "historical_seal_path": "provenance/resources/INTEGRITY.json"
+    },
+    "identity": {
+      "path": "source/internal-ledger-native-fixture-0008",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0008",
+      "original_integrity_sha256": "a827a6eb7b3d891bc360bef1f7a6281436be7b0bdce060a81f46b7cef0df92d6",
+      "historical_seal_path": "provenance/identity/INTEGRITY.json"
+    },
+    "parser": {
+      "path": "source/internal-ledger-native-fixture-0009",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0009",
+      "original_integrity_sha256": "d3a2649c5d67fb28aa20e4161ba3c7b5aee9a6db8701406bb16f6b55dc582f36",
+      "historical_seal_path": "provenance/parser/INTEGRITY.json"
+    },
+    "registry": {
+      "path": "source/internal-ledger-native-fixture-0010",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010",
+      "original_integrity_sha256": "34619b410733949bd6b63269dd5a2bf16bdafd090318aba71c0a35b84545af9c",
+      "historical_seal_path": "provenance/registry/INTEGRITY.json"
+    },
+    "opening": {
+      "path": "source/bbj-supplemental-sql-successor-0123",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123",
+      "original_integrity_sha256": "741c5f4ff9b8f50a52703079ee02d52f76c1d9a9300d748b7bfa97fbd642698f",
+      "historical_seal_path": "provenance/opening/INTEGRITY.json"
+    },
+    "opening_adapter": {
+      "path": "source/bbj-root-adapter-successor-0124",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124",
+      "original_integrity_sha256": "388c24a7c4e836b3b043aef94d7e5a946004ade5c5a8eab550033a4d443ba808",
+      "historical_seal_path": "provenance/opening_adapter/INTEGRITY.json"
+    },
+    "backup": {
+      "path": "source/bbj-backup-source-0002",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002",
+      "original_integrity_sha256": "81d1be4c513e2e8c3764a1f70ed13b9fcaf0ef71ed33145dce4cf7ba16a23dac",
+      "historical_seal_path": "provenance/backup/INTEGRITY.json"
+    },
+    "promo": {
+      "path": "source/bbj-promo-case-source-0086",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/work/bbj-promo-case-source-0086",
+      "original_integrity_sha256": "c624393210a3f723bc4f607f9a7552ffff2a6bfc84a592be697060c9e79429a8",
+      "historical_seal_path": "provenance/promo/INTEGRITY.json"
+    },
+    "supplement": {
+      "path": "source/bbj-backup-supplemental-0003",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003",
+      "original_integrity_sha256": "33cfa2dda4240297c77b97b38cffdec28064022cee848970d2dc3428cca5943d",
+      "historical_seal_path": "provenance/supplement/INTEGRITY.json"
+    },
+    "backup_adapter": {
+      "path": "source/bbj-backup-root-adapter-0002",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002",
+      "original_integrity_sha256": "9d559186b41451eaef2abafac31196bfa2b0feba4638669426845a6750c35476",
+      "historical_seal_path": "provenance/backup_adapter/INTEGRITY.json"
+    },
+    "promo_adapter": {
+      "path": "source/bbj-promo-root-adapter-0001",
+      "original_directory": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001",
+      "original_integrity_sha256": "91016ba6729d7ceba4ee5aa4d19f588f780ad54ff3e4e171acc39b42cb021516",
+      "historical_seal_path": "provenance/promo_adapter/INTEGRITY.json"
+    }
+  },
+  "files": [
+    {
+      "id": "backup/CURRENT-FUNCTIONS.json",
+      "path": "source/bbj-backup-source-0002/CURRENT-FUNCTIONS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/CURRENT-FUNCTIONS.json",
+      "sha256": "a861a6f96a7b2319d28de202a149bb620f5b3a47aac061cdd653fc2630dc8b8f",
+      "bytes": 12199,
+      "original_packet": "backup",
+      "original_member": "CURRENT-FUNCTIONS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup/CURRENT-RELATIONS.json",
+      "path": "source/bbj-backup-source-0002/CURRENT-RELATIONS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/CURRENT-RELATIONS.json",
+      "sha256": "782875c31339b4ea929422d1688c9a9c512baa2e94bb985a4ca546a0c8b4748c",
+      "bytes": 89803,
+      "original_packet": "backup",
+      "original_member": "CURRENT-RELATIONS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup/DEPENDENCY-CONTRACT.json",
+      "path": "source/bbj-backup-source-0002/DEPENDENCY-CONTRACT.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/DEPENDENCY-CONTRACT.json",
+      "sha256": "76803edfd3c4bcee5b6de30ae5f5aab333493b4e7272308d9852f31cb6910087",
+      "bytes": 10188,
+      "original_packet": "backup",
+      "original_member": "DEPENDENCY-CONTRACT.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup/FINGERPRINT-CONTRACT.json",
+      "path": "source/bbj-backup-source-0002/FINGERPRINT-CONTRACT.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/FINGERPRINT-CONTRACT.json",
+      "sha256": "b29727d3dd3e07c47a12a72f1fa24e5059a73bdfcfc1c2d83eb2fe5ba4ab49e9",
+      "bytes": 2501,
+      "original_packet": "backup",
+      "original_member": "FINGERPRINT-CONTRACT.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup/ORIGINAL-POOL-JOURNAL-MODELS.json",
+      "path": "source/bbj-backup-source-0002/ORIGINAL-POOL-JOURNAL-MODELS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/ORIGINAL-POOL-JOURNAL-MODELS.json",
+      "sha256": "387e7073ee9adb1ce5ced42eafb12371ae54e9e60ff998706563a4aecb8b735f",
+      "bytes": 35653,
+      "original_packet": "backup",
+      "original_member": "ORIGINAL-POOL-JOURNAL-MODELS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup/SOURCE-PINS.json",
+      "path": "source/bbj-backup-source-0002/SOURCE-PINS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/SOURCE-PINS.json",
+      "sha256": "1b8567c7afa4c33b79b440b66ce9f8f8f79ad132b321a3d350a41f8c77334ec3",
+      "bytes": 30661,
+      "original_packet": "backup",
+      "original_member": "SOURCE-PINS.json",
+      "binding": "historical_path_or_authority_metadata"
+    },
+    {
+      "id": "backup/SUPPLEMENTAL-TRIGGER-MODELS.json",
+      "path": "source/bbj-backup-source-0002/SUPPLEMENTAL-TRIGGER-MODELS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/SUPPLEMENTAL-TRIGGER-MODELS.json",
+      "sha256": "1fbf459c59fe76d481de8ef3a1e22f811ca965ab506f40f84f9899936b61b9f3",
+      "bytes": 2800,
+      "original_packet": "backup",
+      "original_member": "SUPPLEMENTAL-TRIGGER-MODELS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup/case_module.py",
+      "path": "source/bbj-backup-source-0002/case_module.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/case_module.py",
+      "sha256": "cd033e36f2c19edc5758c5185491faa7099ba0a611a9b4359fc9a7aa34397166",
+      "bytes": 29318,
+      "original_packet": "backup",
+      "original_member": "case_module.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup_adapter/COMBINED-COMMAND.sql",
+      "path": "source/bbj-backup-root-adapter-0002/COMBINED-COMMAND.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/COMBINED-COMMAND.sql",
+      "sha256": "b9ea8f516f71a34010d5b7883a7242ea87c14ab808babefa7fcc9cca420b8f4f",
+      "bytes": 327,
+      "original_packet": "backup_adapter",
+      "original_member": "COMBINED-COMMAND.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup_adapter/SOURCE-PINS.json",
+      "path": "source/bbj-backup-root-adapter-0002/SOURCE-PINS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/SOURCE-PINS.json",
+      "sha256": "aabc18839a6f55d008d478d44f989360551df4cf61ed42d0e3aef24e2b5ae471",
+      "bytes": 209616,
+      "original_packet": "backup_adapter",
+      "original_member": "SOURCE-PINS.json",
+      "binding": "historical_path_or_authority_metadata"
+    },
+    {
+      "id": "backup_adapter/binding.py",
+      "path": "source/bbj-backup-root-adapter-0002/binding.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/binding.py",
+      "sha256": "e079d2c98da50c4271245aec6d6d7c92462e3f054df0080d82ca4356977b3730",
+      "bytes": 6857,
+      "original_packet": "backup_adapter",
+      "original_member": "binding.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "backup_adapter/case_module.py",
+      "path": "source/bbj-backup-root-adapter-0002/case_module.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/case_module.py",
+      "sha256": "bff27f96ce42ee9f9eeb7a5422c34c5e099966c1ad1256b3bf5f8c956a37d49c",
+      "bytes": 23630,
+      "original_packet": "backup_adapter",
+      "original_member": "case_module.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "identity/oid_identity.py",
+      "path": "source/internal-ledger-native-fixture-0008/oid_identity.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0008/oid_identity.py",
+      "sha256": "cc50bb4cd02d9eaa77cc942c3c42e55a3e69c5864902bffafa12065949fa26e6",
+      "bytes": 1390,
+      "original_packet": "identity",
+      "original_member": "oid_identity.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/CASE-RECIPE.json",
+      "path": "source/bbj-supplemental-sql-successor-0123/CASE-RECIPE.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/CASE-RECIPE.json",
+      "sha256": "17c7513a6c2514ea829325a421391f5c00bfc4306b358c03bb1571434d5171a8",
+      "bytes": 11626,
+      "original_packet": "opening",
+      "original_member": "CASE-RECIPE.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/CURRENT-RELATIONS.json",
+      "path": "source/bbj-supplemental-sql-successor-0123/CURRENT-RELATIONS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/CURRENT-RELATIONS.json",
+      "sha256": "ee8be1b8fe0feebb9000e1519a08eee8225d1ed924047cea135b2334b9f5a735",
+      "bytes": 52253,
+      "original_packet": "opening",
+      "original_member": "CURRENT-RELATIONS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/FINGERPRINT-CONTRACT.json",
+      "path": "source/bbj-supplemental-sql-successor-0123/FINGERPRINT-CONTRACT.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/FINGERPRINT-CONTRACT.json",
+      "sha256": "a4bc93ffc2a2119ba03a407ea619c04a7683a311456e8aa56b7f6bf1c0944fb1",
+      "bytes": 2616,
+      "original_packet": "opening",
+      "original_member": "FINGERPRINT-CONTRACT.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/SOURCE-PINS.json",
+      "path": "source/bbj-supplemental-sql-successor-0123/SOURCE-PINS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/SOURCE-PINS.json",
+      "sha256": "f37a9bcbd958c56dcbd4be41d8cc50d82106168fde8ce50058abe41491872ecf",
+      "bytes": 9884,
+      "original_packet": "opening",
+      "original_member": "SOURCE-PINS.json",
+      "binding": "historical_path_or_authority_metadata"
+    },
+    {
+      "id": "opening/SUPPLEMENTAL-FUNCTIONS.json",
+      "path": "source/bbj-supplemental-sql-successor-0123/SUPPLEMENTAL-FUNCTIONS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/SUPPLEMENTAL-FUNCTIONS.json",
+      "sha256": "5f4d195349bc4f872c8f17d16971187b549f149221904b802b4d7b9d828f658a",
+      "bytes": 49226,
+      "original_packet": "opening",
+      "original_member": "SUPPLEMENTAL-FUNCTIONS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/case_module.py",
+      "path": "source/bbj-supplemental-sql-successor-0123/case_module.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/case_module.py",
+      "sha256": "e041c4b649303dcb93e900d9458b32514cf1a25c13309d7436c061d9bab83d0d",
+      "bytes": 24046,
+      "original_packet": "opening",
+      "original_member": "case_module.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/noninterference.py",
+      "path": "source/bbj-supplemental-sql-successor-0123/noninterference.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/noninterference.py",
+      "sha256": "8866372c0a9ee7f19196b71f01b216ddb02d31af5c2a05f8ae6245999f4bed84",
+      "bytes": 7134,
+      "original_packet": "opening",
+      "original_member": "noninterference.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/packet_contract.py",
+      "path": "source/bbj-supplemental-sql-successor-0123/packet_contract.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/packet_contract.py",
+      "sha256": "80d1b2cb30b1fa8a0ace1977f5abe7f6493592e3c00a98f95ef40abc76568f18",
+      "bytes": 1517,
+      "original_packet": "opening",
+      "original_member": "packet_contract.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/pair_support.py",
+      "path": "source/bbj-supplemental-sql-successor-0123/pair_support.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/pair_support.py",
+      "sha256": "886140539cd3fda9d5899b207df764ab858995ed4a9676055c9a9ad854d53d5a",
+      "bytes": 1284,
+      "original_packet": "opening",
+      "original_member": "pair_support.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening/supplemental.py",
+      "path": "source/bbj-supplemental-sql-successor-0123/supplemental.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/supplemental.py",
+      "sha256": "cf38ee75bc16416ff00fc55078651189558563fd1ccf4140a1af86e034ab2704",
+      "bytes": 2612,
+      "original_packet": "opening",
+      "original_member": "supplemental.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/COMBINED-COMMAND.sql",
+      "path": "source/bbj-root-adapter-successor-0124/COMBINED-COMMAND.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/COMBINED-COMMAND.sql",
+      "sha256": "b9ea8f516f71a34010d5b7883a7242ea87c14ab808babefa7fcc9cca420b8f4f",
+      "bytes": 327,
+      "original_packet": "opening_adapter",
+      "original_member": "COMBINED-COMMAND.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/EVENT-TRIGGERS-EXPECTED.json",
+      "path": "source/bbj-root-adapter-successor-0124/EVENT-TRIGGERS-EXPECTED.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/EVENT-TRIGGERS-EXPECTED.json",
+      "sha256": "3d1d5702c0cf0699dbdf028e64fd1a8c54748ef727a0ddb24a6744f23908108e",
+      "bytes": 3614,
+      "original_packet": "opening_adapter",
+      "original_member": "EVENT-TRIGGERS-EXPECTED.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/FUNCTION-TRANSITIONS.json",
+      "path": "source/bbj-root-adapter-successor-0124/FUNCTION-TRANSITIONS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/FUNCTION-TRANSITIONS.json",
+      "sha256": "69702e8debe8748f57e2922933c41ebbc53f5a89b7a13be8cf11060799c21301",
+      "bytes": 105490,
+      "original_packet": "opening_adapter",
+      "original_member": "FUNCTION-TRANSITIONS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/RELATION-QUERY.sql",
+      "path": "source/bbj-root-adapter-successor-0124/RELATION-QUERY.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/RELATION-QUERY.sql",
+      "sha256": "cb049d4d08fb8a2cbb14ca906d8dbbc74b3ee6924294bb9e5c635cb817f4a2d8",
+      "bytes": 1868,
+      "original_packet": "opening_adapter",
+      "original_member": "RELATION-QUERY.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/SOURCE-PINS.json",
+      "path": "source/bbj-root-adapter-successor-0124/SOURCE-PINS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/SOURCE-PINS.json",
+      "sha256": "325512642a6e20fa4274885a8ed6c2f93b8333b4d6fdcf1b5d5c57fd69e16c01",
+      "bytes": 129839,
+      "original_packet": "opening_adapter",
+      "original_member": "SOURCE-PINS.json",
+      "binding": "historical_path_or_authority_metadata"
+    },
+    {
+      "id": "opening_adapter/TABLE-TRANSITIONS.json",
+      "path": "source/bbj-root-adapter-successor-0124/TABLE-TRANSITIONS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/TABLE-TRANSITIONS.json",
+      "sha256": "3d36f8b0586bde4203e21f41ac88ca43ab7e76c1b98f40d0de82f816100dbb4b",
+      "bytes": 123230,
+      "original_packet": "opening_adapter",
+      "original_member": "TABLE-TRANSITIONS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/binding.py",
+      "path": "source/bbj-root-adapter-successor-0124/binding.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/binding.py",
+      "sha256": "e908191ea1e24319d147c5d8a5dbdca8eda506746006c8bc4e85476e02a9ee57",
+      "bytes": 15548,
+      "original_packet": "opening_adapter",
+      "original_member": "binding.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/case_module.py",
+      "path": "source/bbj-root-adapter-successor-0124/case_module.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/case_module.py",
+      "sha256": "b75a11c2dc6491e0467f7ab6e0ceb1796660f059dcf457f0b466851f072e9e77",
+      "bytes": 6294,
+      "original_packet": "opening_adapter",
+      "original_member": "case_module.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/catalog_queries.py",
+      "path": "source/bbj-root-adapter-successor-0124/catalog_queries.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/catalog_queries.py",
+      "sha256": "6c19a430c6784dd5522cadaa3a25348b53ed1120d1edec6363fd92a0567766c2",
+      "bytes": 2197,
+      "original_packet": "opening_adapter",
+      "original_member": "catalog_queries.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "opening_adapter/normalization.py",
+      "path": "source/bbj-root-adapter-successor-0124/normalization.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/normalization.py",
+      "sha256": "b67697002487de10024bc49d2b3730ddca60d408c608b4fa7c1323eddf80e0f3",
+      "bytes": 10130,
+      "original_packet": "opening_adapter",
+      "original_member": "normalization.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "parser/catalog_contract.py",
+      "path": "source/internal-ledger-native-fixture-0009/catalog_contract.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0009/catalog_contract.py",
+      "sha256": "e92aa955c84ba18029789d02423292d7787fceb4cf665b3736a03b0ba5368ee5",
+      "bytes": 1616,
+      "original_packet": "parser",
+      "original_member": "catalog_contract.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "promo/OPERATION.json",
+      "path": "source/bbj-promo-case-source-0086/OPERATION.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/work/bbj-promo-case-source-0086/OPERATION.json",
+      "sha256": "853f06f1749cdd1627a7ddb78fe84a287dab68a418b8cd2de71d15b2fd60567c",
+      "bytes": 265,
+      "original_packet": "promo",
+      "original_member": "OPERATION.json",
+      "binding": "historical_path_or_authority_metadata"
+    },
+    {
+      "id": "promo/SOURCE-PINS.json",
+      "path": "source/bbj-promo-case-source-0086/SOURCE-PINS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/work/bbj-promo-case-source-0086/SOURCE-PINS.json",
+      "sha256": "1f632626fd473cabc8e80ca6ea298bf85080d4836f4978bd167eb873bbbb09f5",
+      "bytes": 40107,
+      "original_packet": "promo",
+      "original_member": "SOURCE-PINS.json",
+      "binding": "historical_path_or_authority_metadata"
+    },
+    {
+      "id": "promo/case_module.py",
+      "path": "source/bbj-promo-case-source-0086/case_module.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/work/bbj-promo-case-source-0086/case_module.py",
+      "sha256": "6b79b2a2b9160264cab33ac42ea2786dad8accad8135f70a9500bf4850b25ee5",
+      "bytes": 29680,
+      "original_packet": "promo",
+      "original_member": "case_module.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "promo_adapter/COMBINED-COMMAND.sql",
+      "path": "source/bbj-promo-root-adapter-0001/COMBINED-COMMAND.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/COMBINED-COMMAND.sql",
+      "sha256": "b9ea8f516f71a34010d5b7883a7242ea87c14ab808babefa7fcc9cca420b8f4f",
+      "bytes": 327,
+      "original_packet": "promo_adapter",
+      "original_member": "COMBINED-COMMAND.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "promo_adapter/SOURCE-PINS.json",
+      "path": "source/bbj-promo-root-adapter-0001/SOURCE-PINS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/SOURCE-PINS.json",
+      "sha256": "ba93049c1b5c191ae45e6831a58929d11c0ae458e1e09643bdca06192d77fe9c",
+      "bytes": 236778,
+      "original_packet": "promo_adapter",
+      "original_member": "SOURCE-PINS.json",
+      "binding": "historical_path_or_authority_metadata"
+    },
+    {
+      "id": "promo_adapter/binding.py",
+      "path": "source/bbj-promo-root-adapter-0001/binding.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/binding.py",
+      "sha256": "4aa69da106a194fa64a155c7a93a6eca41a2324ada98b8cb7fd699f01138b55f",
+      "bytes": 10892,
+      "original_packet": "promo_adapter",
+      "original_member": "binding.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "promo_adapter/case_module.py",
+      "path": "source/bbj-promo-root-adapter-0001/case_module.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/case_module.py",
+      "sha256": "e96bd5a044122cdeeef7ef5a84ea2e6aff75b6d2306f35cfbf9fecf0df066fa9",
+      "bytes": 23744,
+      "original_packet": "promo_adapter",
+      "original_member": "case_module.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "registry/REGISTRY-CATALOG-QUERY.sql",
+      "path": "source/internal-ledger-native-fixture-0010/REGISTRY-CATALOG-QUERY.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/REGISTRY-CATALOG-QUERY.sql",
+      "sha256": "d133ad74b09d2d2a0a344529cad047920156638023462eddc09e6476e36cb9fe",
+      "bytes": 1817,
+      "original_packet": "registry",
+      "original_member": "REGISTRY-CATALOG-QUERY.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "registry/REGISTRY-EXPECTED.json",
+      "path": "source/internal-ledger-native-fixture-0010/REGISTRY-EXPECTED.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/REGISTRY-EXPECTED.json",
+      "sha256": "6da171811c3ff9c9c27e4c20577a77412efaeed06d43b7efe931c3df17c38199",
+      "bytes": 9247,
+      "original_packet": "registry",
+      "original_member": "REGISTRY-EXPECTED.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "registry/SEED-RELATION-DEPENDENCIES.json",
+      "path": "source/internal-ledger-native-fixture-0010/SEED-RELATION-DEPENDENCIES.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/SEED-RELATION-DEPENDENCIES.json",
+      "sha256": "bb0e85705520e21b0df7c056f501329f0a86c9da69f4bf6b2d290f19fd18a7b7",
+      "bytes": 1740,
+      "original_packet": "registry",
+      "original_member": "SEED-RELATION-DEPENDENCIES.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "registry/build_registry.py",
+      "path": "source/internal-ledger-native-fixture-0010/build_registry.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/build_registry.py",
+      "sha256": "c9e23ef4e06658481a209d6e92cdd814c1c6821f9347eedc98589c20ce467e66",
+      "bytes": 4227,
+      "original_packet": "registry",
+      "original_member": "build_registry.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "registry/registry-overlay.sql",
+      "path": "source/internal-ledger-native-fixture-0010/registry-overlay.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/registry-overlay.sql",
+      "sha256": "cf0b5af86142257bfbffe598471a52f1a0c6914bb44ccb0799039296f8bf14b3",
+      "bytes": 6906,
+      "original_packet": "registry",
+      "original_member": "registry-overlay.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "registry/registry_preflight.py",
+      "path": "source/internal-ledger-native-fixture-0010/registry_preflight.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/registry_preflight.py",
+      "sha256": "97b37c5a0b1da2f47582b4bdd7a371a8f7e8c4ba7f9724814ebe38d192108dbd",
+      "bytes": 2629,
+      "original_packet": "registry",
+      "original_member": "registry_preflight.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "resources/resource_safety.py",
+      "path": "source/internal-ledger-native-fixture-0007/resource_safety.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0007/resource_safety.py",
+      "sha256": "8a2c60c55eca8c972dd868aa42682a9835f173f14c279e620f39e6305851510e",
+      "bytes": 3114,
+      "original_packet": "resources",
+      "original_member": "resource_safety.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "resources/seed.sql",
+      "path": "source/internal-ledger-native-fixture-0007/seed.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0007/seed.sql",
+      "sha256": "51967e20d0a839fa693e3adee98889bf018e632b4c952a681b3cca3213df1306",
+      "bytes": 4852,
+      "original_packet": "resources",
+      "original_member": "seed.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/CONTEXT-AND-IDENTITY-INPUTS.json",
+      "path": "source/internal-ledger-native-fixture-0006/CONTEXT-AND-IDENTITY-INPUTS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/CONTEXT-AND-IDENTITY-INPUTS.json",
+      "sha256": "765227bb6375a83e55495429c2677d1b1f073c332f07db3c72234c4d57c63b8d",
+      "bytes": 994089,
+      "original_packet": "schema",
+      "original_member": "CONTEXT-AND-IDENTITY-INPUTS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/FUNCTION-OVERLAY-INPUTS.json",
+      "path": "source/internal-ledger-native-fixture-0006/FUNCTION-OVERLAY-INPUTS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/FUNCTION-OVERLAY-INPUTS.json",
+      "sha256": "a7b99f4323253a06375eba61d7f5ea724be081a8f349bc62c6df777584e52db7",
+      "bytes": 790126,
+      "original_packet": "schema",
+      "original_member": "FUNCTION-OVERLAY-INPUTS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/NAMESPACE-AND-SEQUENCE-INPUTS.json",
+      "path": "source/internal-ledger-native-fixture-0006/NAMESPACE-AND-SEQUENCE-INPUTS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/NAMESPACE-AND-SEQUENCE-INPUTS.json",
+      "sha256": "7afc9d6505507abca89bc30402cb9a86ec4c419782ee1e2061ca391cea0a461f",
+      "bytes": 4473,
+      "original_packet": "schema",
+      "original_member": "NAMESPACE-AND-SEQUENCE-INPUTS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/NATIVE-EXPRESSION-IDENTITY-QUERY.sql",
+      "path": "source/internal-ledger-native-fixture-0006/NATIVE-EXPRESSION-IDENTITY-QUERY.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/NATIVE-EXPRESSION-IDENTITY-QUERY.sql",
+      "sha256": "e9bcaa56f623d6421fc8da89980878e43f306a38906a2e25c3990e084e57a521",
+      "bytes": 2596,
+      "original_packet": "schema",
+      "original_member": "NATIVE-EXPRESSION-IDENTITY-QUERY.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/TABLE-OVERLAY-INPUTS.json",
+      "path": "source/internal-ledger-native-fixture-0006/TABLE-OVERLAY-INPUTS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/TABLE-OVERLAY-INPUTS.json",
+      "sha256": "8eac6706146731ca97584c85c8e16bcf00847ba9313ee5a53affc1d2c4d05de2",
+      "bytes": 533695,
+      "original_packet": "schema",
+      "original_member": "TABLE-OVERLAY-INPUTS.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/build/00-roles.sql",
+      "path": "source/internal-ledger-native-fixture-0006/build/00-roles.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/00-roles.sql",
+      "sha256": "b8b52a6640879a763e5c6b9c5d070e9268e2af68b59f0ab1c495ddc964720991",
+      "bytes": 10469,
+      "original_packet": "schema",
+      "original_member": "build/00-roles.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/build/10-historical-schema.sql",
+      "path": "source/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "sha256": "83eaf66eb3c7e7110740b4cedeb3c6c5c445a905b9c70d3b882113ce127b250f",
+      "bytes": 11927472,
+      "original_packet": "schema",
+      "original_member": "build/10-historical-schema.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/build/15-current-prerequisites.sql",
+      "path": "source/internal-ledger-native-fixture-0006/build/15-current-prerequisites.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/15-current-prerequisites.sql",
+      "sha256": "b9f89372969b79ac171c5474e89b62439d4515ac277617e5eac267a10e41bd8b",
+      "bytes": 33420,
+      "original_packet": "schema",
+      "original_member": "build/15-current-prerequisites.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/build/20-current-schema.sql",
+      "path": "source/internal-ledger-native-fixture-0006/build/20-current-schema.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/20-current-schema.sql",
+      "sha256": "db7ef71d882176788c28f81ba81cb7fe0e363cf2425730cbcda702900b2d81d2",
+      "bytes": 504102,
+      "original_packet": "schema",
+      "original_member": "build/20-current-schema.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/build/30-current-functions.sql",
+      "path": "source/internal-ledger-native-fixture-0006/build/30-current-functions.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/30-current-functions.sql",
+      "sha256": "470bb118cb13c7fde17e94284dd7173cf924ce2b75551c418a0cfb3a7dfd6343",
+      "bytes": 1454224,
+      "original_packet": "schema",
+      "original_member": "build/30-current-functions.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/build/40-replay-candidate.sql",
+      "path": "source/internal-ledger-native-fixture-0006/build/40-replay-candidate.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/40-replay-candidate.sql",
+      "sha256": "fe609f6502fec2183a7dadf4126828e2df957aff1f2958a4ca797d393d4645e6",
+      "bytes": 12159,
+      "original_packet": "schema",
+      "original_member": "build/40-replay-candidate.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/build/50-current-attachments-acl.sql",
+      "path": "source/internal-ledger-native-fixture-0006/build/50-current-attachments-acl.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/50-current-attachments-acl.sql",
+      "sha256": "cff67c65cee3ef4d517f44b67f48a42744ecf6603f4819d70c4799a0fe596b7a",
+      "bytes": 3837876,
+      "original_packet": "schema",
+      "original_member": "build/50-current-attachments-acl.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/build/90-historical-event-triggers.sql",
+      "path": "source/internal-ledger-native-fixture-0006/build/90-historical-event-triggers.sql",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/90-historical-event-triggers.sql",
+      "sha256": "8faafdde98338cd6ec7a1d99c07090d98ecb4552bdf49d72e842e652ae190d04",
+      "bytes": 4993,
+      "original_packet": "schema",
+      "original_member": "build/90-historical-event-triggers.sql",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/preflight.py",
+      "path": "source/internal-ledger-native-fixture-0006/preflight.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/preflight.py",
+      "sha256": "fb94ef5aa2a98ee266953bd81f1d37521a0c725c5ffbf7d5b21f9a0a31adf3f7",
+      "bytes": 10359,
+      "original_packet": "schema",
+      "original_member": "preflight.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "schema/sequence_driver.py",
+      "path": "source/internal-ledger-native-fixture-0006/sequence_driver.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/sequence_driver.py",
+      "sha256": "12c1d9b92c8d3ede4caa8cea8aa137faaccb1dcb92eb23a38c22026a4edf65e2",
+      "bytes": 13753,
+      "original_packet": "schema",
+      "original_member": "sequence_driver.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "supplement/AUDIT-EXPECTED.json",
+      "path": "source/bbj-backup-supplemental-0003/AUDIT-EXPECTED.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/AUDIT-EXPECTED.json",
+      "sha256": "3d49a0de26c120b94160b6a23742c8be7211273b6637c83252f907a8526d6083",
+      "bytes": 47075,
+      "original_packet": "supplement",
+      "original_member": "AUDIT-EXPECTED.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "supplement/EXPECTED.json",
+      "path": "source/bbj-backup-supplemental-0003/EXPECTED.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/EXPECTED.json",
+      "sha256": "01407774da7da138234306d74e24c22ce55c777c471122e14468fe6039e38b3e",
+      "bytes": 114023,
+      "original_packet": "supplement",
+      "original_member": "EXPECTED.json",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "supplement/SOURCE-AUTHORITY.json",
+      "path": "source/bbj-backup-supplemental-0003/SOURCE-AUTHORITY.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/SOURCE-AUTHORITY.json",
+      "sha256": "e9a4e6b28e481644f8f781611e545c0244ee92315720c02da8bfc43970f27fca",
+      "bytes": 163999,
+      "original_packet": "supplement",
+      "original_member": "SOURCE-AUTHORITY.json",
+      "binding": "historical_path_or_authority_metadata"
+    },
+    {
+      "id": "supplement/audit_contract.py",
+      "path": "source/bbj-backup-supplemental-0003/audit_contract.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/audit_contract.py",
+      "sha256": "d1cda1459724ebda0dffe54c32acfc31c892e5913dc6395166c6d92dbf3e7ffa",
+      "bytes": 19556,
+      "original_packet": "supplement",
+      "original_member": "audit_contract.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "supplement/queries.py",
+      "path": "source/bbj-backup-supplemental-0003/queries.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/queries.py",
+      "sha256": "d3a501254da7acc640a5fba6e4606b4ef5db694f26c1984f72bd859a8bbcd8c9",
+      "bytes": 7672,
+      "original_packet": "supplement",
+      "original_member": "queries.py",
+      "binding": "exact_direct_input"
+    },
+    {
+      "id": "supplement/supplemental.py",
+      "path": "source/bbj-backup-supplemental-0003/supplemental.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/supplemental.py",
+      "sha256": "cc35bc3192b1698b403fd86ae89fcb9bf962450e91620186b76889696a25abe3",
+      "bytes": 23832,
+      "original_packet": "supplement",
+      "original_member": "supplemental.py",
+      "binding": "exact_direct_input"
+    }
+  ],
+  "provenance": [
+    {
+      "path": "provenance/schema/INTEGRITY.json",
+      "sha256": "0d0cbdcbcb8cf09d1166a057cd4fc6f380ab9c17a1a47bdcbd0d1978147b89db",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/resources/INTEGRITY.json",
+      "sha256": "4c6c982bff1866ecdac62c171991529d0e1d74a5926b91177d178072397b3272",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0007/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/identity/INTEGRITY.json",
+      "sha256": "a827a6eb7b3d891bc360bef1f7a6281436be7b0bdce060a81f46b7cef0df92d6",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0008/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/parser/INTEGRITY.json",
+      "sha256": "d3a2649c5d67fb28aa20e4161ba3c7b5aee9a6db8701406bb16f6b55dc582f36",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0009/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/registry/INTEGRITY.json",
+      "sha256": "34619b410733949bd6b63269dd5a2bf16bdafd090318aba71c0a35b84545af9c",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/opening/INTEGRITY.json",
+      "sha256": "741c5f4ff9b8f50a52703079ee02d52f76c1d9a9300d748b7bfa97fbd642698f",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/opening_adapter/INTEGRITY.json",
+      "sha256": "388c24a7c4e836b3b043aef94d7e5a946004ade5c5a8eab550033a4d443ba808",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/backup/INTEGRITY.json",
+      "sha256": "81d1be4c513e2e8c3764a1f70ed13b9fcaf0ef71ed33145dce4cf7ba16a23dac",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/promo/INTEGRITY.json",
+      "sha256": "c624393210a3f723bc4f607f9a7552ffff2a6bfc84a592be697060c9e79429a8",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/work/bbj-promo-case-source-0086/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/supplement/INTEGRITY.json",
+      "sha256": "33cfa2dda4240297c77b97b38cffdec28064022cee848970d2dc3428cca5943d",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/backup_adapter/INTEGRITY.json",
+      "sha256": "9d559186b41451eaef2abafac31196bfa2b0feba4638669426845a6750c35476",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/promo_adapter/INTEGRITY.json",
+      "sha256": "91016ba6729d7ceba4ee5aa4d19f588f780ad54ff3e4e171acc39b42cb021516",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/INTEGRITY.json",
+      "kind": "historical_full_packet_seal_not_execution_authority"
+    },
+    {
+      "path": "provenance/backup_adapter/run_integration.py.txt",
+      "sha256": "3b7488dbba156bc99f527b1a456ae1121e9eaa689f8ca81e6a84db5ef10b1884",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/run_integration.py",
+      "original_packet": "backup_adapter",
+      "original_member": "run_integration.py",
+      "kind": "historical_runner_derivation_not_executable"
+    },
+    {
+      "path": "provenance/backup_adapter/RUNNER-TRANSFORMS.json",
+      "sha256": "756f76c2b003fc08d497fcdd2bae1c7d18ae37b03432025a1b56e08c00348fe7",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/RUNNER-TRANSFORMS.json",
+      "original_packet": "backup_adapter",
+      "original_member": "RUNNER-TRANSFORMS.json",
+      "kind": "historical_runner_derivation_not_executable"
+    },
+    {
+      "path": "provenance/promo_adapter/run_integration.py.txt",
+      "sha256": "de2fcd525fcbcac6d15617fb6471d61086c2086edba84a5620f1c5b1480f8416",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/run_integration.py",
+      "original_packet": "promo_adapter",
+      "original_member": "run_integration.py",
+      "kind": "historical_runner_derivation_not_executable"
+    },
+    {
+      "path": "provenance/promo_adapter/ORIGINAL-26-RUNNER-TRANSFORMS.json",
+      "sha256": "756f76c2b003fc08d497fcdd2bae1c7d18ae37b03432025a1b56e08c00348fe7",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/ORIGINAL-26-RUNNER-TRANSFORMS.json",
+      "original_packet": "promo_adapter",
+      "original_member": "ORIGINAL-26-RUNNER-TRANSFORMS.json",
+      "kind": "historical_runner_derivation_not_executable"
+    },
+    {
+      "path": "provenance/promo_adapter/PROMO-SOURCE-TRANSFORMS.json",
+      "sha256": "d99c971115bcc93cf2581756abb2aef5007c5b637c97f8433b7262e9cca35718",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/PROMO-SOURCE-TRANSFORMS.json",
+      "original_packet": "promo_adapter",
+      "original_member": "PROMO-SOURCE-TRANSFORMS.json",
+      "kind": "historical_runner_derivation_not_executable"
+    }
+  ],
+  "historical_roots": {
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006": "source/internal-ledger-native-fixture-0006",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0007": "source/internal-ledger-native-fixture-0007",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0008": "source/internal-ledger-native-fixture-0008",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0009": "source/internal-ledger-native-fixture-0009",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010": "source/internal-ledger-native-fixture-0010",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-supplemental-sql-successor-0123": "source/bbj-supplemental-sql-successor-0123",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-accounting-integration/work/bbj-root-adapter-successor-0124": "source/bbj-root-adapter-successor-0124",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002": "source/bbj-backup-source-0002",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/work/bbj-promo-case-source-0086": "source/bbj-promo-case-source-0086",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003": "source/bbj-backup-supplemental-0003",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002": "source/bbj-backup-root-adapter-0002",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001": "source/bbj-promo-root-adapter-0001"
+  },
+  "unresolved_legacy_binding_functions": [
+    "backup_adapter.binding.verify_binding and promo_adapter.binding.verify_binding: full historical pin/seal/decision/prior-run authority traversal",
+    "opening_adapter.binding.verify_binding / verify_prior_fixture_preflight / verify_seal: prior consumed native decisions and full source graph",
+    "opening.packet_contract.verify_authorization / verify_pins and backup/promo.case_module.verify_authorization: historical all-member seals and policy pins",
+    "supplement.supplemental.verify_sources: historical all-member seals/policy inputs",
+    "original adapters/normalizer dynamic imports and promo SHARED: translate only explicitly mapped source paths after fresh operation admission is supplied"
+  ],
+  "sql_order": [
+    "schema/build/00-roles.sql",
+    "schema/build/10-historical-schema.sql",
+    "schema/build/15-current-prerequisites.sql",
+    "schema/build/30-current-functions.sql",
+    "schema/build/20-current-schema.sql",
+    "schema/build/40-replay-candidate.sql",
+    "schema/build/50-current-attachments-acl.sql",
+    "registry/registry-overlay.sql",
+    "schema/build/90-historical-event-triggers.sql"
+  ],
+  "callbacks_after_sql": [
+    "opening_adapter/normalization.py:normalize_owned_fixture",
+    "supplement/supplemental.py:install"
+  ],
+  "preserved_invariants": {
+    "original_identities": 327,
+    "expression_edges": 2957,
+    "raw_relations": 57,
+    "financial_fingerprints": 53,
+    "audit_ddl_dispatches": 23,
+    "audit_records": 25,
+    "combined_requests_per_selected_case": 5,
+    "original_runner_transforms": 26
+  },
+  "funded_execution_enabled": false
+}

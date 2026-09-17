@@ -627,6 +627,10 @@ REVOKE ALL ON FUNCTION public.fn_cashier_lock_authority(uuid,uuid,uuid,uuid) FRO
 
 -- All supported cashier custody movements finish here. Browser arguments never
 -- supply a ledger actor, representative, physical source, document or audience.
+-- Register the private balance writer before CREATE so the installed money-RPC
+-- guard sees its authority. An unexpected existing row must refuse installation.
+INSERT INTO public.ca_money_rpc_registry(proname,status,notes) VALUES
+ ('fn_cashier_cashout_transition','approved','Private exact-intent cashier escrow hold, approval and release authority. Authenticated actor and current-authority gates bind the existing physical journal, immutable event and mandatory invoice/delivery receipt; no client EXECUTE.');
 CREATE FUNCTION public.fn_cashier_cashout_transition(p_action text,p_club_id uuid,p_cashout_id uuid,p_amount numeric,
  p_expected_actor_id uuid,p_op_id uuid,p_note text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=public,pg_temp AS $function$

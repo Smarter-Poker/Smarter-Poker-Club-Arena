@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "a0de658b6cffc6e4e0dfd77d7f0930337242079a21814064c2b2c67259e7ad1e",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "30ed20418cdac4f8fd239ad307464bf49d0025a2fcdaebbbf44405bafb7a2611",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -303,7 +303,8 @@
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-seat-move-authority.raw.txt": "2ca4ebcb887713e661a2661833726cc80ef151c04d1a9185e616b5495c774781",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-successor-provenance.json": "58289123ad4fee1e1f402b9dd7120ea267dab4cf792bbc608f59d6da1989b23d",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c",
-    "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "0c43c6d516c0f72aeb0e5c5ba7c35c70ad16dd3dbe239896bcd83b2b600b21af"
+    "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "0c43c6d516c0f72aeb0e5c5ba7c35c70ad16dd3dbe239896bcd83b2b600b21af",
+    "tests/fixtures/union-provider-preimages-20260917/money-registry-ddl-guard.sql": "fb4c7ab0022dcc6c404b31470aa73dc9986e32f8855a61304f2d8418e30f4c46"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",

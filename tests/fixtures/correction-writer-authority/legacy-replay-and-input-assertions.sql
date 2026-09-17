@@ -2,11 +2,27 @@
 -- SAME session, after full candidate. Do not reconstruct or delete legacy intent.
 BEGIN;
 SET LOCAL statement_timeout='60s';SET LOCAL lock_timeout='3s';
-DO $legacy$ DECLARE w record;before_book jsonb;r jsonb;BEGIN
+DO $legacy$ DECLARE w record;before_book jsonb;r jsonb;actual_rows jsonb;expected_rows jsonb;source_shape boolean;BEGIN
  IF current_user<>'postgres' OR inet_server_addr() IS NOT NULL OR current_setting('session_replication_role')<>'origin'
   OR to_regclass('public.ca_correction_request_intents_v1') IS NULL THEN RAISE EXCEPTION 'isolated accepted correction successor required';END IF;
  SELECT * INTO STRICT w FROM correction_legacy_witness;
- PERFORM pg_temp.cw_check(pg_temp.cw_legacy_rows(w.ledger_id)=w.original_rows,'full installation preserves predecessor ledger, IDs and original document rows');
+ actual_rows:=pg_temp.cw_legacy_rows(w.ledger_id);
+ -- Component37 adds exactly one nullable source column. Preserve the immutable
+ -- preinstallation witness and every original value; historical invoices must
+ -- gain only this explicit JSON null, never a fabricated operation source.
+ source_shape:=(SELECT count(*)>0 AND bool_and(NOT (value ? 'source_credit_reduction_operation_id'))
+  FROM jsonb_array_elements(w.original_rows->'invoices'))
+  AND (SELECT count(*)>0 AND bool_and((value ? 'source_credit_reduction_operation_id'
+  AND value->'source_credit_reduction_operation_id'='null'::jsonb) IS TRUE)
+  FROM jsonb_array_elements(actual_rows->'invoices'));
+ expected_rows:=jsonb_set(w.original_rows,'{invoices}',(SELECT jsonb_agg(
+  value||jsonb_build_object('source_credit_reduction_operation_id',NULL) ORDER BY ordinal)
+  FROM jsonb_array_elements(w.original_rows->'invoices') WITH ORDINALITY AS invoice(value,ordinal)),false);
+ IF (source_shape AND actual_rows=expected_rows) IS DISTINCT FROM true THEN
+  RAISE EXCEPTION 'correction writer fixture failed: full installation preserves predecessor ledger, IDs and original document rows'
+   USING DETAIL=jsonb_build_object('original_rows',w.original_rows,'expected_rows',expected_rows,'actual_rows',actual_rows)::text;
+ END IF;
+ PERFORM pg_temp.cw_check(source_shape AND actual_rows=expected_rows,'full installation preserves predecessor ledger, IDs and original document rows');
  PERFORM pg_temp.cw_check(NOT EXISTS(SELECT 1 FROM public.ca_correction_request_intents_v1 WHERE ledger_id=w.ledger_id),
   'installation does not invent legacy full intent');
  before_book:=pg_temp.cw_book();PERFORM pg_temp.cw_actor(pg_temp.cw_id(1),'service_role');EXECUTE 'SET LOCAL ROLE service_role';

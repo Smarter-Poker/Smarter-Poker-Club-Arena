@@ -1386,8 +1386,8 @@
         }
       ],
       "signature": "operational_source_intake.receipt_row(operational_alert_events, text)",
-      "full_definition_md5": "7c12c50493f80f42f99654dab55ca475",
-      "basis": "fresh installed direct-source intake metadata; exact existing helper, no replacement"
+      "full_definition_md5": "f632abdd64e5ba45a3d74298ef1e10a3",
+      "basis": "installed Alerts legacy-envelope successor readback 2026-09-17T07:29:59.347153+00:00; exact existing helper, no Union replacement; tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json"
     },
     {
       "owner": "postgres",

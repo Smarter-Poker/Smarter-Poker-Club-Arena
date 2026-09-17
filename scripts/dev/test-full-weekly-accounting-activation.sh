@@ -139,6 +139,7 @@ psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -U postgres -h "$fixture/socket" -p
   -f "$root/tests/fixtures/union-provider-preimages-20260917/owner-notification-coexistence.sql" \
   -f "$root/tests/fixtures/union-provider-preimages-20260917/direct-intake-prerequisites.sql" \
   -f "$root/tests/fixtures/union-provider-preimages-20260917/direct-intake-installed.sql" \
+  -f "$root/tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql" \
   -f "$root/tests/fixtures/rakeback-write-authority/captured-stats-batch.sql" 2>&1 | tee "$fixture/baseline.log"
 # Actual extension-owned unrelated job: disabled launcher makes it inert.
 "${psql[@]}" -A -t -d "$fixture_db" -c "SELECT cron.schedule('fixture-full-activation-unrelated','17 * * * *','SELECT 1');" > "$fixture/cron-fixture.log"

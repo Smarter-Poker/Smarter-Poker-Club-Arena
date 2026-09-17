@@ -11,6 +11,7 @@
     "fn_cash_record_original_funding",
     "fn_cash_capture_hand_manifest",
     "fn_cash_accept_hand_provenance",
-    "fn_cash_record_funding_application"
+    "fn_cash_record_funding_application",
+    "fn_pnl_cash_hand_evidence"
   ]
 }

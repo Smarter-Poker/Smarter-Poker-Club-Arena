@@ -84,58 +84,116 @@ Inside `fn_complete_tournament_terminal`, `fn_ca_open_tournament_seat_exit_autho
 already takes T(id) exclusive, so a finish holds T(id) exclusively today; the
 outer G exclusive adds only the platform-wide exclusion.
 
+## What the global lane is protecting, in its own words
+
+The body of `fn_complete_tournament_terminal_pre_seat_guard` says why every
+finish takes the whole platform: "All satellite and non-satellite terminal
+money commits use this exact first lock. It eliminates cross-event cycles on
+shared club, union and recipient wallets without weakening any event-local
+row proof." So the lane is deadlock avoidance between money commits that
+touch shared wallet rows (`club_members.chip_balance`, `wallets`,
+`club_wallets`), not field correctness. Two facts bound that risk today:
+
+- Rolling authorities of different tournaments have run beside each other
+  and beside every hand settlement since 2026-09-10, and they write the same
+  wallet rows (a seat purchase debits the buyer, a bounty credits recipients
+  in `user_id` order, a refund credits one wallet). Postgres logged 17
+  `deadlock detected` in the last 24 hours, 0 to 5 an hour, every one
+  detected after `deadlock_timeout` (1 s) and retried by the engine.
+- A hand settlement writes a wallet only for a player who left the table
+  mid-hand (`late_seat_settle` in `fn_ca_settle_hand_stacks_absolute`); every
+  other stack change stays in `table_seats`.
+
+The global lane is also taken again at every level of the finish:
+`fn_complete_tournament_terminal` (wrapper), `..._pre_seat_guard` (body),
+`fn_settle_tournament_places` and `fn_settle_tournament_rake` each call
+`fn_ca_lock_settlement_lane_global()`. Re-entrant while G is already held
+exclusively; an upgrade, and a deadlock, the moment the outer hold becomes
+shared. Any change must cover every level or be made where they all meet.
+
 ## The change
+
+A finish lane F, exclusive among finishes, shared with everyone else:
+
+| path                                                   | G (platform) | F (finishes) | B (hands) | T(id)     |
+| ------------------------------------------------------ | ------------ | ------------ | --------- | --------- |
+| non-satellite finish (new)                             | shared       | exclusive    | -         | exclusive |
+| satellite finish, cancellation, other rare authorities | exclusive    | -            | exclusive | -         |
+| rolling authority                                      | shared       | -            | -         | exclusive |
+| hand settlement                                        | shared       | -            | shared    | shared    |
+
+Order everywhere: G, then F, then B, then T. F is taken only by finishes,
+always after G and before T, so it adds no cycle among the keys.
 
 One migration, in the shape of `20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql`:
 
-1. `fn_complete_tournament_terminal(p_tournament_id, p_observed_winner_id, p_settlement_mode)`:
-   read the tournament's `variant`, `tournament_type`, `satellite_target_id`
-   and `satellite_target` (no lock; these never change after creation), and
-   take the lane accordingly:
-   - satellite: `fn_ca_lock_settlement_lane_global()` as today (a satellite
-     finish writes the target tournament's rows, and a transaction never
-     holds two tournaments' lanes);
-   - anything else: `fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)`,
-     that is G shared and T(id) exclusive, the rolling-authority shape.
-     Nothing else in the body changes.
-2. `fn_resolve_tournament_terminal_outcome`: it refuses satellites itself, so
-   it takes `fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)`
-   unconditionally. It is a read-only resolver; the per-tournament lane is
-   exactly what it needs (it waits for a finish of the same tournament that is
-   still in flight, and nothing else).
-3. `fn_spin_expire_unfilled`: Spins are never satellites; per-tournament lane.
+1. New `fn_ca_lock_settlement_lane_for_finish(p_tournament_id)`: reads the
+   tournament's `variant`, `tournament_type`, `satellite_target_id` and
+   `satellite_target` (no lock; fixed for the life of the row). Satellite or
+   unknown: `fn_ca_lock_settlement_lane_global()` as today, because a
+   satellite finish writes the target tournament's rows and a transaction
+   never holds two tournaments' lanes. Otherwise: G shared, F exclusive,
+   T(id) exclusive, and `set_config('ca.finish_lane_tournament', id, true)`
+   so the rest of the transaction knows which lane it holds.
+2. `fn_complete_tournament_terminal`: calls the finish lane instead of the
+   global lane. Nothing else in the wrapper changes.
+3. `fn_ca_lock_settlement_lane_global()`: if `ca.finish_lane_tournament` is
+   set in this transaction, re-enter that finish lane (free: every key is
+   already held by this backend) and return; otherwise G then B exclusive as
+   today. This is what keeps the 40 KB finish body, `fn_settle_tournament_places`
+   and `fn_settle_tournament_rake` byte-identical: their nested global-lane
+   calls become re-entries of the lane the wrapper chose, never an upgrade.
+   Outside a finish transaction the helper is unchanged.
+4. `fn_resolve_tournament_terminal_outcome` (read-only, refuses satellites):
+   `fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)`, G shared and
+   T(id) exclusive, which waits for exactly an in-flight finish of the same
+   tournament. `fn_spin_expire_unfilled` (Spins are never satellites): the
+   same.
 
-Stays on the global lane: `fn_resolve_satellite_settlement_outcome`, every
-satellite finish, cancellation, deal review, managed-game close, rake sweep
-and the other rare callers. They are rare, and they are the ones that can
-write across tournaments.
+Stays on the global lane: satellite finishes, `fn_resolve_satellite_settlement_outcome`,
+cancellation, deal review, managed-game close, the rake sweep and the other
+rare callers, and any caller of the global helper outside a finish
+transaction.
 
-B is not taken by a per-tournament finish. Hands of the same tournament
-hold T(id) shared and are excluded by T(id) exclusive; hands of other
-tournaments and cash hands were never in conflict with this tournament's
-payout, they were only queued by it. Balance, ledger and Spin reserve rows
-are row-locked in the same order by every writer, as they are today under
-the global lane; the advisory lane never protected them.
+B is not taken by a non-satellite finish. Hands of the same tournament hold
+T(id) shared and are excluded by T(id) exclusive; hands of other tournaments
+and cash hands were never in conflict with this tournament's payout, they
+were only queued by it.
 
 ## Why it is safe
 
 - Every guard that reads the lane as proof of authority accepts T(row's
-  tournament) held exclusively, and the finish holds it (proved on the live
-  catalog above; the migration re-proves it).
-- The finish's writes are all rows of its own tournament: `tournaments`,
+  tournament) held exclusively, and the finish holds it: `fn_tournament_live_seat_acquisition_requires_authority`,
+  `fn_tournament_payouts_are_append_only`, `fn_satellite_target_player_provenance_is_immutable`
+  (since 2026-09-10), and `smarter_private.f06_source_guard` / `f06_try_lane`
+  (try G shared plus T). Inside the finish, `fn_ca_open_tournament_seat_exit_authority`
+  already takes T(id) exclusive, so a finish holds it today.
+- Finishes still run one at a time (F), so finish-against-finish wallet
+  order is exactly what it is today. The concurrency that is new is finish
+  against rolling authorities and hands of OTHER tournaments, the class the
+  platform has run since 2026-09-10 with the deadlock counter as its
+  witness; a cycle there needs two shared wallet rows locked in opposite
+  orders by a finish (place order) and a multi-wallet rolling write
+  (`user_id` order), is detected by Postgres after 1 s and retried by the
+  engine, and cannot corrupt money.
+- The finish's writes are rows of its own tournament (`tournaments`,
   `tables`, `table_seats`, `tournament_players`, `tournament_escrow`,
   `tournament_terminal_settlements`, `tournament_bounty_completion_receipts`,
-  plus the payout, rake, bounty and diamond receipts of that tournament.
-  Cross-tournament writes exist only on the satellite path, which keeps the
-  global lane.
+  `tournament_payouts`, `tournament_rake_settlements`) plus wallet rows and
+  VIP points of its own players and club. Cross-tournament writes exist
+  only on the satellite path, which keeps the global lane.
 - Lock order is unchanged: lane first, then `tournaments FOR UPDATE`, then
-  the field. The rolling authorities already run in this exact shape beside
-  hand settlements, since 2026-09-10, with `pg_stat_database.deadlocks`
-  unchanged across that change.
+  the field, then wallets.
 - The migration refuses to run unless each replaced body is byte-identical
-  (md5) to the reviewed one, and after the change proves on the live catalog
-  that only the lane helpers and the listed global callers still take G
-  exclusively. Rollback is a byte-for-byte file beside it.
+  (md5) to the reviewed one and the set of functions naming G is the
+  reviewed set; after the change it proves on the live catalog that only the
+  lane helpers take G exclusively, that the four-deep call graph of the
+  non-satellite finish reaches the global helper only through the reviewed
+  per-tournament callees (`fn_settle_tournament_places`,
+  `fn_settle_tournament_rake`, `fn_finalize_bounty_pool`,
+  `fn_mystery_bounty_settle`, `fn_settle_tournament_final_table_deal`, the
+  body itself), and that no rolling authority reaches the global lane.
+  Rollback is a byte-for-byte file beside it.
 
 ## Verification on production, before the change is called done
 
@@ -156,7 +214,10 @@ drains decided Spins at 85 finishes a minute, which is the worst case seen):
   `wait_event = advisory`.
 - No guard refusal (`TOURNAMENT_SEAT_ACQUISITION_REQUIRES_TERMINAL_AUTHORITY`,
   provenance, append-only payout, `F06_*`) from any caller after the change.
-- `pg_stat_database.deadlocks` unchanged.
+- `pg_stat_database.deadlocks` and the Postgres log's `deadlock detected`
+  rate unchanged (17 in the 24 hours before the change, 0 to 5 an hour).
+- F held by at most one backend in every sample; a finish waits on F only
+  for another finish, never on G.
 
 ## What the 07:55 release changed, for the record
 

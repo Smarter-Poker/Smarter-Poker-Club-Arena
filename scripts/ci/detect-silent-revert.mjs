@@ -35,19 +35,24 @@
  *
  * ESCAPE HATCHES
  *   - paths in IGNORED_PATHS (build output, lockfiles, generated bundles)
- *   - a commit message containing "revert" or [allow-revert] — but since
- *     2026-09-01 ONLY when the run also carries REVERT_APPROVED=true, which
- *     the workflow derives from the human-applied `revert-approved` PR label.
+ *   - an ANNOUNCED revert: the commit message contains "revert" or
+ *     [allow-revert], or the pull request title/body does (the workflow
+ *     passes that in as REVERT_ANNOUNCED=true). The `revert-approved` label
+ *     still counts too (REVERT_APPROVED=true), but nobody has to apply it.
  *
- * WHY ANNOUNCING STOPPED BEING ENOUGH (2026-09-01)
- *   On 2026-08-31 an agent hit this guard, amended its own commit message to
- *   add [allow-revert], force-pushed, and re-armed auto-merge. The lock was on
- *   the door and the key hung beside it. A detected revert now merges only
- *   when a human has looked at it: Dan applies the `revert-approved` label,
- *   the `labeled` trigger re-runs this check, and it passes. Agents cannot
- *   apply labels through Autopilot, and the workflow files an issue naming
- *   the PR so the request is visible without anyone polling.
- *   If main is broken, prefer a forward fix — it needs no approval.
+ * THE ANNOUNCEMENT IS THE APPROVAL (2026-09-17, Dan)
+ *   From 2026-09-01 to 2026-09-17 an announced revert also needed the
+ *   `revert-approved` label, applied by a human, after an agent had amended
+ *   [allow-revert] into its own message to get past this guard. Dan retired
+ *   that on 2026-09-17: "I don't approve anything, when you are cleared to
+ *   push and publish you do it automatically." Agents own their releases end
+ *   to end, so a revert that SAYS it is a revert is approved by saying so.
+ *
+ *   What this guard still catches is the thing it was written for: a commit
+ *   that restores a file to an older state WITHOUT saying so, which is what
+ *   a stale checkout does to somebody else's fix. That is a defect, not a
+ *   decision, and the fix is to rebase and re-apply, or to say in the commit
+ *   or the pull request that the revert is intended.
  *
  * USAGE
  *   node scripts/ci/detect-silent-revert.mjs [--base <ref>] [--days N]
@@ -165,7 +170,7 @@ const buildTouchMap = (tipRef) => {
   return map;
 };
 
-const range = commitsInRange();           // newest first
+const range = commitsInRange(); // newest first
 const rangeIndex = new Map(range.map((sha, i) => [sha, i]));
 
 const MAX_RANGE = 200;
@@ -189,35 +194,21 @@ if (range.length > MAX_RANGE) {
 // six-second check and a CI timeout.
 const touchMap = buildTouchMap('HEAD');
 
-// Set by the workflow from the human-applied `revert-approved` PR label.
-// Announcing a revert in the commit message is no longer sufficient on its
-// own: an agent demonstrably added [allow-revert] to its own message to get
-// past this guard (2026-08-31). Approval must come from outside the commit.
+// REVERT_APPROVED: the `revert-approved` label is on the pull request.
+// REVERT_ANNOUNCED: the pull request title or body says "revert" or carries
+// [allow-revert]. Either one is the author saying, outside any single commit
+// message, that this pull request undoes earlier work on purpose. Since
+// 2026-09-17 no human is in this loop (Dan: agents push and publish
+// themselves), so both are honoured the same way: say what is being waved
+// through and stop.
 const APPROVED = process.env.REVERT_APPROVED === 'true';
+const ANNOUNCED_IN_PR = process.env.REVERT_ANNOUNCED === 'true';
 
-/**
- * THE LABEL IS THE APPROVAL (2026-09-02).
- *
- * This used to be `if (announced && APPROVED) continue;` per commit - the
- * label exempted a commit only if its message ALSO contained the word
- * "revert". CLAUDE.md 10.8.2 and this workflow's own issue text both promise
- * "apply the label and the check passes"; neither mentions the message. So a
- * human-approved pull request whose commits were not worded as a revert - a
- * redundant workflow file being deleted, say - stayed blocked with the label
- * on, and the only escape was editing the commit message, which 10.8.2
- * forbids. A gate whose approved path cannot be taken is a lock.
- *
- * Measured on #2676: label applied 18:41, guard re-ran on `labeled` at 18:42
- * with REVERT_APPROVED=true in its environment, exit 1.
- *
- * The label is a human's approval of the PULL REQUEST they read. It is not
- * conditional on how any commit inside it was phrased. When it is present,
- * say what is being waved through and stop.
- */
-if (APPROVED) {
+if (APPROVED || ANNOUNCED_IN_PR) {
   console.log(
-    `revert-approved label present: ${range.length} commit(s) in this pull request ` +
-      'are approved by a human and are not scanned for restored files.'
+    `${APPROVED ? 'revert-approved label present' : 'revert announced in the pull request'}: ` +
+      `${range.length} commit(s) in this pull request are an intended revert and are not ` +
+      'scanned for restored files.'
   );
   process.exit(0);
 }
@@ -227,10 +218,10 @@ const findings = [];
 for (const commit of range) {
   const message = bodyOf(commit);
   const announced = /revert/i.test(message) || message.includes('[allow-revert]');
-  // Announcing a revert in the message changes nothing on its own (an agent
-  // wrote it into its own message to get past this on 2026-08-31). If the
-  // commit actually restores prior state it is reported below with
-  // instructions to request the label, never waved through.
+  // A commit that says it reverts is an intended revert (2026-09-17: the
+  // announcement is the approval). Only the SILENT restore of an older state
+  // is a finding, because that is the stale-checkout clobber this exists for.
+  if (announced) continue;
 
   const allChanged = (git('diff-tree', '--no-commit-id', '--name-only', '-r', commit) || '')
     .split('\n')
@@ -252,11 +243,13 @@ for (const commit of range) {
     // Only commits strictly OLDER than this one. Anything at or after it in
     // the pushed range is not something it could have reverted.
     const myIndex = rangeIndex.get(commit);
-    const history = (touchMap.get(file) || []).filter((sha) => {
-      if (sha === commit) return false;
-      const idx = rangeIndex.get(sha);
-      return idx === undefined ? true : idx > myIndex;
-    }).slice(0, MAX_PRIORS_PER_FILE);
+    const history = (touchMap.get(file) || [])
+      .filter((sha) => {
+        if (sha === commit) return false;
+        const idx = rangeIndex.get(sha);
+        return idx === undefined ? true : idx > myIndex;
+      })
+      .slice(0, MAX_PRIORS_PER_FILE);
 
     for (const prior of history) {
       const priorParent = `${prior}~1`;
@@ -288,7 +281,6 @@ for (const commit of range) {
           commit: commit.slice(0, 9),
           commitSubject: subjectOf(commit),
           file,
-          announced,
           reverted: prior.slice(0, 9),
           revertedSubject: subjectOf(prior),
           revertedDate: git('log', '-1', '--format=%ad', '--date=short', prior),
@@ -300,47 +292,36 @@ for (const commit of range) {
 }
 
 if (findings.length === 0) {
-  console.log('detect-silent-revert: no unapproved reverts in ' + `${BASE}..HEAD`);
+  console.log('detect-silent-revert: no silent reverts in ' + `${BASE}..HEAD`);
   process.exit(0);
 }
 
-const silent = findings.filter((f) => !f.announced);
-const announcedOnly = findings.filter((f) => f.announced);
-
 console.error('');
-console.error('REVERT DETECTED');
-console.error('===============');
+console.error('SILENT REVERT DETECTED');
+console.error('======================');
 console.error('');
-
-if (silent.length > 0) {
-  console.error('A commit below restores a file to exactly the state it had before an');
-  console.error('earlier commit, without saying so. This is what happens when work is');
-  console.error('committed from a checkout that predates someone else’s change: the');
-  console.error('older content wins and the newer fix disappears with no diff anyone');
-  console.error('would think to read.');
-  console.error('');
-}
+console.error('A commit below restores a file to exactly the state it had before an');
+console.error('earlier commit, without saying so. This is what happens when work is');
+console.error('committed from a checkout that predates someone else’s change: the');
+console.error('older content wins and the newer fix disappears with no diff anyone');
+console.error('would think to read.');
+console.error('');
 
 for (const f of findings) {
-  console.error(`  ${f.file}${f.announced ? '   (announced in the message)' : ''}`);
+  console.error(`  ${f.file}`);
   console.error(`    this commit : ${f.commit}  ${f.commitSubject}`);
   console.error(`    undoes      : ${f.reverted}  ${f.revertedSubject}  (${f.revertedDate})`);
   console.error('');
 }
 
-if (silent.length > 0) {
-  console.error('If this revert is NOT intentional (it usually is not): rebase onto');
-  console.error('current origin/main and re-apply your change on top of theirs.');
-  console.error('');
-}
-if (announcedOnly.length > 0 || silent.length > 0) {
-  console.error('If the revert IS intentional: since 2026-09-01 an intentional revert');
-  console.error('needs the `revert-approved` LABEL on this pull request, applied by a');
-  console.error('human. Say in the PR body which commit you are undoing and why, and');
-  console.error('this workflow has already filed an issue asking for the label — do');
-  console.error('NOT edit the commit message to route around this check; that is the');
-  console.error('exact move this rule was written to stop (2026-08-31 incident).');
-  console.error('If main is broken right now, prefer a forward fix: it needs no label.');
-}
+console.error('If this revert is NOT intentional (it usually is not): merge current');
+console.error('origin/main into your branch and re-apply your change on top of theirs.');
+console.error('');
+console.error('If the revert IS intentional: say so. Put "revert" or [allow-revert] in');
+console.error('the commit message, or in the pull request title or body, naming which');
+console.error('commit you are undoing and why. That announcement is the approval; no');
+console.error('label and no human sign-off is needed (Dan, 2026-09-17). The check');
+console.error('re-runs when the pull request is edited.');
+console.error('If main is broken right now, prefer a forward fix.');
 console.error('');
 process.exit(1);

@@ -1,22 +1,25 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  THE REVERT-APPROVED LABEL IS THE APPROVAL (2026-09-02)
+ *  THE ANNOUNCEMENT IS THE APPROVAL (2026-09-17)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * MEASURED on #2676. The Silent Revert Guard flagged a pull request that
- * deleted a redundant workflow file. The `revert-approved` label was applied
- * at 18:41; the guard re-ran on `labeled` at 18:42 with REVERT_APPROVED=true
- * in its environment and exited 1 anyway.
+ * Dan, 2026-09-17: "REMOVE THIS GLOBALLY: human-only revert-approved. I don't
+ * approve anything, when you are cleared to push and publish you do it
+ * automatically." Agents own their releases end to end, so the Silent Revert
+ * Guard no longer waits for a human label. An intended revert is cleared by
+ * saying so: "revert" or [allow-revert] in a commit message, or in the pull
+ * request title or body (REVERT_ANNOUNCED, set by the workflow). The
+ * `revert-approved` label (REVERT_APPROVED) still clears it, for anyone who
+ * applies one, but nothing requires it.
  *
- * The label only exempted a commit whose MESSAGE also contained the word
- * "revert". CLAUDE.md 10.8.2 and the guard's own issue text promise "apply the
- * label and the check passes" and say nothing about the message; 10.8.2 also
- * forbids editing commit messages to route around the guard. So a human's
- * approval could not be acted on. A gate whose approved path cannot be taken
- * is a lock.
+ * What the guard still refuses is the SILENT restore of an older state, the
+ * stale-checkout clobber it was written for (World Hub 902d8b2b).
  *
- * These run the real script against a throwaway repository so the pin is on
- * behaviour, not on the shape of the source.
+ * History: from 2026-09-01 the label was mandatory after an agent amended
+ * [allow-revert] into its own message; on 2026-09-02 (#2676) the label was
+ * made to work regardless of commit wording. Both are superseded by the rule
+ * above. These run the real script against a throwaway repository so the pin
+ * is on behaviour, not on the shape of the source.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -95,24 +98,32 @@ afterAll(() => {
   rmSync(repo, { recursive: true, force: true });
 });
 
-describe('the revert-approved label is the approval', () => {
-  it('without the label, a deletion is reported and the guard exits 1', () => {
-    expect(guard({ REVERT_APPROVED: 'false' })).toBe(1);
+describe('the announcement is the approval', () => {
+  it('a silent restore of an older state, announced nowhere, is reported and the guard exits 1', () => {
+    expect(guard({ REVERT_APPROVED: 'false', REVERT_ANNOUNCED: 'false' })).toBe(1);
   });
 
-  it('WITH the label, the same pull request passes - whatever the commit said', () => {
-    // The message above contains no "revert" and no [allow-revert]. Before
-    // 2026-09-02 this returned 1 with the label on, which is the bug.
-    expect(guard({ REVERT_APPROVED: 'true' })).toBe(0);
+  it('the revert-approved label still clears it, whatever the commit said', () => {
+    expect(guard({ REVERT_APPROVED: 'true', REVERT_ANNOUNCED: 'false' })).toBe(0);
   });
 
-  it('a commit message saying "revert" is NOT an approval on its own', () => {
-    // 2026-08-31: an agent wrote [allow-revert] into its own message to get
-    // past the guard. Announcing must never substitute for the label.
+  it('the pull request saying "revert" clears it, whatever the commit said, with no label', () => {
+    expect(guard({ REVERT_APPROVED: 'false', REVERT_ANNOUNCED: 'true' })).toBe(0);
+  });
+
+  it('a commit message saying "revert" IS the approval on its own', () => {
     writeFileSync(join(repo, 'guarded.yml'), 'name: three\n');
     git('commit', '-q', '-am', 'change again');
     writeFileSync(join(repo, 'guarded.yml'), 'name: one\n');
     git('commit', '-q', '-am', 'revert: back to one [allow-revert]');
-    expect(guard({ REVERT_APPROVED: 'false' })).toBe(1);
+    expect(guard({ REVERT_APPROVED: 'false', REVERT_ANNOUNCED: 'false' })).toBe(0);
+  });
+
+  it('an unannounced restore after an announced one is still reported', () => {
+    writeFileSync(join(repo, 'guarded.yml'), 'name: four\n');
+    git('commit', '-q', '-am', 'change to four');
+    writeFileSync(join(repo, 'guarded.yml'), 'name: one\n');
+    git('commit', '-q', '-am', 'chore: tidy');
+    expect(guard({ REVERT_APPROVED: 'false', REVERT_ANNOUNCED: 'false' })).toBe(1);
   });
 });

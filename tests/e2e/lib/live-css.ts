@@ -51,6 +51,9 @@ export interface LiveCssLoad {
 /** Enough CSS to be a real bundle rather than a stub or an error page. */
 const MIN_BYTES = 2_000;
 
+/** Bound each load without dropping chunks or changing their cascade order. */
+const CSS_REQUEST_CONCURRENCY = 4;
+
 interface Options {
   /**
    * Value for `--animation-speed` on the root once the CSS is in. Four of the
@@ -120,15 +123,23 @@ export async function loadLiveCss(
       continue;
     }
 
-    const sheets = await Promise.all(
-      names.map(async (n) => {
-        const res = await page.request.get(`${base}${n}`);
-        /* One chunk that 404s is genuinely not this test's problem - the
-           bundle moved on and the others still describe the shipped CSS. A
-           bundle where they ALL 404 is caught by the byte floor below. */
-        return res.ok() ? res.text() : '';
-      })
-    );
+    const sheets: string[] = [];
+    // The bundle can name hundreds of lazy chunks. Read bounded batches,
+    // including their bodies, instead of opening one request per chunk at
+    // once. Promise.all preserves discovery order within each batch; a
+    // transport failure still rejects this load before any CSS is installed.
+    for (let start = 0; start < names.length; start += CSS_REQUEST_CONCURRENCY) {
+      const batch = await Promise.all(
+        names.slice(start, start + CSS_REQUEST_CONCURRENCY).map(async (n) => {
+          const res = await page.request.get(`${base}${n}`);
+          /* One chunk that 404s is genuinely not this test's problem - the
+             bundle moved on and the others still describe the shipped CSS. A
+             bundle where they ALL 404 is caught by the byte floor below. */
+          return res.ok() ? res.text() : '';
+        })
+      );
+      sheets.push(...batch);
+    }
     const contents = sheets.filter((c) => c.length > 0);
     const bytes = contents.reduce((n, c) => n + c.length, 0);
 

@@ -1,7 +1,36 @@
 -- SOURCE ONLY / UNRUN. Run within the one successor transaction after all fragments.
 DO $credit_document_postconditions$
-DECLARE expected jsonb;target oid;who text;col text;actual jsonb;BEGIN
- FOR expected IN SELECT value FROM jsonb_array_elements($pins$[{"signature":"public.fn_accounting_credit_change_immutable_v1()","md5":"e52fcbd89007bef2df9019a17cb9385a","returns":"trigger","argument_names":null,"security_definer":false,"config":["search_path=pg_catalog"]},{"signature":"public.fn_accounting_credit_change_payload_v1(uuid)","md5":"d69ab1877cc2a92a43f2b823f619abe3","returns":"jsonb","argument_names":["p_document_id"],"security_definer":true,"config":["datestyle=iso,ymd","search_path=public","timezone=utc"]},{"signature":"public.fn_accounting_credit_change_contract_v1(uuid)","md5":"73a0e5343d9004f3dc088b79df8a74f1","returns":"jsonb","argument_names":["p_invoice_id"],"security_definer":true,"config":["datestyle=iso,ymd","search_path=public","timezone=utc"]},{"signature":"public.fn_accounting_credit_change_body_v1(uuid,text)","md5":"656363b1938b4ce522b5cc4a8414c4b4","returns":"text","argument_names":["p_document_id","p_invoice_number"],"security_definer":true,"config":["search_path=public"]},{"signature":"public.fn_accounting_credit_reduction_assert_document(uuid)","md5":"05f6a673ad86acccf43d42c87a38d08c","returns":"jsonb","argument_names":["p_operation_receipt_id"],"security_definer":true,"config":["datestyle=iso,ymd","search_path=public","timezone=utc"]},{"signature":"public.fn_accounting_credit_change_on_operation_v1()","md5":"895a34b7a4a100c6c34c6fcef2ee9ae7","returns":"trigger","argument_names":null,"security_definer":true,"config":["datestyle=iso,ymd","search_path=public","timezone=utc"]},{"signature":"public.fn_accounting_credit_change_deferred_v1()","md5":"714f4d682b5c547aa6ffc86d418a6bb4","returns":"trigger","argument_names":null,"security_definer":true,"config":["search_path=public"]}]$pins$::jsonb) LOOP
+DECLARE expected jsonb;target oid;who text;col text;actual jsonb;source_column smallint;BEGIN
+ -- Exact shape/key postconditions for the new typed invoice source. The
+ -- original check preimage is guarded in document-authority.sql; actual native
+ -- positive/negative invoice inserts qualify the amended predicate semantics.
+ SELECT attnum INTO source_column FROM pg_attribute
+  WHERE attrelid='public.settlement_invoices'::regclass AND attname='source_credit_reduction_operation_id'
+   AND NOT attisdropped AND atttypid='uuid'::regtype AND atttypmod=-1 AND NOT attnotnull
+   AND attidentity='' AND attgenerated='' AND attacl IS NULL
+   AND NOT EXISTS(SELECT 1 FROM pg_attrdef WHERE adrelid=attrelid AND adnum=attnum);
+ IF source_column IS NULL
+  OR NOT EXISTS(SELECT 1 FROM pg_constraint c JOIN pg_index i ON i.indexrelid=c.conindid
+   WHERE c.conrelid='public.settlement_invoices'::regclass
+    AND c.conname='accounting_invoice_credit_reduction_source_unique' AND c.contype='u'
+    AND c.conkey=ARRAY[source_column]::smallint[] AND c.convalidated AND NOT c.condeferrable AND NOT c.condeferred
+    AND i.indisunique AND i.indisvalid AND i.indisready AND i.indislive AND i.indimmediate
+    AND i.indpred IS NULL AND i.indexprs IS NULL)
+  OR NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.settlement_invoices'::regclass
+   AND conname='accounting_invoice_credit_reduction_source_fk' AND contype='f'
+   AND conkey=ARRAY[source_column]::smallint[] AND convalidated AND NOT condeferrable AND NOT condeferred
+   AND confrelid='public.accounting_credit_reduction_operations_v1'::regclass
+   AND confkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid='public.accounting_credit_reduction_operations_v1'::regclass AND attname='id')]::smallint[]
+   AND confupdtype='a' AND confdeltype='a' AND confmatchtype='s')
+  OR NOT EXISTS(SELECT 1 FROM pg_constraint c WHERE c.conrelid='public.settlement_invoices'::regclass
+   AND c.conname='accounting_invoice_has_one_source' AND c.contype='c' AND c.convalidated
+   AND NOT c.condeferrable AND NOT c.condeferred
+   AND (SELECT array_agg(k ORDER BY k) FROM unnest(c.conkey)k)=
+       (SELECT array_agg(attnum ORDER BY attnum) FROM pg_attribute WHERE attrelid=c.conrelid
+        AND attname=ANY(ARRAY['period_id','invoice_type','source_ledger_id','source_credit_invoice_id',
+         'source_credit_payment_id','source_credit_reduction_operation_id']) AND NOT attisdropped))
+ THEN RAISE EXCEPTION 'credit_change_invoice_source_postcondition_changed';END IF;
+ FOR expected IN SELECT value FROM jsonb_array_elements($pins$[{"signature":"public.fn_accounting_credit_change_immutable_v1()","md5":"e52fcbd89007bef2df9019a17cb9385a","returns":"trigger","argument_names":null,"security_definer":false,"config":["search_path=pg_catalog"]},{"signature":"public.fn_accounting_credit_change_payload_v1(uuid)","md5":"d69ab1877cc2a92a43f2b823f619abe3","returns":"jsonb","argument_names":["p_document_id"],"security_definer":true,"config":["datestyle=iso,ymd","search_path=public","timezone=utc"]},{"signature":"public.fn_accounting_credit_change_contract_v1(uuid)","md5":"7a44cc174c0e006a6bc39afbfa61c388","returns":"jsonb","argument_names":["p_invoice_id"],"security_definer":true,"config":["datestyle=iso,ymd","search_path=public","timezone=utc"]},{"signature":"public.fn_accounting_credit_change_body_v1(uuid,text)","md5":"656363b1938b4ce522b5cc4a8414c4b4","returns":"text","argument_names":["p_document_id","p_invoice_number"],"security_definer":true,"config":["search_path=public"]},{"signature":"public.fn_accounting_credit_reduction_assert_document(uuid)","md5":"05f6a673ad86acccf43d42c87a38d08c","returns":"jsonb","argument_names":["p_operation_receipt_id"],"security_definer":true,"config":["datestyle=iso,ymd","search_path=public","timezone=utc"]},{"signature":"public.fn_accounting_credit_change_on_operation_v1()","md5":"c84e757d054b05ac55ceeabee4550786","returns":"trigger","argument_names":null,"security_definer":true,"config":["datestyle=iso,ymd","search_path=public","timezone=utc"]},{"signature":"public.fn_accounting_credit_change_deferred_v1()","md5":"714f4d682b5c547aa6ffc86d418a6bb4","returns":"trigger","argument_names":null,"security_definer":true,"config":["search_path=public"]}]$pins$::jsonb) LOOP
   target:=to_regprocedure(expected->>'signature');
   IF target IS NULL OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=target AND proowner='postgres'::regrole
     AND prosecdef=(expected->>'security_definer')::boolean AND md5(prosrc)=expected->>'md5'

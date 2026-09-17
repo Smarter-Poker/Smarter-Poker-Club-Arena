@@ -37,11 +37,24 @@ DO $durable$ DECLARE e jsonb;x jsonb;BEGIN
   AND club_id=pg_temp.cr_id(101) AND invoice_type='credit_limit_change' AND status='generated'
   AND chips_transferred IS FALSE AND transferred_at IS NULL AND due_at IS NULL
   AND source_ledger_id IS NULL AND source_credit_invoice_id IS NULL AND source_credit_payment_id IS NULL
-  AND gross_amount=20 AND net_amount=20 AND deductions=0), 'capacity record has no paid or chip-transfer claim');
+  AND source_credit_reduction_operation_id=(x->>'receipt_id')::uuid
+  AND gross_amount=20 AND net_amount=20 AND deductions=0), 'exact20.00 capacity record has one typed operation source and no paid or chip-transfer claim');
  PERFORM pg_temp.cr_check((SELECT array_agg(recipient_id ORDER BY recipient_id)=ARRAY[pg_temp.cr_id(1),pg_temp.cr_id(2)]
   FROM public.accounting_invoice_deliveries WHERE invoice_id=(x->>'invoice_id')::uuid),
   'only original actor and target receive the immediate record');
 END$durable$;
+DO $immutable_source$ DECLARE before_book jsonb;got_message text;BEGIN
+ before_book:=pg_temp.cr_book();
+ BEGIN
+  UPDATE public.settlement_invoices SET source_credit_reduction_operation_id=pg_temp.cr_id(1999)
+   WHERE id=(SELECT (response->'receipt'->>'invoice_id')::uuid FROM cr_saved WHERE label='main');
+  RAISE EXCEPTION 'credit invoice source mutation was accepted';
+ EXCEPTION WHEN check_violation THEN
+  GET STACKED DIAGNOSTICS got_message=MESSAGE_TEXT;
+  IF got_message IS DISTINCT FROM 'credit_change_document_is_immutable' THEN RAISE;END IF;
+ END;
+ PERFORM pg_temp.cr_check(pg_temp.cr_book()=before_book,'issued typed operation source is immutable with complete book unchanged');
+END$immutable_source$;
 -- Force actual deferred push/document assertions before checking post-commit
 -- equivalence. A source acknowledgment alone is insufficient.
 SET CONSTRAINTS ALL IMMEDIATE;

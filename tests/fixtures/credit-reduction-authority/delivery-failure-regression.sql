@@ -7,6 +7,18 @@ CREATE FUNCTION pg_temp.cr_delivery_fault() RETURNS trigger LANGUAGE plpgsql AS 
 BEGIN
  IF TG_ARGV[0]='suppress' THEN RETURN NULL;END IF;
  IF TG_ARGV[0]='link_only' THEN NEW.link:='/unexpected-credit-destination';RETURN NEW;END IF;
+ IF TG_ARGV[0]='missing_credit_source' THEN NEW.source_credit_reduction_operation_id:=NULL;RETURN NEW;END IF;
+ IF TG_ARGV[0]='unknown_credit_source' THEN NEW.source_credit_reduction_operation_id:=pg_temp.cr_id(1999);RETURN NEW;END IF;
+ IF TG_ARGV[0]='duplicate_credit_source' THEN
+  NEW.source_credit_reduction_operation_id:=(SELECT (response->'receipt'->>'receipt_id')::uuid FROM cr_saved WHERE label='main');
+  RETURN NEW;
+ END IF;
+ IF TG_ARGV[0]='wrong_credit_source' THEN
+  NEW.source_credit_reduction_operation_id:=(SELECT (response->'receipt'->>'receipt_id')::uuid FROM cr_saved WHERE label='no_change');
+  RETURN NEW;
+ END IF;
+ IF TG_ARGV[0]='mixed_credit_source' THEN NEW.source_ledger_id:=pg_temp.cr_id(1999);RETURN NEW;END IF;
+ IF TG_ARGV[0]='ordinary_credit_source' THEN NEW.invoice_type:='transaction_receipt';RETURN NEW;END IF;
  IF TG_TABLE_NAME='accounting_credit_change_documents_v1' THEN NEW.recipient_name:='Tampered recipient';
  ELSIF TG_TABLE_NAME='settlement_invoices' THEN NEW.notes:='Unexpected hidden note';
  ELSIF TG_TABLE_NAME='social_messages' THEN NEW.content:='Tampered credit body';
@@ -59,6 +71,38 @@ CREATE TRIGGER fixture_credit_invoice BEFORE INSERT ON public.settlement_invoice
  WHEN(NEW.invoice_type='credit_limit_change') EXECUTE FUNCTION pg_temp.cr_delivery_fault('transform');
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.cr_expect_atomic_failure(q,'23514','credit_change_document_contract_mismatch') FROM cr_failure_intent;
+RESET ROLE;DROP TRIGGER fixture_credit_invoice ON public.settlement_invoices;
+-- One immutable source means an actual operation, never a type-only exception,
+-- mixed financial source, ordinary receipt using the new source, or another op.
+CREATE TRIGGER fixture_credit_invoice BEFORE INSERT ON public.settlement_invoices FOR EACH ROW
+ WHEN(NEW.invoice_type='credit_limit_change') EXECUTE FUNCTION pg_temp.cr_delivery_fault('missing_credit_source');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.cr_expect_atomic_failure(q,'23514','new row for relation "settlement_invoices" violates check constraint "accounting_invoice_has_one_source"','settlement_invoices') FROM cr_failure_intent;
+RESET ROLE;DROP TRIGGER fixture_credit_invoice ON public.settlement_invoices;
+CREATE TRIGGER fixture_credit_invoice BEFORE INSERT ON public.settlement_invoices FOR EACH ROW
+ WHEN(NEW.invoice_type='credit_limit_change') EXECUTE FUNCTION pg_temp.cr_delivery_fault('unknown_credit_source');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.cr_expect_atomic_failure(q,'23503','insert or update on table "settlement_invoices" violates foreign key constraint "accounting_invoice_credit_reduction_source_fk"','settlement_invoices') FROM cr_failure_intent;
+RESET ROLE;DROP TRIGGER fixture_credit_invoice ON public.settlement_invoices;
+CREATE TRIGGER fixture_credit_invoice BEFORE INSERT ON public.settlement_invoices FOR EACH ROW
+ WHEN(NEW.invoice_type='credit_limit_change') EXECUTE FUNCTION pg_temp.cr_delivery_fault('duplicate_credit_source');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.cr_expect_atomic_failure(q,'23505','duplicate key value violates unique constraint "accounting_invoice_credit_reduction_source_unique"','settlement_invoices') FROM cr_failure_intent;
+RESET ROLE;DROP TRIGGER fixture_credit_invoice ON public.settlement_invoices;
+CREATE TRIGGER fixture_credit_invoice BEFORE INSERT ON public.settlement_invoices FOR EACH ROW
+ WHEN(NEW.invoice_type='credit_limit_change') EXECUTE FUNCTION pg_temp.cr_delivery_fault('wrong_credit_source');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.cr_expect_atomic_failure(q,'23514','credit_change_document_contract_mismatch') FROM cr_failure_intent;
+RESET ROLE;DROP TRIGGER fixture_credit_invoice ON public.settlement_invoices;
+CREATE TRIGGER fixture_credit_invoice BEFORE INSERT ON public.settlement_invoices FOR EACH ROW
+ WHEN(NEW.invoice_type='credit_limit_change') EXECUTE FUNCTION pg_temp.cr_delivery_fault('mixed_credit_source');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.cr_expect_atomic_failure(q,'23514','new row for relation "settlement_invoices" violates check constraint "accounting_invoice_has_one_source"','settlement_invoices') FROM cr_failure_intent;
+RESET ROLE;DROP TRIGGER fixture_credit_invoice ON public.settlement_invoices;
+CREATE TRIGGER fixture_credit_invoice BEFORE INSERT ON public.settlement_invoices FOR EACH ROW
+ WHEN(NEW.invoice_type='credit_limit_change') EXECUTE FUNCTION pg_temp.cr_delivery_fault('ordinary_credit_source');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.cr_expect_atomic_failure(q,'23514','new row for relation "settlement_invoices" violates check constraint "accounting_invoice_has_one_source"','settlement_invoices') FROM cr_failure_intent;
 RESET ROLE;DROP TRIGGER fixture_credit_invoice ON public.settlement_invoices;
 CREATE TRIGGER fixture_credit_message BEFORE INSERT ON public.social_messages FOR EACH ROW
  WHEN(NEW.media_metadata->>'invoice_type'='credit_limit_change') EXECUTE FUNCTION pg_temp.cr_delivery_fault('suppress');

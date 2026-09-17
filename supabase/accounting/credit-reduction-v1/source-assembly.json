@@ -1,8 +1,8 @@
 {
   "status": "LITERAL_SOURCE_ASSEMBLY_ONLY_UNRUN",
   "component_name": "20260915150000_credit_reductions_retain_exact_intent_and_private_records.sql",
-  "component_sha256": "f169f26a394e52b04011a8bee26f45ca300b24dfd84441db10bdd2e40fd2aeb6",
-  "component_bytes": 285365,
+  "component_sha256": "d618181c0043a0608dc71b1e9671215ab388556a561c1c2e62c307dd272118be",
+  "component_bytes": 290252,
   "header": "-- SOURCE ONLY / UNAPPLIED / UNRUN. Component37 after the preserved36.\n-- Exact accepted credit reductions extend the original credit writer and\n-- existing invoice/Messenger/notification authority. No chip payment is implied.\n-- Native loader, role, concurrency and compatible application checks required.\n-- Maintained fragments and exact assembly are bound in credit-reduction-v1.\nBEGIN;\nSET LOCAL lock_timeout='3s';\nSET LOCAL statement_timeout='300s';\nSELECT pg_advisory_xact_lock(hashtextextended('accounting-authority-install',0));\n",
   "fragments": [
     {
@@ -32,8 +32,8 @@
     },
     {
       "name": "document-authority.sql",
-      "bytes": 17345,
-      "sha256": "fc0c7ff9e7b0505e7e8e32b28485a8ae901034020fc47ac9f56ade957bbe1da2"
+      "bytes": 19792,
+      "sha256": "7474d51fd28cd5bf4eb8aa2a985dcd7cf2ebfa30064cd99feab298456a397c47"
     },
     {
       "name": "document-delivery-successor.sql",
@@ -57,8 +57,8 @@
     },
     {
       "name": "document-postconditions.sql",
-      "bytes": 8632,
-      "sha256": "f5823de1140dcfcb228b1808ac42c527b8c0eca7e3d17dde678f06769ff04252"
+      "bytes": 11072,
+      "sha256": "c28b1246328d1c2a48824f3f1181167abf20a0039af72aa1ad8769b933d78575"
     }
   ],
   "footer": "COMMIT;\n",

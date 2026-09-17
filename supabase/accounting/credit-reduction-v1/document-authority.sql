@@ -1,6 +1,32 @@
 -- SOURCE ONLY / UNRUN. Fragment for one guarded post36 transaction.
 -- Load after the operation schema; install the delivery/reader successor in
 -- the same transaction before admitting any operation. No alternate payer.
+-- A non-payment capacity record has its own typed immutable source; it must
+-- never counterfeit a period, ledger leg, credit invoice or credit payment.
+DO $credit_invoice_source_preimage$
+BEGIN
+ IF EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.settlement_invoices'::regclass
+   AND attname='source_credit_reduction_operation_id' AND NOT attisdropped)
+  OR EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.settlement_invoices'::regclass
+   AND conname IN('accounting_invoice_credit_reduction_source_fk','accounting_invoice_credit_reduction_source_unique'))
+  OR NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.settlement_invoices'::regclass
+   AND conname='accounting_invoice_has_one_source' AND contype='c' AND convalidated AND NOT condeferrable
+   AND pg_get_constraintdef(oid)=$original$CHECK (((num_nonnulls(source_ledger_id, source_credit_invoice_id, source_credit_payment_id) <= 1) AND ((period_id IS NOT NULL) OR (num_nonnulls(source_ledger_id, source_credit_invoice_id, source_credit_payment_id) = 1))))$original$)
+ THEN RAISE EXCEPTION 'credit_change_invoice_source_preimage_changed';END IF;
+END $credit_invoice_source_preimage$;
+ALTER TABLE public.settlement_invoices ADD COLUMN source_credit_reduction_operation_id uuid;
+ALTER TABLE public.settlement_invoices ADD CONSTRAINT accounting_invoice_credit_reduction_source_unique
+ UNIQUE(source_credit_reduction_operation_id);
+ALTER TABLE public.settlement_invoices ADD CONSTRAINT accounting_invoice_credit_reduction_source_fk
+ FOREIGN KEY(source_credit_reduction_operation_id) REFERENCES public.accounting_credit_reduction_operations_v1(id);
+ALTER TABLE public.settlement_invoices DROP CONSTRAINT accounting_invoice_has_one_source;
+ALTER TABLE public.settlement_invoices ADD CONSTRAINT accounting_invoice_has_one_source CHECK (
+ (source_credit_reduction_operation_id IS NULL AND invoice_type<>'credit_limit_change'
+  AND ((num_nonnulls(source_ledger_id, source_credit_invoice_id, source_credit_payment_id) <= 1) AND ((period_id IS NOT NULL) OR (num_nonnulls(source_ledger_id, source_credit_invoice_id, source_credit_payment_id) = 1))))
+ OR (source_credit_reduction_operation_id IS NOT NULL AND invoice_type='credit_limit_change'
+  AND period_id IS NULL AND num_nonnulls(source_ledger_id,source_credit_invoice_id,source_credit_payment_id)=0)
+);
+
 CREATE TABLE public.accounting_credit_change_documents_v1 (
  id uuid PRIMARY KEY,
  invoice_id uuid NOT NULL UNIQUE,
@@ -75,6 +101,7 @@ BEGIN
   OR i.chips_transferred IS DISTINCT FROM false OR i.transferred_at IS NOT NULL OR i.due_at IS NOT NULL
   OR i.chip_transfer_id IS NOT NULL OR i.adjusts_invoice_id IS NOT NULL OR i.period_id IS NOT NULL
   OR i.source_ledger_id IS NOT NULL OR i.source_credit_invoice_id IS NOT NULL OR i.source_credit_payment_id IS NOT NULL
+  OR i.source_credit_reduction_operation_id IS DISTINCT FROM o.id
   OR i.overdue_at IS NOT NULL OR i.reminders_sent IS DISTINCT FROM 0 OR i.last_reminder_at IS NOT NULL
   OR i.notes IS NOT NULL OR i.created_at IS DISTINCT FROM d.issued_at
   OR i.invoice_number IS NULL OR i.breakdown IS DISTINCT FROM jsonb_build_object('category','credit_limit_change','credit_change',payload)
@@ -180,10 +207,10 @@ BEGIN
  THEN RAISE EXCEPTION 'credit_change_provenance_write_missing' USING ERRCODE='23514';END IF;
  invoice_number:=public.fn_accounting_next_invoice_number();
  INSERT INTO public.settlement_invoices(id,club_id,invoice_type,invoice_number,from_entity_type,from_entity_id,to_entity_type,to_entity_id,
-  gross_amount,net_amount,deductions,breakdown,status,chips_transferred,transferred_at,due_at,notes,source_ledger_id,created_at)
+  gross_amount,net_amount,deductions,breakdown,status,chips_transferred,transferred_at,due_at,notes,source_ledger_id,source_credit_reduction_operation_id,created_at)
  VALUES(NEW.invoice_id,NEW.club_id,'credit_limit_change',invoice_number,'club',NEW.club_id::text,'agent',NEW.target_user_id::text,
   NEW.applied_reduction,NEW.applied_reduction,0,jsonb_build_object('category','credit_limit_change','credit_change',public.fn_accounting_credit_change_payload_v1(intended.id)),
-  'generated',false,NULL,NULL,NULL,NULL,NEW.recorded_at) RETURNING id INTO invoice_id;
+  'generated',false,NULL,NULL,NULL,NULL,NEW.id,NEW.recorded_at) RETURNING id INTO invoice_id;
  IF NOT FOUND OR invoice_id IS DISTINCT FROM NEW.invoice_id
  THEN RAISE EXCEPTION 'credit_change_invoice_write_missing' USING ERRCODE='23514';END IF;
  PERFORM public.fn_deliver_accounting_invoice(invoice_id);

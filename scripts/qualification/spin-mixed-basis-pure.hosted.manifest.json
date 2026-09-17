@@ -39,15 +39,24 @@
   "embedded_sources": {
     "mixed_component_source": {
       "path": "supabase/components/spin-mixed-basis-evidence.sql",
-      "remove_outer_transaction": ["BEGIN;", "COMMIT;"]
+      "remove_outer_transaction": [
+        "BEGIN;",
+        "COMMIT;"
+      ]
     },
     "mixed_shape_source": {
       "path": "scripts/qualification/spin-mixed-basis-shape.sql",
-      "remove_outer_transaction": ["BEGIN;", "ROLLBACK;"]
+      "remove_outer_transaction": [
+        "BEGIN;",
+        "ROLLBACK;"
+      ]
     },
     "mixed_preimage_source": {
       "path": "scripts/qualification/spin-mixed-basis-evidence.preimage.sql",
-      "remove_outer_transaction": ["BEGIN;", "COMMIT;"]
+      "remove_outer_transaction": [
+        "BEGIN;",
+        "COMMIT;"
+      ]
     }
   },
   "stage": {

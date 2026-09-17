@@ -2288,6 +2288,7 @@
       "heads_up_cap_factor",
       "short_handed_cap_factor",
       "short_handed_max_players",
+      "short_handed_min_seats",
       "no_flop_no_drop",
       "bbj_min_players_dealt",
       "bbj_min_pot_bb",

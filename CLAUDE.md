@@ -972,13 +972,16 @@ at all — the same shortcut, in the same shape, that 10.5 was written about.
 One binding law, one violation of it, and a stopped job waiting on a ruling
 that 10.5 had already given.
 
-**2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
-accepts `[allow-revert]` or the word "revert" in a commit message on its own —
-on 2026-08-31 an agent amended the token into its own message to get past the
-guard. A detected revert merges only when Dan applies the `revert-approved`
-label to the PR (the check re-runs itself on labeling, and the guard files an
-issue asking for it). If main is broken, prefer a forward fix; it needs no
-label. Do not edit commit messages to route around the guard.
+**2. INTENTIONAL REVERTS ARE DECLARED ON THE PULL REQUEST.** The Silent
+Revert Guard does not accept `[allow-revert]` or the word "revert" in a commit
+message on its own — on 2026-08-31 an agent amended the token into its own
+message to get past the guard. A detected revert merges when the PR carries
+the `revert-approved` label (the check re-runs itself on labeling, and the
+guard files an issue saying so). Dan, 2026-09-17: "I don't approve anything;
+when you are cleared to push and publish you do it automatically" — the label
+is no longer human-only. Say in the PR body which commit you are undoing and
+why, then apply the label yourself. If main is broken, prefer a forward fix;
+it needs no label. Do not edit commit messages to route around the guard.
 
 **3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
 PR, report the PR number, END YOUR SESSION. Native events open it, Autopilot

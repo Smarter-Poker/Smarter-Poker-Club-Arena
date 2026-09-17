@@ -211,7 +211,10 @@ with (root/'results.log').open('w') as log:
         run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses= -c max_wal_size=64MB -c min_wal_size=32MB','-w','start'])
         started=True
 
-        if '--accounting-prize-only' in sys.argv:
+        if '--accounting-acl-only' in sys.argv:
+            from tournament_accounting_provenance_cases import verify_acl
+            verify_acl(q,fresh,check)
+        elif '--accounting-prize-only' in sys.argv:
             from tournament_heads_up_funding_cases import verify
             from tournament_accounting_provenance_cases import prepare_payout,verify_payout
             verify(q,fresh,overlap,call,check,prepare=prepare_payout,
@@ -288,8 +291,9 @@ with (root/'results.log').open('w') as log:
             from tournament_unregistration_funding_cases import verify
             verify(q,fresh,overlap,call,check)
             if '--with-heads-up-payout' in sys.argv:
-                from tournament_accounting_provenance_cases import verify_identity_cases
+                from tournament_accounting_provenance_cases import verify_identity_cases,verify_acl
                 verify_identity_cases(q,fresh,call,check)
+                verify_acl(q,fresh,check)
                 funded_heads_up()
             else:
                 from tournament_heads_up_funding_cases import verify

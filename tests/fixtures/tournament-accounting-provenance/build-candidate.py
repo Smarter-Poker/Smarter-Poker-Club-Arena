@@ -54,6 +54,14 @@ def candidate(r):
   s=once(s,a,"   WHERE id = v_ob.id;\n  PERFORM set_config('app.pnl_tournament_obligation_credit_key','',true);\n  IF v_adj.id IS NOT NULL THEN")
  else: raise AssertionError(name)
  return s
+def original_acl_sql():
+ out=[]
+ for r in rows:
+  acl=r['acl'] if isinstance(r['acl'],list) else r['acl'].strip('{}').split(',')
+  assert set(acl).issubset({'postgres=X/postgres','service_role=X/postgres'})
+  roles=','.join(a.split('=')[0] for a in acl)
+  out.append(f"REVOKE ALL ON FUNCTION public.{r['signature']} FROM PUBLIC,anon,authenticated,service_role;\nGRANT EXECUTE ON FUNCTION public.{r['signature']} TO {roles};")
+ return '\n'.join(out)
 def render():
  out=["-- Original tournament financial identities and liability transitions, prospectively captured.\n-- No historical seed, new payer, commercial ownership assumption or gameplay policy.\nBEGIN;\nSET LOCAL lock_timeout='3s';\nSET LOCAL search_path=public,pg_temp;\n"]
  # Every original owner/config/ACL is checked before any changes.
@@ -71,6 +79,7 @@ END $precondition$;
 """)
  out.append((fixtures/'new-authority.sql').read_text())
  out.extend(candidate(r)+';\n' for r in rows)
+ out.append(original_acl_sql())
  out.append('COMMIT;\n')
  return '\n'.join(out)
 if __name__=='__main__':

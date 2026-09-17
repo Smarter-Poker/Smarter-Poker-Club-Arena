@@ -178,7 +178,7 @@ VALUES('chip_ledger','zz_tournament_accounting_credit_ledger','Original tourname
 ON CONFLICT(table_name,trigger_name) DO UPDATE SET note=EXCLUDED.note;
 
 DO $permissions$
-DECLARE v_table text;v_function text;
+DECLARE v_table text;
 BEGIN
  FOREACH v_table IN ARRAY ARRAY['tournament_participant_funding_receipts','tournament_accounting_credit_receipts','tournament_obligation_events'] LOOP
    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',v_table);
@@ -187,11 +187,14 @@ BEGIN
    EXECUTE format('CREATE TRIGGER original_evidence_immutable BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tournament_accounting_evidence_immutable()',v_table);
    EXECUTE format('CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.%I FOR EACH STATEMENT EXECUTE FUNCTION public.fn_ca_tournament_accounting_evidence_immutable()',v_table);
  END LOOP;
- FOREACH v_function IN ARRAY ARRAY[
- 'fn_ca_tournament_accounting_evidence_immutable()','fn_ca_capture_tournament_credit_ledger()',
- 'fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb)',
- 'fn_ca_record_tournament_accounting_credit(text,uuid,uuid,numeric,uuid,uuid,uuid)',
- 'fn_ca_capture_tournament_obligation_event()'] LOOP
-   EXECUTE format('REVOKE ALL ON FUNCTION public.%s FROM PUBLIC,anon,authenticated,service_role',v_function);
- END LOOP;
 END $permissions$;
+REVOKE ALL ON FUNCTION public.fn_ca_tournament_accounting_evidence_immutable() FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_capture_tournament_credit_ledger() FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_record_tournament_accounting_credit(text,uuid,uuid,numeric,uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_capture_tournament_obligation_event() FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_tournament_accounting_evidence_immutable() TO postgres;
+GRANT EXECUTE ON FUNCTION public.fn_ca_capture_tournament_credit_ledger() TO postgres;
+GRANT EXECUTE ON FUNCTION public.fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb) TO postgres;
+GRANT EXECUTE ON FUNCTION public.fn_ca_record_tournament_accounting_credit(text,uuid,uuid,numeric,uuid,uuid,uuid) TO postgres;
+GRANT EXECUTE ON FUNCTION public.fn_ca_capture_tournament_obligation_event() TO postgres;

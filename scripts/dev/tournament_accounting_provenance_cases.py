@@ -12,7 +12,7 @@ runtime_catalog=[]
 def install(q):
     global runtime_catalog
     # Schema additions model the current recorded asset/admission columns only.
-    q("DO $$ DECLARE r text; BEGIN FOREACH r IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=r) THEN EXECUTE format('CREATE ROLE %I',r); END IF; END LOOP; END $$;")
+    q("DO $$ DECLARE r text; BEGIN FOREACH r IN ARRAY ARRAY['anon','authenticated','service_role','postgres'] LOOP IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=r) THEN EXECUTE format('CREATE ROLE %I',r); END IF; END LOOP; END $$;")
     q("""ALTER TABLE clubs ADD COLUMN IF NOT EXISTS asset text DEFAULT 'chips';
     ALTER TABLE clubs ADD COLUMN IF NOT EXISTS is_platform boolean DEFAULT false;
     ALTER TABLE clubs ADD COLUMN IF NOT EXISTS union_id uuid;
@@ -30,6 +30,7 @@ def install(q):
     q(';\n'.join(candidate.candidate(r) for r in candidate.rows
       if has_prize_owner or not r['signature'].startswith('fn_settle_tournament_obligation_before'))+'; RESET check_function_bodies;')
     if has_prize_owner:
+        q(candidate.original_acl_sql())
         signatures=','.join("'public."+r['signature']+"'::regprocedure" for r in candidate.rows)
         observed=json.loads(q("SELECT json_agg(json_build_object('signature',oid::regprocedure::text,'definition_md5',md5(pg_get_functiondef(oid)),'body_md5',md5(prosrc),'owner',pg_get_userbyid(proowner),'acl',proacl,'config',proconfig) ORDER BY oid::regprocedure::text) FROM pg_proc WHERE oid IN ("+signatures+");"))
         expected={r['signature']:hashlib.md5(candidate.candidate(r).encode()).hexdigest() for r in candidate.rows}
@@ -135,3 +136,20 @@ def verify_identity_cases(q,fresh,register,check):
     assert q("SELECT count(*) FROM tournament_participant_funding_receipts WHERE amount=0 AND asset='diamonds' AND ledger_id IS NULL AND entitlement_id IS NULL")=='1'
     assert q('SELECT count(*) FROM chip_ledger')=='2'
     check('free entry retains the original Diamond instrument without a chip or custody debit')
+
+def verify_acl(q,fresh,check):
+    fresh('original_provenance_acl')
+    from tournament_heads_up_payout_cases import install_archive
+    install_archive(q,(root/'scripts/dev/fixtures/heads-up-payout/installed.sql').read_text())
+    install(q)
+    before=q("SELECT jsonb_object_agg(oid::text,proowner::text) FROM pg_proc WHERE pronamespace='public'::regnamespace")
+    q(candidate.original_acl_sql())
+    assert q("SELECT jsonb_object_agg(oid::text,proowner::text) FROM pg_proc WHERE pronamespace='public'::regnamespace")==before
+    for r in candidate.rows:
+        sig='public.'+r['signature']
+        actual=json.loads(q("SELECT jsonb_build_object('anon',has_function_privilege('anon','"+sig+"','EXECUTE'),'authenticated',has_function_privilege('authenticated','"+sig+"','EXECUTE'),'service_role',has_function_privilege('service_role','"+sig+"','EXECUTE'),'postgres',has_function_privilege('postgres','"+sig+"','EXECUTE'))"))
+        assert actual==dict(anon=False,authenticated=False,service_role=r['signature'].startswith('log_wallet_transaction('),postgres=True),(sig,actual)
+    for sig in ['fn_ca_tournament_accounting_evidence_immutable()','fn_ca_capture_tournament_credit_ledger()','fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb)','fn_ca_record_tournament_accounting_credit(text,uuid,uuid,numeric,uuid,uuid,uuid)','fn_ca_capture_tournament_obligation_event()']:
+        assert q("SELECT has_function_privilege('anon','public."+sig+"','EXECUTE') OR has_function_privilege('authenticated','public."+sig+"','EXECUTE') OR has_function_privilege('service_role','public."+sig+"','EXECUTE')")=='f'
+        assert q("SELECT has_function_privilege('postgres','public."+sig+"','EXECUTE')")=='t'
+    check('explicit original and helper ACLs preserve owner identity, deny browser callers, and retain only the original log-wallet service grant')

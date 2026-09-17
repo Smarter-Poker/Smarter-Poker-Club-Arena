@@ -23,8 +23,35 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 
 const css = (p: string) => readFileSync(p, 'utf8');
+
+for (const clubMessage of [false, true]) {
+  test(`cash lobby dismissal survives a delayed offer control with club message ${clubMessage}`, async ({
+    page,
+  }) => {
+    await page.setContent(`
+      <button role="tab" aria-selected="false"
+        onclick="this.setAttribute('aria-selected', 'true')">NLH</button>
+      ${clubMessage ? '<button onclick="this.remove()">Close Club Message</button>' : ''}
+      <output id="declines">0</output>
+      <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">
+        <button id="decline" disabled onclick="document.getElementById('declines').textContent='1';this.parentElement.remove()">Not Now</button>
+      </div>
+      <script>setTimeout(() => document.getElementById('decline').disabled = false, 3000)</script>
+    `);
+    // The control becomes actionable after the optional two-second probe.
+    // The old ordering stranded its handler when that probe timed out.
+    await prepareCashLobbyActions(page);
+    const tab = page.getByRole('tab', { name: 'NLH', exact: true });
+    await tab.click({ timeout: 6_000 });
+    await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+    await expect(page.locator('#declines')).toHaveText('1');
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: 'Close Club Message' })).toBeHidden();
+  });
+}
 
 const SHEETS = [
   'src/styles/globals.css',

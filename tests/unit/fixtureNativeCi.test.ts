@@ -16,6 +16,22 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+describe('cash lobby verification reaches the existing browser gate', () => {
+  it.each([
+    'tests/e2e/mobile-lobby-chrome.spec.ts',
+    'tests/e2e/production-live-table-realtime.spec.ts',
+    'tests/e2e/support/cashLobbyOverlays.ts',
+    'tests/e2e/support/observationDeadline.ts',
+  ])('runs browser regressions when the individual input changes: %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ src: true, tests: true, server: false });
+  });
+
+  it('does not route unrelated unit tests or similarly named notes to the browser build', () => {
+    expect(classifyChangedPaths(['tests/unit/unrelated.test.ts']).src).toBe(false);
+    expect(classifyChangedPaths(['tests/e2e/support/cashLobbyOverlays.ts.md']).src).toBe(false);
+  });
+});
+
 type GitFixture = {
   directory: string;
   base: string;

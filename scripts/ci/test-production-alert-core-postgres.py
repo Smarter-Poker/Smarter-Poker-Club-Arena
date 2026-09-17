@@ -255,7 +255,6 @@ def main():
         sql('verify', ROOT / CHECKOUT_INPUTS['qualifier'], user='postgres', phase='verify')
         after = sql('committed_verify_observer', ROOT / FIXTURE / 'readback.sql', user='postgres')
         require(before == after, 'committed original notification/inbox state changed during rollback-scoped verification')
-        sql('linked_invoice_positive', ROOT / FIXTURE / 'inputs/linked-invoice-positive.sql', user='postgres')
         sql('core_catalog_supplement', ROOT / CHECKOUT_INPUTS['core_supplement'])
         sql('core_original_identity_matrix', ROOT / CHECKOUT_INPUTS['core_identity'], user='postgres')
         sql('core_identity_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
@@ -263,6 +262,9 @@ def main():
         sql('core_connected_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
         final_originals = sql('core_original_notifications_readback', ROOT / FIXTURE / 'readback.sql', user='postgres')
         require(after == final_originals, 'core qualification changed committed original notification/inbox state')
+        # This positive commits invoice notifications and pushes. Run it only after
+        # every rollback-scoped check has verified the untouched original rows.
+        sql('linked_invoice_positive', ROOT / FIXTURE / 'inputs/linked-invoice-positive.sql', user='postgres')
         receipt['sql_slice_passed'] = True
     except BaseException as error:
         receipt['failure'] = {'type': type(error).__name__, 'message': str(error)}

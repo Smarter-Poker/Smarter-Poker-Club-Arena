@@ -60,3 +60,4 @@ scripts/ci/probes/production-alert-core/notification/manifest.json
 scripts/ci/probes/class4-hand-outcome/captured-functions.json
 scripts/ci/probes/class4-hand-outcome/manifest.json
 scripts/qualification/class4-hand-outcome-evidence.md
+scripts/ci/probes/class4-hand-outcome/resource-population-basis.json

@@ -130,6 +130,21 @@
       "path": "scripts/qualification/fixtures/class4-hand-outcome-evidence.originals.sql",
       "bytes": 2279,
       "sha256": "16e940682626c3259da3c05ae7360feb09067549def40dda52a86730ec5c1d37"
+    },
+    "resource_prepare": {
+      "path": "scripts/ci/probes/class4-hand-outcome/resource-prepare.sql",
+      "bytes": 6067,
+      "sha256": "7c89be3c70efe39ff8fa7deb9dfe52ba239949d6bdecac555defcc4ac90c82c5"
+    },
+    "resource_measure": {
+      "path": "scripts/ci/probes/class4-hand-outcome/resource-measure.sql",
+      "bytes": 5965,
+      "sha256": "0074dac5a7424cccc86d3fed9f943c8a158516e7e1c5ad102fa94842037462e9"
+    },
+    "resource_population_basis": {
+      "path": "scripts/ci/probes/class4-hand-outcome/resource-population-basis.json",
+      "bytes": 2344,
+      "sha256": "436733d317127e27a9e33c8660af9057db084ae691b8a83f9d21f354f029d4fd"
     }
   },
   "sequenceContract": {
@@ -151,5 +166,21 @@
     "coreManifestSha256": "81f4b63287361d12e59a71adccbf2765a3dbdf8784116d19e019a6f797f9ebf3",
     "liveFunctionsSha256": "46229e0ae65fb6e32f996e33ea2e3e71dc98eaa2fcfad83cab91c2efc86ca57e",
     "liveRelationsSha256": "4dd182e02d3bd1c4bc062002f3a7c49b0d80429a9f7307f1131eeb3b121b4842"
+  },
+  "boundedResourceCase": {
+    "observedPopulationAt": "2026-09-17T02:19:15.19765Z",
+    "observedTotalAlerts": 42051,
+    "observedUnresolved": 3363,
+    "observedCanonicalEstimatedRows": 2528753,
+    "syntheticCanonicalRows": 2600000,
+    "eligibleFrontier": 5001,
+    "limit": 5000,
+    "setupProcessDeadlineSeconds": 60,
+    "resolverStatementDeadlineSeconds": 20,
+    "originalDriverWorkDeadlineSeconds": 240,
+    "workMem": "4MB",
+    "sharedBuffers": "32MB",
+    "productionPayloadBytesOrColdCacheEquivalence": false,
+    "moneyWriterOrTypedRollbackQualification": false
   }
 }

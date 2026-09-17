@@ -31,7 +31,7 @@ LEAVES = (
     'readback.sql', 'inputs/owner-notification-catalog-postimage.sql',
     'inputs/linked-invoice-positive.sql', 'inputs/captured-financial-store-policy.sql',
 )
-CHECKOUT_INPUTS = {'isolation_builder': 'scripts/ci/build_pg17_isolationtester.py', 'core_supplement': 'scripts/ci/probes/production-alert-core/core-catalog-supplement.sql', 'core_component': 'supabase/components/production-alert-identity-and-rake-wording.sql', 'core_rollback': 'supabase/components/production-alert-identity-and-rake-wording.rollback.sql', 'catalog_supplement': 'scripts/ci/probes/class4-hand-outcome/catalog-supplement.sql', 'captured_functions': 'scripts/ci/probes/class4-hand-outcome/captured-functions.json', 'readback': 'scripts/ci/probes/class4-hand-outcome/readback.sql', 'class4_component': 'supabase/components/class4-hand-outcome-evidence.sql', 'class4_rollback': 'supabase/components/class4-hand-outcome-evidence.rollback.sql', 'class4_primary': 'scripts/qualification/class4-hand-outcome-evidence.sql', 'class4_drift': 'scripts/qualification/class4-hand-outcome-evidence.drift.sql', 'class4_concurrency': 'scripts/qualification/class4-hand-outcome-evidence.concurrency.spec', 'class4_preimage': 'scripts/qualification/fixtures/class4-hand-outcome-evidence.preimage.sql', 'class4_candidate': 'scripts/qualification/fixtures/class4-hand-outcome-evidence.candidate.sql', 'class4_originals': 'scripts/qualification/fixtures/class4-hand-outcome-evidence.originals.sql'}
+CHECKOUT_INPUTS = {'isolation_builder': 'scripts/ci/build_pg17_isolationtester.py', 'core_supplement': 'scripts/ci/probes/production-alert-core/core-catalog-supplement.sql', 'core_component': 'supabase/components/production-alert-identity-and-rake-wording.sql', 'core_rollback': 'supabase/components/production-alert-identity-and-rake-wording.rollback.sql', 'catalog_supplement': 'scripts/ci/probes/class4-hand-outcome/catalog-supplement.sql', 'captured_functions': 'scripts/ci/probes/class4-hand-outcome/captured-functions.json', 'readback': 'scripts/ci/probes/class4-hand-outcome/readback.sql', 'class4_component': 'supabase/components/class4-hand-outcome-evidence.sql', 'class4_rollback': 'supabase/components/class4-hand-outcome-evidence.rollback.sql', 'class4_primary': 'scripts/qualification/class4-hand-outcome-evidence.sql', 'class4_drift': 'scripts/qualification/class4-hand-outcome-evidence.drift.sql', 'class4_concurrency': 'scripts/qualification/class4-hand-outcome-evidence.concurrency.spec', 'class4_preimage': 'scripts/qualification/fixtures/class4-hand-outcome-evidence.preimage.sql', 'class4_candidate': 'scripts/qualification/fixtures/class4-hand-outcome-evidence.candidate.sql', 'class4_originals': 'scripts/qualification/fixtures/class4-hand-outcome-evidence.originals.sql', 'resource_prepare': 'scripts/ci/probes/class4-hand-outcome/resource-prepare.sql', 'resource_measure': 'scripts/ci/probes/class4-hand-outcome/resource-measure.sql', 'resource_population_basis': 'scripts/ci/probes/class4-hand-outcome/resource-population-basis.json'}
 
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 
@@ -83,6 +83,7 @@ def command_budget(deadline, now, requested):
 def qualifies(receipt):
     return (receipt.get('sql_slice_passed') is True
             and receipt.get('concurrency_passed') is True
+            and receipt.get('bounded_backlog_qualified') is True
             and receipt.get('terminal_observed') is True
             and receipt.get('source_stable') is True
             and not receipt.get('failure') and not receipt.get('cleanup_errors'))
@@ -168,6 +169,14 @@ def validate_isolation(stdout, stderr):
         require(events == expected, 'missing, extra or misordered actual blocked/unblocked step: ' + waiter)
     return True
 
+def resource_marker(stdout, prefix):
+    rows = [line[len(prefix):] for line in stdout.splitlines() if line.startswith(prefix)]
+    require(len(rows) == 1, 'exact one resource receipt marker required: ' + prefix)
+    data = json.loads(rows[0])
+    require(isinstance(data, dict), 'resource receipt must be an object')
+    return data
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path,
@@ -218,6 +227,7 @@ def main():
         'source_stable': False, 'cleanup_errors': [], 'passed': False, 'failure': None,
         'concurrency_passed': False, 'fixture_authority_delta': 'GRANT SET ON PARAMETER session_replication_role TO postgres only for original synthetic seed phase; service_role unchanged',
         'atomic_money_writer_qualified': False, 'representative_backlog_qualified': False,
+        'bounded_backlog_qualified': False, 'production_payload_or_cold_cache_qualified': False,
         'manifest_sha256': digest(manifest_bytes), 'adapter_sha256': digest(adapter_bytes),
         'input_sha256': {name: digest(value) for name, value in sources.items()},
     }
@@ -254,6 +264,7 @@ def main():
                 entry['returncode'] = child.returncode; persist()
                 raise
         entry['returncode'] = child.returncode
+        entry['elapsed_seconds'] = time.monotonic() - entry['started_monotonic']
         entry['stdout_sha256'] = digest(stdout.read_bytes())
         entry['stderr_sha256'] = digest(stderr.read_bytes())
         persist()
@@ -264,12 +275,12 @@ def main():
                  '-v', 'legacy_operational_uuid=' + str(uuid.uuid5(uuid.UUID(execution), 'legacy-operational')),
                  '-v', 'legacy_personal_uuid=' + str(uuid.uuid5(uuid.UUID(execution), 'legacy-personal'))]
 
-    def sql(stage, path, user='fixture_bootstrap', phase=None):
+    def sql(stage, path, user='fixture_bootstrap', phase=None, timeout=70):
         argv = [pg / 'psql', '-X', '-w', '-A', '-t', '-h', socket, '-p', '55432',
                 '-U', user, '-d', db, '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose'] + variables
         if phase:
             argv += ['-v', 'phase=' + phase]
-        return command(stage, argv + ['-f', path], timeout=70)
+        return command(stage, argv + ['-f', path], timeout=timeout)
 
     cleanup_started = False
 
@@ -350,6 +361,24 @@ def main():
         sql('class4_guarded_final_source_rollback', ROOT / CHECKOUT_INPUTS['class4_rollback'], user='postgres')
         final = json.loads(sql('class4_final_empty_source_observer', ROOT / CHECKOUT_INPUTS['readback'], user='postgres').splitlines()[-1])
         require(final == before, 'final guarded rollback did not restore exact original source/state')
+        # Extra bounded resource slice follows all unchanged original states/races
+        # and their independent empty-state/source rollback checks.
+        setup_output = sql('class4_resource_prepare', ROOT / CHECKOUT_INPUTS['resource_prepare'],
+                           user='postgres', timeout=60)
+        setup = resource_marker(setup_output, 'CLASS4_RESOURCE_SETUP=')
+        require(setup.get('canonical_rows') == 2600000 and setup.get('alerts') == 47052
+                and setup.get('unresolved') == 8364 and setup.get('eligible_frontier') == 5001,
+                'resource setup receipt/cardinality mismatch')
+        receipt['backlog_resource_setup'] = setup
+        resource_output = sql('class4_resource_measure', ROOT / CHECKOUT_INPUTS['resource_measure'],
+                              user='postgres', timeout=70)
+        resource = resource_marker(resource_output, 'CLASS4_RESOURCE_RESULT=')
+        require(resource.get('passed') is True and resource.get('p_limit') == 5000
+                and resource.get('eligible_resolved_in_two_calls') == 5001
+                and resource.get('remaining_negative_alerts') == 3363,
+                'resource qualification receipt mismatch')
+        receipt['backlog_resource_result'] = resource
+        receipt['bounded_backlog_qualified'] = True
         validate_tool_receipt(tool_receipt, pg)
         require(tool_receipt_path.read_bytes() == tool_receipt_bytes, 'isolation build receipt changed')
         receipt['sql_slice_passed'] = True

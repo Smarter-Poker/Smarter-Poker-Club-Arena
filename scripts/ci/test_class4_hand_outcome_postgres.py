@@ -58,13 +58,20 @@ class Class4TranscriptContract(unittest.TestCase):
 
     def test_cleanup_or_concurrency_failure_never_qualifies(self):
         receipt = {'sql_slice_passed': True, 'concurrency_passed': True,
+                   'bounded_backlog_qualified': True,
                    'terminal_observed': True, 'source_stable': True,
                    'failure': None, 'cleanup_errors': []}
         self.assertTrue(DRIVER.qualifies(receipt))
-        for delta in [{'concurrency_passed': False}, {'terminal_observed': False},
+        for delta in [{'bounded_backlog_qualified': False}, {'concurrency_passed': False}, {'terminal_observed': False},
                       {'source_stable': False}, {'cleanup_errors': ['stop failed']},
                       {'failure': {'message': 'interrupted'}}]:
             self.assertFalse(DRIVER.qualifies(dict(receipt, **delta)))
+
+    def test_resource_marker_requires_single_actual_receipt(self):
+        self.assertEqual(DRIVER.resource_marker('SET\nRESULT={"passed":true}\nROLLBACK\n', 'RESULT='), {'passed': True})
+        for text in ['SET\nROLLBACK\n', 'RESULT={}\nRESULT={}\n', 'RESULT=[]\n']:
+            with self.assertRaises(RuntimeError):
+                DRIVER.resource_marker(text, 'RESULT=')
 
     def test_original_deadline_is_not_refreshed_per_command(self):
         self.assertEqual(DRIVER.command_budget(100, 92, 60), 5)

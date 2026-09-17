@@ -1,16 +1,7 @@
 ---
-description: Superseded — see 00-anti-regression-workflow.md
 trigger: always_on
 ---
 
-# Superseded
+# Verification and regression protection
 
-The binding workflow now lives in **`.agents/rules/00-anti-regression-workflow.md`**.
-
-Two rules files describing the same workflow drifted apart and agents followed
-whichever they read first. This file is intentionally a pointer so that cannot
-happen again.
-
-Summary of the rule that matters: **open the PR and stop.** Autopilot enables
-squash auto-merge and GitHub merges it when the required checks pass. Never use
-`--admin`, `--merge`, `--rebase`, or a polling script.
+Read root `AGENTS.md`, `docs/agent-policy/HARDENING.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. Their maintained requirements replace this former duplicate checklist. Use an owned worktree, preserve other agents’ changes, fix real blockers, run applicable checks and retain meaningful regression protection. Do not skip assertions, demand an open PR after merge, or assume CI installs a migration. Verify the actual installation and final observable result.

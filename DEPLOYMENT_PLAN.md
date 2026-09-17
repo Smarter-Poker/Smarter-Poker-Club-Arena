@@ -1,49 +1,9 @@
-# Club Arena Deployment Plan
+# Protected publication guide
 
-Status: current. Club Arena owns both of its production release paths. The
-World Hub is not a Club Arena publisher.
+Read root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. Recover the assigned branch, existing PR and evidence. Commit explicit paths in an owned worktree with normal hooks; push through configured authenticated Git; find or create the PR; pass required checks; complete protected squash merge; verify the owning publisher and actual live behavior. The authorized agent owns the whole delivery. No stop-after-push rule or disabled autopilot supplies the remaining steps.
 
-## Player Frontend
+World Hub uses the existing Vercel Git source integration for `hub-vanguard` and production `/api/health`. Club Arena client uses its own `publish-club-arena.yml` and `ca-static.smarter.poker`; verify `build-info.json` there and at `https://smarter.poker/hub/club-arena/build-info.json`. A client release does not require a World Hub rebuild. Club Arena engine uses `stage-engine-release.yml` and `auto-deploy-hetzner.yml`, its sealed release result, engine health and applicable behavior proof. Preserve component revision selection, maintenance, immutable assets and concurrency. Prove inclusion if a newer protected revision contains the assigned change.
 
-1. Work on an isolated branch and merge current `origin/main` into it when
-   needed. Never push directly to protected `main`.
-2. Run the relevant tests and production build, commit normally, and push the
-   branch with hooks enabled.
-3. `agent-open-pr.yml` opens the pull request. Autopilot merges only after the
-   required gates pass.
-4. `.github/workflows/publish-club-arena.yml` builds the exact tip of Club
-   Arena `main`, rsyncs it to the Hetzner origin under
-   `/srv/club-arena/releases/<ca_sha>/`, and atomically switches `current`.
-5. The World Hub contains only the public rewrite from
-   `/hub/club-arena/*` to `https://ca-static.smarter.poker`; no Club Arena
-   bundle is built, copied, committed, or published there.
+On failure, diagnose and repair immediately; retain valid evidence and rerun affected or required checks. Establish an unknown remote outcome before retrying. Recheck installed/live state before repeating publication. The hourly engine boundary does not delay build/test repair or missing-proof recovery. A fresh engine cutover still needs the existing safe certificate until the connected recovery-window improvement is implemented and verified.
 
-The frontend publisher uses the Club Arena repository secrets
-`CA_ORIGIN_SSH_KEY`, `CA_ORIGIN_HOST`, and `CA_ORIGIN_HOST_KEY`. Credential
-values never belong in this file or a local `.env`.
-
-## Realtime Engine
-
-Server changes use `.github/workflows/auto-deploy-hetzner.yml`. The workflow
-builds an immutable image from the exact committed `server/` tree, stages it
-immediately, and allows cutover only under the sealed maintenance authority.
-Never start, restart, or mutate the Club Arena engine from the World Hub.
-
-The engine workflow uses the Club Arena repository secrets
-`HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, and pinned `HETZNER_HOST_KEY`.
-There is no legacy key-name or cross-repository fallback.
-
-## Release Proof
-
-A branch push, merged pull request, or green build is not publication proof.
-Before declaring a release complete, verify:
-
-- Club Arena `main` equals the intended merge SHA.
-- `https://ca-static.smarter.poker/build-info.json` reports that exact SHA.
-- `https://smarter.poker/hub/club-arena/build-info.json` reports the same SHA.
-- Any server-changing merge has a successful exact-SHA Hetzner deployment and
-  cache-busted `https://engine.smarter.poker/health` reports that version with
-  healthy, stable runtime evidence.
-
-See `.github/DEPLOYMENT.md`, `.agent/architecture/deploy-paths.md`, and
-`CLAUDE.md` section 1.1 for the detailed contracts.
+No local/custom fallback, shared-clone push script, release watcher, scheduler, retired telemetry or replacement approval label is authorized. Never source `.env` or copy credential values. Record pending run identities, exact blockers and remaining verification in the existing task checkpoint.

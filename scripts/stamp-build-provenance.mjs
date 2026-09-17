@@ -82,6 +82,8 @@ const historyComplete =
 const behindMain = hasOriginMain && historyComplete ? gitCount('HEAD..origin/main') : null;
 const aheadMain = hasOriginMain && historyComplete ? gitCount('origin/main..HEAD') : null;
 
+let pullRequest = null;
+let pullRequestIdentityError = null;
 function isPullRequestValidation() {
   if (process.env.CA_BUILD_PURPOSE !== 'ci-validation') return false;
   if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== 'pull_request')
@@ -113,6 +115,8 @@ function isPullRequestValidation() {
   const pr = event.pull_request;
   if (
     !pr ||
+    pr.state !== 'open' ||
+    event.repository?.full_name !== repository ||
     event.number !== Number(match[1]) ||
     pr.number !== event.number ||
     pr.base?.ref !== 'main' ||
@@ -131,16 +135,23 @@ function isPullRequestValidation() {
     git(`merge-base --is-ancestor ${parents[1]} origin/main`, null) !== ''
   )
     fail();
+  pullRequest = { number: event.number, base: parents[1], head: pr.head.sha, merge: commit };
   return true;
 }
 
 // CI validates the captured merge even if main advances; publishers refuse
 // this explicit marker and retain all existing protected-main ancestry gates.
-const validationOnly = isPullRequestValidation();
+let validationOnly = false;
+try {
+  validationOnly = process.env.STRICT_PROVENANCE === '1' ? false : isPullRequestValidation();
+} catch (error) {
+  pullRequestIdentityError = `Invalid PR build validation identity: ${error.message}`;
+}
 
 const info = {
   schema: 1,
   validationOnly,
+  pullRequest,
   commit,
   commitTime,
   buildTime: new Date().toISOString(),
@@ -174,6 +185,10 @@ console.log(
 // test may use its event snapshot, but retains its real non-publishable distance.
 // Local diagnostic builds warn; the publisher independently enforces provenance.
 const strictProvenance = process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1';
+if (pullRequestIdentityError) {
+  console.error(pullRequestIdentityError);
+  process.exit(1);
+}
 if (commit !== 'unknown' && historyComplete !== true) {
   const msg =
     '\n✗ Build ancestry cannot be verified: incomplete Git history.\n' +

@@ -4,10 +4,7 @@ import { execFileSync } from 'node:child_process';
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
-export function requireReadyEngineSha(raw, expected) {
-  if (!FULL_SHA.test(expected)) {
-    throw new Error('The expected engine provenance must be one full lowercase SHA.');
-  }
+export function readReadyEngineSha(raw) {
   let value;
   try {
     value = JSON.parse(String(raw));
@@ -20,15 +17,23 @@ export function requireReadyEngineSha(raw, expected) {
   if (!Object.hasOwn(value, 'releaseSha') || !FULL_SHA.test(value.releaseSha)) {
     throw new Error('Production engine health must contain one full lowercase releaseSha.');
   }
-  if (value.releaseSha !== expected) {
-    throw new Error(
-      `Production engine ${value.releaseSha} has not reached required ${expected}; this run cannot begin certification.`
-    );
-  }
   if (value.running !== true || value.liveness !== 'ok') {
     throw new Error('The exact production engine is not running with healthy liveness.');
   }
   return value.releaseSha;
+}
+
+export function requireReadyEngineSha(raw, expected) {
+  if (!FULL_SHA.test(expected)) {
+    throw new Error('The expected engine provenance must be one full lowercase SHA.');
+  }
+  const actual = readReadyEngineSha(raw);
+  if (actual !== expected) {
+    throw new Error(
+      `Production engine ${actual} has not reached required ${expected}; this run cannot begin certification.`
+    );
+  }
+  return actual;
 }
 
 export function readBuildInfoSha(raw) {
@@ -99,6 +104,10 @@ async function readStdin() {
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
+  if (command === 'engine-live' && args.length === 0) {
+    process.stdout.write(`${readReadyEngineSha(await readStdin())}\n`);
+    return;
+  }
   if (command === 'engine-ready' && args.length === 1) {
     process.stdout.write(`${requireReadyEngineSha(await readStdin(), args[0])}\n`);
     return;
@@ -116,7 +125,7 @@ async function main() {
     return;
   }
   throw new Error(
-    'Usage: production-e2e-provenance.mjs build-info | unchanged <expected-sha> | engine-ready <expected-sha> | lineage <live-sha> <checkout-sha>'
+    'Usage: production-e2e-provenance.mjs build-info | unchanged <expected-sha> | engine-live | engine-ready <expected-sha> | lineage <live-sha> <checkout-sha>'
   );
 }
 

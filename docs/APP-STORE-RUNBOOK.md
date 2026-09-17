@@ -33,10 +33,9 @@ The audit's phases and where each one lives:
 - **Artwork is regenerated LAST (2026-09-09).** The art is still being
   upgraded; every icon, splash, listing graphic and screenshot waits until it
   is final, so the image pass happens once. See "Artwork" below.
-- **No accounts existed on 2026-09-07.** Every account below is Dan's to
-  create; agents never set a credential (CLAUDE.md 10.84).
+- **Account availability must be checked when work starts.** The September 7 inventory is historical. Use current owner authority for assigned setup and credential work; identify actual provider/tool authentication requirements without inventing human approval gates.
 
-## Accounts and credentials Dan creates (never an agent)
+## Account and credential prerequisites
 
 | account                                                                                   | why                                                                                  | where the value goes                                                                                                                                                                                 |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

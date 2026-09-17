@@ -184,7 +184,7 @@ The orphan `club-arena` Vercel project (was `prj_oaCq8RYhExLRUYizLG93li0uX468`) 
 Historically, the standalone `club-arena` Vercel project built on pushes to
 main. It was deleted and is not a fallback or verification target.
 
-**Canonical now:** push a Club Arena branch → required checks → autopilot merge
+**Canonical now:** push a Club Arena branch → required checks → agent-owned protected merge
 → `publish-club-arena.yml` builds the exact merge and atomically publishes it
 to `ca-static.smarter.poker` → World Hub rewrite serves it publicly.
 

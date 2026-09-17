@@ -1,70 +1,6 @@
-# AGENT OPERATIONS GUIDE — read before touching anything
+# Agent operations guide
 
-For every Claude agent (Cowork, CLI, Antigravity, subagents) on this platform.
-Written 2026-08-19 after a session that hit every trap below and paid for it.
-The current release mechanics live in `.agent/architecture/deploy-paths.md`
-and the binding repository rules live in `CLAUDE.md`. If this file and reality
-disagree, verify reality, then fix this file.
-
-## 1. KNOW WHICH SHELL YOU ARE IN — the single biggest source of wasted time
-
-| Shell                       | Where it runs                    | Network                                             | Delete files    | Repo access       | Use for                                |
-| --------------------------- | -------------------------------- | --------------------------------------------------- | --------------- | ----------------- | -------------------------------------- |
-| `counselors__host_terminal` | The Mac host, user smarter.poker | YES                                                 | YES             | ~/Documents/\*    | push, publish, gh, locks cleanup, node |
-| `device_bash` (Cowork VM)   | Sandboxed Linux VM, repo mounts  | NO                                                  | NO (`rm` fails) | /sessions/_/mnt/_ | editing files, running node harnesses  |
-| `Bash` (cloud container)    | Anthropic cloud sandbox          | partial (proxy blocks github repos + smarter.poker) | YES             | NO repo           | npm lockfile work, Playwright renders  |
-
-- Host shells are NON-LOGIN: start anything needing node/gh with
-  `export PATH="/opt/homebrew/bin:$PATH"`. nvm also exists (~/.nvm).
-- Host commands killed by the 60s MCP tool timeout KEEP RUNNING. Check
-  `pgrep -f <script>` before starting a second copy. Run long jobs detached:
-  `nohup <cmd> > /tmp/x.log 2>&1 &` and poll the log.
-- On the VM, never fight a git lock by renaming it repeatedly -- 100+ stale
-  `.lock.old` files accumulated that way. From the HOST:
-  `find .git -name "*.lock*" -mmin +10 -delete`.
-- The VM cannot run `next build` or `vite build` (arch-mismatched node_modules).
-  Do not try. Typecheck with the repo's own tsc; build gates run on host/CI.
-
-## 2. PUSH AND PUBLISH — never end a session unpushed, never hand off
-
-Full mechanics are in `.agent/architecture/deploy-paths.md`. Summary:
-
-- World Hub changes use that repository's own protected branch, pull request,
-  and release procedure. They never carry or publish a Club Arena bundle.
-- Club Arena: work in an isolated branch/worktree, merge current `origin/main`
-  into that branch when main moves, run the required checks, and push the
-  branch with normal hooks. Never push directly to protected `main` and never
-  use a World Hub sync path. `agent-open-pr.yml` opens the pull request and
-  autopilot merges only after the required gates pass. A main merge triggers
-  Publish Club Arena (the bundle goes directly to the Hetzner static origin at
-  `ca-static.smarter.poker`) and separately stages server changes for the
-  sealed Hetzner engine cutover. Verify ALL of them:
-  `gh run list --repo Smarter-Poker/Smarter-Poker-Club-Arena --limit 5`.
-  A red run = not published. Fix forward the same session.
-- Vercel is not in either Club Arena release path. The World Hub only carries
-  the public rewrite to the already-published static origin.
-
-## 3. CREDENTIALS — authority and isolation
-
-- `VERCEL_TOKEN` belongs to the separate World Hub deployment only. Club Arena
-  does not read or require a Vercel credential.
-- A local ignored `.env` is development input only. It is never a deployment
-  authority and must never be consulted by a release script, guard, workflow,
-  or another repository. Production Supabase access is supplied to the owning
-  Club Arena workflow or through the approved database integration.
-- GitHub: the host's git remotes and `gh` CLI are already authenticated. Use
-  that credential store for workstation operations and a freshly minted
-  GitHub App installation token for privileged automation. Do not copy tokens
-  into files, read them from `.env`, or print them in chat or logs.
-- Hetzner engine: the Club Arena repository owns
-  `HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, and the pinned
-  `HETZNER_HOST_KEY`. There is no legacy key-name fallback and no World Hub
-  engine credential path.
-- Hetzner static origin: the Club Arena repository separately owns
-  `CA_ORIGIN_SSH_KEY`, `CA_ORIGIN_HOST`, and pinned `CA_ORIGIN_HOST_KEY`.
-  Their values live only in GitHub Actions secrets, never in `.env` or docs.
-- `.env.example` files contain intentional placeholders that 401. Never
-  "fix" them with real values -- they are committed and public.
+Read root `AGENTS.md`, `AGENT-PLAYBOOK.md` and `docs/agent-policy/REFERENCE-INDEX.md` at task start and every resumption. They link to the current owner policy, operating law and hardening standard. Read `PUBLISHING.md` for delivery. Later owner instructions govern operating authority; the product and financial laws below remain applicable within the assigned scope. Historical programmes are not automatic assignments.
 
 ## 4. VERIFY AGAINST REALITY, NOT AGAINST FILES — the recurring lesson
 
@@ -157,33 +93,16 @@ multitable-walk` (or `trainer-walkthrough`). Read e2e-live/README.md first —
   The top-level `e2e/` directory is ORPHANED — testDir moved to tests/e2e in
   3de146acd and nothing runs those specs. Do not add specs there.
 - Screenshots land in /tmp/e2e-shots. To LOOK at them (mandatory for visual
-  claims): cp into a device-mounted folder, stage via device_stage_files,
-  then Read the staged path.
+  claims): use the current available image-viewing tool on the actual saved artifact.
 - A run that fails can be a PRODUCT bug, a TEST bug, or a PLATFORM incident —
   check https://status.supabase.com before debugging your own code (the
   2026-08-20 API Gateway degradation produced infinite club-home skeletons
   that looked exactly like an app bug; ClubHomePage now has a 15s watchdog
   that surfaces the Retry panel instead).
 
-## 9. WHEN GITHUB ACTIONS IS DEGRADED — keep one release authority
+## 9. Provider or deployment failure
 
-An infrastructure outage means a merged commit is not yet published; it does
-not authorize a workstation rsync, manual SSH cutover, World Hub sync, Vercel
-deploy, or second publisher. Diagnose runner-wide failures with `gh run view`
-and `gh run list`, then re-dispatch the owning Club Arena workflow as soon as
-the runner path is available.
-
-For an engine SHA that is already staged, send the
-`deploy-club-arena-engine` repository event with the exact full main SHA toward
-the current certified maintenance break; do not wait passively for another
-scheduled tick and never force a restart. For a frontend SHA, send the
-`publish-club-arena` repository event with the exact full main SHA.
-Both paths retain their exact-SHA gates, pinned-host verification, atomic
-release mechanics, and audit trail.
-
-After either recovery, verify the exact merged SHA from the direct Hetzner
-endpoint and its public route. A successful dispatch or workflow conclusion
-without matching live content is not a completed release.
+Follow `PUBLISHING.md` and the operating law. Diagnose the actual failing owner and compare its last successful equivalent. Repair and validate promptly. An outage does not authorize a local build/upload, a second publisher, a new scheduler or bypassing checks. Retain the exact pending run and continue eligible authorized work. Keep actual publication and live proof outstanding until verified.
 
 ## 10. ASSET AND SCHEMA-GRANT TRAPS (2026-08-20 sweep)
 

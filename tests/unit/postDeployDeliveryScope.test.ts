@@ -37,6 +37,20 @@ describe('post-publication verification belongs to its delivered component', () 
     expect(JSON.stringify(engine)).toContain('production-live-table-realtime.spec.ts');
     expect(JSON.stringify(engine)).toContain('assert-e2e-actually-ran.mjs');
     expect(JSON.stringify(engine)).toContain('production-e2e-account.mjs cleanup');
+    for (const job of [client, engine]) {
+      const accountAt = job.steps.findIndex((step: any) => step.id === 'account');
+      for (const command of [
+        'check-club-fk-indexes.mjs',
+        'check-phantom-tables.mjs',
+        'check-phantom-columns.mjs',
+        'check-embed-relationships.mjs',
+      ]) {
+        const auditAt = job.steps.findIndex((step: any) => step.run?.includes(command));
+        expect(auditAt).toBeGreaterThan(-1);
+        expect(auditAt).toBeLessThan(accountAt);
+        expect(job.steps[auditAt]['continue-on-error']).not.toBe(true);
+      }
+    }
   });
 
   it.each(['workflow_run', 'repository_dispatch'])(

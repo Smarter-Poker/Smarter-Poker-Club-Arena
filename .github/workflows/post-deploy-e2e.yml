@@ -638,6 +638,22 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
+      - name: Prove every club foreign key remains deletable
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/check-club-fk-indexes.mjs
+
+      - name: Audit the remaining live schema from trusted code
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/check-phantom-tables.mjs
+          node scripts/ci/check-phantom-columns.mjs
+          node scripts/ci/check-embed-relationships.mjs
+
       - name: Resolve the exact protected-main engine component
         id: engine
         env:

@@ -133,13 +133,13 @@
     "tests/credit-admin-panel-scope.test.tsx": "5aff5273de15a3d0b190318332a07cf2ee5f5ca02d5c5780bf6dca5fd3aac5cd",
     "tests/credit-request-widget-scope.test.tsx": "4e21f293256137413732dc332123c62c557cfcb74a5b0c5505a4b06102daff90",
     "tests/super-agent-credit-routing.test.tsx": "2a4c622c1e0b2c6d0983289854abaee4f83848cd290ed9d0c9e56d2f5e67ae36",
-    "tests/unit/CreditRequestAuthority.test.ts": "86a95a292ecefea07d394476a421328daaab3b19d24bf98814ea4efcfe2463b5",
-    "tests/unit/CreditRequestLegacyCaller.test.ts": "ec6e38cf2fe8e38570f2142dcc735201de8c0a54aaf2e805a142ad01bbb6d25f",
+    "tests/unit/CreditRequestAuthority.test.ts": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821",
+    "tests/unit/CreditRequestLegacyCaller.test.ts": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b",
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
     "tests/components/agent-cashout-scope.test.tsx": "3ad6e569d62e731fc9aa5948028867a8d32da4f7e0ff88c49d5f1a7e00b988ef",
     "tests/unit/CashoutService.test.ts": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469",
     "tests/config/roleScopedCashier.test.ts": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa",
-    "tests/cashout-escrow-flow.test.ts": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19",
+    "tests/cashout-escrow-flow.test.ts": "b74114ae26cc7499d9243d67ac9b9b41d0d1c64dcfb47d8d0140aad0dc536fd5",
     "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "465c52037bd06a28de7c2d5e6c84b2dd82793003e5eace6195accd656dd0f0e9",
@@ -161,7 +161,7 @@
     "tests/cashier-weekly-statements.test.tsx": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947",
     "tests/helpers/clubWeeklyStatement.ts": "bed78178cbf349971916688f02bc386be3c64fec8630ad3782d02e7d78577023",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "0db656796982b819b9b2d8cbb6bfc555c850d44de18f628dc945416e7303ee3d",
-    "tests/unit/FinancialExportService.test.ts": "608845083c38ae79097a7f3550f25ae8f5df698586f9277f4db6bf0d98c68721",
+    "tests/unit/FinancialExportService.test.ts": "17b705c4af3fa783ccaa556249f6915dd3c4a83b78863e2ca1ad29f46989633e",
     "tests/fixtures/browser-period-observer/README.md": "43b9b9f94e8ddd1cc01bcd1d635995d196ea4f1cfafa6d35233761bb84a91da0",
     "tests/fixtures/browser-period-observer/captured-dependencies.json": "c9874b776f79b4636dffeee5f1046910093e2f36ae1208a95cd2bcb98f530ae3",
     "tests/fixtures/browser-period-observer/captured-legacy.json": "6588bb8ed6eb4904558e7b2176a8fb228d76b78cd0c87fd618bdd6b4e882df26",
@@ -1123,5 +1123,36 @@
     },
     "reason": "Preserve the unchanged provider settings guards by reproducing the observed read-only monitoring role in the isolated managed caller; no production privilege changes.",
     "focused_validation": "Exact maintained managed-cron-role-regression.py passed with actual local PostgreSQL17.11 and pg_cron1.6.8 against prior accepted schema: oldLOCK42501, exact source transition and rollback, job272 staleupdate40001, job271 retirementguardrefusal and preserved concurrent rows, final272 timing race40001. No job launched. Full final hosted job remains required."
+  },
+  "diamond_merge_test_successor_20260917": {
+    "baseline_commit": "66347b24660443d3d2496bccee9365a348018a9e",
+    "tested_commit": "b6c42fc365de3a2feca9ef6b04d52e2c3515171b",
+    "prior_binding_sha256": "26839887e0c9fb4d35d07b22a5fa4f23725a781129a28de05f956d21379f5283",
+    "failed_run": 35274824240,
+    "failed_job": 105383004849,
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/CreditRequestAuthority.test.ts",
+        "previous_sha256": "86a95a292ecefea07d394476a421328daaab3b19d24bf98814ea4efcfe2463b5",
+        "sha256": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821"
+      },
+      {
+        "path": "tests/unit/CreditRequestLegacyCaller.test.ts",
+        "previous_sha256": "ec6e38cf2fe8e38570f2142dcc735201de8c0a54aaf2e805a142ad01bbb6d25f",
+        "sha256": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19",
+        "sha256": "b74114ae26cc7499d9243d67ac9b9b41d0d1c64dcfb47d8d0140aad0dc536fd5"
+      },
+      {
+        "path": "tests/unit/FinancialExportService.test.ts",
+        "previous_sha256": "608845083c38ae79097a7f3550f25ae8f5df698586f9277f4db6bf0d98c68721",
+        "sha256": "17b705c4af3fa783ccaa556249f6915dd3c4a83b78863e2ca1ad29f46989633e"
+      }
+    ],
+    "reason": "Ordinary integration hooks exposed existing no-loss-of-precision, unexpected-multiline and no-useless-escape lint errors in three tests; explicit Number conversion, joined chained calls and equivalent regex preserve their assertions. The cashout source pin normalizes whitespace after required source formatting. All other 267 bindings remain byte-identical to the reviewed baseline, including captured SQL, catalog and native probes.",
+    "validation": "Existing three lint-affected suites passed118 cases; four format-pin suites passed77 cases; ordinary final pre-push related/source-pin tests passed. Final native composition must run after this explicit four-file successor binding; no historic execution is reattributed."
   }
 }

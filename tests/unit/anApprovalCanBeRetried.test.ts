@@ -242,6 +242,7 @@ describe('the settlement period belongs to the club whose page it heads', () => 
     expect(SETTLEMENT).not.toContain('executeMondayPayouts');
     expect(SETTLEMENT).not.toContain("status={selectedPeriod.settledAt ? 'paid' : 'pending'}");
   });
+
 });
 
 describe('the cashier stops contradicting itself', () => {

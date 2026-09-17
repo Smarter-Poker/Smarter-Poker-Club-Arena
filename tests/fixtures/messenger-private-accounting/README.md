@@ -15,11 +15,11 @@ Load order for the owner-authored full fixture is:
 
 `schema.sql` creates only the missing `notification_preferences` relation. Its primary-key and unique constraints create the two captured btree indexes; there are no extra duplicate indexes. RLS is enabled and not forced. The FK's `profiles` reference and the policy's admin function are explicitly schema-qualified without changing their targets. `definitions.sql` preserves the three captured `pg_get_functiondef` bodies. `access.sql` checks the actual source and definition MD5s, volatility, SECURITY DEFINER and search path before restoring exact direct ACLs; those native deparser checks remain UNRUN.
 
-| Reader                                                          | Captured definition MD5            | Captured source MD5                |
-| --------------------------------------------------------------- | ---------------------------------- | ---------------------------------- |
+| Reader | Captured definition MD5 | Captured source MD5 |
+| --- | --- | --- |
 | `fn_messenger_message_page(uuid,uuid,timestamptz,uuid,integer)` | `50f7d04e5714aca5db85e37f9c5b7527` | `ae752a70fdd81c0f9d8c45c6d3955bfc` |
-| `fn_messenger_accounting_threads(uuid,uuid[])`                  | `17d04846d71f752ee13cfa2e8714e628` | `c334d1027a8857d2ffa39761b003fda4` |
-| `fn_messenger_search_messages(uuid,uuid[],text,integer)`        | `8a435bb2242375fd1e00055cba8f50e0` | `37d6a68678cd19a44ce00696f4c42a16` |
+| `fn_messenger_accounting_threads(uuid,uuid[])` | `17d04846d71f752ee13cfa2e8714e628` | `c334d1027a8857d2ffa39761b003fda4` |
+| `fn_messenger_search_messages(uuid,uuid[],text,integer)` | `8a435bb2242375fd1e00055cba8f50e0` | `37d6a68678cd19a44ce00696f4c42a16` |
 
 The restored table ACL intentionally reflects the observed baseline: anon/authenticated have SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER and MAINTAIN, while service also has TRUNCATE. These grants are capture fidelity, not a recommendation or proof that every granted operation passes RLS. The readers grant EXECUTE to authenticated and service, with no anon/PUBLIC grant. The access supplement asserts the complete observed client/service table and per-column effective matrix, function EXECUTE matrix and role attributes. It never creates the captured Supabase admin roles or grants their memberships.
 

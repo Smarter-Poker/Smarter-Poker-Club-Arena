@@ -53,13 +53,13 @@ The shared `cashier` object has exactly these fields:
 - `hold_event_id`, `hold_invoice_id`: explicit null on hold; distinct valid canonical IDs on terminal events.
 - `ledger_from_type`, `ledger_from_entity_id`, `ledger_to_type`, `ledger_to_entity_id`; `custody_movement_recorded: true`; `cashout_completed` true only for approval; `refund_recorded` true only for cancellation/decline/expiry.
 
-| Event         | Physical movement                              | Event request status | Immutable invoice                                                                 |
-| ------------- | ---------------------------------------------- | -------------------- | --------------------------------------------------------------------------------- |
-| Hold          | Player wallet → exact escrow                   | pending              | generated; chips_transferred false; held chips, cashout incomplete                |
-| Approval      | Escrow → actual approving actor's agent wallet | approved             | paid; chips_transferred true; chip transfer, not proof of outside cash settlement |
-| Cancellation  | Escrow → original player wallet                | cancelled            | paid; returned chips                                                              |
-| Decline       | Escrow → original player wallet                | rejected             | paid; returned chips, no declining-agent debit                                    |
-| Expiry refund | Escrow → original player wallet                | expired              | paid; system refund                                                               |
+| Event | Physical movement | Event request status | Immutable invoice |
+|---|---|---|---|
+| Hold | Player wallet → exact escrow | pending | generated; chips_transferred false; held chips, cashout incomplete |
+| Approval | Escrow → actual approving actor's agent wallet | approved | paid; chips_transferred true; chip transfer, not proof of outside cash settlement |
+| Cancellation | Escrow → original player wallet | cancelled | paid; returned chips |
+| Decline | Escrow → original player wallet | rejected | paid; returned chips, no declining-agent debit |
+| Expiry refund | Escrow → original player wallet | expired | paid; system refund |
 
 `request` is the actual current request, with `id`, `club_id`, `player_id`, `agent_id`, exact-text `amount`, `status`, required `created_at`/`updated_at`, explicit nullable `acknowledged_at`/`completed_at`/`cancelled_at`, `player_note` and `agent_note`. A hold replay can return a current terminal request only when the matching terminal canonical event proves it. The immutable hold's `request_status` remains pending and its `display_state` remains held; no fake current-pending DTO or mutable paid hold message is manufactured.
 

@@ -125,3 +125,32 @@ tests/fixtures/messenger-private-accounting/captured-catalog.json
 tests/fixtures/pnl-evidence/captured-pnl-metadata.json
 tests/fixtures/rakeback-history-privacy/policy-preimage.json
 tests/fixtures/tournament-fee-lifecycle/full-lifecycle-terminal-receipts.json
+
+# Byte-bound accounting fixture documents and regression inputs.
+# Keep reviewed bytes intact; intentional test repairs update their binding.
+tests/fixtures/full-weekly-accounting/README.md
+tests/fixtures/messenger-private-accounting/README.md
+tests/fixtures/weekly-union-continuation/RUNNER.md
+tests/credit-admin-data.test.ts
+tests/super-agent-credit-routing.test.tsx
+tests/components/agent-cashout-scope.test.tsx
+tests/unit/leaveClubReleasesEscrow.test.ts
+tests/components/cashout-scope.test.tsx
+tests/helpers/cashoutV2Receipt.ts
+tests/components/agent-dashboard-durable-transfers.test.tsx
+tests/unit/CashoutRequestModal.test.tsx
+tests/fixtures/cashier-document-authority/README.md
+tests/helpers/clubWeeklyStatement.ts
+tests/unit/ClubWeeklyAccountingReader.test.ts
+tests/fixtures/browser-period-observer/README.md
+tests/unit/SettlementCronService.test.ts
+tests/unit/ServiceBootstrap.test.ts
+tests/unit/FinancialCronService.test.ts
+tests/components/ClubWeeklyAccountingSummary.test.tsx
+tests/unit/AccountingObservationService.test.ts
+tests/unit/anApprovalCanBeRetried.test.ts
+tests/helpers/accountingObservation.ts
+tests/components/cashier-cashout-generations.test.tsx
+tests/unit/FinancialAlertServiceRead.test.ts
+tests/unit/CreditReductionContract.test.ts
+tests/helpers/creditReductionReceipt.ts

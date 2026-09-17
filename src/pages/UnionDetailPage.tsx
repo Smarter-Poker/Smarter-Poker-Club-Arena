@@ -600,20 +600,10 @@ export default function UnionDetailPage() {
       1000
     );
 
-    // Refresh financial summary when a settlement completes
-    const unsubSettlement = masterBus.subscribeDebounced(
-      'SETTLEMENT_COMPLETED',
-      () => {
-        void reloadUnion();
-      },
-      1000
-    );
-
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       unsubUnion();
       unsubTable();
-      unsubSettlement();
     };
   }, [unionId, union?.settings?.crossClubTournaments, clubs]);
 

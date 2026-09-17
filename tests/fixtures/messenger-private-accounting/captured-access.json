@@ -1,0 +1,2391 @@
+[
+  {
+    "jsonb_build_object": {
+      "captured_at": "2026-09-15T02:39:31.441006+00:00",
+      "column_acls": [
+        {
+          "acl": null,
+          "column": "id"
+        },
+        {
+          "acl": null,
+          "column": "user_id"
+        },
+        {
+          "acl": null,
+          "column": "push_enabled"
+        },
+        {
+          "acl": null,
+          "column": "email_enabled"
+        },
+        {
+          "acl": null,
+          "column": "sms_enabled"
+        },
+        {
+          "acl": null,
+          "column": "marketing_enabled"
+        },
+        {
+          "acl": null,
+          "column": "tournament_alerts"
+        },
+        {
+          "acl": null,
+          "column": "social_alerts"
+        },
+        {
+          "acl": null,
+          "column": "training_alerts"
+        },
+        {
+          "acl": null,
+          "column": "preferences"
+        },
+        {
+          "acl": null,
+          "column": "created_at"
+        },
+        {
+          "acl": null,
+          "column": "updated_at"
+        },
+        {
+          "acl": null,
+          "column": "mute_all"
+        },
+        {
+          "acl": null,
+          "column": "browser_push"
+        },
+        {
+          "acl": null,
+          "column": "push_type_prefs"
+        },
+        {
+          "acl": null,
+          "column": "quiet_hours_start"
+        },
+        {
+          "acl": null,
+          "column": "quiet_hours_end"
+        },
+        {
+          "acl": null,
+          "column": "quiet_hours_tz"
+        },
+        {
+          "acl": null,
+          "column": "daily_push_cap"
+        }
+      ],
+      "memberships": [
+        {
+          "set": true,
+          "role": "pg_read_all_settings",
+          "admin": false,
+          "member": "pg_monitor",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_stats",
+          "admin": false,
+          "member": "pg_monitor",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_stat_scan_tables",
+          "admin": false,
+          "member": "pg_monitor",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_data",
+          "admin": false,
+          "member": "supabase_etl_admin",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_data",
+          "admin": false,
+          "member": "supabase_read_only_user",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "anon",
+          "admin": false,
+          "member": "authenticator",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "authenticated",
+          "admin": false,
+          "member": "authenticator",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "service_role",
+          "admin": false,
+          "member": "authenticator",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "authenticator",
+          "admin": false,
+          "member": "supabase_storage_admin",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "anon",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "authenticated",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "service_role",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "authenticator",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_monitor",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_data",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_signal_backend",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_monitor",
+          "admin": false,
+          "member": "supabase_etl_admin",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_monitor",
+          "admin": false,
+          "member": "supabase_read_only_user",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_create_subscription",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "postgres",
+          "admin": false,
+          "member": "cli_login_postgres",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "supabase_privileged_role",
+          "admin": false,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "supabase_privileged_role",
+          "admin": false,
+          "member": "supabase_etl_admin",
+          "grantor": "supabase_admin",
+          "inherit": true
+        },
+        {
+          "set": false,
+          "role": "supabase_backup_admin",
+          "admin": true,
+          "member": "postgres",
+          "grantor": "supabase_admin",
+          "inherit": false
+        },
+        {
+          "set": true,
+          "role": "pg_read_all_data",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "pg_monitor",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "service_role",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "authenticated",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        },
+        {
+          "set": true,
+          "role": "anon",
+          "admin": false,
+          "member": "supabase_backup_admin",
+          "grantor": "postgres",
+          "inherit": true
+        }
+      ],
+      "role_attributes": [
+        {
+          "role": "anon",
+          "inherit": true,
+          "can_login": false,
+          "superuser": false,
+          "bypass_rls": false
+        },
+        {
+          "role": "authenticated",
+          "inherit": true,
+          "can_login": false,
+          "superuser": false,
+          "bypass_rls": false
+        },
+        {
+          "role": "postgres",
+          "inherit": true,
+          "can_login": true,
+          "superuser": false,
+          "bypass_rls": true
+        },
+        {
+          "role": "service_role",
+          "inherit": true,
+          "can_login": false,
+          "superuser": false,
+          "bypass_rls": true
+        }
+      ],
+      "effective_tables": [
+        {
+          "role": "anon",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "allowed": true,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "authenticated",
+          "allowed": true,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "allowed": true,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "allowed": true,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "anon",
+          "allowed": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "authenticated",
+          "allowed": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "allowed": true,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "allowed": true,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "anon",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "allowed": true,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "authenticated",
+          "allowed": true,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "allowed": true,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "allowed": true,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "anon",
+          "allowed": true,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "authenticated",
+          "allowed": true,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "allowed": true,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "allowed": true,
+          "privilege": "MAINTAIN"
+        }
+      ],
+      "effective_columns": [
+        {
+          "role": "anon",
+          "column": "id",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "id",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "authenticated",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "id",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "id",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "anon",
+          "column": "id",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "id",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "authenticated",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "id",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "id",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "anon",
+          "column": "id",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "id",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "authenticated",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "id",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "postgres",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "id",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "anon",
+          "column": "id",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "anon",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "id",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "authenticated",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "id",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "id",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "user_id",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "push_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "email_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "sms_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "marketing_enabled",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "tournament_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "social_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "training_alerts",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "preferences",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "created_at",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "updated_at",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "mute_all",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "browser_push",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "push_type_prefs",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_start",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_end",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "quiet_hours_tz",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "column": "daily_push_cap",
+          "allowed": true,
+          "privilege": "REFERENCES"
+        }
+      ],
+      "effective_functions": [
+        {
+          "role": "anon",
+          "execute": false,
+          "signature": "fn_messenger_message_page(uuid,uuid,timestamp with time zone,uuid,integer)"
+        },
+        {
+          "role": "anon",
+          "execute": false,
+          "signature": "fn_messenger_accounting_threads(uuid,uuid[])"
+        },
+        {
+          "role": "anon",
+          "execute": false,
+          "signature": "fn_messenger_search_messages(uuid,uuid[],text,integer)"
+        },
+        {
+          "role": "authenticated",
+          "execute": true,
+          "signature": "fn_messenger_message_page(uuid,uuid,timestamp with time zone,uuid,integer)"
+        },
+        {
+          "role": "authenticated",
+          "execute": true,
+          "signature": "fn_messenger_accounting_threads(uuid,uuid[])"
+        },
+        {
+          "role": "authenticated",
+          "execute": true,
+          "signature": "fn_messenger_search_messages(uuid,uuid[],text,integer)"
+        },
+        {
+          "role": "postgres",
+          "execute": true,
+          "signature": "fn_messenger_message_page(uuid,uuid,timestamp with time zone,uuid,integer)"
+        },
+        {
+          "role": "postgres",
+          "execute": true,
+          "signature": "fn_messenger_accounting_threads(uuid,uuid[])"
+        },
+        {
+          "role": "postgres",
+          "execute": true,
+          "signature": "fn_messenger_search_messages(uuid,uuid[],text,integer)"
+        },
+        {
+          "role": "service_role",
+          "execute": true,
+          "signature": "fn_messenger_message_page(uuid,uuid,timestamp with time zone,uuid,integer)"
+        },
+        {
+          "role": "service_role",
+          "execute": true,
+          "signature": "fn_messenger_accounting_threads(uuid,uuid[])"
+        },
+        {
+          "role": "service_role",
+          "execute": true,
+          "signature": "fn_messenger_search_messages(uuid,uuid[],text,integer)"
+        }
+      ]
+    }
+  }
+]

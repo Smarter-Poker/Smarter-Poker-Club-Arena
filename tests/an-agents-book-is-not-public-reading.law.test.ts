@@ -233,7 +233,7 @@ describe('the client only ever asks about itself', () => {
 
   it('the dashboard nulls the figure on failure rather than showing zero', () => {
     expect(DASHBOARD).toMatch(
-      /reportError\(e, 'AgentCommissionDashboard\.unsettled'\);\s*\n\s*if \(isMounted\.current\) setOwed\(null\);/
+      /reportError\(e, 'AgentCommissionDashboard\.unsettled'\);\s*\n\s*if \(current\(\)\) setOwed\(null\);/
     );
   });
 
@@ -245,7 +245,7 @@ describe('the client only ever asks about itself', () => {
     expect(DASHBOARD).toMatch(/let downlineFailed = false;/);
     expect(DASHBOARD).toMatch(/downlineFailed = true;/);
     expect(DASHBOARD).toMatch(
-      /totalCommission: downlineFailed \? null : \(downlineOwed\[a\.id\] \?\? 0\),/
+      /totalCommission: downlineFailed \? null : \(downlineOwed\[a\.id\] \?\? null\),/
     );
     expect(DASHBOARD).toMatch(/\? 'Unavailable'/);
     // `|| 0` would turn a genuine zero and a failure back into the same thing.

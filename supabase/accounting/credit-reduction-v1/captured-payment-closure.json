@@ -1,0 +1,940 @@
+[
+  {
+    "catalog": {
+      "scope": "fn_ca_post_leg, atomic_deduct_wallet_and_log, three named relations direct noninternal trigger functions, and one static public-callee layer; dynamic or further indirect callers remain unproven.",
+      "functions": [
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public, extensions, pg_temp"],
+          "result": "boolean",
+          "strict": false,
+          "is_root": true,
+          "body_md5": "1835dbd974d8ba219cf37ab712a9ccbd",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "p_user_id uuid, p_amount numeric, p_category text DEFAULT 'debit'::text, p_description text DEFAULT ''::text, p_table_id uuid DEFAULT NULL::uuid, p_hand_id uuid DEFAULT NULL::uuid, p_related_entity_id uuid DEFAULT NULL::uuid",
+          "leakproof": false,
+          "signature": "atomic_deduct_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.atomic_deduct_wallet_and_log(p_user_id uuid, p_amount numeric, p_category text DEFAULT 'debit'::text, p_description text DEFAULT ''::text, p_table_id uuid DEFAULT NULL::uuid, p_hand_id uuid DEFAULT NULL::uuid, p_related_entity_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions', 'pg_temp'\nAS $function$\nDECLARE\n  v_balance numeric;\n  v_club_id uuid;\n  v_context_club uuid;\n  v_context_tournament uuid;\n  v_declared_club uuid;\n  v_declared_text text;\n  v_has_club boolean;\nBEGIN\n  IF p_user_id IS NULL\n     OR p_amount IS NULL\n     OR p_amount::text IN ('NaN','Infinity','-Infinity')\n     OR p_amount <= 0\n     OR p_amount <> round(p_amount,2) THEN\n    RAISE EXCEPTION 'wallet debit requires a positive two-decimal amount'\n      USING ERRCODE='22023';\n  END IF;\n\n  v_declared_text:=NULLIF(current_setting('app.ledger_club_id',true),'');\n  IF v_declared_text IS NOT NULL THEN\n    BEGIN\n      v_declared_club:=v_declared_text::uuid;\n    EXCEPTION WHEN invalid_text_representation THEN\n      RAISE EXCEPTION 'wallet debit declared club is not a UUID'\n        USING ERRCODE='22023';\n    END;\n    v_club_id:=v_declared_club;\n  END IF;\n\n  IF p_table_id IS NOT NULL THEN\n    SELECT t.club_id, t.tournament_id INTO v_context_club, v_context_tournament\n      FROM public.tables t\n     WHERE t.id=p_table_id;\n    IF v_context_club IS NULL THEN\n      RAISE EXCEPTION 'wallet debit table % has no club context',p_table_id\n        USING ERRCODE='P0002';\n    END IF;\n    IF v_context_tournament IS NOT NULL THEN\n      -- THE ENTRY IS CHARGED TO THE WALLET THE ENTRY IS STAMPED WITH\n      -- (2026-09-10): a tournament table resolves the wallet the way the\n      -- entry stamp does, so a rebuy at a union event comes from the same\n      -- member-club wallet the buy-in came from.\n      v_context_club:=public.fn_tournament_club_for_user(\n        p_user_id,v_context_tournament,v_club_id);\n      IF v_context_club IS NULL THEN\n        RAISE EXCEPTION 'no club wallet in the union of tournament % resolves for player %',\n          v_context_tournament,p_user_id USING ERRCODE='42501';\n      END IF;\n    END IF;\n    IF v_club_id IS NOT NULL AND v_club_id<>v_context_club THEN\n      RAISE EXCEPTION 'wallet debit declared club does not own table %',p_table_id\n        USING ERRCODE='22023';\n    END IF;\n    v_club_id:=v_context_club;\n  END IF;\n\n  IF p_related_entity_id IS NOT NULL\n     AND lower(COALESCE(p_category,'')) IN\n       ('tournament_buyin','tournament_rebuy','rebuy','reentry','addon') THEN\n    IF NOT EXISTS (SELECT 1 FROM public.tournaments t WHERE t.id=p_related_entity_id\n                     AND t.club_id IS NOT NULL) THEN\n      RAISE EXCEPTION 'wallet debit tournament % has no club context',\n        p_related_entity_id USING ERRCODE='P0002';\n    END IF;\n    -- THE ENTRY IS CHARGED TO THE WALLET THE ENTRY IS STAMPED WITH\n    -- (2026-09-10). trg_tournament_players_stamp_club stamps the entry with\n    -- fn_tournament_club_for_user; the debit reads the same function with the\n    -- same preferred club, so the wallet a prize returns to is the wallet the\n    -- buy-in left. Reading tournaments.club_id here charged the union's house\n    -- club for every union-hosted entry (3,232 entries / 73,659.00 in 24h).\n    v_context_club:=public.fn_tournament_club_for_user(\n      p_user_id,p_related_entity_id,v_club_id);\n    IF v_context_club IS NULL THEN\n      RAISE EXCEPTION 'no club wallet in the union of tournament % resolves for player %',\n        p_related_entity_id,p_user_id USING ERRCODE='42501';\n    END IF;\n    IF v_club_id IS NOT NULL AND v_club_id<>v_context_club THEN\n      RAISE EXCEPTION 'wallet debit declared club does not own tournament %',\n        p_related_entity_id USING ERRCODE='22023';\n    END IF;\n    v_club_id:=v_context_club;\n  END IF;\n\n  IF v_club_id IS NULL THEN\n    v_club_id:=public.fn_player_home_club(p_user_id,NULL);\n  END IF;\n\n  IF v_club_id IS NOT NULL THEN\n    IF public.fn_ensure_club_wallet(p_user_id,v_club_id) IS DISTINCT FROM TRUE THEN\n      RAISE EXCEPTION 'player % has no active wallet at club %',p_user_id,v_club_id\n        USING ERRCODE='42501';\n    END IF;\n    SELECT cm.chip_balance INTO v_balance\n      FROM public.club_members cm\n     WHERE cm.user_id=p_user_id AND cm.club_id=v_club_id\n       AND cm.status IN ('active','approved')\n     FOR UPDATE;\n    IF v_balance IS NULL OR v_balance<p_amount THEN\n      RETURN false;\n    END IF;\n    UPDATE public.club_members cm\n       SET chip_balance=cm.chip_balance-p_amount,updated_at=now()\n     WHERE cm.user_id=p_user_id AND cm.club_id=v_club_id\n       AND cm.status IN ('active','approved')\n       AND cm.chip_balance>=p_amount;\n    IF NOT FOUND THEN\n      RETURN false;\n    END IF;\n    INSERT INTO public.chip_transactions(\n      club_id,from_user_id,amount,transaction_type,notes\n    ) VALUES (\n      v_club_id,p_user_id,p_amount,p_category,\n      COALESCE(NULLIF(p_description,''),'Wallet debit')\n    );\n    RETURN true;\n  END IF;\n\n  SELECT EXISTS(\n    SELECT 1 FROM public.club_members cm WHERE cm.user_id=p_user_id\n  ) INTO v_has_club;\n  IF v_has_club THEN\n    RAISE EXCEPTION 'No active club wallet resolves for Club Arena debit from player %',\n      p_user_id USING ERRCODE='42501';\n  END IF;\n\n  UPDATE public.wallets w\n     SET balance=w.balance-p_amount,updated_at=now()\n   WHERE w.user_id=p_user_id AND w.wallet_type='PLAYER'\n     AND w.balance>=p_amount;\n  RETURN FOUND;\nEND;\n$function$\n",
+          "volatility": "v",
+          "definition_md5": "ab3d8e4c0baac59e7194319ffceba71e",
+          "security_definer": false,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": false
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "result": "trigger",
+          "strict": false,
+          "is_root": true,
+          "body_md5": "f67730a532168a1a0b98c98895a199ba",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "fn_accounting_credit_document_on_insert()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_credit_document_on_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE a public.agents%ROWTYPE; credit public.credit_invoices%ROWTYPE;\nBEGIN\n IF TG_TABLE_NAME='credit_invoices' THEN\n   SELECT * INTO a FROM public.agents WHERE id=NEW.agent_id;\n   INSERT INTO public.settlement_invoices(club_id,invoice_type,from_entity_type,from_entity_id,to_entity_type,to_entity_id,\n    gross_amount,net_amount,deductions,breakdown,status,chips_transferred,due_at,source_credit_invoice_id,notes)\n   VALUES(a.club_id,'transaction_receipt','club',a.club_id::text,'agent',a.user_id::text,\n    NEW.debt_owed,NEW.debt_owed,0,jsonb_build_object('kind','credit_invoice','period_start',NEW.period_start,'period_end',NEW.period_end),\n    'generated',false,NEW.due_date,NEW.id,'Drawn Credit Invoice. This Amount Is Due From The Agent To The Club.');\n ELSIF TG_TABLE_NAME='credit_payments' THEN\n   SELECT * INTO credit FROM public.credit_invoices WHERE id=NEW.invoice_id;\n   SELECT * INTO a FROM public.agents WHERE id=credit.agent_id;\n   INSERT INTO public.settlement_invoices(club_id,invoice_type,from_entity_type,from_entity_id,to_entity_type,to_entity_id,\n    gross_amount,net_amount,deductions,breakdown,status,chips_transferred,transferred_at,source_credit_payment_id,notes)\n   VALUES(a.club_id,'transaction_receipt','agent',a.user_id::text,'club',a.club_id::text,\n    NEW.amount,NEW.amount,0,jsonb_build_object('kind','credit_payment','credit_invoice_id',NEW.invoice_id,'payment_method',NEW.payment_method,'transaction_id',NEW.transaction_id),\n    'paid',NEW.payment_method='wallet',NEW.created_at,NEW.id,'Credit Payment Recorded Against The Referenced Invoice.');\n ELSE RAISE EXCEPTION 'unsupported_credit_document_source'; END IF;\n RETURN NEW;\nEND $function$\n",
+          "volatility": "v",
+          "definition_md5": "64b3c2467897361d25e4646613ca6b7d",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": false
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "result": "boolean",
+          "strict": false,
+          "is_root": true,
+          "body_md5": "f43e1453aba9edc498277627a185e59a",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "p_category text, p_from_type text, p_from_entity uuid, p_to_type text, p_to_entity uuid, p_amount numeric, p_club_id uuid, p_idempotency_key text, p_description text",
+          "leakproof": false,
+          "signature": "fn_ca_post_leg(text,text,uuid,text,uuid,numeric,uuid,text,text)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_post_leg(p_category text, p_from_type text, p_from_entity uuid, p_to_type text, p_to_entity uuid, p_amount numeric, p_club_id uuid, p_idempotency_key text, p_description text)\n RETURNS boolean\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_st text; v_msg text;\nBEGIN\n  IF p_amount IS NULL OR p_amount <= 0 THEN\n    RETURN false;\n  END IF;\n  BEGIN\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, description, idempotency_key)\n    VALUES (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),\n            p_from_type, p_from_entity, p_to_type, p_to_entity,\n            round(p_amount, 2), p_category, p_club_id, p_description, p_idempotency_key);\n    RETURN true;\n  EXCEPTION WHEN OTHERS THEN\n      -- A journal failure must abort the enclosing chip movement.\n      -- Preserve SQLSTATE so the existing caller can retry the whole operation.\n      RAISE;\n    END;\n\nEND $function$\n",
+          "volatility": "v",
+          "definition_md5": "e6835ba26f6a2fc99c130a8b715c7866",
+          "security_definer": false,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": false
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public, pg_temp"],
+          "result": "trigger",
+          "strict": false,
+          "is_root": true,
+          "body_md5": "143988884af6597ebeba74225b2d372f",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "fn_ca_record_frozen_pool_deletion()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_record_frozen_pool_deletion()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF OLD.created_at < '2026-08-22' THEN\n    BEGIN\n      INSERT INTO public.ca_frozen_pool_deletions\n        (wallet_id, user_id, wallet_type, deleted_balance, row_created_at,\n         db_role, app_name, note)\n      VALUES\n        (OLD.id, OLD.user_id, OLD.wallet_type, COALESCE(OLD.balance,0), OLD.created_at,\n         current_user, COALESCE(current_setting('application_name', true), ''),\n         'pre-freeze wallet row deleted (cascade or direct)');\n    EXCEPTION WHEN OTHERS THEN\n      -- Never block an account teardown to record it.\n      NULL;\n    END;\n  END IF;\n  RETURN OLD;\nEND;\n$function$\n",
+          "volatility": "v",
+          "definition_md5": "09b843d7a8af627f91a9ff05708778b9",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": false
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "result": "boolean",
+          "strict": false,
+          "is_root": false,
+          "body_md5": "9a9fb5c1f8a4a88bbeed01710af6c4c2",
+          "language": "sql",
+          "parallel": "u",
+          "arguments": "p_user_id uuid, p_club_id uuid",
+          "leakproof": false,
+          "signature": "fn_ensure_club_wallet(uuid,uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_ensure_club_wallet(p_user_id uuid, p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1 FROM public.club_members cm\n     WHERE cm.user_id = p_user_id AND cm.club_id = p_club_id\n       AND cm.status IN ('active', 'approved')\n  );\n$function$\n",
+          "volatility": "s",
+          "definition_md5": "dd462a9943724d4b94fbe683ed364250",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": [
+            "=X/postgres",
+            "postgres=X/postgres",
+            "anon=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": ["search_path=public, pg_temp"],
+          "result": "boolean",
+          "strict": false,
+          "is_root": false,
+          "body_md5": "455e80fbd8c07c99bf0e9f8fb146e889",
+          "language": "sql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "fn_freeze_bypass_active()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_freeze_bypass_active()\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE(current_setting('app.freeze_bypass', TRUE), '') = 'on';\n$function$\n",
+          "volatility": "s",
+          "definition_md5": "2bfad412c70b965fd9d2c72b2ad83310",
+          "security_definer": false,
+          "effective_execute": {
+            "anon": true,
+            "service_role": true,
+            "authenticated": true
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public, pg_temp"],
+          "result": "trigger",
+          "strict": false,
+          "is_root": true,
+          "body_md5": "f056528dab49bf3260faed436a1dee71",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "fn_guard_retired_club_mutation()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_retired_club_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_club_id uuid;\n  v_old_club_id uuid;\n  v_maintenance boolean :=\n    auth.uid() IS NULL\n    AND coalesce(current_setting('app.club_retirement_maintenance', true), '') = 'on';\nBEGIN\n  IF v_maintenance THEN\n    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n    RETURN NEW;\n  END IF;\n\n  IF TG_OP = 'DELETE' THEN\n    IF TG_TABLE_NAME = 'unions' THEN\n      v_club_id := OLD.id;\n    ELSIF TG_TABLE_NAME = 'table_seats' THEN\n      SELECT t.club_id INTO v_club_id FROM public.tables t WHERE t.id = OLD.table_id;\n    ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n      SELECT t.club_id INTO v_club_id FROM public.tournaments t\n       WHERE t.id = OLD.tournament_id;\n    ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n      SELECT cr.club_id INTO v_club_id FROM public.cashout_requests cr\n       WHERE cr.id = OLD.cashout_request_id;\n    ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n      SELECT a.club_id INTO v_club_id FROM public.agents a WHERE a.id = OLD.agent_id;\n    ELSE\n      v_club_id := OLD.club_id;\n    END IF;\n  ELSE\n    IF TG_TABLE_NAME = 'unions' THEN\n      v_club_id := NEW.id;\n    ELSIF TG_TABLE_NAME = 'table_seats' THEN\n      SELECT t.club_id INTO v_club_id FROM public.tables t WHERE t.id = NEW.table_id;\n    ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n      SELECT t.club_id INTO v_club_id FROM public.tournaments t\n       WHERE t.id = NEW.tournament_id;\n    ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n      SELECT cr.club_id INTO v_club_id FROM public.cashout_requests cr\n       WHERE cr.id = NEW.cashout_request_id;\n    ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n      SELECT a.club_id INTO v_club_id FROM public.agents a WHERE a.id = NEW.agent_id;\n    ELSE\n      v_club_id := NEW.club_id;\n    END IF;\n\n    -- On UPDATE, check the source scope too. Moving a retained row to an active\n    -- club must not become an escape hatch from a retired club's write freeze.\n    IF TG_OP = 'UPDATE' THEN\n      IF TG_TABLE_NAME = 'unions' THEN\n        v_old_club_id := OLD.id;\n      ELSIF TG_TABLE_NAME = 'table_seats' THEN\n        SELECT t.club_id INTO v_old_club_id FROM public.tables t WHERE t.id = OLD.table_id;\n      ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n        SELECT t.club_id INTO v_old_club_id FROM public.tournaments t\n         WHERE t.id = OLD.tournament_id;\n      ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n        SELECT cr.club_id INTO v_old_club_id FROM public.cashout_requests cr\n         WHERE cr.id = OLD.cashout_request_id;\n      ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n        SELECT a.club_id INTO v_old_club_id FROM public.agents a WHERE a.id = OLD.agent_id;\n      ELSE\n        v_old_club_id := OLD.club_id;\n      END IF;\n    END IF;\n  END IF;\n\n  -- A union row can use a club UUID without an FK back to clubs. Serialize\n  -- that conversion with the retirement RPC so it cannot create a union\n  -- identity from a club that became retired in the same instant.\n  IF TG_TABLE_NAME = 'unions' AND v_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('cashier-hierarchy:' || v_club_id::text, 0)\n    );\n  END IF;\n\n  IF (v_club_id IS NOT NULL OR v_old_club_id IS NOT NULL) AND EXISTS (\n    SELECT 1 FROM public.clubs c\n     WHERE c.id IN (v_club_id, v_old_club_id) AND c.lifecycle_status = 'retired'\n  ) THEN\n    RAISE EXCEPTION 'CLUB_RETIRED: gameplay and cashier records are read-only'\n      USING ERRCODE = '55000';\n  END IF;\n\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND\n$function$\n",
+          "volatility": "v",
+          "definition_md5": "b82be212e7ccf2a15637c231861ff993",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": false
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "anon=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": ["search_path=public, pg_temp"],
+          "result": "boolean",
+          "strict": false,
+          "is_root": false,
+          "body_md5": "112b1265824ee082b8adc67ea367d826",
+          "language": "sql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "fn_platform_frozen()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_platform_frozen()\n RETURNS boolean\n LANGUAGE sql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT EXISTS (\n           SELECT 1\n             FROM public.engine_maintenance_break b\n            WHERE b.enforce_freeze\n              AND b.announced_at < clock_timestamp() + INTERVAL '30 seconds'\n              AND (\n                (\n                  b.phase = 'last_hand'\n                  AND b.break_started_at IS NULL\n                  AND b.break_ends_at IS NULL\n                  AND b.announced_at + INTERVAL '2 minutes' <= clock_timestamp()\n                )\n                OR (\n                  b.phase = 'counting_down'\n                  AND b.break_started_at IS NOT NULL\n                  AND b.break_ends_at IS NOT NULL\n                  AND b.break_started_at >= b.announced_at\n                  AND b.break_ends_at > b.break_started_at\n                  AND b.break_ends_at < b.announced_at + INTERVAL '15 minutes'\n                )\n              )\n         )\n         OR COALESCE(\n           public.fn_active_maintenance_release_boundary() > clock_timestamp(),\n           false\n         );\n$function$\n",
+          "volatility": "v",
+          "definition_md5": "ec683805e052fceeae74789e82dce4cc",
+          "security_definer": false,
+          "effective_execute": {
+            "anon": true,
+            "service_role": true,
+            "authenticated": true
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "result": "uuid",
+          "strict": false,
+          "is_root": false,
+          "body_md5": "2d052a4815d033295d98772989224800",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "p_user_id uuid, p_club_hint uuid DEFAULT NULL::uuid",
+          "leakproof": false,
+          "signature": "fn_player_home_club(uuid,uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_player_home_club(p_user_id uuid, p_club_hint uuid DEFAULT NULL::uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_club uuid;\nBEGIN\n  IF p_user_id IS NULL THEN RETURN NULL; END IF;\n  IF p_club_hint IS NOT NULL AND EXISTS (\n    SELECT 1 FROM public.club_members cm\n     WHERE cm.user_id = p_user_id AND cm.club_id = p_club_hint\n       AND cm.status IN ('active','approved')\n  ) THEN RETURN p_club_hint; END IF;\n  SELECT cm.club_id INTO v_club\n    FROM public.club_members cm\n   WHERE cm.user_id = p_user_id AND cm.status IN ('active','approved')\n   ORDER BY cm.joined_at ASC NULLS LAST, cm.club_id\n   LIMIT 1;\n  RETURN v_club;\nEND;\n$function$\n",
+          "volatility": "s",
+          "definition_md5": "bdced39339da2e5ec46404177bab7dc2",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public, pg_temp"],
+          "result": "trigger",
+          "strict": false,
+          "is_root": true,
+          "body_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "fn_refuse_while_frozen()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_refuse_while_frozen()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  col  TEXT;\n  changed BOOLEAN := FALSE;\n  v_claims TEXT;\nBEGIN\n  IF TG_OP = 'UPDATE' AND TG_NARGS > 0 THEN\n    FOREACH col IN ARRAY TG_ARGV LOOP\n      IF to_jsonb(NEW) -> col IS DISTINCT FROM to_jsonb(OLD) -> col THEN\n        changed := TRUE;\n        EXIT;\n      END IF;\n    END LOOP;\n    IF NOT changed THEN\n      RETURN NEW;\n    END IF;\n  END IF;\n\n  -- ONBOARDING NEVER FREEZES (to-do #2563 item 1). A membership row carrying\n  -- no chips is identity, not money. This table, INSERT only, zero balance.\n  IF TG_TABLE_NAME = 'club_members' AND TG_OP = 'INSERT'\n     AND COALESCE((to_jsonb(NEW) ->> 'chip_balance')::numeric, 0) = 0 THEN\n    RETURN NEW;\n  END IF;\n\n  IF public.fn_freeze_bypass_active() THEN\n    RETURN COALESCE(NEW, OLD);\n  END IF;\n\n  -- CHIP STANDARD (2026-09-05): A JOURNAL ROW IS THE RECORD OF A WRITE, NOT A\n  -- WRITE. When a balance write was permitted (a money table outside this\n  -- guard, or a permitted role), its chip_ledger leg is written by the\n  -- autoledger inside that same statement, at trigger depth 2 or more.\n  -- Refusing the leg while the write stands is the one outcome the standard\n  -- cannot allow: 104 BBJ bank moves (9.69 chips) lost their legs this way at :55 and\n  -- :00 up to 09-05 06:58 (ca_ledger_write_failures, sqlstate 55006), each one an unexplained movement on the BBJ meter. A direct\n  -- INSERT on chip_ledger from a client (depth 1) is still refused.\n  IF TG_TABLE_NAME = 'chip_ledger' AND pg_trigger_depth() > 1 THEN\n    RETURN COALESCE(NEW, OLD);\n  END IF;\n\n  BEGIN\n    v_claims := current_setting('request.jwt.claims', TRUE);\n    IF v_claims IS NOT NULL AND v_claims <> ''\n       AND (v_claims::jsonb ->> 'role') = 'service_role' THEN\n      RETURN COALESCE(NEW, OLD);\n    END IF;\n  EXCEPTION WHEN OTHERS THEN\n    NULL;\n  END;\n\n  IF public.fn_platform_frozen() THEN\n    RAISE EXCEPTION\n      'PLATFORM_FROZEN: the platform is on a scheduled maintenance break. % on % was refused; it will succeed when play resumes.',\n      TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55006',\n            HINT = 'Scheduled maintenance breaks run from :55 to :00. Nothing is lost - retry after the break.';\n  END IF;\n\n  RETURN COALESCE(NEW, OLD);\nEND;\n$function$\n",
+          "volatility": "v",
+          "definition_md5": "3a866372172806a8a69cc3d37413f0cc",
+          "security_definer": false,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": false
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "result": "uuid",
+          "strict": false,
+          "is_root": false,
+          "body_md5": "f80eff4c311820670f1b71d15c29452d",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "p_user_id uuid, p_tournament_id uuid, p_preferred_club uuid DEFAULT NULL::uuid",
+          "leakproof": false,
+          "signature": "fn_tournament_club_for_user(uuid,uuid,uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_club_for_user(p_user_id uuid, p_tournament_id uuid, p_preferred_club uuid DEFAULT NULL::uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_union uuid; v_t_club uuid; v_club uuid;\n  v_is_horse boolean := false; v_n int; v_idx int;\nBEGIN\n  SELECT t.union_id, t.club_id INTO v_union, v_t_club\n    FROM tournaments t WHERE t.id = p_tournament_id;\n\n  IF v_union IS NULL THEN\n    RETURN v_t_club;                       -- standalone club tournament\n  END IF;\n\n  /* THE HOST CLUB IS IN ITS OWN UNION (2026-09-10). A tournament hosted BY a\n     union has club_id = union_id, and that house club is never a row in\n     union_clubs. The membership test below joined union_clubs, so the\n     tournament's own club could never be the preferred club - a satellite\n     winner who IS a member of the host club was resolved to some other club\n     and the ticket award was refused for a club mismatch. Friday Night\n     Feature Satellite Heads-Up sat RUNNING for 16 hours on that refusal. The\n     host club counts as in the union without needing the row. */\n  IF p_preferred_club IS NOT NULL\n     AND EXISTS (SELECT 1 FROM club_members m\n                 WHERE m.user_id = p_user_id AND m.club_id = p_preferred_club\n                   AND m.status IN ('active','approved')\n                   AND (m.club_id = v_t_club\n                        OR EXISTS (SELECT 1 FROM union_clubs uc\n                                    WHERE uc.club_id = m.club_id AND uc.union_id = v_union)))\n  THEN\n    RETURN p_preferred_club;\n  END IF;\n\n  SELECT COALESCE(p.is_horse, false) INTO v_is_horse FROM profiles p WHERE p.id = p_user_id;\n\n  IF v_is_horse THEN\n    -- Same stable home club a horse uses for cash play, so a horse's tournament\n    -- and cash activity always belong to the same club.\n    SELECT count(*) INTO v_n\n      FROM club_members m\n      JOIN union_clubs uc ON uc.club_id = m.club_id AND uc.union_id = v_union\n     WHERE m.user_id = p_user_id AND m.status IN ('active','approved');\n    IF v_n > 1 THEN\n      v_idx := (abs(hashtextextended(p_user_id::text, 0)) % v_n)::int;\n      SELECT m.club_id INTO v_club\n        FROM club_members m\n        JOIN union_clubs uc ON uc.club_id = m.club_id AND uc.union_id = v_union\n       WHERE m.user_id = p_user_id AND m.status IN ('active','approved')\n       ORDER BY m.club_id OFFSET v_idx LIMIT 1;\n      IF v_club IS NOT NULL THEN RETURN v_club; END IF;\n    END IF;\n  END IF;\n\n  SELECT m.club_id INTO v_club\n    FROM club_members m\n    JOIN union_clubs uc ON uc.club_id = m.club_id AND uc.union_id = v_union\n   WHERE m.user_id = p_user_id AND m.status IN ('active','approved')\n   ORDER BY m.joined_at ASC NULLS LAST, m.club_id\n   LIMIT 1;\n\n  RETURN v_club;\nEND $function$\n",
+          "volatility": "s",
+          "definition_md5": "344609ab3cf21094b9e85167bfb6655e",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          },
+          "direct_relation_dependencies": null
+        },
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "result": "trigger",
+          "strict": false,
+          "is_root": true,
+          "body_md5": "5fa8a504757adfba1ad3939722dd0064",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "guard_wallet_balance_write()",
+          "definition": "CREATE OR REPLACE FUNCTION public.guard_wallet_balance_write()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_stack   TEXT;\n  v_bypass  TEXT;\n  v_allowed TEXT[] := ARRAY[\n    'atomic_credit_wallet_and_log','atomic_deduct_wallet_and_log','atomic_wallet_transfer',\n    'atomic_chip_transfer','fn_idempotent_credit_wallet','fn_idempotent_deduct_wallet',\n    'fn_idempotent_wallet_transfer','atomic_table_buyin','atomic_table_cashout',\n    'atomic_table_rebuy','atomic_table_addon','atomic_table_withdraw','atomic_seat_horse','player_leave_table','atomic_tournament_register',\n    'atomic_tournament_unregister','atomic_cancel_tournament','distribute_tournament_prizes',\n    'process_tournament_rebuy',\n    'atomic_pay_player_rakeback','credit_agent_commission',\n    'credit_player_rakeback','fn_cancel_cashout','fn_reject_cashout',\n    'fn_clawback_chips_atomic','distribute_chips','mint_club_chips','add_chips','add_to_promo_wallet',\n    'credit_player_wallet','deduct_player_wallet','wallet_internal_transfer','wallet_user_transfer',\n    'create_user_wallets','reconcile_ledger_nightly',\n    -- added 2026-08-15 with the chip-removal authority policy\n    'fn_admin_remove_player_chips','fn_approve_cashout_atomic','fn_cancel_cashout_atomic',\n    -- added 2026-08-21 with the diamond-backed Chip Mint (Dan's directive)\n    'fn_mint_chips_from_diamonds',\n    -- added 2026-08-23 with the Club Bank Cashier (Dan directive)\n    'fn_club_bank_send',\n    'fn_club_bank_claim_back', 'fn_promo_wallet_send',\n    'fn_club_bank_reverse'\n    -- removed 2026-08-31 (phase 6): execute_commission_payout, which credited a\n    -- wallet, debited nothing and never marked the commission settled.\n    -- removed 2026-09-01 (phase 7): atomic_pay_agent_settlement, a staff payout\n    -- that decremented a column nothing incremented.\n  ];\n  v_fn TEXT;\nBEGIN\n  v_bypass := current_setting('app.bypass_wallet_guard', true);\n  IF v_bypass = 'on' THEN RETURN NEW; END IF;\n  GET DIAGNOSTICS v_stack = PG_CONTEXT;\n  FOREACH v_fn IN ARRAY v_allowed LOOP\n    IF v_stack ~ ('function (public\\.)?' || v_fn || '\\(') THEN\n      RETURN NEW;\n    END IF;\n  END LOOP;\n  RAISE EXCEPTION\n    'Direct balance mutation on %.% is forbidden by Phase 4.1.6a guard. '\n    'All balance changes must flow through the whitelisted SECURITY DEFINER '\n    'RPCs (atomic_*, fn_idempotent_*, distribute_chips, mint_club_chips, etc.) '\n    'that log to chip_ledger. Admin override: '\n    'SELECT set_config(''app.bypass_wallet_guard'', ''on'', true);',\n    TG_TABLE_SCHEMA, TG_TABLE_NAME\n    USING ERRCODE = 'insufficient_privilege';\nEND;\n$function$\n",
+          "volatility": "v",
+          "definition_md5": "2af2718d22fcf12be394f9239e88e3c7",
+          "security_definer": false,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": false
+          },
+          "direct_relation_dependencies": null
+        }
+      ],
+      "relations": [
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=rxt/postgres",
+            "authenticated=rxt/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "kind": "r",
+          "name": "credit_invoices",
+          "owner": "postgres",
+          "columns": [
+            {
+              "acl": null,
+              "name": "id",
+              "type": "uuid",
+              "default": "gen_random_uuid()",
+              "ordinal": 1,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "agent_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 2,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "period_start",
+              "type": "timestamp with time zone",
+              "default": null,
+              "ordinal": 3,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "period_end",
+              "type": "timestamp with time zone",
+              "default": null,
+              "ordinal": 4,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "debt_owed",
+              "type": "numeric",
+              "default": "0",
+              "ordinal": 5,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "amount_paid",
+              "type": "numeric",
+              "default": "0",
+              "ordinal": 6,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "amount_remaining",
+              "type": "numeric",
+              "default": "0",
+              "ordinal": 7,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "status",
+              "type": "text",
+              "default": "'pending'::text",
+              "ordinal": 8,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "due_date",
+              "type": "timestamp with time zone",
+              "default": null,
+              "ordinal": 9,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "created_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "ordinal": 10,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "paid_at",
+              "type": "timestamp with time zone",
+              "default": null,
+              "ordinal": 11,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "void_reason",
+              "type": "text",
+              "default": null,
+              "ordinal": 12,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            }
+          ],
+          "options": null,
+          "policies": [
+            {
+              "cmd": "SELECT",
+              "qual": "(agent_id IN ( SELECT a.id\n   FROM agents a\n  WHERE (a.user_id = ( SELECT auth.uid() AS uid))))",
+              "roles": ["public"],
+              "tablename": "credit_invoices",
+              "permissive": "PERMISSIVE",
+              "policyname": "credit_invoices_select_own",
+              "schemaname": "public",
+              "with_check": null
+            }
+          ],
+          "triggers": [
+            {
+              "name": "accounting_credit_invoice_document",
+              "type": 5,
+              "enabled": "O",
+              "function": "fn_accounting_credit_document_on_insert()",
+              "deferrable": false,
+              "definition": "CREATE TRIGGER accounting_credit_invoice_document AFTER INSERT ON credit_invoices FOR EACH ROW EXECUTE FUNCTION fn_accounting_credit_document_on_insert()",
+              "initially_deferred": false
+            },
+            {
+              "name": "trg_guard_retired_club_mutation",
+              "type": 31,
+              "enabled": "O",
+              "function": "fn_guard_retired_club_mutation()",
+              "deferrable": false,
+              "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON credit_invoices FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+              "initially_deferred": false
+            }
+          ],
+          "force_rls": false,
+          "effective_privileges": {
+            "anon": {
+              "table": {
+                "DELETE": false,
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "TRIGGER": true,
+                "MAINTAIN": false,
+                "TRUNCATE": false,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "REFERENCES": true
+              }
+            },
+            "service_role": {
+              "table": {
+                "DELETE": true,
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "TRIGGER": true,
+                "MAINTAIN": true,
+                "TRUNCATE": true,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "REFERENCES": true
+              }
+            },
+            "authenticated": {
+              "table": {
+                "DELETE": false,
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "TRIGGER": true,
+                "MAINTAIN": false,
+                "TRUNCATE": false,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "REFERENCES": true
+              }
+            }
+          }
+        },
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=rxt/postgres",
+            "authenticated=rxt/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "kind": "r",
+          "name": "credit_payments",
+          "owner": "postgres",
+          "columns": [
+            {
+              "acl": null,
+              "name": "id",
+              "type": "uuid",
+              "default": "gen_random_uuid()",
+              "ordinal": 1,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "invoice_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 2,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "amount",
+              "type": "numeric",
+              "default": null,
+              "ordinal": 3,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "payment_method",
+              "type": "text",
+              "default": null,
+              "ordinal": 4,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "transaction_id",
+              "type": "text",
+              "default": null,
+              "ordinal": 5,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "created_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "ordinal": 6,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "operation_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 7,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "payer_user_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 8,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "payment_reference",
+              "type": "text",
+              "default": null,
+              "ordinal": 9,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            }
+          ],
+          "options": null,
+          "policies": [
+            {
+              "cmd": "SELECT",
+              "qual": "(invoice_id IN ( SELECT ci.id\n   FROM (credit_invoices ci\n     JOIN agents a ON ((a.id = ci.agent_id)))\n  WHERE (a.user_id = ( SELECT auth.uid() AS uid))))",
+              "roles": ["public"],
+              "tablename": "credit_payments",
+              "permissive": "PERMISSIVE",
+              "policyname": "credit_payments_select_own",
+              "schemaname": "public",
+              "with_check": null
+            }
+          ],
+          "triggers": [
+            {
+              "name": "accounting_credit_payment_document",
+              "type": 5,
+              "enabled": "O",
+              "function": "fn_accounting_credit_document_on_insert()",
+              "deferrable": false,
+              "definition": "CREATE TRIGGER accounting_credit_payment_document AFTER INSERT ON credit_payments FOR EACH ROW EXECUTE FUNCTION fn_accounting_credit_document_on_insert()",
+              "initially_deferred": false
+            }
+          ],
+          "force_rls": false,
+          "effective_privileges": {
+            "anon": {
+              "table": {
+                "DELETE": false,
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "TRIGGER": true,
+                "MAINTAIN": false,
+                "TRUNCATE": false,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "REFERENCES": true
+              }
+            },
+            "service_role": {
+              "table": {
+                "DELETE": true,
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "TRIGGER": true,
+                "MAINTAIN": true,
+                "TRUNCATE": true,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "REFERENCES": true
+              }
+            },
+            "authenticated": {
+              "table": {
+                "DELETE": false,
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "TRIGGER": true,
+                "MAINTAIN": false,
+                "TRUNCATE": false,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": false,
+                "SELECT": true,
+                "UPDATE": false,
+                "REFERENCES": true
+              }
+            }
+          }
+        },
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=arwdxtm/postgres",
+            "authenticated=arwdxtm/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "kind": "r",
+          "name": "wallets",
+          "owner": "postgres",
+          "columns": [
+            {
+              "acl": null,
+              "name": "id",
+              "type": "uuid",
+              "default": "gen_random_uuid()",
+              "ordinal": 1,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "user_id",
+              "type": "uuid",
+              "default": null,
+              "ordinal": 2,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "wallet_type",
+              "type": "text",
+              "default": null,
+              "ordinal": 3,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "balance",
+              "type": "numeric(15,2)",
+              "default": "0",
+              "ordinal": 4,
+              "identity": "",
+              "not_null": true,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "locked_balance",
+              "type": "numeric(15,2)",
+              "default": "0",
+              "ordinal": 5,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "updated_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "ordinal": 6,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            },
+            {
+              "acl": null,
+              "name": "created_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "ordinal": 7,
+              "identity": "",
+              "not_null": false,
+              "generated": ""
+            }
+          ],
+          "options": null,
+          "policies": [
+            {
+              "cmd": "ALL",
+              "qual": "true",
+              "roles": ["service_role"],
+              "tablename": "wallets",
+              "permissive": "PERMISSIVE",
+              "policyname": "Service role full access wallets",
+              "schemaname": "public",
+              "with_check": "true"
+            },
+            {
+              "cmd": "INSERT",
+              "qual": null,
+              "roles": ["public"],
+              "tablename": "wallets",
+              "permissive": "PERMISSIVE",
+              "policyname": "Users can insert own wallets",
+              "schemaname": "public",
+              "with_check": "(user_id = ( SELECT auth.uid() AS uid))"
+            },
+            {
+              "cmd": "SELECT",
+              "qual": "(( SELECT auth.uid() AS uid) = user_id)",
+              "roles": ["public"],
+              "tablename": "wallets",
+              "permissive": "PERMISSIVE",
+              "policyname": "Users can read own wallets",
+              "schemaname": "public",
+              "with_check": null
+            }
+          ],
+          "triggers": [
+            {
+              "name": "trg_guard_wallets_balance_ins",
+              "type": 7,
+              "enabled": "O",
+              "function": "guard_wallet_balance_write()",
+              "deferrable": false,
+              "definition": "CREATE TRIGGER trg_guard_wallets_balance_ins BEFORE INSERT ON wallets FOR EACH ROW WHEN (new.balance IS NOT NULL AND new.balance <> 0::numeric) EXECUTE FUNCTION guard_wallet_balance_write()",
+              "initially_deferred": false
+            },
+            {
+              "name": "trg_guard_wallets_balance_upd",
+              "type": 19,
+              "enabled": "O",
+              "function": "guard_wallet_balance_write()",
+              "deferrable": false,
+              "definition": "CREATE TRIGGER trg_guard_wallets_balance_upd BEFORE UPDATE OF balance ON wallets FOR EACH ROW WHEN (new.balance IS DISTINCT FROM old.balance) EXECUTE FUNCTION guard_wallet_balance_write()",
+              "initially_deferred": false
+            },
+            {
+              "name": "zz_ca_record_frozen_pool_deletion",
+              "type": 11,
+              "enabled": "O",
+              "function": "fn_ca_record_frozen_pool_deletion()",
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_ca_record_frozen_pool_deletion BEFORE DELETE ON wallets FOR EACH ROW EXECUTE FUNCTION fn_ca_record_frozen_pool_deletion()",
+              "initially_deferred": false
+            },
+            {
+              "name": "zz_freeze_guard",
+              "type": 31,
+              "enabled": "O",
+              "function": "fn_refuse_while_frozen()",
+              "deferrable": false,
+              "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON wallets FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('balance')",
+              "initially_deferred": false
+            }
+          ],
+          "force_rls": false,
+          "effective_privileges": {
+            "anon": {
+              "table": {
+                "DELETE": true,
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "TRIGGER": true,
+                "MAINTAIN": true,
+                "TRUNCATE": false,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "REFERENCES": true
+              }
+            },
+            "service_role": {
+              "table": {
+                "DELETE": true,
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "TRIGGER": true,
+                "MAINTAIN": true,
+                "TRUNCATE": true,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "REFERENCES": true
+              }
+            },
+            "authenticated": {
+              "table": {
+                "DELETE": true,
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "TRIGGER": true,
+                "MAINTAIN": true,
+                "TRUNCATE": false,
+                "REFERENCES": true
+              },
+              "any_column": {
+                "INSERT": true,
+                "SELECT": true,
+                "UPDATE": true,
+                "REFERENCES": true
+              }
+            }
+          }
+        }
+      ],
+      "captured_at": "2026-09-15 14:41:34.710789+00",
+      "lock_timeout": "2s",
+      "function_limit": 64,
+      "server_version": "17.6",
+      "statement_timeout": "10s",
+      "transaction_isolation": "repeatable read",
+      "transaction_read_only": "on",
+      "missing_named_functions": null,
+      "function_candidate_count": 12
+    }
+  }
+]

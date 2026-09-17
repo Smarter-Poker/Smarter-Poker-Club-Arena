@@ -1,0 +1,275 @@
+[
+  {
+    "signature": "public.fn_admin_update_agent(uuid,text,text,numeric,numeric,numeric,uuid,text,boolean)",
+    "arguments": "p_agent_id uuid, p_status text DEFAULT NULL::text, p_role text DEFAULT NULL::text, p_credit_limit numeric DEFAULT NULL::numeric, p_commission_rate numeric DEFAULT NULL::numeric, p_player_rakeback_rate numeric DEFAULT NULL::numeric, p_assigned_by uuid DEFAULT NULL::uuid, p_credit_reason text DEFAULT NULL::text, p_is_prepaid boolean DEFAULT NULL::boolean",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=public, extensions"],
+    "acl": ["authenticated=X/postgres", "postgres=X/postgres", "service_role=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": true,
+      "service_role": true
+    },
+    "source_md5": "9180c45b9e2b6b41995258659546c038",
+    "basis": "admin-writer-successor.sql"
+  },
+  {
+    "signature": "public.fn_agent_credit_control_revision_v1()",
+    "arguments": "",
+    "result": "trigger",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog"],
+    "acl": ["postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "ad43ab5c2eb812d7c0d983a4f5e8eff2",
+    "basis": "private-contract.sql"
+  },
+  {
+    "signature": "public.fn_agent_credit_reduction_receipt_v1(uuid,uuid,uuid)",
+    "arguments": "p_expected_actor_id uuid, p_operation_id uuid, p_club_id uuid",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["authenticated=X/postgres", "postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": true,
+      "service_role": false
+    },
+    "source_md5": "034ec1cd10bc1cc9fa0b9ba341e64857",
+    "basis": "server-functions.sql"
+  },
+  {
+    "signature": "public.fn_agent_credit_reduction_snapshot_v1(uuid,uuid,uuid)",
+    "arguments": "p_expected_actor_id uuid, p_club_id uuid, p_target_user_id uuid",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["authenticated=X/postgres", "postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": true,
+      "service_role": false
+    },
+    "source_md5": "df0f0d7cce9a8d6dbbba850dd826c4b8",
+    "basis": "server-functions.sql"
+  },
+  {
+    "signature": "public.fn_credit_reduction_immutable_v1()",
+    "arguments": "",
+    "result": "trigger",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog"],
+    "acl": ["postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "3dee20395e977fc4cd9c3bd87ea8d7a0",
+    "basis": "private-contract.sql"
+  },
+  {
+    "signature": "public.fn_credit_reduction_lock_current_manager_v1(uuid,uuid)",
+    "arguments": "p_actor uuid, p_club uuid",
+    "result": "void",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "basis": "server-functions.sql",
+    "source_md5": "5c777ff7338ba5d29b3463dafbc39727"
+  },
+  {
+    "signature": "public.fn_credit_reduction_lock_v1(uuid,uuid,uuid)",
+    "arguments": "p_actor uuid, p_operation uuid, p_club uuid",
+    "result": "void",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "ef4c1edd6198798b916dfb0a061ad62e",
+    "basis": "server-functions.sql"
+  },
+  {
+    "signature": "public.fn_credit_reduction_observe_v1(uuid,uuid,uuid)",
+    "arguments": "p_actor uuid, p_operation uuid, p_club uuid",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "858d34be108254f4b7fb0ebe2de146ca",
+    "basis": "server-functions.sql"
+  },
+  {
+    "signature": "public.fn_credit_reduction_receipt_payload_v1(uuid)",
+    "arguments": "p_receipt_id uuid",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "46ba3ce82db524c1c80b5aaedeff7425",
+    "basis": "server-functions.sql"
+  },
+  {
+    "signature": "public.fn_credit_reduction_retirement_payload_v1(uuid)",
+    "arguments": "p_retirement_id uuid",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "ea46855da5882e04b385967b4f35df19",
+    "basis": "server-functions.sql"
+  },
+  {
+    "signature": "public.fn_credit_reduction_terminal_exclusive_v1()",
+    "arguments": "",
+    "result": "trigger",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "b77c0ecd14f6586230511865b72e435f",
+    "basis": "private-contract.sql"
+  },
+  {
+    "signature": "public.fn_reduce_agent_credit_v1(uuid,uuid,uuid,uuid,uuid,numeric,numeric,numeric,boolean,bigint,text)",
+    "arguments": "p_expected_actor_id uuid, p_operation_id uuid, p_club_id uuid, p_agent_id uuid, p_target_user_id uuid, p_requested_reduction numeric, p_expected_credit_limit numeric, p_expected_credit_used numeric, p_expected_is_prepaid boolean, p_expected_revision bigint, p_reason text DEFAULT NULL::text",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["authenticated=X/postgres", "postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": true,
+      "service_role": false
+    },
+    "source_md5": "2921345d6b7eda01404fc77e2e130c29",
+    "basis": "server-functions.sql"
+  },
+  {
+    "signature": "public.fn_retire_agent_credit_reduction_v1(uuid,uuid,uuid)",
+    "arguments": "p_expected_actor_id uuid, p_operation_id uuid, p_club_id uuid",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": ["search_path=pg_catalog, public"],
+    "acl": ["authenticated=X/postgres", "postgres=X/postgres"],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": true,
+      "service_role": false
+    },
+    "source_md5": "7ef3a5839666732fb2e6f39fd653b8a6",
+    "basis": "server-functions.sql"
+  }
+]

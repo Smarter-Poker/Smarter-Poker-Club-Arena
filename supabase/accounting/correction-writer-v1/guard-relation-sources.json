@@ -1,0 +1,4286 @@
+{
+  "status": "SOURCE_DERIVED_UNRUN",
+  "ledger_relations": [
+    {
+      "name": "chip_ledger",
+      "owner": "postgres",
+      "kind": "r",
+      "rls": true,
+      "force_rls": false,
+      "partition": false,
+      "partition_key": null,
+      "partition_bound": null,
+      "replica_identity": "d",
+      "options": [
+        "autovacuum_enabled=true",
+        "autovacuum_analyze_scale_factor=0.0",
+        "autovacuum_analyze_threshold=1000",
+        "autovacuum_vacuum_scale_factor=0.0",
+        "autovacuum_vacuum_threshold=1000",
+        "autovacuum_vacuum_cost_delay=2",
+        "autovacuum_vacuum_cost_limit=2000"
+      ],
+      "inheritance": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "ordinal": 1,
+          "identity": "",
+          "not_null": true,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "performed_by",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 2,
+          "identity": "",
+          "not_null": true,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "from_type",
+          "type": "text",
+          "default": null,
+          "ordinal": 3,
+          "identity": "",
+          "not_null": true,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "from_entity_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 4,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "from_label",
+          "type": "text",
+          "default": null,
+          "ordinal": 5,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "to_type",
+          "type": "text",
+          "default": null,
+          "ordinal": 6,
+          "identity": "",
+          "not_null": true,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "to_entity_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 7,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "to_label",
+          "type": "text",
+          "default": null,
+          "ordinal": 8,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "amount",
+          "type": "numeric(15,2)",
+          "default": null,
+          "ordinal": 9,
+          "identity": "",
+          "not_null": true,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "category",
+          "type": "text",
+          "default": "'transfer'::text",
+          "ordinal": 10,
+          "identity": "",
+          "not_null": true,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "description",
+          "type": "text",
+          "default": null,
+          "ordinal": 11,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "notes",
+          "type": "text",
+          "default": null,
+          "ordinal": 12,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 13,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 14,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 15,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 16,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 17,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "ordinal": 18,
+          "identity": "",
+          "not_null": true,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "ordinal": 19,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "correlation_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 20,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "causation_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 21,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "settlement_id",
+          "type": "text",
+          "default": null,
+          "ordinal": 22,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "epoch_id",
+          "type": "integer",
+          "default": null,
+          "ordinal": 23,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "actor_service",
+          "type": "text",
+          "default": null,
+          "ordinal": 24,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "db_role",
+          "type": "text",
+          "default": null,
+          "ordinal": 25,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "pre_from_balance",
+          "type": "numeric",
+          "default": null,
+          "ordinal": 26,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "post_from_balance",
+          "type": "numeric",
+          "default": null,
+          "ordinal": 27,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "pre_to_balance",
+          "type": "numeric",
+          "default": null,
+          "ordinal": 28,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "post_to_balance",
+          "type": "numeric",
+          "default": null,
+          "ordinal": 29,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "status",
+          "type": "text",
+          "default": "'posted'::text",
+          "ordinal": 30,
+          "identity": "",
+          "not_null": true,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "metadata",
+          "type": "jsonb",
+          "default": null,
+          "ordinal": 31,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "chain_seq",
+          "type": "bigint",
+          "default": null,
+          "ordinal": 32,
+          "identity": "",
+          "not_null": false,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "prev_hash",
+          "type": "text",
+          "default": null,
+          "ordinal": 33,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "row_hash",
+          "type": "text",
+          "default": null,
+          "ordinal": 34,
+          "identity": "",
+          "not_null": false,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chip_ledger_amount_check",
+          "type": "c",
+          "columns": [9],
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (amount > 0::numeric)",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chip_ledger_category_check",
+          "type": "c",
+          "columns": [10],
+          "validated": false,
+          "deferrable": false,
+          "definition": "CHECK (category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'rake'::text, 'commission'::text, 'transfer'::text, 'player_funding'::text, 'agent_funding'::text, 'mint'::text, 'burn'::text, 'legacy_seed_reconcile'::text, 'rakeback'::text, 'settlement'::text, 'tournament_buyin'::text, 'tournament_prize'::text, 'bounty'::text, 'adjustment'::text, 'refund'::text, 'addon'::text, 'rebuy'::text, 'table_cashout'::text, 'tournament_refund'::text, 'bbj_contribution'::text, 'bbj_payout'::text, 'promo'::text, 'promo_release'::text, 'promo_send'::text, 'credit_draw'::text, 'credit_repayment'::text, 'insurance'::text, 'spin_entry'::text, 'spin_prize'::text, 'overlay'::text, 'correction'::text, 'reversal'::text, 'escrow_hold'::text, 'escrow_release'::text, 'treasury_transfer'::text, 'horse_funding'::text, 'fee'::text, 'eco'::text, 'pnl_settlement'::text, 'union_send'::text, 'cashier_send'::text, 'cashier_claim_back'::text, 'ticket_issue'::text, 'ticket_redeem'::text, 'club_opening_allocation'::text, 'leaderboard_payout'::text, 'club_bank_send'::text, 'club_bank_claim'::text, 'agent_send'::text, 'agent_claim'::text, 'union_settlement'::text, 'wheel_prize'::text, 'plinko_prize'::text, 'crash_prize'::text, 'crossing_prize'::text, 'mines_prize'::text])) NOT VALID",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chip_ledger_exact_scale",
+          "type": "c",
+          "columns": [9],
+          "validated": false,
+          "deferrable": false,
+          "definition": "CHECK (amount = round(amount, 2)) NOT VALID",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chip_ledger_from_type_check",
+          "type": "c",
+          "columns": [3],
+          "validated": false,
+          "deferrable": false,
+          "definition": "CHECK (from_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text])) NOT VALID",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chip_ledger_no_diamond_category_check",
+          "type": "c",
+          "columns": [10],
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (category !~* '^diamond'::text AND category !~* '_diamond'::text)",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chip_ledger_performed_by_fkey",
+          "type": "f",
+          "columns": [2],
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (performed_by) REFERENCES auth.users(id)",
+          "foreign_columns": [2],
+          "initially_deferred": false,
+          "referenced_relation": "auth.users"
+        },
+        {
+          "name": "chip_ledger_pkey",
+          "type": "p",
+          "columns": [1],
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chip_ledger_positive_amount",
+          "type": "c",
+          "columns": [9],
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (amount > 0::numeric)",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chip_ledger_status_check",
+          "type": "c",
+          "columns": [30],
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (status = ANY (ARRAY['posted'::text, 'correction'::text, 'reversal'::text]))",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chip_ledger_to_type_check",
+          "type": "c",
+          "columns": [6],
+          "validated": false,
+          "deferrable": false,
+          "definition": "CHECK (to_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text])) NOT VALID",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chk_post_from_balance_is_two_decimal_places",
+          "type": "c",
+          "columns": [27],
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (post_from_balance IS NULL OR post_from_balance = round(post_from_balance, 2))",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chk_post_to_balance_is_two_decimal_places",
+          "type": "c",
+          "columns": [29],
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (post_to_balance IS NULL OR post_to_balance = round(post_to_balance, 2))",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chk_pre_from_balance_is_two_decimal_places",
+          "type": "c",
+          "columns": [26],
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (pre_from_balance IS NULL OR pre_from_balance = round(pre_from_balance, 2))",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "chk_pre_to_balance_is_two_decimal_places",
+          "type": "c",
+          "columns": [28],
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (pre_to_balance IS NULL OR pre_to_balance = round(pre_to_balance, 2))",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "ck_whole_cents",
+          "type": "c",
+          "columns": [18, 9],
+          "validated": false,
+          "deferrable": false,
+          "definition": "CHECK (created_at < '2026-09-07 22:00:00+00'::timestamp with time zone OR amount = round(amount, 2)) NOT VALID",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        },
+        {
+          "name": "zz_ca_issuance_leg_is_registered",
+          "type": "t",
+          "columns": null,
+          "validated": true,
+          "deferrable": true,
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+          "foreign_columns": null,
+          "initially_deferred": true,
+          "referenced_relation": null
+        }
+      ],
+      "indexes": [
+        {
+          "kind": "i",
+          "live": true,
+          "name": "chip_ledger_chain_seq_key",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE UNIQUE INDEX chip_ledger_chain_seq_key ON public.chip_ledger USING btree (chain_seq)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "chip_ledger_pkey",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": true,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE UNIQUE INDEX chip_ledger_pkey ON public.chip_ledger USING btree (id)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_club_created_desc",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_club_created_desc ON public.chip_ledger USING btree (club_id, created_at DESC)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_club_from_created",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_club_from_created ON public.chip_ledger USING btree (club_id, from_entity_id, created_at)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_club_to_created",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_club_to_created ON public.chip_ledger USING btree (club_id, to_entity_id, created_at)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_created_at",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_created_at ON public.chip_ledger USING btree (created_at)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_from_entity_created",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_from_entity_created ON public.chip_ledger USING btree (from_entity_id, created_at DESC)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_overlay_by_tournament",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_overlay_by_tournament ON public.chip_ledger USING btree (tournament_id) INCLUDE (amount) WHERE ((tournament_id IS NOT NULL) AND (category = 'overlay'::text) AND (to_type = 'prize_liability'::text))",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_performed_by",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_performed_by ON public.chip_ledger USING btree (performed_by)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_promo_from",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_promo_from ON public.chip_ledger USING btree (from_entity_id, created_at DESC) WHERE (from_type = 'promo_wallet'::text)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_promo_to",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_promo_to ON public.chip_ledger USING btree (to_entity_id, created_at DESC) WHERE (to_type = 'promo_wallet'::text)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_rebuy_probe",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_rebuy_probe ON public.chip_ledger USING btree (from_entity_id, tournament_id, created_at) WHERE ((category = 'rebuy'::text) AND (from_type = 'player_wallet'::text) AND (to_type = 'prize_liability'::text) AND (status = 'posted'::text))",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_to_entity",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_to_entity ON public.chip_ledger USING btree (to_entity_id)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_to_entity_created",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_to_entity_created ON public.chip_ledger USING btree (to_entity_id, created_at DESC)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "idx_chip_ledger_tournament_category",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_tournament_category ON public.chip_ledger USING btree (tournament_id, category) WHERE (tournament_id IS NOT NULL)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "ix_chip_ledger_settlement",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX ix_chip_ledger_settlement ON public.chip_ledger USING btree (settlement_id) WHERE (settlement_id IS NOT NULL)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
+          "name": "ux_chip_ledger_idempotency_key",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE UNIQUE INDEX ux_chip_ledger_idempotency_key ON public.chip_ledger USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        }
+      ],
+      "policies": [
+        {
+          "cmd": "SELECT",
+          "qual": "((( SELECT auth.uid() AS uid) = performed_by) OR (( SELECT auth.uid() AS uid) = from_entity_id) OR (( SELECT auth.uid() AS uid) = to_entity_id))",
+          "roles": ["public"],
+          "tablename": "chip_ledger",
+          "permissive": "PERMISSIVE",
+          "policyname": "Users can view their own transactions",
+          "schemaname": "public",
+          "with_check": null
+        }
+      ],
+      "effective_privileges": {
+        "anon": {
+          "table": {
+            "DELETE": false,
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "TRIGGER": false,
+            "MAINTAIN": true,
+            "TRUNCATE": false,
+            "REFERENCES": false
+          },
+          "any_column": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": false
+          }
+        },
+        "service_role": {
+          "table": {
+            "DELETE": true,
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "TRIGGER": true,
+            "MAINTAIN": true,
+            "TRUNCATE": true,
+            "REFERENCES": true
+          },
+          "any_column": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          }
+        },
+        "authenticated": {
+          "table": {
+            "DELETE": false,
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "TRIGGER": false,
+            "MAINTAIN": true,
+            "TRUNCATE": false,
+            "REFERENCES": false
+          },
+          "any_column": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": false
+          }
+        }
+      },
+      "acl": [
+        "anon=rm/postgres",
+        "authenticated=rm/postgres",
+        "postgres=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "triggers": [
+        {
+          "name": "aa_ca_capture_tournament_charge_entitlement",
+          "definition": "CREATE TRIGGER aa_ca_capture_tournament_charge_entitlement AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.tournament_id IS NOT NULL AND new.from_type = 'player_wallet'::text AND new.to_type = 'prize_liability'::text) EXECUTE FUNCTION fn_ca_capture_tournament_charge_entitlement()",
+          "enabled": "O",
+          "type": 5,
+          "function": "fn_ca_capture_tournament_charge_entitlement()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "ab_ca_chip_store_declared",
+          "definition": "CREATE TRIGGER ab_ca_chip_store_declared BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_store_declared()",
+          "enabled": "O",
+          "type": 7,
+          "function": "fn_ca_chip_store_declared()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "accounting_tournament_recognized_bank_immutable",
+          "definition": "CREATE TRIGGER accounting_tournament_recognized_bank_immutable BEFORE DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_accounting_tournament_recognized_evidence_immutable()",
+          "enabled": "O",
+          "type": 27,
+          "function": "fn_accounting_tournament_recognized_evidence_immutable()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "accounting_transfer_document",
+          "definition": "CREATE TRIGGER accounting_transfer_document AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.status = 'posted'::text AND ((new.from_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text])) OR new.from_type = 'settlement_suspense'::text AND new.category = 'rakeback'::text) AND (new.to_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text]))) EXECUTE FUNCTION fn_accounting_transfer_document_on_insert()",
+          "enabled": "O",
+          "type": 5,
+          "function": "fn_accounting_transfer_document_on_insert()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "cancelled_tournament_evidence_is_immutable",
+          "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+          "enabled": "O",
+          "type": 31,
+          "function": "fn_cancelled_tournament_evidence_is_immutable()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "satellite_transfer_ledger_is_immutable",
+          "definition": "CREATE TRIGGER satellite_transfer_ledger_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_satellite_transfer_ledger_is_immutable()",
+          "enabled": "O",
+          "type": 31,
+          "function": "fn_satellite_transfer_ledger_is_immutable()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "terminal_tournament_evidence_is_immutable",
+          "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+          "enabled": "O",
+          "type": 31,
+          "function": "fn_terminal_tournament_evidence_is_immutable()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "trg_ca_append_only",
+          "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+          "enabled": "O",
+          "type": 27,
+          "function": "fn_ca_journal_append_only()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "trg_ca_chip_ledger_enrich",
+          "definition": "CREATE TRIGGER trg_ca_chip_ledger_enrich BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_ledger_enrich()",
+          "enabled": "O",
+          "type": 7,
+          "function": "fn_ca_chip_ledger_enrich()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "trg_chip_ledger_performed_by",
+          "definition": "CREATE TRIGGER trg_chip_ledger_performed_by BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION enforce_chip_ledger_performed_by()",
+          "enabled": "O",
+          "type": 7,
+          "function": "enforce_chip_ledger_performed_by()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "zz_ca_attested_day_is_restated_del",
+          "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_del AFTER DELETE ON chip_ledger REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+          "enabled": "O",
+          "type": 8,
+          "function": "fn_ca_attested_day_is_restated()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "zz_ca_attested_day_is_restated_upd",
+          "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_upd AFTER UPDATE ON chip_ledger REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()",
+          "enabled": "O",
+          "type": 16,
+          "function": "fn_ca_attested_day_is_restated()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "zz_ca_escrow_overlay_leg",
+          "definition": "CREATE TRIGGER zz_ca_escrow_overlay_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.to_type = 'prize_liability'::text AND (new.category = 'overlay'::text OR new.category = 'correction'::text AND (new.from_type = ANY (ARRAY['union_bank'::text, 'club_treasury'::text])))) EXECUTE FUNCTION fn_ca_escrow_on_overlay_leg()",
+          "enabled": "O",
+          "type": 5,
+          "function": "fn_ca_escrow_on_overlay_leg()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "zz_ca_escrow_reserve_leg",
+          "definition": "CREATE TRIGGER zz_ca_escrow_reserve_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.category = ANY (ARRAY['spin_entry'::text, 'spin_prize'::text])) EXECUTE FUNCTION fn_ca_escrow_on_reserve_leg()",
+          "enabled": "O",
+          "type": 5,
+          "function": "fn_ca_escrow_on_reserve_leg()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "zz_ca_escrow_seat_transfer_leg",
+          "definition": "CREATE TRIGGER zz_ca_escrow_seat_transfer_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.to_type = 'prize_liability'::text AND new.idempotency_key ~~ 'tourney:%:seat:%:pool_transfer'::text) EXECUTE FUNCTION fn_ca_escrow_on_seat_transfer_leg()",
+          "enabled": "O",
+          "type": 5,
+          "function": "fn_ca_escrow_on_seat_transfer_leg()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "zz_ca_issuance_leg_is_registered",
+          "definition": "CREATE CONSTRAINT TRIGGER zz_ca_issuance_leg_is_registered AFTER INSERT ON chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.from_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])) OR (new.to_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text]))) EXECUTE FUNCTION fn_ca_issuance_leg_is_registered()",
+          "enabled": "O",
+          "type": 5,
+          "function": "fn_ca_issuance_leg_is_registered()",
+          "deferrable": true,
+          "initially_deferred": true
+        },
+        {
+          "name": "zz_chip_ledger_key_is_claimed_once",
+          "definition": "CREATE TRIGGER zz_chip_ledger_key_is_claimed_once BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION zz_chip_ledger_key_is_claimed_once()",
+          "enabled": "O",
+          "type": 7,
+          "function": "zz_chip_ledger_key_is_claimed_once()",
+          "deferrable": false,
+          "initially_deferred": false
+        },
+        {
+          "name": "zz_freeze_guard",
+          "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()",
+          "enabled": "O",
+          "type": 31,
+          "function": "fn_refuse_while_frozen()",
+          "deferrable": false,
+          "initially_deferred": false
+        }
+      ]
+    },
+    {
+      "name": "chip_ledger_idem",
+      "owner": "postgres",
+      "kind": "r",
+      "rls": true,
+      "force_rls": false,
+      "partition": false,
+      "partition_key": null,
+      "partition_bound": null,
+      "replica_identity": "d",
+      "options": null,
+      "inheritance": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "ordinal": 1,
+          "identity": "",
+          "not_null": true,
+          "collation": "\"default\"",
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": false,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": false,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "leg_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 2,
+          "identity": "",
+          "not_null": true,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": false,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": false,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "ordinal": 3,
+          "identity": "",
+          "not_null": true,
+          "collation": null,
+          "generated": "",
+          "effective_privileges": {
+            "anon": {
+              "INSERT": false,
+              "SELECT": false,
+              "UPDATE": false,
+              "REFERENCES": false
+            },
+            "service_role": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            },
+            "authenticated": {
+              "INSERT": false,
+              "SELECT": false,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chip_ledger_idem_pkey",
+          "type": "p",
+          "columns": [1],
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (idempotency_key)",
+          "foreign_columns": null,
+          "initially_deferred": false,
+          "referenced_relation": null
+        }
+      ],
+      "indexes": [
+        {
+          "kind": "i",
+          "live": true,
+          "name": "chip_ledger_idem_pkey",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": true,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE UNIQUE INDEX chip_ledger_idem_pkey ON public.chip_ledger_idem USING btree (idempotency_key)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        }
+      ],
+      "policies": null,
+      "effective_privileges": {
+        "anon": {
+          "table": {
+            "DELETE": false,
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "TRIGGER": false,
+            "MAINTAIN": false,
+            "TRUNCATE": false,
+            "REFERENCES": false
+          },
+          "any_column": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": false
+          }
+        },
+        "service_role": {
+          "table": {
+            "DELETE": true,
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "TRIGGER": true,
+            "MAINTAIN": true,
+            "TRUNCATE": true,
+            "REFERENCES": true
+          },
+          "any_column": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          }
+        },
+        "authenticated": {
+          "table": {
+            "DELETE": false,
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "TRIGGER": false,
+            "MAINTAIN": false,
+            "TRUNCATE": false,
+            "REFERENCES": false
+          },
+          "any_column": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": false
+          }
+        }
+      },
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+      "triggers": []
+    }
+  ],
+  "incident_relations": [
+    {
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+      "oid": "18098067",
+      "rls": true,
+      "kind": "r",
+      "name": "public.ca_drift_incidents",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "number": 1,
+          "default": "gen_random_uuid()",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "detected_at",
+          "type": "timestamp with time zone",
+          "number": 2,
+          "default": "now()",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "deadline_at",
+          "type": "timestamp with time zone",
+          "number": 3,
+          "default": "(now() + '00:20:00'::interval)",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "classification",
+          "type": "text",
+          "number": 4,
+          "default": "'unknown'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "severity",
+          "type": "text",
+          "number": 5,
+          "default": "'critical'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "layer",
+          "type": "text",
+          "number": 6,
+          "default": "'unknown'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "status",
+          "type": "text",
+          "number": 7,
+          "default": "'open'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "source",
+          "type": "text",
+          "number": 8,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "dedupe_key",
+          "type": "text",
+          "number": 9,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "union_id",
+          "type": "uuid",
+          "number": 10,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "number": 11,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "entity_type",
+          "type": "text",
+          "number": 12,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "entity_id",
+          "type": "uuid",
+          "number": 13,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "table_id",
+          "type": "uuid",
+          "number": 14,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "tournament_id",
+          "type": "uuid",
+          "number": 15,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "hand_id",
+          "type": "uuid",
+          "number": 16,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "settlement_id",
+          "type": "text",
+          "number": 17,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "wallet_ids",
+          "type": "uuid[]",
+          "number": 18,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "transaction_ids",
+          "type": "uuid[]",
+          "number": 19,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "currency",
+          "type": "text",
+          "number": 20,
+          "default": "'club_chips'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "expected_amount",
+          "type": "numeric",
+          "number": 21,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "actual_amount",
+          "type": "numeric",
+          "number": 22,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "discrepancy_amount",
+          "type": "numeric",
+          "number": 23,
+          "default": "0",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "ledger_balanced",
+          "type": "boolean",
+          "number": 24,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "suspected_cause",
+          "type": "text",
+          "number": 25,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "auto_repair_status",
+          "type": "text",
+          "number": 26,
+          "default": "'pending'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "escalation_level",
+          "type": "integer",
+          "number": 27,
+          "default": "0",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "past_target",
+          "type": "boolean",
+          "number": 28,
+          "default": "false",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "occurrences",
+          "type": "integer",
+          "number": 29,
+          "default": "1",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "number": 30,
+          "default": "now()",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "acknowledged_by",
+          "type": "uuid",
+          "number": 31,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "acknowledged_at",
+          "type": "timestamp with time zone",
+          "number": 32,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "assigned_to",
+          "type": "uuid",
+          "number": 33,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "root_cause",
+          "type": "text",
+          "number": 34,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "correction_ref",
+          "type": "text",
+          "number": 35,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "resolution",
+          "type": "text",
+          "number": 36,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "resolved_by",
+          "type": "uuid",
+          "number": 37,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "number": 38,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "metadata",
+          "type": "jsonb",
+          "number": 39,
+          "default": "'{}'::jsonb",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "number": 40,
+          "default": "now()",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ca_drift_incidents_alert_id_idx",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX ca_drift_incidents_alert_id_idx ON public.ca_drift_incidents USING btree (((metadata ->> 'alert_id'::text))) WHERE (metadata ? 'alert_id'::text)"
+        },
+        {
+          "name": "ca_drift_incidents_alert_uuid_idx",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX ca_drift_incidents_alert_uuid_idx ON public.ca_drift_incidents USING btree ((((metadata ->> 'alert_id'::text))::uuid)) WHERE ((metadata ->> 'alert_id'::text) ~ '^[0-9a-fA-F-]{36}$'::text)"
+        },
+        {
+          "name": "ca_drift_incidents_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX ca_drift_incidents_pkey ON public.ca_drift_incidents USING btree (id)"
+        },
+        {
+          "name": "ix_ca_drift_incidents_club",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX ix_ca_drift_incidents_club ON public.ca_drift_incidents USING btree (club_id, detected_at DESC)"
+        },
+        {
+          "name": "ix_ca_drift_incidents_open",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX ix_ca_drift_incidents_open ON public.ca_drift_incidents USING btree (status, detected_at DESC) WHERE (status <> 'resolved'::text)"
+        },
+        {
+          "name": "ux_ca_drift_incidents_open_dedupe",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX ux_ca_drift_incidents_open_dedupe ON public.ca_drift_incidents USING btree (dedupe_key) WHERE (status <> 'resolved'::text)"
+        }
+      ],
+      "policies": [],
+      "triggers": [
+        {
+          "name": "a00_operational_source_intake",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER a00_operational_source_intake AFTER INSERT OR UPDATE ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION fn_capture_operational_source_event()",
+          "function_oid": "33305538",
+          "function_signature": "fn_capture_operational_source_event()"
+        },
+        {
+          "name": "trg_ca_incidents_stay_in_midway",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_ca_incidents_stay_in_midway BEFORE INSERT ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION fn_ca_incidents_stay_in_midway()",
+          "function_oid": "18513170",
+          "function_signature": "fn_ca_incidents_stay_in_midway()"
+        },
+        {
+          "name": "trg_ca_resolution_needs_a_cause",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_ca_resolution_needs_a_cause BEFORE UPDATE ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION fn_ca_resolution_needs_a_cause()",
+          "function_oid": "18626773",
+          "function_signature": "fn_ca_resolution_needs_a_cause()"
+        },
+        {
+          "name": "zz_ca_incident_resolution_reaches_the_alerts",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER zz_ca_incident_resolution_reaches_the_alerts AFTER UPDATE OF status ON public.ca_drift_incidents FOR EACH ROW EXECUTE FUNCTION fn_ca_incident_resolution_reaches_the_alerts()",
+          "function_oid": "22247104",
+          "function_signature": "fn_ca_incident_resolution_reaches_the_alerts()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ca_drift_incidents_auto_repair_status_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((auto_repair_status = ANY (ARRAY['pending'::text, 'running'::text, 'repaired'::text, 'manual_needed'::text, 'not_applicable'::text])))"
+        },
+        {
+          "name": "ca_drift_incidents_classification_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((classification = ANY (ARRAY['ledger_imbalance'::text, 'settlement_error'::text, 'duplicate_payment'::text, 'missing_payment'::text, 'projection_delay'::text, 'cache_mismatch'::text, 'reporting_mismatch'::text, 'delayed_event'::text, 'duplicate_event'::text, 'rounding_error'::text, 'incorrect_rake'::text, 'incorrect_weighted_rake'::text, 'incorrect_rakeback'::text, 'bbj_error'::text, 'treasury_error'::text, 'credit_line_error'::text, 'cross_club_posting'::text, 'cross_union_posting'::text, 'unauthorized_adjustment'::text, 'historical_migration'::text, 'unknown'::text])))"
+        },
+        {
+          "name": "ca_drift_incidents_layer_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((layer = ANY (ARRAY['ledger'::text, 'projection'::text, 'cache'::text, 'reporting'::text, 'settlement'::text, 'unknown'::text])))"
+        },
+        {
+          "name": "ca_drift_incidents_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "ca_drift_incidents_severity_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((severity = ANY (ARRAY['critical'::text, 'warning'::text, 'info'::text])))"
+        },
+        {
+          "name": "ca_drift_incidents_status_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'acknowledged'::text, 'reconciling'::text, 'resolved'::text])))"
+        }
+      ],
+      "effective_access": [
+        {
+          "role": "anon",
+          "delete": false,
+          "insert": false,
+          "select": false,
+          "update": false,
+          "trigger": false,
+          "truncate": false
+        },
+        {
+          "role": "authenticated",
+          "delete": false,
+          "insert": false,
+          "select": false,
+          "update": false,
+          "trigger": false,
+          "truncate": false
+        },
+        {
+          "role": "service_role",
+          "delete": true,
+          "insert": true,
+          "select": true,
+          "update": true,
+          "trigger": true,
+          "truncate": true
+        }
+      ]
+    },
+    {
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+      "oid": "18098105",
+      "rls": true,
+      "kind": "r",
+      "name": "public.ca_incident_events",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "bigint",
+          "number": 1,
+          "default": null,
+          "identity": "a",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "incident_id",
+          "type": "uuid",
+          "number": 2,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "at",
+          "type": "timestamp with time zone",
+          "number": 3,
+          "default": "now()",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "kind",
+          "type": "text",
+          "number": 4,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "actor",
+          "type": "uuid",
+          "number": 5,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "actor_label",
+          "type": "text",
+          "number": 6,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "detail",
+          "type": "jsonb",
+          "number": 7,
+          "default": "'{}'::jsonb",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ca_incident_events_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX ca_incident_events_pkey ON public.ca_incident_events USING btree (id)"
+        },
+        {
+          "name": "ix_ca_incident_events_incident",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX ix_ca_incident_events_incident ON public.ca_incident_events USING btree (incident_id, at)"
+        }
+      ],
+      "policies": [],
+      "triggers": [
+        {
+          "name": "trg_ca_incident_events_append_only",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_ca_incident_events_append_only BEFORE DELETE OR UPDATE ON public.ca_incident_events FOR EACH ROW EXECUTE FUNCTION fn_ca_incident_events_append_only()",
+          "function_oid": "18098122",
+          "function_signature": "fn_ca_incident_events_append_only()"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ca_incident_events_incident_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (incident_id) REFERENCES ca_drift_incidents(id)"
+        },
+        {
+          "name": "ca_incident_events_kind_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((kind = ANY (ARRAY['created'::text, 'recurred'::text, 'notified'::text, 'escalated'::text, 'status_change'::text, 'repair_action'::text, 'comment'::text, 'assigned'::text, 'acknowledged'::text, 'resolved'::text, 'reopened'::text, 'notify_failed'::text, 'notify_withheld'::text])))"
+        },
+        {
+          "name": "ca_incident_events_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "effective_access": [
+        {
+          "role": "anon",
+          "delete": false,
+          "insert": false,
+          "select": false,
+          "update": false,
+          "trigger": false,
+          "truncate": false
+        },
+        {
+          "role": "authenticated",
+          "delete": false,
+          "insert": false,
+          "select": false,
+          "update": false,
+          "trigger": false,
+          "truncate": false
+        },
+        {
+          "role": "service_role",
+          "delete": true,
+          "insert": true,
+          "select": true,
+          "update": true,
+          "trigger": true,
+          "truncate": true
+        }
+      ]
+    },
+    {
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+      "oid": "18098125",
+      "rls": true,
+      "kind": "r",
+      "name": "public.ca_incident_recipients",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "number": 1,
+          "default": "gen_random_uuid()",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "scope",
+          "type": "text",
+          "number": 2,
+          "default": "'platform'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "scope_id",
+          "type": "uuid",
+          "number": 3,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "user_id",
+          "type": "uuid",
+          "number": 4,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "min_severity",
+          "type": "text",
+          "number": 5,
+          "default": "'warning'::text",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "senior",
+          "type": "boolean",
+          "number": 6,
+          "default": "false",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "active",
+          "type": "boolean",
+          "number": 7,
+          "default": "true",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "number": 8,
+          "default": "now()",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": false,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ca_incident_recipients_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX ca_incident_recipients_pkey ON public.ca_incident_recipients USING btree (id)"
+        },
+        {
+          "name": "ca_incident_recipients_scope_scope_id_user_id_key",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX ca_incident_recipients_scope_scope_id_user_id_key ON public.ca_incident_recipients USING btree (scope, scope_id, user_id)"
+        }
+      ],
+      "policies": [],
+      "triggers": [],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ca_incident_recipients_min_severity_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((min_severity = ANY (ARRAY['critical'::text, 'warning'::text, 'info'::text])))"
+        },
+        {
+          "name": "ca_incident_recipients_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "ca_incident_recipients_scope_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((scope = ANY (ARRAY['platform'::text, 'financial_ops'::text, 'technical'::text, 'union'::text, 'club'::text])))"
+        },
+        {
+          "name": "ca_incident_recipients_scope_scope_id_user_id_key",
+          "type": "u",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (scope, scope_id, user_id)"
+        }
+      ],
+      "effective_access": [
+        {
+          "role": "anon",
+          "delete": false,
+          "insert": false,
+          "select": false,
+          "update": false,
+          "trigger": false,
+          "truncate": false
+        },
+        {
+          "role": "authenticated",
+          "delete": false,
+          "insert": false,
+          "select": false,
+          "update": false,
+          "trigger": false,
+          "truncate": false
+        },
+        {
+          "role": "service_role",
+          "delete": true,
+          "insert": true,
+          "select": true,
+          "update": true,
+          "trigger": true,
+          "truncate": true
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=rxt/postgres",
+        "authenticated=rxt/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "oid": "16310778",
+      "rls": true,
+      "kind": "r",
+      "name": "public.ca_ledger_write_failures",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "bigint",
+          "number": 1,
+          "default": "nextval('ca_ledger_write_failures_id_seq'::regclass)",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "number": 2,
+          "default": "now()",
+          "identity": "",
+          "not_null": true,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "number": 3,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "user_id",
+          "type": "uuid",
+          "number": 4,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "delta",
+          "type": "numeric",
+          "number": 5,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "sqlstate",
+          "type": "text",
+          "number": 6,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        },
+        {
+          "acl": null,
+          "name": "message",
+          "type": "text",
+          "number": 7,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": "",
+          "effective_access": [
+            {
+              "role": "anon",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "authenticated",
+              "insert": false,
+              "select": true,
+              "update": false
+            },
+            {
+              "role": "service_role",
+              "insert": true,
+              "select": true,
+              "update": true
+            }
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ca_ledger_write_failures_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX ca_ledger_write_failures_pkey ON public.ca_ledger_write_failures USING btree (id)"
+        }
+      ],
+      "policies": [],
+      "triggers": [],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ca_ledger_write_failures_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "effective_access": [
+        {
+          "role": "anon",
+          "delete": false,
+          "insert": false,
+          "select": true,
+          "update": false,
+          "trigger": true,
+          "truncate": false
+        },
+        {
+          "role": "authenticated",
+          "delete": false,
+          "insert": false,
+          "select": true,
+          "update": false,
+          "trigger": true,
+          "truncate": false
+        },
+        {
+          "role": "service_role",
+          "delete": true,
+          "insert": true,
+          "select": true,
+          "update": true,
+          "trigger": true,
+          "truncate": true
+        }
+      ]
+    }
+  ],
+  "default_acl": [
+    {
+      "acl": [
+        "anon=rwU/postgres",
+        "authenticated=rwU/postgres",
+        "postgres=rwU/postgres",
+        "service_role=rwU/postgres"
+      ],
+      "owner": "postgres",
+      "schema": "public",
+      "object_type": "S"
+    },
+    {
+      "acl": [
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "owner": "postgres",
+      "schema": "public",
+      "object_type": "f"
+    },
+    {
+      "acl": [
+        "anon=arwdxtm/postgres",
+        "authenticated=arwdxtm/postgres",
+        "postgres=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "owner": "postgres",
+      "schema": "public",
+      "object_type": "r"
+    },
+    {
+      "acl": [
+        "anon=rwU/supabase_admin",
+        "authenticated=rwU/supabase_admin",
+        "postgres=rwU/supabase_admin",
+        "service_role=rwU/supabase_admin"
+      ],
+      "owner": "supabase_admin",
+      "schema": "public",
+      "object_type": "S"
+    },
+    {
+      "acl": [
+        "anon=X/supabase_admin",
+        "authenticated=X/supabase_admin",
+        "postgres=X/supabase_admin",
+        "service_role=X/supabase_admin"
+      ],
+      "owner": "supabase_admin",
+      "schema": "public",
+      "object_type": "f"
+    },
+    {
+      "acl": [
+        "anon=arwdDxtm/supabase_admin",
+        "authenticated=arwdDxtm/supabase_admin",
+        "postgres=arwdDxtm/supabase_admin",
+        "service_role=arwdDxtm/supabase_admin"
+      ],
+      "owner": "supabase_admin",
+      "schema": "public",
+      "object_type": "r"
+    }
+  ]
+}

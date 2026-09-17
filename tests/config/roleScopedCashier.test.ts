@@ -28,7 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceSqlStatement, sliceMethod } from '../helpers/sourceWindow';
+import { sliceSqlStatement } from '../helpers/sourceWindow';
 
 const ROOT = resolve(__dirname, '../..');
 const SQL = readFileSync(
@@ -411,9 +411,9 @@ describe('the client asks the right server', () => {
 
   it('every cashout leg goes through its own RPC', () => {
     for (const rpc of [
-      'fn_cashout_request',
-      'fn_cashout_approve',
-      'fn_cashout_release',
+      'fn_cashout_request_v2',
+      'fn_cashout_approve_v2',
+      'fn_cashout_release_v2',
       'fn_cashout_queue',
       'fn_agent_wallet_send',
       'fn_agent_wallet_claim_back',
@@ -438,20 +438,17 @@ describe('the client asks the right server', () => {
     //
     // So what matters now is that the client calls the RPC that owns the rule,
     // and does NOT send its own push on top.
-    for (const rpc of ['fn_cashout_request', 'fn_cashout_approve', 'fn_cashout_release']) {
+    for (const rpc of ['fn_cashout_request_v2', 'fn_cashout_approve_v2', 'fn_cashout_release_v2']) {
       expect(SERVICE).toContain(`'${rpc}'`);
     }
     expect(SERVICE).not.toContain('pushNotificationService.sendToUser');
   });
 
-  it('pushQuietly stays a no-op that cannot be repointed at a dead transport', () => {
-    // The old assertion here was `expect(push).toContain('catch')` -- a proxy
-    // for "a failed push can never fail the money that already moved". The
-    // stronger version of that promise is that there is no push here at all to
-    // fail: the shim is empty, and the RPC's own notification is inside the
-    // transaction that moved the chips.
-    const push = sliceMethod(SERVICE, 'async function pushQuietly');
-    expect(push).not.toContain('sendToUser');
-    expect(push).not.toContain('await');
+  it('has no client push shim or transport alongside the server-owned invoice notification', () => {
+    const code = SERVICE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    expect(code).not.toContain('pushQuietly');
+    expect(code).not.toContain('PushNotificationService');
+    expect(code).not.toContain('sendToUser');
+    expect(code).not.toMatch(/\.from\(['"](?:notifications|push_outbox)['"]\)/);
   });
 });

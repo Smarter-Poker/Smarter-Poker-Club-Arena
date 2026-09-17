@@ -1,0 +1,191 @@
+{
+  "project": "kuklfnapbkmacvwxktbh",
+  "installed_migration": "20260917062322",
+  "method": "Fresh REPEATABLE READ READ ONLY catalog query with10s statement and2s lock timeout;ROLLBACK;no business calls",
+  "functions": [
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "operational_source_intake.immutable_snapshot()",
+      "full_definition_md5": "16342e691036f7088507015405dfc488"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "operational_source_intake.mapping(text, jsonb)",
+      "full_definition_md5": "6ee2f916c376e40a50b2a448d622b746"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "operational_source_intake.preserve(text, jsonb, text)",
+      "full_definition_md5": "d65ad45efff48ca9bc43df88b93581c6"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "operational_source_intake.receipt_row(operational_alert_events, text)",
+      "full_definition_md5": "f632abdd64e5ba45a3d74298ef1e10a3"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "operational_source_intake.record_engine(engine_alerts, text)",
+      "full_definition_md5": "7fcfc23cb94c515e12a3fc55ac334182"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "operational_source_intake.record_strict(text, jsonb, text, uuid)",
+      "full_definition_md5": "f544c3bb7508e7c74aff95445ddd19c5"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "operational_source_intake.reference(uuid)",
+      "full_definition_md5": "16ef8a75f57ea9944a882c5ed1450c86"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "operational_source_intake.try_delivery(uuid)",
+      "full_definition_md5": "c2188e9d92e925966ebdccff40804eaf"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "public.fn_capture_operational_source_event()",
+      "full_definition_md5": "3031e327bd104873df31362bd21ccafe"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "public.fn_read_operational_source_snapshot(bigint)",
+      "full_definition_md5": "38d12eff5dbb573dedccc92acffb252f"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "public.fn_record_engine_alerts(jsonb)",
+      "full_definition_md5": "3b97b07170b81947137ee2adfc268717"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "public.fn_record_operational_alert(text, text, text, text, text, jsonb)",
+      "full_definition_md5": "36601e205494e8768f5a1dce09f4a186"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "signature": "public.fn_retry_operational_source_snapshot(uuid)",
+      "full_definition_md5": "935dca569d687dd45eda3b8cb1b044ce"
+    }
+  ],
+  "function_successor_readback": {
+    "signature": "operational_source_intake.receipt_row(operational_alert_events, text)",
+    "observed_at": "2026-09-17T07:29:59.347153+00:00",
+    "full_definition_md5": "f632abdd64e5ba45a3d74298ef1e10a3",
+    "body_md5": "851d3ea26b4a48123986c7853a92ef2b",
+    "provenance": "direct-intake-receipt-row-successor-provenance.json",
+    "scope": "Only this function succeeds the original installation catalog; other 12 function guards retain the captured authority."
+  }
+}

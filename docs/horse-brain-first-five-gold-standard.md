@@ -180,17 +180,17 @@ The swarm also exposed truncated cash equity populations: ordinary postflop samp
 
 ## Mandatory gold-standard gate set for every phase
 
-| Gate                       | Required deliverable                                                                                       | Failure condition                                                               |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| G1 Domain                  | Explicit production variant/configuration/street/action/depth/seat/pot/rake/objective matrix               | Ordinary supported cases hidden behind generic fallback                         |
-| G2 Inputs                  | Canonical schema, public/private boundary, source freshness and relational validation                      | Inferred or stale tags substituted for authoritative game state                 |
-| G3 Computation             | Phase-specific calculation, distributions/EV meaning, contrasted inputs and outputs                        | Only labels, counters, wrappers or copied thresholds                            |
-| G4 Immutable authority     | Policy/data versions, checksums, detached immutable stores, atomic refresh, lifecycle                      | Mutable data retains an old trust mark; malformed JSON crashes validation       |
-| G5 Reachability            | Producer→loader→real worker→policy→utility/safety→executor→reader map                                      | Import-only, writer-only, dormant or diagnostic path called active strategy     |
-| G6 Outcome receipts        | Eligible/evaluated/changed/retained/miss/error/timeout/rejected/coerced/accepted states                    | Decision count substituted for accepted-action evidence                         |
-| G7 Independent correctness | Negative, boundary, differential/oracle, mutation and consumer tests                                       | Production algorithm used as its own oracle; failed cases omitted               |
-| G8 Performance/replay      | Frozen populations/seeds/work budgets; bounded latency and restart replay where required                   | Faster result achieved by silently reducing useful work or changing seed inputs |
-| G9 Learning/promotion      | Immutable source windows, untouched holdouts, prespecified metric, rollback                                | Observational tag or low sample count becomes causal permission                 |
+| Gate                       | Required deliverable                                                                                        | Failure condition                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| G1 Domain                  | Explicit production variant/configuration/street/action/depth/seat/pot/rake/objective matrix                | Ordinary supported cases hidden behind generic fallback                         |
+| G2 Inputs                  | Canonical schema, public/private boundary, source freshness and relational validation                       | Inferred or stale tags substituted for authoritative game state                 |
+| G3 Computation             | Phase-specific calculation, distributions/EV meaning, contrasted inputs and outputs                         | Only labels, counters, wrappers or copied thresholds                            |
+| G4 Immutable authority     | Policy/data versions, checksums, detached immutable stores, atomic refresh, lifecycle                       | Mutable data retains an old trust mark; malformed JSON crashes validation       |
+| G5 Reachability            | Producer→loader→real worker→policy→utility/safety→executor→reader map                                       | Import-only, writer-only, dormant or diagnostic path called active strategy     |
+| G6 Outcome receipts        | Eligible/evaluated/changed/retained/miss/error/timeout/rejected/coerced/accepted states                     | Decision count substituted for accepted-action evidence                         |
+| G7 Independent correctness | Negative, boundary, differential/oracle, mutation and consumer tests                                        | Production algorithm used as its own oracle; failed cases omitted               |
+| G8 Performance/replay      | Frozen populations/seeds/work budgets; bounded latency and restart replay where required                    | Faster result achieved by silently reducing useful work or changing seed inputs |
+| G9 Learning/promotion      | Immutable source windows, untouched holdouts, prespecified metric, rollback                                 | Observational tag or low sample count becomes causal permission                 |
 | G10 Publication/use        | Reviewed source and artifact identity, protected provider publication, served identity and natural receipts | Local pass, open change, old release or empty dataset called complete           |
 
 For each gate record **verified now**, **historical only**, **implemented but unverified**, **defective**, **unavailable external input**, or **not applicable with reason**. Do not average these into a completion percentage. Phase-specific strategy depth, critical economic-state tests and predefined promotion criteria from Phase 6/7 remain mandatory.

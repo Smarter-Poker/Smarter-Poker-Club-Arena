@@ -35,29 +35,51 @@ const SRC = fs.readFileSync(
 const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('the rakeback settlement watermark', () => {
-  const settle = sliceMethod(code, 'private async _runSettlementInner(');
   it('accepts canonical source receipts before checkpointing the page', () => {
+    const settle = sliceMethod(code, 'private async _runSettlementInner(');
     expect(settle).toContain('readCashSourceBatch(data, ids)');
     expect(settle.indexOf('readCashSourceBatch(data, ids)')).toBeLessThan(
       settle.indexOf('saveHighWaterMark(nextCursor)')
     );
-    expect(settle).toContain("receipt.status !== 'accrued'");
-    expect(settle).toContain("return 'halted'");
-  });
-  it('has no second legacy stats or client period writer', () => {
     expect(settle).not.toContain('fn_apply_rakeback_player_stats_batch');
-    expect(settle).not.toContain('fn_rakeback_recompute_periods');
     expect(settle).not.toContain('sharesForRakeRecord');
-    expect(settle).not.toContain('fn_retry_cash_accounting_sources');
   });
   it('updates the in-memory cursor only after the database accepted its checkpoint', () => {
     const save = sliceMethod(code, 'private async saveHighWaterMark(');
+    const settle = sliceMethod(code, 'private async _runSettlementInner(');
+    expect(save.indexOf('if (error) throw error')).toBeGreaterThan(-1);
     expect(save.indexOf('if (error) throw error')).toBeLessThan(
       save.indexOf('this.cursor = cursor')
     );
     expect(settle).toContain("if (!(await this.saveHighWaterMark(nextCursor))) return 'halted'");
   });
-  it('retains the real halted cycle outcome', () => {
+  it('holds the cursor when a period recompute failed', () => {
+    /* There are TWO cursor advances in this method and only one of them is a
+       bug. The first sits in the `buckets.size === 0` branch -- no eligible
+       player-credits, so there is nothing to recompute and nothing that can
+       fail, and advancing there is correct. The one that matters is the LAST
+       one, after the recompute loop, which is why this uses lastIndexOf. */
+    const inner = sliceMethod(code, 'private async _runSettlementInner(');
+    const guard = inner.indexOf('if (failures > 0)');
+    const finalAdvance = inner.lastIndexOf('this.saveHighWaterMark(nextCursor)');
+    expect(guard, 'no failures > 0 guard before the watermark advances').toBeGreaterThan(-1);
+    expect(finalAdvance).toBeGreaterThan(-1);
+    expect(
+      guard,
+      'the watermark advances past a failed recompute - those rake_records are then never settled'
+    ).toBeLessThan(finalAdvance);
+  });
+
+  it("returns 'halted' on a failed recompute, like the two read-failure sites", () => {
+    expect(code).toMatch(/if \(failures > 0\)[\s\S]{0,900}?return 'halted';/);
+  });
+
+  it('says so out loud rather than only counting it', () => {
+    expect(code).toMatch(/period_recompute_failures_hold_cursor/);
+  });
+
+  it("still has 'halted' wired as a real cycle outcome", () => {
+    // If this type ever loses 'halted', the guard above becomes unreachable.
     expect(SRC).toMatch(/type CycleResult = 'idle' \| 'more' \| 'halted'/);
   });
 });

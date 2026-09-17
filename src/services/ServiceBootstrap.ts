@@ -10,7 +10,6 @@
 import { masterBus } from '../core/MasterBus';
 import { soundService } from './SoundService';
 import { OfflineQueueService } from './OfflineQueueService';
-import { SettlementCronService } from './SettlementCronService';
 import { FinancialCronService } from './FinancialCronService';
 
 export interface BootResult {
@@ -21,24 +20,19 @@ export interface BootResult {
   timestamp: string;
 }
 
-let booted = false;
+let bootResult: Readonly<BootResult> | null = null;
 
 /**
  * Initialize all engine services in the correct order.
  * Idempotent — safe to call multiple times (only runs once).
  */
-export async function bootServices(options?: {
+export async function bootServices(_options?: {
+  /** Retired compatibility input; browser startup never starts accounting. */
   enableSettlementCron?: boolean;
 }): Promise<BootResult> {
-  if (booted) {
+  if (bootResult) {
     console.debug('[ServiceBootstrap] Already booted - skipping');
-    return {
-      offlineQueue: true,
-      settlementCron: true,
-      autoRebuy: true,
-      financialCron: true,
-      timestamp: new Date().toISOString(),
-    };
+    return { ...bootResult };
   }
 
   const result: BootResult = {
@@ -84,16 +78,9 @@ export async function bootServices(options?: {
     console.debug('[ServiceBootstrap] ✗ OfflineQueueService failed:', err);
   }
 
-  // 2. Settlement Cron — only for admin/owner roles
-  if (options?.enableSettlementCron === true) {
-    try {
-      SettlementCronService.start({ checkIntervalMs: 60 * 60 * 1000 });
-      result.settlementCron = true;
-      console.debug('[ServiceBootstrap] ✓ SettlementCronService started');
-    } catch (err: unknown) {
-      console.debug('[ServiceBootstrap] ✗ SettlementCronService failed:', err);
-    }
-  }
+  // 2. Weekly accounting belongs to the canonical server coordinator. The
+  // compatibility field reports only that no browser accounting timer started;
+  // it is not an observation of server scheduling or financial completion.
 
   // 3. Horse auto-rebuy / fleet management is SERVER-AUTHORITATIVE (Hetzner engine).
   //    The Hetzner engine fully owns horse funding and population:
@@ -138,7 +125,7 @@ export async function bootServices(options?: {
       console.debug('[ServiceBootstrap] ✗ Engine auth-token cache warm skipped:', err);
     });
 
-  booted = true;
+  bootResult = Object.freeze({ ...result });
 
   // Emit ready event so UI can react
   masterBus.emit('SERVICES_READY', {
@@ -160,8 +147,7 @@ export async function bootServices(options?: {
  */
 export function shutdownServices(): void {
   OfflineQueueService.dispose();
-  SettlementCronService.stop();
   FinancialCronService.stop();
-  booted = false;
+  bootResult = null;
   console.debug('[ServiceBootstrap] Services shut down');
 }

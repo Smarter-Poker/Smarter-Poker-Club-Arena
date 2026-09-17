@@ -1676,6 +1676,10 @@ class MasterBusCore {
     // When auth state changes, sync user data across stores
     this.subscribe('AUTH_STATE_CHANGED', (event) => {
       const { userId, isAuthenticated } = event.payload;
+      // Retire financial reads on every account event, including A→B→A before
+      // React renders. Register here, after bus initialization, not in a store
+      // that this module imports.
+      useUnionStore.getState().reset();
       realtimeChannelService.handleIdentityChange(isAuthenticated ? userId : null);
 
       if (isAuthenticated && userId) {

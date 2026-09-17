@@ -247,7 +247,8 @@ describe('the client asks the ledger', () => {
   });
 
   it('the summary is asked for the club being looked at', () => {
-    expect(DASHBOARD).toMatch(/p_agent_id: user\.id, p_club_id: clubId \?\? null/);
+    expect(DASHBOARD).toMatch(/p_agent_id: user\.id, p_club_id: canonicalClubId/);
+    expect(DASHBOARD).toMatch(/await resolveClubUUIDStrict\(clubId\)/);
   });
 
   it('sub-agent earnings come from the ledger, not the dropped column', () => {

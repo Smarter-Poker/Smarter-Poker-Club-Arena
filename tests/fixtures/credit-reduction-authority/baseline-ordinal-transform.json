@@ -1,0 +1,30 @@
+{
+  "status": "SOURCE_TRANSFORMATION_ONLY_UNRUN",
+  "input_path": "tests/fixtures/full-weekly-accounting/schema.sql",
+  "input_sha256": "db0f5a5ea4a884b3715620c925ae7bb19b1a53c9c6716e97b769f42712674fd9",
+  "input_bytes": 2709755,
+  "output_name": "qualification-credit-baseline.sql",
+  "output_sha256": "138a9f96bbea3404125fb6530b4b8b565d1ebcf19a306a6974964cf5b446c696",
+  "output_bytes": 2709883,
+  "match_count": 1,
+  "before": "CREATE TABLE \"public\".\"agents\"(\"id\" uuid NOT NULL,\n\"user_id\" uuid NOT NULL,\n\"club_id\" uuid NOT NULL,\n\"membership_id\" uuid,\n\"role\" text NOT NULL,\n\"status\" text NOT NULL,\n\"parent_agent_id\" uuid,\n\"commission_rate\" numeric(5,4) NOT NULL,\n\"player_rakeback_rate\" numeric(5,4) NOT NULL,\n\"credit_limit\" numeric(15,2) NOT NULL,\n\"credit_used\" numeric(15,2) NOT NULL,\n\"is_prepaid\" boolean NOT NULL,\n\"business_balance\" numeric(15,2) NOT NULL,\n\"player_balance\" numeric(15,2) NOT NULL,\n\"promo_balance\" numeric(15,2) NOT NULL,\n\"total_players\" integer NOT NULL,\n\"active_player_count\" integer NOT NULL,\n\"sub_agent_count\" integer NOT NULL,\n\"weekly_rake_generated\" numeric(15,2) NOT NULL,\n\"lifetime_earnings\" numeric(15,2) NOT NULL,\n\"joined_at\" timestamp with time zone NOT NULL,\n\"last_active_at\" timestamp with time zone,\n\"created_at\" timestamp with time zone NOT NULL,\n\"updated_at\" timestamp with time zone NOT NULL,\n\"auto_rakeback_enabled\" boolean,\n\"rakeback_percentage\" numeric(5,4),\n\"agent_wallet_balance\" numeric(18,2),\n\"player_wallet_balance\" numeric(18,4),\n\"promo_wallet_balance\" numeric(18,2),\n\"lifetime_rake_generated\" numeric(18,4));",
+  "after": "CREATE TABLE \"public\".\"agents\"(\"id\" uuid NOT NULL,\n\"user_id\" uuid NOT NULL,\n\"club_id\" uuid NOT NULL,\n\"membership_id\" uuid,\n\"role\" text NOT NULL,\n\"status\" text NOT NULL,\n\"parent_agent_id\" uuid,\n\"commission_rate\" numeric(5,4) NOT NULL,\n\"player_rakeback_rate\" numeric(5,4) NOT NULL,\n\"credit_limit\" numeric(15,2) NOT NULL,\n\"credit_used\" numeric(15,2) NOT NULL,\n\"is_prepaid\" boolean NOT NULL,\n\"business_balance\" numeric(15,2) NOT NULL,\n\"player_balance\" numeric(15,2) NOT NULL,\n\"promo_balance\" numeric(15,2) NOT NULL,\n\"total_players\" integer NOT NULL,\n\"active_player_count\" integer NOT NULL,\n\"sub_agent_count\" integer NOT NULL,\n\"weekly_rake_generated\" numeric(15,2) NOT NULL,\n\"lifetime_earnings\" numeric(15,2) NOT NULL,\n\"joined_at\" timestamp with time zone NOT NULL,\n\"last_active_at\" timestamp with time zone,\n\"created_at\" timestamp with time zone NOT NULL,\n\"updated_at\" timestamp with time zone NOT NULL,\n\"auto_rakeback_enabled\" boolean,\n\"rakeback_percentage\" numeric(5,4),\n\"__fixture_credit_dropped_ordinal_27\" integer,\n\"agent_wallet_balance\" numeric(18,2),\n\"player_wallet_balance\" numeric(18,4),\n\"promo_wallet_balance\" numeric(18,2),\n\"lifetime_rake_generated\" numeric(18,4));\nALTER TABLE \"public\".\"agents\" DROP COLUMN \"__fixture_credit_dropped_ordinal_27\";",
+  "capture_path": "supabase/accounting/credit-reduction-v1/captured-credit-catalog.json",
+  "capture_sha256": "e993129dcb12261ea7d5bd350f0546415814c17346fd27f51b1ba9efb14854bc",
+  "required_observed_live_ordinals": {
+    "agent_wallet_balance": 28,
+    "player_wallet_balance": 29,
+    "promo_wallet_balance": 30,
+    "lifetime_rake_generated": 31
+  },
+  "unchanged_live_ordinals": [
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+  ],
+  "scope": "One CREATE TABLE literal only. A fixture-only placeholder reserves dropped ordinal27 and is immediately dropped before all defaults/constraints/indexes/triggers; original schema remains untouched. No pg_catalog mutation. This reconstructs observed live attnum/conkey positions, not the unobserved removed column name/type/storage history.",
+  "other_captured_tables_with_no_ordinal_gaps": {
+    "credit_assignments": 7,
+    "credit_invoices": 12,
+    "credit_payments": 9,
+    "wallets": 7
+  }
+}

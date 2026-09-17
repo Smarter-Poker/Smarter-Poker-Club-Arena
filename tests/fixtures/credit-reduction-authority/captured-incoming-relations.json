@@ -1,0 +1,1058 @@
+[
+  {
+    "snapshot": {
+      "tables": [
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=rxt/postgres",
+            "authenticated=rxt/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "kind": "r",
+          "name": "commission_rate_audit",
+          "owner": "postgres",
+          "exists": true,
+          "columns": [
+            {
+              "acl": null,
+              "name": "id",
+              "type": "uuid",
+              "default": "gen_random_uuid()",
+              "identity": "",
+              "not_null": true,
+              "position": 1,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "agent_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 2,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "changed_by",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 3,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "old_rate",
+              "type": "numeric",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 4,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "numeric",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "new_rate",
+              "type": "numeric",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 5,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "numeric",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "rate_type",
+              "type": "text",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 6,
+              "collation": "\"default\"",
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "text",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "club_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": false,
+              "position": 7,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "created_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "identity": "",
+              "not_null": true,
+              "position": 8,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "timestamptz",
+              "type_schema": "pg_catalog"
+            }
+          ],
+          "indexes": [
+            {
+              "name": "commission_rate_audit_pkey",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": true,
+              "definition": "CREATE UNIQUE INDEX commission_rate_audit_pkey ON public.commission_rate_audit USING btree (id)"
+            },
+            {
+              "name": "idx_commission_rate_audit_changed_by",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "definition": "CREATE INDEX idx_commission_rate_audit_changed_by ON public.commission_rate_audit USING btree (changed_by)"
+            },
+            {
+              "name": "idx_commission_rate_audit_club_id_fk",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "definition": "CREATE INDEX idx_commission_rate_audit_club_id_fk ON public.commission_rate_audit USING btree (club_id)"
+            }
+          ],
+          "options": null,
+          "parents": null,
+          "policies": [
+            {
+              "name": "commission_rate_audit_service_role_all",
+              "roles": ["service_role"],
+              "using": "true",
+              "command": "*",
+              "permissive": true,
+              "with_check": "true"
+            }
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16239009",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "16239006",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_16239009\" AFTER INSERT ON commission_rate_audit FROM profiles NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16239010",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "16239006",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_16239010\" AFTER UPDATE ON commission_rate_audit FROM profiles NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5206805",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5206802",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5206805\" AFTER INSERT ON commission_rate_audit FROM agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5206806",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5206802",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5206806\" AFTER UPDATE ON commission_rate_audit FROM agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5206815",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5206812",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5206815\" AFTER INSERT ON commission_rate_audit FROM clubs NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5206816",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5206812",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5206816\" AFTER UPDATE ON commission_rate_audit FROM clubs NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            }
+          ],
+          "force_rls": false,
+          "sequences": null,
+          "partitions": null,
+          "constraints": [
+            {
+              "name": "commission_rate_audit_agent_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
+              "initially_deferred": false,
+              "referenced_relation": "agents"
+            },
+            {
+              "name": "commission_rate_audit_changed_by_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (changed_by) REFERENCES profiles(id) ON DELETE SET NULL",
+              "initially_deferred": false,
+              "referenced_relation": "profiles"
+            },
+            {
+              "name": "commission_rate_audit_club_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE SET NULL",
+              "initially_deferred": false,
+              "referenced_relation": "clubs"
+            },
+            {
+              "name": "commission_rate_audit_pkey",
+              "type": "p",
+              "validated": true,
+              "deferrable": false,
+              "definition": "PRIMARY KEY (id)",
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "commission_rate_audit_rate_type_check",
+              "type": "c",
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (rate_type = ANY (ARRAY['rakeback'::text, 'commission'::text, 'sub_agent_split'::text, 'bonus_pct'::text]))",
+              "initially_deferred": false,
+              "referenced_relation": null
+            }
+          ],
+          "persistence": "p"
+        },
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=rxt/postgres",
+            "authenticated=rxt/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "kind": "r",
+          "name": "player_agent_assignments",
+          "owner": "postgres",
+          "exists": true,
+          "columns": [
+            {
+              "acl": null,
+              "name": "id",
+              "type": "uuid",
+              "default": "gen_random_uuid()",
+              "identity": "",
+              "not_null": true,
+              "position": 1,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "player_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 2,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "club_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 3,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "agent_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": false,
+              "position": 4,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "sub_agent_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": false,
+              "position": 5,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "assigned_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "identity": "",
+              "not_null": true,
+              "position": 6,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "timestamptz",
+              "type_schema": "pg_catalog"
+            }
+          ],
+          "indexes": [
+            {
+              "name": "idx_player_agent_assignments_club_id_fk",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "definition": "CREATE INDEX idx_player_agent_assignments_club_id_fk ON public.player_agent_assignments USING btree (club_id)"
+            },
+            {
+              "name": "player_agent_assignments_pkey",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": true,
+              "definition": "CREATE UNIQUE INDEX player_agent_assignments_pkey ON public.player_agent_assignments USING btree (id)"
+            },
+            {
+              "name": "player_agent_assignments_player_id_club_id_key",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": false,
+              "definition": "CREATE UNIQUE INDEX player_agent_assignments_player_id_club_id_key ON public.player_agent_assignments USING btree (player_id, club_id)"
+            }
+          ],
+          "options": null,
+          "parents": null,
+          "policies": [
+            {
+              "name": "service_role full access",
+              "roles": ["service_role"],
+              "using": "true",
+              "command": "*",
+              "permissive": true,
+              "with_check": "true"
+            },
+            {
+              "name": "union_overseer_read",
+              "roles": ["authenticated"],
+              "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
+              "command": "r",
+              "permissive": true,
+              "with_check": null
+            }
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_5192189",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5192186",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192189\" AFTER INSERT ON player_agent_assignments FROM auth.users NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192190",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5192186",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192190\" AFTER UPDATE ON player_agent_assignments FROM auth.users NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192194",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5192191",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192194\" AFTER INSERT ON player_agent_assignments FROM clubs NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192195",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5192191",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192195\" AFTER UPDATE ON player_agent_assignments FROM clubs NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192199",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5192196",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192199\" AFTER INSERT ON player_agent_assignments FROM agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192200",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5192196",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192200\" AFTER UPDATE ON player_agent_assignments FROM agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192204",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5192201",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192204\" AFTER INSERT ON player_agent_assignments FROM sub_agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192205",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5192201",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192205\" AFTER UPDATE ON player_agent_assignments FROM sub_agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "poker_arena_no_hierarchy",
+              "enabled": "O",
+              "function": "fn_poker_reject_diamond_hierarchy()",
+              "internal": false,
+              "constraint": null,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON player_agent_assignments FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()",
+              "function_oid": "24566571",
+              "initially_deferred": false
+            }
+          ],
+          "force_rls": false,
+          "sequences": null,
+          "partitions": null,
+          "constraints": [
+            {
+              "name": "player_agent_assignments_agent_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL",
+              "initially_deferred": false,
+              "referenced_relation": "agents"
+            },
+            {
+              "name": "player_agent_assignments_club_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+              "initially_deferred": false,
+              "referenced_relation": "clubs"
+            },
+            {
+              "name": "player_agent_assignments_pkey",
+              "type": "p",
+              "validated": true,
+              "deferrable": false,
+              "definition": "PRIMARY KEY (id)",
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "player_agent_assignments_player_id_club_id_key",
+              "type": "u",
+              "validated": true,
+              "deferrable": false,
+              "definition": "UNIQUE (player_id, club_id)",
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "player_agent_assignments_player_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (player_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+              "initially_deferred": false,
+              "referenced_relation": "auth.users"
+            },
+            {
+              "name": "player_agent_assignments_sub_agent_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (sub_agent_id) REFERENCES sub_agents(id) ON DELETE SET NULL",
+              "initially_deferred": false,
+              "referenced_relation": "sub_agents"
+            },
+            {
+              "name": "player_assigned_exactly_one",
+              "type": "c",
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (agent_id IS NOT NULL AND sub_agent_id IS NULL OR agent_id IS NULL AND sub_agent_id IS NOT NULL)",
+              "initially_deferred": false,
+              "referenced_relation": null
+            }
+          ],
+          "persistence": "p"
+        },
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=rxt/postgres",
+            "authenticated=rxt/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "kind": "r",
+          "name": "sub_agents",
+          "owner": "postgres",
+          "exists": true,
+          "columns": [
+            {
+              "acl": null,
+              "name": "id",
+              "type": "uuid",
+              "default": "gen_random_uuid()",
+              "identity": "",
+              "not_null": true,
+              "position": 1,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "user_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 2,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "parent_agent_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 3,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "club_id",
+              "type": "uuid",
+              "default": null,
+              "identity": "",
+              "not_null": true,
+              "position": 4,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "uuid",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "commission_pct",
+              "type": "numeric(5,2)",
+              "default": "0",
+              "identity": "",
+              "not_null": true,
+              "position": 5,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "numeric",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "status",
+              "type": "text",
+              "default": "'active'::text",
+              "identity": "",
+              "not_null": true,
+              "position": 6,
+              "collation": "\"default\"",
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "text",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "suspended_reason",
+              "type": "text",
+              "default": null,
+              "identity": "",
+              "not_null": false,
+              "position": 7,
+              "collation": "\"default\"",
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "text",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "suspended_at",
+              "type": "timestamp with time zone",
+              "default": null,
+              "identity": "",
+              "not_null": false,
+              "position": 8,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "timestamptz",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "total_players_recruited",
+              "type": "integer",
+              "default": "0",
+              "identity": "",
+              "not_null": true,
+              "position": 9,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "int4",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "total_rake_generated",
+              "type": "numeric(20,4)",
+              "default": "0",
+              "identity": "",
+              "not_null": true,
+              "position": 10,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "numeric",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "total_commission_paid",
+              "type": "numeric(20,4)",
+              "default": "0",
+              "identity": "",
+              "not_null": true,
+              "position": 11,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "numeric",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "created_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "identity": "",
+              "not_null": true,
+              "position": 12,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "timestamptz",
+              "type_schema": "pg_catalog"
+            },
+            {
+              "acl": null,
+              "name": "updated_at",
+              "type": "timestamp with time zone",
+              "default": "now()",
+              "identity": "",
+              "not_null": true,
+              "position": 13,
+              "collation": null,
+              "generated": "",
+              "type_kind": "b",
+              "type_name": "timestamptz",
+              "type_schema": "pg_catalog"
+            }
+          ],
+          "indexes": [
+            {
+              "name": "idx_sub_agents_club_id_fk",
+              "ready": true,
+              "valid": true,
+              "unique": false,
+              "primary": false,
+              "definition": "CREATE INDEX idx_sub_agents_club_id_fk ON public.sub_agents USING btree (club_id)"
+            },
+            {
+              "name": "sub_agents_pkey",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": true,
+              "definition": "CREATE UNIQUE INDEX sub_agents_pkey ON public.sub_agents USING btree (id)"
+            },
+            {
+              "name": "sub_agents_user_id_key",
+              "ready": true,
+              "valid": true,
+              "unique": true,
+              "primary": false,
+              "definition": "CREATE UNIQUE INDEX sub_agents_user_id_key ON public.sub_agents USING btree (user_id)"
+            }
+          ],
+          "options": null,
+          "parents": null,
+          "policies": [
+            {
+              "name": "agents read own sub_agents",
+              "roles": ["authenticated"],
+              "using": "((parent_agent_id IN ( SELECT a.id\n   FROM agents a\n  WHERE (a.user_id = ( SELECT auth.uid() AS uid)))) OR (user_id = ( SELECT auth.uid() AS uid)))",
+              "command": "r",
+              "permissive": true,
+              "with_check": null
+            },
+            {
+              "name": "service_role full access",
+              "roles": ["service_role"],
+              "using": "true",
+              "command": "*",
+              "permissive": true,
+              "with_check": "true"
+            },
+            {
+              "name": "union_overseer_read",
+              "roles": ["authenticated"],
+              "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
+              "command": "r",
+              "permissive": true,
+              "with_check": null
+            }
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_a_5192202",
+              "enabled": "O",
+              "function": "\"RI_FKey_setnull_del\"()",
+              "internal": true,
+              "constraint": "5192201",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_5192202\" AFTER DELETE ON sub_agents FROM player_agent_assignments NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_setnull_del\"()",
+              "function_oid": "1650",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_a_5192203",
+              "enabled": "O",
+              "function": "\"RI_FKey_noaction_upd\"()",
+              "internal": true,
+              "constraint": "5192201",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_5192203\" AFTER UPDATE ON sub_agents FROM player_agent_assignments NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()",
+              "function_oid": "1655",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192158",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5192155",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192158\" AFTER INSERT ON sub_agents FROM auth.users NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192159",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5192155",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192159\" AFTER UPDATE ON sub_agents FROM auth.users NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192163",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5192160",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192163\" AFTER INSERT ON sub_agents FROM agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192164",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5192160",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192164\" AFTER UPDATE ON sub_agents FROM agents NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192168",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_ins\"()",
+              "internal": true,
+              "constraint": "5192165",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192168\" AFTER INSERT ON sub_agents FROM clubs NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()",
+              "function_oid": "1644",
+              "initially_deferred": false
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_5192169",
+              "enabled": "O",
+              "function": "\"RI_FKey_check_upd\"()",
+              "internal": true,
+              "constraint": "5192165",
+              "deferrable": false,
+              "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_5192169\" AFTER UPDATE ON sub_agents FROM clubs NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()",
+              "function_oid": "1645",
+              "initially_deferred": false
+            },
+            {
+              "name": "poker_arena_no_hierarchy",
+              "enabled": "O",
+              "function": "fn_poker_reject_diamond_hierarchy()",
+              "internal": false,
+              "constraint": null,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON sub_agents FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()",
+              "function_oid": "24566571",
+              "initially_deferred": false
+            },
+            {
+              "name": "trg_sub_agents_updated",
+              "enabled": "O",
+              "function": "touch_sub_agents()",
+              "internal": false,
+              "constraint": null,
+              "deferrable": false,
+              "definition": "CREATE TRIGGER trg_sub_agents_updated BEFORE UPDATE ON sub_agents FOR EACH ROW EXECUTE FUNCTION touch_sub_agents()",
+              "function_oid": "5192172",
+              "initially_deferred": false
+            }
+          ],
+          "force_rls": false,
+          "sequences": null,
+          "partitions": null,
+          "constraints": [
+            {
+              "name": "sub_agents_club_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+              "initially_deferred": false,
+              "referenced_relation": "clubs"
+            },
+            {
+              "name": "sub_agents_commission_pct_check",
+              "type": "c",
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (commission_pct >= 0::numeric AND commission_pct <= 100::numeric)",
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "sub_agents_parent_agent_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (parent_agent_id) REFERENCES agents(id) ON DELETE CASCADE",
+              "initially_deferred": false,
+              "referenced_relation": "agents"
+            },
+            {
+              "name": "sub_agents_pkey",
+              "type": "p",
+              "validated": true,
+              "deferrable": false,
+              "definition": "PRIMARY KEY (id)",
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "sub_agents_status_check",
+              "type": "c",
+              "validated": true,
+              "deferrable": false,
+              "definition": "CHECK (status = ANY (ARRAY['active'::text, 'suspended'::text, 'deleted'::text]))",
+              "initially_deferred": false,
+              "referenced_relation": null
+            },
+            {
+              "name": "sub_agents_user_id_fkey",
+              "type": "f",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+              "initially_deferred": false,
+              "referenced_relation": "auth.users"
+            },
+            {
+              "name": "sub_agents_user_id_key",
+              "type": "u",
+              "validated": true,
+              "deferrable": false,
+              "definition": "UNIQUE (user_id)",
+              "initially_deferred": false,
+              "referenced_relation": null
+            }
+          ],
+          "persistence": "p"
+        }
+      ],
+      "observed_at": "2026-09-16T04:31:59.558616+00:00",
+      "server_version": "17.6",
+      "trigger_functions": [
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "signature": "fn_poker_reject_diamond_hierarchy()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_reject_diamond_hierarchy()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF EXISTS (SELECT 1 FROM public.clubs WHERE id=NEW.club_id AND asset='diamonds') THEN\n    RAISE EXCEPTION 'Diamond Arena Has No Agents Or Commissions' USING ERRCODE='23514';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+          "definition_md5": "49037a2bf4322d2a327bc9141a7a7a89"
+        },
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "owner": "postgres",
+          "signature": "touch_sub_agents()",
+          "definition": "CREATE OR REPLACE FUNCTION public.touch_sub_agents()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN NEW.updated_at = NOW(); RETURN NEW; END;\n$function$\n",
+          "definition_md5": "17ea75951ae3de7e39b5eb6e59330706"
+        }
+      ],
+      "transaction_read_only": "on"
+    }
+  }
+]

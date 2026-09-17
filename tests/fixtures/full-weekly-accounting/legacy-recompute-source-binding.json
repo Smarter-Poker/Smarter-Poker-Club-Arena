@@ -1,0 +1,64 @@
+{
+  "status": "source_hashes_bound_unrun_pending_protected_qualification",
+  "captured_on": "2026-09-14",
+  "signature": "public.fn_rakeback_recompute_all_clubs(date,date)",
+  "source": {
+    "captured_definition": "captured-legacy-recompute-definition.sql",
+    "capture_kind": "saved read-only pg_get_functiondef output from the accounting audit",
+    "captured_source_sha256": "7b085c84afee69fb3f892f5996d571308f1cb730ad2fe8094e6ffab331fb5ec9",
+    "capture_currentness": "historical; no new database observation",
+    "portable_definition": "legacy-recompute-definition.sql",
+    "transformation": "append SQL statement terminator after the captured closing dollar delimiter; body and pg_get_functiondef metadata remain unchanged",
+    "definition_sha256": "2ffbef17dabe2cd79dbc1b9d6181086a088b8a4cf5ff65ad3614b5c2e812fb57",
+    "definition_body_binding": "component 20260914155500 compares pg_get_functiondef to the exact captured embedded definition, ignoring only trailing newline characters"
+  },
+  "captured_definition_metadata": {
+    "language": "plpgsql",
+    "security_definer": true,
+    "return_type": "jsonb",
+    "parameters": "p_period_start date DEFAULT NULL::date, p_period_end date DEFAULT NULL::date",
+    "configuration": ["search_path=public", "statement_timeout=600s"]
+  },
+  "access": {
+    "full_production_owner_captured": true,
+    "full_production_acl_captured": true,
+    "effective_acl_currently_reverified": true,
+    "observed_at": "2026-09-15 01:01:08.623296+00",
+    "owner": "postgres",
+    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+    "definition_md5": "7b626bf398892a294e95e6050073431c",
+    "source_md5": "94bccb645adfde96a32b2405603cf514",
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": true
+    },
+    "captured_fixture": "supplemental-function-access.sql",
+    "captured_metadata": "supplemental-function-access.json",
+    "required_before_install": "Fresh protected preimage and owner/ACL readback; this timestamped source capture is not installation proof."
+  },
+  "required_custody_step": "Source SHA256s bound by the local custody owner. Final commit/tree and complete file hashes must still be admitted by the protected pipeline; source hashes are not execution or production ACL proof.",
+  "limits": [
+    "No fake cron schema, table or function is included",
+    "Does not fill unrelated omissions in the captured partial catalog",
+    "Definition, actual captured supplemental ACL and pg_cron prerequisites must precede candidate application",
+    "fn_union_settlement_cascade_due is created by the accounting candidate; it is not presented as an additionally captured definition"
+  ],
+  "historical_access_assumptions": {
+    "full_production_owner_captured": false,
+    "full_production_acl_captured": false,
+    "effective_acl_currently_reverified": false,
+    "historical_source_reference": "supabase/migrations/20260901232323_definer_lockdown_phase1_server_machinery.sql",
+    "historical_source_fact": "explicit REVOKE ALL from PUBLIC, anon and authenticated; comment says service_role retains execute; that migration's service assertion checks fn_ca_mint, not this function",
+    "assumption_fixture": "legacy-recompute-access-assumptions.sql",
+    "assumption_fixture_sha256": "fc8c07ed0d27a4f7687e782b371c9d6a948207ba8e9d47a9d16357f1eebf2d75",
+    "fixture_effective_execute": {
+      "PUBLIC": false,
+      "anon": false,
+      "authenticated": false,
+      "service_role": true
+    },
+    "owner_assumption": "function is owned by the protected disposable fixture loader, not a claim about production owner",
+    "required_before_install": "protected fresh pg_proc owner/proacl and effective has_function_privilege readback matching the retirement guard"
+  }
+}

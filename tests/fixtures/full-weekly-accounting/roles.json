@@ -1,0 +1,110 @@
+[
+  { "rolname": "pg_database_owner", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  { "rolname": "pg_read_all_data", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  { "rolname": "pg_write_all_data", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  { "rolname": "pg_monitor", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  {
+    "rolname": "pg_read_all_settings",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  { "rolname": "pg_read_all_stats", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  {
+    "rolname": "pg_stat_scan_tables",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "pg_read_server_files",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "pg_write_server_files",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "pg_execute_server_program",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  { "rolname": "pg_signal_backend", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  { "rolname": "pg_checkpoint", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  { "rolname": "pg_maintain", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  {
+    "rolname": "pg_use_reserved_connections",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "pg_create_subscription",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  { "rolname": "dashboard_user", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  { "rolname": "supabase_etl_admin", "rolsuper": false, "rolinherit": true, "rolbypassrls": true },
+  { "rolname": "authenticated", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  { "rolname": "anon", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  { "rolname": "service_role", "rolsuper": false, "rolinherit": true, "rolbypassrls": true },
+  { "rolname": "supabase_admin", "rolsuper": true, "rolinherit": true, "rolbypassrls": true },
+  { "rolname": "authenticator", "rolsuper": false, "rolinherit": false, "rolbypassrls": false },
+  {
+    "rolname": "supabase_privileged_role",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "supabase_auth_admin",
+    "rolsuper": false,
+    "rolinherit": false,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "supabase_storage_admin",
+    "rolsuper": false,
+    "rolinherit": false,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "supabase_replication_admin",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "supabase_read_only_user",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": true
+  },
+  { "rolname": "pgbouncer", "rolsuper": false, "rolinherit": true, "rolbypassrls": false },
+  {
+    "rolname": "supabase_realtime_admin",
+    "rolsuper": false,
+    "rolinherit": false,
+    "rolbypassrls": false
+  },
+  { "rolname": "postgres", "rolsuper": false, "rolinherit": true, "rolbypassrls": true },
+  {
+    "rolname": "supabase_functions_admin",
+    "rolsuper": false,
+    "rolinherit": false,
+    "rolbypassrls": false
+  },
+  {
+    "rolname": "supabase_backup_admin",
+    "rolsuper": false,
+    "rolinherit": true,
+    "rolbypassrls": false
+  },
+  { "rolname": "cli_login_postgres", "rolsuper": false, "rolinherit": false, "rolbypassrls": false }
+]

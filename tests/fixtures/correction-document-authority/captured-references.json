@@ -1,0 +1,534 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "read_only": true,
+  "query_path": "outputs/accounting-correction-reference-catalog-query.sql",
+  "catalog": {
+    "scope": "correction trigger/reference metadata closure only; no application rows or financial invocation",
+    "functions": [
+      {
+        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "md5": "2436b25400e0ee73dbbe3158fdb47b0d",
+        "oid": "31371461",
+        "owner": "postgres",
+        "config": ["search_path=public"],
+        "signature": "fn_accounting_party_users(text,uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_party_users(p_kind text, p_id uuid)\n RETURNS TABLE(user_id uuid)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n SELECT DISTINCT p.id FROM public.profiles p WHERE p.id IN (\n  SELECT p_id WHERE p_kind IN('agent','player')\n  UNION SELECT c.owner_id FROM public.clubs c WHERE p_kind='club' AND c.id=p_id\n  UNION SELECT m.user_id FROM public.club_members m WHERE p_kind='club' AND m.club_id=p_id\n   AND m.role IN('owner','co_owner','admin') AND COALESCE(m.status,'active') IN('active','approved')\n  UNION SELECT u.owner_id FROM public.unions u WHERE p_kind='union' AND u.id=p_id\n  UNION SELECT a.user_id FROM public.union_admins a WHERE p_kind='union' AND a.union_id=p_id\n   AND public.fn_is_union_overseer(p_id,a.user_id)\n );\n$function$\n",
+        "volatility": "s",
+        "security_definer": true,
+        "effective_execute": [
+          { "role": "anon", "execute": false },
+          { "role": "authenticated", "execute": false },
+          { "role": "service_role", "execute": true }
+        ]
+      },
+      {
+        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "md5": "bf9d870bfc52d44c1d2cc33860dfd71a",
+        "oid": "31371469",
+        "owner": "postgres",
+        "config": ["search_path=public"],
+        "signature": "fn_accounting_transfer_document_on_insert()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_transfer_document_on_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n PERFORM public.fn_invoice_accounting_ledger_transfer(NEW.id);\n RETURN NEW;\nEND $function$\n",
+        "volatility": "v",
+        "security_definer": true,
+        "effective_execute": [
+          { "role": "anon", "execute": false },
+          { "role": "authenticated", "execute": false },
+          { "role": "service_role", "execute": true }
+        ]
+      },
+      {
+        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "md5": "dbe622139f98faf98bca7bc30db0155c",
+        "oid": "22247102",
+        "owner": "postgres",
+        "config": ["search_path=public"],
+        "signature": "fn_ca_alert_resolution_reaches_the_incident()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_alert_resolution_reaches_the_incident()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_state text; v_msg text;\nBEGIN\n  IF NOT COALESCE(NEW.resolved,false) OR COALESCE(OLD.resolved,false) THEN\n    RETURN NEW;\n  END IF;\n  UPDATE public.ca_drift_incidents i\n     SET status      = 'resolved',\n         resolved_at = COALESCE(NEW.resolved_at, now()),\n         correction_ref = COALESCE(NULLIF(i.correction_ref,''),\n                                   'verified: closed with financial alert ' || NEW.id::text),\n         root_cause  = COALESCE(NULLIF(i.root_cause,''),\n                        'This incident is a mirror of financial alert ' || NEW.id::text\n                        || ', raised by ' || COALESCE(NEW.source,'an unnamed source')\n                        || '. The condition it describes was diagnosed and closed on that '\n                        || 'alert; this row exists only because the alert was copied onto '\n                        || 'the drift board when it was raised.'),\n         resolution  = COALESCE(NULLIF(i.resolution,'') || ' | ', '')\n                       || 'Closed with the financial alert it mirrors ('\n                       || NEW.id::text || '): '\n                       || COALESCE(NULLIF(NEW.resolution,''), 'no note given on the alert')\n   WHERE i.status <> 'resolved'\n     AND i.metadata->>'alert_id' ~ '^[0-9a-fA-F-]{36}$'\n     AND (i.metadata->>'alert_id')::uuid = NEW.id;\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN\n  /* Never roll back the resolve that triggered us - but never disappear\n     either. RAISE WARNING alone is how this defect hid from its own author. */\n  GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;\n  BEGIN\n    INSERT INTO public.ca_incident_file_failures\n      (source, dedupe_key, classification, severity, discrepancy, sqlstate, message)\n    VALUES ('fn_ca_alert_resolution_reaches_the_incident',\n            'propagate:alert->incident:' || NEW.id::text,\n            'unknown', 'warning', 0, v_state,\n            'a resolved alert did not close the incident mirroring it: ' || v_msg);\n  EXCEPTION WHEN OTHERS THEN NULL;\n  END;\n  RAISE WARNING 'fn_ca_alert_resolution_reaches_the_incident failed: %', v_msg;\n  RETURN NEW;\nEND $function$\n",
+        "volatility": "v",
+        "security_definer": true,
+        "effective_execute": [
+          { "role": "anon", "execute": false },
+          { "role": "authenticated", "execute": false },
+          { "role": "service_role", "execute": true }
+        ]
+      },
+      {
+        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "md5": "1b916fb576271d94c481099c11ca8b93",
+        "oid": "21012781",
+        "owner": "postgres",
+        "config": ["search_path=public"],
+        "signature": "fn_ca_escrow_on_overlay_leg()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_escrow_on_overlay_leg()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  -- Explicit rows only: the autoledger twin (description 'auto-ledgered ...')\n  -- of the same debit is not a second overlay. None has been written since\n  -- the lock trigger was fixed on 09-03; the shadow still skips them.\n  IF COALESCE(NEW.description, '') LIKE 'auto-ledgered%' THEN RETURN NULL; END IF;\n  PERFORM public.fn_ca_escrow_apply(NEW.to_entity_id, 'overlay', p_overlay_in => round(NEW.amount, 2));\n  RETURN NULL;\nEND;\n$function$\n",
+        "volatility": "v",
+        "security_definer": true,
+        "effective_execute": [
+          { "role": "anon", "execute": false },
+          { "role": "authenticated", "execute": false },
+          { "role": "service_role", "execute": true }
+        ]
+      },
+      {
+        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "md5": "3771aeef9008e35c6af3d03f220ebb3b",
+        "oid": "18098154",
+        "owner": "postgres",
+        "config": ["search_path=public"],
+        "signature": "fn_ca_financial_alert_to_incident()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_financial_alert_to_incident()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_dedupe text;\n  v_echo_id uuid;\n  v_severity text;\n  v_shape text;\nBEGIN\n  IF NEW.severity <> 'critical' THEN RETURN NEW; END IF;\n  IF NEW.source LIKE 'drift_incident:%' THEN RETURN NEW; END IF;\n\n  /* A REFUSED HAND IS A RATE, NOT AN INCIDENT (2026-09-09). */\n  IF NEW.source = 'ServerTableEngine.authoritative_hand_semantic_refusal'\n     OR COALESCE(NEW.context->>'error', '') LIKE '%authoritative_hand_semantic_refusal%' THEN\n    RETURN NEW;\n  END IF;\n\n  /* A HANDOFF THAT NAMES ITS SUCCESSOR IS NOT AN INCIDENT (2026-09-10). */\n  IF NEW.source = 'ServerTableEngine.post_commit_obligations_pending' THEN\n    RETURN NEW;\n  END IF;\n\n  /* ONE CAUSE IS ONE INCIDENT (2026-09-09). The key is the SHAPE of the\n     finding, not its instance. */\n  v_shape := public.fn_ca_normalize_alert_text(left(NEW.message, 200))\n             || '|' ||\n             public.fn_ca_normalize_alert_text(left(COALESCE(NEW.context->>'error', ''), 200));\n\n  v_dedupe := CASE\n      -- A terminal refusal belongs to one tournament. Normalizing the error\n      -- removes its UUID; shape-only folding then mixes different events.\n      -- Without an entity, retain the original alert as its own unknown.\n      WHEN NEW.source = 'Tournament.atomic_finish_refused'\n        THEN 'fa:Tournament.atomic_finish_refused:'\n          || COALESCE(NULLIF(lower(NEW.context->>'tournament_id'), ''),\n                      'alert:' || NEW.id::text)\n          || ':' || md5(v_shape)\n      WHEN NEW.source ~* 'prize_credit_failed' AND NULLIF(NEW.context->>'tournament_id','') IS NOT NULL\n        THEN 'fa:prize_credit_failed:' || (NEW.context->>'tournament_id')\n      ELSE 'fa:' || NEW.source || ':' || md5(v_shape) END;\n\n  SELECT i.id INTO v_echo_id FROM public.ca_drift_incidents i\n   WHERE i.dedupe_key = v_dedupe AND i.status = 'resolved'\n     AND i.resolved_at > now() - interval '48 hours'\n     AND i.suspected_cause = left(NEW.message, 300)\n   ORDER BY i.resolved_at DESC LIMIT 1;\n  IF v_echo_id IS NOT NULL THEN\n    UPDATE public.ca_drift_incidents SET occurrences = occurrences + 1 WHERE id = v_echo_id;\n    INSERT INTO public.ca_incident_events (incident_id, at, kind, actor_label, detail)\n    VALUES (v_echo_id, now(), 'comment', 'system',\n            jsonb_build_object('note', 'Byte-identical echo of this resolved incident re-reported by '\n              || NEW.source || '; folded without re-paging (alert ' || NEW.id || ').'));\n    RETURN NEW;\n  END IF;\n\n  /* A DRIFT INCIDENT IS CRITICAL WHEN CHIPS ARE AT STAKE (2026-09-10). */\n  v_severity := CASE\n      WHEN NEW.source ~* 'conservation' THEN 'info'\n      /* THE ENGINE ALREADY DECIDED THIS ONE (2026-09-12, incident bf4ef6e0).\n         ServerTableEngineSettlement.runStep raises a financial alert ONLY when\n         its moneyCritical argument is true, so every postHandTasks.* row here\n         is already filtered to \"this moves chips\" - the five steps that move\n         none (promo_playthrough, horse_rebuys, chip_continuity, horse_cashouts,\n         deferred_sitouts) never arrive. Re-deciding it in SQL downgraded all of\n         them, on two broken tests: a source-name scan for money words, which\n         'leave_pending' fails while returning a player's whole stack to their\n         wallet; and COALESCE(discrepancy, amount, 0) = 0 as proof of zero, when\n         runStep writes neither key - 0 of 1,551 alerts in seven days carry one,\n         so the test was unconditionally true and this branch could only ever\n         return info. And info is not a colour: fn_ca_raise_drift_incident opens\n         with IF p_severity = 'info' THEN NULL, so six failures across six\n         tables paged nobody. When the engine asserts moves_chips in the\n         context, that fact decides; absent, critical, because absent must fail\n         toward being seen. Compared as text rather than cast to boolean on\n         purpose: this trigger ends in EXCEPTION WHEN OTHERS ... RETURN NEW, so\n         a bad cast would silently stop creating incidents rather than raise. */\n      WHEN NEW.source LIKE 'postHandTasks.%'\n        THEN CASE WHEN lower(COALESCE(NEW.context->>'moves_chips','true')) IN ('false','f','0')\n                  THEN 'info' ELSE 'critical' END\n      WHEN NEW.source LIKE 'ServerTableEngine.%'\n           AND NOT (NEW.source ~* 'prize|payout|bounty|rake|treasury|guarantee|insurance|bbj|rakeback')\n           AND COALESCE(NULLIF(NEW.context->>'discrepancy','')::numeric,\n                        NULLIF(NEW.context->>'amount','')::numeric, 0) = 0\n        THEN 'info'\n      WHEN NEW.source ~* 'prize_credit_failed'\n           AND NULLIF(NEW.context->>'user_id','') IS NOT NULL\n           AND public.fn_ca_is_cert_account((NEW.context->>'user_id')::uuid) THEN 'info'\n      ELSE 'critical' END;\n\n  PERFORM public.fn_ca_raise_drift_incident(\n    p_source         => 'financial_alerts:' || NEW.source,\n    p_classification => CASE\n        WHEN NEW.source ~* 'rake'                   THEN 'incorrect_rake'\n        WHEN NEW.source ~* 'bbj'                    THEN 'bbj_error'\n        WHEN NEW.source ~* 'rakeback'               THEN 'incorrect_rakeback'\n        WHEN NEW.source ~* 'treasury|guarantee'     THEN 'treasury_error'\n        WHEN NEW.source ~* 'payout|prize|bounty'    THEN 'settlement_error'\n        WHEN NEW.source ~* 'insurance'              THEN 'settlement_error'\n        WHEN NEW.source ~* 'conservation'           THEN 'ledger_imbalance'\n        ELSE 'unknown' END,\n    p_severity       => v_severity,\n    p_dedupe_key     => v_dedupe,\n    p_discrepancy    => COALESCE(NULLIF(NEW.context->>'discrepancy','')::numeric,\n                                 NULLIF(NEW.context->>'amount','')::numeric, 0),\n    p_layer          => 'ledger',\n    p_club_id        => NULLIF(NEW.context->>'club_id','')::uuid,\n    p_tournament_id  => NULLIF(NEW.context->>'tournament_id','')::uuid,\n    p_table_id       => NULLIF(NEW.context->>'table_id','')::uuid,\n    p_suspected_cause => left(NEW.message, 300),\n    p_metadata       => COALESCE(NEW.context,'{}'::jsonb) ||\n                        jsonb_build_object('alert_id', NEW.id));\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'fn_ca_financial_alert_to_incident failed: %', SQLERRM;\n  RETURN NEW;\nEND $function$\n",
+        "volatility": "v",
+        "security_definer": true,
+        "effective_execute": [
+          { "role": "anon", "execute": false },
+          { "role": "authenticated", "execute": false },
+          { "role": "service_role", "execute": true }
+        ]
+      },
+      {
+        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "md5": "8d3d5e1feccd96fcf0045afefdb9fcdc",
+        "oid": "20877259",
+        "owner": "postgres",
+        "config": ["search_path=public"],
+        "signature": "fn_ca_register_issuance_leg(uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_register_issuance_leg(p_ledger_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  l record; v_action text; v_holder_type text; v_holder uuid; v_label text;\n  v_before numeric; v_after numeric; v_supply numeric; v_reason text; v_op text;\n  v_outside text[] := public.fn_ca_noncirculating_chip_stores();\nBEGIN\n  SELECT * INTO l FROM public.chip_ledger WHERE id = p_ledger_id;\n  IF NOT FOUND THEN RETURN false; END IF;\n  IF EXISTS (SELECT 1 FROM public.ca_mint_ledger m WHERE m.chip_ledger_id = l.id) THEN\n    RETURN false;\n  END IF;\n  IF l.category = 'correction' AND l.metadata->>'posted_via' = 'fn_ca_post_correction' THEN\n    RETURN false;  -- a correction moves no balance (a_correction_is_not_a_mint)\n  END IF;\n  IF l.from_type = ANY (v_outside) AND NOT (l.to_type = ANY (v_outside)) THEN\n    v_action := 'mint'; v_holder := l.to_entity_id;\n    v_holder_type := CASE l.to_type\n      WHEN 'club_treasury' THEN 'club' WHEN 'club_wallet' THEN 'club'\n      WHEN 'union_bank' THEN 'union' WHEN 'union_wallet' THEN 'union'\n      WHEN 'player_wallet' THEN 'player' WHEN 'promo_wallet' THEN 'player'\n      ELSE 'circulation' END;\n  ELSIF l.to_type = ANY (v_outside) AND NOT (l.from_type = ANY (v_outside)) THEN\n    v_action := 'burn'; v_holder := l.from_entity_id;\n    v_holder_type := CASE l.from_type\n      WHEN 'club_treasury' THEN 'club' WHEN 'club_wallet' THEN 'club'\n      WHEN 'union_bank' THEN 'union' WHEN 'union_wallet' THEN 'union'\n      WHEN 'player_wallet' THEN 'player' WHEN 'promo_wallet' THEN 'player'\n      ELSE 'circulation' END;\n  ELSE\n    RETURN false;  -- store to store, or circulating to circulating\n  END IF;\n  -- The autoledger stamps a union wallet's row with the union id; a union is\n  -- also a row in clubs (is_union), so resolve by what the id actually is.\n  IF v_holder_type = 'club' AND EXISTS (SELECT 1 FROM public.clubs c WHERE c.id = v_holder AND COALESCE(c.is_union, false)) THEN\n    v_holder_type := 'union';\n  END IF;\n  IF v_holder IS NULL THEN\n    v_holder_type := 'circulation';\n  END IF;\n  IF v_holder_type = 'circulation' THEN\n    v_holder := '00000000-0000-0000-0000-00000000c1c0';  -- the circulation sentinel (the house is ...d1a0)\n  END IF;\n  v_label := CASE v_holder_type\n    WHEN 'club'   THEN (SELECT c.name FROM public.clubs c WHERE c.id = v_holder)\n    WHEN 'union'  THEN COALESCE((SELECT u.name FROM public.unions u WHERE u.id = v_holder), (SELECT c.name FROM public.clubs c WHERE c.id = v_holder))\n    WHEN 'player' THEN (SELECT COALESCE(NULLIF(btrim(p.username), ''), p.full_name, p.id::text) FROM public.profiles p WHERE p.id = v_holder)\n    ELSE 'circulation' END;\n  -- A leg written by hand (a linked compensating entry) carries no balances;\n  -- the register still wants a pair, so the pair is the amount itself.\n  /* A door that wrote its own register row but did not link the leg\n     (fn_ca_burn looks the leg up by a shape it does not always match):\n     adopt that row rather than write a second one. Same action, holder,\n     amount, asset, within five seconds of the leg, not yet linked. */\n  UPDATE public.ca_mint_ledger m\n     SET chip_ledger_id = l.id\n   WHERE m.id = (SELECT m2.id FROM public.ca_mint_ledger m2\n                  WHERE m2.chip_ledger_id IS NULL AND m2.asset = 'chips' AND m2.action = v_action\n                    AND m2.amount = l.amount AND m2.holder_id = v_holder\n                    AND m2.created_at BETWEEN l.created_at - interval '5 seconds' AND l.created_at + interval '5 seconds'\n                  ORDER BY m2.created_at LIMIT 1);\n  IF FOUND THEN RETURN false; END IF;\n  v_before := COALESCE(CASE WHEN v_action = 'mint' THEN l.pre_to_balance ELSE l.pre_from_balance END, 0);\n  v_after  := COALESCE(CASE WHEN v_action = 'mint' THEN l.post_to_balance ELSE l.post_from_balance END,\n                       v_before + CASE WHEN v_action = 'mint' THEN l.amount ELSE -l.amount END);\n  SELECT COALESCE(SUM(CASE WHEN action = 'mint' THEN amount ELSE -amount END), 0)\n       + CASE WHEN v_action = 'mint' THEN l.amount ELSE -l.amount END\n    INTO v_supply FROM public.ca_mint_ledger WHERE asset = 'chips';\n  v_op := 'ledger:' || l.id::text;\n  v_reason := left(COALESCE(NULLIF(btrim(l.description), ''), l.category) || ' (' || l.category\n              || CASE WHEN l.idempotency_key IS NOT NULL THEN ', key ' || l.idempotency_key ELSE '' END\n              || '; registered from the journal leg)', 500);\n  IF length(btrim(v_reason)) < 10 THEN v_reason := v_reason || ' - registered from the journal'; END IF;\n  INSERT INTO public.ca_mint_ledger\n    (op_id, action, asset, holder_type, holder_id, holder_label, amount,\n     balance_before, balance_after, supply_after, reason, performed_by, performed_by_label, db_role, chip_ledger_id, created_at)\n  VALUES (v_op, v_action, 'chips', v_holder_type, v_holder, v_label, l.amount,\n          v_before, v_after, v_supply, v_reason, l.performed_by, COALESCE(l.actor_service, l.db_role), l.db_role, l.id, l.created_at)\n  ON CONFLICT (op_id) DO NOTHING;\n  RETURN true;\nEND;\n$function$\n",
+        "volatility": "v",
+        "security_definer": true,
+        "effective_execute": [
+          { "role": "anon", "execute": false },
+          { "role": "authenticated", "execute": false },
+          { "role": "service_role", "execute": true }
+        ]
+      },
+      {
+        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "md5": "dd1871aa89f1709b9b45cb16542b5fa9",
+        "oid": "31371466",
+        "owner": "postgres",
+        "config": ["search_path=public"],
+        "signature": "fn_invoice_accounting_ledger_transfer(uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_invoice_accounting_ledger_transfer(p_ledger_id uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE leg public.chip_ledger%ROWTYPE; inv_id uuid; issuer_kind text; issuer_id uuid; payee_kind text; payee_id uuid; kind text;\nBEGIN\n SELECT * INTO leg FROM public.chip_ledger WHERE id=p_ledger_id;\n IF NOT FOUND OR leg.status IS DISTINCT FROM 'posted' OR leg.amount IS NULL OR leg.amount<=0\n    OR leg.amount::text IN('NaN','Infinity','-Infinity') OR leg.amount<>round(leg.amount,2)\n THEN RAISE EXCEPTION 'invalid_accounting_transfer' USING ERRCODE='23514'; END IF;\n IF leg.from_type IN('union_wallet','union_bank') THEN issuer_kind:='union';issuer_id:=leg.from_entity_id;\n ELSIF leg.from_type='club_treasury' THEN issuer_kind:='club';issuer_id:=leg.from_entity_id;\n ELSIF leg.from_type IN('player_wallet','agent_wallet') THEN issuer_id:=leg.from_entity_id;\n   issuer_kind:=CASE WHEN leg.from_type='agent_wallet' OR EXISTS(SELECT 1 FROM public.agents a WHERE a.user_id=issuer_id AND a.club_id=leg.club_id) THEN 'agent' ELSE 'player' END;\n ELSIF leg.from_type='settlement_suspense' AND leg.category='rakeback' AND leg.club_id IS NOT NULL THEN\n   -- Club-issued receipt for the existing clearing-account leg; preserve its actual source in breakdown.\n   issuer_kind:='club';issuer_id:=leg.club_id;\n ELSE RAISE EXCEPTION 'unsupported_accounting_transfer_source' USING ERRCODE='23514'; END IF;\n -- Game payout journals retain the physical union_wallets.id store identity.\n -- Accounting parties use unions.id. Resolve only a matching, declared host;\n -- never rewrite the original journal or infer a different union.\n IF leg.category IN('wheel_prize','plinko_prize','crash_prize','crossing_prize','mines_prize')\n    AND issuer_kind='union' AND leg.union_id IS NOT NULL\n    AND EXISTS(SELECT 1 FROM public.union_wallets w WHERE w.id=issuer_id AND w.union_id=leg.union_id)\n THEN issuer_id:=leg.union_id; END IF;\n IF leg.to_type IN('union_wallet','union_bank') THEN payee_kind:='union';payee_id:=leg.to_entity_id;\n ELSIF leg.to_type='club_treasury' THEN payee_kind:='club';payee_id:=leg.to_entity_id;\n ELSIF leg.to_type IN('player_wallet','agent_wallet') THEN\n   payee_id:=leg.to_entity_id;\n   payee_kind:=CASE WHEN leg.category='commission' OR EXISTS(SELECT 1 FROM public.agents a WHERE a.user_id=payee_id AND a.club_id=leg.club_id) THEN 'agent' ELSE 'player' END;\n ELSE RAISE EXCEPTION 'unsupported_accounting_transfer_recipient' USING ERRCODE='23514'; END IF;\n kind:=CASE WHEN issuer_kind='union' AND payee_kind='club' THEN 'union_to_club'\n            WHEN issuer_kind='club' AND payee_kind='agent' THEN 'club_to_agent'\n            WHEN issuer_kind='agent' AND payee_kind='agent' THEN 'agent_to_subagent'\n            WHEN issuer_kind='agent' AND payee_kind='player' THEN 'agent_to_player' ELSE 'transaction_receipt' END;\n PERFORM pg_advisory_xact_lock(hashtextextended('accounting_ledger_invoice:'||leg.id::text,0));\n SELECT id INTO inv_id FROM public.settlement_invoices WHERE source_ledger_id=leg.id;\n IF inv_id IS NULL THEN\n   INSERT INTO public.settlement_invoices(club_id,invoice_type,from_entity_type,from_entity_id,to_entity_type,to_entity_id,\n    gross_amount,net_amount,deductions,breakdown,status,chips_transferred,transferred_at,notes,source_ledger_id)\n   VALUES(COALESCE(leg.club_id,leg.union_id),kind,issuer_kind,issuer_id::text,payee_kind,payee_id::text,leg.amount,leg.amount,0,\n    COALESCE(leg.metadata,'{}'::jsonb)||jsonb_build_object('ledger_id',leg.id,'category',leg.category,'ledger_from_type',leg.from_type,\n      'ledger_from_entity_id',leg.from_entity_id,'ledger_to_type',leg.to_type,'ledger_to_entity_id',leg.to_entity_id,\n      'payee_role_at_transfer',CASE WHEN payee_kind='player' THEN 'player' ELSE (SELECT a.role FROM public.agents a WHERE a.user_id=payee_id AND a.club_id=leg.club_id ORDER BY a.id LIMIT 1) END),\n    'paid',true,leg.created_at,'Receipt For A Posted Accounting Transfer. This Does Not Certify The Entire Weekly Close.',leg.id)\n   RETURNING id INTO inv_id;\n END IF;\n PERFORM public.fn_deliver_accounting_invoice(inv_id);\n RETURN inv_id;\nEND $function$\n",
+        "volatility": "v",
+        "security_definer": true,
+        "effective_execute": [
+          { "role": "anon", "execute": false },
+          { "role": "authenticated", "execute": false },
+          { "role": "service_role", "execute": true }
+        ]
+      }
+    ],
+    "captured_at": "2026-09-15T05:12:10.785296+00:00",
+    "transaction": {
+      "isolation": "repeatable read",
+      "read_only": "on",
+      "lock_timeout": "2s",
+      "statement_timeout": "10s"
+    },
+    "reference_columns": [
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "id",
+        "default": "uuid_generate_v4()",
+        "present": true,
+        "not_null": true,
+        "relation": "public.clubs",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "owner_id",
+        "default": null,
+        "present": true,
+        "not_null": false,
+        "relation": "public.clubs",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "union_id",
+        "default": null,
+        "present": true,
+        "not_null": false,
+        "relation": "public.clubs",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": ["authenticated=r/postgres"],
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "id",
+        "default": null,
+        "present": true,
+        "not_null": true,
+        "relation": "public.profiles",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": false },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": ["authenticated=r/postgres"],
+        "rls": true,
+        "type": "text",
+        "owner": "postgres",
+        "column": "role",
+        "default": "'user'::text",
+        "present": true,
+        "not_null": false,
+        "relation": "public.profiles",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": false },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "club_id",
+        "default": null,
+        "present": true,
+        "not_null": false,
+        "relation": "public.tables",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "id",
+        "default": "gen_random_uuid()",
+        "present": true,
+        "not_null": true,
+        "relation": "public.tables",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "club_id",
+        "default": null,
+        "present": true,
+        "not_null": false,
+        "relation": "public.tournaments",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "id",
+        "default": "gen_random_uuid()",
+        "present": true,
+        "not_null": true,
+        "relation": "public.tournaments",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "text",
+        "owner": "postgres",
+        "column": "role",
+        "default": "'union_admin'::text",
+        "present": true,
+        "not_null": true,
+        "relation": "public.union_admins",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "union_id",
+        "default": null,
+        "present": true,
+        "not_null": true,
+        "relation": "public.union_admins",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "user_id",
+        "default": null,
+        "present": true,
+        "not_null": true,
+        "relation": "public.union_admins",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "club_id",
+        "default": null,
+        "present": true,
+        "not_null": true,
+        "relation": "public.union_clubs",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      },
+      {
+        "acl": null,
+        "rls": true,
+        "type": "uuid",
+        "owner": "postgres",
+        "column": "union_id",
+        "default": null,
+        "present": true,
+        "not_null": true,
+        "relation": "public.union_clubs",
+        "force_rls": false,
+        "effective_select": [
+          { "role": "anon", "select": true },
+          { "role": "authenticated", "select": true },
+          { "role": "service_role", "select": true }
+        ]
+      }
+    ],
+    "missing_function_names": [],
+    "reference_key_constraints": [
+      {
+        "name": "clubs_club_id_key",
+        "relation": "public.clubs",
+        "validated": true,
+        "definition": "UNIQUE (club_id)"
+      },
+      {
+        "name": "clubs_owner_id_fkey",
+        "relation": "public.clubs",
+        "validated": true,
+        "definition": "FOREIGN KEY (owner_id) REFERENCES profiles(id)"
+      },
+      {
+        "name": "clubs_pkey",
+        "relation": "public.clubs",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "clubs_retired_by_fkey",
+        "relation": "public.clubs",
+        "validated": true,
+        "definition": "FOREIGN KEY (retired_by) REFERENCES auth.users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "clubs_union_id_fkey",
+        "relation": "public.clubs",
+        "validated": true,
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id)"
+      },
+      {
+        "name": "profiles_id_fkey",
+        "relation": "public.profiles",
+        "validated": true,
+        "definition": "FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "profiles_pkey",
+        "relation": "public.profiles",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "fk_tables_club_id",
+        "relation": "public.tables",
+        "validated": true,
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "table_game_scope_parent_key",
+        "relation": "public.tables",
+        "validated": true,
+        "definition": "UNIQUE (id, seat_game_scope)"
+      },
+      {
+        "name": "table_seat_admission_parent_key",
+        "relation": "public.tables",
+        "validated": true,
+        "definition": "UNIQUE (id, seat_admission_key)"
+      },
+      {
+        "name": "tables_cluster_id_fkey",
+        "relation": "public.tables",
+        "validated": true,
+        "definition": "FOREIGN KEY (cluster_id) REFERENCES cash_games(id)"
+      },
+      {
+        "name": "tables_created_by_fkey",
+        "relation": "public.tables",
+        "validated": true,
+        "definition": "FOREIGN KEY (created_by) REFERENCES auth.users(id)"
+      },
+      {
+        "name": "tables_pkey",
+        "relation": "public.tables",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "tables_tournament_id_fkey",
+        "relation": "public.tables",
+        "validated": true,
+        "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id)"
+      },
+      {
+        "name": "tables_union_id_fkey",
+        "relation": "public.tables",
+        "validated": true,
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "tournaments_club_id_fkey",
+        "relation": "public.tournaments",
+        "validated": true,
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "tournaments_pkey",
+        "relation": "public.tournaments",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "tournaments_satellite_target_id_fkey",
+        "relation": "public.tournaments",
+        "validated": true,
+        "definition": "FOREIGN KEY (satellite_target_id) REFERENCES tournaments(id)"
+      },
+      {
+        "name": "fk_union_admins_user_id_profiles",
+        "relation": "public.union_admins",
+        "validated": true,
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "union_admins_pkey",
+        "relation": "public.union_admins",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "union_admins_union_id_fkey",
+        "relation": "public.union_admins",
+        "validated": true,
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "union_admins_union_id_user_id_key",
+        "relation": "public.union_admins",
+        "validated": true,
+        "definition": "UNIQUE (union_id, user_id)"
+      },
+      {
+        "name": "union_admins_user_id_fkey",
+        "relation": "public.union_admins",
+        "validated": true,
+        "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "union_clubs_club_id_fkey",
+        "relation": "public.union_clubs",
+        "validated": true,
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "union_clubs_pkey",
+        "relation": "public.union_clubs",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "union_clubs_union_id_club_id_key",
+        "relation": "public.union_clubs",
+        "validated": true,
+        "definition": "UNIQUE (union_id, club_id)"
+      },
+      {
+        "name": "union_clubs_union_id_fkey",
+        "relation": "public.union_clubs",
+        "validated": true,
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+      }
+    ]
+  }
+}

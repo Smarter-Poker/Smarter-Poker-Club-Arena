@@ -5,7 +5,7 @@
  *
  * Tests:
  * - Credit status calculation (utilization thresholds)
- * - Debt formula: Math.max(0, creditLimit - currentBalance)
+ * - Drawn credit, independent of credit capacity and wallet balance
  * - Prepaid agents have zero debt
  * - Next settlement date (always next Sunday)
  * - Grace period remaining logic
@@ -20,13 +20,20 @@ vi.mock('../../src/core/IdentityDNA', () => ({
 
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
+const creditRead = vi.hoisted(() => ({ data: null as any, error: null as any, select: vi.fn() }));
 const buildChain = (): any => {
   const handler: ProxyHandler<any> = {
     get: (_target, prop) => {
+      if (prop === 'select')
+        return (columns: string) => {
+          creditRead.select(columns);
+          return new Proxy({}, handler);
+        };
       if (prop === 'maybeSingle' || prop === 'single')
-        return () => Promise.resolve({ data: null, error: null });
+        return () => Promise.resolve({ data: creditRead.data, error: creditRead.error });
       if (prop === 'then')
-        return (resolve: (v: any) => void) => resolve({ data: null, error: null });
+        return (resolve: (v: any) => void) =>
+          resolve({ data: creditRead.data, error: creditRead.error });
       return vi.fn().mockReturnValue(new Proxy({}, handler));
     },
   };
@@ -71,10 +78,50 @@ vi.mock('../../src/services/SettlementService', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { CreditService } from '../../src/services/CreditService';
+import { supabase } from '../../src/lib/supabase';
 
 describe('CreditService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('payment receipts', () => {
+    it('submits the preserved operation identity and returns only the confirmed amount', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: {
+          ok: true,
+          amount: 12.34,
+          payment: { id: 'receipt', transaction_id: 'operation', created_at: '2026-09-14T09:00Z' },
+        },
+        error: null,
+      } as any);
+      const receipt = await CreditService.processPayment('invoice', 12.34, 'wallet', {
+        operationId: 'operation',
+      });
+      expect(supabase.rpc).toHaveBeenCalledWith('fn_process_credit_invoice_payment', {
+        p_invoice_id: 'invoice',
+        p_amount: 12.34,
+        p_method: 'wallet',
+        p_operation_id: 'operation',
+        p_reference: null,
+      });
+      expect(receipt).toMatchObject({ id: 'receipt', amount: 12.34, transactionId: 'operation' });
+    });
+    it('does not substitute the requested amount for an incomplete receipt', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { ok: true }, error: null } as any);
+      await expect(CreditService.processPayment('invoice', 12.34, 'wallet')).rejects.toThrow(
+        'receipt is incomplete'
+      );
+    });
+    it.each([NaN, Infinity, -1, 0, 1.001])(
+      'refuses an invalid payment amount %s before sending it',
+      async (amount) => {
+        await expect(CreditService.processPayment('invoice', amount, 'wallet')).rejects.toThrow(
+          'positive amount'
+        );
+        expect(supabase.rpc).not.toHaveBeenCalled();
+      }
+    );
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -123,23 +170,55 @@ describe('CreditService', () => {
   // DEBT FORMULA
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('debt formula', () => {
-    it('should calculate debt as creditLimit - currentBalance', () => {
-      // debt = 10000 - 2500 = 7500
-      const debt = Math.max(0, 10000 - 2500);
-      expect(debt).toBe(7500);
+  describe('drawn credit', () => {
+    it('does not bill an unused credit line', async () => {
+      creditRead.data = {
+        credit_limit: 10000,
+        credit_used: 0,
+        agent_wallet_balance: 0,
+        is_prepaid: false,
+      };
+      expect((await CreditService.calculateDebt('agent')).debtOwed).toBe(0);
+      expect(creditRead.select).toHaveBeenCalledWith(expect.stringContaining('credit_used'));
     });
-
-    it('should never return negative debt', () => {
-      // balance > limit means agent is in surplus
-      const debt = Math.max(0, 5000 - 8000);
-      expect(debt).toBe(0);
+    it('preserves the debt even when the agent wallet exceeds the credit line', async () => {
+      creditRead.data = {
+        credit_limit: 10000,
+        credit_used: 75.23,
+        agent_wallet_balance: 20000,
+        is_prepaid: false,
+      };
+      expect((await CreditService.calculateDebt('agent')).debtOwed).toBe(75.23);
     });
-
-    it('should return zero debt when balance equals limit', () => {
-      const debt = Math.max(0, 10000 - 10000);
-      expect(debt).toBe(0);
+    it('uses drawn credit for each club agent', async () => {
+      creditRead.data = [
+        { id: 'a', credit_limit: 10000, credit_used: 25.17, agent_wallet_balance: 0 },
+      ];
+      expect((await CreditService.calculateClubDebt('club'))[0].debtOwed).toBe(25.17);
     });
+    it('keeps prepaid accounts at zero debt', async () => {
+      creditRead.data = {
+        credit_limit: 10000,
+        credit_used: 0,
+        agent_wallet_balance: 0,
+        is_prepaid: true,
+      };
+      expect((await CreditService.calculateDebt('agent')).debtOwed).toBe(0);
+    });
+    it.each([null, undefined, 'NaN', Infinity, -1])(
+      'refuses unknown or invalid debt %s',
+      async (value) => {
+        creditRead.data = {
+          credit_limit: 10000,
+          credit_used: value,
+          agent_wallet_balance: 0,
+          is_prepaid: false,
+        };
+        await expect(CreditService.calculateDebt('agent')).rejects.toThrow(
+          'Drawn credit is unavailable'
+        );
+      }
+    );
   });
 
   // ─────────────────────────────────────────────────────────────────────────

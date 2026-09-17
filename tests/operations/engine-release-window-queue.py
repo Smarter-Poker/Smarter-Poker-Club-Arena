@@ -13,6 +13,7 @@ HELPERS = SOURCE[SOURCE.index('remaining_seconds() {'):SOURCE.index('validate_ac
 START = SOURCE.index('while :; do', SOURCE.index('NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))'))
 STOP = SOURCE.index('  BREAK_END_EPOCH=$(( $(date +%s) + (BREAK_REMAINING_MS / 1000) ))', START)
 QUEUE = SOURCE[START:STOP]
+RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_break_deadline() {')]
 
 
 def run_queue(certificates, *, now=100, deadline=1000, certificate_deadline=900,
@@ -77,6 +78,7 @@ maintenance_certificate() {{
   esac
 }}
 {HELPERS}
+{RECOVERY}
 {QUEUE}
   [ "$LOCK_HELD" = 1 ] || exit 95
   [ "$BREAK_REMAINING_MS" -ge "$MIN_BREAK_REMAINING_MS" ] || exit 94

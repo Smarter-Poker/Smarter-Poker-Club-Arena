@@ -412,11 +412,16 @@ maintenance_certificate() {
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 remaining=int(m.get("remainingMs") or 0) if isinstance(m,dict) else 0
-ok=(d.get("running") is True and isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and m.get("readyForRestart") is True and m.get("unparkedTables")==0)
-if not ok: raise SystemExit(1)
+window=(d.get("running") is True and isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
+if not window: raise SystemExit(1)
+# A straggler can prevent restart certification for the entire real window.
+# Record that missed opportunity separately from permission to cut over. Only
+# this durable health observation qualifies; missing/unreadable health does not.
 if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):
     print(remaining)
     raise SystemExit(2)
+ok=(m.get("readyForRestart") is True and m.get("unparkedTables")==0)
+if not ok: raise SystemExit(1)
 print(remaining)
 ' 2>/dev/null
 }
@@ -446,6 +451,68 @@ if remaining<minimum or ends-time.time()*1000<minimum:
     raise SystemExit(1)
 print(math.floor(ends/1000))
 ' 2>/dev/null
+}
+
+# This is one optional event in the existing bounded transaction, not a
+# background retry owner. The immutable seal reservation survives SSH loss,
+# systemd retries and unknown HTTP outcomes without sliding the break end.
+RECOVERY_REQUESTED=0
+RECOVERY_CHECKED_CAUSE=-1
+RECOVERY_ADMISSION_MISSED=0
+request_recovery_window() {
+  local health minute stamp outcome
+  local reserve_args
+  [ "$RECOVERY_REQUESTED" = 0 ] || return 0
+  minute=$(( ($(date +%s) % 3600) / 60 ))
+  # Leave the normal announcement and its database buffer intact.
+  [ "$minute" -ge 3 ] && [ "$minute" -lt 45 ] || return 0
+  [ "$RECOVERY_CHECKED_CAUSE" != "$RECOVERY_ADMISSION_MISSED" ] || return 0
+  health="$(curl -sS --max-time 5 http://127.0.0.1:8080/health 2>/dev/null)" || return 0
+  printf '%s' "$health" | python3 -c '
+import json,sys
+d=json.load(sys.stdin); m=d.get("maintenance") or {}
+raise SystemExit(0 if d.get("running") is True and m.get("active") is False and m.get("recoveryWindowReady") is True and m.get("recoveryWindowProtocol")=="engine-recovery-window-v1" else 1)
+' || return 0
+  acquire_engine_lock 'one recovery announcement'
+  source_target_is_current
+  if EXACT_INSTANCE="$(exact_runtime_instance)"; then
+    emit_already_released "$EXACT_INSTANCE"
+  fi
+  reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
+  [ "$RECOVERY_ADMISSION_MISSED" = 0 ] || reserve_args+=(--missed-window)
+  if ! stamp="$(timeout --signal=TERM --kill-after=1s 15s "$RELEASE_SEAL" reserve-recovery-window \
+    "${reserve_args[@]}")"; then
+    release_engine_lock
+    die 'recovery announcement reservation could not be established'
+  fi
+  RECOVERY_CHECKED_CAUSE="$RECOVERY_ADMISSION_MISSED"
+  if [ "$stamp" = unavailable ]; then
+    release_engine_lock
+    return 0
+  fi
+  [[ "$stamp" =~ ^[1-9][0-9]{12}$ ]] || die 'invalid recovery announcement timestamp'
+  RECOVERY_REQUESTED=1
+  # The configured key stays inside the running engine container. The API is
+  # loopback-only and has the same maintenance/database owner as hourly work.
+  # A lost response is UNKNOWN; observe the certificate, never allocate a new
+  # timestamp or send another announcement in this invocation.
+  outcome="$(timeout --signal=TERM --kill-after=1s 20s docker exec -i "$CONTAINER" \
+    node - "$stamp" <<'NODE'
+const announcedAt=Number(process.argv[2]);
+const key=process.env.INTERNAL_API_KEY;
+if (!key) process.exit(1);
+fetch('http://127.0.0.1:8080/internal/maintenance-recovery-window', {
+  method:'POST', headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},
+  body:JSON.stringify({announcedAt}), signal:AbortSignal.timeout(15000)
+}).then(async r=>{
+  const d=await r.json();
+  if (!r.ok || !['accepted','active','pending','busy','expired','use_hourly','unavailable'].includes(d.status)) process.exit(1);
+  console.log(d.status);
+}).catch(()=>process.exit(1));
+NODE
+)" || outcome=unknown
+  release_engine_lock
+  echo "[engine-release-transaction] fixed recovery announcement $stamp: $outcome; existing certificate and rollback budget remain required"
 }
 
 persist_break_deadline() {
@@ -917,15 +984,17 @@ while :; do
       continue
     fi
   elif [ "$CERTIFICATE_RC" -eq 2 ]; then
+    RECOVERY_ADMISSION_MISSED=1
     # A predecessor or image build can consume the beginning of this break.
     # No prepare or break deadline exists yet. Keep the original request's
     # absolute deadline and source-freshness checks while waiting for a later
     # complete certificate; never reduce the candidate-and-recovery reserve.
-    echo "[engine-release-transaction] the certified table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
+    echo "[engine-release-transaction] the durable table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
     bounded_sleep 15
     continue
   fi
   if [ "$LEGACY_CHECKPOINT_REQUIRED" != 1 ] && [ "$CERTIFICATE_RC" -ne 0 ]; then
+    request_recovery_window
     bounded_sleep 5
     continue
   fi
@@ -971,6 +1040,7 @@ while :; do
     die 'legacy checkpoint did not retain the full restart certificate and 285000ms reserve'
   fi
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
+    RECOVERY_ADMISSION_MISSED=1
     release_engine_lock
     echo "[engine-release-transaction] the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; waiting for a later certificate"
     bounded_sleep 15

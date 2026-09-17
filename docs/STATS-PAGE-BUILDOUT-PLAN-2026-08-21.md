@@ -1,3 +1,5 @@
+> Current execution authority: root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. This dated plan supplies scope/dependency context only; it does not assign new work or override current delivery policy.
+
 # Stats Page Full Buildout Plan
 
 Target surface: `https://smarter.poker/hub/club-arena/stats`
@@ -1100,7 +1102,7 @@ From World Hub CLAUDE.md:
 - Migrations under `supabase/migrations/<YYYYMMDD>_<desc>.sql`, applied via the
   Supabase MCP `apply_migration`, never raw `execute_sql`
 - Deploy by pushing a branch and stopping (corrected 2026-09-04; the sync
-  script named here was deleted on 2026-09-02). Autopilot merges,
+  script named here was deleted on 2026-09-02). The authorized agent completes protected merge,
   `publish-club-arena.yml` publishes to `ca-static.smarter.poker`, and the only
   claim of "deployed" that counts is `ca_sha` in
   `https://smarter.poker/hub/club-arena/build-info.json` equalling main

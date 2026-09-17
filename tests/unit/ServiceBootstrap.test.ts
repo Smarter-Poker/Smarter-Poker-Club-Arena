@@ -47,6 +47,9 @@ vi.mock('../../src/services/FinancialCronService', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { bootServices, shutdownServices } from '../../src/services/ServiceBootstrap';
+import { OfflineQueueService } from '../../src/services/OfflineQueueService';
+import { SettlementCronService } from '../../src/services/SettlementCronService';
+import { FinancialCronService } from '../../src/services/FinancialCronService';
 
 describe('ServiceBootstrap', () => {
   beforeEach(() => {
@@ -88,9 +91,25 @@ describe('ServiceBootstrap', () => {
       expect(second.offlineQueue).toBe(true);
     });
 
-    it('should enable settlementCron when option is set', async () => {
+    it('never starts a browser payer even for the retired opt-in', async () => {
       const result = await bootServices({ enableSettlementCron: true });
-      expect(result.settlementCron).toBe(true);
+      const repeated = await bootServices({ enableSettlementCron: true });
+      expect(result.settlementCron).toBe(false);
+      expect(repeated).toEqual(result);
+      expect(SettlementCronService.start).not.toHaveBeenCalled();
+    });
+
+    it('retains actual startup failures on repeat instead of manufacturing healthy services', async () => {
+      vi.mocked(OfflineQueueService.init).mockRejectedValueOnce(new Error('unavailable'));
+      vi.mocked(FinancialCronService.start).mockImplementationOnce(() => { throw new Error('unavailable'); });
+      const first = await bootServices();
+      first.offlineQueue = true; // A caller cannot mutate the cached observation.
+      const repeated = await bootServices();
+      expect(repeated.offlineQueue).toBe(false);
+      expect(repeated.financialCron).toBe(false);
+      expect(repeated.settlementCron).toBe(false);
+      expect(OfflineQueueService.init).toHaveBeenCalledTimes(1);
+      expect(FinancialCronService.start).toHaveBeenCalledTimes(1);
     });
   });
 

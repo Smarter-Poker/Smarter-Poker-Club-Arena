@@ -28,6 +28,7 @@ export interface Notification {
     | 'achievement'
     | 'bonus'
     | 'settlement'
+    | 'accounting_invoice'
     | 'system'
     | 'your_turn' // Bible V8 5.18: your turn to act
     | 'your_turn_reminder' // Bible V8 5.19: reminder after 5s inaction
@@ -374,6 +375,12 @@ class NotificationServiceClass {
           : metadata.senderId
             ? `/profile/${metadata.senderId}`
             : '/messages';
+      case 'accounting_invoice': {
+        const conversation = metadata.conversation_id ?? metadata.conversationId;
+        return typeof conversation === 'string' && conversation.trim()
+          ? `/hub/messenger?conversation=${encodeURIComponent(conversation)}`
+          : undefined;
+      }
       case 'achievement':
         return '/achievements';
       case 'bonus':
@@ -538,6 +545,11 @@ class NotificationServiceClass {
     const ungroupable: Notification[] = [];
 
     for (const notif of notifications) {
+      // Every accounting transaction retains its own visible notification.
+      if (notif.type === 'accounting_invoice') {
+        ungroupable.push(notif);
+        continue;
+      }
       // Handle both camelCase (service) and snake_case (page) timestamp fields
       const timestamp = (notif as any).createdAt || (notif as any).created_at;
       const timeBucket = timestamp ? Math.floor(new Date(timestamp).getTime() / (30 * 60_000)) : 0;

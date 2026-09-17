@@ -101,10 +101,10 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
     try {
       const res = await UnionOpsService.runSettlementCascade(unionId);
       setConfirming(false);
-      const r2 = (res as Record<string, Record<string, unknown>>)?.round2_club_to_agents;
-      const r3 = (res as Record<string, Record<string, unknown>>)?.round3_agents_to_players;
+      const r2 = res.round2_club_to_agents;
+      const r3 = res.round3_agents_to_players;
       toast.success(
-        `Settled: clubs to agents ${money(Number(r2?.amount ?? 0))}, agents to players ${money(Number(r3?.amount ?? 0))}`
+        `Settled: clubs to agents ${money(r2.amount)}, agents to players ${money(r3.amount)}`
       );
       await load();
     } catch (e) {

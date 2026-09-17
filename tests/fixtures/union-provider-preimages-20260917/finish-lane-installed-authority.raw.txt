@@ -1,0 +1,73 @@
+{
+  "functions": [
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "58962520e072fe177eaa29809db909f3",
+      "identity": "fn_ca_lock_settlement_lane_for_finish(uuid)",
+      "proconfig": [
+        "search_path=public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_settlement_lane_for_finish(p_tournament_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_held text := COALESCE(current_setting('ca.finish_lane_tournament', true), '');\n  -- Unknown until the row proves it is a plain tournament: the whole lane.\n  v_satellite boolean := true;\nBEGIN\n  -- Re-entry: this transaction already holds a finish lane. Every key below\n  -- is already held by this backend, so nothing waits; a second tournament\n  -- is refused, a transaction never holds two tournaments' lanes.\n  IF v_held <> '' THEN\n    IF p_tournament_id IS NOT NULL AND v_held <> p_tournament_id::text THEN\n      RAISE EXCEPTION 'finish lane is held for tournament %, refused for %',\n        v_held, p_tournament_id USING ERRCODE = '55000';\n    END IF;\n    PERFORM pg_advisory_xact_lock_shared(\n      hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('ca:tournament-finish-lane:v1', 0));\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('ca:tournament-terminal-settlement:v1:' || v_held, 0));\n    RETURN;\n  END IF;\n\n  -- Resolve the tournament before any lock. variant, tournament_type and the\n  -- satellite target are fixed for the life of the row, so reading them\n  -- unlocked gives the answer reading them under the lane would.\n  IF p_tournament_id IS NOT NULL THEN\n    SELECT (lower(COALESCE(t.variant::text, '')) = 'satellite'\n            OR upper(COALESCE(t.tournament_type::text, '')) = 'SATELLITE'\n            OR t.satellite_target_id IS NOT NULL\n            OR t.satellite_target IS NOT NULL)\n      INTO v_satellite\n      FROM public.tournaments t\n     WHERE t.id = p_tournament_id;\n    IF NOT FOUND THEN\n      v_satellite := true;\n    END IF;\n  END IF;\n\n  -- A satellite finish writes the target tournament's rows, and an unknown\n  -- tournament cannot be scoped: the whole lane, as it always was.\n  IF v_satellite THEN\n    PERFORM public.fn_ca_lock_settlement_lane_global();\n    RETURN;\n  END IF;\n\n  -- G SHARED: waits for, and excludes, the rare global authorities (G\n  -- exclusive) and nothing else. Hands and rolling authorities of other\n  -- tournaments run beside this finish.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n  -- F EXCLUSIVE: one finish on the platform at a time, so finish-against-\n  -- finish wallet order is what it was under G exclusive.\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-finish-lane:v1', 0));\n  -- T(id) EXCLUSIVE: this tournament's hands (T shared) and rolling\n  -- authorities (T exclusive) wait for the finish, and the proof-of-\n  -- authority guards read it as this backend's authority over the rows.\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-terminal-settlement:v1:' || p_tournament_id::text, 0));\n  -- The rest of this transaction re-enters this lane through\n  -- fn_ca_lock_settlement_lane_global; transaction-local, gone at commit.\n  PERFORM set_config('ca.finish_lane_tournament', p_tournament_id::text, true);\nEND;\n$function$\n",
+      "anon_execute": false,
+      "definition_md5": "76e4c6b5291bab20f0cfc65dd060022b",
+      "security_definer": false,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    },
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "2270895ea61dfdfc47b2a17754c9de4a",
+      "identity": "fn_ca_lock_settlement_lane_global()",
+      "proconfig": [
+        "search_path=public, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_settlement_lane_global()\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  -- Inside a non-satellite finish (2026-09-17) this transaction already\n  -- holds that finish's lane: G shared, F exclusive, T(id) exclusive. The\n  -- finish body and the settle functions still call this helper; re-enter\n  -- the lane that is held instead of requesting G exclusively, which would\n  -- be an upgrade of a shared hold (2026-09-10: no upgrades, they deadlock).\n  IF COALESCE(current_setting('ca.finish_lane_tournament', true), '') <> '' THEN\n    PERFORM public.fn_ca_lock_settlement_lane_for_finish(NULL);\n    RETURN;\n  END IF;\n  -- G then B. Terminal / rare authorities: serialised against every other\n  -- authority AND against every hand settlement, as on 2026-09-09.\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:hand-settlement-barrier:v1', 0));\nEND;\n$function$\n",
+      "anon_execute": false,
+      "definition_md5": "7c759bb7a639c3124de2607bdbf12577",
+      "security_definer": false,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    },
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "36384d5eaef31083e0ee5424d814138d",
+      "identity": "fn_complete_tournament_terminal(uuid,uuid,text)",
+      "proconfig": [
+        "search_path=public, pg_temp",
+        "statement_timeout=45s"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal(p_tournament_id uuid, p_observed_winner_id uuid, p_settlement_mode text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '45s'\nAS $function$\nDECLARE\n  v_token uuid;\n  v_result jsonb;\nBEGIN\n  IF NOT public.fn_caller_is_engine() THEN\n    RAISE EXCEPTION 'terminal settlement requires service authority'\n      USING ERRCODE='28000';\n  END IF;\n  PERFORM public.fn_ca_lock_settlement_lane_for_finish(p_tournament_id);\n  v_token:=public.fn_ca_open_tournament_seat_exit_authority(\n    p_tournament_id,'terminal_finish',NULL);\n  BEGIN\n    v_result:=public.fn_complete_tournament_terminal_pre_seat_guard(\n      p_tournament_id,p_observed_winner_id,p_settlement_mode);\n    PERFORM public.fn_ca_close_tournament_seat_exit_authority(\n      v_token,COALESCE((v_result->>'ok')::boolean,false));\n  EXCEPTION WHEN OTHERS THEN\n    PERFORM public.fn_ca_close_tournament_seat_exit_authority(v_token,false);\n    RAISE;\n  END;\n  RETURN v_result;\nEND;\n$function$\n",
+      "anon_execute": false,
+      "definition_md5": "c64e049911fd99c1d784cdb042ca714b",
+      "security_definer": true,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    },
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "f4dbfcaed8d50d95183a0b3fa6a6c290",
+      "identity": "fn_resolve_tournament_terminal_outcome(uuid,uuid,text)",
+      "proconfig": [
+        "search_path=public",
+        "statement_timeout=45s"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_resolve_tournament_terminal_outcome(p_tournament_id uuid, p_observed_winner_id uuid, p_settlement_mode text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET statement_timeout TO '45s'\nAS $function$\nDECLARE\n  v_mode text := lower(btrim(COALESCE(p_settlement_mode,'')));\n  v_t record;\n  v_h public.tournament_terminal_settlements%ROWTYPE;\n  v_receipt jsonb;\nBEGIN\n  PERFORM public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id);\n  IF p_tournament_id IS NULL THEN\n    RAISE EXCEPTION 'terminal outcome requires a tournament id'\n      USING ERRCODE = '22004';\n  END IF;\n  IF v_mode NOT IN ('places','final_table_deal') THEN\n    RAISE EXCEPTION 'unknown terminal outcome mode %',p_settlement_mode\n      USING ERRCODE = '22023';\n  END IF;\n  SELECT t.* INTO v_t FROM public.tournaments t\n   WHERE t.id = p_tournament_id FOR UPDATE;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'tournament % does not exist',p_tournament_id\n      USING ERRCODE = 'P0002';\n  END IF;\n  IF lower(COALESCE(v_t.variant::text,'')) = 'satellite'\n     OR upper(COALESCE(v_t.tournament_type::text,'')) = 'SATELLITE'\n     OR v_t.satellite_target_id IS NOT NULL\n     OR v_t.satellite_target IS NOT NULL THEN\n    RAISE EXCEPTION 'tournament % is a satellite',p_tournament_id\n      USING ERRCODE = '22023';\n  END IF;\n\n  SELECT * INTO v_h FROM public.tournament_terminal_settlements h\n   WHERE h.tournament_id = p_tournament_id;\n  IF FOUND THEN\n    IF v_h.settlement_mode IS DISTINCT FROM v_mode\n       OR (p_observed_winner_id IS NOT NULL\n           AND v_h.winner_id IS DISTINCT FROM p_observed_winner_id) THEN\n      RAISE EXCEPTION 'terminal outcome parameters disagree with stored receipt for %',\n        p_tournament_id USING ERRCODE = '40001';\n    END IF;\n    v_receipt := public.fn_ca_tournament_terminal_receipt(\n      p_tournament_id,p_observed_winner_id);\n    RETURN jsonb_build_object(\n      'ok',true,\n      'terminal_committed',true,\n      'definitively_not_committed',false,\n      'status','COMPLETED',\n      'mode',v_mode,\n      'tournament_id',p_tournament_id,\n      'receipt',v_receipt);\n  END IF;\n\n  IF upper(COALESCE(v_t.status::text,'')) = 'COMPLETED' THEN\n    RAISE EXCEPTION 'completed tournament % has no atomic terminal receipt',\n      p_tournament_id USING ERRCODE = 'P0404';\n  END IF;\n  IF upper(COALESCE(v_t.status::text,'')) NOT IN ('RUNNING','COMPLETING') THEN\n    RAISE EXCEPTION 'tournament % has non-terminal-outcome status %',\n      p_tournament_id,v_t.status USING ERRCODE = '55000';\n  END IF;\n  RETURN jsonb_build_object(\n    'ok',true,\n    'terminal_committed',false,\n    'definitively_not_committed',true,\n    'status',upper(v_t.status::text),\n    'mode',v_mode,\n    'tournament_id',p_tournament_id,\n    'receipt','null'::jsonb);\nEND;\n$function$\n",
+      "anon_execute": false,
+      "definition_md5": "be748996b334541f84debbc2e9eb5457",
+      "security_definer": true,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    }
+  ],
+  "migration": [
+    {
+      "name": "the_finish_lane_is_exclusive_among_finishes",
+      "version": "20260917113717"
+    }
+  ],
+  "captured_at": "2026-09-17T12:25:42.366585+00:00"
+}

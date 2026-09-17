@@ -1,0 +1,6 @@
+BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout='10s'; SET LOCAL lock_timeout='2s';
+SELECT jsonb_build_object('captured_at',clock_timestamp(),'transaction_read_only',current_setting('transaction_read_only'),
+'functions',(SELECT jsonb_agg(jsonb_build_object('signature',n.nspname||'.'||p.proname||'('||oidvectortypes(p.proargtypes)||')','source_md5',md5(p.prosrc),'definition_md5',md5(pg_get_functiondef(p.oid)),'definition',pg_get_functiondef(p.oid),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl,'config',p.proconfig) ORDER BY p.proname,oidvectortypes(p.proargtypes)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN('fn_is_owner_operational_notification','fn_capture_owner_notification_destination','fn_ca_raise_drift_incident','fn_ca_financial_alert_to_incident','fn_settle_tournament_rake')),
+'roles',(SELECT jsonb_agg(jsonb_build_object('name',rolname,'super',rolsuper,'bypassrls',rolbypassrls,'inherit',rolinherit,'can_create_public',has_schema_privilege(rolname,'public','CREATE'),'postgres_usage',pg_has_role(rolname,'postgres','USAGE'),'service_role_usage',pg_has_role(rolname,'service_role','USAGE')) ORDER BY rolname) FROM pg_roles WHERE rolname IN('anon','authenticated','service_role','postgres'))) AS catalog;
+ROLLBACK;

@@ -1,0 +1,120 @@
+{
+  "status": "AGREED_NAMES_DRAFT_SOURCE_CONTRACT_UNRUN",
+  "tables": {
+    "operations": "public.accounting_credit_reduction_operations_v1",
+    "retirements": "public.accounting_credit_reduction_retirements_v1",
+    "revision": "public.agents.credit_control_revision"
+  },
+  "snapshot": {
+    "rpc": "fn_agent_credit_reduction_snapshot_v1",
+    "args": {
+      "p_expected_actor_id": "uuid",
+      "p_club_id": "uuid",
+      "p_target_user_id": "uuid"
+    },
+    "result": {
+      "contract_version": 1,
+      "actor_user_id": "uuid",
+      "club_id": "uuid",
+      "agent_id": "uuid",
+      "target_user_id": "uuid",
+      "credit_limit": "fixed2 nonnegative numeric(15,2) text",
+      "credit_used": "fixed2 nonnegative numeric(15,2) text",
+      "is_prepaid": "boolean",
+      "control_revision": "nonnegative bigint decimal text;0 valid",
+      "captured_at": "UTC YYYY-MM-DDTHH:mm:ss.ffffffZ"
+    }
+  },
+  "apply": {
+    "rpc": "fn_reduce_agent_credit_v1",
+    "args": {
+      "p_expected_actor_id": "uuid",
+      "p_operation_id": "uuid",
+      "p_club_id": "uuid",
+      "p_agent_id": "uuid",
+      "p_target_user_id": "uuid",
+      "p_requested_reduction": "positive exact-cent numeric <=1000000000",
+      "p_expected_credit_limit": "nonnegative exact-cent numeric(15,2)",
+      "p_expected_credit_used": "nonnegative exact-cent numeric(15,2)",
+      "p_expected_is_prepaid": "boolean nonnull",
+      "p_expected_revision": "bigint nonnegative",
+      "p_reason": "text nullable DEFAULT NULL; retained exactly"
+    }
+  },
+  "lookup": {
+    "rpc": "fn_agent_credit_reduction_receipt_v1",
+    "args": {
+      "p_expected_actor_id": "uuid",
+      "p_operation_id": "uuid",
+      "p_club_id": "uuid"
+    }
+  },
+  "retire": {
+    "rpc": "fn_retire_agent_credit_reduction_v1",
+    "args": {
+      "p_expected_actor_id": "uuid",
+      "p_operation_id": "uuid",
+      "p_club_id": "uuid"
+    }
+  },
+  "envelope": {
+    "contract_version": 1,
+    "state": "recorded|retired|absent; absent is lookup only",
+    "actor_user_id": "uuid",
+    "operation_id": "uuid",
+    "club_id": "uuid",
+    "replayed": "boolean; lookup recorded/retired true; fresh apply/retire false",
+    "receipt": "RecordedReceipt|null",
+    "retirement": "RetirementReceipt|null"
+  },
+  "RecordedReceipt": {
+    "contract_version": 1,
+    "receipt_id": "uuid maps op.id",
+    "actor_user_id": "uuid",
+    "operation_id": "uuid",
+    "club_id": "uuid",
+    "agent_id": "uuid",
+    "target_user_id": "uuid",
+    "action": "reduce_credit_limit",
+    "requested_reduction": "fixed2 text",
+    "reason": "exact original text|null; NULL and empty distinct intent",
+    "assignment_reason": "reason unless NULL/empty then literal Credit line reduced",
+    "before_limit": "fixed2 text",
+    "after_limit": "fixed2 text",
+    "credit_used": "fixed2 text unchanged at occurrence",
+    "before_prepaid": "boolean",
+    "after_prepaid": "boolean",
+    "before_revision": "nonnegative decimal bigint text",
+    "after_revision": "nonnegative decimal bigint text",
+    "applied_reduction": "fixed2 text",
+    "assignment_id": "uuid|null",
+    "document_id": "uuid|null",
+    "invoice_id": "uuid|null",
+    "recorded_at": "UTC YYYY-MM-DDTHH:mm:ss.ffffffZ",
+    "outcome": "applied|no_change",
+    "payment_proven": false,
+    "chip_movement_claimed": false,
+    "amount_due_claimed": false
+  },
+  "RetirementReceipt": {
+    "contract_version": 1,
+    "retirement_id": "uuid",
+    "actor_user_id": "uuid",
+    "operation_id": "uuid",
+    "club_id": "uuid",
+    "state": "retired",
+    "retired_at": "UTC YYYY-MM-DDTHH:mm:ss.ffffffZ"
+  },
+  "rules": [
+    "recorded envelope has receipt only; retired has retirement only; absent has both null and replayed false",
+    "all UUIDs canonical lowercase; timestamps fixed six microseconds UTC; exact decimal strings no floats",
+    "applied=requested clamped to before_limit; after_limit=before_limit-applied; applied>0 requires all assignment/document/invoice IDs distinct nonnull and after_revision=before_revision+1",
+    "true no_change requires before/after limit0, credit_used0, before/after prepaid true, same revision and all3document/assignment IDs null",
+    "zero nonprepaid/other malformed prior funding pair refuses; no silent mode repair",
+    "reason exact raw text|null belongs to fingerprint; assignment_reason default is independently validated. No server trim; UI may normalize once before preparing accepted intent",
+    "full operation fingerprint is action + actor/club/agent/target + requested reduction + expected limit/used/prepaid/revision + reason. Snapshot timestamp is not part of intent",
+    "completed receipt/replay/retirement resolve by exact actor/op/club without currentagent/assignment lookup; no fresh balance claim",
+    "absent/error never releases unresolved lane; explicit retirement under club→actor/op lock prevents delayed apply",
+    "root AFTERINSERT operations trigger creates canonical nonpayable document and calls existing delivery; wrapper calls fn_accounting_credit_reduction_assert_document(op.id) after nested effects; no stub"
+  ]
+}

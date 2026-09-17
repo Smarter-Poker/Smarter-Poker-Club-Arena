@@ -1,0 +1,22 @@
+{
+  "status": "SOURCE_CHANGED_UNRUN_PENDING_QUALIFICATION",
+  "forward_component": {
+    "path": "supabase/accounting/weekly-v3/components/20260914160000_private_cash_attribution_preserves_recorded_seat_scope.sql",
+    "sha256": "755b408b0a26fed68b6bd4f8e0fd89cb6f61de2cbeb3d816911a51e31e96e70a",
+    "preimage_domain": "md5(pg_proc.prosrc)",
+    "preimage_md5": "9ac29f1d313dbc33f862efd3ee11e3a1"
+  },
+  "files": {
+    "regression.sql": "7651f8d4aa4c61483fbea3090549f3088aff53abfb240650c971919e7c8e33c7",
+    "README.md": "7b66c0e847f887128d9bac591c73ef3fc248f89c7401a217d8b850309c1f25c8"
+  },
+  "ordering": "Existing cash-source-compatibility SQL stages through producer-order.sql; then this forward component; then this regression. Full-candidate acceptance additionally requires the protected accepted-hand/barrier profile.",
+  "reviewed_dependencies": {
+    "supabase/accounting/weekly-v3/components/20260914131539_cash_commissions_account_for_every_contributor_once.sql": "cfad133fe5581148709f26ae22dd9430f205fb459b9bc0f9f86eafd3ef86f768",
+    "supabase/accounting/weekly-v3/components/20260914144442_cash_accounting_refusals_are_durable_and_retryable.sql": "dd50f34cbf18e3a5fb52b6b3873ef74fceb360a2c815212c52de08d183521cfb",
+    "server/src/services/RakebackSettlerService.ts": "31a9394a6e86ba9f693f3f5f1e03d17d7013f258b9e4458c9a97e49e45b32507",
+    "tests/fixtures/full-weekly-accounting/tables.json": "0f986db3950d8416e5f2e968972ca03bfdb984bf8aa43267d60b2fce37cf0428",
+    "tests/fixtures/full-weekly-accounting/triggers-round-3.json": "383cf9b43093ba5f945a68c9f4f8d1389472e8ce6b1d16f4b18d547a86a0249e"
+  },
+  "execution_performed": false
+}

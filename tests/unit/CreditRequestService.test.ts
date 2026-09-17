@@ -6,6 +6,10 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('../../src/core/IdentityDNA', () => ({
+  getIdentityDNAStatus: () => ({ loaded: true, authenticated: true, userId: 'approver-1' }),
+}));
+
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
     const handler: ProxyHandler<any> = {

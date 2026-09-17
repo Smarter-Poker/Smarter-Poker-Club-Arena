@@ -41,7 +41,7 @@
  *      agents, clubs, union_wallets
  *   3. MasterBus subscriptions: BALANCE_UPDATED, DIAMOND_BALANCE_CHANGED,
  *      WALLET_REFRESHED, CHIPS_ADDED, CHIPS_DISTRIBUTED, CHIPS_WITHDRAWN,
- *      CLUB_UPDATED, SETTLEMENT_COMPLETED, COMMISSION_PAID
+ *      CLUB_UPDATED
  *
  * Improvements (v2):
  *   - Loading skeleton (shimmer) instead of flash-of-zeros
@@ -86,8 +86,6 @@ const WALLET_BUS_EVENTS = [
   'CHIPS_ADDED',
   'CHIPS_DISTRIBUTED',
   'CLUB_UPDATED',
-  'SETTLEMENT_COMPLETED',
-  'COMMISSION_PAID',
 ] as const;
 
 // Reconnect backoff delays (ms)

@@ -22,7 +22,7 @@
  * route's AuthGuard still redirects them to /auth).
  */
 
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { matchPath, useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import ErrorBoundary from '../common/ErrorBoundary';
@@ -38,10 +38,36 @@ const MultiTablePage = lazyWithRetry(() => import('../../pages/MultiTablePage'))
    jackpot could need it. */
 const BBJHitAnnouncer = lazyWithRetry(() => import('../bbj/BBJHitAnnouncer'));
 
+// Match TableRouteBoundary's full UUID shape without importing its club resolver
+// and dependencies into the entry chunk. UUID versions do not restrict table IDs.
+const TABLE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default function PersistentTableLayer() {
   const { user } = useAuthUser();
   const location = useLocation();
-  const onTableRoute = matchPath('/table/:tableId', location.pathname) !== null;
+  const tableRoute = matchPath('/table/:tableId', location.pathname);
+  const onTableRoute = tableRoute !== null;
+  const tableId = tableRoute?.params.tableId;
+  const userId = user?.id;
+
+  useEffect(() => {
+    if (!userId || !tableId || !TABLE_ID_PATTERN.test(tableId)) return;
+    let disposed = false;
+    // Direct links have no lobby intent. Start the same speculative owner while
+    // MultiTablePage is loading; the real table still owns admission and errors.
+    // Keep this import dynamic: this layer itself is part of the entry chunk.
+    void import('../../services/tableWarmup')
+      .then(({ warmTable }) => {
+        if (!disposed) warmTable(tableId);
+      })
+      .catch(() => {
+        // Preparation is optional; failure must not block the actual table.
+      });
+    return () => {
+      // A delayed chunk must not start work for an old route or account.
+      disposed = true;
+    };
+  }, [tableId, userId]);
 
   if (!user) return null;
 

@@ -174,12 +174,20 @@ BEGIN SELECT pg_get_functiondef(v_oid),prosrc INTO v_def,v_body FROM pg_proc WHE
 ROLLBACK TO SAVEPOINT body_drift;
 SELECT pg_temp.assert_true(:'observed_state'='P0001','unrelated full-body drift refuses atomically');
 SAVEPOINT owner_drift;
+-- PostgreSQL requires the proposed owner to hold schema CREATE before this
+-- deliberate ownership corruption can reach the component guard. Confine that
+-- prerequisite to this savepoint; the real API role retains no CREATE grant.
+SELECT pg_temp.assert_true(NOT has_schema_privilege('authenticated','public','CREATE'),
+  'owner-drift setup starts with unchanged API schema authority');
+GRANT CREATE ON SCHEMA public TO authenticated;
 ALTER FUNCTION public.fn_ca_financial_alert_to_incident() OWNER TO authenticated;
 \set ON_ERROR_STOP off
 \ir ../../supabase/components/production-alert-identity-and-rake-wording.sql
 \set observed_state :SQLSTATE
 \set ON_ERROR_STOP on
 ROLLBACK TO SAVEPOINT owner_drift;
+SELECT pg_temp.assert_true(NOT has_schema_privilege('authenticated','public','CREATE'),
+  'owner-drift savepoint restores API schema authority');
 SELECT pg_temp.assert_true(:'observed_state'='P0001','changed bridge owner refuses atomically');
 SAVEPOINT security_drift;
 ALTER FUNCTION public.fn_ca_financial_alert_to_incident() SECURITY INVOKER;

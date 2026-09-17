@@ -88,8 +88,8 @@
     },
     "core_identity": {
       "path": "scripts/qualification/production-alert-core-identity.sql",
-      "sha256": "a719809f0c20a56b38872407d145a5fe98f4f39ccdd93bb38efeb384085f53da",
-      "bytes": 28186
+      "sha256": "d70c35f0d5b980cb3a7410485f0dc31d19a283f6fa2ac38ebc7ba7b9493178a3",
+      "bytes": 28768
     },
     "core_connected": {
       "path": "scripts/qualification/production-alert-core-connected.sql",

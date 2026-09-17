@@ -1377,6 +1377,27 @@ jobs:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-tournament-create-payout-depth-pg17.py
 
+      - name: MTT persisted-format preparation preserves legacy admission
+        id: mtt_preparation
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 -B tests/operations/mtt-unlimited-runner.test.py
+          python3 -B tests/operations/mtt-isolation-results.test.py
+          python3 -B scripts/ci/test-mtt-unlimited.py --mode preparation \
+            --output "$RUNNER_TEMP/mtt-preparation-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --work-parent "$RUNNER_TEMP" --deadline-seconds 600
+
+      - name: Retain MTT preparation receipts and exact native transcripts
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.mtt_preparation.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mtt-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

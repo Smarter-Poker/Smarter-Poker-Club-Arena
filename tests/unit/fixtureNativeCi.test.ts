@@ -159,6 +159,52 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/ci/test-mtt-unlimited.py',
+    'scripts/ci/mtt_unlimited_fixture.py',
+    'scripts/ci/mtt_format_qualification.py',
+    'scripts/ci/mtt_isolation_results.py',
+    'scripts/ci/fixtures/mtt-unlimited/accounting-schema.sql',
+    'scripts/ci/fixtures/mtt-format-preparation/source-binding.json',
+    'scripts/ci/fixtures/mtt-format-preparation/satellite-restart-future.sql',
+    'scripts/ci/fixtures/mtt-format-preparation/satellite-creator-legacy.sql',
+    'scripts/ci/probes/mtt-format-preparation-native.sql',
+    'scripts/ci/probes/mtt-format-admission-lock.spec',
+    'scripts/ci/probes/mtt-isolation/creation-commit.spec',
+    'tests/operations/mtt-unlimited-runner.test.py',
+    'tests/operations/mtt-isolation-results.test.py',
+    'tests/operations/fixtures/mtt-preparation-lock/format_admission-actual.stdout',
+  ])('selects the existing accounting job for MTT regression input %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
+  it('runs preparation verification in the existing accounting job without activation', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const mtt = steps.filter((step: { run?: string }) =>
+      step.run?.includes('test-mtt-unlimited.py')
+    );
+    expect(mtt).toHaveLength(1);
+    expect(mtt[0].run).toContain('--mode preparation');
+    expect(mtt[0].run).toContain('mtt-unlimited-runner.test.py');
+    expect(mtt[0].run).toContain('mtt-isolation-results.test.py');
+    expect(mtt[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(mtt[0].env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+    expect(mtt[0].run).not.toContain('20260915150000');
+    expect(mtt[0]['continue-on-error']).toBeUndefined();
+    expect(mtt[0].if).toBeUndefined();
+    const evidence = steps.filter(
+      (step: { name?: string }) =>
+        step.name === 'Retain MTT preparation receipts and exact native transcripts'
+    );
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0].uses).toBe('actions/upload-artifact@v4');
+    expect(evidence[0].if).toContain('always()');
+    expect(evidence[0].if).toContain('steps.mtt_preparation.outcome');
+    expect(evidence[0].with['if-no-files-found']).toBe('error');
+  });
+
+  it.each([
     'scripts/dev/probe-atomic-tournament-blinds-pg17.py',
     'scripts/dev/probe-played-mtt-launch-pg17.py',
   ])('executes the retained MTT native authority probe in accounting: %s', (path) => {

@@ -212,18 +212,34 @@ export const PARKED_PRESENCE_FRESH_MS = 20 * 60_000;
  * effort: a failure here costs the next boot its strike counts and blind
  * budgets, which is what every boot cost before this existed.
  */
+export interface ParkedTimeBank {
+  occupancyId: string;
+  remainingSeconds: number;
+  usesRemaining: number;
+  initialSeconds: number;
+  baseSeconds: number;
+  dbConsumedSeconds: number;
+}
+
 export async function savePresenceAtPark(params: {
   tableId: string;
   disconnectStates: Record<string, DisconnectStateEntry>;
   engineInstance?: string | null;
+  timeBanks?: Record<string, ParkedTimeBank>;
+  handNumber?: number;
 }): Promise<boolean> {
   try {
+    const parkedAt = new Date().toISOString();
     const { error } = await supabase.from('engine_presence_parked').upsert(
       {
         table_id: params.tableId,
         disconnect_states: params.disconnectStates,
-        parked_at: new Date().toISOString(),
+        parked_at: parkedAt,
         engine_instance: params.engineInstance ?? null,
+        time_bank_snapshot:
+          params.timeBanks && Number.isSafeInteger(params.handNumber)
+            ? { version: 1, parkedAt, handNumber: params.handNumber, players: params.timeBanks }
+            : null,
       },
       { onConflict: 'table_id' }
     );
@@ -260,4 +276,56 @@ export async function loadPresenceFromPark(
     console.warn(`[loadPresenceFromPark] Exception:`, e);
     return null;
   }
+}
+
+/** Read only explicitly initialized banks from this exact, still-current park. */
+export async function loadTimeBanksFromPark(
+  tableId: string,
+  handNumber: number,
+  nowMs = Date.now()
+): Promise<Record<string, ParkedTimeBank>> {
+  const { data, error } = await supabase
+    .from('engine_presence_parked')
+    .select('time_bank_snapshot, parked_at')
+    .eq('table_id', tableId)
+    .maybeSingle();
+  if (error) throw error;
+  const snapshot = data?.time_bank_snapshot;
+  const parkedAt = Date.parse(String(data?.parked_at));
+  if (
+    !snapshot ||
+    snapshot.version !== 1 ||
+    snapshot.handNumber !== handNumber ||
+    !Number.isFinite(parkedAt) ||
+    nowMs < parkedAt ||
+    nowMs - parkedAt > PARKED_PRESENCE_FRESH_MS ||
+    Date.parse(String(snapshot.parkedAt)) !== parkedAt ||
+    !snapshot.players ||
+    typeof snapshot.players !== 'object' ||
+    Array.isArray(snapshot.players)
+  )
+    return {};
+  const valid: Record<string, ParkedTimeBank> = {};
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  for (const [userId, value] of Object.entries(snapshot.players)) {
+    if (!uuid.test(userId) || !value || typeof value !== 'object') continue;
+    const bank = value as ParkedTimeBank;
+    if (
+      !uuid.test(bank.occupancyId) ||
+      ![
+        bank.remainingSeconds,
+        bank.usesRemaining,
+        bank.initialSeconds,
+        bank.baseSeconds,
+        bank.dbConsumedSeconds,
+      ].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0) ||
+      !Number.isSafeInteger(bank.usesRemaining) ||
+      bank.remainingSeconds > bank.initialSeconds ||
+      bank.baseSeconds > bank.initialSeconds ||
+      bank.dbConsumedSeconds > bank.initialSeconds - bank.baseSeconds
+    )
+      continue;
+    valid[userId] = bank;
+  }
+  return valid;
 }

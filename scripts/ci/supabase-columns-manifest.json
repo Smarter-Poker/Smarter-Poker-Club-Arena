@@ -6516,7 +6516,8 @@
       "table_id",
       "disconnect_states",
       "parked_at",
-      "engine_instance"
+      "engine_instance",
+      "time_bank_snapshot"
     ],
     "engine_recovery_events": [
       "id",

@@ -951,6 +951,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.running
         ) {
           this.setLoopPhase('parked_for_pause');
+          if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
           await this.awaitPauseGate();
         }
 
@@ -2789,32 +2790,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // Only initialize time bank if player is NEW (don't reset existing pool per session)
         if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
           const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
-          // ── REVERTED 2026-08-25, same day it shipped. Read this before trying
-          //    the restart-fidelity time-bank restore again. ──
-          //
-          // The intent was right: the accepted-hand envelope writes time_bank_remaining,
-          // loadSeatedPlayers reads it back, and this line threw it away, so a
-          // restart refilled everyone's bank for free. The implementation was
-          // wrong in a way that made things strictly WORSE than the refill:
-          //
-          //   `time_bank_remaining INTEGER DEFAULT 30` (20260313_time_bank_
-          //   persistence.sql) — the column is never null, and loadSeatedPlayers
-          //   additionally coerces `|| 0`. So "is there a persisted value?" was
-          //   ALWAYS true and the fallback branch was unreachable for every
-          //   player on every table.
-          //
-          // The damage: every seat got 30s/4 uses instead of the table base plus
-          // their VIP and purchased extras, which made fetchTimeBankExtras dead
-          // code; and dbConsumedSeconds was seeded at (tbTotal - 30), so a VIP
-          // with 300s of extras had 310 seconds of their monthly quota booked as
-          // spent the instant they sat down.
-          //
-          // A correct version needs a way to tell "this seat has never been
-          // seeded" from "this seat has 30 seconds left", which the schema cannot
-          // currently express. That needs a nullable marker column, not a cleverer
-          // read of these two. Until then the generous behaviour is the safe one:
-          // a free refill on a restart costs the house a few seconds of clock; the
-          // broken version silently overcharged VIP quota on every table.
+          // Unmarked legacy seat defaults cannot prove an initialized bank.
+          // A current parked snapshot is restored earlier, by adoptSeatRoster,
+          // only for its exact occupancy and completed-hand boundary. Missing
+          // or unreadable markers retain this approved allowance fallback;
+          // never infer VIP consumption from the old default-30 seat column.
           this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
             remainingSeconds: tbTotal,
             usesRemaining: Math.ceil(tbTotal / 20),

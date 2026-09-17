@@ -61,6 +61,19 @@ export interface WorkerLike {
   unref?(): void;
 }
 
+/**
+ * Per-job options a caller may pass with a decision request.
+ *
+ * `deadlineMs`: how long this job may spend in queue plus compute before it
+ * expires into the caller's fallback, measured from enqueue. A turn-bound
+ * caller derives it from the action clock (`decisionDeadline.ts`); absent or
+ * invalid, the client's fixed `jobTimeoutMs` applies. The worker-integrity
+ * (execution) deadline armed at dispatch is separate and unaffected.
+ */
+export interface HorseDecisionJobOptions {
+  deadlineMs?: number;
+}
+
 export interface LiveHorseDecisionWorkerClientOptions {
   workerFactory?: () => WorkerLike;
   readyTimeoutMs?: number;
@@ -158,6 +171,8 @@ interface QueuedJob {
   abortListener?: () => void;
   settled: boolean;
   enqueuedAt: number;
+  /** How long this job may live from enqueue: the caller's turn-clock deadline, or the client's fixed window. */
+  callerDeadlineMs: number;
   /** Caller/action-clock deadline measured from enqueue. */
   deadlineTimer: ReturnType<typeof setTimeout> | null;
   /** Worker-integrity deadline measured only after this job is posted. */
@@ -470,26 +485,40 @@ export class LiveHorseDecisionWorkerClient {
 
   decideFast(
     snapshot: LiveHorseDecisionSnapshot,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: HorseDecisionJobOptions
   ): Promise<FastHorseDecisionResult> {
     const request: FastHorseDecisionRequest = {
       ...snapshot,
       type: 'DECIDE_FAST',
       requestId: this.nextRequestId++,
     };
-    return this.enqueue<FastHorseDecisionResult>(request, 'FAST_RESULT', signal);
+    return this.enqueue<FastHorseDecisionResult>(
+      request,
+      'FAST_RESULT',
+      signal,
+      false,
+      options?.deadlineMs
+    );
   }
 
   decideDeep(
     snapshot: LiveHorseDecisionSnapshot & { rngBefore: number; deepEquity: number },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: HorseDecisionJobOptions
   ): Promise<DeepHorseDecisionResult> {
     const request: DeepHorseDecisionRequest = {
       ...snapshot,
       type: 'DECIDE_DEEP',
       requestId: this.nextRequestId++,
     };
-    return this.enqueue<DeepHorseDecisionResult>(request, 'DEEP_RESULT', signal);
+    return this.enqueue<DeepHorseDecisionResult>(
+      request,
+      'DEEP_RESULT',
+      signal,
+      false,
+      options?.deadlineMs
+    );
   }
 
   observeCompletedHand(
@@ -671,7 +700,8 @@ export class LiveHorseDecisionWorkerClient {
     request: HorseDecisionJobRequest,
     expected: T['type'],
     signal?: AbortSignal,
-    priority = false
+    priority = false,
+    deadlineMs?: number
   ): Promise<T> {
     if (this.phase === 'stopping' || this.phase === 'stopped') {
       return Promise.reject(new Error('live horse decision worker is stopping'));
@@ -683,6 +713,15 @@ export class LiveHorseDecisionWorkerClient {
 
     return new Promise<T>((resolve, reject) => {
       const enqueuedAt = Date.now();
+      // THE DECISION DEADLINE IS THE TURN CLOCK (2026-09-17): a caller that
+      // knows how much of the turn is left passes it (decisionDeadline.ts);
+      // everything else keeps the fixed window. The execution (worker-
+      // integrity) deadline armed at dispatch is still `jobTimeoutMs` and
+      // does not move with this number.
+      const callerDeadlineMs =
+        typeof deadlineMs === 'number' && Number.isFinite(deadlineMs) && deadlineMs > 0
+          ? Math.floor(deadlineMs)
+          : this.jobTimeoutMs;
       const job: QueuedJob = {
         request,
         expected,
@@ -691,11 +730,12 @@ export class LiveHorseDecisionWorkerClient {
         signal,
         settled: false,
         enqueuedAt,
+        callerDeadlineMs,
         deadlineTimer: null,
         executionTimer: null,
         executionDeadlineCheck: null,
       };
-      job.deadlineTimer = setTimeout(() => this.onJobDeadline(job), this.jobTimeoutMs);
+      job.deadlineTimer = setTimeout(() => this.onJobDeadline(job), callerDeadlineMs);
       job.deadlineTimer.unref?.();
       if (signal) {
         job.abortListener = () => this.abort(job);
@@ -1206,8 +1246,8 @@ export class LiveHorseDecisionWorkerClient {
     job.reject(
       new HorseDecisionExpiredError(
         posted
-          ? `horse decision expired after ${this.jobTimeoutMs}ms of queue-plus-compute time`
-          : `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
+          ? `horse decision expired after ${job.callerDeadlineMs}ms of queue-plus-compute time`
+          : `horse decision expired after ${job.callerDeadlineMs}ms before worker dispatch`
       )
     );
     if (posted) {

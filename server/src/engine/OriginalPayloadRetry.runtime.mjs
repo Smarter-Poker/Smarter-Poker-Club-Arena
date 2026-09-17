@@ -5,6 +5,8 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import ts from 'typescript';
+import { LifecycleDiagnostics } from '../services/LifecycleDiagnostics.ts';
+import { leavePendingTerminalReason } from '../observability/LeavePendingDiagnostic.ts';
 const readCurrent = (file) => fs.readFileSync(resolve(process.cwd(), 'src', file), 'utf8');
 const base = readCurrent('engine/ServerTableEngineBase.ts'),
   settlement = readCurrent('engine/ServerTableEngineSettlement.ts');
@@ -20,7 +22,10 @@ const methods = [
   'isTransientDbError',
   'isRolledBackSerializationRefusal',
   'lifecycleCanMutate',
+  'recordLeavePendingGuard',
+  'recordLifecycleDiagnostic',
   'killForRestart',
+  'fenceTerminalEngine',
 ].map((n) => method(base, n));
 const uuid = 'abcdef00-0000-4000-8000-000000000001';
 function harness(sequence, { rootB = false, onSleep, onRpc } = {}) {
@@ -81,6 +86,7 @@ function harness(sequence, { rootB = false, onSleep, onRpc } = {}) {
       settlementStepSlow: { inc() {} },
     },
     AUTOMATIC_RECOVERY_EVENT_CLASS: 'automatic',
+    leavePendingTerminalReason,
     structuredClone,
     setTimeout: (fn, ms) => {
       sleeps.push(ms);
@@ -116,6 +122,8 @@ function harness(sequence, { rootB = false, onSleep, onRpc } = {}) {
   Object.assign(probe, {
     running: true,
     terminal: false,
+    lifecycleDiagnostics: new LifecycleDiagnostics(),
+    lifecycleDiagnosticWriteFailures: 0,
     tableId: uuid,
     handCount: 42,
     currentHandVariant: 'nlh',

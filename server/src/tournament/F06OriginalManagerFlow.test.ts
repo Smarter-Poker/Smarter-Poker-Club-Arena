@@ -646,6 +646,9 @@ it.each(['committed', 'absent', 'pending_reserved'])(
         return {
           data: {
             ok: true,
+            tournament_id: p.p_tournament_id,
+            generation: p.p_lease_generation,
+            custody_id: p.p_custody_id,
             permit_id: p.p_permit_id,
             table_id: destination,
             lifecycle: '1',

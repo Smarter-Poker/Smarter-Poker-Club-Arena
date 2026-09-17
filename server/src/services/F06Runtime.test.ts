@@ -168,6 +168,9 @@ it('actual Base accepted finish clears only exact permit after durable acknowled
   };
   const reply = {
     ok: true,
+    tournament_id: b.tournament_id,
+    generation: b.lease_generation,
+    custody_id: b.custody_id,
     permit_id: b.permit_id,
     table_id: b.table_id,
     lifecycle: b.lifecycle,
@@ -186,7 +189,7 @@ it('actual Base accepted finish clears only exact permit after durable acknowled
   e.f06CurrentPermit = p;
   const finish = e.finishF06AcceptedHand('1000001', id(9));
   expect(e.f06CurrentPermit).toBe(p);
-  resolve({ data: { ...reply, state: 'accepted' }, error: null });
+  resolve({ data: { ...reply, state: 'accepted', evidence_id: id(9) }, error: null });
   await finish;
   expect(e.f06CurrentPermit).toBeNull();
 });
@@ -246,9 +249,7 @@ it('actual Manager shared admission starts only after resolved projection and pr
     await Promise.all([...manager.tableEngineRunJobs]);
     spy.mockRestore();
     expect(order).toEqual(
-      unresolved
-        ? ['booked-start-held', 'recovery']
-        : ['booked-start-held', 'installed', 'started']
+      unresolved ? ['booked-start-held', 'recovery'] : ['booked-start-held', 'installed', 'started']
     );
   }
 });
@@ -267,7 +268,13 @@ it('actual Base no-start drain retains original permit until exact custody evide
   const p = new F06HandPermit(
     b,
     async (name) => ({
-      data: { ok: true, ...b, state: name === 'fn_f06_begin_hand' ? 'reserved' : 'never_started' },
+      data: {
+        ok: true,
+        ...b,
+        generation: b.lease_generation,
+        state: name === 'fn_f06_begin_hand' ? 'reserved' : 'never_started',
+        evidence_id: name === 'fn_f06_begin_hand' ? null : b.custody_id,
+      },
       error: null,
     }),
     () => true
@@ -405,7 +412,10 @@ it('actual original permit recovery replays identical BEGIN and rejects owner lo
       calls++;
       return calls === 1
         ? { data: null, error: 'lost' }
-        : { data: { ok: true, ...b, state: 'reserved' }, error: null };
+        : {
+            data: { ok: true, ...b, generation: b.lease_generation, state: 'reserved' },
+            error: null,
+          };
     },
     () => current
   );

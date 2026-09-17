@@ -23,45 +23,65 @@ const publishCode = uncommented(publish);
 const buildProvenance = read('scripts/stamp-build-provenance.mjs');
 const ci = read('.github/workflows/ci.yml');
 
-describe('the required server check accounts for every shard', () => {
+describe('the required server check joins independent accounting and engine work', () => {
   const shards = uncommented(job(ci, 'server_shards'));
   const aggregate = uncommented(job(ci, 'server'));
-  it('retains the required name and the complete matrix prerequisite', () => {
+  it('starts independent jobs together and retains both complete prerequisites', () => {
     expect(aggregate).toMatch(/^ {4}name: Server Engine \(typecheck \+ tests\)$/m);
-    expect(aggregate).toMatch(/^ {4}needs: \[changes, server_shards\]$/m);
+    expect(aggregate).toMatch(/^ {4}needs: \[changes, server_shards, accounting_postgres\]$/m);
     expect(aggregate).toMatch(/^ {4}if: always\(\)$/m);
+    expect(shards).toMatch(/^ {4}needs: changes$/m);
+    expect(shards).not.toContain('needs.accounting_postgres');
     expect(shards).toMatch(/^ {8}shard: \[1, 2, 3, 4\]$/m);
     expect(shards).not.toMatch(/^\s+(?:include|exclude|continue-on-error):/m);
     expect(shards).toMatch(/^\s+npm test -- --shard="\$SERVER_TEST_SHARD\/4"\s*$/m);
     expect(shards).toContain("needs.changes.result != 'success'");
-    expect(shards).toContain("needs.accounting_postgres.result != 'success'");
+    expect(aggregate).toContain('ACCOUNTING_RESULT: ${{ needs.accounting_postgres.result }}');
   });
   const script = aggregate
     .match(/^ {8}run: \|\n((?:^ {10}.+\n?)+)/m)?.[1]
     .split('\n')
     .map((line) => line.slice(10))
     .join('\n');
-  for (const [result, event, diff, changed, expected] of [
-    ['success', 'pull_request', 'success', 'true', 0],
-    ['success', 'schedule', 'skipped', '', 0],
-    ['skipped', 'pull_request', 'success', 'false', 0],
-    ['skipped', 'pull_request', 'success', 'true', 1],
-    ['skipped', 'pull_request', 'failure', 'false', 1],
-    ['skipped', 'pull_request', 'success', '', 1],
-    ['skipped', 'schedule', 'skipped', '', 1],
-    ['failure', 'pull_request', 'success', 'true', 1],
-    ['cancelled', 'pull_request', 'success', 'true', 1],
-    ['unknown', 'pull_request', 'success', 'false', 1],
+  // Execute the actual required-check script. Every missing, skipped, failed or
+  // cancelled dependency refuses even if its independent peer passed.
+  for (const matrix of ['success', 'failure', 'cancelled', 'skipped', 'unknown', '']) {
+    for (const accounting of ['success', 'failure', 'cancelled', 'skipped', 'unknown', '']) {
+      it(`joins engine=${matrix || 'missing'} and accounting=${accounting || 'missing'}`, () => {
+        const run = spawnSync('bash', ['-euo', 'pipefail', '-c', script!], {
+          encoding: 'utf8',
+          timeout: 2000,
+          env: {
+            PATH: process.env.PATH,
+            MATRIX_RESULT: matrix,
+            ACCOUNTING_RESULT: accounting,
+            CI_EVENT_NAME: 'pull_request',
+            DIFF_RESULT: 'success',
+            SERVER_CHANGED: 'true',
+          },
+        });
+        expect(run.status, run.stderr).toBe(
+          matrix === 'success' && accounting === 'success' ? 0 : 1
+        );
+      });
+    }
+  }
+  for (const [event, diff, changed, expected] of [
+    ['pull_request', 'success', 'false', 0],
+    ['pull_request', 'success', 'true', 1],
+    ['pull_request', 'failure', 'false', 1],
+    ['pull_request', 'cancelled', 'false', 1],
+    ['pull_request', 'success', '', 1],
+    ['schedule', 'success', 'false', 1],
   ] as const) {
-    it(`executes the aggregate for ${result}/${event}/${diff}/${changed || 'missing'}`, () => {
-      expect(script).toBeTruthy();
-      expect(script).toMatch(/^case "\$MATRIX_RESULT" in/);
+    it(`permits skipped work only for a verified unaffected diff: ${event}/${diff}/${changed}`, () => {
       const run = spawnSync('bash', ['-euo', 'pipefail', '-c', script!], {
         encoding: 'utf8',
         timeout: 2000,
         env: {
           PATH: process.env.PATH,
-          MATRIX_RESULT: result,
+          MATRIX_RESULT: 'skipped',
+          ACCOUNTING_RESULT: 'skipped',
           CI_EVENT_NAME: event,
           DIFF_RESULT: diff,
           SERVER_CHANGED: changed,

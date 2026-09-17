@@ -1,3 +1,5 @@
+> Current execution authority: root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. This dated plan supplies scope/dependency context only; it does not assign new work or override current delivery policy.
+
 # SWARM BRIEF - Chip Accounting Standard implementation (2026-09-02)
 
 > Historical lane brief. Current release authority is `.github/DEPLOYMENT.md`.

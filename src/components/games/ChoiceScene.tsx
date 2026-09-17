@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { gpuFrameRenderer } from './gpuFrameRenderer';
 import MinesGrid from './MinesGrid';
 import {
   STREET_WIDTH,
@@ -313,6 +314,7 @@ function CrossingScene(props: Props) {
     observer.observe(node);
     resize();
     const reduced = prefersReducedMotion();
+    const frames = gpuFrameRenderer(renderer, scene, camera);
     let raf = 0,
       last = 0,
       signature = '',
@@ -400,11 +402,10 @@ function CrossingScene(props: Props) {
       camera.lookAt(focus + 0.6, 0.1, 0);
       key.position.x = focus - 4;
       key.target.position.x = focus;
-      if (finished && !notified) {
+      if (frames.render() && finished && !notified) {
         notified = true;
         p.onSettled?.();
       }
-      renderer.render(scene, camera);
     };
     raf = requestAnimationFrame(draw);
     const lost = (e: Event) => {
@@ -415,6 +416,7 @@ function CrossingScene(props: Props) {
     canvas.addEventListener('webglcontextlost', lost);
     return () => {
       cancelAnimationFrame(raf);
+      frames.dispose();
       observer.disconnect();
       canvas.removeEventListener('webglcontextlost', lost);
       const geometries = new Set<THREE.BufferGeometry>(),

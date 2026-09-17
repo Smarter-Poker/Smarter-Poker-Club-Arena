@@ -319,7 +319,7 @@ export default function CrashCurve(props: CrashCurveProps) {
         planet.rotation.y = now / 70000;
         orbit.rotation.z = now / 16000;
       }
-      renderer.render(scene, camera);
+      kit.render();
     };
     raf = requestAnimationFrame(draw);
     return () => {

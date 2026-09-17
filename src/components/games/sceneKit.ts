@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { gpuFrameRenderer } from './gpuFrameRenderer';
 
 export function metal(color: number, roughness = 0.2) {
   return new THREE.MeshPhysicalMaterial({ color, metalness: 0.85, roughness, clearcoat: 0.8 });
@@ -50,11 +51,14 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
   const blue = new THREE.DirectionalLight(0x1877f2, 3);
   blue.position.set(6, -2, 4);
   scene.add(blue);
+  const frames = gpuFrameRenderer(renderer, scene, camera);
   return {
     renderer,
     scene,
     camera,
+    render: frames.render,
     cleanup() {
+      frames.dispose();
       const geometries = new Set<THREE.BufferGeometry>(),
         materials = new Set<THREE.Material>(),
         textures = new Set<THREE.Texture>();
@@ -75,6 +79,7 @@ export function gameRenderer(canvas: HTMLCanvasElement, width: number, height: n
       materials.forEach((m) => m.dispose());
       textures.forEach((t) => t.dispose());
       environment.dispose();
+      key.shadow.map?.dispose();
       renderer.dispose();
     },
   };

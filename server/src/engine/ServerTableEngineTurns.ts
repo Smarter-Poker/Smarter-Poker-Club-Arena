@@ -66,6 +66,7 @@ import {
   type FastHorseDecisionResult,
   type LiveHorseDecisionSnapshot,
 } from './horseDecision/index.js';
+import { horseDecisionDeadlineMs } from './horseDecision/decisionDeadline.js';
 
 /**
  * Why a decision did NOT earn a V44 second look (2026-09-06).
@@ -409,6 +410,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   }
 
   private static readonly HORSE_MAX_BANK_BURN_MS = 9000;
+
+  /**
+   * How long a decision job enqueued NOW may live: what is left of this
+   * seat's action clock, less the engine's margin to act on the answer
+   * (horseDecision/decisionDeadline.ts). The turn stamp is the same one the
+   * countdown pulses and the turn timer read, so the job and the clock agree
+   * on when the turn began.
+   */
+  protected horseDecisionDeadlineMs(): number {
+    const startedAt = this.playerTurnStartTime;
+    const elapsedMs =
+      typeof startedAt === 'number' && Number.isFinite(startedAt) && startedAt > 0
+        ? Date.now() - startedAt
+        : 0;
+    return horseDecisionDeadlineMs({
+      actionTimeSeconds: this.tableInfo?.action_time_seconds,
+      elapsedMs,
+    });
+  }
 
   protected clearTurnTimer(): void {
     this.preciseTimer.clearTable(this.tableId);
@@ -3040,9 +3060,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     };
     let fastDecision: Promise<FastHorseDecisionResult>;
     try {
+      // THE DECISION DEADLINE IS THE TURN CLOCK (2026-09-17). The job may
+      // live for what is left of this seat's action clock, less the margin
+      // the engine needs to act on the answer - not a fixed 8 s that gave up
+      // with half the clock and a whole time bank unused while the main loop
+      // was slow. See horseDecision/decisionDeadline.ts for the measurement.
       fastDecision = getLiveHorseDecisionWorker().decideFast(
         decisionSnapshot,
-        abortController.signal
+        abortController.signal,
+        { deadlineMs: this.horseDecisionDeadlineMs() }
       );
     } catch (error) {
       fastDecision = Promise.reject(error);
@@ -3276,7 +3302,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   rngBefore: fastResult.rngBefore,
                   deepEquity: ServerTableEngineTurns.SECOND_LOOK_DEPTH,
                 },
-                abortController.signal
+                abortController.signal,
+                { deadlineMs: this.horseDecisionDeadlineMs() }
               )
               .then((deepResult) => {
                 if (

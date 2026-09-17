@@ -1,13 +1,10 @@
 /**
- * LAW: the park writes the active bank too, and a park with nothing to write
- * is durable.
+ * LAW: the park settles an active bank before checkpointing it. Only a
+ * genuinely empty checkpoint is durable without a write.
  *
- * The restart gate (MaintenanceBreak.readyForRestart) counts a table as
- * unparked while its park write has not landed. A bank still counting down
- * at the park used to be skipped by the capture, so a table whose every bank
- * was active had nothing to write, was never marked durable, and held the
- * gate shut for the whole break. Measured 2026-09-17 17:55 UTC on engine-01:
- * 30 such tables, readyForRestart never, three staged releases missed.
+ * The restart gate requires a complete, acknowledged checkpoint. An active
+ * allocation must use the owning bank/accounting transition before capture;
+ * missing metadata is an unknown outcome, never an empty bank.
  *
  * See docs/laws.d/server-src-engine-theParkWritesTheActiveBank.md
  */
@@ -57,6 +54,7 @@ beforeEach(() => {
   data.writeErrors = [];
   data.writes = 0;
   data.rpc.mockReset();
+  data.rpc.mockResolvedValue({ data: { success: true, shortfall_seconds: 0 }, error: null });
 });
 
 describe('the park writes the active bank too', () => {
@@ -78,16 +76,32 @@ describe('the park writes the active bank too', () => {
       occupancyId: stay,
       remainingSeconds: 10,
       usesRemaining: 1,
+      dbConsumedSeconds: 30,
+    });
+    expect(e.timeBankEngine.getPlayerBank(table, user).isActive).toBe(false);
+    expect(data.rpc).toHaveBeenCalledTimes(1);
+    expect(data.rpc).toHaveBeenCalledWith('fn_consume_time_bank', {
+      p_user_id: user,
+      p_seconds: 20,
     });
   });
 
-  it('is durable at once when no bank can be written, instead of holding the gate shut', async () => {
+  it('keeps an initialized bank with missing metadata behind the restart gate', async () => {
     const e = engine();
-    // A bank with no meta cannot be restored, so there is nothing to write.
+    // Missing metadata is not evidence that an initialized bank is safe to lose.
     e.timeBankEngine.initializePlayer(table, user, { remainingSeconds: 30, usesRemaining: 2 });
     e.pauseForMaintenance(120000);
     await e.presenceSave;
     expect(e.isMaintenanceStateDurable()).toBe(false);
+    await e.persistPresenceForRestart('parked');
+    expect(data.writes).toBe(0);
+    expect(e.isMaintenanceStateDurable()).toBe(false);
+  });
+
+  it('is durable without a write only when there is no initialized bank or presence', async () => {
+    const e = engine();
+    e.pauseForMaintenance(120000);
+    await e.presenceSave;
     await e.persistPresenceForRestart('parked');
     expect(data.writes).toBe(0);
     expect(e.isMaintenanceStateDurable()).toBe(true);

@@ -31,6 +31,15 @@ const class4HandOutcome =
 const cashEvidence =
   /^(supabase\/components\/(?:cash-pot-check-evidence|cash-failed-run-intake)(?:\.rollback)?\.sql$|scripts\/operational-alerts\/cash-pot-failed-run-intake\.(?:sql|md)$|scripts\/qualification\/(?:cash-native-hosted\.manifest\.json$|cash-pot-check-connected\.sql$|cash-pot-check-evidence(?:\.sql|\.md|\.manifest\.json|-concurrency\.spec)$|cash-pot-failed-run-intake\.sql$|fixtures\/(?:cash-pot-check-evidence|cash-pot-failed-run-intake|cash-native-pgcron)\/)|scripts\/ci\/(?:build_pg17_cash_pgcron|test-cash-failure-pgcron|test_cash_native_pgcron)\.py$)/;
 
+export function gitEnvironmentForCwd() {
+  // Hooks export repository context that overrides cwd. These local-only Git
+  // calls must also discard inherited index/object/config overrides so a
+  // foreign fixture cannot read or modify the hook's repository.
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+  );
+}
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
@@ -38,11 +47,17 @@ export function classifyChangedPaths(paths) {
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
   const nativeIsolationTool = matches(/^scripts\/ci\/build_pg17_isolationtester\.py$/);
-  const horsePriority = matches(/^scripts\/qualification\/(?:horse-league-process-priority-native\.mjs$|fixtures\/horse-league-process-priority\/)/);
+  const horsePriority = matches(
+    /^scripts\/qualification\/(?:horse-league-process-priority-native\.mjs$|fixtures\/horse-league-process-priority\/)/
+  );
   // Rule-only changes must run the existing reporting contract suites.
   const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
-  const memoryMonitoring = matches(/^infra\/monitoring\/(?:alert-rules\.yml|grafana-dashboards\/poker-engine\.json)$/);
-  const spinComparator = matches(/^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/);
+  const memoryMonitoring = matches(
+    /^infra\/monitoring\/(?:alert-rules\.yml|grafana-dashboards\/poker-engine\.json)$/
+  );
+  const spinComparator = matches(
+    /^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/
+  );
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
   // Script/fixture-only edits must admit accounting and its routing tests.
@@ -51,8 +66,37 @@ export function classifyChangedPaths(paths) {
   );
   return {
     src: broad || matches(/^src\//),
-    server: broad || phase4Changed || commitmentAudit || nativeIsolationTool || spinRules || horsePriority || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql) || matches(productionAlertCore) || matches(alertEvidence) || matches(class4HandOutcome) || matches(cashEvidence),
-    tests: broad || commitmentAudit || nativeIsolationTool || spinRules || spinComparator || memoryMonitoring || horsePriority || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/) || matches(spinExpiry) || matches(productionAlertsSql) || matches(productionAlertCore) || matches(alertEvidence) || matches(class4HandOutcome) || matches(cashEvidence),
+    server:
+      broad ||
+      phase4Changed ||
+      commitmentAudit ||
+      nativeIsolationTool ||
+      spinRules ||
+      horsePriority ||
+      matches(
+        /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
+      ) ||
+      matches(spinExpiry) ||
+      matches(productionAlertsSql) ||
+      matches(productionAlertCore) ||
+      matches(alertEvidence) ||
+      matches(class4HandOutcome) ||
+      matches(cashEvidence),
+    tests:
+      broad ||
+      commitmentAudit ||
+      nativeIsolationTool ||
+      spinRules ||
+      spinComparator ||
+      memoryMonitoring ||
+      horsePriority ||
+      matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/) ||
+      matches(spinExpiry) ||
+      matches(productionAlertsSql) ||
+      matches(productionAlertCore) ||
+      matches(alertEvidence) ||
+      matches(class4HandOutcome) ||
+      matches(cashEvidence),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };
@@ -69,6 +113,7 @@ export function classifyGitChanges({ cwd, base, head }) {
   const git = (...args) =>
     execFileSync('git', args, {
       cwd,
+      env: gitEnvironmentForCwd(),
       maxBuffer: 16 * 1024 * 1024,
       timeout: 30000,
       stdio: ['ignore', 'pipe', 'pipe'],

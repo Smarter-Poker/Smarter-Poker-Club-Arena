@@ -46,6 +46,9 @@ import { HelpPopover } from '../components/common/HelpPopover';
 import { Toggle, Slider, NumberField } from '../components/table-config/controls';
 import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import { MttCreationStructurePreview } from '../components/tournament/MttCreationStructurePreview';
+import { MttPayoutDepthOptions } from '../components/tournament/MttPayoutDepthOptions';
+import { MttCreationProfileSelect } from '../components/tournament/MttCreationProfileSelect';
 import {
   FREE_BUY_ADDON_COST,
   FREE_BUY_HELPER,
@@ -61,7 +64,7 @@ type GameMode = 'regular' | 'sng' | 'mtt';
 
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
-type PayoutStructure = 'payout1' | 'payout2' | 'payout3' | 'winner_take_all';
+type PayoutStructure = 'payout1' | 'payout2' | 'payout3' | 'payout20' | 'winner_take_all';
 
 interface TableTemplate {
   id: string;
@@ -1286,6 +1289,11 @@ export default function TableConfigPage({
               </div>
             )}
 
+            <MttCreationProfileSelect
+              config={config}
+              onApply={(values) => setConfig((current) => ({ ...current, ...values }))}
+            />
+
             {/* Blind Structure Radio */}
             <div className="config-radio-group">
               <span className="radio-group-label">Blind Structure</span>
@@ -1340,11 +1348,20 @@ export default function TableConfigPage({
                 value={config.payoutStructure}
                 onChange={(e) => updateConfig('payoutStructure', e.target.value as PayoutStructure)}
               >
-                <option value="payout1">Top 10% Of Field</option>
-                <option value="payout2">Top 12.5% Of Field</option>
-                <option value="payout3">Top 15% Of Field (Standard)</option>
-                {config.gameMode === 'sng' && (
-                  <option value="winner_take_all">Winner Take All</option>
+                {config.gameMode === 'mtt' ? (
+                  <MttPayoutDepthOptions currentChoice={config.payoutStructure} />
+                ) : (
+                  <>
+                    {config.payoutStructure === 'payout20' && (
+                      <option value="payout20" disabled>
+                        Choose A Sit And Go Payout Structure
+                      </option>
+                    )}
+                    <option value="payout1">Top 10% Of Field</option>
+                    <option value="payout2">Top 12.5% Of Field</option>
+                    <option value="payout3">Top 15% Of Field (Standard)</option>
+                    <option value="winner_take_all">Winner Take All</option>
+                  </>
                 )}
               </select>
             </div>
@@ -1366,6 +1383,8 @@ export default function TableConfigPage({
               max={15}
               suffix=" min"
             />
+
+            <MttCreationStructurePreview config={config} gameType={gameType} />
 
             <Toggle
               label="Big Blind Ante"

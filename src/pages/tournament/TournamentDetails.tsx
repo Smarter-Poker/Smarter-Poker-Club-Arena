@@ -1,3 +1,7 @@
+import {
+  tournamentEntryWindow,
+  type TournamentEntryWindowRow,
+} from '../../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ARENA - Tournament Lobby (PLAY CHIPS ONLY)
@@ -351,15 +355,13 @@ export default function TournamentDetails({
    */
   useEffect(() => {
     if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
-    const t = tournament as unknown as {
-      late_reg_levels?: number;
-      late_reg_mins?: number;
-      current_level?: number;
-      started_at?: string | null;
-    } | null;
-    const lateRegLevels = Number(t?.late_reg_levels) || 0;
-    const lateRegMins = Number(t?.late_reg_mins) || 0;
-    if (!isLateStatus(tournament?.status) || (!lateRegLevels && !lateRegMins)) return;
+    const t = tournament as unknown as TournamentEntryWindowRow | null;
+    setLateRegCountdown('');
+    if (!t || !isLateStatus(tournament?.status)) return;
+    const window = tournamentEntryWindow(t);
+    if (window.mode === 'closed') return;
+    const lateRegLevels = window.mode === 'levels' ? window.cap : 0;
+    const lateRegMins = window.mode === 'minutes' ? window.minutes : 0;
 
     const stop = () => {
       setLateRegCountdown('');
@@ -397,6 +399,8 @@ export default function TournamentDetails({
     (tournament as unknown as { current_level?: number } | null)?.current_level,
     (tournament as unknown as { late_reg_levels?: number } | null)?.late_reg_levels,
     (tournament as unknown as { late_reg_mins?: number } | null)?.late_reg_mins,
+    (tournament as unknown as TournamentEntryWindowRow | null)?.rebuy_levels,
+    (tournament as unknown as TournamentEntryWindowRow | null)?.prize_pool_finalized,
     (tournament as unknown as { started_at?: string | null } | null)?.started_at,
   ]);
 

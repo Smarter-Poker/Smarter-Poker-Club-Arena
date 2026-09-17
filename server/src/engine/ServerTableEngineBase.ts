@@ -1811,6 +1811,8 @@ export abstract class ServerTableEngineBase {
   private parkedTimeBanks: Record<string, ParkedTimeBank> = {};
   private presenceSave: Promise<void> = Promise.resolve();
   private parkedBankSaveComplete = false;
+  /** See persistPresenceForRestart: the delay before the one retry a refused park write gets. */
+  protected parkWriteRetryMs = 5_000;
   /**
    * CHIP CONTINUITY (Operation Table Stakes, Slice 0). The engine-side mirror
    * of cash_player_session: the stay clock a player ahead of their buy-in
@@ -4935,10 +4937,22 @@ export abstract class ServerTableEngineBase {
     for (const seat of this.seatedPlayers) {
       const bank = this.timeBankEngine.getPlayerBank(this.tableId, seat.user_id);
       const meta = this.timeBankMeta.get(seat.user_id);
-      if (!seat.occupancy_id || !bank || bank.isActive || !meta) continue;
+      if (!seat.occupancy_id || !bank || !meta) continue;
+      // THE PARK WRITES THE ACTIVE BANK TOO (2026-09-17). A bank still
+      // counting down at the park - a horse's auto-activation on the last
+      // hand of the break, which a slow main loop leaves active past the
+      // hand - used to be skipped here, and a table whose every bank was
+      // active then had nothing to write, was never marked durable, and held
+      // the restart gate shut for the whole break: 30 tables at 17:55 UTC,
+      // readyForRestart never, three releases missed. The activation is
+      // spent whatever happens next, so it is charged in full here; the
+      // engine deducts it at stop the same way (TimeBankEngine.deactivate).
+      const remainingSeconds = bank.isActive
+        ? Math.max(0, bank.remainingSeconds - Math.max(0, bank.currentUseSeconds ?? 0))
+        : bank.remainingSeconds;
       saved[seat.user_id] = {
         occupancyId: seat.occupancy_id,
-        remainingSeconds: bank.remainingSeconds,
+        remainingSeconds,
         usesRemaining: bank.usesRemaining,
         ...meta,
       };
@@ -4978,14 +4992,30 @@ export abstract class ServerTableEngineBase {
     try {
       const states = this.disconnectEngine.getFsmStatesForTable(this.tableId);
       const timeBanks = when === 'parked' ? this.captureParkedTimeBanks() : undefined;
-      if (Object.keys(states).length === 0 && !Object.keys(timeBanks ?? {}).length) return;
-      const saved = await savePresenceAtPark({
-        tableId: this.tableId,
-        disconnectStates: states,
-        engineInstance: `${INSTANCE_ID}:${when}`,
-        handNumber: this.handCount,
-        timeBanks,
-      });
+      if (Object.keys(states).length === 0 && !Object.keys(timeBanks ?? {}).length) {
+        // Nothing to write is nothing to lose: a park with no presence state
+        // and no restorable bank is durable by definition. Leaving the flag
+        // down here held the restart gate shut for a break in which nothing
+        // could ever land (2026-09-17, see captureParkedTimeBanks).
+        if (when === 'parked') this.parkedBankSaveComplete = true;
+        return;
+      }
+      const write = () =>
+        savePresenceAtPark({
+          tableId: this.tableId,
+          disconnectStates: states,
+          engineInstance: `${INSTANCE_ID}:${when}`,
+          handNumber: this.handCount,
+          timeBanks,
+        });
+      let saved = await write();
+      if (!saved && when === 'parked' && this.maintenancePaused) {
+        // One more try, five seconds on. A single refused write during the
+        // break's own burst of parks must not decide the restart for the
+        // whole platform; a second refusal leaves the gate shut, as it did.
+        await new Promise<void>((resolve) => setTimeout(resolve, this.parkWriteRetryMs));
+        if (this.maintenancePaused) saved = await write();
+      }
       if (when === 'parked') this.parkedBankSaveComplete = saved;
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');

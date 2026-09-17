@@ -23,6 +23,7 @@ import { handleAdminKickOccupancy } from './handlers/admin.js';
  */
 
 import type { IncomingMessage, ServerResponse } from 'http';
+import type { GameServer } from './GameServer.js';
 import { sendJSON, CORS_HEADERS } from './http/respond.js';
 import { handleHealth, handleWsMetrics, handleMetrics } from './handlers/health.js';
 import { handleStableHand } from './handlers/stableHand.js';
@@ -83,7 +84,9 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleGetActions>[3]['gameServer'] &
   Parameters<typeof handleGetState>[3]['gameServer'] &
   Parameters<typeof handleHealth>[1]['gameServer'] &
-  Parameters<typeof handleMetrics>[1]['gameServer'];
+  Parameters<typeof handleMetrics>[1]['gameServer'] & {
+    getTournamentLifecycleDiagnostic?: GameServer['getTournamentLifecycleDiagnostic'];
+  };
 
 export interface RouterDeps {
   gameServer: AnyGameServer;
@@ -144,6 +147,184 @@ function verifyInternalKey(req: IncomingMessage): boolean {
   return parts[1] === INTERNAL_API_KEY;
 }
 
+const DIAGNOSTIC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DIAGNOSTIC_MAX_BYTES = 64 * 1024;
+// Fixed wire fields: never enumerate arbitrary objects or invoke toJSON/accessors.
+const DIAGNOSTIC_WIRE_KEYS = [
+  'schema',
+  'diagnosticOnly',
+  'tournamentId',
+  'observedAtMs',
+  'observedMonotonicMs',
+  'pid',
+  'gameServerInitializedAtMs',
+  'hostIdentityCoverage',
+  'currentManagerPresent',
+  'expectedIdentityMatch',
+  'releaseBarrierPresent',
+  'pendingLeaseGeneration',
+  'retirementIndexCoverage',
+  'retirementOperationsCount',
+  'retirementEntriesScanned',
+  'retirementScanTruncated',
+  'ownersObservedCountLowerBound',
+  'ownersOmitted',
+  'unavailableOwners',
+  'diagnosticIndexFailures',
+  'releaseDiagnosticFailures',
+  'owners',
+  'roles',
+  'snapshot',
+  'scheduler',
+  'missingMeans',
+  'activeEntriesCount',
+  'activeEntriesScanned',
+  'activeScanTruncated',
+  'matchingEntriesCountLowerBound',
+  'entries',
+  'registrationId',
+  'managerInstanceId',
+  'leaseGeneration',
+  'operationId',
+  'operationCorrelation',
+  'currentRegistration',
+  'registered',
+  'running',
+  'warned',
+  'queuedAs',
+  'dirtyAs',
+  'queueTicket',
+  'enqueuedAt',
+  'pendingWakeAt',
+  'pendingWakeAs',
+  'abortRequested',
+  'ownerAvailability',
+  'instanceId',
+  'lastSequence',
+  'droppedRecords',
+  'records',
+  'diagnosticWriteFailures',
+  'proofDeadlineMonotonicMs',
+  'authorityExpired',
+  'stopPending',
+  'schedulerPendingCount',
+  'lifecyclePendingCount',
+  'schedulerRecent',
+  'schedulerListTruncated',
+  'originals',
+  'originalSelection',
+  'originalsCount',
+  'retainedOriginalCount',
+  'originalsReturned',
+  'originalsOmitted',
+  'selectionMissingCount',
+  'originalsTruncated',
+  'leaseRelease',
+  'tableId',
+  'availability',
+  'engine',
+  'session',
+  'sessionCoverage',
+  'leaseAuthorityExpired',
+  'terminal',
+  'stopInitiated',
+  'retainedWork',
+  'dealingLoop',
+  'settlements',
+  'postHandTasks',
+  'tournamentMoves',
+  'readContinuations',
+  'readContinuationCoverage',
+  'leaseReleaseAck',
+  'sequence',
+  'event',
+  'attempt',
+  'writerKind',
+  'outcome',
+  'leaseStatus',
+  'releasedCount',
+  'reason',
+  'status',
+  'attempts',
+] as const;
+
+function serializeTournamentDiagnostic(
+  value: ReturnType<GameServer['getTournamentLifecycleDiagnostic']>
+): string {
+  const chunks: string[] = [];
+  const ancestors = new Set<object>();
+  let bytes = 0;
+  let nodes = 0;
+  const emit = (text: string): void => {
+    bytes += Buffer.byteLength(text, 'utf8');
+    if (bytes > DIAGNOSTIC_MAX_BYTES) throw new Error('diagnostic_evidence_limit');
+    chunks.push(text);
+  };
+  const visit = (item: unknown, depth: number): void => {
+    if (++nodes > 8192 || depth > 12) throw new Error('diagnostic_evidence_limit');
+    if (item === null) {
+      emit('null');
+      return;
+    }
+    if (typeof item === 'boolean') {
+      emit(item ? 'true' : 'false');
+      return;
+    }
+    if (typeof item === 'number' && Number.isFinite(item)) {
+      emit(String(item));
+      return;
+    }
+    if (typeof item === 'string' && item.length <= 256) {
+      emit(JSON.stringify(item));
+      return;
+    }
+    if (!item || typeof item !== 'object' || ancestors.has(item))
+      throw new Error('invalid_diagnostic_evidence');
+    const array = Array.isArray(item);
+    const prototype = Object.getPrototypeOf(item);
+    if (prototype !== (array ? Array.prototype : Object.prototype) && prototype !== null) {
+      throw new Error('invalid_diagnostic_evidence');
+    }
+    ancestors.add(item);
+    if (array) {
+      const length = Object.getOwnPropertyDescriptor(item, 'length');
+      if (
+        !length ||
+        !('value' in length) ||
+        !Number.isSafeInteger(length.value) ||
+        length.value < 0 ||
+        length.value > 64
+      )
+        throw new Error('diagnostic_evidence_limit');
+      emit('[');
+      for (let i = 0; i < length.value; i++) {
+        const field = Object.getOwnPropertyDescriptor(item, String(i));
+        if (!field || !('value' in field)) throw new Error('invalid_diagnostic_evidence');
+        if (i) emit(',');
+        visit(field.value, depth + 1);
+      }
+      emit(']');
+    } else {
+      emit('{');
+      let fields = 0;
+      for (const key of DIAGNOSTIC_WIRE_KEYS) {
+        const field = Object.getOwnPropertyDescriptor(item, key);
+        if (!field) continue;
+        if (!('value' in field)) throw new Error('invalid_diagnostic_evidence');
+        // Existing lifecycle records intentionally have absent optional fields.
+        if (field.value === undefined) continue;
+        if (fields++) emit(',');
+        emit(JSON.stringify(key) + ':');
+        visit(field.value, depth + 1);
+      }
+      emit('}');
+    }
+    ancestors.delete(item);
+  };
+  visit(value, 0);
+  return chunks.join('');
+}
+
 /**
  * Build the request listener. Deps are captured by closure so each request
  * sees the same singletons without module-level global state.
@@ -170,6 +351,76 @@ export function createRouter(
       res.writeHead(204, CORS_HEADERS);
       res.end();
       return;
+    }
+
+    if (/^\/internal\/tournament-diagnostics(?:\/|$)/.test(url)) {
+      res.setHeader('Cache-Control', 'no-store');
+      if (!verifyInternalKey(req)) return sendJSON(res, 401, { error: 'Unauthorized' });
+      if (method !== 'GET') return sendJSON(res, 405, { error: 'Method not allowed' });
+      if (Buffer.byteLength(req.url || '', 'utf8') > 2048) {
+        return sendJSON(res, 400, { error: 'Invalid diagnostic scope' });
+      }
+      const match = url.match(/^\/internal\/tournament-diagnostics\/([^/]+)$/);
+      if (!match || !DIAGNOSTIC_UUID.test(match[1])) {
+        return sendJSON(res, 400, { error: 'Invalid diagnostic scope' });
+      }
+      const requestTarget = req.url || '';
+      const queryStart = requestTarget.indexOf('?');
+      const query = new URLSearchParams(queryStart < 0 ? '' : requestTarget.slice(queryStart + 1));
+      const known = new Set(['table_ids', 'manager_instance_id', 'lease_generation']);
+      for (const key of query.keys()) {
+        if (!known.has(key) || query.getAll(key).length !== 1) {
+          return sendJSON(res, 400, { error: 'Invalid diagnostic scope' });
+        }
+      }
+      const tableIds = query.has('table_ids') ? query.get('table_ids')!.split(',') : undefined;
+      const managerInstanceId = query.get('manager_instance_id') ?? undefined;
+      const leaseGeneration = query.get('lease_generation') ?? undefined;
+      if (
+        (tableIds &&
+          (tableIds.length < 1 ||
+            tableIds.length > 8 ||
+            tableIds.some((id) => !DIAGNOSTIC_UUID.test(id)) ||
+            new Set(tableIds.map((id) => id.toLowerCase())).size !== tableIds.length)) ||
+        (managerInstanceId !== undefined && !DIAGNOSTIC_UUID.test(managerInstanceId)) ||
+        (leaseGeneration !== undefined && !DIAGNOSTIC_UUID.test(leaseGeneration))
+      ) {
+        return sendJSON(res, 400, { error: 'Invalid diagnostic scope' });
+      }
+      if (typeof gameServer.getTournamentLifecycleDiagnostic !== 'function') {
+        return sendJSON(res, 503, { error: 'Diagnostic observation unavailable' });
+      }
+      try {
+        const tournamentId = match[1].toLowerCase();
+        const snapshot = gameServer.getTournamentLifecycleDiagnostic(
+          tournamentId,
+          { tableIds: tableIds?.map((id) => id.toLowerCase()) },
+          {
+            managerInstanceId: managerInstanceId?.toLowerCase(),
+            leaseGeneration: leaseGeneration?.toLowerCase(),
+          }
+        );
+        const schema = Object.getOwnPropertyDescriptor(snapshot, 'schema');
+        const identity = Object.getOwnPropertyDescriptor(snapshot, 'tournamentId');
+        if (
+          !schema ||
+          !('value' in schema) ||
+          schema.value !== 'tournament-lifecycle-diagnostic/v1' ||
+          !identity ||
+          !('value' in identity) ||
+          identity.value !== tournamentId
+        ) {
+          throw new Error('invalid_diagnostic_evidence');
+        }
+        const body = serializeTournamentDiagnostic(snapshot);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(body);
+        return;
+      } catch {
+        return sendJSON(res, 503, {
+          error: 'Diagnostic observation unavailable or exceeds evidence limit',
+        });
+      }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

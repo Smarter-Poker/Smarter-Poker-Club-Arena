@@ -332,3 +332,95 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     ).toBe(true);
   });
 });
+
+describe('Production Alert SQL checks use the existing accounting job', () => {
+  const paths = [
+    'scripts/ci/test-hand-index-writer-order.py',
+    'scripts/ci/test-hand-stat-writer-order.py',
+    'scripts/ci/test-rake-attribution-atomic.py',
+    'scripts/ci/probes/hand-index-writer-order/baseline.json',
+    'scripts/ci/probes/hand-stat-writer-order/baseline.json',
+    'scripts/ci/probes/rake-attribution-atomic/baseline.json',
+    'supabase/migrations/20260914194928_hand_index_writers_share_a_canonical_order.sql',
+    'supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql',
+    'supabase/migrations/20260914223105_rake_settlement_requires_complete_attribution.sql',
+    'tests/tournament-rake-attribution-retries-inside-its-own-transaction.law.test.ts',
+  ];
+
+  it.each(paths)('selects the real accounting check and source guards for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+  });
+
+  it.each([
+    'scripts/ci/test-hand-stat-writer-order.py.bak',
+    'scripts/ci/probes/unrelated-input/baseline.json',
+  ])('does not select an unrelated accounting check for %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(false);
+  });
+
+  it('runs all three real drivers with the installed PG17 tools and no failure bypass', () => {
+    const accounting = ci.jobs.accounting_postgres;
+    expect(accounting['runs-on']).toBe('ubuntu-latest');
+    expect(accounting['continue-on-error']).toBeUndefined();
+    const expected = [
+      [
+        'hand_index_writer_order',
+        'python3 scripts/ci/test-hand-index-writer-order.py --migration supabase/migrations/20260914194928_hand_index_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-index',
+      ],
+      [
+        'hand_stat_writer_order',
+        'python3 scripts/ci/test-hand-stat-writer-order.py --migration supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-stat',
+      ],
+      [
+        'rake_attribution_atomic',
+        'python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution',
+      ],
+    ];
+    let previous = -1;
+    for (const [id, command] of expected) {
+      const calls = accounting.steps.filter((step: { id?: string }) => step.id === id);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].run).toBe(command);
+      expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+      expect(calls[0].if).toBeUndefined();
+      expect(calls[0]['continue-on-error']).toBeUndefined();
+      const current = accounting.steps.indexOf(calls[0]);
+      expect(current).toBeGreaterThan(previous);
+      previous = current;
+    }
+    expect(ci.jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(
+      ci.jobs.unit_shards.steps.some(
+        (step: { run?: string }) =>
+          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+      )
+    ).toBe(true);
+  });
+});
+
+describe('memory observation rules keep their existing monitoring regression checks', () => {
+  it.each([
+    'infra/monitoring/alert-rules.yml',
+    'infra/monitoring/grafana-dashboards/poker-engine.json',
+  ])('runs the existing test suite for a rule-only change to %s', (path) => {
+    expect(classifyChangedPaths([path]).tests).toBe(true);
+    expect(classifyChangedPaths([path]).src).toBe(false);
+  });
+});
+
+describe('Horse League priority fixture stays in the existing server verification', () => {
+  it.each([
+    'scripts/qualification/horse-league-process-priority-native.mjs',
+    'scripts/qualification/fixtures/horse-league-process-priority/child.mjs',
+  ])('selects server checks when only %s changes', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+    expect(classifyChangedPaths([path]).tests).toBe(true);
+  });
+  it('does not select the server for qualification prose alone', () => {
+    expect(
+      classifyChangedPaths(['scripts/qualification/horse-league-process-priority-native.md']).server
+    ).toBe(false);
+  });
+});

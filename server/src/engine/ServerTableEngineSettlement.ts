@@ -62,6 +62,10 @@ import { checkTournamentWholeChips, describeFractionalSeats } from './tournament
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
 import { requireHandSeatGeneration } from './handSeatGeneration.js';
+import {
+  LeavePendingDiagnostic,
+  type LeavePendingAttempt,
+} from '../observability/LeavePendingDiagnostic.js';
 
 /**
  * A chip is two decimal places, everywhere it is stored (#3358).
@@ -1755,7 +1759,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     const runStep = async (
       stepName: string,
       moneyCritical: boolean,
-      fn: () => Promise<void>
+      fn: (diagnostic?: LeavePendingAttempt) => Promise<void>
     ): Promise<void> => {
       const exec = async (): Promise<void> => {
         // A successor generation may acquire the table while this step waits
@@ -1765,31 +1769,49 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const started = performance.now();
         let outcome = 'returned';
         const budget = STEP_RETRY[stepName] ?? 0;
+        const diagnostic =
+          stepName === 'leave_pending'
+            ? new LeavePendingDiagnostic(this.tableId, snap.handNumber, persistenceGeneration)
+            : undefined;
         let attempts = 0;
         try {
           for (;;) {
             attempts++;
+            const attempt = diagnostic?.beginAttempt(attempts);
+            if (attempts === 1) this.recordLeavePendingGuard(attempt, 'runStep_entry', true);
             try {
-              await fn();
+              await fn(attempt);
               if (attempts > 1) outcome = 'retried';
               break;
             } catch (err) {
+              attempt?.rejected(err);
               /* Only a database that BLINKED is worth another try, and only
                  while this generation still owns the table. Every refusal the
                  database gives on purpose is a decision, not a queue, and it
                  falls straight through to the report below exactly as before. */
-              if (
-                attempts > budget ||
-                !ServerTableEngineBase.isTransientDbError(err) ||
-                !this.lifecycleCanMutate()
-              ) {
+              // Preserve the original short-circuit order and exact calls.
+              if (attempts > budget) {
+                attempt?.retryDecision('budget_exhausted');
                 throw err;
               }
+              if (!ServerTableEngineBase.isTransientDbError(err)) {
+                attempt?.retryDecision('non_transient');
+                throw err;
+              }
+              const retryAllowed = this.lifecycleCanMutate();
+              this.recordLeavePendingGuard(attempt, 'runStep_retry', retryAllowed);
+              if (!retryAllowed) {
+                attempt?.retryDecision('lifecycle_denied');
+                throw err;
+              }
+              attempt?.retryDecision('retry_scheduled');
               await this.sleep(STEP_RETRY_BACKOFF_MS[attempts - 1] ?? 1_000);
             }
           }
         } catch (err) {
           outcome = 'threw';
+          // Copy before reportError can prefix the original Error message.
+          const failureEvidence = diagnostic?.snapshot();
           reportError(err, `postHandTasks.step_failed.${stepName}`, {
             tableId: this.tableId,
             handNumber: snap.handNumber,
@@ -1807,6 +1829,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 error: describeError(err),
                 attempts,
                 retry_budget: budget,
+                ...(failureEvidence ? { leave_pending_diagnostic_v1: failureEvidence } : {}),
               }
             );
           }
@@ -3593,7 +3616,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     if (!this.lifecycleCanMutate()) return;
 
     // 6. Process leave-pending players (cash games only)
-    await runStep('leave_pending', true, async () => {
+    await runStep('leave_pending', true, async (diagnostic) => {
       if (!this.isTournamentTable()) {
         // Round 57: processLeavePending reports the user_ids it cashed out;
         // we use that to unregister DisconnectEngine tracking so player states
@@ -3604,9 +3627,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // 2026-09-11: that teardown now lives in tearDownDepartedSeats(), so
         // it can also run for a departure an EARLIER attempt or boundary made
         // and then lost when its sweep threw after the money had moved.
+        diagnostic?.phase('local_teardown');
         this.tearDownDepartedSeats();
-        const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures();
-        if (!this.lifecycleCanMutate()) return;
+        const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures(diagnostic);
+        const afterDepartures = this.lifecycleCanMutate();
+        this.recordLeavePendingGuard(diagnostic, 'after_departures', afterDepartures);
+        if (!afterDepartures) return;
+        diagnostic?.phase('local_teardown');
         this.tearDownDepartedSeats(cashedOutIds);
         // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
         // after the leavers. A move is not a leave: no cash-out, no clock.
@@ -3614,8 +3641,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // This Hand"; a move planned during the hand waits for the next deal
         // to be announced, so nobody is moved off a hand they were not told
         // about.
-        await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves);
-        if (!this.lifecycleCanMutate()) return;
+        await this.executePendingSeatMoves({ announcedOnly: true }, pendingMoves, diagnostic);
+        const afterMirrors = this.lifecycleCanMutate();
+        this.recordLeavePendingGuard(diagnostic, 'after_move_mirrors', afterMirrors);
+        if (!afterMirrors) return;
       }
     });
     if (!this.lifecycleCanMutate()) return;
@@ -3730,33 +3759,49 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * still rechecks the live source seat, destination and expiry under its existing
    * database locks; the caller retains the announced-only filter. This list belongs to this boundary only.
    */
-  protected async readCashHandDepartures(): Promise<{
+  protected async readCashHandDepartures(diagnostic?: LeavePendingAttempt): Promise<{
     cashedOutIds: Array<{ userId: string; occupancyId: string }>;
     /** `null` is a read that FAILED - never an empty list (CLAUDE.md 10.86). */
     pendingMoves: PendingSeatMove[] | null;
   }> {
-    if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: null };
+    const allowed = this.lifecycleCanMutate();
+    this.recordLeavePendingGuard(diagnostic, 'read_departures_entry', allowed);
+    if (!allowed) return { cashedOutIds: [], pendingMoves: null };
+    diagnostic?.departures.phase('departure_sweep');
     const [leaves, moves] = await Promise.allSettled([
       processLeavePending(
         this.tableId,
         this.tableInfo?.club_id || '',
         (lockedUserId, stayRemainingMs, occupancyId) => {
-          if (this.lifecycleCanMutate()) {
+          const callbackAllowed = this.lifecycleCanMutate();
+          this.recordLeavePendingGuard(diagnostic, 'departure_locked_callback', callbackAllowed);
+          if (callbackAllowed) {
             this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
           }
         },
         // Owed the moment the cash-out commits, so a later seat's timeout or a
         // rejected sibling read cannot take the teardown with it.
-        (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId)
+        (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId),
+        diagnostic?.departures
       ),
       this.tableInfo?.cluster_id
-        ? pendingSeatMoves(this.tableId)
-        : Promise.resolve<PendingSeatMove[] | null>([]),
+        ? pendingSeatMoves(this.tableId, diagnostic?.move_read)
+        : (diagnostic?.move_read.skip(), Promise.resolve<PendingSeatMove[] | null>([])),
     ]);
+    if (leaves.status === 'rejected') diagnostic?.departures.fail(leaves.reason);
+    else diagnostic?.departures.finish();
+    if (moves.status === 'rejected') diagnostic?.move_read.fail(moves.reason);
+    else diagnostic?.move_read.finish();
     // Own both rejections immediately and let neither attempt outlive the
     // boundary on a retry. No move may run after a failed leave sweep.
-    if (leaves.status === 'rejected') throw leaves.reason;
-    if (moves.status === 'rejected') throw moves.reason;
+    if (leaves.status === 'rejected') {
+      diagnostic?.selectFailure('departures');
+      throw leaves.reason;
+    }
+    if (moves.status === 'rejected') {
+      diagnostic?.selectFailure('move_read');
+      throw moves.reason;
+    }
     return { cashedOutIds: leaves.value, pendingMoves: moves.value };
   }
 }

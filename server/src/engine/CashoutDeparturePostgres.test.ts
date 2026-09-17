@@ -361,6 +361,9 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   );
   it('the actual service recovers a lost committed response using only the original move', async () => {
     seedMove();
+    const original = sql(
+      `SELECT to_json(source_occupancy_id) FROM cash_seat_moves WHERE id='${MOVE}'`
+    ) as string;
     const service = await import('../services/supabase/seatMoves.js');
     let calls = 0;
     transport.rpc.mockImplementation(async (name: string, args: { p_move_id: string }) => {
@@ -375,6 +378,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       {
         move_id: MOVE,
         player_id: USER,
+        source_occupancy_id: original,
         to_table_id: OTHER_TABLE,
         to_table_name: null,
         to_role: null,
@@ -393,6 +397,39 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     });
     expect(calls).toBe(2);
     expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(1);
+  });
+
+  it('the pending RPC retains original occupancy and durable swap readiness', () => {
+    seedSwap();
+    const original = sql(
+      `SELECT to_json(source_occupancy_id) FROM cash_seat_moves WHERE id='${MOVE}'`
+    );
+    expect(move()).toMatchObject({ ok: false, held: true, reason: 'waiting_partner' });
+    const rows = sql(`SELECT json_agg(m) FROM fn_cash_seat_moves_pending('${TABLE}') m`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      move_id: MOVE,
+      player_id: USER,
+      source_occupancy_id: original,
+    });
+    expect(rows[0].ready_at).toBeTruthy();
+    expect(
+      sql(
+        "SELECT to_json(has_function_privilege('authenticated','fn_cash_seat_moves_pending(uuid)','EXECUTE'))"
+      )
+    ).toBe(false);
+    expect(
+      sql(
+        "SELECT to_json(has_function_privilege('anon','fn_cash_seat_moves_pending(uuid)','EXECUTE'))"
+      )
+    ).toBe(false);
+    expect(
+      sql(
+        "SELECT to_json(has_function_privilege('service_role','fn_cash_seat_moves_pending(uuid)','EXECUTE'))"
+      )
+    ).toBe(true);
+    sql(`UPDATE cash_seat_moves SET expires_at=now()-interval '1 second' WHERE id='${MOVE}'`);
+    expect(sql(`SELECT count(*) FROM fn_cash_seat_moves_pending('${TABLE}')`)).toBe(0);
   });
 
   it('does not tear down a replacement engine occupancy after an old move reply', async () => {
@@ -414,6 +451,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         {
           move_id: MOVE,
           player_id: USER,
+          source_occupancy_id: originalOutcome.source_occupancy_id,
           to_table_id: OTHER_TABLE,
           to_table_name: null,
           to_role: null,

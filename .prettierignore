@@ -41,3 +41,8 @@ server/src/gto/contracts/fixtures/chart-policy-artifact.v1.json
 scripts/ci/probes/spin-expiry/inputs/captured-spin-catalog.json
 scripts/qualification/spin-expiry-committed-refund.authority.json
 scripts/qualification/spin-expiry-lock-order.authority.json
+
+# Preserve the reviewed serialization of captured Production Alert baselines.
+scripts/ci/probes/hand-index-writer-order/baseline.json
+scripts/ci/probes/hand-stat-writer-order/baseline.json
+scripts/ci/probes/rake-attribution-atomic/baseline.json

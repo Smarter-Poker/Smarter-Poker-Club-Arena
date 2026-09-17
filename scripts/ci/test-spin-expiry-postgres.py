@@ -32,6 +32,10 @@ IMAGES = ('preimage', 'candidate')
 CASES = {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund')}
 CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.json',
                 'committed-refund': 'committed-refund.jsonl'}
+SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
+  'user',current_user,'session_user',session_user,'port',current_setting('port'),
+  'address',inet_server_addr(),'listen_addresses',current_setting('listen_addresses'),
+  'unix_socket_directories',current_setting('unix_socket_directories'));"""
 CLEAN_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
              'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
              'PYTHONDONTWRITEBYTECODE': '1'}
@@ -41,6 +45,22 @@ FIXED_INPUTS = frozenset(('inputs/schema.sql', 'inputs/access.sql', 'inputs/poli
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def validate_server_endpoint(value, socket_path):
+    # PG17 restricts unix_socket_directories to privileged diagnostic readers.
+    # The existing fixture bootstrap checks server configuration; business
+    # sessions retain their captured nonsuperuser roles and owned socket checks.
+    require(value == {'user': 'fixture_bootstrap', 'session_user': 'fixture_bootstrap',
+                      'port': '5432', 'address': None, 'listen_addresses': '',
+                      'unix_socket_directories': str(socket_path)},
+            'private server endpoint configuration differs')
+
+
+def server_endpoint_command(PG, socket_path):
+    return [str(PG / 'psql'), '-X', '-w', '-h', str(socket_path), '-p', '5432',
+            '-U', 'fixture_bootstrap', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1',
+            '-qAt', '-c', SERVER_ENDPOINT_QUERY]
 
 
 def digest(data):
@@ -477,6 +497,11 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         command('pg_start', [str(PG / 'pg_ctl'), '-D', str(data), '-l', str(work / 'postgres.log'), '-w', '-t', '12', 'start'], timeout=15)
         original_pid = int((data / 'postmaster.pid').read_text().splitlines()[0])
         bootstrap = [str(PG / 'psql'), '-X', '-w', '-h', str(work / 'socket'), '-p', '5432', '-U', 'fixture_bootstrap', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1']
+        server_endpoint = decode(command('server_endpoint_readback',
+            server_endpoint_command(PG, work / 'socket'), timeout=5))
+        validate_server_endpoint(server_endpoint, work / 'socket')
+        receipt['server_endpoint'] = server_endpoint
+        persist()
         extension_query = "SELECT json_build_object('pgcrypto',EXISTS(SELECT 1 FROM pg_available_extensions WHERE name='pgcrypto'),'uuid-ossp',EXISTS(SELECT 1 FROM pg_available_extensions WHERE name='uuid-ossp'),'pg_trgm_1_6',EXISTS(SELECT 1 FROM pg_available_extension_versions WHERE name='pg_trgm' AND version='1.6'));"
         extensions = decode(command('extension_availability', bootstrap + ['-qAt', '-c', extension_query], timeout=5))
         require(extensions == {'pgcrypto': True, 'uuid-ossp': True, 'pg_trgm_1_6': True}, 'required authentic PostgreSQL extensions unavailable')
@@ -614,12 +639,21 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(isinstance(stages, list) and 0 < len(stages) <= 64, 'missing bounded original stage evidence')
     require(all(isinstance(stage, dict) for stage in stages), 'invalid original stage')
     names = [stage.get('stage') for stage in stages]
+    validate_server_endpoint(receipt.get('server_endpoint'), source.parent / 'work/socket')
+    require(names.count('server_endpoint_readback') == 1, 'server endpoint readback absent or repeated')
+    endpoint_index = names.index('server_endpoint_readback')
+    endpoint_stage = stages[endpoint_index]
+    require(endpoint_stage.get('returncode') == 0
+            and endpoint_stage.get('argv') == server_endpoint_command(PG, source.parent / 'work/socket'),
+            'server endpoint readback identity or outcome differs')
     catalog = ['spin_catalog_before', 'spin_catalog_rollback_qualification', 'spin_catalog_after']
     expected = (catalog + ['install_candidate'] if image == 'candidate' else []) + ['real_funded_paid_seat_fixture']
     expected += ['actual_business_' + case for case in CASES[image]]
     require(all(names.count(name) == 1 for name in expected)
             and [names.index(name) for name in expected] == sorted(names.index(name) for name in expected),
             'original phase sequence absent or repeated')
+    require(endpoint_index < min(names.index(name) for name in expected),
+            'server endpoint readback must precede qualification and financial setup')
     if image == 'preimage':
         require(not any(name in names for name in catalog + ['install_candidate']),
                 'candidate installation or catalog execution in preimage allocation')

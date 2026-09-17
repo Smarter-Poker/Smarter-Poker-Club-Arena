@@ -1,4 +1,9 @@
 import { AsyncResource } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+import type {
+  TournamentManagerBase,
+  TournamentDiagnosticSelection,
+} from './TournamentManagerBase.js';
 /**
  * Process-wide tournament elimination scheduler.
  *
@@ -55,10 +60,67 @@ for (const outcome of ['completed', 'failed', 'timed_out']) {
 
 type QueueKind = 'urgent' | 'routine';
 
+type ManagerSnapshot = ReturnType<TournamentManagerBase['getLifecycleDiagnosticSnapshot']>;
+interface RegistrationDiagnostics {
+  readonly managerInstanceId: string;
+  readonly leaseGeneration: string | null;
+  readonly operationIdFor: (operation: Promise<void>) => string | null;
+  readonly snapshot: (selection: TournamentDiagnosticSelection) => ManagerSnapshot;
+}
+
+function diagnosticUuid(value: unknown): string | null {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase()
+    : null;
+}
+
+export function diagnosticTableIds(
+  selection: TournamentDiagnosticSelection
+): readonly string[] | undefined {
+  const ids = selection.tableIds;
+  if (ids === undefined) return undefined;
+  if (!Array.isArray(ids) || ids.length > 8 || ids.some((id) => diagnosticUuid(id) === null)) {
+    throw new Error('tournament_diagnostic_selection_limit');
+  }
+  const normalized = ids.map((id) => id.toLowerCase());
+  if (new Set(normalized).size !== normalized.length)
+    throw new Error('tournament_diagnostic_duplicate_table');
+  return normalized;
+}
+
+function captureRegistrationDiagnostics(
+  registration: TournamentEliminationRegistration
+): RegistrationDiagnostics | null {
+  try {
+    const supplied = registration.diagnostics;
+    if (!supplied) return null;
+    const managerInstanceId = diagnosticUuid(supplied.managerInstanceId);
+    const leaseGeneration =
+      supplied.leaseGeneration === null ? null : diagnosticUuid(supplied.leaseGeneration);
+    if (
+      !managerInstanceId ||
+      (supplied.leaseGeneration !== null && !leaseGeneration) ||
+      typeof supplied.operationIdFor !== 'function' ||
+      typeof supplied.snapshot !== 'function'
+    )
+      return null;
+    return Object.freeze({
+      managerInstanceId,
+      leaseGeneration,
+      operationIdFor: supplied.operationIdFor,
+      snapshot: supplied.snapshot,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export interface TournamentEliminationRegistration {
   tournamentId: string;
   run: (signal: AbortSignal) => Promise<void>;
   isActive?: () => boolean;
+  diagnostics?: RegistrationDiagnostics;
 }
 
 export interface TournamentEliminationSchedulerOptions {
@@ -71,6 +133,9 @@ export interface TournamentEliminationSchedulerOptions {
 }
 
 interface Entry extends TournamentEliminationRegistration {
+  diagnosticRegistrationId: string | null;
+  diagnosticOwner: RegistrationDiagnostics | null;
+  diagnosticOperationId: string | null;
   registered: boolean;
   queuedAs: QueueKind | null;
   /** Queue generation. A place in a lane is live only while it carries this. */
@@ -179,8 +244,18 @@ export class TournamentEliminationScheduler {
     const previous = this.entries.get(registration.tournamentId);
     if (previous) this.remove(previous);
 
+    const diagnosticOwner = captureRegistrationDiagnostics(registration);
+    let diagnosticRegistrationId: string | null = null;
+    try {
+      diagnosticRegistrationId = randomUUID();
+    } catch {
+      /* unknown, not a scheduling failure */
+    }
     const entry: Entry = {
       ...registration,
+      diagnosticRegistrationId,
+      diagnosticOwner,
+      diagnosticOperationId: null,
       // A process-wide scheduler is invoked by many manager contexts. Its
       // timers and promise continuations inherit whichever manager woke it.
       // Restore each callback's registration context before invoking the
@@ -283,6 +358,81 @@ export class TournamentEliminationScheduler {
       pendingWakes,
       oldestWaitMs: oldestEnqueuedAt === null ? 0 : Math.max(0, this.now() - oldestEnqueuedAt),
     };
+  }
+
+  /** Exact Entry ownership only; never invokes isActive, run, abort or a join. */
+  diagnosticSnapshot(tournamentId: string, selection: TournamentDiagnosticSelection = {}) {
+    const tableIds = diagnosticTableIds(selection);
+    const selected = new Set<Entry>();
+    const current = this.entries.get(tournamentId);
+    if (current) selected.add(current);
+    const iterator = this.activeEntries.values();
+    let scanned = 0;
+    for (let i = 0; i < 32; i++) {
+      const next = iterator.next();
+      if (next.done) break;
+      scanned++;
+      if (next.value.tournamentId === tournamentId) selected.add(next.value);
+    }
+    const rows = [...selected].map((entry) => {
+      let owner: ManagerSnapshot | null = null;
+      if (entry.diagnosticOwner) {
+        try {
+          const candidate = entry.diagnosticOwner.snapshot({ tableIds });
+          const instance = Object.getOwnPropertyDescriptor(candidate, 'instanceId');
+          const generation = Object.getOwnPropertyDescriptor(candidate, 'leaseGeneration');
+          const tournament = Object.getOwnPropertyDescriptor(candidate, 'tournamentId');
+          if (
+            instance &&
+            'value' in instance &&
+            instance.value === entry.diagnosticOwner.managerInstanceId &&
+            generation &&
+            'value' in generation &&
+            generation.value === entry.diagnosticOwner.leaseGeneration &&
+            tournament &&
+            'value' in tournament &&
+            tournament.value === tournamentId
+          )
+            owner = candidate;
+        } catch {
+          /* old ownership remains unknown; no fallback to a replacement */
+        }
+      }
+      return Object.freeze({
+        registrationId: entry.diagnosticRegistrationId,
+        tournamentId: entry.tournamentId,
+        managerInstanceId: entry.diagnosticOwner?.managerInstanceId ?? null,
+        leaseGeneration: entry.diagnosticOwner?.leaseGeneration ?? null,
+        operationId: entry.running ? entry.diagnosticOperationId : null,
+        operationCorrelation: !entry.running
+          ? ('not_running' as const)
+          : entry.diagnosticOperationId
+            ? ('observed' as const)
+            : ('unavailable' as const),
+        currentRegistration: entry === current,
+        registered: entry.registered,
+        running: entry.running,
+        warned: entry.warned,
+        queuedAs: entry.queuedAs,
+        dirtyAs: entry.dirtyAs,
+        queueTicket: entry.queueTicket,
+        enqueuedAt: entry.enqueuedAt,
+        pendingWakeAt: entry.pendingWakeAt,
+        pendingWakeAs: entry.pendingWakeAs,
+        abortRequested: entry.abortController?.signal.aborted ?? null,
+        owner,
+        ownerAvailability: owner ? ('observed' as const) : ('unavailable' as const),
+      });
+    });
+    return Object.freeze({
+      tournamentId,
+      activeEntriesCount: this.activeEntries.size,
+      activeEntriesScanned: scanned,
+      activeScanTruncated: this.activeEntries.size > scanned,
+      matchingEntriesCountLowerBound: rows.length,
+      entries: Object.freeze(rows),
+      missingMeans: 'unknown' as const,
+    });
   }
 
   /** Test/process teardown only. Manager teardown uses its unregister closure. */
@@ -503,6 +653,7 @@ export class TournamentEliminationScheduler {
 
   private dispatch(entry: Entry): void {
     entry.running = true;
+    entry.diagnosticOperationId = null;
     entry.abortController = new AbortController();
     this.activeTournamentIds.add(entry.tournamentId);
     this.activeEntries.add(entry);
@@ -516,6 +667,7 @@ export class TournamentEliminationScheduler {
       settled = true;
       if (warningTimer) clearTimeout(warningTimer);
       entry.running = false;
+      entry.diagnosticOperationId = null;
       entry.abortController = null;
       entry.warned = false;
       this.activeTournamentIds.delete(entry.tournamentId);
@@ -569,7 +721,18 @@ export class TournamentEliminationScheduler {
     }
 
     Promise.resolve()
-      .then(() => entry.run(entry.abortController!.signal))
+      .then(() => {
+        // The original value still flows into the same assimilation/finish chain.
+        const physical = entry.run(entry.abortController!.signal);
+        try {
+          entry.diagnosticOperationId = diagnosticUuid(
+            entry.diagnosticOwner?.operationIdFor(physical)
+          );
+        } catch {
+          entry.diagnosticOperationId = null;
+        }
+        return physical;
+      })
       .then(
         () => finish('completed'),
         (error) => {

@@ -13,6 +13,7 @@ import { supabase } from './client.js';
 import { pushFinancialUpdate } from '../financialPush.js';
 import { reportError } from '../errorReporter.js';
 import { tableCountChangedFilter } from './tables.js';
+import type { LeavePendingOperation } from '../../observability/LeavePendingDiagnostic.js';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -413,7 +414,8 @@ export async function processLeavePending(
    * here, so it swallows its own failure per seat and this loop continues. If
    * that ever changes, this callback already covers it.
    */
-  onDeparted?: (userId: string, occupancyId: string) => void
+  onDeparted?: (userId: string, occupancyId: string) => void,
+  diagnostic?: LeavePendingOperation
 ): Promise<Array<{ userId: string; occupancyId: string }>> {
   /* Deliberately does NOT select `stack`. This query only ENUMERATES which
      seats asked to leave; the amount comes from the locked read inside
@@ -421,6 +423,7 @@ export async function processLeavePending(
      is precisely the shape that invites someone to "save a round-trip" by
      passing it along - and an unlocked stack read handed to a credit is the
      2026-08-27 race. Do not add it back. */
+  diagnostic?.phase('table_seats_query');
   const { data: pendingSeats, error: pendingReadError } = await supabase
     .from('table_seats')
     .select('user_id, seat_number, occupancy_id')
@@ -428,8 +431,11 @@ export async function processLeavePending(
     .eq('leave_pending', true)
     .is('left_at', null);
 
-  if (pendingReadError)
+  if (pendingReadError) {
+    diagnostic?.fail(pendingReadError, 'returned_error');
     throw new Error(pendingReadError.message || 'Pending Departure Read Failed');
+  }
+  diagnostic?.phase('departure_processing');
   if (!pendingSeats || pendingSeats.length === 0) return [];
 
   const cashedOut: Array<{ userId: string; occupancyId: string }> = [];
@@ -450,7 +456,9 @@ export async function processLeavePending(
       // Refusal does not cancel the accepted departure. Keep the durable
       // pending flag so a new engine process reads the same occupancy after
       // restart; the in-memory countdown callback is presentation only.
+      diagnostic?.phase('departure_locked_callback');
       onLocked?.(seat.user_id, out.lockedMs, seat.occupancy_id);
+      diagnostic?.phase('departure_processing');
       continue;
     }
     // Any other failure: the seat is untouched (one transaction) and the next
@@ -459,7 +467,9 @@ export async function processLeavePending(
     cashedOut.push({ userId: seat.user_id, occupancyId: seat.occupancy_id });
     // Reported here, not at the return, so a later seat's failure cannot take
     // this departure down with it (see onDeparted above).
+    diagnostic?.phase('departure_departed_callback');
     onDeparted?.(seat.user_id, seat.occupancy_id);
+    diagnostic?.phase('departure_processing');
   }
 
   // Each confirmed atomicCashout already updates the player count in its

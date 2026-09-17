@@ -9,6 +9,17 @@
  */
 
 import { HandController } from './HandController.js';
+import {
+  LifecycleDiagnostics,
+  type LifecycleDetail,
+  type LifecycleTransition,
+} from '../services/LifecycleDiagnostics.js';
+import {
+  leavePendingTerminalReason,
+  type LeavePendingAttempt,
+  type LeavePendingGuardSite,
+  type LeavePendingLifecycle,
+} from '../observability/LeavePendingDiagnostic.js';
 import type { HandSeatGeneration } from './handSeatGeneration.js';
 import { playerActionContext } from './PlayerActionContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
@@ -102,6 +113,10 @@ import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
 import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
+import {
+  DiamondCashPolicyClosedError,
+  type CashTablePolicyRefusal,
+} from '../services/cashTablePlayEligibility.js';
 
 export type EngineLeaseAuthority =
   | {
@@ -158,6 +173,13 @@ export abstract class ServerTableEngineBase {
   protected running: boolean = false;
   /** A table-engine object is one lifecycle generation and is never restarted. */
   private terminal: boolean = false;
+  private startupPolicyRefusal: Readonly<CashTablePolicyRefusal> | null = null;
+
+  getStartupPolicyRefusal(): Readonly<CashTablePolicyRefusal> | null {
+    return this.startupPolicyRefusal;
+  }
+  /** Passive first fence only; never used to authorize or schedule work. */
+  private firstTerminalObservation: ReturnType<typeof leavePendingTerminalReason> | null = null;
   /**
    * The one durable teardown result for this generation. Kept after both
    * fulfillment and rejection so a late caller cannot mistake `running ===
@@ -915,6 +937,35 @@ export abstract class ServerTableEngineBase {
       return false;
     }
     return this.running && !this.terminal && this.isCurrentEngine();
+  }
+
+  /** Observe raw state without expiring, renewing or re-evaluating a lease. */
+  protected leavePendingLifecycleSnapshot(): LeavePendingLifecycle | null {
+    try {
+      const observed = leaseMonotonicNow();
+      return {
+        running: this.running,
+        terminal: this.terminal,
+        current_engine: ServerTableEngineBase.isCurrentEngineFor(this.tableId, this),
+        lease_scope: this.engineLeaseScope,
+        lease_verified: this.engineLeaseVerified,
+        lease_generation: this.engineLeaseGeneration,
+        lease_expired: this.engineLeaseAuthorityExpired,
+        proof_deadline_monotonic_ms: this.engineLeaseProofDeadlineMonotonicMs,
+        observed_monotonic_ms: Number.isFinite(observed) ? observed : null,
+        first_terminal: this.firstTerminalObservation ? { ...this.firstTerminalObservation } : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  protected recordLeavePendingGuard(
+    diagnostic: LeavePendingAttempt | undefined,
+    site: LeavePendingGuardSite,
+    allowed: boolean
+  ): void {
+    if (diagnostic) diagnostic.guard(site, allowed, this.leavePendingLifecycleSnapshot());
   }
 
   /**
@@ -2760,6 +2811,22 @@ export abstract class ServerTableEngineBase {
       // in the ownership-failure certificate.
       void dealingLoop.catch(() => undefined);
     } catch (err) {
+      if (
+        err instanceof DiamondCashPolicyClosedError &&
+        err.tableId === this.tableId &&
+        this.engineLeaseScope === 'cash' &&
+        this.loopPhase === 'start_load_table'
+      ) {
+        // Publish the decision before ready=false can trigger a recovery retry.
+        // The exact owner still has to join stop() and release this generation.
+        this.startupPolicyRefusal = Object.freeze({
+          code: err.code,
+          tableId: err.tableId,
+          arenaId: err.arenaId,
+        });
+        this.fenceTerminalEngine('startup_policy_closed', false);
+        throw err;
+      }
       this.settleReady(false);
       reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start`);
       // 2026-08-22: was a bare `running = false`, which could leak an armed
@@ -2783,8 +2850,26 @@ export abstract class ServerTableEngineBase {
   /**
    * Stop the engine
    */
+  private readonly lifecycleDiagnostics = new LifecycleDiagnostics();
+  private lifecycleDiagnosticWriteFailures = 0;
+
+  private recordLifecycleDiagnostic(
+    event: LifecycleTransition,
+    detail: LifecycleDetail = {}
+  ): void {
+    try {
+      this.lifecycleDiagnostics.record(event, detail);
+    } catch {
+      // Diagnostics cannot replace the owned operation's return or rejection.
+      this.lifecycleDiagnosticWriteFailures++;
+    }
+  }
+
   stop(): Promise<void> {
     if (this.teardownPromise) return this.teardownPromise;
+    this.recordLifecycleDiagnostic('stop_initiated', {
+      proofDeadlineMonotonicMs: this.engineLeaseProofDeadlineMonotonicMs,
+    });
 
     // Capture the exact writers BEFORE changing `running`. The dealing loop
     // reacts to that fence and may return in the same microtask turn; neither
@@ -2796,6 +2881,7 @@ export abstract class ServerTableEngineBase {
 
     // Publish the terminal fence synchronously. Any start/restart attempt in
     // the same turn observes it before teardown reaches its first await.
+    this.firstTerminalObservation ??= leavePendingTerminalReason('stop_requested');
     this.terminal = true;
     this.running = false;
     this.clearEngineLeaseExpiryTimer();
@@ -2807,6 +2893,10 @@ export abstract class ServerTableEngineBase {
 
     const teardown = this.performStop(dealingLoopAtFence, settlementsAtFence);
     this.teardownPromise = teardown;
+    void teardown.then(
+      () => this.recordLifecycleDiagnostic('stop_completed'),
+      () => this.recordLifecycleDiagnostic('stop_failed')
+    );
     return teardown;
   }
 
@@ -2864,6 +2954,8 @@ export abstract class ServerTableEngineBase {
     // A cashout accepted before the terminal fence remains an owned writer.
     // Do not release this engine's resources until its transaction returns.
     await this.seatBoundaryTail;
+
+    this.recordLifecycleDiagnostic('owned_work_joined');
 
     // CROSS-INSTANCE GUARD (2026-08-22): if a replacement engine for this
     // tableId has already been constructed, every shared resource (scheduler
@@ -3285,7 +3377,8 @@ export abstract class ServerTableEngineBase {
   protected async executePendingSeatMoves(
     opts: { announcedOnly: boolean } = { announcedOnly: false },
     /** Read at this boundary by the caller; `null` is a read that FAILED. */
-    prefetched?: readonly PendingSeatMove[] | null
+    prefetched?: readonly PendingSeatMove[] | null,
+    diagnostic?: LeavePendingAttempt
   ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
     /* ONE READ, USED TWICE (2026-09-09). The list is what the service would
@@ -3293,13 +3386,33 @@ export abstract class ServerTableEngineBase {
        having it HERE is what lets a table that cannot deal still release a
        swap hold whose move has died (see reconcileSeatMoveHolds). */
     const pending = prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
-    if (!this.lifecycleCanMutate()) return [];
+    const beforeMoves = this.lifecycleCanMutate();
+    this.recordLeavePendingGuard(diagnostic, 'before_move_execution', beforeMoves);
+    if (!beforeMoves) return [];
     if (pending === null) return [];
+    diagnostic?.phase('move_hold_reconciliation');
     this.reconcileSeatMoveHolds(pending);
-    const { done, held, refused } = await executePendingSeatMoves(this.tableId, opts, pending);
+    let outcome: Awaited<ReturnType<typeof executePendingSeatMoves>>;
+    try {
+      outcome = await executePendingSeatMoves(
+        this.tableId,
+        opts,
+        pending,
+        diagnostic?.move_execution
+      );
+      diagnostic?.move_execution.finish();
+    } catch (error) {
+      diagnostic?.move_execution.fail(error);
+      diagnostic?.selectFailure('move_execution');
+      throw error;
+    }
+    const { done, held, refused } = outcome;
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
-    if (!this.lifecycleCanMutate()) return [];
+    const afterMoves = this.lifecycleCanMutate();
+    this.recordLeavePendingGuard(diagnostic, 'after_move_execution', afterMoves);
+    if (!afterMoves) return [];
+    diagnostic?.phase('move_mirrors');
     // A MOVE THAT DID NOT HAPPEN IS SAID OUT LOUD (2026-09-09, must-move
     // audit). The deal promised "Moving After This Hand"; the executor then
     // found the seat taken, the table closed, or the swap partner gone, and
@@ -3843,6 +3956,18 @@ export abstract class ServerTableEngineBase {
     notifyOwner = true,
     recoveryEventClass?: EngineRecoveryEventClass
   ): void {
+    const diagnosticReason: LifecycleDetail['reason'] =
+      reason === 'cash_lease_proof_expired' ||
+      reason === 'tournament_lease_proof_expired' ||
+      reason === 'dealing_loop_threw'
+        ? reason
+        : reason.startsWith('start_failed:')
+          ? 'start_failed'
+          : 'other';
+    this.recordLifecycleDiagnostic('engine_fenced', {
+      reason: diagnosticReason,
+      proofDeadlineMonotonicMs: this.engineLeaseProofDeadlineMonotonicMs,
+    });
     reportError(
       new Error('Engine self-terminating for restart: ' + reason),
       'ServerTableEngine.' + this.tableId + '.watchdog_kill',
@@ -3853,10 +3978,16 @@ export abstract class ServerTableEngineBase {
       reason,
       recoveryEventClass ?? this.pendingRecoveryEventClass ?? AUTOMATIC_RECOVERY_EVENT_CLASS
     );
+    this.fenceTerminalEngine(reason, notifyOwner);
+  }
+
+  /** Local fence only. Process ownership remains retained until stop completes. */
+  private fenceTerminalEngine(reason: string, notifyOwner: boolean): void {
     // A terminal kill is the end of the recovery chain. Non-terminal recovery
     // records deliberately leave drill provenance armed until real progress
     // proves the injected fault has ended.
     this.pendingRecoveryEventClass = null;
+    this.firstTerminalObservation ??= leavePendingTerminalReason(reason);
     this.terminal = true;
     this.running = false;
     this.clearEngineLeaseExpiryTimer();
@@ -4132,6 +4263,31 @@ export abstract class ServerTableEngineBase {
       seat_number: p.seat_number,
       is_horse: !!p.is_horse,
     }));
+  }
+
+  /** Local fields only. No writer join, authority check, RPC or cleanup. */
+  getLifecycleDiagnosticSnapshot() {
+    return Object.freeze({
+      ...this.lifecycleDiagnostics.snapshot(),
+      diagnosticWriteFailures: this.lifecycleDiagnosticWriteFailures,
+      tableId: this.tableId,
+      tournamentId: this.engineLeaseTournamentId,
+      leaseGeneration: this.engineLeaseGeneration,
+      proofDeadlineMonotonicMs: this.engineLeaseProofDeadlineMonotonicMs,
+      leaseAuthorityExpired: this.engineLeaseAuthorityExpired,
+      terminal: this.terminal,
+      running: this.running,
+      stopInitiated: this.teardownPromise !== null,
+      retainedWork: Object.freeze({
+        dealingLoop: this.dealingLoopPromise !== null,
+        settlements: this.settlementInFlight?.size ?? 0,
+        postHandTasks: this.postHandTasksPromise !== null,
+        tournamentMoves: this.tournamentMoveOperations.size,
+        readContinuations: null,
+      }),
+      readContinuationCoverage: 'unavailable_on_selected_base' as const,
+      leaseReleaseAck: 'unobserved-owner-boundary' as const,
+    });
   }
 
   // FIX 153: Expose telemetry snapshot for health endpoint

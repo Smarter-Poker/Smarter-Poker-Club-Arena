@@ -78,6 +78,78 @@
         }
       ],
       "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+    },
+    {
+      "id": 6,
+      "title": "Engine process memory (what the engine itself weighs)",
+      "description": "Whole-process RSS, main-isolate V8 heap and external memory are distinct observations. The legacy native-main-arena series measures current [heap] virtual extent, not resident memory or allocation ownership. Missing series are unknown. See docs/runbooks/engine-memory.md.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "poker_engine_process_rss_bytes",
+          "legendFormat": "rss"
+        },
+        {
+          "expr": "poker_engine_heap_used_bytes",
+          "legendFormat": "heap used"
+        },
+        {
+          "expr": "poker_engine_heap_total_bytes",
+          "legendFormat": "heap total"
+        },
+        {
+          "expr": "poker_engine_native_main_arena_bytes",
+          "legendFormat": "heap virtual extent"
+        },
+        {
+          "expr": "poker_engine_external_bytes",
+          "legendFormat": "external"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Build headroom (engine-01)",
+      "description": "Current original GitHub/Hetzner publication builds the engine image on engine-01. The existing build gate requires 1152 MiB available at its actual start (896 MiB builder limit plus 256 MiB reserve). This panel observes current host pressure; it does not authorize a build or restart or predict later build success. The 256 MiB line is the separate critical OOM-risk threshold. See docs/runbooks/engine-memory.md.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "node_memory_MemAvailable_bytes{host=\"engine-01\"}",
+          "legendFormat": "available"
+        },
+        {
+          "expr": "vector(1207959552)",
+          "legendFormat": "image build needs"
+        },
+        {
+          "expr": "vector(268435456)",
+          "legendFormat": "near OOM"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0
+        }
+      }
     }
   ],
   "refresh": "10s",

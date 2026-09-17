@@ -36,6 +36,7 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import type { LeavePendingOperation } from '../../observability/LeavePendingDiagnostic.js';
 
 /**
  * A FOURTH REASON (Dan 2026-09-05): `balance`. The room evened the must-move
@@ -49,6 +50,8 @@ export type SeatMoveReason = 'must_move' | 'break' | 'seat_change' | 'balance';
 export interface PendingSeatMove {
   move_id: string;
   player_id: string;
+  /** Original stay selected by the planner, never the user's replacement seat. */
+  source_occupancy_id: string;
   to_table_id: string;
   to_table_name: string | null;
   to_role: string | null;
@@ -145,15 +148,25 @@ export const SEAT_MOVE_NON_TERMINAL_REASONS: ReadonlySet<string> = new Set([
  * it into "change nothing" at the two sites where that is the right answer -
  * see ServerTableEngineBase.readPendingSeatMoves.
  */
-export async function pendingSeatMoves(tableId: string): Promise<PendingSeatMove[]> {
+export async function pendingSeatMoves(
+  tableId: string,
+  diagnostic?: LeavePendingOperation
+): Promise<PendingSeatMove[]> {
+  diagnostic?.phase('move_enumeration_rpc');
   const { data, error } = await supabase.rpc('fn_cash_seat_moves_pending', {
     p_table_id: tableId,
   });
   if (error) {
+    diagnostic?.fail(error, 'returned_error');
     reportError(error, 'seatMoves.pending_failed', { tableId });
     throw new Error(error.message || 'Seat move enumeration failed');
   }
+  diagnostic?.phase('move_enumeration_validation');
   if (!Array.isArray(data)) throw new Error('Seat move enumeration was not confirmed');
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (data.some((m) => !m || !uuid.test(m.source_occupancy_id ?? ''))) {
+    throw new Error('Seat move original occupancy was not confirmed');
+  }
   return data as PendingSeatMove[];
 }
 
@@ -194,7 +207,8 @@ export async function executePendingSeatMoves(
   tableId: string,
   opts: ExecuteSeatMovesOptions = { announcedOnly: false },
   /** Fresh candidates read at this same hand boundary, never cached. */
-  prefetched?: readonly PendingSeatMove[]
+  prefetched?: readonly PendingSeatMove[],
+  diagnostic?: LeavePendingOperation
 ): Promise<SeatMoveOutcome> {
   const pending = prefetched ?? (await pendingSeatMoves(tableId));
   const due = opts.announcedOnly ? pending.filter((m) => m.announced_at != null) : pending;
@@ -202,21 +216,29 @@ export async function executePendingSeatMoves(
   const held: SeatMoveOutcome['held'] = [];
   const refused: SeatMoveOutcome['refused'] = [];
   for (const m of due) {
+    diagnostic?.beginMove(m.move_id);
     let data: unknown;
     let failure: unknown;
     // A lost response retries only this immutable move, never another current seat.
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
+        diagnostic?.rpcStart(attempt + 1);
         const result = await supabase.rpc('fn_cash_seat_move_execute', { p_move_id: m.move_id });
-        if (result.error) throw new Error(result.error.message || 'Seat move execution failed');
+        if (result.error) {
+          diagnostic?.rpcFailed(result.error, 'returned_error');
+          throw new Error(result.error.message || 'Seat move execution failed');
+        }
+        diagnostic?.rpcFinished();
         data = result.data;
         failure = undefined;
         break;
       } catch (error) {
+        diagnostic?.rpcFailed(error);
         failure = error;
       }
     }
     if (failure) throw failure;
+    diagnostic?.phase('move_receipt_validation');
     const res = (data ?? {}) as {
       ok?: boolean;
       move_id?: string;
@@ -256,6 +278,7 @@ export async function executePendingSeatMoves(
       res.from_table_id === tableId &&
       typeof res.source_occupancy_id === 'string' &&
       uuid.test(res.source_occupancy_id) &&
+      res.source_occupancy_id === m.source_occupancy_id &&
       Number.isInteger(res.source_seat_number);
     if (res.ok === true) {
       if (
@@ -279,6 +302,7 @@ export async function executePendingSeatMoves(
       ) {
         throw new Error('Seat move outcome does not prove the original transfer');
       }
+      diagnostic?.phase('move_outcome_processing');
       done.push({
         source_occupancy_id: res.source_occupancy_id!,
         destination_occupancy_id: res.destination_occupancy_id!,
@@ -310,6 +334,7 @@ export async function executePendingSeatMoves(
         !uuid.test(res.partner_id)
       )
         throw new Error('Seat swap hold does not prove the original occupancy');
+      diagnostic?.phase('move_outcome_processing');
       held.push({
         source_occupancy_id: res.source_occupancy_id!,
         move_id: m.move_id,
@@ -324,6 +349,7 @@ export async function executePendingSeatMoves(
          decide whether that reason is one the PLAYER has to be told about. */
       if (res.ok !== false || typeof res.reason !== 'string' || !res.reason)
         throw new Error('Seat move outcome was not confirmed');
+      diagnostic?.phase('move_outcome_processing');
       console.log(
         `[seatMoves:${tableId}] move ${m.move_id} for ${m.player_id} not executed: ${res.reason}`
       );

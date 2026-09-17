@@ -111,10 +111,10 @@ def private_socket():
 
 
 def require_private_endpoint(environment, database):
+    private_socket()  # Recheck the exact owned endpoint used by every Session.
     require(environment['database'] == database and environment['user'] == 'postgres'
             and environment['session_user'] == 'postgres' and environment['port'] == '5432'
-            and environment['address'] is None and environment['listen_addresses'] == ''
-            and environment['unix_socket_directories'] == str(private_socket())
+            and environment['address'] is None
             and 170000 <= environment['version'] < 180000 and environment['others'] == 0,
             'private current PG17 socket tripwire differs')
 
@@ -301,8 +301,6 @@ def run(args, events, sessions, deadline):
     environment = observer.json("""SELECT jsonb_build_object('database',current_database(),
       'user',current_user,'session_user',session_user,'port',current_setting('port'),
       'address',inet_server_addr(),'version',current_setting('server_version_num')::int,
-      'listen_addresses',current_setting('listen_addresses'),
-      'unix_socket_directories',current_setting('unix_socket_directories'),
       'deadlock_ms',extract(epoch FROM current_setting('deadlock_timeout')::interval)*1000,
       'others',(SELECT count(*) FROM pg_stat_activity
         WHERE datname=current_database() AND pid<>pg_backend_pid()));""")

@@ -453,6 +453,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (!currentIds.has(id)) this.dealtInUserIds.delete(id);
         }
 
+        // A restored horse's last beat belongs to the previous engine. The
+        // scheduled heartbeat may still be seconds away, while this check
+        // can disconnect the horse and expire its first turn immediately.
+        // Observe the server-driven seats before classifying stale presence,
+        // using the same heartbeat path as the periodic table tick. Human
+        // presence, voluntary sit-outs and time-bank state remain untouched.
+        for (const p of this.seatedPlayers) {
+          if (p.is_horse) this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+        }
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
 

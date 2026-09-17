@@ -141,7 +141,9 @@ describe("D1 - a read that FAILED changes nothing (the invariant, through main's
        this law's branch reached by main's own structure. Adding a catch here
        would only hide the alert. */
     const fn = SETTLEMENT.slice(SETTLEMENT.indexOf('protected async readCashHandDepartures'));
-    expect(fn).toMatch(/if \(moves\.status === 'rejected'\) throw moves\.reason;/);
+    expect(fn).toMatch(
+      /if \(moves\.status === 'rejected'\) \{\s*diagnostic\?\.selectFailure\('move_read'\);\s*throw moves\.reason;/
+    );
     expect(fn).not.toMatch(/catch/);
     expect(SETTLEMENT).toMatch(/runStep\('leave_pending', true,/);
   });

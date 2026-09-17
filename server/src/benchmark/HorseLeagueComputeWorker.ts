@@ -10,6 +10,10 @@
 
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { getPriority } from 'node:os';
+import {
+  horseLeagueReadyPriorityProof,
+  requireHorseLeagueBootstrapPriority,
+} from './HorseLeagueProcessPriority.js';
 
 import { runMatchup } from './HorseLeague.js';
 import { runTournamentLeague } from './HorseTournamentLeague.js';
@@ -55,6 +59,7 @@ if (runtimeAvailable) {
   };
 
   const ready = (async () => {
+    if (!parentPort) requireHorseLeagueBootstrapPriority();
     if (options.hydrateSolverStores !== false) {
       // These are the same bounded, collect-then-swap loaders used by the live
       // process.  They run here so worker decisions never silently fall back
@@ -64,6 +69,7 @@ if (runtimeAvailable) {
     send({
       type: 'READY',
       executionNice: getPriority(0),
+      ...(parentPort ? {} : { executionPriority: horseLeagueReadyPriorityProof() }),
       solverStores: {
         charts: gtoChartCount(),
         postflop: gtoPostflopCount(),

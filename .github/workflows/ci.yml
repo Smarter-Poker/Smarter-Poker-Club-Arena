@@ -1168,6 +1168,33 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      - name: Hand index writers retain canonical order and exact coverage
+        id: hand_index_writer_order
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-index-writer-order.py --migration supabase/migrations/20260914194928_hand_index_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-index
+
+      - name: Hand stat writers retain canonical order and rollback
+        id: hand_stat_writer_order
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-stat-writer-order.py --migration supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-stat
+
+      - name: Rake attribution commits with its fee or rolls back together
+        id: rake_attribution_atomic
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution
+
+      - name: Retain production alert SQL qualification evidence
+        if: always() && steps.hand_index_writer_order.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-alerts-sql-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/production-alerts-sql/
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Spin expiry lock order and committed refund contracts
         id: spin_expiry_postgres
         env:

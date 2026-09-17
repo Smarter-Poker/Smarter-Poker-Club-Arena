@@ -204,7 +204,8 @@ type HorseTurnAbandonReason =
   | 'hand_replaced'
   | 'lifecycle_locked'
   | 'seat_moved'
-  | 'lease_lost';
+  | 'lease_lost'
+  | 'clock_expired';
 
 /** How far the turn got before the fence refused it. `commit` is the
  *  expensive one: the decision was computed and then dropped. */
@@ -2128,6 +2129,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
       this.startTurnTimer(userId, player.seat, Math.max(0.001, (protection - Date.now()) / 1000));
       this.timeBankSuppressedThisTurn = true;
+      // The disconnected TURN_CHANGE returned before requesting a horse
+      // decision. Restoring only its clock leaves the seat waiting for an
+      // input device that was never resumed. Keep this same deadline and
+      // suppressed bank; a reconnect does not grant a fresh turn budget.
+      const seatedPlayer = this.seatedPlayers.find(
+        (p) => p.user_id === userId && p.seat_number === player.seat
+      );
+      if (seatedPlayer?.is_horse) {
+        try {
+          this.scheduleHorseAction(seatedPlayer, player.seat, player, state, protection);
+        } catch (error) {
+          reportError(
+            error,
+            'ServerTableEngine.' + this.tableId + '.horse_reconnect_decision_threw'
+          );
+        }
+      }
       return;
     }
 
@@ -2646,7 +2664,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       communityCards: any[];
       players: any[];
       stage: HandStage;
-    }
+    },
+    protectedDeadlineMs?: number
   ): void {
     // One turn owns one worker request, optional deep replay and action timer.
     // Cancel the previous set as a unit before publishing a new local fence.
@@ -2725,6 +2744,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
        is. */
     const fenceRefusal = (): HorseTurnAbandonReason | null => {
       if (abortController.signal.aborted) return 'aborted';
+      if (protectedDeadlineMs !== undefined && Date.now() >= protectedDeadlineMs) {
+        return 'clock_expired';
+      }
       if (
         this.horseDecisionAbortController !== abortController ||
         this.horseTurnToken !== turnToken
@@ -3079,6 +3101,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // ('street_limit') refuses the auto-activation at 17 s, and the seat
         // is auto-folded with its real answer still in the think timer.
         const bankUsable =
+          protectedDeadlineMs === undefined &&
+          this.timeBankSuppressedThisTurn !== true &&
           this.tableInfo?.time_bank_enabled !== false &&
           bank != null &&
           (bank as { isActive?: boolean }).isActive !== true &&
@@ -3133,7 +3157,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // Worker queue/computation is part of the horse's visible think time.
         // A loaded process must never add compute delay on top of the selected
         // cadence or let a stale answer fire after the authoritative clock.
-        const remainingThinkMs = Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs));
+        const remainingThinkMs = Math.min(
+          Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs)),
+          protectedDeadlineMs === undefined
+            ? Infinity
+            : Math.max(0, protectedDeadlineMs - Date.now() - 100)
+        );
 
         // ═══ V44 SECOND LOOK (2026-09-05) ═══════════════════════════════════════
         // The fast decision above ran its Monte Carlo at 120-450 iterations to

@@ -11,6 +11,14 @@ import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 
 import { randomUUID } from 'node:crypto';
 import {
+  tournamentEliminationScheduler,
+  diagnosticTableIds,
+} from './tournament/TournamentEliminationScheduler.js';
+import type {
+  TournamentDiagnosticSelection,
+  TournamentManagerBase,
+} from './tournament/TournamentManagerBase.js';
+import {
   selectPublicTableLiveness,
   type PublicTableLivenessQuery,
 } from './observability/PublicTableLiveness.js';
@@ -103,6 +111,7 @@ import {
   leaseRenewalLoopRunning,
   leaseRenewalLoopRelaunchesTotal,
 } from './observability/engineInstruments.js';
+import { processMemoryHealth } from './observability/processMemory.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
@@ -195,6 +204,8 @@ import {
   selectRunningResumes,
 } from './tournamentResumeBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
+import { assertCashTablePlayEnabled, type CashTablePlayRow } from './services/supabase/tables.js';
+import { DiamondCashPolicyClosedError } from './services/cashTablePlayEligibility.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
 import { ENGINE_RELEASE_IDENTITY } from './releaseIdentity.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
@@ -292,13 +303,19 @@ const OWNERSHIP_LEASE_RENEWAL_ABANDON_MS = Number(
 );
 
 /**
- * The four materially different answers to a direct table admission attempt.
+ * The distinct answers to a direct table admission attempt.
  * A boolean erased the distinction between "this table was closed", "another
  * live process owns it", and "the database/start path blipped". The first two
- * are terminal for this process; the last one must retain the exact causal
- * recovery obligation instead of waiting for fleet discovery to notice it.
+ * are classified admission outcomes; only retryable_failure retains the exact
+ * causal recovery obligation. policy_closed is returned after any acquired
+ * generation has completed its owned teardown and confirmed lease release.
  */
-type DirectTableAdmission = 'ready' | 'not_wakeable' | 'owned_elsewhere' | 'retryable_failure';
+type DirectTableAdmission =
+  | 'ready'
+  | 'not_wakeable'
+  | 'policy_closed'
+  | 'owned_elsewhere'
+  | 'retryable_failure';
 type TournamentManagerStartMode = 'start' | 'resume';
 type DealerPrerequisiteGate = {
   generation: number;
@@ -490,6 +507,10 @@ export class GameServer {
     TournamentManager,
     Promise<boolean>
   >();
+  /** Read index only: lifetime is exactly the already-owned retirement operation. */
+  private tournamentDiagnosticRetirements = new Map<string, Set<TournamentManager>>();
+  private tournamentDiagnosticIndexFailures = 0;
+  private tournamentReleaseDiagnosticFailures = 0;
 
   private launchDiscoveryJob(
     operation: Promise<unknown>,
@@ -1290,9 +1311,22 @@ export class GameServer {
     tableId: string,
     engine: ServerTableEngine
   ): Promise<DirectTableAdmission> {
-    const outcome = engine.ready.then<DirectTableAdmission>((ready) =>
-      ready ? 'ready' : 'retryable_failure'
-    );
+    const outcome = engine.ready.then<DirectTableAdmission>(async (ready) => {
+      if (ready) return 'ready';
+      if (!engine.getStartupPolicyRefusal()) return 'retryable_failure';
+      try {
+        // Boolean readiness is already false. Keep the classified admission
+        // pending until its exact engine/lease cleanup has actually finished;
+        // an early policy_closed result could erase a failed cleanup's retry.
+        await this.recoverDirectTableEngine(tableId, engine, 'startup_policy_closed', true);
+        return 'policy_closed';
+      } catch (cleanupError) {
+        reportError(cleanupError, 'GameServer.policy_closed_table_cleanup_unconfirmed', {
+          tableId,
+        });
+        return 'retryable_failure';
+      }
+    });
     const tracked = outcome.finally(() => {
       if (this.tableEngineStartPromises.get(tableId) === tracked) {
         this.tableEngineStartPromises.delete(tableId);
@@ -1400,6 +1434,13 @@ export class GameServer {
     tableStateHub.dropTable(tableId);
     if (!this.running) return;
 
+    if (engine.getStartupPolicyRefusal()) {
+      // Closure is not a crash. Cleanup and exact lease release above still
+      // apply; an unavailable cleanup result must never reach this branch.
+      this.clearDirectTableRecovery(tableId);
+      return;
+    }
+
     // A start that exhausted its own transient retries gets a causal backoff;
     // a detached runtime death is replaced immediately. Both remain exact to
     // this table and neither waits for the five-second discovery scanner.
@@ -1476,6 +1517,115 @@ export class GameServer {
     return this.tournamentEngines.get(tournamentId) === manager;
   }
 
+  /** Exact bounded object capture; no getStatus, authority callbacks or external reads. */
+  getTournamentLifecycleDiagnostic(
+    tournamentId: string,
+    selection: TournamentDiagnosticSelection = {},
+    expected: { managerInstanceId?: string; leaseGeneration?: string } = {}
+  ) {
+    const boundedSelection = { tableIds: diagnosticTableIds(selection) };
+    type Snapshot = ReturnType<TournamentManagerBase['getLifecycleDiagnosticSnapshot']>;
+    const current = this.tournamentEngines.get(tournamentId);
+    const retiring = this.tournamentDiagnosticRetirements?.get(tournamentId);
+    const retirementIndexComplete =
+      this.tournamentDiagnosticRetirements instanceof Map &&
+      (this.tournamentDiagnosticIndexFailures ?? 0) === 0;
+    const scheduler = tournamentEliminationScheduler.diagnosticSnapshot(
+      tournamentId,
+      boundedSelection
+    );
+    const byInstance = new Map<string, { roles: string[]; snapshot: Snapshot }>();
+    let unavailableOwners = 0;
+    let currentSnapshot: Snapshot | null = null;
+    const add = (snapshot: Snapshot | null, role: string): void => {
+      if (!snapshot) {
+        unavailableOwners++;
+        return;
+      }
+      const prior = byInstance.get(snapshot.instanceId);
+      if (prior) {
+        if (!prior.roles.includes(role)) prior.roles.push(role);
+      } else byInstance.set(snapshot.instanceId, { roles: [role], snapshot });
+    };
+    const read = (manager: TournamentManager): Snapshot | null => {
+      try {
+        return manager.getLifecycleDiagnosticSnapshot(boundedSelection);
+      } catch {
+        return null;
+      }
+    };
+    if (current) {
+      currentSnapshot = read(current);
+      add(currentSnapshot, 'current');
+    }
+    let retirementEntriesScanned = 0;
+    if (retiring) {
+      const iterator = retiring.values();
+      for (let i = 0; i < 32; i++) {
+        const next = iterator.next();
+        if (next.done) break;
+        retirementEntriesScanned++;
+        add(next.value === current ? currentSnapshot : read(next.value), 'retiring');
+      }
+    }
+    for (const entry of scheduler.entries) {
+      if (entry.owner) add(entry.owner, 'scheduler');
+      else if (entry.managerInstanceId) unavailableOwners++;
+    }
+    const owners = [...byInstance.values()].slice(0, 4).map((entry) =>
+      Object.freeze({
+        roles: Object.freeze(entry.roles),
+        snapshot: entry.snapshot,
+      })
+    );
+    const expectedIdentityMatch =
+      !expected.managerInstanceId && !expected.leaseGeneration
+        ? ('not_requested' as const)
+        : !currentSnapshot
+          ? ('unavailable' as const)
+          : (!expected.managerInstanceId ||
+                currentSnapshot.instanceId === expected.managerInstanceId) &&
+              (!expected.leaseGeneration ||
+                currentSnapshot.leaseGeneration === expected.leaseGeneration)
+            ? ('match' as const)
+            : ('mismatch' as const);
+    return Object.freeze({
+      schema: 'tournament-lifecycle-diagnostic/v1' as const,
+      diagnosticOnly: true as const,
+      tournamentId,
+      observedAtMs: Date.now(),
+      observedMonotonicMs: performance.now(),
+      pid: process.pid,
+      gameServerInitializedAtMs: this.processStartedAt,
+      hostIdentityCoverage: 'host_must_bind_container_start_image_release' as const,
+      currentManagerPresent: !!current,
+      expectedIdentityMatch,
+      releaseBarrierPresent: this.tournamentManagerLeaseReleaseOperations.has(tournamentId),
+      pendingLeaseGeneration: this.tournamentManagerPendingLeaseReleases.get(tournamentId) ?? null,
+      retirementIndexCoverage: retirementIndexComplete
+        ? ('complete' as const)
+        : ('unavailable' as const),
+      retirementOperationsCount: retirementIndexComplete ? (retiring?.size ?? 0) : null,
+      retirementEntriesScanned,
+      retirementScanTruncated: retirementIndexComplete
+        ? (retiring?.size ?? 0) > retirementEntriesScanned
+        : null,
+      ownersObservedCountLowerBound: byInstance.size,
+      ownersOmitted: byInstance.size - owners.length,
+      unavailableOwners,
+      diagnosticIndexFailures: this.tournamentDiagnosticIndexFailures ?? 0,
+      releaseDiagnosticFailures: this.tournamentReleaseDiagnosticFailures ?? 0,
+      owners: Object.freeze(owners),
+      scheduler: Object.freeze({
+        ...scheduler,
+        entries: Object.freeze(
+          scheduler.entries.map(({ owner: _owner, ...entry }) => Object.freeze(entry))
+        ),
+      }),
+      missingMeans: 'unknown' as const,
+    });
+  }
+
   /**
    * Stop one exact manager generation and release its slot only after every
    * table engine has completed teardown. A replacement installed while the
@@ -1491,6 +1641,21 @@ export class GameServer {
     if (existing) return existing;
 
     const leaseGeneration = releaseLease ? manager.getTournamentLeaseGeneration() : null;
+    let observeLeaseRelease: ReturnType<
+      TournamentManager['captureLeaseReleaseDiagnosticObserver']
+    > = null;
+    if (leaseGeneration) {
+      try {
+        observeLeaseRelease = manager.captureLeaseReleaseDiagnosticObserver(
+          tournamentId,
+          leaseGeneration
+        );
+      } catch {
+        // Observation cannot prevent the original manager's physical stop.
+        this.tournamentReleaseDiagnosticFailures =
+          (this.tournamentReleaseDiagnosticFailures ?? 0) + 1;
+      }
+    }
     let resolveReleaseBarrier: (confirmed: boolean) => void = () => undefined;
     const releaseBarrier = leaseGeneration
       ? new Promise<boolean>((resolve) => {
@@ -1504,6 +1669,17 @@ export class GameServer {
       this.tournamentManagerLeaseReleaseOperations.set(tournamentId, releaseBarrier);
     }
 
+    // Index only an already-owned stop, after the existing release setup succeeds.
+    let diagnosticRetirements: Set<TournamentManager> | null = null;
+    try {
+      this.tournamentDiagnosticRetirements ??= new Map();
+      diagnosticRetirements =
+        this.tournamentDiagnosticRetirements.get(tournamentId) ?? new Set<TournamentManager>();
+      this.tournamentDiagnosticRetirements.set(tournamentId, diagnosticRetirements);
+      diagnosticRetirements.add(manager);
+    } catch {
+      this.tournamentDiagnosticIndexFailures = (this.tournamentDiagnosticIndexFailures ?? 0) + 1;
+    }
     const operation = (async (): Promise<boolean> => {
       let releaseConfirmed = leaseGeneration === null;
       try {
@@ -1516,6 +1692,19 @@ export class GameServer {
         if (stopped && leaseGeneration) {
           this.tournamentManagerPendingLeaseReleases.set(tournamentId, leaseGeneration);
           const release = await releaseTournaments([{ tournamentId, leaseGeneration }]);
+          try {
+            const releaseDiagnostic = observeLeaseRelease?.(release);
+            if (releaseDiagnostic) {
+              // The host-owned Docker log supplies container/process custody.
+              // This bounded record is an observation, never release authority.
+              console.info('[tournament-manager-release]', JSON.stringify(releaseDiagnostic));
+            }
+          } catch {
+            // Process the original lease result even when observation/logging
+            // fails. The pending generation and barrier still follow that result.
+            this.tournamentReleaseDiagnosticFailures =
+              (this.tournamentReleaseDiagnosticFailures ?? 0) + 1;
+          }
           if (release.status !== 'confirmed') {
             throw new Error(
               `Tournament lease release was not confirmed for ${tournamentId}/${leaseGeneration}: ` +
@@ -1537,6 +1726,18 @@ export class GameServer {
         }
         if (releaseBarrier) resolveReleaseBarrier(releaseConfirmed);
         this.tournamentManagerRetirementOperations.delete(manager);
+        try {
+          diagnosticRetirements?.delete(manager);
+          if (
+            diagnosticRetirements?.size === 0 &&
+            this.tournamentDiagnosticRetirements.get(tournamentId) === diagnosticRetirements
+          ) {
+            this.tournamentDiagnosticRetirements.delete(tournamentId);
+          }
+        } catch {
+          this.tournamentDiagnosticIndexFailures =
+            (this.tournamentDiagnosticIndexFailures ?? 0) + 1;
+        }
       }
     })();
     this.tournamentManagerRetirementOperations.set(manager, operation);
@@ -3397,6 +3598,10 @@ export class GameServer {
       // Still useful, but a different question: can the realtime table loop
       // service sockets, clocks, leases and state broadcasts without delay?
       mainEventLoopGovernor: equityGovernor.snapshot(),
+      // Whole-process RSS and main-isolate memory, rounded to decimal MB.
+      // Unavailable /proc observations are null. The legacy arena field is
+      // [heap] virtual extent, not RSS or allocation ownership.
+      memory: processMemoryHealth(),
       // The one process-wide FIFO that owns live HorseLogic state. Queue depth
       // and phase distinguish worker pressure/failure from main-loop pressure;
       // solver store counts prove the worker reached an authoritative READY.
@@ -8534,12 +8739,14 @@ export class GameServer {
     await this.awaitDirectTableLeaseRelease(tableId);
     if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
 
-    let table: Parameters<typeof isWakeableCashTable>[0];
+    let table: CashTablePlayRow | null;
     let error: { message: string } | null = null;
     try {
       const result = await supabase
         .from('tables')
-        .select('id, tournament_id, status, game_type, is_deleted')
+        .select(
+          'id, tournament_id, status, game_type, is_deleted, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
+        )
         .eq('id', tableId)
         .maybeSingle();
       table = result.data;
@@ -8564,6 +8771,20 @@ export class GameServer {
       // tournament manager's lease or a concurrent discovery grant.
       return 'not_wakeable';
     }
+
+    try {
+      // Both discovery and direct wake use this path. A disabled arena must
+      // not acquire a lease or construct an engine merely to refuse its start.
+      await assertCashTablePlayEnabled(tableId, table!);
+    } catch (policyError) {
+      if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
+      if (policyError instanceof DiamondCashPolicyClosedError && policyError.tableId === tableId) {
+        return 'policy_closed';
+      }
+      reportError(policyError, 'GameServer.cash_table_play_eligibility_unavailable', { tableId });
+      return 'retryable_failure';
+    }
+    if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
 
     const requestedLeaseGeneration =
       this.directTableAdmissionLeaseGenerations.get(tableId) ?? randomUUID();
@@ -8673,8 +8894,12 @@ export class GameServer {
     void engine
       .start()
       .catch(async (startError) => {
-        this.engineStartFailures++;
-        reportError(startError, 'GameServer.direct_table_start_failed');
+        if (
+          !(startError instanceof DiamondCashPolicyClosedError && engine.getStartupPolicyRefusal())
+        ) {
+          this.engineStartFailures++;
+          reportError(startError, 'GameServer.direct_table_start_failed');
+        }
         await this.recoverDirectTableEngine(tableId, engine, 'direct_start_failed', true);
       })
       .catch((recoveryError) => {

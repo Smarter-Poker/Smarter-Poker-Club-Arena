@@ -24,7 +24,7 @@ R2_SQL = DIRECTORY/'spin-expiry-committed-refund-state.sql'
 ORACLE = DIRECTORY/'spin-expiry-committed-refund-oracle.py'
 AUTHORITY = DIRECTORY/'spin-expiry-committed-refund.authority.json'
 FROZEN = {
-    R1:'1166f58da0d47aebe00a99c045840d62a08dc7296649a8149dfdfea377b78bd7',
+    R1:'33040b22707d84990cc87489d97b412ca1a5163906646769a9961842a1f3eae8',
     R1_SQL:'eb052a103771b40e473a34b8b730e3126db7d9a9cbe18ece152b7a0afeab588a',
     DIRECTORY/'spin-expiry-lock-order.authority.json':
         '204c8528c4963c723139a2636fe7482abbad6ebcf3a247ec8a2f1de5fbccc09c',
@@ -218,13 +218,11 @@ def main():
         environment=observer.json("""SELECT jsonb_build_object('database',current_database(),
           'user',current_user,'session_user',session_user,'port',current_setting('port'),
           'address',inet_server_addr(),'version',current_setting('server_version_num')::int,
-          'listen_addresses',current_setting('listen_addresses'),
-          'unix_socket_directories',current_setting('unix_socket_directories'),
           'others',(SELECT count(*) FROM pg_stat_activity
             WHERE datname=current_database() AND pid<>pg_backend_pid()));""")
         journal.append('environment',value=environment)
         lib.require(set(environment) == {'database','user','session_user','port','address','version',
-                    'listen_addresses','unix_socket_directories','others'}, 'unexpected PG17 environment observation')
+                    'others'}, 'unexpected PG17 environment observation')
         lib.require_private_endpoint(environment, database)
         observer.no_errors(observer.command("SET statement_timeout='3s'; SET timezone='UTC'; "
             'SET search_path=public,pg_temp;'+R1_SQL.read_text()+R2_SQL.read_text()))

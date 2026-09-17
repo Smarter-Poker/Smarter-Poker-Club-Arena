@@ -15,16 +15,25 @@ const fixture =
 const spinExpiry =
   /^(supabase\/components\/spin-expiry-lock-order(?:\.rollback)?\.sql$|scripts\/qualification\/spin-expiry-|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
 
+// Production Alert SQL inputs select the existing accounting checks.
+const productionAlertsSql =
+  /^(scripts\/ci\/(?:test-(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\.py$|probes\/(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\/)|tests\/tournament-rake-attribution-retries-inside-its-own-transaction\.law\.test\.ts$)/;
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  const horsePriority = matches(/^scripts\/qualification\/(?:horse-league-process-priority-native\.mjs$|fixtures\/horse-league-process-priority\/)/);
+  // Rule-only changes must run the existing reporting contract suites.
+  const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
+  const memoryMonitoring = matches(/^infra\/monitoring\/(?:alert-rules\.yml|grafana-dashboards\/poker-engine\.json)$/);
+  const spinComparator = matches(/^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/);
   return {
     src: broad || matches(/^src\//),
-    server: broad || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/) || matches(spinExpiry),
-    tests: broad || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/) || matches(spinExpiry),
+    server: broad || spinRules || horsePriority || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql),
+    tests: broad || spinRules || spinComparator || memoryMonitoring || horsePriority || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql),
     phase4: matches(phase4),
     fixture: matches(fixture),
   };

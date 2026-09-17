@@ -43,6 +43,11 @@ def receipt(image='candidate'):
     stages = [{'stage': name, 'returncode': 0, 'argv': sql + ['-f', str(source / sql_inputs[name])],
                'stdout_sha256': 'e' * 64}
               for name in (catalog + ['install_candidate'] if image == 'candidate' else []) + ['real_funded_paid_seat_fixture']]
+    endpoint = {'user': 'fixture_bootstrap', 'session_user': 'fixture_bootstrap',
+                'port': '5432', 'address': None, 'listen_addresses': '',
+                'unix_socket_directories': str(source.parent / 'work/socket')}
+    stages.insert(0, {'stage': 'server_endpoint_readback', 'returncode': 0,
+                      'argv': W.server_endpoint_command(PG, source.parent / 'work/socket')})
     records = []
     for ordinal, case in enumerate(W.CASES[image], start=1):
         common = ['--psql', str(PG / 'psql'), '--execution', EXECUTION, '--tournament', TOURNAMENT]
@@ -65,7 +70,7 @@ def receipt(image='candidate'):
             'full_qualification': False, 'connected_services_qualified': False,
             'execution_backend': 'hosted-owned-pg17-unix-socket',
             'hosted_cleanup_observed': True, 'original_clients_terminal': True,
-            'stages': stages, 'business_cases': records}
+            'stages': stages, 'business_cases': records, 'server_endpoint': endpoint}
 
 
 class SessionEnvironmentTests(unittest.TestCase):
@@ -266,15 +271,12 @@ class SessionEnvironmentTests(unittest.TestCase):
                         self.assertRaises((RuntimeError, OSError)):
                     self.lib.private_socket()
 
-    def test_endpoint_observation_rejects_tcp_listener_foreign_socket_database_and_identity(self):
+    def test_business_endpoint_rejects_tcp_wrong_database_and_identity(self):
         db = 'qual_spin_expiry_' + EXECUTION.replace('-', '')
         value = dict(database=db, user='postgres', session_user='postgres', port='5432',
-                     address=None, listen_addresses='',
-                     unix_socket_directories=str(self.root.parent / 'work/socket'),
-                     version=170006, others=0)
+                     address=None, version=170006, others=0)
         self.lib.require_private_endpoint(value, db)
-        for key, changed in [('address','127.0.0.1'), ('listen_addresses','127.0.0.1'),
-                             ('unix_socket_directories','/tmp'), ('database','postgres'),
+        for key, changed in [('address','127.0.0.1'), ('database','postgres'),
                              ('user','fixture_bootstrap'), ('session_user','service_role'),
                              ('port','5433'), ('version',160000), ('others',1)]:
             with self.subTest(key=key), self.assertRaises(RuntimeError):
@@ -573,7 +575,7 @@ class ReceiptTests(unittest.TestCase):
             if mode == 'missing': value['stages'].pop()
             if mode == 'repeated': value['stages'].append(copy.deepcopy(value['stages'][0]))
             if mode == 'wrong-user':
-                argv = value['stages'][0]['argv']
+                argv = next(stage for stage in value['stages'] if stage['stage'] == 'spin_catalog_before')['argv']
                 argv[argv.index('ordinary_user_uuid=' + ORDINARY)] = 'ordinary_user_uuid=' + EXECUTION
             if mode == 'failed': value['stages'][0]['returncode'] = 1
             if mode == 'order': value['stages'].reverse()
@@ -595,13 +597,16 @@ class ReceiptTests(unittest.TestCase):
     def test_catalog_requires_one_success_before_install_and_equal_original_observers(self):
         for mode in ('flag', 'missing', 'repeated', 'late', 'failed', 'drift', 'wrong-source', 'preimage'):
             value = receipt()
+            stages = value['stages']
+            qualification = next(stage for stage in stages if stage['stage'] == 'spin_catalog_rollback_qualification')
+            after = next(stage for stage in stages if stage['stage'] == 'spin_catalog_after')
             if mode == 'flag': value['catalog_slice_passed'] = False
-            if mode == 'missing': value['stages'].pop(1)
-            if mode == 'repeated': value['stages'].insert(2, copy.deepcopy(value['stages'][1]))
-            if mode == 'late': value['stages'].insert(4, value['stages'].pop(1))
-            if mode == 'failed': value['stages'][1]['returncode'] = 3
-            if mode == 'drift': value['stages'][2]['stdout_sha256'] = 'd' * 64
-            if mode == 'wrong-source': value['stages'][1]['argv'][-1] = '/old-provider/qualifier.sql'
+            if mode == 'missing': stages.remove(qualification)
+            if mode == 'repeated': stages.append(copy.deepcopy(qualification))
+            if mode == 'late': stages.remove(qualification); stages.append(qualification)
+            if mode == 'failed': qualification['returncode'] = 3
+            if mode == 'drift': after['stdout_sha256'] = 'd' * 64
+            if mode == 'wrong-source': qualification['argv'][-1] = '/old-provider/qualifier.sql'
             if mode == 'preimage': value = receipt('preimage'); value['catalog_slice_passed'] = True
             with self.subTest(mode=mode), self.assertRaises(RuntimeError): self.validate(value)
 
@@ -619,6 +624,40 @@ class ReceiptTests(unittest.TestCase):
 
 
 class HostedLifecycleTests(unittest.TestCase):
+    def test_bootstrap_endpoint_preserves_listener_socket_and_diagnostic_identity_controls(self):
+        socket_path = SOURCE.parent / 'work/socket'
+        value = dict(user='fixture_bootstrap', session_user='fixture_bootstrap',
+                     port='5432', address=None, listen_addresses='',
+                     unix_socket_directories=str(socket_path))
+        W.validate_server_endpoint(value, socket_path)
+        for key, changed in [('listen_addresses','127.0.0.1'), ('unix_socket_directories','/tmp'),
+                             ('address','127.0.0.1'), ('port','5433'), ('user','postgres'),
+                             ('session_user','postgres')]:
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                W.validate_server_endpoint(dict(value, **{key: changed}), socket_path)
+        for changed in (None, {}, dict(value, unobserved=True)):
+            with self.subTest(value=changed), self.assertRaises(RuntimeError):
+                W.validate_server_endpoint(changed, socket_path)
+        for key in value:
+            changed = dict(value); del changed[key]
+            with self.subTest(missing=key), self.assertRaises(RuntimeError):
+                W.validate_server_endpoint(changed, socket_path)
+
+    def test_privileged_endpoint_readback_is_required_before_business(self):
+        good = receipt('preimage')
+        mutations = []
+        missing = copy.deepcopy(good); del missing['server_endpoint']; mutations.append(missing)
+        missing = copy.deepcopy(good); missing['stages'].pop(0); mutations.append(missing)
+        duplicate = copy.deepcopy(good); duplicate['stages'].insert(0, copy.deepcopy(duplicate['stages'][0])); mutations.append(duplicate)
+        failed = copy.deepcopy(good); failed['stages'][0]['returncode'] = 1; mutations.append(failed)
+        wrong_role = copy.deepcopy(good); command = wrong_role['stages'][0]['argv']; command[command.index('-U') + 1] = 'postgres'; mutations.append(wrong_role)
+        wrong_socket = copy.deepcopy(good); command = wrong_socket['stages'][0]['argv']; command[command.index('-h') + 1] = '/tmp'; mutations.append(wrong_socket)
+        late = copy.deepcopy(good); late['stages'].append(late['stages'].pop(0)); mutations.append(late)
+        for changed in mutations:
+            with self.subTest(changed=changed), self.assertRaises(RuntimeError):
+                W.validate_receipt(changed, EXECUTION, ORDINARY, TOURNAMENT,
+                                   'preimage', MANIFEST_SHA, SOURCE, PG)
+
     def test_cleanup_first_failure_and_original_deadline_are_sticky(self):
         W.cleanup_negative_controls()
         outcome=W.CleanupOutcome(); outcome.failed('first failure'); outcome.observed_stopped()

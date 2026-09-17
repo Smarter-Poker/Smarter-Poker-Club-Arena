@@ -49,7 +49,13 @@ DO $$ BEGIN
     OR (SELECT count(*) FROM public.financial_alerts WHERE message='Bounded resource fixture exact original' AND resolved IS TRUE)<>5001
     OR (SELECT original_digest FROM class4_resource_before) IS DISTINCT FROM
        (SELECT md5(string_agg(md5(to_jsonb(a)::text),'' ORDER BY a.id)) FROM public.financial_alerts a WHERE a.message<>'Bounded resource fixture exact original')
-    OR (SELECT count(*) FROM public.ca_drift_incidents i JOIN public.financial_alerts a ON i.metadata->>'alert_id'=a.id::text WHERE i.status='resolved' AND position(a.resolution IN i.resolution)>0 AND a.context->>'resolution'=a.resolution)<>5001
+    OR (SELECT count(*) FROM public.ca_drift_incidents i JOIN public.financial_alerts a
+        -- Preserve the exact textual assertion while admitting a primary-key
+        -- lookup. The guarded cast adds no accepted identity or invalid cast.
+        ON a.id=CASE WHEN i.metadata->>'alert_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+                     THEN (i.metadata->>'alert_id')::uuid END
+       AND i.metadata->>'alert_id'=a.id::text
+      WHERE i.status='resolved' AND position(a.resolution IN i.resolution)>0 AND a.context->>'resolution'=a.resolution)<>5001
     OR (SELECT count(*) FROM class4_resource_plans)<>3
     OR EXISTS(SELECT 1 FROM class4_resource_plans WHERE (plan->0->>'Execution Time')::numeric>=20000 OR plan->0->'Execution Time' IS NULL)
  THEN RAISE EXCEPTION 'backlog drain, negative preservation or20s resource bound failed'; END IF;

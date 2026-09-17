@@ -138,8 +138,8 @@
     },
     "resource_measure": {
       "path": "scripts/ci/probes/class4-hand-outcome/resource-measure.sql",
-      "bytes": 6210,
-      "sha256": "28a5f84ba9c84fdd5623478ef211bfc720f94c55c16d274d342ef85f2718d99a"
+      "bytes": 6575,
+      "sha256": "73bd019765732d8a87e5939a6961a89dedfc3bb8b6429bc355ccbe927f42475e"
     },
     "resource_population_basis": {
       "path": "scripts/ci/probes/class4-hand-outcome/resource-population-basis.json",

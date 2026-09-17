@@ -100,13 +100,6 @@ def verify_private_projection(run):
   raw=(source/name).read_bytes()
   if hashlib.sha256(raw).hexdigest()!=pin: raise RuntimeError('Projection source drift: '+name)
   texts[name]=raw.decode('utf8')
- # Preserve the sealed rejected predecessor; PostgreSQL requires its CASE
- # expression to be parenthesized inside this PL/pgSQL IF comparison.
- predecessor='predecessor0141/definition.sql'
- original="IS DISTINCT FROM CASE WHEN r->>'kind'='ordinary' THEN 'insurance' ELSE r->>'kind' END THEN"
- corrected="IS DISTINCT FROM (CASE WHEN r->>'kind'='ordinary' THEN 'insurance' ELSE r->>'kind' END) THEN"
- if texts[predecessor].count(original)!=1: raise RuntimeError('Projection predecessor CASE boundary drift')
- texts[predecessor]=texts[predecessor].replace(original,corrected,1)
  bodies=[texts[name].split('$function$')[1] for name in ('predecessor0141/definition.sql','insurance0145/definition.sql')]
  # These are source literals for catalogue readback, never executable SQL from a caller.
  expected=json.dumps(dict(zip(('insurance_projection_0141','insurance_projection_0144'),bodies)))

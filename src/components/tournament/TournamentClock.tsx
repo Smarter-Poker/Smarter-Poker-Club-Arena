@@ -37,9 +37,9 @@ interface TournamentClockProps {
 
 interface ClockState {
   currentLevel: number;
-  smallBlind: number;
-  bigBlind: number;
-  ante: number;
+  smallBlind: number | null;
+  bigBlind: number | null;
+  ante: number | null;
   nextSmallBlind: number;
   nextBigBlind: number;
   nextAnte: number;
@@ -102,9 +102,9 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
 }) => {
   const [clock, setClock] = useState<ClockState>({
     currentLevel: 1,
-    smallBlind: 25,
-    bigBlind: 50,
-    ante: 0,
+    smallBlind: null,
+    bigBlind: null,
+    ante: null,
     nextSmallBlind: 50,
     nextBigBlind: 100,
     nextAnte: 0,
@@ -219,9 +219,9 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
 
       setClock({
         currentLevel: levelState.levelIndex + 1,
-        smallBlind: levelState.currentLevel.smallBlind,
-        bigBlind: levelState.currentLevel.bigBlind,
-        ante: levelState.currentLevel.ante,
+        smallBlind: levelState.currentLevel?.smallBlind ?? null,
+        bigBlind: levelState.currentLevel?.bigBlind ?? null,
+        ante: levelState.currentLevel?.ante ?? null,
         nextSmallBlind: levelState.nextLevel?.smallBlind || 0,
         nextBigBlind: levelState.nextLevel?.bigBlind || 0,
         nextAnte: levelState.nextLevel?.ante || 0,
@@ -413,7 +413,8 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   useMasterBusSubscription('BREAK_END', handleBreakEnd);
 
   // ── Format chip count with K/M abbreviations ──
-  const formatChips = (n: number): string => {
+  const formatChips = (n: number | null): string => {
+    if (n === null) return '—';
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 10_000) return `${(n / 1000).toFixed(0)}K`;
     if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
@@ -479,7 +480,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
               <span className="tc-blind-label">BB</span>
               <span className="tc-blind-value">{formatChips(clock.bigBlind)}</span>
             </div>
-            {clock.ante > 0 && (
+            {(clock.ante ?? 0) > 0 && (
               <>
                 <span className="tc-blind-separator">+</span>
                 <div className="tc-blind-group">

@@ -71,6 +71,7 @@ import { useIsMounted } from '../../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../../hooks/useMasterBusSubscription';
 import { openTableAsObserver } from '../../../utils/observeTable';
 import { reportError } from '../../../utils/errorReporter';
+import { readCommittedTournamentBlinds } from '../../../utils/committedTournamentBlinds';
 import { useDownlineIds } from './useDownlineIds';
 import {
   chips,
@@ -698,38 +699,24 @@ export default function RankingTab({
   const leaderChips = living.length > 0 ? Number(living[0].chips) || 0 : 0;
 
   const bigBlind = useMemo(() => {
-    const playable = blindLevels.filter((l) => !l.isBreak && l.bigBlind > 0);
-    if (playable.length === 0) {
-      const seated = tables.find((t) => (t.big_blind || 0) > 0);
-      return seated?.big_blind || 0;
+    // Preserve the existing table-backed display for legacy rows with neither
+    // a playable ladder nor a receipt. The service's default ladder is not a
+    // recorded current blind. A present receipt always goes through validation.
+    if (
+      tournament.blind_level_state == null &&
+      !blindLevels.some((level) => !level.isBreak && level.bigBlind > 0)
+    ) {
+      return tables.find((table) => (table.big_blind || 0) > 0)?.big_blind || 0;
     }
-    /**
-     * `current_level` IS A 0-BASED INDEX (fixed 2026-08-26).
-     *
-     * This matched it against the structure's own 1-based `level` field, so it
-     * returned the PREVIOUS level's big blind for every level after the first.
-     * Every BB figure on this tab divides a stack by this number, and a
-     * too-small divisor OVERSTATES the count: the hero card's "Big Blinds",
-     * each row's "{n} BB" sub-line, the "Average Stack → n BB" tile and the
-     * watch-confirmation dialog all read high — typically by 40-60% on a
-     * doubling structure. On a bubble that is "I have 12 BB" when the truth is
-     * 8, which is the difference between folding and shoving.
-     *
-     * Index first. The `level`-field search survives only as the fallback for
-     * old sparse structures, where the index may not line up.
-     */
-    const idx = Math.max(0, Number(tournament?.current_level) || 0);
-    const atIndex = blindLevels[idx];
-    if (atIndex && !atIndex.isBreak && atIndex.bigBlind > 0) return atIndex.bigBlind;
-
-    // Sparse or misnumbered structure: fall back to the nearest playable level
-    // at or below this one, then to the first.
-    const level = Number(atIndex?.level) || idx + 1;
-    const exact = playable.find((l) => l.level === level);
-    if (exact) return exact.bigBlind;
-    const below = playable.filter((l) => l.level <= level);
-    return below.length > 0 ? below[below.length - 1].bigBlind : playable[0].bigBlind;
-  }, [blindLevels, tables, tournament?.current_level]);
+    const index = Math.max(0, Number(tournament.current_level) || 0);
+    const committed = readCommittedTournamentBlinds(index, tournament.blind_level_state);
+    if (committed) return committed.bigBlind;
+    const current =
+      tournament.blind_level_state == null && Number.isInteger(index) ? blindLevels[index] : null;
+    // Zero suppresses BB figures. A stale or missing overflow receipt must
+    // never divide stacks by the final advertised level's unrelated amount.
+    return current && !current.isBreak ? current.bigBlind : 0;
+  }, [tournament, blindLevels, tables]);
 
   const tableNameById = useMemo(() => {
     const map = new Map<string, string>();

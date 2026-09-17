@@ -1,0 +1,237 @@
+[
+  {
+    "catalog": {
+      "functions": [
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": [
+            "search_path=public, pg_temp"
+          ],
+          "result": "jsonb",
+          "strict": false,
+          "body_md5": "cf7af5fd327c68c935a58e864537cc7a",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "p_club_id uuid, p_transaction_id uuid, p_amount numeric DEFAULT NULL::numeric, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+          "leakproof": false,
+          "signature": "fn_agent_wallet_claim_back(uuid,uuid,numeric,text,uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_agent_wallet_claim_back(p_club_id uuid, p_transaction_id uuid, p_amount numeric DEFAULT NULL::numeric, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nbegin\n  if auth.uid() is null then\n    return jsonb_build_object('success',false,'error','Not Authenticated');\n  end if;\n  if p_op_id is null then\n    return jsonb_build_object('success',false,'error','A Retry Key Is Required For Every Claim Back');\n  end if;\n  return public.fn_agent_wallet_claim_back_phase2_core_20260831(\n    p_club_id,p_transaction_id,p_amount,p_reason,p_op_id\n  );\nend\n$function$\n",
+          "volatility": "v",
+          "definition_md5": "31d05a227849bda2a1195594c57b90eb",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          }
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": [
+            "search_path=public, pg_temp"
+          ],
+          "result": "jsonb",
+          "strict": false,
+          "body_md5": "2ee5fa22748b07166f2dba6e16706c61",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+          "leakproof": false,
+          "signature": "fn_agent_wallet_send_phase2_core_20260831(uuid,uuid,numeric,text,text,uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_agent_wallet_send_phase2_core_20260831(p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\ndeclare\n  v_actor uuid := auth.uid();\n  v_op_id uuid := coalesce(p_op_id,gen_random_uuid());\n  v_destination text := lower(coalesce(p_destination,'player_wallet'));\n  v_prior record;\n  v_replay_destination text;\n  v_actor_role text;\n  v_target_role text;\n  v_first uuid;\n  v_second uuid;\nbegin\n  if v_actor is null then return jsonb_build_object('success',false,'error','Not Authenticated'); end if;\n  if p_club_id is null or p_to_user_id is null or p_to_user_id=v_actor then\n    return jsonb_build_object('success',false,'error','Choose Another Active Member');\n  end if;\n  if p_amount is null or p_amount <= 0 or p_amount > 1e9 or p_amount<>round(p_amount,2) then\n    return jsonb_build_object('success',false,'error','Enter A Valid Send Amount');\n  end if;\n  if v_destination not in ('player_wallet','agent_wallet') then\n    return jsonb_build_object('success',false,'error','Unknown Destination Wallet');\n  end if;\n\n  perform pg_advisory_xact_lock(hashtextextended(\n    'agent-wallet-send:'||p_club_id::text||':'||v_actor::text||':'||v_op_id::text,0));\n  perform pg_advisory_xact_lock(hashtextextended('cashier-hierarchy:'||p_club_id::text,0));\n\n  select ct.* into v_prior from public.chip_transactions ct\n   where ct.club_id=p_club_id and ct.transaction_type='agent_wallet_send'\n     and ct.from_user_id=v_actor and ct.metadata->>'op_id'=v_op_id::text limit 1;\n  if found then\n    v_replay_destination := case\n      when coalesce(v_prior.metadata->>'recipient_role','') in\n        ('owner','co_owner','admin','super_agent','agent','sub_agent')\n      then 'agent_wallet' else v_destination end;\n    if v_prior.to_user_id is distinct from p_to_user_id\n       or v_prior.amount is distinct from p_amount\n       or coalesce(v_prior.metadata->>'destination','') is distinct from v_replay_destination then\n      return jsonb_build_object('success',false,\n        'error','That Retry Key Belongs To A Different Agent Wallet Send');\n    end if;\n    return jsonb_build_object(\n      'success',true,'replayed',true,'transaction_id',v_prior.id,'amount',v_prior.amount,\n      'destination',v_prior.metadata->>'destination',\n      'agent_wallet_after',(v_prior.metadata->>'agent_wallet_after')::numeric,\n      'recipient_balance_after',(v_prior.metadata->>'recipient_balance_after')::numeric,\n      'credit_drawn',coalesce((v_prior.metadata->>'credit_drawn')::numeric,0),\n      'credit_used_after',(v_prior.metadata->>'credit_used_after')::numeric,\n      'credit_limit',(v_prior.metadata->>'credit_limit')::numeric);\n  end if;\n\n  -- Ownership and both membership rows stay locked through the core operation.\n  -- A concurrent role revocation, downline reassignment, or member deletion\n  -- must complete before or after this send, never between its checks and debit.\n  perform 1 from public.clubs where id=p_club_id for update;\n  if not found then return jsonb_build_object('success',false,'error','That Club Could Not Be Found'); end if;\n  if v_actor<p_to_user_id then v_first:=v_actor; v_second:=p_to_user_id;\n  else v_first:=p_to_user_id; v_second:=v_actor; end if;\n  perform 1 from public.club_members where club_id=p_club_id and user_id=v_first for update;\n  perform 1 from public.club_members where club_id=p_club_id and user_id=v_second for update;\n\n  v_actor_role:=public.fn_club_bank_role(p_club_id,v_actor);\n  select role into v_target_role from public.club_members\n   where club_id=p_club_id and user_id=p_to_user_id\n     and coalesce(status,'active') in ('active','approved');\n  if v_actor_role is null\n     or v_actor_role not in ('owner','co_owner','admin','super_agent','agent','sub_agent') then\n    return jsonb_build_object('success',false,'error','Your Cashier Authority Is No Longer Active');\n  end if;\n  if v_target_role is null then\n    return jsonb_build_object('success',false,'error','Recipient Is Not An Active Member Of This Club');\n  end if;\n  if not public.fn_club_cashier_can_transact(p_club_id,v_actor,p_to_user_id) then\n    return jsonb_build_object('success',false,'error','That Member Is Not In Your Downline');\n  end if;\n\n  -- Agent recipients always receive agent float; bind the replay fingerprint\n  -- to the effective destination, not a caller-controlled label.\n  if v_target_role in ('owner','co_owner','admin','super_agent','agent','sub_agent') then\n    v_destination:='agent_wallet';\n  end if;\n\n  return public.fn_agent_wallet_send_core_20260830(\n    p_club_id,p_to_user_id,p_amount,v_destination,p_reason,v_op_id);\nend\n$function$\n",
+          "volatility": "v",
+          "definition_md5": "53ba478533aec762384aa9ac7d63a9b2",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": false
+          }
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": [
+            "search_path=pg_catalog, public, auth"
+          ],
+          "result": "boolean",
+          "strict": false,
+          "body_md5": "36e18a86ba143ac90e90648b0bc020ea",
+          "language": "sql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "fn_caller_is_engine()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_caller_is_engine()\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog', 'public', 'auth'\nAS $function$\n  -- The engine and every server-side job authenticate as service_role. A NULL\n  -- means there is no PostgREST request context at all - psql, pg_cron, a\n  -- migration - which is equally trusted. A browser can never produce NULL:\n  -- reaching `authenticated` requires a verified JWT and PostgREST always sets\n  -- request.jwt.claims from it.\n  --\n  -- NOT current_user. Inside a SECURITY DEFINER body current_user is the\n  -- function OWNER for the browser and the engine alike, which is what made an\n  -- earlier guard on club_members a silent no-op.\n  SELECT COALESCE(auth.role(), 'service_role') = 'service_role';\n$function$\n",
+          "volatility": "s",
+          "definition_md5": "d9a70f1d932538025e656bfe2b4d091d",
+          "security_definer": false,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          }
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": [
+            "search_path=public, pg_temp"
+          ],
+          "result": "text",
+          "strict": false,
+          "body_md5": "d5a0014edd6ebab23dbb5620ff600117",
+          "language": "sql",
+          "parallel": "u",
+          "arguments": "p_club_id uuid, p_user_id uuid DEFAULT NULL::uuid",
+          "leakproof": false,
+          "signature": "fn_club_bank_role(uuid,uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_club_bank_role(p_club_id uuid, p_user_id uuid DEFAULT NULL::uuid)\n RETURNS text\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  select case\n    when p_club_id is null then null\n    when exists (select 1 from public.clubs c\n                  where c.id = p_club_id\n                    and c.owner_id = coalesce(p_user_id, auth.uid())) then 'owner'\n    else (select cm.role from public.club_members cm\n           where cm.club_id = p_club_id\n             and cm.user_id = coalesce(p_user_id, auth.uid())\n             and coalesce(cm.status, 'active') in ('active', 'approved')\n           limit 1)\n  end;\n$function$\n",
+          "volatility": "s",
+          "definition_md5": "b36e67efcfaba2f867d62140322a8ed8",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          }
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": [
+            "search_path=public, pg_temp"
+          ],
+          "result": "boolean",
+          "strict": false,
+          "body_md5": "a0cc4f8ffcd889e40a27053c60630f74",
+          "language": "sql",
+          "parallel": "u",
+          "arguments": "p_club_id uuid, p_actor uuid, p_target uuid",
+          "leakproof": false,
+          "signature": "fn_club_cashier_can_transact(uuid,uuid,uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_club_cashier_can_transact(p_club_id uuid, p_actor uuid, p_target uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE\n    WHEN p_club_id IS NULL OR p_actor IS NULL OR p_target IS NULL THEN false\n    ELSE (\n      SELECT CASE s.scope\n        WHEN 'all'      THEN true\n        WHEN 'downline' THEN public.fn_club_is_in_downline(p_club_id, p_actor, p_target)\n        ELSE false\n      END\n      FROM (SELECT public.fn_club_cashier_scope(p_club_id, p_actor) AS scope) s\n    )\n  END;\n$function$\n",
+          "volatility": "s",
+          "definition_md5": "a812c44870554f37cddb36edf600e386",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          }
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": [
+            "search_path=public, extensions"
+          ],
+          "result": "jsonb",
+          "strict": false,
+          "body_md5": "0ab9271f0678917b937c6ffa8bb4cbe4",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "p_agent_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone, p_debt_owed numeric, p_due_date timestamp with time zone",
+          "leakproof": false,
+          "signature": "fn_generate_credit_invoice(uuid,timestamp with time zone,timestamp with time zone,numeric,timestamp with time zone)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_generate_credit_invoice(p_agent_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone, p_debt_owed numeric, p_due_date timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n v_agent public.agents%ROWTYPE;\n v_row public.credit_invoices%ROWTYPE;\n v_invoiced numeric;\n v_available numeric;\nBEGIN\n IF p_agent_id IS NULL THEN RAISE EXCEPTION 'agent_required' USING ERRCODE='22023'; END IF;\n SELECT * INTO v_agent FROM public.agents WHERE id=p_agent_id FOR UPDATE;\n IF NOT FOUND THEN RAISE EXCEPTION 'agent_not_found' USING ERRCODE='22023'; END IF;\n IF NOT public.fn_caller_is_engine() AND (auth.uid() IS NULL OR\n   (auth.uid()<>v_agent.user_id AND NOT public.fn_is_platform_admin()\n    AND NOT public.fn_is_club_admin_uid(v_agent.club_id))) THEN\n   RAISE EXCEPTION 'not_authorised' USING ERRCODE='42501';\n END IF;\n IF p_period_start IS NULL OR p_period_end IS NULL OR p_due_date IS NULL\n   OR NOT isfinite(p_period_start) OR NOT isfinite(p_period_end) OR NOT isfinite(p_due_date)\n   OR p_period_start>=p_period_end OR p_period_end>now() OR p_due_date<p_period_end\n   OR p_debt_owed IS NULL OR p_debt_owed::text IN ('NaN','Infinity','-Infinity')\n   OR p_debt_owed<=0 OR p_debt_owed<>round(p_debt_owed,2) THEN\n   RAISE EXCEPTION 'invalid_credit_invoice_terms' USING ERRCODE='22023';\n END IF;\n -- An issued document is immutable. Replay returns its original terms.\n SELECT * INTO v_row FROM public.credit_invoices WHERE agent_id=p_agent_id AND period_end=p_period_end;\n IF FOUND THEN RETURN jsonb_build_object('success',true,'duplicate',true,'invoice',to_jsonb(v_row)); END IF;\n IF COALESCE(v_agent.is_prepaid,false) THEN\n   RETURN jsonb_build_object('success',false,'error','prepaid_agent');\n END IF;\n IF v_agent.credit_used IS NULL OR v_agent.credit_used::text IN ('NaN','Infinity','-Infinity')\n   OR v_agent.credit_used<0 OR v_agent.credit_used<>round(v_agent.credit_used,2) THEN\n   RAISE EXCEPTION 'invalid_drawn_credit' USING ERRCODE='23514';\n END IF;\n SELECT COALESCE(sum(amount_remaining),0) INTO v_invoiced FROM public.credit_invoices\n   WHERE agent_id=p_agent_id AND status IN ('pending','partial','overdue','disputed');\n v_available:=v_agent.credit_used-v_invoiced;\n IF v_available<p_debt_owed THEN\n   RETURN jsonb_build_object('success',false,'error','debt_already_invoiced_or_not_drawn',\n     'credit_used',v_agent.credit_used,'already_invoiced',v_invoiced,'available',v_available);\n END IF;\n INSERT INTO public.credit_invoices(agent_id,period_start,period_end,debt_owed,amount_paid,amount_remaining,status,due_date)\n VALUES(p_agent_id,p_period_start,p_period_end,p_debt_owed,0,p_debt_owed,'pending',p_due_date)\n RETURNING * INTO v_row;\n RETURN jsonb_build_object('success',true,'duplicate',false,'invoice',to_jsonb(v_row));\nEND $function$\n",
+          "volatility": "v",
+          "definition_md5": "b0e4603b081f48ce1beb6963e0356c9a",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          }
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres",
+            "authenticated=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": [
+            "search_path=public"
+          ],
+          "result": "boolean",
+          "strict": false,
+          "body_md5": "7f93571e2638c7a86d9fd3720f70d03b",
+          "language": "sql",
+          "parallel": "u",
+          "arguments": "p_club_id uuid",
+          "leakproof": false,
+          "signature": "fn_is_club_admin_uid(uuid)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_is_club_admin_uid(p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1 FROM public.club_members cm\n    WHERE cm.club_id = p_club_id\n      AND cm.user_id = auth.uid()\n      AND cm.role IN ('owner','co_owner','admin','manager')\n      AND COALESCE(cm.status, 'active') = 'active'\n  );\n$function$\n",
+          "volatility": "s",
+          "definition_md5": "021940a1e457cf22312eb139d3d05267",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          }
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres",
+            "authenticated=X/postgres"
+          ],
+          "owner": "postgres",
+          "config": [
+            "search_path=public"
+          ],
+          "result": "boolean",
+          "strict": false,
+          "body_md5": "a8d8672e0201c8036e326989ea82d05c",
+          "language": "plpgsql",
+          "parallel": "u",
+          "arguments": "",
+          "leakproof": false,
+          "signature": "fn_is_platform_admin()",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_is_platform_admin()\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_role text;\nBEGIN\n  IF auth.uid() IS NULL THEN RETURN false; END IF;\n  SELECT role INTO v_role FROM public.profiles WHERE id = auth.uid();\n  RETURN v_role IN ('admin', 'superadmin', 'god');\nEND;\n$function$\n",
+          "volatility": "s",
+          "definition_md5": "ed89787c7b832e76a886734e16a27c3d",
+          "security_definer": true,
+          "effective_execute": {
+            "anon": false,
+            "service_role": true,
+            "authenticated": true
+          }
+        }
+      ],
+      "captured_at": "2026-09-15 14:22:10.194019+00",
+      "lock_timeout": "2s",
+      "missing_names": null,
+      "statement_timeout": "10s",
+      "transaction_isolation": "repeatable read",
+      "transaction_read_only": "on"
+    }
+  }
+]

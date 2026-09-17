@@ -1,0 +1,57 @@
+{
+  "status": "actual_capture_packaged_source_only_unrun",
+  "observed_at": "2026-09-15 00:39:03.686932+00",
+  "capture_source": "outputs/accounting-40398-installed-period-writers.json",
+  "capture_scope": "Installed static direct rakeback_periods writers plus known bulk-upsert RPC; not a complete dynamic or transitive writer inventory",
+  "definitions_file": "legacy-period-writers-definitions.sql",
+  "access_file": "legacy-period-writers-access.sql",
+  "copy_transformation": "SQL statement terminators and file-level provenance comments only; function bodies and pg_get_functiondef metadata preserved",
+  "functions": [
+    {
+      "signature": "public.fn_create_settlement_period(uuid,uuid,date,date)",
+      "owner": "postgres",
+      "security_definer": false,
+      "definition_md5": "3ff2d628a4561939095d2c6c0181fba8",
+      "source_md5": "9441ee9859635994083376e985e3c6c7",
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "effective_execute": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "captured_initial_full_catalog_contains_definition": false,
+      "closure_review": "SECURITY INVOKER needs caller table INSERT. Client table DML revocation closes its service path. No active runtime or captured SQL function caller was found. Explicit legacy RPC execution retirement is recommended."
+    },
+    {
+      "signature": "public.fn_rakeback_periods_bulk_upsert(jsonb)",
+      "owner": "postgres",
+      "security_definer": true,
+      "definition_md5": "89712d79d8ec9e19e7dfe6c0f0fe2611",
+      "source_md5": "d0c71ea5b08d917e99c71ea967f5caab",
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "effective_execute": {
+        "anon": false,
+        "authenticated": false,
+        "service_role": true
+      },
+      "captured_initial_full_catalog_contains_definition": false,
+      "closure_review": "SECURITY DEFINER accepts caller JSON amounts/rates and writes pending periods without canonical source certification. Table ACL revocation does not close it. Legacy function EXECUTE must retire as part of the same authority cutover."
+    }
+  ],
+  "fixture_binding": "Access fixture verifies exact captured definition/source MD5 before reproducing owner/ACL and verifies effective anon/authenticated/service rights. Root source-custody owner adds these file bytes and metadata to main SHA256 source-binding before protected execution.",
+  "limits": [
+    "No new database observation or function execution performed while packaging",
+    "These are the original installed preimages, not hardened replacements",
+    "Captures do not prove runtime correctness, migration installation or live release",
+    "Dynamic SQL and transitive generic write APIs remain outside this bounded static inventory",
+    "The dormant invoker factory references player_agent_assignments, absent from this captured catalog. Its client EXECUTE-denial fixture must stop before body entry; no owner execution or legacy factory runtime correctness is claimed."
+  ],
+  "original_capture_file": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/accounting-40398-installed-period-writers.json",
+  "original_capture_sha256": "1f8d80981b7cc60d2a2aa1adf507d92b0c8b48b6ebfabc7432e30d15796855c3"
+}

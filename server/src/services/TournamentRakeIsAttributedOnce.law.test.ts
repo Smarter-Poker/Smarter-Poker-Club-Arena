@@ -46,33 +46,16 @@ describe('tournament rake is attributed once, at settlement', () => {
     );
   });
 
-  it('never pays a per-row agent commission on a tournament row', () => {
-    const loop = code.indexOf('const commissionItems');
-    const push = code.indexOf('commissionItems.push(', loop);
-    const gate = code.indexOf('if (isTournamentRakeRow(row))', loop);
-    expect(loop).toBeGreaterThan(-1);
-    expect(gate, 'the commission loop has no tournament gate').toBeGreaterThan(loop);
-    expect(gate, 'the tournament gate sits after the push').toBeLessThan(push);
-    expect(code, "the 'tournament_fee' commission source is the second payment").not.toMatch(
-      /tournament_fee/
+  it('filters both tournament identities before the source batch is constructed', () => {
+    expect(code).toMatch(
+      /const cashRows = sourceRows\.filter\(\(row\) => !isTournamentRakeRow\(row\)\)/
     );
+    expect(code.indexOf('const cashRows')).toBeLessThan(
+      code.indexOf("source_type: 'cash_rake_record'")
+    );
+    expect(code).not.toMatch(/tournament_fee/);
   });
-
-  it('never applies per-row player_stats for a tournament row', () => {
-    const loop = code.indexOf('const statsItems');
-    const push = code.indexOf('statsItems.push(', loop);
-    const gate = code.indexOf('if (isTournamentRakeRow(row)) continue;', loop);
-    expect(loop).toBeGreaterThan(-1);
-    expect(gate, 'the player_stats loop has no tournament gate').toBeGreaterThan(loop);
-    expect(gate).toBeLessThan(push);
-  });
-
-  it('leaves the rakeback basis alone - that is a policy question, not a double-pay', () => {
-    // The buckets loop feeds fn_rakeback_recompute_periods. It must not be
-    // gated here: which rake earns player rakeback is Dan's to decide.
-    const buckets = code.indexOf('const buckets = new Map');
-    const commission = code.indexOf('const commissionItems');
-    const between = code.slice(buckets, commission);
-    expect(between).not.toMatch(/isTournamentRakeRow/);
+  it('has no independent player-stats or commission calculation loop', () => {
+    expect(code).not.toMatch(/fn_apply_rakeback_player_stats_batch|statsItems|commissionItems/);
   });
 });

@@ -34,17 +34,28 @@ import AgentBackOffice from '../components/agent/AgentBackOffice';
 type DashboardTab = 'overview' | 'agents' | 'players' | 'commissions' | 'transfers' | 'backoffice';
 
 export default function SuperAgentDashboard() {
-  const navigate = useNavigate();
   const { clubId } = useParams();
-  const { user } = useAuthUser();
+  const { user, isHydrating } = useAuthUser();
+  if (isHydrating) return <PageSkeleton variant="dashboard" />;
+  if (!user?.id || !clubId) return <p>Sign in and select a club to open your agent dashboard.</p>;
+  // A different account or route owns a different component and every pending
+  // read/action belonging to the old surface loses permission to update it.
+  return <SuperAgentDashboardForScope key={JSON.stringify([user.id, clubId])}
+    userId={user.id} clubId={clubId} />;
+}
+
+function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubId: string }) {
+  const navigate = useNavigate();
   const toast = useToast();
   const isMounted = useIsMounted();
   useVisibilityRefresh(() => {
-    if (clubId && user?.id) loadDashboardData();
+    loadDashboardData();
   });
 
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [agent, setAgent] = useState<Agent | null>(null);
+  const [creditApproverUserId, setCreditApproverUserId] = useState<string | undefined>();
+  const [canReviewCredit, setCanReviewCredit] = useState(false);
   const [subAgents, setSubAgents] = useState<Agent[]>([]);
   const [players, setPlayers] = useState<AgentPlayer[]>([]);
   const [spread, setSpread] = useState<CommissionSpread | null>(null);
@@ -87,12 +98,12 @@ export default function SuperAgentDashboard() {
   }, [players.length]);
 
   useEffect(() => {
-    if (clubId && user?.id) {
+    if (clubId && userId) {
       loadDashboardData();
 
       // Real-time updates for agent activity
       let isMounted = true;
-      const channelKey = 'super-agent-live';
+      const channelKey = `super-agent-live:${userId}:${clubId}`;
 
       const setupRealtime = async () => {
         const resolvedId = await resolveClubUUID(clubId);
@@ -143,11 +154,11 @@ export default function SuperAgentDashboard() {
         masterBus.removeRegisteredChannel(channelKey);
       };
     }
-  }, [clubId, user?.id]);
+  }, [clubId, userId]);
 
   // Bus event listeners for cross-component sync (debounced to prevent rapid-fire reloads)
   useEffect(() => {
-    if (!clubId || !user?.id) return;
+    if (!clubId || !userId) return;
     const unsubWallet = masterBus.subscribeDebounced(
       'WALLET_REFRESHED',
       () => {
@@ -203,45 +214,76 @@ export default function SuperAgentDashboard() {
       unsubAgent();
       unsubCredit();
     };
-  }, [clubId, user?.id]);
+  }, [clubId, userId]);
 
   const loadingRef = useRef(false);
-
-  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  const loadGeneration = useRef(0);
   useEffect(() => {
-    setActiveTab('overview');
-    setTransferPlayerId('');
-    setTransferAmount('');
-    setIsTransferring(false);
-    setVisibleStatCards(new Set());
-    setVisibleAgentRows(new Set());
-    setVisiblePlayerRows(new Set());
-    loadingRef.current = false;
-  }, [clubId]);
+    return () => {
+      loadGeneration.current += 1;
+      loadingRef.current = false;
+    };
+  }, []);
 
   const loadDashboardData = async () => {
-    if (loadingRef.current) return;
+    if (!isMounted.current || loadingRef.current) return;
     loadingRef.current = true;
+    const generation = ++loadGeneration.current;
+    const current = () => isMounted.current && generation === loadGeneration.current;
     setLoading(true);
+    setLoadFailed(false);
+    setCanReviewCredit(false);
     try {
-      const agents = await AgentService.getAgents(clubId!);
-      if (!isMounted.current) return;
-      const myAgent = agents.find((a) => a.userId === user?.id);
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!current()) return;
+      if (!resolvedId) throw new Error('The selected club could not be resolved.');
+      const [agents, club, membership] = await Promise.all([
+        AgentService.getAgents(resolvedId),
+        supabase.from('clubs').select('owner_id').eq('id', resolvedId).maybeSingle(),
+        supabase.from('club_members').select('role, status')
+          .eq('club_id', resolvedId).eq('user_id', userId).maybeSingle(),
+      ]);
+      if (!current()) return;
+      if (club.error) throw club.error;
+      if (membership.error) throw membership.error;
+      if (!club.data || agents.some((a) => a.clubId !== resolvedId)) {
+        throw new Error('Agent club identity could not be confirmed.');
+      }
+      const matches = agents.filter((a) => a.userId === userId);
+      if (matches.length > 1) throw new Error('More than one agent record matched this account.');
+      const myAgent = matches[0];
       if (myAgent) {
-        setAgent(myAgent);
-        setSubAgents(agents.filter((a) => a.parentAgentId === myAgent.id));
         const myPlayers =
           await /* Scoped to the club being viewed. Without it this list, the player count
              beside it and the transfer picker below all showed the agent's
              players from every club they hold an agents row in - while the
              transfer itself is scoped to THIS club, so an operator could send
              to a name that does not belong here. */
-          AgentService.getAgentPlayers(myAgent.id, clubId!);
-        if (!isMounted.current) return;
-        setPlayers(myPlayers);
+          AgentService.getAgentPlayers(myAgent.id, resolvedId);
+        if (!current()) return;
         const commSpread = await CommissionService.calculateSpread(myAgent.id);
-        if (!isMounted.current) return;
+        if (!current()) return;
+        // Requesters cannot read their upline's private agent/membership rows.
+        // Route to the current owner recorded on this exact club, which also
+        // matches CreditService's shared creation route. A hierarchy ID is
+        // never treated as an account or as approval authority.
+        const approver = club.data.owner_id;
+        setCreditApproverUserId(typeof approver === 'string' && approver && approver !== userId
+          ? approver : undefined);
+        setCanReviewCredit(club.data.owner_id === userId || (
+          ['owner', 'co_owner', 'admin'].includes(membership.data?.role || '') &&
+          ['active', 'approved'].includes(membership.data?.status || '')
+        ));
+        setAgent(myAgent);
+        setSubAgents(agents.filter((a) => a.parentAgentId === myAgent.id));
+        setPlayers(myPlayers);
         setSpread(commSpread);
+      } else {
+        setAgent(null);
+        setCreditApproverUserId(undefined);
+        setSubAgents([]);
+        setPlayers([]);
+        setSpread(null);
       }
     } catch (error) {
       reportError(error, 'SuperAgentDashboard.Failed_to_load_dashboard');
@@ -249,13 +291,20 @@ export default function SuperAgentDashboard() {
          this throws, and the empty state below renders "You Are Not An Agent
          In This Club" - an accusation, for what is usually a network blip.
          The two are separated now. */
-      if (isMounted.current) {
+      if (current()) {
+        setAgent(null);
+        setCreditApproverUserId(undefined);
+        setSubAgents([]);
+        setPlayers([]);
+        setSpread(null);
         setLoadFailed(true);
         toast.error('Failed to load dashboard data');
       }
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (current()) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   };
 
@@ -437,9 +486,11 @@ export default function SuperAgentDashboard() {
             <div className="credit-section">
               <h3>Credit</h3>
               <CreditRequestWidget
-                agentId={agent.id}
-                agentName={agent.displayName || 'Agent'}
-                parentAgentId={agent.parentAgentId}
+                userId={userId}
+                clubId={agent.clubId}
+                approverUserId={creditApproverUserId}
+                canRequest={agent.status === 'active'}
+                canReview={canReviewCredit}
                 currentCreditLimit={agent.creditLimit}
                 currentCreditUsed={agent.creditUsed}
               />

@@ -1,0 +1,11 @@
+BEGIN;
+UPDATE tournaments SET status='COMPLETED',ended_at=now()-interval '1 hour' WHERE id IN(u(4000),u(4200));
+UPDATE tournaments SET status='CANCELLED',ended_at=now()-interval '1 hour' WHERE id IN(u(4700),u(4800),u(4900));
+SELECT assert_true((fn_tournament_rake_settlement_check()->>'missing_count')::integer=0,'existing monitor accepts banked fees and proved zero cancellations without inventing unpaid money');
+UPDATE tournaments SET status='COMPLETED',ended_at=now()-interval '1 hour' WHERE id=u(4400);
+SELECT assert_true((fn_tournament_rake_settlement_check()->>'missing_count')::integer=1,'existing monitor detects a missing terminal fee receipt');
+INSERT INTO tournament_rake_settlements(tournament_id,amount,destination) VALUES(u(4400),0,'pending');
+SELECT assert_true((fn_tournament_rake_settlement_check()->>'missing_count')::integer=1,'uncommitted pending bank row cannot hide a missing fee receipt');
+SELECT assert_true((SELECT count(*)=1 FROM financial_alerts),'existing monitor deduplicates the same unresolved failure');
+SELECT count(*) AS native_assertions FROM assertions;
+ROLLBACK;

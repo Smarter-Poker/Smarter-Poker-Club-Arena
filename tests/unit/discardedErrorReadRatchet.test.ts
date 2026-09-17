@@ -133,7 +133,7 @@ const BASELINE = new Map<string, number>([
   // seatHorse, the browser-side seat creator that minted a stack; it is gone
   // with its reads, and the server fleet is the one seat creator for horses.
   ['src/services/HydraService.ts', 0],
-  ['src/services/FinancialExportService.ts', 2],
+  ['src/services/FinancialExportService.ts', 0],
   // BonusService.ts was deleted 2026-09-07 with the chip daily-bonus ladder.
   /* 0 since 2026-09-05: the last unbound read here was the player_stats
      lookup in updateUserStats, which is now `const { data, error }` and

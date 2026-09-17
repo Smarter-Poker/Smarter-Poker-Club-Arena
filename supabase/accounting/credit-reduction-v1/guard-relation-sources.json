@@ -1,0 +1,1851 @@
+[
+  {
+    "acl": [
+      "anon=xtm/postgres",
+      "authenticated=rxtm/postgres",
+      "postgres=arwdDxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "rls": true,
+    "kind": "r",
+    "name": "agents",
+    "owner": "postgres",
+    "schema": "public",
+    "columns": [
+      {
+        "acl": null,
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "ordinal": 1,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "ordinal": 2,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "ordinal": 3,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "membership_id",
+        "type": "uuid",
+        "default": null,
+        "ordinal": 4,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "role",
+        "type": "text",
+        "default": null,
+        "ordinal": 5,
+        "identity": "",
+        "not_null": true,
+        "collation": "\"default\"",
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "ordinal": 6,
+        "identity": "",
+        "not_null": true,
+        "collation": "\"default\"",
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "parent_agent_id",
+        "type": "uuid",
+        "default": null,
+        "ordinal": 7,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "commission_rate",
+        "type": "numeric(5,4)",
+        "default": null,
+        "ordinal": 8,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "player_rakeback_rate",
+        "type": "numeric(5,4)",
+        "default": null,
+        "ordinal": 9,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "credit_limit",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "ordinal": 10,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "credit_used",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "ordinal": 11,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "is_prepaid",
+        "type": "boolean",
+        "default": "false",
+        "ordinal": 12,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "business_balance",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "ordinal": 13,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "player_balance",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "ordinal": 14,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "promo_balance",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "ordinal": 15,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "total_players",
+        "type": "integer",
+        "default": "0",
+        "ordinal": 16,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "active_player_count",
+        "type": "integer",
+        "default": "0",
+        "ordinal": 17,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "sub_agent_count",
+        "type": "integer",
+        "default": "0",
+        "ordinal": 18,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "weekly_rake_generated",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "ordinal": 19,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "lifetime_earnings",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "ordinal": 20,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "joined_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "ordinal": 21,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "last_active_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "ordinal": 22,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "ordinal": 23,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "ordinal": 24,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "auto_rakeback_enabled",
+        "type": "boolean",
+        "default": "true",
+        "ordinal": 25,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "rakeback_percentage",
+        "type": "numeric(5,4)",
+        "default": "0.0000",
+        "ordinal": 26,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "agent_wallet_balance",
+        "type": "numeric(18,2)",
+        "default": "0",
+        "ordinal": 28,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "player_wallet_balance",
+        "type": "numeric(18,4)",
+        "default": "0",
+        "ordinal": 29,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "promo_wallet_balance",
+        "type": "numeric(18,2)",
+        "default": "0",
+        "ordinal": 30,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "lifetime_rake_generated",
+        "type": "numeric(18,4)",
+        "default": "0",
+        "ordinal": 31,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": false,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      }
+    ],
+    "indexes": [
+      {
+        "kind": "i",
+        "live": true,
+        "name": "agents_agreement_club_and_id",
+        "owner": "postgres",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "primary": false,
+        "clustered": false,
+        "immediate": true,
+        "definition": "CREATE UNIQUE INDEX agents_agreement_club_and_id ON public.agents USING btree (club_id, id)",
+        "replica_identity": false,
+        "nulls_not_distinct": false
+      },
+      {
+        "kind": "i",
+        "live": true,
+        "name": "agents_club_id_user_id_key",
+        "owner": "postgres",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "primary": false,
+        "clustered": false,
+        "immediate": true,
+        "definition": "CREATE UNIQUE INDEX agents_club_id_user_id_key ON public.agents USING btree (club_id, user_id)",
+        "replica_identity": false,
+        "nulls_not_distinct": false
+      },
+      {
+        "kind": "i",
+        "live": true,
+        "name": "agents_pkey",
+        "owner": "postgres",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "primary": true,
+        "clustered": false,
+        "immediate": true,
+        "definition": "CREATE UNIQUE INDEX agents_pkey ON public.agents USING btree (id)",
+        "replica_identity": false,
+        "nulls_not_distinct": false
+      },
+      {
+        "kind": "i",
+        "live": true,
+        "name": "idx_agents_club",
+        "owner": "postgres",
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "primary": false,
+        "clustered": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_agents_club ON public.agents USING btree (club_id)",
+        "replica_identity": false,
+        "nulls_not_distinct": false
+      },
+      {
+        "kind": "i",
+        "live": true,
+        "name": "idx_agents_parent",
+        "owner": "postgres",
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "primary": false,
+        "clustered": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_agents_parent ON public.agents USING btree (parent_agent_id)",
+        "replica_identity": false,
+        "nulls_not_distinct": false
+      },
+      {
+        "kind": "i",
+        "live": true,
+        "name": "idx_agents_user",
+        "owner": "postgres",
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "primary": false,
+        "clustered": false,
+        "immediate": true,
+        "definition": "CREATE INDEX idx_agents_user ON public.agents USING btree (user_id)",
+        "replica_identity": false,
+        "nulls_not_distinct": false
+      }
+    ],
+    "options": null,
+    "policies": [
+      {
+        "cmd": "SELECT",
+        "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR (fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'all'::text) OR ((fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'downline'::text) AND fn_club_cashier_can_transact(club_id, ( SELECT auth.uid() AS uid), user_id)))",
+        "roles": [
+          "authenticated"
+        ],
+        "tablename": "agents",
+        "permissive": "PERMISSIVE",
+        "policyname": "agents_cashier_scoped_read",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "ALL",
+        "qual": "true",
+        "roles": [
+          "service_role"
+        ],
+        "tablename": "agents",
+        "permissive": "PERMISSIVE",
+        "policyname": "agents_svc",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "SELECT",
+        "qual": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
+        "roles": [
+          "authenticated"
+        ],
+        "tablename": "agents",
+        "permissive": "PERMISSIVE",
+        "policyname": "union_overseer_read",
+        "schemaname": "public",
+        "with_check": null
+      }
+    ],
+    "triggers": [
+      {
+        "name": "accounting_agreement_history",
+        "definition": "CREATE TRIGGER accounting_agreement_history AFTER INSERT OR DELETE OR UPDATE OF id, club_id, user_id, parent_agent_id, role, status, commission_rate, player_rakeback_rate, is_prepaid ON agents FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_capture()",
+        "enabled": "O",
+        "internal": false,
+        "type": 29,
+        "function": "fn_accounting_agreement_capture()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "guard_agent_wallet_direct_update",
+        "definition": "CREATE TRIGGER guard_agent_wallet_direct_update BEFORE INSERT OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION guard_agent_wallet_direct_update()",
+        "enabled": "O",
+        "internal": false,
+        "type": 23,
+        "function": "guard_agent_wallet_direct_update()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "poker_arena_no_hierarchy",
+        "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()",
+        "enabled": "O",
+        "internal": false,
+        "type": 23,
+        "function": "fn_poker_reject_diamond_hierarchy()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_agents_commission_bounds",
+        "definition": "CREATE TRIGGER trg_agents_commission_bounds BEFORE INSERT OR UPDATE OF commission_rate ON agents FOR EACH ROW EXECUTE FUNCTION fn_enforce_agent_commission_bounds()",
+        "enabled": "O",
+        "internal": false,
+        "type": 23,
+        "function": "fn_enforce_agent_commission_bounds()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_agents_human_user_club_only",
+        "definition": "CREATE TRIGGER trg_agents_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+        "enabled": "O",
+        "internal": false,
+        "type": 23,
+        "function": "fn_ca_reject_automated_user_club_row()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_agents_staff_earn_no_rakeback",
+        "definition": "CREATE TRIGGER trg_agents_staff_earn_no_rakeback BEFORE INSERT OR UPDATE OF role, commission_rate, player_rakeback_rate ON agents FOR EACH ROW WHEN (COALESCE(new.commission_rate, 0::numeric) <> 0::numeric OR COALESCE(new.player_rakeback_rate, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_agents_staff_earn_no_rakeback()",
+        "enabled": "O",
+        "internal": false,
+        "type": 23,
+        "function": "fn_agents_staff_earn_no_rakeback()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_ca_autoledger",
+        "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF agent_wallet_balance, promo_wallet_balance ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+        "enabled": "O",
+        "internal": false,
+        "type": 17,
+        "function": "fn_ca_autoledger()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_ca_autoledger_delete",
+        "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+        "enabled": "O",
+        "internal": false,
+        "type": 11,
+        "function": "fn_ca_autoledger_delete()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_ca_autoledger_insert",
+        "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON agents FOR EACH ROW WHEN (COALESCE(new.agent_wallet_balance, 0::numeric) <> 0::numeric OR COALESCE(new.promo_wallet_balance, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+        "enabled": "O",
+        "internal": false,
+        "type": 5,
+        "function": "fn_ca_autoledger()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_deep_stack_agents_are_protected",
+        "definition": "CREATE TRIGGER trg_deep_stack_agents_are_protected BEFORE DELETE ON agents FOR EACH ROW WHEN (old.club_id = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid) EXECUTE FUNCTION fn_deep_stack_society_cannot_be_deleted_by_accident()",
+        "enabled": "O",
+        "internal": false,
+        "type": 11,
+        "function": "fn_deep_stack_society_cannot_be_deleted_by_accident()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_guard_retired_club_mutation",
+        "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+        "enabled": "O",
+        "internal": false,
+        "type": 31,
+        "function": "fn_guard_retired_club_mutation()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "trg_sync_agent_wallets",
+        "definition": "CREATE TRIGGER trg_sync_agent_wallets BEFORE UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION sync_agent_wallet_columns()",
+        "enabled": "O",
+        "internal": false,
+        "type": 19,
+        "function": "sync_agent_wallet_columns()",
+        "deferrable": false,
+        "initially_deferred": false
+      },
+      {
+        "name": "zz_guard_agent_agreement",
+        "definition": "CREATE TRIGGER zz_guard_agent_agreement BEFORE INSERT OR UPDATE OF id, user_id, club_id, parent_agent_id, role, commission_rate, player_rakeback_rate, credit_limit ON agents FOR EACH ROW EXECUTE FUNCTION fn_guard_agent_agreement()",
+        "enabled": "O",
+        "internal": false,
+        "type": 23,
+        "function": "fn_guard_agent_agreement()",
+        "deferrable": false,
+        "initially_deferred": false
+      }
+    ],
+    "force_rls": false,
+    "partition": false,
+    "constraints": [
+      {
+        "name": "agents_agent_wallet_balance_nonneg",
+        "type": "c",
+        "columns": [
+          28
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (agent_wallet_balance >= 0::numeric)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "agents_club_id_fkey",
+        "type": "f",
+        "columns": [
+          3
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+        "foreign_columns": [
+          1
+        ],
+        "initially_deferred": false,
+        "referenced_relation": "clubs"
+      },
+      {
+        "name": "agents_club_id_user_id_key",
+        "type": "u",
+        "columns": [
+          3,
+          2
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "UNIQUE (club_id, user_id)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "agents_commission_rate_check",
+        "type": "c",
+        "columns": [
+          8
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (commission_rate >= 0::numeric AND commission_rate <= 0.70)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "agents_credit_used_check",
+        "type": "c",
+        "columns": [
+          11
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (credit_used >= 0::numeric)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "agents_parent_in_same_club",
+        "type": "f",
+        "columns": [
+          3,
+          7
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (club_id, parent_agent_id) REFERENCES agents(club_id, id)",
+        "foreign_columns": [
+          3,
+          1
+        ],
+        "initially_deferred": false,
+        "referenced_relation": "agents"
+      },
+      {
+        "name": "agents_pkey",
+        "type": "p",
+        "columns": [
+          1
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (id)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "agents_player_rakeback_rate_check",
+        "type": "c",
+        "columns": [
+          9
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (player_rakeback_rate >= 0::numeric AND player_rakeback_rate <= 0.50)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "agents_promo_wallet_balance_nonneg",
+        "type": "c",
+        "columns": [
+          30
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (promo_wallet_balance >= 0::numeric)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "agents_role_check",
+        "type": "c",
+        "columns": [
+          5
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (role = ANY (ARRAY['super_agent'::text, 'agent'::text, 'sub_agent'::text]))",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "agents_status_check",
+        "type": "c",
+        "columns": [
+          6
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (status = ANY (ARRAY['active'::text, 'suspended'::text, 'frozen'::text]))",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "check_credit",
+        "type": "c",
+        "columns": [
+          11,
+          10,
+          12
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (credit_used <= credit_limit OR is_prepaid = true)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "chk_player_wallet_balance_is_two_decimal_places",
+        "type": "c",
+        "columns": [
+          29
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK (player_wallet_balance IS NULL OR player_wallet_balance = round(player_wallet_balance, 2))",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      },
+      {
+        "name": "fk_agents_parent",
+        "type": "f",
+        "columns": [
+          7
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (parent_agent_id) REFERENCES agents(id)",
+        "foreign_columns": [
+          1
+        ],
+        "initially_deferred": false,
+        "referenced_relation": "agents"
+      },
+      {
+        "name": "fk_agents_user_id_profiles",
+        "type": "f",
+        "columns": [
+          2
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+        "foreign_columns": [
+          1
+        ],
+        "initially_deferred": false,
+        "referenced_relation": "profiles"
+      }
+    ],
+    "inheritance": null,
+    "partition_key": null,
+    "partition_bound": null,
+    "replica_identity": "d",
+    "effective_privileges": {
+      "anon": {
+        "table": {
+          "DELETE": false,
+          "INSERT": false,
+          "SELECT": false,
+          "UPDATE": false,
+          "TRIGGER": true,
+          "MAINTAIN": true,
+          "TRUNCATE": false,
+          "REFERENCES": true
+        },
+        "any_column": {
+          "INSERT": false,
+          "SELECT": false,
+          "UPDATE": false,
+          "REFERENCES": true
+        }
+      },
+      "service_role": {
+        "table": {
+          "DELETE": true,
+          "INSERT": true,
+          "SELECT": true,
+          "UPDATE": true,
+          "TRIGGER": true,
+          "MAINTAIN": true,
+          "TRUNCATE": true,
+          "REFERENCES": true
+        },
+        "any_column": {
+          "INSERT": true,
+          "SELECT": true,
+          "UPDATE": true,
+          "REFERENCES": true
+        }
+      },
+      "authenticated": {
+        "table": {
+          "DELETE": false,
+          "INSERT": false,
+          "SELECT": true,
+          "UPDATE": false,
+          "TRIGGER": true,
+          "MAINTAIN": true,
+          "TRUNCATE": false,
+          "REFERENCES": true
+        },
+        "any_column": {
+          "INSERT": false,
+          "SELECT": true,
+          "UPDATE": false,
+          "REFERENCES": true
+        }
+      }
+    }
+  },
+  {
+    "acl": [
+      "anon=rxt/postgres",
+      "authenticated=rxt/postgres",
+      "postgres=arwdDxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "rls": true,
+    "kind": "r",
+    "name": "credit_assignments",
+    "owner": "postgres",
+    "schema": "public",
+    "columns": [
+      {
+        "acl": null,
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "ordinal": 1,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "agent_id",
+        "type": "uuid",
+        "default": null,
+        "ordinal": 2,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "assigned_by",
+        "type": "uuid",
+        "default": null,
+        "ordinal": 3,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "old_limit",
+        "type": "numeric",
+        "default": null,
+        "ordinal": 4,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "new_limit",
+        "type": "numeric",
+        "default": null,
+        "ordinal": 5,
+        "identity": "",
+        "not_null": false,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "ordinal": 6,
+        "identity": "",
+        "not_null": false,
+        "collation": "\"default\"",
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      },
+      {
+        "acl": null,
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "ordinal": 7,
+        "identity": "",
+        "not_null": true,
+        "collation": null,
+        "generated": "",
+        "effective_privileges": {
+          "anon": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          },
+          "service_role": {
+            "INSERT": true,
+            "SELECT": true,
+            "UPDATE": true,
+            "REFERENCES": true
+          },
+          "authenticated": {
+            "INSERT": false,
+            "SELECT": true,
+            "UPDATE": false,
+            "REFERENCES": true
+          }
+        }
+      }
+    ],
+    "indexes": [
+      {
+        "kind": "i",
+        "live": true,
+        "name": "credit_assignments_pkey",
+        "owner": "postgres",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "primary": true,
+        "clustered": false,
+        "immediate": true,
+        "definition": "CREATE UNIQUE INDEX credit_assignments_pkey ON public.credit_assignments USING btree (id)",
+        "replica_identity": false,
+        "nulls_not_distinct": false
+      }
+    ],
+    "options": null,
+    "policies": [
+      {
+        "cmd": "SELECT",
+        "qual": "(EXISTS ( SELECT 1\n   FROM agents a\n  WHERE ((a.id = credit_assignments.agent_id) AND ((a.user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM clubs c\n          WHERE ((c.id = a.club_id) AND ((c.owner_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n                   FROM club_members cm\n                  WHERE ((cm.club_id = a.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)) AND (cm.role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text])))))))))))))",
+        "roles": [
+          "public"
+        ],
+        "tablename": "credit_assignments",
+        "permissive": "PERMISSIVE",
+        "policyname": "credit_assignments_read",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "ALL",
+        "qual": "true",
+        "roles": [
+          "service_role"
+        ],
+        "tablename": "credit_assignments",
+        "permissive": "PERMISSIVE",
+        "policyname": "credit_assignments_svc",
+        "schemaname": "public",
+        "with_check": "true"
+      }
+    ],
+    "triggers": null,
+    "force_rls": false,
+    "partition": false,
+    "constraints": [
+      {
+        "name": "credit_assignments_agent_id_fkey",
+        "type": "f",
+        "columns": [
+          2
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
+        "foreign_columns": [
+          1
+        ],
+        "initially_deferred": false,
+        "referenced_relation": "agents"
+      },
+      {
+        "name": "credit_assignments_pkey",
+        "type": "p",
+        "columns": [
+          1
+        ],
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (id)",
+        "foreign_columns": null,
+        "initially_deferred": false,
+        "referenced_relation": null
+      }
+    ],
+    "inheritance": null,
+    "partition_key": null,
+    "partition_bound": null,
+    "replica_identity": "d",
+    "effective_privileges": {
+      "anon": {
+        "table": {
+          "DELETE": false,
+          "INSERT": false,
+          "SELECT": true,
+          "UPDATE": false,
+          "TRIGGER": true,
+          "MAINTAIN": false,
+          "TRUNCATE": false,
+          "REFERENCES": true
+        },
+        "any_column": {
+          "INSERT": false,
+          "SELECT": true,
+          "UPDATE": false,
+          "REFERENCES": true
+        }
+      },
+      "service_role": {
+        "table": {
+          "DELETE": true,
+          "INSERT": true,
+          "SELECT": true,
+          "UPDATE": true,
+          "TRIGGER": true,
+          "MAINTAIN": true,
+          "TRUNCATE": true,
+          "REFERENCES": true
+        },
+        "any_column": {
+          "INSERT": true,
+          "SELECT": true,
+          "UPDATE": true,
+          "REFERENCES": true
+        }
+      },
+      "authenticated": {
+        "table": {
+          "DELETE": false,
+          "INSERT": false,
+          "SELECT": true,
+          "UPDATE": false,
+          "TRIGGER": true,
+          "MAINTAIN": false,
+          "TRUNCATE": false,
+          "REFERENCES": true
+        },
+        "any_column": {
+          "INSERT": false,
+          "SELECT": true,
+          "UPDATE": false,
+          "REFERENCES": true
+        }
+      }
+    }
+  }
+]

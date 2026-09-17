@@ -1,0 +1,74 @@
+[
+  {
+    "table": "agents",
+    "name": "agents_parent_in_same_club",
+    "referenced_relation": "agents",
+    "definition": "FOREIGN KEY (club_id, parent_agent_id) REFERENCES agents(club_id, id)",
+    "validated": true,
+    "deferrable": false,
+    "initially_deferred": false
+  },
+  {
+    "name": "fk_agents_parent",
+    "table": "agents",
+    "validated": true,
+    "deferrable": false,
+    "definition": "FOREIGN KEY (parent_agent_id) REFERENCES agents(id)",
+    "initially_deferred": false,
+    "referenced_relation": "agents"
+  },
+  {
+    "name": "commission_rate_audit_agent_id_fkey",
+    "table": "commission_rate_audit",
+    "validated": true,
+    "deferrable": false,
+    "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
+    "initially_deferred": false,
+    "referenced_relation": "agents"
+  },
+  {
+    "name": "credit_assignments_agent_id_fkey",
+    "table": "credit_assignments",
+    "validated": true,
+    "deferrable": false,
+    "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
+    "initially_deferred": false,
+    "referenced_relation": "agents"
+  },
+  {
+    "name": "credit_invoices_agent_id_fkey",
+    "table": "credit_invoices",
+    "validated": true,
+    "deferrable": false,
+    "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
+    "initially_deferred": false,
+    "referenced_relation": "agents"
+  },
+  {
+    "name": "player_agent_assignments_agent_id_fkey",
+    "table": "player_agent_assignments",
+    "validated": true,
+    "deferrable": false,
+    "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL",
+    "initially_deferred": false,
+    "referenced_relation": "agents"
+  },
+  {
+    "name": "rake_attributions_agent_id_fkey",
+    "table": "rake_attributions",
+    "validated": true,
+    "deferrable": false,
+    "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL",
+    "initially_deferred": false,
+    "referenced_relation": "agents"
+  },
+  {
+    "name": "sub_agents_parent_agent_id_fkey",
+    "table": "sub_agents",
+    "validated": true,
+    "deferrable": false,
+    "definition": "FOREIGN KEY (parent_agent_id) REFERENCES agents(id) ON DELETE CASCADE",
+    "initially_deferred": false,
+    "referenced_relation": "agents"
+  }
+]

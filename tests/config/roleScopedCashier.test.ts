@@ -411,9 +411,9 @@ describe('the client asks the right server', () => {
 
   it('every cashout leg goes through its own RPC', () => {
     for (const rpc of [
-      'fn_cashout_request',
-      'fn_cashout_approve',
-      'fn_cashout_release',
+      'fn_cashout_request_v2',
+      'fn_cashout_approve_v2',
+      'fn_cashout_release_v2',
       'fn_cashout_queue',
       'fn_agent_wallet_send',
       'fn_agent_wallet_claim_back',
@@ -438,7 +438,7 @@ describe('the client asks the right server', () => {
     //
     // So what matters now is that the client calls the RPC that owns the rule,
     // and does NOT send its own push on top.
-    for (const rpc of ['fn_cashout_request', 'fn_cashout_approve', 'fn_cashout_release']) {
+    for (const rpc of ['fn_cashout_request_v2', 'fn_cashout_approve_v2', 'fn_cashout_release_v2']) {
       expect(SERVICE).toContain(`'${rpc}'`);
     }
     expect(SERVICE).not.toContain('pushNotificationService.sendToUser');

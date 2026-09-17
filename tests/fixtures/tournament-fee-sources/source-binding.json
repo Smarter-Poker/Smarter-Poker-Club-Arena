@@ -1,0 +1,43 @@
+{
+  "format_version": 1,
+  "verification_status": "SOURCE_CHANGED_UNRUN_PENDING_QUALIFICATION",
+  "historical_assertion_executions": 105,
+  "tournament_component": {
+    "path": "supabase/accounting/weekly-v3/components/20260914135530_tournament_fees_share_one_recorded_earning_authority.sql",
+    "sha256": "c1f3b86a25cb0e2e9d4e8b2ca503b10627b9228f03d1b834e3ebd28e7b0100cd",
+    "sections": {
+      "tournament-fee-receipts-draft.sql": "f28b58c128476c46e6c91b8603436378048b6fd89e8efa7461a72c874d66dfa3",
+      "tournament-fee-producer-adapter-draft.sql": "aa4ed185484fce462dcbc7a4921ad5ac1131e7653cabfe3f4ba61d235721e811",
+      "tournament-fee-recognition-draft.sql": "01a345699aaad313873de0aff75f08f4cd1ce33499f5fe62c3655abef5839b92",
+      "tournament-fee-terminal-common-draft.sql": "7f6b7c03960b1d6ec9ffed4204d3850c6b1c552b9e0fec3d85194a5b82078a5c",
+      "tournament-fee-settle-adapter-draft.sql": "ff33a62c475e3c5feff71b855b34904b72a646baa3f0a56ce21f865dacd0db61",
+      "tournament-fee-terminal-gates-draft.sql": "b3e4e902d6c38f5e058ffed245124a04c620d985d3183206835d2edac9afc7a8",
+      "tournament-fee-satellite-gates-draft.sql": "864df770ee938e42716b764fd1370283cddf62a44ff6ef37c172184fa1029c17",
+      "tournament-fee-cancellation-adapter-draft.sql": "f8d0af0dded367b00055d63118fa2a4e0a87bc81c5df358d6b88b88f143b1617",
+      "tournament-fee-legacy-adapters-draft.sql": "b29ef8e320191a3782229bbcff30147520a5e4a032396347e2a8c71ed2f47abd",
+      "tournament-fee-monitor-draft.sql": "59c44286181c7951ffba9a2342ead9fbc293fb6bd031fe92c63107f798b00662"
+    }
+  },
+  "shared_commission_function": {
+    "path": "supabase/accounting/weekly-v3/components/20260914131539_cash_commissions_account_for_every_contributor_once.sql",
+    "function": "fn_post_accounting_commission_source",
+    "sha256": "c9ce8f08be584014cf00dee86d30950a0e1ccd255411f2d5f9bd5526f6ac8be7"
+  },
+  "fixtures": {
+    "tournament-fee-native-bootstrap.sql": "63bbdf9d604925f55b1605b33549abcc78c78f31fafa1115f4b14db3d157834a",
+    "tournament-fee-native-regression.sql": "5ee072e90aebc99e244d3fd4f9814b826d2fe06d7b318ee8b44ab8c15f57e3b1",
+    "tournament-fee-producer-native.sql": "b57503a359f1e765a27a48e2538b31151d5a2b05244832297362e19f069f2ef2",
+    "tournament-fee-recognition-native.sql": "b7695dbd79a63fedf97c0c5395735715d947ca4ef8a9b11243a691843f370b78",
+    "tournament-fee-settle-native-bootstrap.sql": "22728f001b4337f5a53658c85b1c163e1070055d36d8b3ff8aa4a93926f97659",
+    "tournament-fee-settle-native.sql": "87c5163f23b39cbc78f1b1c30cd650ab52197a8ff09d778f3209fc42326160f4",
+    "tournament-fee-terminal-extra-native.sql": "236a32632d1e2549593259cbc005bddd1db1964032e21f1826c0e92e97db00d0",
+    "tournament-fee-monitor-native-bootstrap.sql": "6c8eb78c9a02f851c146db920107f6dcd65f137c2f643f6f997501ed3cafbe89",
+    "tournament-fee-monitor-native.sql": "47bc51b4c77ba754b45e8fefacadeb41f41b16f5f8185ac594a61d6b8d8e29da",
+    "tournament-terminal-native-seed.sql": "44ca81f4ff50d430c911bfbe71a3ba571cc61b9f8d898d4e031a562f46bb488a",
+    "tournament-terminal-native-schema.sql": "052eedcf236669ebe984a52b7d2d9aedbef3fad726f6ede7fa8ac7ec75e9d7b9",
+    "tournament-terminal-native-support.sql": "5366a4f0ad2fe3d76973f59df053b1ecf1a05f121d08bfb4623c1fbf39015574",
+    "terminal-marker-native.sql": "04159982bc88085dc6aec118c1c4a1d550c181a5e5aee7bee8af1767204ba6c6",
+    "tournament-terminal-native.sql": "7292eeaf4aaa17b74315b18ed53e9f6318117dd47ebd149dab6b660b6fab2da3",
+    "tournament-extra-native-compile-schema.sql": "0180a16f741b7c6d75e6b4b4ef4dffe142b1d10f27506ac606ec4af0b8d06778"
+  }
+}

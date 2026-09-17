@@ -1,48 +1,69 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  SETTLEMENT SERVICE — Weekly Financial Settlement Automation
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Handles Union Cross-Club Wires and Monday Payouts.
- *
- * SETTLEMENT CYCLE:
- * - Sunday 11:59:59 PM PST → Snapshot all ledgers
- * - Monday 4:00 AM PST → Process payouts
- *
- * FORMULA:
- * Wire = (Net Player P/L) + (Gross Rake Return) - (Union Tax 10%)
- */
-
+/** Browser settlement reads. Automatic weekly writes belong to the canonical coordinator. */
 import { supabase } from '../lib/supabase';
-import { CommissionService } from './CommissionService';
-import { WalletService } from './WalletService';
-import { masterBus } from '../core/MasterBus';
-import { resolveClubUUID } from '../utils/clubIdResolver';
-import { retryAsync } from '../utils/retryAsync';
-import { QUERY_LIMITS } from '../lib/constants';
-import { reportError } from '../utils/errorReporter';
-// Use globalThis.crypto for browser-safe UUID generation
-const generateUUID = (): string =>
-  typeof globalThis.crypto?.randomUUID === 'function'
-    ? globalThis.crypto.randomUUID()
-    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-        const r = (Math.random() * 16) | 0;
-        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-      });
+import { captureWeeklyAccountingAccount } from './ClubWeeklyAccountingReader';
+import { accountingInstant, isAccountingUUID, type AccountingScopeKind } from './AccountingObservationService';
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
+export class AutomaticWeeklyAccountingOnlyError extends Error {
+  readonly code = 'automatic_weekly_accounting_only';
+  constructor() { super('Weekly accounting runs automatically. Refresh its recorded status.'); }
+}
+export class CanonicalWeeklyStatementsRequiredError extends Error {
+  readonly code = 'canonical_weekly_statements_required';
+  constructor() { super('Use issued weekly accounting statements. This historical report cannot verify its complete scope.'); }
+}
+export interface SettlementReadScope { scopeKind: AccountingScopeKind; scopeId: string; actorId?: string; isCurrent?: () => boolean }
+const unavailable = () => new Error('Settlement Records Are Unavailable');
+function scopedRead(input?: SettlementReadScope) {
+  if (!input || !['club','union'].includes(input.scopeKind) || !isAccountingUUID(input.scopeId)) throw unavailable();
+  const scope = { ...input, scopeId: input.scopeId.toLowerCase() };
+  const account = captureWeeklyAccountingAccount(scope.actorId);
+  const current = () => { if (!account.isCurrent() || (scope.isCurrent && !scope.isCurrent())) throw unavailable(); };
+  current(); return { scope, current };
+}
+const periodFields = 'id,club_id,union_id,period_number,year,start_at,end_at,status,total_rake_collected::text,total_bbj_contributions::text,total_player_winnings::text,total_player_losses::text,total_hands_dealt,settled_at,settled_by';
+function integer(value: unknown, nullable = false): number | null {
+  if (nullable && value === null) return null;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw unavailable();
+  return value;
+}
+/** Captured period columns are numeric(15,2); null remains unavailable, never zero. */
+function periodAmount(value: unknown): number | null {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !/^-?(?:0|[1-9]\d{0,12})\.\d{2}$/.test(value)) throw unavailable();
+  const cents = BigInt(value.replace('.', ''));
+  if (cents > BigInt(Number.MAX_SAFE_INTEGER) || cents < -BigInt(Number.MAX_SAFE_INTEGER)) throw unavailable();
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || BigInt(Math.round(amount * 100)) !== cents) throw unavailable();
+  return amount;
+}
+function periodRecord(value: unknown, scope?: SettlementReadScope): SettlementPeriod {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw unavailable();
+  const p = value as Record<string, unknown>;
+  if (!isAccountingUUID(p.id) || typeof p.status !== 'string' || !['open','processing','settled','disputed','closed'].includes(String(p.status)) ||
+      accountingInstant(p.end_at) <= accountingInstant(p.start_at)) throw unavailable();
+  const kind = p.club_id === null && isAccountingUUID(p.union_id) ? 'union'
+    : p.union_id === null && isAccountingUUID(p.club_id) ? 'club' : null;
+  if (!kind || (scope && (kind !== scope.scopeKind || p[`${kind}_id`] !== scope.scopeId))) throw unavailable();
+  if (p.settled_at !== null) accountingInstant(p.settled_at);
+  if (p.settled_by !== null && !isAccountingUUID(p.settled_by)) throw unavailable();
+  return { id:p.id, scope:kind, clubId:p.club_id as string|null, unionId:p.union_id as string|null,
+    periodNumber:integer(p.period_number) as number, year:integer(p.year) as number,
+    startAt:p.start_at as string, endAt:p.end_at as string, status:p.status as SettlementStatus,
+    totalRakeCollected:periodAmount(p.total_rake_collected), totalBBJContributions:periodAmount(p.total_bbj_contributions),
+    totalPlayerWinnings:periodAmount(p.total_player_winnings), totalPlayerLosses:periodAmount(p.total_player_losses),
+    totalHandsDealt:integer(p.total_hands_dealt,true), settledAt:p.settled_at as string|null ?? undefined,
+    settledBy:p.settled_by as string|null ?? undefined };
+}
+function periodQuery(scope: SettlementReadScope) {
+  return supabase.from('settlement_periods').select(periodFields).eq(`${scope.scopeKind}_id`,scope.scopeId)
+    .is(scope.scopeKind === 'club' ? 'union_id' : 'club_id',null);
+}
 
-export type SettlementStatus = 'open' | 'processing' | 'settled' | 'disputed';
+export type SettlementStatus = 'open' | 'processing' | 'settled' | 'disputed' | 'closed';
 
 export interface SettlementPeriod {
   id: string;
-  /**
-   * Whose period this is. 'club' is the club's own; 'union' means the club has
-   * none of its own and this is the union's open period, shown as such.
-   * Undefined for the unscoped platform-wide lookup.
-   */
+  /** Recorded scope; status is not a canonical payment receipt. */
   scope?: 'club' | 'union';
   clubId?: string | null;
   unionId?: string | null;
@@ -51,11 +72,11 @@ export interface SettlementPeriod {
   startAt: string;
   endAt: string;
   status: SettlementStatus;
-  totalRakeCollected: number;
-  totalBBJContributions: number;
-  totalPlayerWinnings: number;
-  totalPlayerLosses: number;
-  totalHandsDealt: number;
+  totalRakeCollected: number | null;
+  totalBBJContributions: number | null;
+  totalPlayerWinnings: number | null;
+  totalPlayerLosses: number | null;
+  totalHandsDealt: number | null;
   settledAt?: string;
   settledBy?: string;
 }
@@ -112,151 +133,34 @@ export interface SettlementSummary {
   totalPlayerRakeback: number;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SERVICE
-// ═══════════════════════════════════════════════════════════════════════════════
-
 export const SettlementService = {
-  // ─────────────────────────────────────────────────────────────────────────────
-  // PERIOD MANAGEMENT
-  // ─────────────────────────────────────────────────────────────────────────────
+  async getCurrentPeriodForClub(_clubId: string): Promise<SettlementPeriod | null> { throw new AutomaticWeeklyAccountingOnlyError(); },
+  async getCurrentPeriod(): Promise<SettlementPeriod> { throw new AutomaticWeeklyAccountingOnlyError(); },
+  async closePeriod(_periodId: string): Promise<boolean> { throw new AutomaticWeeklyAccountingOnlyError(); },
+  async executeMondayPayouts(_periodId: string): Promise<{ agentsPaid:number; playersWithRakeback:number; totalDisbursed:number }> { throw new AutomaticWeeklyAccountingOnlyError(); },
+  async runPendingRakebackSettlement(_maxClubs = 100): Promise<{ clubsProcessed:number; periodsSettled:number; totalPayout:number; clubsRemaining:number }> { throw new AutomaticWeeklyAccountingOnlyError(); },
+  async executeUnionRakeBack(_unionId:string,_periodStart:string,_periodEnd:string): Promise<{clubsPaid:number;totalRakeBack:number;unionRetained:number}> { throw new AutomaticWeeklyAccountingOnlyError(); },
 
-  /**
-   * THE PERIOD THIS CLUB IS IN (2026-09-05, phase 7).
-   *
-   * `get_current_settlement_period(club)` answers for one club: its own open
-   * period, else its own work still in flight, else its union's open period
-   * marked as the union's. Null when the club has none - which is the honest
-   * answer for a club that has never been settled, and is what the reference
-   * club returns today.
-   *
-   * The no-argument `getCurrentPeriod()` below is unchanged and still serves
-   * the union surfaces. It asks for the newest OPEN period on the platform
-   * regardless of club, which is why heading a club page with it showed every
-   * club the same period - one that today belongs to no club at all
-   * (club_id NULL, union-scoped, three weeks stale).
-   */
-  async getCurrentPeriodForClub(clubId: string): Promise<SettlementPeriod | null> {
-    const { data, error } = await supabase.rpc('get_current_settlement_period', {
-      p_club_id: clubId,
-    });
-    if (error) throw error;
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row?.id) return null;
-    return {
-      id: row.id,
-      scope: row.scope === 'union' ? 'union' : 'club',
-      clubId: row.club_id ?? null,
-      unionId: row.union_id ?? null,
-      // Every one of these is a real column on settlement_periods. They used
-      // to be hardcoded here - periodNumber 1, this year, and four zeroes -
-      // which is what drew "Period 1/2026" over a grid of zeros.
-      periodNumber: Number(row.period_number) || 0,
-      year: Number(row.year) || new Date().getFullYear(),
-      startAt: row.period_start,
-      endAt: row.period_end,
-      status: (row.status || 'open') as SettlementStatus,
-      totalRakeCollected: Number(row.total_rake) || 0,
-      totalBBJContributions: Number(row.total_bbj) || 0,
-      totalPlayerWinnings: Number(row.total_player_winnings) || 0,
-      totalPlayerLosses: Number(row.total_player_losses) || 0,
-      totalHandsDealt: Number(row.total_hands_dealt) || 0,
-      settledAt: row.settled_at ?? undefined,
-    };
+  /** No global fallback. Bounded records are not payment or completion attestations. */
+  async getPeriodHistory(limit = 12, requested?: SettlementReadScope): Promise<SettlementPeriod[]> {
+    const { scope, current } = scopedRead(requested);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw unavailable();
+    const { data, error } = await periodQuery(scope).order('start_at',{ascending:false}).order('id',{ascending:false}).limit(limit);
+    current();
+    if (error || !Array.isArray(data) || data.length > limit) throw unavailable();
+    const rows = data.map(row => periodRecord(row,scope));
+    if (new Set(rows.map(row=>row.id)).size !== rows.length) throw unavailable();
+    current(); return rows;
   },
-
-  /**
-   * Get or create the current settlement period, platform-wide.
-   *
-   * NOT club-scoped: it returns the newest open period whoever asks. Use
-   * getCurrentPeriodForClub() on any club surface.
-   */
-  async getCurrentPeriod(): Promise<SettlementPeriod> {
-    const { data, error } = await retryAsync(
-      () => supabase.rpc('get_current_settlement_period'),
-      3
-    );
-    if (error) throw error;
-
-    // The RPC is a SECURITY DEFINER get-or-create: it always returns a real,
-    // persisted open period (selecting the current one or inserting a new one).
-    // We must NEVER fabricate a random-UUID period here — nothing backs it, so
-    // every settlement written against it is orphaned.
-    if (data && data.length > 0) {
-      const period = data[0];
-      if (!period.id) {
-        throw new Error(
-          '[Settlement] get_current_settlement_period returned a row with no id - refusing to fabricate an orphaned period.'
-        );
-      }
-      return {
-        id: period.id,
-        periodNumber: 1,
-        year: new Date().getFullYear(),
-        startAt: period.period_start,
-        endAt: period.period_end,
-        status: period.status || 'open',
-        totalRakeCollected: period.total_rake || 0,
-        totalBBJContributions: 0,
-        totalPlayerWinnings: 0,
-        totalPlayerLosses: 0,
-        totalHandsDealt: 0,
-      };
-    }
-
-    // Empty result now means a genuine backend failure (the get-or-create RPC
-    // should always return a period). Fail loudly rather than orphan a settlement.
-    throw new Error(
-      '[Settlement] get_current_settlement_period returned no rows - settlement period unavailable.'
-    );
+  async getPeriodRecord(periodId:string, requested?:SettlementReadScope): Promise<SettlementPeriod> {
+    const { scope,current } = scopedRead(requested);
+    if (!isAccountingUUID(periodId)) throw unavailable();
+    const { data,error } = await periodQuery(scope).eq('id',periodId.toLowerCase()).single();
+    current(); if(error) throw unavailable();
+    const row = periodRecord(data,scope);
+    if(row.id !== periodId.toLowerCase()) throw unavailable();
+    return row;
   },
-
-  /**
-   * Get historical periods
-   */
-  async getPeriodHistory(limit: number = 12, clubId?: string): Promise<SettlementPeriod[]> {
-    // 2026-08-19: this had NO club scoping, so a page rendering "this club's
-    // settlement history" actually rendered whatever periods RLS happened to
-    // let the viewer see — for a union admin, every club in the union, mixed
-    // together with no way to tell them apart. RLS contained it, but the list
-    // was still wrong. Callers that know their club should pass it.
-    let query = supabase
-      .from('settlement_periods')
-      .select(
-        'id, club_id, period_number, year, start_at, end_at, status, total_rake_collected, total_bbj_contributions, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, settled_by'
-      );
-
-    if (clubId) query = query.eq('club_id', clubId);
-
-    const { data, error } = await query.order('start_at', { ascending: false }).limit(limit);
-
-    if (error) throw error;
-    return data.map(this.mapPeriod);
-  },
-
-  /**
-   * Close period and begin processing
-   */
-  async closePeriod(periodId: string): Promise<boolean> {
-    // settlement_periods is service-role-write-only; a direct update silently
-    // affects 0 rows. Go through the authorized RPC.
-    const { data, error } = await supabase.rpc('fn_set_settlement_period_status', {
-      p_period_id: periodId,
-      p_status: 'processing',
-    });
-    if (error) throw error;
-    const r = data as { success?: boolean; error?: string } | null;
-    if (r && r.success === false) throw new Error(r.error || 'Failed to close period');
-    return true;
-  },
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // SETTLEMENT CALCULATIONS
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Calculate union wire for a club
-   */
   calculateUnionWire(
     clubId: string,
     clubName: string,
@@ -283,352 +187,31 @@ export const SettlementService = {
     };
   },
 
-  /**
-   * Generate all settlements for a period.
-   *
-   * SWEEP #3 (2026-07-23): the `generate_period_settlements` RPC is no longer a
-   * stub — it is a real SECURITY DEFINER read model computed over the live
-   * tables (settlement_periods, rake_history, bbj_contributions,
-   * agent_commissions, rakeback_periods, settlement_invoices) and returns the
-   * full camelCase SettlementSummary shape. Read-only; it moves no money.
-   */
-  async generateSettlements(periodId: string): Promise<SettlementSummary> {
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('generate_period_settlements', {
-          p_period_id: periodId,
-        }),
-      3
-    );
-
-    if (error) throw error;
-    return data;
+  /** Historical report RPCs do not prove complete union/agent scope. Never dispatch them. */
+  async generateSettlements(_periodId:string, _scope?:SettlementReadScope):Promise<SettlementSummary> {
+    throw new CanonicalWeeklyStatementsRequiredError();
   },
-
-  /**
-   * Calculate agent settlement for a specific agent.
-   *
-   * SWEEP #3 (2026-07-23): `calculate_agent_settlement` is reimplemented
-   * server-side over agents + agent_commissions (the live per-hand commission
-   * ledger written by the engine RakebackSettler) and returns the camelCase
-   * AgentSettlement shape directly.
-   */
-  async calculateAgentSettlement(periodId: string, agentId: string): Promise<AgentSettlement> {
-    try {
-      const { data, error } = await retryAsync(
-        () =>
-          supabase.rpc('calculate_agent_settlement', {
-            p_period_id: periodId,
-            p_agent_id: agentId,
-          }),
-        3
-      );
-
-      if (error) {
-        reportError(error, 'SettlementService.calculateAgentSettlement', { periodId, agentId });
-        // Return default if the RPC fails (e.g. caller not authorized)
-        return {
-          id: `${agentId}-${periodId}`,
-          periodId,
-          agentId,
-          agentName: 'Unknown',
-          totalRakeGenerated: 0,
-          commissionRate: 0,
-          commissionEarned: 0,
-          creditExtended: 0,
-          creditRepaid: 0,
-          netSettlement: 0,
-          activePlayers: 0,
-          status: 'pending',
-        };
-      }
-      return data;
-    } catch (err: unknown) {
-      reportError(err, 'SettlementService.calculateAgentSettlement.exception', {
-        periodId,
-        agentId,
-      });
-      throw err;
-    }
+  async calculateAgentSettlement(_periodId:string,_agentId:string,_scope?:SettlementReadScope):Promise<AgentSettlement> {
+    throw new CanonicalWeeklyStatementsRequiredError();
   },
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // PAYOUT EXECUTION
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Execute Monday payout cycle
-   */
-  async executeMondayPayouts(periodId: string): Promise<{
-    agentsPaid: number;
-    playersWithRakeback: number;
-    totalDisbursed: number;
-  }> {
-    // DEPRECATED / RETIRED (2026-07-21). This Monday-payout runner read two tables
-    // that were DELIBERATELY REMOVED from the schema — `agent_settlements` and
-    // `player_weekly_snapshots` — and its `calculate_agent_settlement` RPC is a stub
-    // ("agent_settlements table removed"). It has therefore been a silent no-op
-    // (errors on the missing tables were swallowed). The LIVE payout paths are:
-    //   - Agent commissions -> the credit_invoices subsystem
-    //     (fn_generate_credit_invoice / fn_apply_credit_payment, see CreditService).
-    //   - Player rakeback   -> the engine's durable RakebackSettlerService daemon on
-    //     Hetzner (settles rakeback_periods / player_stats behind a persisted
-    //     high-water-mark watermark).
-    // Kept as a pure no-op so existing callers (SettlementCronService with
-    // autoExecutePayouts, useUnionStore) resolve cleanly; it moves no money. Do not
-    // build on it — see .agent/architecture/CLUB-MONEY-LEDGERS-CANONICAL.md.
-    console.debug(
-      `[Settlement] executeMondayPayouts is retired (no-op) for period ${periodId} - ` +
-        'agent payouts flow through credit_invoices; player rakeback through the engine ' +
-        'RakebackSettlerService.'
-    );
-    return { agentsPaid: 0, playersWithRakeback: 0, totalDisbursed: 0 };
+  /** Historical backlog diagnostics are retained; unavailable is never a zero debt. */
+  async getRakebackSettlementStatus():Promise<{pendingPeriods:number;pendingClubs:number;estimatedOwed:number;lastPaidAt:string|null}|null> {
+    const account=captureWeeklyAccountingAccount();
+    const {data,error}=await supabase.rpc('fn_rakeback_settlement_status');
+    if(!account.isCurrent()) throw unavailable();
+    if(error || data?.success !== true) return null;
+    const pendingPeriods=integer(data.pending_periods), pendingClubs=integer(data.pending_clubs);
+    if(typeof data.estimated_owed !== 'number' || !Number.isFinite(data.estimated_owed) || data.estimated_owed < 0) throw unavailable();
+    if(data.last_paid_at !== null) accountingInstant(data.last_paid_at);
+    return {pendingPeriods:pendingPeriods as number,pendingClubs:pendingClubs as number,estimatedOwed:data.estimated_owed,lastPaidAt:data.last_paid_at};
   },
-
-  /**
-   * Admin-only status of the player-rakeback settlement backlog. The engine
-   * daemon settles rakeback automatically; this surfaces what's still pending so
-   * the dashboard can stop pretending and show real numbers.
-   */
-  async getRakebackSettlementStatus(): Promise<{
-    pendingPeriods: number;
-    pendingClubs: number;
-    estimatedOwed: number;
-    lastPaidAt: string | null;
-  } | null> {
-    const { data, error } = await supabase.rpc('fn_rakeback_settlement_status');
-    if (error || !data?.success) {
-      if (error) reportError(error, 'SettlementService.getRakebackSettlementStatus');
-      return null;
-    }
-    return {
-      pendingPeriods: Number(data.pending_periods || 0),
-      pendingClubs: Number(data.pending_clubs || 0),
-      estimatedOwed: Number(data.estimated_owed || 0),
-      lastPaidAt: data.last_paid_at || null,
-    };
+  async getClubReport(_clubId:string,_periodId?:string):Promise<ClubSettlement|null> {
+    throw new CanonicalWeeklyStatementsRequiredError();
   },
-
-  /**
-   * Admin-only on-demand player-rakeback settlement. Drives the existing
-   * idempotent settle_club_rakeback per club (status-guard + receipt table), so
-   * it is safe to run any time and cannot double-pay. Bounded per call.
-   */
-  async runPendingRakebackSettlement(maxClubs = 100): Promise<{
-    clubsProcessed: number;
-    periodsSettled: number;
-    totalPayout: number;
-    clubsRemaining: number;
-  }> {
-    const { data, error } = await supabase.rpc('fn_run_pending_rakeback_settlement', {
-      p_max_clubs: maxClubs,
-    });
-    if (error) {
-      reportError(error, 'SettlementService.runPendingRakebackSettlement');
-      throw new Error(`Rakeback settlement failed: ${error.message}`);
-    }
-    if (!data?.success) {
-      throw new Error(`Rakeback settlement failed: ${data?.error || 'unknown error'}`);
-    }
-    return {
-      clubsProcessed: Number(data.clubs_processed || 0),
-      periodsSettled: Number(data.periods_settled || 0),
-      totalPayout: Number(data.total_payout || 0),
-      clubsRemaining: Number(data.clubs_remaining || 0),
-    };
+  async getAgentReport(_agentId:string,_periodId?:string,_scope?:SettlementReadScope):Promise<AgentSettlement|null> {
+    throw new CanonicalWeeklyStatementsRequiredError();
   },
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // UNION RAKE BACK — Weekly 90% Distribution
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Execute weekly union settlement: distribute 90% of collected rake back to clubs.
-   * Union keeps 10% and holds ALL BBJ and Promotional chips.
-   *
-   * FLOW:
-   * 1. Query all rake_records for this period, grouped by club
-   * 2. For each club in a union: compute 90% rake back
-   * 3. Credit 90% to club owner's wallet from union owner's wallet
-   * 4. Log all transactions with full audit trail
-   */
-  async executeUnionRakeBack(
-    unionId: string,
-    periodStart: string,
-    periodEnd: string
-  ): Promise<{
-    clubsPaid: number;
-    totalRakeBack: number;
-    unionRetained: number;
-  }> {
-    // Server-authoritative: fn_execute_union_rakeback (SECURITY DEFINER) does the
-    // rake read, per-club rakeback math (union keeps revenueSharePercent, pays back
-    // the rest), the union-owner balance check, idempotency (union_rakeback_log is
-    // unique per union+period), and every wallet transfer ALL in ONE atomic txn.
-    // So: no partial payouts, no double-pay, and no dependence on the caller's RLS
-    // to read other clubs' rake/wallets. Only the union owner is authorised
-    // (checked server-side via auth.uid()).
-    const { data, error } = await supabase.rpc('fn_execute_union_rakeback', {
-      p_union_id: unionId,
-      p_period_start: periodStart,
-      p_period_end: periodEnd,
-    });
-
-    if (error) {
-      reportError(error, 'SettlementService.executeUnionRakeBack', { unionId });
-      throw new Error(`Union rakeback failed: ${error.message}`);
-    }
-
-    const res = (data || {}) as {
-      success?: boolean;
-      error?: string;
-      clubs_paid?: number;
-      total_rakeback?: number;
-      union_retained?: number;
-      required?: number;
-      balance?: number;
-    };
-
-    if (!res.success) {
-      // Benign idempotent re-run — already paid for this period.
-      if (res.error === 'already_executed') {
-        return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
-      }
-      if (res.error === 'insufficient_balance') {
-        try {
-          const { FinancialAlertService } = await import('./FinancialAlertService');
-          await FinancialAlertService.logCritical(
-            'SettlementService.executeUnionRakeBack',
-            'Union owner insufficient balance for rakeback distribution',
-            { unionId, required: res.required, balance: res.balance, periodStart, periodEnd }
-          );
-        } catch (e) {
-          reportError(e, 'SettlementService');
-        }
-        masterBus.emit('SETTLEMENT_PAYOUT_FAILED', {
-          type: 'union_rakeback_insufficient_balance',
-          unionId,
-          error: `Union owner balance insufficient. Balance: ${res.balance}, Required: ${res.required}`,
-          amount: Number(res.required || 0),
-        });
-        return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
-      }
-      // The close is now funded from the union TREASURY (union_wallets), not
-      // the owner's personal wallet, so it can report a treasury shortfall.
-      if (res.error === 'insufficient_treasury') {
-        try {
-          const { FinancialAlertService } = await import('./FinancialAlertService');
-          await FinancialAlertService.logCritical(
-            'SettlementService.executeUnionRakeBack',
-            'Union rake treasury cannot cover the weekly rakeback payout',
-            { unionId, periodStart, periodEnd }
-          );
-        } catch (e) {
-          reportError(e, 'SettlementService');
-        }
-        throw new Error(
-          'Union rakeback failed: the rake treasury cannot cover this payout. ' +
-            'It was NOT partially paid - investigate before retrying.'
-        );
-      }
-      // Periods must be whole ISO weeks so a manual run addresses exactly the
-      // same window as the automated Monday close (otherwise the idempotency
-      // log cannot tell they are the same period, and days can be paid twice).
-      if (res.error === 'period_must_be_iso_weeks') {
-        throw new Error(
-          'Union rakeback failed: the period must be whole ISO weeks ' +
-            '(Monday 00:00 UTC to Monday 00:00 UTC).'
-        );
-      }
-      // not_authorized / union_not_found / missing_params / a failed transfer
-      // (which rolled the whole txn back — nothing was paid).
-      reportError(res.error || 'unknown', 'SettlementService.executeUnionRakeBack.failed', {
-        unionId,
-      });
-      throw new Error(`Union rakeback failed: ${res.error || 'unknown error'}`);
-    }
-
-    const clubsPaid = Number(res.clubs_paid || 0);
-    const totalRakeBack = Number(res.total_rakeback || 0);
-
-    if (clubsPaid > 0) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'union_rakeback', userId: unionId });
-    }
-
-    return { clubsPaid, totalRakeBack, unionRetained: Number(res.union_retained || 0) };
-  },
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // REPORTING
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Get club settlement report.
-   *
-   * SWEEP #3 (2026-07-23): repointed off the phantom `club_settlements` table.
-   * The club settlement is now derived from the real `generate_period_settlements`
-   * read-model RPC (settlement_periods + rake_history + agent_commissions +
-   * settlement_invoices).
-   */
-  async getClubReport(clubId: string, periodId?: string): Promise<ClubSettlement | null> {
-    try {
-      const resolvedClubId = await resolveClubUUID(clubId);
-      const pid = periodId || (await this.getCurrentPeriod()).id;
-      const { data, error } = await supabase.rpc('generate_period_settlements', {
-        p_period_id: pid,
-      });
-      if (error || !data) return null;
-      const clubSettlements: ClubSettlement[] = data.clubSettlements || [];
-      return clubSettlements.find((c) => c.clubId === resolvedClubId) || null;
-    } catch (err) {
-      reportError(err, 'SettlementService.getClubReport', { clubId, periodId });
-      return null;
-    }
-  },
-
-  /**
-   * Get agent settlement report.
-   *
-   * SWEEP #3 (2026-07-23): repointed off the phantom `agent_settlements` table
-   * onto the real `calculate_agent_settlement` RPC (agents + agent_commissions).
-   */
-  async getAgentReport(agentId: string, periodId?: string): Promise<AgentSettlement | null> {
-    try {
-      const pid = periodId || (await this.getCurrentPeriod()).id;
-      const { data, error } = await supabase.rpc('calculate_agent_settlement', {
-        p_period_id: pid,
-        p_agent_id: agentId,
-      });
-      if (error || !data) return null;
-      return data as AgentSettlement;
-    } catch (err) {
-      reportError(err, 'SettlementService.getAgentReport', { agentId, periodId });
-      return null;
-    }
-  },
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // HELPERS
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  mapPeriod(p: any): SettlementPeriod {
-    return {
-      id: p.id,
-      periodNumber: p.period_number,
-      year: p.year,
-      startAt: p.start_at,
-      endAt: p.end_at,
-      status: p.status,
-      totalRakeCollected: p.total_rake_collected || 0,
-      totalBBJContributions: p.total_bbj_contributions || 0,
-      totalPlayerWinnings: p.total_player_winnings || 0,
-      totalPlayerLosses: p.total_player_losses || 0,
-      totalHandsDealt: p.total_hands_dealt || 0,
-      settledAt: p.settled_at,
-      settledBy: p.settled_by,
-    };
-  },
-
+  mapPeriod(p:unknown):SettlementPeriod { return periodRecord(p); },
   mapClubSettlement(s: any): ClubSettlement {
     return {
       id: s.id,
@@ -665,5 +248,4 @@ export const SettlementService = {
     };
   },
 };
-
 export default SettlementService;

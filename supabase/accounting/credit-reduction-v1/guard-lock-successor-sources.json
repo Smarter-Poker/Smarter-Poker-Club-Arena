@@ -1,0 +1,186 @@
+[
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_user_id uuid, p_role text, p_actor_user_id uuid DEFAULT NULL::uuid, p_commission_rate numeric DEFAULT NULL::numeric, p_player_rakeback_rate numeric DEFAULT NULL::numeric, p_is_prepaid boolean DEFAULT NULL::boolean, p_credit_limit numeric DEFAULT NULL::numeric",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_club_set_member_role(uuid,uuid,text,uuid,numeric,numeric,boolean,numeric)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "lock-order-successor.sql; retained full function plus only early mutex",
+    "source_md5": "d7a2c0aefc0fce74214735c89d24909c"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_agent_user_id uuid, p_super_agent_user_id uuid, p_club_id uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_assign_agent_to_super_agent(uuid,uuid,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "lock-order-successor.sql; retained full function plus only early mutex",
+    "source_md5": "c1585a4464c3a32146cedddfe7c4a110"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_user_id uuid, p_role text",
+    "result": "uuid",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_ensure_agent_row(uuid,uuid,text)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "lock-order-successor.sql; retained full function plus only early mutex",
+    "source_md5": "c072f3ee43b341d5efbe077bcf3a6a9b"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_agent_wallet_send(uuid,uuid,numeric,text,text,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "lock-order-successor.sql; retained full function plus only early mutex",
+    "source_md5": "7a357ba95a8ca4eb13f00f798233d8d4"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_agent_wallet_send_phase2_core_20260831(uuid,uuid,numeric,text,text,uuid)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "lock-order-successor.sql; retained full function plus only early mutex",
+    "source_md5": "82cc66e55d9d3f2b3e87d08571ea8a15"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_agent_wallet_send_core_20260830(uuid,uuid,numeric,text,text,uuid)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "lock-order-successor.sql; retained full function plus only early mutex",
+    "source_md5": "89019200238a7fe72b807d2a9b364e5a"
+  },
+  {
+    "signature": "public.fn_cashier_cashout_transition(text,uuid,uuid,numeric,uuid,uuid,text)",
+    "arguments": "p_action text, p_club_id uuid, p_cashout_id uuid, p_amount numeric, p_expected_actor_id uuid, p_op_id uuid, p_note text DEFAULT NULL::text",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "435ba3ef6f23cba3720ebb7d7ca4a44e",
+    "basis": "lock-order-successor.sql; staged33 authority plus only early mutex and CREATE OR REPLACE header"
+  }
+]

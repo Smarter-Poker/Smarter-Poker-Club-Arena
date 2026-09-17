@@ -1,0 +1,110 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "read_only": true,
+  "catalog": {
+    "functions": [
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "signature": "fn_open_settlement_period(uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_open_settlement_period(p_club_id uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_id uuid;\n  v_caller uuid := (SELECT auth.uid());\nBEGIN\n  IF v_caller IS NULL THEN RAISE EXCEPTION 'authentication required'; END IF;\n  IF NOT EXISTS (\n    SELECT 1 FROM clubs c WHERE c.id = p_club_id AND (\n      c.owner_id = v_caller\n      OR EXISTS (SELECT 1 FROM club_members cm WHERE cm.club_id = p_club_id\n                 AND cm.user_id = v_caller AND cm.role IN ('owner','co_owner','admin'))))\n  THEN RAISE EXCEPTION 'not authorized to manage this club''s settlement periods'; END IF;\n\n  IF EXISTS (SELECT 1 FROM settlement_periods WHERE club_id = p_club_id AND status = 'open') THEN\n    RAISE EXCEPTION 'an open settlement period already exists for this club';\n  END IF;\n\n  INSERT INTO settlement_periods\n    (club_id, status, start_at, year, period_number, created_at, updated_at)\n  VALUES\n    (p_club_id, 'open', now(), EXTRACT(YEAR FROM now())::int,\n     COALESCE((SELECT max(period_number) FROM settlement_periods WHERE club_id = p_club_id), 0) + 1,\n     now(), now())\n  RETURNING id INTO v_id;\n  RETURN v_id;\nEND;\n$function$\n",
+        "source_md5": "4253ea834c9e5fdcfb1d119d1dc4d440",
+        "anon_execute": false,
+        "definition_md5": "da3ac3fce43c8b7b4a58f70158bd9f14",
+        "service_execute": true,
+        "security_definer": true,
+        "authenticated_execute": true
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "signature": "fn_set_settlement_period_status(uuid,text)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_set_settlement_period_status(p_period_id uuid, p_status text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_club uuid;\n  v_union uuid;\n  v_caller uuid := (SELECT auth.uid());\nBEGIN\n  IF v_caller IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'authentication required'); END IF;\n  IF p_status NOT IN ('open','processing','settled','disputed') THEN\n    RETURN jsonb_build_object('success', false, 'error', 'invalid status'); END IF;\n\n  SELECT club_id, union_id INTO v_club, v_union FROM settlement_periods WHERE id = p_period_id;\n  IF v_club IS NULL AND v_union IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'period not found'); END IF;\n\n  IF NOT (\n    (v_club IS NOT NULL AND EXISTS (\n      SELECT 1 FROM clubs c WHERE c.id = v_club AND (\n        c.owner_id = v_caller\n        OR EXISTS (SELECT 1 FROM club_members cm WHERE cm.club_id = v_club\n                   AND cm.user_id = v_caller AND cm.role IN ('owner','co_owner','admin')))))\n    OR (v_union IS NOT NULL AND EXISTS (\n      SELECT 1 FROM unions u WHERE u.id = v_union AND u.owner_id = v_caller))\n  ) THEN\n    RETURN jsonb_build_object('success', false, 'error', 'not authorized'); END IF;\n\n  UPDATE settlement_periods SET\n    status = p_status,\n    end_at = CASE WHEN p_status IN ('processing','settled') THEN COALESCE(end_at, now()) ELSE end_at END,\n    settled_at = CASE WHEN p_status = 'settled' THEN now() ELSE settled_at END,\n    settled_by = CASE WHEN p_status = 'settled' THEN v_caller ELSE settled_by END,\n    updated_at = now()\n  WHERE id = p_period_id;\n\n  RETURN jsonb_build_object('success', true, 'period_id', p_period_id, 'status', p_status);\nEND;\n$function$\n",
+        "source_md5": "f9e93d15cec59d0e572dd32a3c3a33a8",
+        "anon_execute": false,
+        "definition_md5": "e4ca93cd7fd10d0a8da485eac492e192",
+        "service_execute": true,
+        "security_definer": true,
+        "authenticated_execute": true
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public, extensions"
+        ],
+        "signature": "get_current_settlement_period()",
+        "definition": "CREATE OR REPLACE FUNCTION public.get_current_settlement_period()\n RETURNS TABLE(id uuid, period_start timestamp with time zone, period_end timestamp with time zone, status text, total_rake numeric)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_now timestamptz := now();\n  v_start timestamptz;\n  v_end timestamptz;\n  v_union uuid;\n  v_union_count int;\nBEGIN\n  -- Existing open period wins.\n  RETURN QUERY SELECT sp.id, sp.start_at, sp.end_at, sp.status::text,\n                      COALESCE(sp.total_rake_collected, 0)\n    FROM settlement_periods sp WHERE sp.status = 'open'\n   ORDER BY sp.start_at DESC LIMIT 1;\n  IF FOUND THEN RETURN; END IF;\n\n  -- None open: create one, WITH AN OWNER. A period belonging to nobody can\n  -- never be settled and poisons the lookup above for everybody.\n  SELECT count(*) INTO v_union_count FROM unions;\n  IF v_union_count <> 1 THEN\n    RETURN;  -- no single obvious owner; create nothing rather than guess\n  END IF;\n  SELECT u.id INTO v_union FROM unions u LIMIT 1;\n\n  /* THE UNION'S OWN WEEK (2026-09-09). This was a Sunday-to-Sunday UTC\n     week; the settlement runs on fn_union_week_start, Monday midnight\n     Pacific, and refuses any other boundary with\n     period_not_closed_union_weeks. A period minted on the wrong boundary\n     can never be settled and blocks the lookup above for everybody. */\n  v_start := public.fn_union_week_start(v_now);\n  v_end := v_start + interval '7 days';\n  INSERT INTO settlement_periods (id, union_id, start_at, end_at, status,\n                                  total_rake_collected, period_number, year)\n  VALUES (gen_random_uuid(), v_union, v_start, v_end, 'open', 0,\n          EXTRACT(week FROM v_start)::int, EXTRACT(isoyear FROM v_start)::int)\n  ON CONFLICT DO NOTHING;\n\n  -- Re-select (works whether our insert won or a concurrent one did).\n  RETURN QUERY SELECT sp.id, sp.start_at, sp.end_at, sp.status::text,\n                      COALESCE(sp.total_rake_collected, 0)\n    FROM settlement_periods sp WHERE sp.status = 'open'\n   ORDER BY sp.start_at DESC LIMIT 1;\nEND;\n$function$\n",
+        "source_md5": "dd9306dc528fc4e69a7c89a05be272a6",
+        "anon_execute": false,
+        "definition_md5": "6e670854dbcbd50fb8527e2a99146dca",
+        "service_execute": true,
+        "security_definer": true,
+        "authenticated_execute": true
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "signature": "get_current_settlement_period(uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.get_current_settlement_period(p_club_id uuid)\n RETURNS TABLE(id uuid, club_id uuid, union_id uuid, scope text, period_number integer, year integer, period_start timestamp with time zone, period_end timestamp with time zone, status text, total_rake numeric, total_bbj numeric, total_player_winnings numeric, total_player_losses numeric, total_hands_dealt bigint, settled_at timestamp with time zone)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_union uuid;\nBEGIN\n  IF p_club_id IS NULL THEN\n    RETURN;\n  END IF;\n  -- Any member may see which period their club is in; the money inside it is\n  -- gated by the reads that return it, not by this lookup.\n  IF NOT public.ca_can_view_club(p_club_id) THEN\n    RAISE EXCEPTION 'not authorized for this club' USING ERRCODE = '42501';\n  END IF;\n\n  SELECT c.union_id INTO v_union FROM clubs c WHERE c.id = p_club_id;\n\n  RETURN QUERY\n  WITH candidates AS (\n    SELECT sp.*,\n           CASE\n             WHEN sp.club_id = p_club_id AND sp.status = 'open'                   THEN 1\n             WHEN sp.club_id = p_club_id AND sp.status IN ('processing','disputed') THEN 2\n             WHEN sp.club_id IS NULL AND v_union IS NOT NULL\n                  AND sp.union_id = v_union AND sp.status = 'open'                THEN 3\n             WHEN sp.club_id = p_club_id                                          THEN 4\n           END AS rank\n      FROM settlement_periods sp\n     WHERE sp.club_id = p_club_id\n        OR (sp.club_id IS NULL AND v_union IS NOT NULL AND sp.union_id = v_union\n            AND sp.status = 'open')\n  )\n  SELECT c.id, c.club_id, c.union_id,\n         CASE WHEN c.club_id = p_club_id THEN 'club' ELSE 'union' END,\n         c.period_number, c.year, c.start_at, c.end_at, c.status::text,\n         COALESCE(c.total_rake_collected, 0),\n         COALESCE(c.total_bbj_contributions, 0),\n         COALESCE(c.total_player_winnings, 0),\n         COALESCE(c.total_player_losses, 0),\n         COALESCE(c.total_hands_dealt, 0)::bigint,\n         c.settled_at\n    FROM candidates c\n   WHERE c.rank IS NOT NULL\n   ORDER BY c.rank, c.start_at DESC\n   LIMIT 1;\nEND;\n$function$\n",
+        "source_md5": "b3074168d12878cae0b6b282073a5fbd",
+        "anon_execute": false,
+        "definition_md5": "e357bd34de0afe73e449564ea1c13cbe",
+        "service_execute": true,
+        "security_definer": true,
+        "authenticated_execute": true
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public, extensions"
+        ],
+        "signature": "get_wallet_balance_totals()",
+        "definition": "CREATE OR REPLACE FUNCTION public.get_wallet_balance_totals()\n RETURNS TABLE(total_credits numeric, total_debits numeric)\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n    RETURN QUERY\n    SELECT\n        COALESCE(SUM(CASE WHEN wt.type = 'credit' THEN wt.amount ELSE 0 END), 0) AS total_credits,\n        COALESCE(SUM(CASE WHEN wt.type = 'debit'  THEN wt.amount ELSE 0 END), 0) AS total_debits\n    FROM wallet_transactions wt;\nEND;\n$function$\n",
+        "source_md5": "56877b37edb92d2bb8cf1869fe80166e",
+        "anon_execute": false,
+        "definition_md5": "52e2bb2c75d83fb6c43fc03f2724e129",
+        "service_execute": true,
+        "security_definer": false,
+        "authenticated_execute": true
+      }
+    ],
+    "isolation": "repeatable read",
+    "captured_at": "2026-09-15T05:19:08.554609+00:00",
+    "lock_timeout": "2s",
+    "statement_timeout": "10s",
+    "dependent_functions": null,
+    "transaction_read_only": "on"
+  }
+}
+

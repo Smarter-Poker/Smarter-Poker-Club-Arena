@@ -41,8 +41,9 @@ describe('the rakeback settlement watermark', () => {
        player-credits, so there is nothing to recompute and nothing that can
        fail, and advancing there is correct. The one that matters is the LAST
        one, after the recompute loop, which is why this uses lastIndexOf. */
-    const guard = code.indexOf('if (failures > 0)');
-    const finalAdvance = code.lastIndexOf('this.cursor = nextCursor');
+    const inner = sliceMethod(code, 'private async _runSettlementInner(');
+    const guard = inner.indexOf('if (failures > 0)');
+    const finalAdvance = inner.lastIndexOf('this.saveHighWaterMark(nextCursor)');
     expect(guard, 'no failures > 0 guard before the watermark advances').toBeGreaterThan(-1);
     expect(finalAdvance).toBeGreaterThan(-1);
     expect(

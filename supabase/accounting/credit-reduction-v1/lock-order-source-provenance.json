@@ -1,0 +1,55 @@
+{
+  "status": "source-only / UNRUN",
+  "functions": [
+    {
+      "signature": "public.fn_club_set_member_role(uuid,uuid,text,uuid,numeric,numeric,boolean,numeric)",
+      "captured_full_definition_md5": "59e8df8dc16220b5bad8e5f2437241e7",
+      "captured_body_md5": "dada5e8d70f18793c3412c481873585a",
+      "successor_body_md5": "d7a2c0aefc0fce74214735c89d24909c",
+      "only_delta": "\n  -- Serialize the existing agreement before any operation/hierarchy/row lock.\n  -- Nested callers reacquire the same transaction lock; no new money path.\n  IF p_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(hashtextextended('agent-agreement:'||p_club_id::text,0));\n  END IF;\n"
+    },
+    {
+      "signature": "public.fn_assign_agent_to_super_agent(uuid,uuid,uuid)",
+      "captured_full_definition_md5": "13f6d2408d152e7d15a8b3b0bf113a9f",
+      "captured_body_md5": "3c110478d9556a0e5b13011d851979f5",
+      "successor_body_md5": "c1585a4464c3a32146cedddfe7c4a110",
+      "only_delta": "\n  -- Serialize the existing agreement before any operation/hierarchy/row lock.\n  -- Nested callers reacquire the same transaction lock; no new money path.\n  IF p_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(hashtextextended('agent-agreement:'||p_club_id::text,0));\n  END IF;\n"
+    },
+    {
+      "signature": "public.fn_ensure_agent_row(uuid,uuid,text)",
+      "captured_full_definition_md5": "3bd1e0aeed55ae8e56c9e28e8967ae2b",
+      "captured_body_md5": "95ea37fdc89cd68957a8c9aaa37e8ff1",
+      "successor_body_md5": "c072f3ee43b341d5efbe077bcf3a6a9b",
+      "only_delta": "\n  -- Serialize the existing agreement before any operation/hierarchy/row lock.\n  -- Nested callers reacquire the same transaction lock; no new money path.\n  IF p_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(hashtextextended('agent-agreement:'||p_club_id::text,0));\n  END IF;\n"
+    },
+    {
+      "signature": "public.fn_agent_wallet_send(uuid,uuid,numeric,text,text,uuid)",
+      "captured_full_definition_md5": "0214036f29a6d121842496c91c7912af",
+      "captured_body_md5": "38d088732280d8b2cb605c87eda4af3f",
+      "successor_body_md5": "7a357ba95a8ca4eb13f00f798233d8d4",
+      "only_delta": "\n  -- Serialize the existing agreement before any operation/hierarchy/row lock.\n  -- Nested callers reacquire the same transaction lock; no new money path.\n  IF p_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(hashtextextended('agent-agreement:'||p_club_id::text,0));\n  END IF;\n"
+    },
+    {
+      "signature": "public.fn_agent_wallet_send_phase2_core_20260831(uuid,uuid,numeric,text,text,uuid)",
+      "captured_full_definition_md5": "53ba478533aec762384aa9ac7d63a9b2",
+      "captured_body_md5": "2ee5fa22748b07166f2dba6e16706c61",
+      "successor_body_md5": "82cc66e55d9d3f2b3e87d08571ea8a15",
+      "only_delta": "\n  -- Serialize the existing agreement before any operation/hierarchy/row lock.\n  -- Nested callers reacquire the same transaction lock; no new money path.\n  IF p_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(hashtextextended('agent-agreement:'||p_club_id::text,0));\n  END IF;\n"
+    },
+    {
+      "signature": "public.fn_agent_wallet_send_core_20260830(uuid,uuid,numeric,text,text,uuid)",
+      "captured_full_definition_md5": "c6bb171c71aa0d6022296b29269a016b",
+      "captured_body_md5": "1ca40e16c6eccd331f6d65b4436edfc1",
+      "successor_body_md5": "89019200238a7fe72b807d2a9b364e5a",
+      "only_delta": "\n  -- Serialize the existing agreement before any operation/hierarchy/row lock.\n  -- Nested callers reacquire the same transaction lock; no new money path.\n  IF p_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(hashtextextended('agent-agreement:'||p_club_id::text,0));\n  END IF;\n"
+    },
+    {
+      "signature": "public.fn_cashier_cashout_transition(text,uuid,uuid,numeric,uuid,uuid,text)",
+      "staged_source": "supabase/accounting/weekly-v3/components/20260914164700_cashier_cashout_documents_share_the_existing_invoice_authority.sql",
+      "staged_body_md5": "c0982bd5ab5e376d4ba5d0ce312bd4e3",
+      "successor_body_md5": "435ba3ef6f23cba3720ebb7d7ca4a44e",
+      "only_body_delta": "\n  -- Serialize the existing agreement before any operation/hierarchy/row lock.\n  -- Nested callers reacquire the same transaction lock; no new money path.\n  IF p_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(hashtextextended('agent-agreement:'||p_club_id::text,0));\n  END IF;\n",
+      "header_delta": "CREATE FUNCTION becomes CREATE OR REPLACE FUNCTION to replace the exact existing staged function"
+    }
+  ]
+}

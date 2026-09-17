@@ -2,11 +2,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CREDIT ADMIN PANEL — Agent Credit Limit Management
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Admin page for setting/adjusting agent credit limits with full audit trail.
+ *  Admin page for adjusting agent credit limits and viewing recent changes.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -16,6 +16,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 import { AgentService } from '../services/AgentService';
+import { CreditRequestManagerInbox } from '../components/agent/CreditRequestWidget';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -23,22 +24,35 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
-
-interface AgentCredit {
-  id: string;
-  displayName: string;
-  creditLimit: number;
-  currentBalance: number;
-  debtOwed: number;
-  status: string;
-}
+import {
+  CREDIT_ADMIN_VIEW_LIMIT,
+  CREDIT_ADMIN_AUDIT_LIMIT,
+  creditAdminAuditRow,
+  creditAdminMoney,
+  creditAdminRow,
+  creditAdminTotal,
+  readCreditMoney,
+  type AgentCredit,
+  type CreditAdminAuditEntry,
+} from '../utils/creditAdminData';
 
 export default function CreditAdminPanel() {
+  const { user, isHydrating } = useAuthUser();
+  const location = useLocation();
+  // A route or account change mounts a fresh authority hook as well as fresh
+  // data. The previous hook's ready scope cannot flash on the new surface.
+  const owner = JSON.stringify([user?.id || null, isHydrating, location.pathname, location.search]);
+  return <CreditAdminPanelForScope key={owner} />;
+}
+
+function CreditAdminPanelForScope() {
   const navigate = useNavigate();
-  const { user } = useAuthUser();
+  const { user, isHydrating } = useAuthUser();
   const toast = useToast();
 
-  const [agents, setAgents] = useState<AgentCredit[]>([]);
+  const [agentRows, setAgents] = useState<AgentCredit[]>([]);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const [loadedGeneration, setLoadedGeneration] = useState(0);
   const [loading, setLoading] = useState(true);
   /* A FAILED READ IS NOT "NO AGENT HAS OUTSTANDING CREDIT" (2026-09-10). The
      agents read discarded its error and rendered an empty console. */
@@ -46,7 +60,8 @@ export default function CreditAdminPanel() {
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [newLimit, setNewLimit] = useState('');
   const [saving, setSaving] = useState(false);
-  const [auditLog, setAuditLog] = useState<any[]>([]);
+  const [auditLog, setAuditLog] = useState<CreditAdminAuditEntry[]>([]);
+  const [auditError, setAuditError] = useState(false);
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -61,19 +76,41 @@ export default function CreditAdminPanel() {
   const scopeStatus = scope.status;
   const scopeClubId = scope.clubId;
   const scopePlatformWide = scope.platformWide;
+  const scopeReady =
+    scopeStatus === 'ready' && !isHydrating && !!user?.id && scope.userId === user.id;
+  const scopeIdentity = scopeReady
+    ? JSON.stringify([user.id, scopeClubId, scopePlatformWide, scope.clubRole, scope.isPlatformStaff])
+    : null;
+  const currentScopeRef = useRef(scopeIdentity);
+  currentScopeRef.current = scopeIdentity;
+  const loadGeneration = useRef(0);
+  const savingRef = useRef(false);
+  const saveGeneration = useRef(0);
+  const agents = loadedScope === scopeIdentity && scopeIdentity !== null ? agentRows : [];
+  const dataReady = !!scopeIdentity && loadedScope === scopeIdentity &&
+    loadedGeneration === loadGeneration.current && !loading && !loadError;
+  const canEdit = dataReady && (scope.isPlatformStaff || ['owner', 'co_owner', 'admin'].includes(scope.clubRole || ''));
 
   useVisibilityRefresh(() => {
     if (scopeStatus === 'ready') loadAgents();
   });
 
-  const loadingRef = useRef(false);
-
   const loadAgents = useCallback(async () => {
-    if (scopeStatus !== 'ready') return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    if (!scopeIdentity || currentScopeRef.current !== scopeIdentity || !isMounted.current) return;
+    const generation = ++loadGeneration.current;
+    const isCurrent = () =>
+      isMounted.current && loadGeneration.current === generation && currentScopeRef.current === scopeIdentity;
+    const retryOwner = { get current() { return isCurrent(); } };
     setLoading(true);
     setLoadError(null);
+    setLoadedScope(null);
+    setAgents([]);
+    setAuditLog([]);
+    setAuditError(false);
+    setEditingAgent(null);
+    setNewLimit('');
+    setVisibleRows(new Set());
+    staggerTimersRef.current.forEach(clearTimeout);
     const scopeKey = { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide };
     try {
       const { data, error } = await retryFetch(
@@ -81,102 +118,114 @@ export default function CreditAdminPanel() {
           clubScoped(
             supabase
               .from('agents')
-              .select('id, user_id, agent_wallet_balance, credit_limit, status'),
+              .select('id, user_id, club_id, agent_wallet_balance::text, credit_limit::text, credit_used::text, status'),
             scopeKey
           )
             .order('credit_limit', { ascending: false })
-            .limit(100)
+            .order('id', { ascending: true })
+            .limit(CREDIT_ADMIN_VIEW_LIMIT)
             .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
+        { maxRetries: 2, isMountedRef: retryOwner }
       );
+      if (!isCurrent()) return;
       if (error) throw error;
+      if (!Array.isArray(data)) throw new Error('The agent credit records were not returned.');
 
-      if (data) {
-        if (!isMounted.current) return;
-
-        // Batch-fetch profile names separately (no FK hint needed)
-        const userIds = data.map((a: any) => a.user_id).filter(Boolean);
-        const profileMap: Record<string, { display_name?: string; username?: string }> = {};
+      const userIds = data.map((a) => a.user_id).filter(Boolean);
+      const profileMap: Record<string, { display_name?: string; username?: string }> = {};
+      if (userIds.length > 0) {
         try {
-          const { data: profiles } = await supabase
+          const { data: profiles, error: profilesError } = await supabase
             .from('profiles')
             .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', userIds);
-          if (profiles) {
-            for (const p of profiles) profileMap[p.id] = p;
-          }
-        } catch (e) {
-          reportError(e, 'CreditAdminPanel.map');
-          /* non-critical */
+          if (!isCurrent()) return;
+          if (profilesError) throw profilesError;
+          for (const profile of profiles || []) profileMap[profile.id] = profile;
+        } catch (err) {
+          if (!isCurrent()) return;
+          reportError(err, 'CreditAdminPanel.names');
+          // Stable agent IDs remain available if display names cannot be read.
         }
+      }
+      if (!isCurrent()) return;
+      const mapped = data.map((row) => creditAdminRow(
+        row,
+        profileMap[row.user_id] ? playerDisplayName(profileMap[row.user_id]) : String(row.id).slice(0, 8)
+      ));
+      if (!scopePlatformWide && mapped.some((row) => row.clubId !== scopeClubId)) {
+        throw new Error('The returned agent records do not belong to this club.');
+      }
+      setAgents(mapped);
+      setLoadedScope(scopeIdentity);
+      setLoadedGeneration(generation);
+      staggerTimersRef.current = mapped.map((_, i) => setTimeout(() => {
+        if (isCurrent()) setVisibleRows((prev) => new Set(prev).add(i));
+      }, i * 40));
 
-        const mapped: AgentCredit[] = data.map((a: any) => ({
-          id: a.id,
-          displayName: profileMap[a.user_id]
-            ? playerDisplayName(profileMap[a.user_id])
-            : a.id.substring(0, 8),
-          creditLimit: a.credit_limit || 0,
-          currentBalance: a.agent_wallet_balance || 0,
-          debtOwed: Math.max(0, (a.credit_limit || 0) - (a.agent_wallet_balance || 0)),
-          status: a.status || 'active',
-        }));
-        setAgents(mapped);
-        // Clear previous stagger timers before starting new ones
-        staggerTimersRef.current.forEach(clearTimeout);
-        staggerTimersRef.current = mapped.map((_, i) =>
-          setTimeout(() => {
-            if (isMounted.current) setVisibleRows((prev) => new Set(prev).add(i));
-          }, i * 40)
+      try {
+        if (mapped.length === 0) return;
+        const shownAgents = new Map(mapped.map((agent) => [agent.id, agent]));
+        // Canonical audit rows carry agent_id, not club_id. Restrict this
+        // recent view to the already scoped agents; existing RLS still decides
+        // which of their changes the caller may read. No global-history claim.
+        const { data: auditData, error: auditReadError } = await retryFetch(
+          () => supabase.from('credit_assignments')
+            .select('id, agent_id, old_limit::text, new_limit::text, created_at')
+            .in('agent_id', [...shownAgents.keys()])
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
+            .limit(CREDIT_ADMIN_AUDIT_LIMIT).then((r) => r),
+          { maxRetries: 2, isMountedRef: retryOwner }
         );
+        if (!isCurrent()) return;
+        if (auditReadError || !Array.isArray(auditData) || auditData.length > CREDIT_ADMIN_AUDIT_LIMIT) {
+          throw auditReadError || new Error('The credit change history was not returned.');
+        }
+        setAuditLog(auditData.map((row) => creditAdminAuditRow(row, shownAgents)));
+      } catch (err) {
+        if (!isCurrent()) return;
+        reportError(err, 'CreditAdminPanel.audit_log');
+        setAuditLog([]);
+        setAuditError(true);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       reportError(err, 'CreditAdminPanel.Load_failed');
-      if (isMounted.current) {
-        setAgents([]);
-        setLoadError(
-          safeErrorMessage(
-            err,
-            'The Agent Credit Lines Could Not Be Loaded. Nothing Has Been Changed.'
-          )
-        );
-        toast.error('Failed to load agents');
-      }
+      setAgents([]);
+      setLoadedScope(null);
+      setLoadError(safeErrorMessage(err, 'The Agent Credit Lines Could Not Be Loaded.'));
+      toast.error('Failed to load agents');
     } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-
-    // Load audit log - this club's credit-limit changes.
-    try {
-      const { data: auditData, error: auditError } = await retryFetch(
-        () =>
-          clubScoped(
-            supabase
-              .from('commission_rate_audit')
-              .select('agent_id, old_rate, new_rate, created_at')
-              .eq('rate_type', 'credit_limit'),
-            scopeKey
-          )
-            .order('created_at', { ascending: false })
-            .limit(20)
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
-      if (auditError) throw auditError;
-      if (isMounted.current) setAuditLog(auditData || []);
-    } catch (e) {
-      reportError(e, 'CreditAdminPanel.audit_log');
-      if (isMounted.current) setAuditLog([]);
-    }
-  }, [toast, scopeStatus, scopeClubId, scopePlatformWide]);
+  }, [toast, scopeIdentity, scopeStatus, scopeClubId, scopePlatformWide, isMounted]);
 
   useEffect(() => {
-    loadAgents();
-  }, [loadAgents]);
+    // A refreshed authority can change without changing the URL or account.
+    // Retire only its UI ownership; the submitted server operation may commit.
+    ++saveGeneration.current;
+    savingRef.current = false;
+    setSaving(false);
+  }, [scopeIdentity]);
+
+  useEffect(() => {
+    if (scopeIdentity) {
+      void loadAgents();
+    } else {
+      ++loadGeneration.current;
+      setLoadedScope(null);
+      setAgents([]);
+      setAuditLog([]);
+      setEditingAgent(null);
+      setNewLimit('');
+    }
+  }, [loadAgents, scopeIdentity]);
 
   // Cleanup stagger timers on unmount
   useEffect(() => {
     return () => {
+      ++loadGeneration.current;
       staggerTimersRef.current.forEach(clearTimeout);
     };
   }, []);
@@ -194,7 +243,8 @@ export default function CreditAdminPanel() {
 
   // ── Supabase Realtime — cross-user WebSocket updates ──
   useEffect(() => {
-    const channelKey = 'credit-admin-agents';
+    if (!scopeIdentity) return;
+    const channelKey = `credit-admin-agents:${scopeIdentity}`;
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'agents' }, () =>
@@ -211,14 +261,24 @@ export default function CreditAdminPanel() {
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [loadAgents]);
+  }, [loadAgents, scopeIdentity]);
 
   const handleSaveLimit = async (agentId: string) => {
-    const limit = parseFloat(newLimit);
-    if (isNaN(limit) || limit < 0) {
+    const agent = agents.find((row) => row.id === agentId);
+    if (!isMounted.current || !canEdit || savingRef.current || !scopeIdentity ||
+      loadedGeneration !== loadGeneration.current ||
+      currentScopeRef.current !== scopeIdentity || editingAgent !== agentId ||
+      !agent || agent.creditLimit === null || agent.debtOwed === null || agent.currentBalance === null) return;
+    const limit = readCreditMoney(newLimit);
+    if (limit === null) {
       toast.error('Enter a valid credit limit');
       return;
     }
+    const saveScope = scopeIdentity;
+    const saveToken = ++saveGeneration.current;
+    const saveIsCurrent = () => isMounted.current && currentScopeRef.current === saveScope &&
+      saveGeneration.current === saveToken;
+    savingRef.current = true;
     setSaving(true);
     try {
       // agents is service-role-write-only under RLS — a direct browser update here
@@ -229,31 +289,37 @@ export default function CreditAdminPanel() {
       const ok = await AgentService.setCreditLimit(
         agentId,
         limit,
-        user?.id || '',
+        user!.id,
         'Credit limit set via admin panel'
       );
+      if (!saveIsCurrent()) return;
       if (!ok) throw new Error('Credit limit update failed');
 
       toast.success(`Credit limit updated to ${limit.toLocaleString()}`);
       setEditingAgent(null);
       setNewLimit('');
-      masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: agentId, amount: limit });
+      masterBus.emit('CREDIT_UPDATED', { clubId: agent.clubId, userId: agent.userId, amount: limit });
       masterBus.emit('BALANCE_UPDATED', { source: 'credit_limit_change', agentId });
+      void loadAgents();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update credit limit');
+      if (saveIsCurrent()) toast.error(err instanceof Error ? err.message : 'Failed to update credit limit');
+    } finally {
+      if (saveGeneration.current === saveToken) {
+        savingRef.current = false;
+        if (saveIsCurrent()) setSaving(false);
+      }
     }
-    setSaving(false);
   };
 
-  const totalCreditExposure = agents.reduce((s, a) => s + a.creditLimit, 0);
-  const totalDebt = agents.reduce((s, a) => s + a.debtOwed, 0);
+  const totalCreditExposure = dataReady ? creditAdminTotal(agents, 'creditLimit') : null;
+  const totalDebt = dataReady ? creditAdminTotal(agents, 'debtOwed') : null;
 
   // Nothing financial renders until the scope has named a club (or the
   // platform) and confirmed the viewer's finance role in it.
-  if (scope.status !== 'ready') {
+  if (scope.status !== 'ready' || !scopeReady) {
     return (
       <div style={{ padding: '16px', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
-        <FinancialAdminScopeState scope={scope} />
+        {scope.status !== 'ready' ? <FinancialAdminScopeState scope={scope} /> : <PageSkeleton variant="list" />}
       </div>
     );
   }
@@ -292,9 +358,21 @@ export default function CreditAdminPanel() {
           </p>
           {agents.length > 0 && (
             <button
+              disabled={!dataReady}
               onClick={() => {
+                if (!isMounted.current || !dataReady || currentScopeRef.current !== scopeIdentity ||
+                  loadedGeneration !== loadGeneration.current) return;
                 try {
-                  exportToCSV(agents, 'credit_admin.csv', [
+                  const shownRows = agents.map((agent) => ({
+                    ...agent,
+                    creditLimit: agent.creditLimit === null ? 'Unavailable' : agent.creditLimit.toFixed(2),
+                    currentBalance: agent.currentBalance === null ? 'Unavailable' : agent.currentBalance.toFixed(2),
+                    debtOwed: agent.debtOwed === null ? 'Unavailable' : agent.debtOwed.toFixed(2),
+                  }));
+                  exportToCSV(shownRows, 'credit_admin_shown_rows.csv', [
+                    { key: 'id', label: 'Agent ID' },
+                    { key: 'userId', label: 'User ID' },
+                    { key: 'clubId', label: 'Club ID' },
                     { key: 'displayName', label: 'Agent' },
                     { key: 'creditLimit', label: 'Credit Limit' },
                     { key: 'currentBalance', label: 'Balance' },
@@ -303,7 +381,7 @@ export default function CreditAdminPanel() {
                   ]);
                 } catch (e) {
                   reportError(e, 'CreditAdminPanel');
-                  /* silent */
+                  toast.error('The shown rows could not be exported.');
                 }
               }}
               style={{
@@ -320,11 +398,19 @@ export default function CreditAdminPanel() {
                 whiteSpace: 'nowrap',
               }}
             >
-              Export
+              Export Shown Rows
             </button>
           )}
         </div>
+        <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>
+          Showing up to {CREDIT_ADMIN_VIEW_LIMIT} agents, ordered by credit limit. Totals and CSV
+          cover the shown rows only.
+        </p>
       </div>
+
+      {scopeReady && scopeClubId && !scopePlatformWide && (
+        <CreditRequestManagerInbox clubId={scopeClubId} />
+      )}
 
       {/* Summary Cards */}
       <div
@@ -354,7 +440,7 @@ export default function CreditAdminPanel() {
               fontWeight: 600,
             }}
           >
-            Total Exposure
+            Credit Limits In View
           </div>
           <div
             style={{
@@ -364,7 +450,7 @@ export default function CreditAdminPanel() {
               fontFamily: 'monospace',
             }}
           >
-            {loadError ? '--' : totalCreditExposure.toLocaleString()}
+            {creditAdminMoney(totalCreditExposure)}
           </div>
         </div>
         <div
@@ -383,7 +469,7 @@ export default function CreditAdminPanel() {
               fontWeight: 600,
             }}
           >
-            Outstanding Debt
+            Debt In View
           </div>
           <div
             style={{
@@ -393,7 +479,7 @@ export default function CreditAdminPanel() {
               fontFamily: 'monospace',
             }}
           >
-            {loadError ? '--' : totalDebt.toLocaleString()}
+            {creditAdminMoney(totalDebt)}
           </div>
         </div>
         <div
@@ -412,7 +498,7 @@ export default function CreditAdminPanel() {
               fontWeight: 600,
             }}
           >
-            Active Agents
+            Agents In View
           </div>
           <div
             style={{
@@ -422,7 +508,7 @@ export default function CreditAdminPanel() {
               fontFamily: 'monospace',
             }}
           >
-            {agents.length}
+            {dataReady ? agents.length : 'Unavailable'}
           </div>
         </div>
       </div>
@@ -440,7 +526,7 @@ export default function CreditAdminPanel() {
       >
         Agents
       </div>
-      {loading && agents.length === 0 && !loadError ? (
+      {!dataReady && !loadError ? (
         <PageSkeleton variant="list" />
       ) : loadError ? (
         <div role="alert" style={{ textAlign: 'center', padding: '32px', color: '#f87171' }}>
@@ -491,15 +577,10 @@ export default function CreditAdminPanel() {
                   >
                     Balance:{' '}
                     <span style={{ color: '#10b981' }}>
-                      {agent.currentBalance.toLocaleString()}
+                      {creditAdminMoney(agent.currentBalance)}
                     </span>
-                    {agent.debtOwed > 0 && (
-                      <>
-                        {' '}
-                        · Debt:{' '}
-                        <span style={{ color: '#ef4444' }}>{agent.debtOwed.toLocaleString()}</span>
-                      </>
-                    )}
+                    {' '}· Debt:{' '}
+                    <span style={{ color: '#ef4444' }}>{creditAdminMoney(agent.debtOwed)}</span>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -509,7 +590,7 @@ export default function CreditAdminPanel() {
                         type="number"
                         value={newLimit}
                         onChange={(e) => setNewLimit(e.target.value)}
-                        placeholder={agent.creditLimit.toString()}
+                        placeholder={agent.creditLimit === null ? 'Unavailable' : String(agent.creditLimit)}
                         style={{
                           width: '100px',
                           padding: '6px',
@@ -523,7 +604,7 @@ export default function CreditAdminPanel() {
                       />
                       <button
                         onClick={() => handleSaveLimit(agent.id)}
-                        disabled={saving}
+                        disabled={saving || !canEdit}
                         style={{
                           padding: '6px 10px',
                           minWidth: '44px',
@@ -572,10 +653,15 @@ export default function CreditAdminPanel() {
                           fontFamily: 'monospace',
                         }}
                       >
-                        {agent.creditLimit.toLocaleString()}
+                        {creditAdminMoney(agent.creditLimit)}
                       </span>
                       <button
+                        disabled={!canEdit || saving || agent.creditLimit === null ||
+                          agent.debtOwed === null || agent.currentBalance === null}
                         onClick={() => {
+                          if (!isMounted.current || !canEdit || savingRef.current ||
+                            currentScopeRef.current !== scopeIdentity || loadedGeneration !== loadGeneration.current ||
+                            agent.creditLimit === null || agent.debtOwed === null || agent.currentBalance === null) return;
                           setEditingAgent(agent.id);
                           setNewLimit(agent.creditLimit.toString());
                         }}
@@ -604,7 +690,8 @@ export default function CreditAdminPanel() {
       )}
 
       {/* Audit Log */}
-      {auditLog.length > 0 && (
+      {dataReady && auditError && <p role="status">Recent credit changes are unavailable.</p>}
+      {dataReady && !auditError && agents.length > 0 && (
         <div style={{ marginTop: '24px' }}>
           <div
             style={{
@@ -616,11 +703,15 @@ export default function CreditAdminPanel() {
               marginBottom: '8px',
             }}
           >
-            Recent Changes
+            Recent Credit Changes For Agents In View
           </div>
-          {auditLog.slice(0, 5).map((log, i) => (
+          <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
+            Up to {CREDIT_ADMIN_AUDIT_LIMIT} recent changes available to your account.
+          </p>
+          {auditLog.length === 0 && <p>No visible credit changes for agents in this view.</p>}
+          {auditLog.map((log) => (
             <div
-              key={i}
+              key={log.id}
               style={{
                 padding: '8px 10px',
                 background: 'rgba(255,255,255,0.02)',
@@ -632,12 +723,12 @@ export default function CreditAdminPanel() {
               }}
             >
               <span style={{ color: 'rgba(255,255,255,0.5)' }}>
-                {new Date(log.created_at).toLocaleDateString()}
+                {log.agentName} · {log.createdAt ? new Date(log.createdAt).toLocaleDateString() : 'Unavailable'}
               </span>
               <span>
-                <span style={{ color: '#ef4444' }}>{log.old_rate?.toLocaleString()}</span>
+                <span style={{ color: '#ef4444' }}>{creditAdminMoney(log.oldLimit)}</span>
                 <span style={{ color: 'rgba(255,255,255,0.3)' }}> → </span>
-                <span style={{ color: '#10b981' }}>{log.new_rate?.toLocaleString()}</span>
+                <span style={{ color: '#10b981' }}>{creditAdminMoney(log.newLimit)}</span>
               </span>
             </div>
           ))}

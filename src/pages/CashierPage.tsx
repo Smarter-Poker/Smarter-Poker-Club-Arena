@@ -30,7 +30,11 @@ import {
 } from '../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { cashoutService } from '../services/CashoutService';
+import type { CashoutRequest } from '../services/CashoutService';
+import { validateCashoutAmount } from '../utils/cashoutAmount';
+import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
+import { runCashoutOperation, recoverCashoutOperation, confirmCashoutOperation, captureCashoutStart, assertCashoutStartCurrent, type CashoutStart } from '../services/CashoutOperation';
+import { usePreparedCashoutOperations, isCashoutStartCurrent } from '../hooks/usePreparedCashoutOperations';
 import { supabase } from '../lib/supabase';
 import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
@@ -196,6 +200,14 @@ import { useCashierHistory } from '../hooks/useCashierHistory';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 export default function CashierPage() {
+  const { user } = useAuthUser();
+  const [params] = useSearchParams();
+  const { clubId } = useParams<{ clubId?: string }>();
+  const key = useCashoutScopeKey(user?.id, JSON.stringify([clubId, params.toString()]));
+  return <CashierContent key={key} />;
+}
+
+function CashierContent() {
   useRealtimeFinancials();
   useEffect(() => {
     document.title = 'Cashier | Smarter Poker';
@@ -208,6 +220,9 @@ export default function CashierPage() {
   const clubId = routeClubId || searchParams.get('club');
 
   const { user } = useAuthUser();
+  const isCashoutCurrent = useCashoutScope(user?.id, JSON.stringify([clubId, tableId]));
+  const cashoutBusy = useRef(false);
+  const cashoutActionInFlight = useRef<symbol | null>(null);
 
   /* `balances` is deliberately NOT destructured any more. It is the GLOBAL
      player wallet, and the last three things on this page that read it were all
@@ -219,8 +234,16 @@ export default function CashierPage() {
   const { mintChips, loadBalances } = useWalletStore();
   const toast = useToast();
 
-  const [action, setAction] = useState<CashierAction>('send');
-  const [amount, setAmount] = useState('');
+  const [action, setActionState] = useState<CashierAction>('send');
+  const [amount, setAmountState] = useState('');
+  const preparationAmount = validateCashoutAmount(amount);
+  const cashoutPreparations = usePreparedCashoutOperations(action === 'cashout' && !tableId &&
+    user?.id && clubId && preparationAmount.ok ? [{ key: 'request', intent: {
+      userId: user.id, playerId: user.id, clubId, targetId: user.id,
+      kind: 'cashout_request', amount: preparationAmount.amount,
+    } }] : [], isCashoutCurrent, null);
+  const setAmount = (value: string) => { cashoutPreparations.invalidate(); setAmountState(value); };
+  const setAction = (value: CashierAction) => { cashoutPreparations.invalidate(); setActionState(value); };
   const [isProcessing, setIsProcessing] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -237,7 +260,6 @@ export default function CashierPage() {
    * effect below the input state. Pattern: WalletCashierModal.doSend.
    */
   const sendOpIdRef = useRef<string>(newOpId());
-  const cashoutOpIdRef = useRef<string>(newOpId());
   const promoOpIdRef = useRef<string>(newOpId());
   const RATE_LIMIT_MS = 2000;
 
@@ -252,7 +274,8 @@ export default function CashierPage() {
     type: 'success' | 'error' | 'info';
     text: string;
   } | null>(null);
-  const [cashoutConfirm, setCashoutConfirm] = useState({ show: false, value: 0 });
+  const [cashoutConfirm, setCashoutConfirm] = useState<{ show: boolean; value: number; start?: CashoutStart<'cashout_request'> }>({ show: false, value: 0 });
+  const cashoutConfirmationVisible = cashoutConfirm.show && isCashoutStartCurrent(cashoutConfirm.start ?? null);
   const [showCashoutModal, setShowCashoutModal] = useState(false);
 
   // Send confirmation for high-value transfers (≥10K)
@@ -349,7 +372,6 @@ export default function CashierPage() {
   // Any change to what is being moved is a NEW intent - fresh keys.
   useEffect(() => {
     sendOpIdRef.current = newOpId();
-    cashoutOpIdRef.current = newOpId();
     promoOpIdRef.current = newOpId();
   }, [amount, selectedRecipient]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
@@ -426,6 +448,8 @@ export default function CashierPage() {
   const [pendingCashouts, setPendingCashouts] = useState<
     { id: string; amount: number; status: string; created_at: string }[]
   >([]);
+  const pendingCashoutScope = useRef<(() => boolean) | null>(null);
+  const visiblePendingCashouts = pendingCashoutScope.current?.() ? pendingCashouts : [];
   // U-01: Loading context state — shows skeleton during initial club data fetch
   const [loadingContext, setLoadingContext] = useState(true);
 
@@ -478,16 +502,21 @@ export default function CashierPage() {
   useEffect(() => {
     if (!clubId || !user?.id) return;
     loadPendingCashouts();
-  }, [clubId, user?.id, action]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clubId, user?.id, action, isCashoutCurrent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // NOTE: WALLET_REFRESHED is handled by the combined subscriber at line ~710
   // (removed duplicate subscription that was here)
 
+  const [pendingCashoutError, setPendingCashoutError] = useState(false);
+  const pendingCashoutGeneration = useRef(0);
   const loadPendingCashouts = useCallback(async () => {
-    if (!clubId || !user?.id) return;
+    if (!clubId || !user?.id || !isCashoutCurrent()) return;
+    const generation = ++pendingCashoutGeneration.current;
+    const current = () => isCashoutCurrent() && generation === pendingCashoutGeneration.current;
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const { data } = await retryFetch(
+      if (!current()) return;
+      const { data, error } = await retryFetch(
         () =>
           supabase
             .from('cashout_requests')
@@ -499,14 +528,22 @@ export default function CashierPage() {
             .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
-      if (isMounted.current) {
+      if (error) throw error;
+      if (current()) {
+        pendingCashoutScope.current = isCashoutCurrent;
+        setPendingCashoutError(false);
         setPendingCashouts(data || []);
       }
     } catch (e) {
       reportError(e, 'CashierPage.then');
-      /* silent */
+      if (current()) {
+        pendingCashoutScope.current = isCashoutCurrent;
+        setPendingCashouts([]);
+        setPendingCashoutError(true);
+        setMessage({ type: 'error', text: 'Pending Cashouts Could Not Be Verified. Refresh To Try Again.' });
+      }
     }
-  }, [clubId, user?.id]);
+  }, [clubId, user?.id, isCashoutCurrent]);
 
   useVisibilityRefresh(() => loadPendingCashouts());
 
@@ -1372,313 +1409,384 @@ export default function CashierPage() {
     [tabs, action]
   );
 
-  const handleAction = async (override?: { value?: number; recipientId?: string }) => {
-    // Chips are whole units. `parseFloat` alone accepted 0.5 and 1e9: the
-    // per-club ledger column is an integer, so a fractional amount is rounded
-    // on write while the sending side is debited the exact decimal — money
-    // created or destroyed by rounding. Reject anything that is not a
-    // positive whole number up front.
-    const parsed = parseChipAmount(override?.value !== undefined ? String(override.value) : amount);
-    if (!parsed.ok) {
-      setMessage({ type: 'error', text: parsed.error });
-      return;
-    }
-    const value = parsed.value;
-    // The confirmation modal captured what the user agreed to; use that rather
-    // than re-reading live state that a realtime refresh may have changed.
-    const recipientIdForAction = override?.recipientId ?? selectedRecipient;
-    if (!user?.id) return;
+  const showCashoutResult = (value: number, receipt: CashoutRequest) => {
+    setMessage({ type: 'success', text: receipt.status === 'pending'
+      ? `Cashout requested. ${value.toLocaleString()} chips are held for review. Your invoice is available in Messenger.`
+      : `This cashout is already ${receipt.status}. Check its invoice for details.` });
+    if (user?.id) void loadBalances(user.id);
+    void loadPendingCashouts();
+  };
 
-    // Rate limit: block rapid successive actions (2s minimum)
-    const now = Date.now();
-    if (now - lastActionRef.current < RATE_LIMIT_MS) {
-      setMessage({ type: 'error', text: 'Please wait before submitting another action' });
-      return;
-    }
-
-    setIsProcessing(true);
-    setMessage(null);
-
-    // SETTLEMENT FREEZE CHECK — Block all chip movements during settlement
-    if (clubId) {
-      try {
-        const lockResult = await checkSettlementLock(clubId);
-        if (lockResult.locked) {
-          if (isMounted.current)
-            setMessage({
-              type: 'error',
-              text: `Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
-            });
-          if (isMounted.current) setIsProcessing(false);
-          return;
-        }
-      } catch (e) {
-        reportError(e, 'CashierPage');
-        // Non-blocking: if settlement check fails, allow the action to proceed
-      }
-    }
-
+  const submitCashout = async (value: number, start: CashoutStart<'cashout_request'>) => {
+    if (!user?.id || !clubId) throw new Error('The Cashout Account Or Club Changed');
+    assertCashoutStartCurrent(start);
+    if (cashoutBusy.current) throw new Error('This Cashout Request Is Already Being Checked');
+    cashoutBusy.current = true;
     try {
-      if (action === 'send') {
-        // ─── SEND CHIPS ───
-        if (!recipientIdForAction) {
-          if (isMounted.current) setMessage({ type: 'error', text: 'Please select a recipient' });
-          if (isMounted.current) setIsProcessing(false);
+      const recovery = await recoverCashoutOperation(start);
+      assertCashoutStartCurrent(start);
+      if (!recovery.found) {
+        const lock = await checkSettlementLock(start.clubId);
+        assertCashoutStartCurrent(start);
+        if (lock.locked) throw new Error('Settlement In Progress. Cashout Requests Are Frozen');
+      }
+      const receipt = recovery.found ? recovery.result : await runCashoutOperation(start);
+      assertCashoutStartCurrent(start);
+      showCashoutResult(value, receipt);
+    } finally {
+      cashoutBusy.current = false;
+    }
+  };
+
+  const handleAction = async (override?: { value?: number; recipientId?: string }) => {
+    if (cashoutActionInFlight.current || cashoutBusy.current) return;
+    const cashoutActionToken = action === 'cashout' && !tableId ? Symbol('cashout-action') : null;
+    if (cashoutActionToken) cashoutActionInFlight.current = cashoutActionToken;
+    try {
+      // Chips are whole units. `parseFloat` alone accepted 0.5 and 1e9: the
+      // per-club ledger column is an integer, so a fractional amount is rounded
+      // on write while the sending side is debited the exact decimal — money
+      // created or destroyed by rounding. Reject anything that is not a
+      // positive whole number up front.
+      const input = override?.value !== undefined ? String(override.value) : amount;
+      const cashoutAmount = action === 'cashout' ? validateCashoutAmount(input) : null;
+      const parsed = cashoutAmount
+        ? cashoutAmount.ok ? { ok: true as const, value: cashoutAmount.amount } : cashoutAmount
+        : parseChipAmount(input);
+      if (!parsed.ok) {
+        setMessage({ type: 'error', text: parsed.error });
+        return;
+      }
+      const value = parsed.value;
+      let cashoutStart: CashoutStart<'cashout_request'> | null = null;
+      if (action === 'cashout' && !tableId) {
+        const prepared = cashoutPreparations.get('request', 'cashout_request');
+        if (!prepared || !preparationAmount.ok || preparationAmount.amount !== value) {
+          if (isCashoutCurrent()) setMessage({ type: 'error', text: 'Wait For This Cashout Request To Be Verified' });
           return;
         }
-        // Stamp the rate limiter only once the submission is actually valid,
-        // so a rejected attempt does not lock out the corrected retry.
-        lastActionRef.current = now;
-
-        const recipient = recipients.find((r) => r.id === recipientIdForAction);
-
-        /**
-         * ── SENDS COME OUT OF THE AGENT WALLET (Dan 2026-08-25, binding) ────
-         *
-         * "Any chips sent or claimed back transact from the Agent Wallet."
-         *
-         * This branch used to be a THIRD money path, and not one that obeyed
-         * that sentence:
-         *
-         *   - it checked `balances.PLAYER.available`, the viewer's GLOBAL
-         *     wallet, which has nothing to do with this club's chips;
-         *   - ChipFlowService.agentToPlayer moved the agent's own PLAYER
-         *     wallet, not agents.agent_wallet_balance (its own doc comment says
-         *     so: "from their own PLAYER wallet");
-         *   - ChipFlowService.clubToAgent moved the OWNER'S personal wallet,
-         *     not clubs.chip_treasury, despite being named for the club bank;
-         *   - none of the three carried an idempotency key, so a response lost
-         *     on the way back was indistinguishable from a send that never
-         *     happened, and the obvious retry sent a second time;
-         *   - none of them asked whether the recipient was in the caller's
-         *     downline, so the only scoping was the (broken) recipient list.
-         *
-         * It is now the same one call the Trade grid and the Wallet Cashier
-         * make: fn_agent_wallet_send. One transaction, one chip_transactions
-         * row, one op_id, a downline check before any money moves, and a ten
-         * minute clawback window the Claim Back surfaces can act on.
-         *
-         * `p_destination` follows the RECIPIENT's role - chips to an agent land
-         * in the float they distribute from, chips to a player land in the
-         * balance they buy in with - and the database derives it again from the
-         * recipient regardless of what is sent here.
-         */
-        if (myAgentWallet !== null && myAgentWallet < value) {
-          if (isMounted.current)
-            setMessage({
-              type: 'error',
-              text: `Insufficient chips in your agent wallet. Available: ${myAgentWallet.toLocaleString()}`,
-            });
-          if (isMounted.current) setIsProcessing(false);
+        try { cashoutStart = captureCashoutStart(prepared); }
+        catch (error) {
+          if (isCashoutCurrent()) setMessage({ type: 'error', text: safeErrorMessage(error) });
           return;
         }
+      }
+      // The confirmation modal captured what the user agreed to; use that rather
+      // than re-reading live state that a realtime refresh may have changed.
+      const recipientIdForAction = override?.recipientId ?? selectedRecipient;
+      if (!user?.id) return;
 
-        const resolvedForTransfer = (await resolveClubUUID(clubId!)) || clubId!;
-        const { data: sendData, error: sendError } = await supabase.rpc('fn_agent_wallet_send', {
-          p_club_id: resolvedForTransfer,
-          p_to_user_id: recipientIdForAction,
-          p_amount: value,
-          p_destination: canHoldAgentWallet(recipient?.role) ? 'agent_wallet' : 'player_wallet',
-          p_reason: `Cashier Send To ${recipient?.username || 'Member'}`,
-          // Per-INTENT key (see sendOpIdRef). A key minted inside the call
-          // protects nothing: the dangerous shape is commit + lost response +
-          // user retry, and that retry must present the SAME key so the
-          // server replays instead of debiting again. The 30-line note above
-          // this call claimed that was already true. It was not.
-          p_op_id: sendOpIdRef.current,
-        });
-        if (sendError) throw sendError;
-        const sendRes = (Array.isArray(sendData) ? sendData[0] : sendData) as {
-          success?: boolean;
-          error?: string;
-          replayed?: boolean;
-        } | null;
-        // The RPC reports a refusal as { success: false, error }. The old path
-        // had no result check at all, so a refusal printed "Sent 500 chips".
-        if (!sendRes?.success) {
-          throw new Error(sendRes?.error || 'The Cashier Refused That Send');
-        }
-
-        if (isMounted.current)
-          setMessage({
-            type: 'success',
-            text: sendRes.replayed
-              ? `That send had already gone through. ${value.toLocaleString()} chips are with ${recipient?.username || 'them'}`
-              : `Sent ${value.toLocaleString()} chips to ${recipient?.username || 'them'} from your agent wallet`,
-          });
-        loadBalances(user.id);
-        loadUserContext(); // the agent wallet figure on screen just changed
-        loadRecipients(true); // Force refresh — a send just changed recipient balances; skip the 60s cache
-        setSelectedRecipient('');
-        notifyWalletChange(user.id, value);
-        notifyWalletChange(recipientIdForAction, value);
-      } else if (action === 'mint') {
-        // ─── MINT CHIPS ───
-        lastActionRef.current = now;
-        const mintResult = await mintChips(clubId!, value);
-        if (!mintResult.success) {
-          // The store catches everything and returns success:false, so the
-          // real reason ("Minting is locked for clubs in a union — only the
-          // Union owner can mint", auth errors, economy caps) was replaced by
-          // "try again", which is the wrong advice for a union-locked club.
-          if (isMounted.current)
-            setMessage({
-              type: 'error',
-              text: safeErrorMessage(mintResult.error, 'Minting failed. Please try again.'),
-            });
-          if (isMounted.current) setIsProcessing(false);
-          return;
-        }
-        // chip_ledger narration REMOVED (2026-08-15): chip_ledger is the
-        // legacy ledger and is now server-owned (client INSERT revoked, the
-        // open forge policy dropped). mintChips' server RPC writes the
-        // authoritative wallet_transactions row; a client-authored audit row
-        // was forgeable narration, not a record.
-
-        if (isMounted.current)
-          setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
-        loadBalances(user.id);
-        notifyWalletChange(user.id, value);
-      } else if (action === 'buyin') {
-        // ─── TABLE BUY-IN ───
-        // AUDIT P1-2 FIX: This Cashier action previously called lockForBuyIn
-        // (WalletService → atomic_deduct_wallet_and_log, a REAL wallet debit)
-        // and then merely navigated to the table — it never called
-        // atomic_table_buyin, never inserted a table_seats row, and never
-        // notified the engine. That debited the wallet with no corresponding
-        // stack anywhere (orphaned debit) and forced the player to buy in a
-        // SECOND time via the in-table BuyInModal. The premature debit and its
-        // (misleading) chip_ledger write are removed: NO money moves in the
-        // Cashier. The player is routed to the table, where the authoritative
-        // in-table buy-in RPC (atomic_table_buyin) is the single point at which
-        // funds move and a seat is atomically created.
-        if (!tableId) {
-          if (isMounted.current)
-            setMessage({ type: 'error', text: 'No table selected for buy-in.' });
-          if (isMounted.current) setIsProcessing(false);
-          return;
-        }
-        navigate(`/table/${tableId}`);
-      } else if (action === 'cashout') {
-        // ─── CASH OUT ───
-        // BUG-02 FIX: Two distinct flows:
-        // 1) If at a table (tableId present) → unlock chips from table
-        // 2) If no table → request-cashout API (escrow → agent approval)
-
-        if (tableId) {
-          // AUDIT M17: the Cashier used to move this money itself — it called
-          // unlockFromTable with the amount the PLAYER TYPED, which credited the
-          // wallet through a generic credit RPC with no offsetting debit
-          // anywhere. There is no seat-stack decrement on that path at all; the
-          // store only adjusted `locked` optimistically, client-side. It was
-          // inert solely because RLS refused the credit, and it would have
-          // become an unlimited mint the moment anyone widened that grant.
-          //
-          // This now mirrors the 'buyin' branch above exactly, and for the same
-          // reason: NO money moves in the Cashier. The player is routed to the
-          // table. CHIP CONTINUITY (2026-09-04): there is no partial cash-out
-          // at a cash table any more - chips come off the felt only when the
-          // player leaves, through the engine's leave path (which may hold
-          // them for the stay clock). The only honest copy is "leave to cash
-          // out".
-          if (isMounted.current)
-            setMessage({
-              type: 'info',
-              text: 'Leave The Table To Cash Out - Taking You There Now.',
-            });
-          navigate(`/table/${tableId}`);
-        } else {
-          // Standard cashout: request-cashout API (escrow → agent approval)
-          // U-03 FIX: Confirmation for high-value cashouts
-          if (value >= 10000) {
-            // High-value cashout: show confirmation modal instead of blocking confirm()
-            setCashoutConfirm({ show: true, value });
-            if (isMounted.current) setIsProcessing(false);
+      // A past verified hold remains recoverable if balance or settlement has
+      // since changed. Only exact absence reaches the existing new-money gates.
+      if (cashoutStart) {
+        setIsProcessing(true);
+        setMessage(null);
+        try {
+          const recovery = await recoverCashoutOperation(cashoutStart);
+          assertCashoutStartCurrent(cashoutStart);
+          if (recovery.found) {
+            showCashoutResult(value, recovery.result);
+            setAmount('');
+            setIsProcessing(false);
             return;
           }
+        } catch (error) {
+          if (isCashoutStartCurrent(cashoutStart)) setMessage({ type: 'error', text: safeErrorMessage(error) });
+          if (isCashoutCurrent()) setIsProcessing(false);
+          return;
+        }
+        setIsProcessing(false);
+      }
 
-          // Cashout debits club_members.chip_balance for THIS club
-          // (fn_request_cashout), so it must be checked against the per-club
-          // figure. balances.PLAYER.available is the GLOBAL wallet — using it
-          // here let a player request a cashout the server always rejects, and
-          // blocked one it would have allowed. Send is deliberately left on the
-          // global figure because atomic_chip_transfer really does debit that.
-          if (myClubChips === null) {
-            if (isMounted.current)
-              setMessage({ type: 'error', text: 'Still loading your club balance - try again.' });
-            if (isMounted.current) setIsProcessing(false);
-            return;
-          }
-          if (myClubChips < value) {
+      // Rate limit: block rapid successive actions (2s minimum)
+      const now = Date.now();
+      if (now - lastActionRef.current < RATE_LIMIT_MS) {
+        setMessage({ type: 'error', text: 'Please wait before submitting another action' });
+        return;
+      }
+
+      setIsProcessing(true);
+      setMessage(null);
+
+      // SETTLEMENT FREEZE CHECK — Block all chip movements during settlement
+      if (clubId) {
+        try {
+          const lockResult = await checkSettlementLock(cashoutStart?.clubId ?? clubId);
+          if (cashoutStart) assertCashoutStartCurrent(cashoutStart);
+          if (lockResult.locked) {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: `Insufficient chips in this club. Available: ${myClubChips.toLocaleString()}`,
+                text: `Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
               });
             if (isMounted.current) setIsProcessing(false);
             return;
           }
+        } catch (e) {
+          reportError(e, 'CashierPage');
+          if (cashoutStart) {
+            if (isCashoutStartCurrent(cashoutStart)) setMessage({ type: 'error', text: safeErrorMessage(e) });
+            if (isCashoutCurrent()) setIsProcessing(false);
+            return;
+          }
+          // Preserve the existing behavior of unrelated cashier actions.
+        }
+      }
 
-          // Stamp the rate limiter for this money action too. Moving the stamp
-          // out of the top of handleAction (so a rejected submit no longer
-          // locked out the retry) left cashout — the one path that actually
-          // moves money from here — with no 2s throttle at all.
+      try {
+        if (action === 'send') {
+          // ─── SEND CHIPS ───
+          if (!recipientIdForAction) {
+            if (isMounted.current) setMessage({ type: 'error', text: 'Please select a recipient' });
+            if (isMounted.current) setIsProcessing(false);
+            return;
+          }
+          // Stamp the rate limiter only once the submission is actually valid,
+          // so a rejected attempt does not lock out the corrected retry.
           lastActionRef.current = now;
 
-          // Call CashoutService directly for unified audit logging, notifications, and DB RPC logic
-          let cashoutFailed = false;
-          try {
-            if (!clubId) throw new Error('Club ID is missing');
-            await cashoutService.requestCashout(
-              user.id,
-              clubId!,
-              value,
-              undefined,
-              cashoutOpIdRef.current
-            );
-            if (isMounted.current)
-              setMessage({
-                type: 'success',
-                text: `Cashout request submitted! ${value.toLocaleString()} chips are now held in escrow. Your agent will review shortly.`,
-              });
-            loadBalances(user.id);
-            loadPendingCashouts();
-            notifyWalletChange(user.id, value);
-          } catch (err: unknown) {
-            cashoutFailed = true;
+          const recipient = recipients.find((r) => r.id === recipientIdForAction);
+
+          /**
+           * ── SENDS COME OUT OF THE AGENT WALLET (Dan 2026-08-25, binding) ────
+           *
+           * "Any chips sent or claimed back transact from the Agent Wallet."
+           *
+           * This branch used to be a THIRD money path, and not one that obeyed
+           * that sentence:
+           *
+           *   - it checked `balances.PLAYER.available`, the viewer's GLOBAL
+           *     wallet, which has nothing to do with this club's chips;
+           *   - ChipFlowService.agentToPlayer moved the agent's own PLAYER
+           *     wallet, not agents.agent_wallet_balance (its own doc comment says
+           *     so: "from their own PLAYER wallet");
+           *   - ChipFlowService.clubToAgent moved the OWNER'S personal wallet,
+           *     not clubs.chip_treasury, despite being named for the club bank;
+           *   - none of the three carried an idempotency key, so a response lost
+           *     on the way back was indistinguishable from a send that never
+           *     happened, and the obvious retry sent a second time;
+           *   - none of them asked whether the recipient was in the caller's
+           *     downline, so the only scoping was the (broken) recipient list.
+           *
+           * It is now the same one call the Trade grid and the Wallet Cashier
+           * make: fn_agent_wallet_send. One transaction, one chip_transactions
+           * row, one op_id, a downline check before any money moves, and a ten
+           * minute clawback window the Claim Back surfaces can act on.
+           *
+           * `p_destination` follows the RECIPIENT's role - chips to an agent land
+           * in the float they distribute from, chips to a player land in the
+           * balance they buy in with - and the database derives it again from the
+           * recipient regardless of what is sent here.
+           */
+          if (myAgentWallet !== null && myAgentWallet < value) {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text:
-                  (err instanceof Error ? err.message : String(err)) || 'Cashout request failed.',
+                text: `Insufficient chips in your agent wallet. Available: ${myAgentWallet.toLocaleString()}`,
               });
-          }
-          // A failed cashout used to fall through to the blanket setAmount('')
-          // below, wiping what the user typed while showing them an error they
-          // are meant to retry.
-          if (cashoutFailed) {
             if (isMounted.current) setIsProcessing(false);
             return;
           }
+
+          const resolvedForTransfer = (await resolveClubUUID(clubId!)) || clubId!;
+          const { data: sendData, error: sendError } = await supabase.rpc('fn_agent_wallet_send', {
+            p_club_id: resolvedForTransfer,
+            p_to_user_id: recipientIdForAction,
+            p_amount: value,
+            p_destination: canHoldAgentWallet(recipient?.role) ? 'agent_wallet' : 'player_wallet',
+            p_reason: `Cashier Send To ${recipient?.username || 'Member'}`,
+            // Per-INTENT key (see sendOpIdRef). A key minted inside the call
+            // protects nothing: the dangerous shape is commit + lost response +
+            // user retry, and that retry must present the SAME key so the
+            // server replays instead of debiting again. The 30-line note above
+            // this call claimed that was already true. It was not.
+            p_op_id: sendOpIdRef.current,
+          });
+          if (sendError) throw sendError;
+          const sendRes = (Array.isArray(sendData) ? sendData[0] : sendData) as {
+            success?: boolean;
+            error?: string;
+            replayed?: boolean;
+          } | null;
+          // The RPC reports a refusal as { success: false, error }. The old path
+          // had no result check at all, so a refusal printed "Sent 500 chips".
+          if (!sendRes?.success) {
+            throw new Error(sendRes?.error || 'The Cashier Refused That Send');
+          }
+
+          if (isMounted.current)
+            setMessage({
+              type: 'success',
+              text: sendRes.replayed
+                ? `That send had already gone through. ${value.toLocaleString()} chips are with ${recipient?.username || 'them'}`
+                : `Sent ${value.toLocaleString()} chips to ${recipient?.username || 'them'} from your agent wallet`,
+            });
+          loadBalances(user.id);
+          loadUserContext(); // the agent wallet figure on screen just changed
+          loadRecipients(true); // Force refresh — a send just changed recipient balances; skip the 60s cache
+          setSelectedRecipient('');
+          notifyWalletChange(user.id, value);
+          notifyWalletChange(recipientIdForAction, value);
+        } else if (action === 'mint') {
+          // ─── MINT CHIPS ───
+          lastActionRef.current = now;
+          const mintResult = await mintChips(clubId!, value);
+          if (!mintResult.success) {
+            // The store catches everything and returns success:false, so the
+            // real reason ("Minting is locked for clubs in a union — only the
+            // Union owner can mint", auth errors, economy caps) was replaced by
+            // "try again", which is the wrong advice for a union-locked club.
+            if (isMounted.current)
+              setMessage({
+                type: 'error',
+                text: safeErrorMessage(mintResult.error, 'Minting failed. Please try again.'),
+              });
+            if (isMounted.current) setIsProcessing(false);
+            return;
+          }
+          // chip_ledger narration REMOVED (2026-08-15): chip_ledger is the
+          // legacy ledger and is now server-owned (client INSERT revoked, the
+          // open forge policy dropped). mintChips' server RPC writes the
+          // authoritative wallet_transactions row; a client-authored audit row
+          // was forgeable narration, not a record.
+
+          if (isMounted.current)
+            setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
+          loadBalances(user.id);
+          notifyWalletChange(user.id, value);
+        } else if (action === 'buyin') {
+          // ─── TABLE BUY-IN ───
+          // AUDIT P1-2 FIX: This Cashier action previously called lockForBuyIn
+          // (WalletService → atomic_deduct_wallet_and_log, a REAL wallet debit)
+          // and then merely navigated to the table — it never called
+          // atomic_table_buyin, never inserted a table_seats row, and never
+          // notified the engine. That debited the wallet with no corresponding
+          // stack anywhere (orphaned debit) and forced the player to buy in a
+          // SECOND time via the in-table BuyInModal. The premature debit and its
+          // (misleading) chip_ledger write are removed: NO money moves in the
+          // Cashier. The player is routed to the table, where the authoritative
+          // in-table buy-in RPC (atomic_table_buyin) is the single point at which
+          // funds move and a seat is atomically created.
+          if (!tableId) {
+            if (isMounted.current)
+              setMessage({ type: 'error', text: 'No table selected for buy-in.' });
+            if (isMounted.current) setIsProcessing(false);
+            return;
+          }
+          navigate(`/table/${tableId}`);
+        } else if (action === 'cashout') {
+          // ─── CASH OUT ───
+          // BUG-02 FIX: Two distinct flows:
+          // 1) If at a table (tableId present) → unlock chips from table
+          // 2) If no table → request-cashout API (escrow → agent approval)
+
+          if (tableId) {
+            // AUDIT M17: the Cashier used to move this money itself — it called
+            // unlockFromTable with the amount the PLAYER TYPED, which credited the
+            // wallet through a generic credit RPC with no offsetting debit
+            // anywhere. There is no seat-stack decrement on that path at all; the
+            // store only adjusted `locked` optimistically, client-side. It was
+            // inert solely because RLS refused the credit, and it would have
+            // become an unlimited mint the moment anyone widened that grant.
+            //
+            // This now mirrors the 'buyin' branch above exactly, and for the same
+            // reason: NO money moves in the Cashier. The player is routed to the
+            // table. CHIP CONTINUITY (2026-09-04): there is no partial cash-out
+            // at a cash table any more - chips come off the felt only when the
+            // player leaves, through the engine's leave path (which may hold
+            // them for the stay clock). The only honest copy is "leave to cash
+            // out".
+            if (isMounted.current)
+              setMessage({
+                type: 'info',
+                text: 'Leave The Table To Cash Out - Taking You There Now.',
+              });
+            navigate(`/table/${tableId}`);
+          } else {
+            if (!cashoutStart) throw new Error('The Cashout Start Could Not Be Verified');
+            assertCashoutStartCurrent(cashoutStart);
+
+            // Cashout debits club_members.chip_balance for THIS club
+            // (fn_request_cashout), so it must be checked against the per-club
+            // figure. balances.PLAYER.available is the GLOBAL wallet — using it
+            // here let a player request a cashout the server always rejects, and
+            // blocked one it would have allowed. Send is deliberately left on the
+            // global figure because atomic_chip_transfer really does debit that.
+            if (myClubChips === null) {
+              if (isMounted.current)
+                setMessage({ type: 'error', text: 'Still loading your club balance - try again.' });
+              if (isMounted.current) setIsProcessing(false);
+              return;
+            }
+            if (myClubChips < value) {
+              if (isMounted.current)
+                setMessage({
+                  type: 'error',
+                  text: `Insufficient chips in this club. Available: ${myClubChips?.toLocaleString() ?? 'unavailable'}`,
+                });
+              if (isMounted.current) setIsProcessing(false);
+              return;
+            }
+
+            if (value >= 10000) {
+              setCashoutConfirm({ show: true, value, start: cashoutStart });
+              setIsProcessing(false);
+              return;
+            }
+
+            // Stamp the rate limiter for this money action too. Moving the stamp
+            // out of the top of handleAction (so a rejected submit no longer
+            // locked out the retry) left cashout — the one path that actually
+            // moves money from here — with no 2s throttle at all.
+            lastActionRef.current = now;
+
+            // Call CashoutService directly for unified audit logging, notifications, and DB RPC logic
+            let cashoutFailed = false;
+            try {
+              if (!clubId) throw new Error('Club ID is missing');
+              await submitCashout(value, cashoutStart);
+              assertCashoutStartCurrent(cashoutStart);
+            } catch (err: unknown) {
+              cashoutFailed = true;
+              if (isCashoutStartCurrent(cashoutStart))
+                setMessage({
+                  type: 'error',
+                  text:
+                    (err instanceof Error ? err.message : String(err)) || 'Cashout request failed.',
+                });
+            }
+            // A failed cashout used to fall through to the blanket setAmount('')
+            // below, wiping what the user typed while showing them an error they
+            // are meant to retry.
+            if (cashoutFailed) {
+              if (isMounted.current) setIsProcessing(false);
+              return;
+            }
+          }
         }
+        setAmount('');
+      } catch (error: unknown) {
+        if (cashoutStart ? isCashoutStartCurrent(cashoutStart) : isMounted.current)
+          setMessage({
+            type: 'error',
+            text:
+              (error instanceof Error ? error.message : String(error)) ||
+              'Transaction failed. Please try again.',
+          });
       }
-      setAmount('');
-    } catch (error: unknown) {
-      if (isMounted.current)
-        setMessage({
-          type: 'error',
-          text:
-            (error instanceof Error ? error.message : String(error)) ||
-            'Transaction failed. Please try again.',
-        });
+      if (isMounted.current) setIsProcessing(false);
+      startCooldown(); // Rate limit
+    } finally {
+      if (cashoutActionToken && cashoutActionInFlight.current === cashoutActionToken) {
+        cashoutActionInFlight.current = null;
+      }
     }
-    if (isMounted.current) setIsProcessing(false);
-    startCooldown(); // Rate limit
   };
 
   // Process high-value cashout after ConfirmModal approval
   const processHighValueCashout = async (value: number) => {
-    if (!user?.id) return;
+    const start = cashoutConfirm.start;
+    if (!user?.id || !cashoutConfirm.show || value !== cashoutConfirm.value || !start || !isCashoutStartCurrent(start)) return;
     // 2026-08-27: this path had no double-submit guard. setIsProcessing is
     // React state and applies after a render, so two taps on the confirm
     // modal inside one frame both reached the RPC (with, before today, two
@@ -1690,13 +1798,23 @@ export default function CashierPage() {
     setCashoutConfirm({ show: false, value: 0 });
     setIsProcessing(true);
     try {
+      // Confirmation is a new explicit observation of the original operation,
+      // not a fresh payment intent. A different tab may have completed its hold.
+      const recovery = await confirmCashoutOperation(start);
+      assertCashoutStartCurrent(start);
+      if (recovery.found) {
+        showCashoutResult(value, recovery.result);
+        setAmount('');
+        setIsProcessing(false);
+        return;
+      }
       // Per-club figure: this is the high-value cashout path and the server
       // debits club_members.chip_balance.
-      if (myClubChips !== null && myClubChips < value) {
+      if (myClubChips === null || myClubChips < value) {
         if (isMounted.current)
           setMessage({
             type: 'error',
-            text: `Insufficient chips in this club. Available: ${myClubChips.toLocaleString()}`,
+            text: `Insufficient chips in this club. Available: ${myClubChips?.toLocaleString() ?? 'unavailable'}`,
           });
         if (isMounted.current) setIsProcessing(false);
         return;
@@ -1708,24 +1826,11 @@ export default function CashierPage() {
       }
 
       // Use CashoutService directly (same as normal cashout path) — no World Hub API dependency
-      await cashoutService.requestCashout(
-        user.id,
-        clubId,
-        value,
-        undefined,
-        cashoutOpIdRef.current
-      );
-      if (isMounted.current)
-        setMessage({
-          type: 'success',
-          text: `Cashout request submitted! ${value.toLocaleString()} chips are now held in escrow. Your agent will review shortly.`,
-        });
-      loadBalances(user.id);
-      loadPendingCashouts();
-      notifyWalletChange(user.id, value);
+      await submitCashout(value, start);
+      assertCashoutStartCurrent(start);
       setAmount('');
     } catch (error: unknown) {
-      if (isMounted.current)
+      if (isCashoutStartCurrent(start))
         setMessage({
           type: 'error',
           text:
@@ -1733,7 +1838,7 @@ export default function CashierPage() {
             'Cashout failed. Please try again.',
         });
     }
-    if (isMounted.current) setIsProcessing(false);
+    if (isCashoutCurrent()) setIsProcessing(false);
     startCooldown();
   };
 
@@ -2465,7 +2570,7 @@ export default function CashierPage() {
         <section className={styles.card} id={`cashier-panel-${action}`} role="tabpanel">
           <h2 className={styles.cardTitle}>
             <span className={styles.cardTitleIcon}>
-              {action === 'cashout' && cashoutConfirm.show
+              {action === 'cashout' && cashoutConfirmationVisible
                 ? '◈'
                 : action === 'buyin'
                   ? '▶'
@@ -2473,7 +2578,7 @@ export default function CashierPage() {
                     ? '◀'
                     : '◆'}
             </span>
-            {action === 'cashout' && cashoutConfirm.show
+            {action === 'cashout' && cashoutConfirmationVisible
               ? 'Escrow Verification'
               : action === 'buyin'
                 ? 'Table Buy-In'
@@ -2481,7 +2586,7 @@ export default function CashierPage() {
                   ? 'Cash Out'
                   : 'Mint Chips'}
           </h2>
-          {action === 'cashout' && cashoutConfirm.show ? (
+          {action === 'cashout' && cashoutConfirmationVisible ? (
             <div className={styles.escrowFlow}>
               <div className={styles.escrowIcon}>◈</div>
               <h3 className={styles.escrowTitle}>Security Verification Required</h3>
@@ -2511,13 +2616,13 @@ export default function CashierPage() {
                 <div className={styles.escrowCheckItem}>
                   <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
                   <span className={styles.escrowCheckLabel}>
-                    Escrow Holding - Chips Are Reserved Until Review Completes
+                    Chips Will Be Held After You Confirm This Request
                   </span>
                 </div>
                 <div className={styles.escrowCheckItem}>
                   <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
                   <span className={styles.escrowCheckLabel}>
-                    Pending Club Agent Review And Approval
+                    Club Agent Review Follows The Verified Hold
                   </span>
                 </div>
               </div>
@@ -2525,7 +2630,7 @@ export default function CashierPage() {
               <div className={styles.btnRow}>
                 <button
                   className={styles.btnGhost}
-                  onClick={() => setCashoutConfirm({ show: false, value: 0 })}
+                  onClick={() => { cashoutPreparations.invalidate(); setCashoutConfirm({ show: false, value: 0 }); }}
                   disabled={isProcessing}
                 >
                   CANCEL
@@ -2533,7 +2638,7 @@ export default function CashierPage() {
                 <button
                   className={styles.btnPrimary}
                   onClick={() => processHighValueCashout(cashoutConfirm.value)}
-                  disabled={isProcessing}
+                  disabled={isProcessing || !isCashoutStartCurrent(cashoutConfirm.start ?? null)}
                 >
                   {isProcessing ? (
                     <>
@@ -2548,11 +2653,13 @@ export default function CashierPage() {
             </div>
           ) : (
             <div className={styles.cardBody}>
+              {action === 'cashout' && cashoutPreparations.error && <p role="status">{cashoutPreparations.error} <button onClick={cashoutPreparations.invalidate}>Refresh</button></p>}
               {/* U-02 FIX: Show pending cashouts when on cashout tab */}
-              {action === 'cashout' && pendingCashouts.length > 0 && (
+              {action === 'cashout' && pendingCashoutScope.current?.() && pendingCashoutError && <p role="status">Pending Cashouts Are Unavailable. <button onClick={() => void loadPendingCashouts()}>Refresh</button></p>}
+              {action === 'cashout' && visiblePendingCashouts.length > 0 && (
                 <div className={styles.pendingBox}>
                   <div className={styles.pendingTitle}>Pending Cashouts</div>
-                  {pendingCashouts.map((pc) => (
+                  {visiblePendingCashouts.map((pc) => (
                     <div key={pc.id} className={styles.pendingRow}>
                       <span>{pc.amount.toLocaleString()} Chips</span>
                       <span className={styles.pendingStatus}>
@@ -2646,7 +2753,8 @@ export default function CashierPage() {
                 // Called through a wrapper: passing the handler directly hands
                 // React's MouseEvent in as the override argument.
                 onClick={() => handleAction()}
-                disabled={isProcessing || cooldown > 0 || !amount}
+                disabled={isProcessing || cooldown > 0 || !amount ||
+                  (action === 'cashout' && !tableId && !cashoutPreparations.get('request', 'cashout_request'))}
               >
                 {isProcessing ? (
                   <>
@@ -2659,7 +2767,7 @@ export default function CashierPage() {
                   tableId ? (
                     'CONFIRM CASH-OUT'
                   ) : (
-                    'REQUEST CASHOUT'
+                    'CHECK OR REQUEST CASHOUT'
                   )
                 ) : (
                   'CONFIRM MINT'
@@ -2822,7 +2930,7 @@ export default function CashierPage() {
           playerId={user.id}
           clubId={clubId}
           // Per-club chips, matching what request-cashout.js actually checks.
-          currentBalance={myClubChips ?? 0}
+          currentBalance={myClubChips}
           onComplete={() => {
             loadBalances(user.id);
             loadPendingCashouts();

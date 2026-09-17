@@ -16,12 +16,13 @@ import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
 import { setBbjUnionMiniEnabled, setBbjUnionMiniFloor } from '../lib/bbjMiniFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useCashoutScope } from '../hooks/useCashoutScope';
+import { formatWeeklyChips } from '../services/ClubWeeklyAccountingReader';
 import './AdminDashboardPage.css';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
-import { SettlementService } from '../services/SettlementService';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
 import UnionTreasuryDetailModal, {
   type TreasuryDetailMode,
@@ -327,11 +328,10 @@ export default function UnionDashboardPage() {
       id: string;
       period_start: string;
       period_end: string;
-      total_rakeback: number;
+      total_rakeback: string;
       executed_at: string;
     }[]
   >([]);
-  const [rakebackRunning, setRakebackRunning] = useState(false);
 
   // Applications
   const [apps, setApps] = useState<UnionApp[]>([]);
@@ -708,93 +708,56 @@ export default function UnionDashboardPage() {
     }
   }, [tab, authorizedUnionId, appsLoaded, loadApps, loadLeaveReqs]);
 
-  // ── Union rakeback: history + on-demand distribution ──────────
+  // ── Retained union rakeback history ──────────────────────────
+  const rakebackScope = useCashoutScope(user?.id, JSON.stringify([unionRef, authorizedUnionId]));
+  const rakebackRead = useRef(0);
+  const rakebackOwner = useRef<(() => boolean) | null>(null);
+  const [rakebackReadError, setRakebackReadError] = useState(false);
+  const [rakebackLoading, setRakebackLoading] = useState(false);
+  const rakebackVisible = rakebackScope() && rakebackOwner.current === rakebackScope;
   const loadRakebackHistory = useCallback(async () => {
-    if (!authorizedUnionId) return;
+    const read = ++rakebackRead.current;
+    const current = () => rakebackScope() && read === rakebackRead.current;
+    if (!authorizedUnionId || !current()) return;
+    rakebackOwner.current = rakebackScope;
+    setRakebackHistory([]);
+    setRakebackReadError(false);
+    setRakebackLoading(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('union_rakeback_log')
-        .select('id, period_start, period_end, total_rakeback, executed_at')
+        .select('id, union_id, period_start, period_end, total_rakeback::text, executed_at')
         .eq('union_id', authorizedUnionId)
         .order('executed_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(12);
-      if (mountedRef.current) setRakebackHistory(data || []);
-    } catch (e) {
-      reportError(e, 'UnionDashboardPage.loadRakebackHistory');
+      if (!current()) return;
+      if (error || !Array.isArray(data) || data.length > 12) throw new Error('Rakeback History Is Unavailable');
+      const ids = new Set<string>();
+      const rows = data.map(row => {
+        const amount = typeof row.total_rakeback === 'string' && row.total_rakeback.length <= 128
+          ? /^(0|[1-9]\d{0,29})(?:\.(\d+))?$/.exec(row.total_rakeback) : null;
+        if (!amount || /[1-9]/.test((amount[2] ?? '').slice(2)) || row.union_id !== authorizedUnionId ||
+          typeof row.id !== 'string' || !row.id || ids.has(row.id) ||
+          ![row.period_start, row.period_end, row.executed_at].every(value => typeof value === 'string' && Number.isFinite(Date.parse(value))) ||
+          Date.parse(row.period_start) >= Date.parse(row.period_end)) throw new Error('Rakeback History Could Not Be Verified');
+        ids.add(row.id);
+        return { id: row.id, period_start: row.period_start, period_end: row.period_end, executed_at: row.executed_at,
+          total_rakeback: `${amount[1]}.${(amount[2] ?? '').padEnd(2, '0').slice(0, 2)}` };
+      });
+      if (current()) setRakebackHistory(rows);
+    } catch (error) {
+      if (current()) { setRakebackHistory([]); setRakebackReadError(true); }
+      reportError(error, 'UnionDashboardPage.loadRakebackHistory');
+    } finally {
+      if (current()) setRakebackLoading(false);
     }
-  }, [authorizedUnionId, mountedRef]);
+  }, [authorizedUnionId, rakebackScope]);
 
   useEffect(() => {
-    if (tab === 'treasury' && authorizedUnionId) loadRakebackHistory();
+    if (tab === 'treasury' && authorizedUnionId) void loadRakebackHistory();
+    return () => { ++rakebackRead.current; };
   }, [tab, authorizedUnionId, loadRakebackHistory]);
-
-  // Distribute last week's cross-club rakeback. The server RPC is atomic +
-  // idempotent (one payout per union+period), so a double-click is safe.
-  const runUnionRakeback = useCallback(async () => {
-    if (!authorizedUnionId || rakebackRunning) return;
-    // Previous ISO week: [last Monday 00:00 UTC, this Monday 00:00 UTC).
-    //
-    // TIMEZONE BUG (fixed 2026-08-20): this used getDay()/setHours(0,0,0,0)/
-    // setDate(), which are LOCAL-time operations, and then serialised with
-    // toISOString(). From Central Time that produced Monday 05:00Z — not an
-    // ISO-week boundary at all. The window therefore straddled two real weeks,
-    // did not match the periods the automated Monday close writes, and the
-    // idempotency log (unique on the EXACT period) could not recognise it as
-    // already paid — so a manual run could pay days the automated close had
-    // already settled. fn_execute_union_rakeback now rejects non-week-aligned
-    // periods outright, which is what surfaced this. All UTC now, so the manual
-    // button and the automated close address the identical period.
-    const now = new Date();
-    const daysSinceMonday = (now.getUTCDay() + 6) % 7; // 0=Sun..6=Sat -> Mon=0
-    const thisMonday = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday)
-    );
-    const lastMonday = new Date(thisMonday);
-    lastMonday.setUTCDate(lastMonday.getUTCDate() - 7);
-    const periodStart = lastMonday.toISOString();
-    const periodEnd = thisMonday.toISOString();
-    const label = `${lastMonday.toLocaleDateString()} - ${new Date(thisMonday.getTime() - 1).toLocaleDateString()}`;
-
-    if (
-      !(await confirmDialog({
-        title: 'Distribute Weekly Rakeback',
-        message: `Pay each club its share of last week's rake (${label}) from the union wallet? This is idempotent - it can't pay the same week twice.`,
-        confirmText: 'Distribute',
-        variant: 'default',
-      }))
-    )
-      return;
-
-    setRakebackRunning(true);
-    try {
-      const res = await SettlementService.executeUnionRakeBack(
-        authorizedUnionId,
-        periodStart,
-        periodEnd
-      );
-      if (res.clubsPaid > 0) {
-        masterBus.emit('SHOW_TOAST', {
-          severity: 'info',
-          message: `Rakeback distributed: ${res.clubsPaid} club(s), ${fmt(res.totalRakeBack)} chips`,
-        });
-      } else {
-        masterBus.emit('SHOW_TOAST', {
-          severity: 'info',
-          message: 'No rakeback to distribute for last week (already paid or no rake).',
-        });
-      }
-      loadRakebackHistory();
-      loadDashboard(authorizedUnionId);
-    } catch (e: any) {
-      masterBus.emit('SHOW_TOAST', {
-        severity: 'critical',
-        message: `Rakeback failed: ${e?.message || 'unknown error'}`,
-      });
-      reportError(e, 'UnionDashboardPage.runUnionRakeback');
-    } finally {
-      if (mountedRef.current) setRakebackRunning(false);
-    }
-  }, [authorizedUnionId, rakebackRunning, mountedRef, loadRakebackHistory, loadDashboard]);
 
   // ── Bus Listeners ──────────────────────────────────────────
   useEffect(() => {
@@ -2508,7 +2471,7 @@ export default function UnionDashboardPage() {
                 </div>
               </div>
 
-              {/* Union Rakeback Distribution */}
+              {/* Canonical weekly accounting navigation and retained records */}
               <h3 className="admin-section-title">Weekly Rakeback</h3>
               <div
                 style={{
@@ -2521,18 +2484,24 @@ export default function UnionDashboardPage() {
                 }}
               >
                 <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  Distribute Each Club&apos;S Share Of Last Week&apos;S Rake From The Union Wallet.
-                  Runs Are Idempotent - A Week Can&apos;T Be Paid Twice.
+                  View Recorded Weekly Accounting And Issued Invoices For This Union.
                 </span>
                 <button
                   className="admin-action-btn"
-                  onClick={runUnionRakeback}
-                  disabled={rakebackRunning}
+                  onClick={() => authorizedUnionId && navigate(`/unions/${authorizedUnionId}/settlement`)}
+                  disabled={!authorizedUnionId}
                 >
-                  {rakebackRunning ? 'Distributing…' : 'Distribute Weekly Rakeback'}
+                  View Accounting Status
                 </button>
               </div>
-              {rakebackHistory.length > 0 && (
+              <h4>Recorded Rakeback History · Latest Up To 12 Records</h4>
+              <button className="admin-action-btn" onClick={() => void loadRakebackHistory()}
+                disabled={!rakebackScope() || (rakebackVisible && rakebackLoading)}>Refresh History</button>
+              {rakebackVisible && rakebackLoading && <p role="status">Loading Recorded Rakeback History…</p>}
+              {(!rakebackVisible || rakebackReadError) && <p role="alert">Recorded Rakeback History Is Unavailable.</p>}
+              {rakebackVisible && !rakebackLoading && !rakebackReadError && rakebackHistory.length === 0 &&
+                <p>No Recorded Rakeback History Was Found For This Union.</p>}
+              {rakebackVisible && !rakebackLoading && !rakebackReadError && rakebackHistory.length > 0 && (
                 <div className="admin-table-scroll" style={{ marginBottom: '20px' }}>
                   <table className="admin-data-table">
                     <thead>
@@ -2549,7 +2518,7 @@ export default function UnionDashboardPage() {
                             {new Date(r.period_start).toLocaleDateString()} -{' '}
                             {new Date(r.period_end).toLocaleDateString()}
                           </td>
-                          <td style={{ color: '#31A24C' }}>{fmt(r.total_rakeback)}</td>
+                          <td>{formatWeeklyChips(r.total_rakeback)}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                             {timeAgo(r.executed_at)}
                           </td>

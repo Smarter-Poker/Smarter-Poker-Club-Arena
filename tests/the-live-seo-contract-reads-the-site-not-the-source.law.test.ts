@@ -23,6 +23,7 @@ const HEAD = `<html><head><title>Help Center | Smarter.Poker</title>
 <meta name="description" content="Answers To The Most Common Poker Arena Questions: Accounts, Joining And Running Clubs, Cash Games And Tournaments." />
 <meta name="robots" content="index, follow, max-image-preview:large" />
 <link rel="canonical" href="https://smarter.poker/hub/club-arena/help" />
+<meta property="og:image" content="https://smarter.poker/images/og-poker-arena.jpg" />
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"BreadcrumbList"},{"@type":"FAQPage"}]}</script>
 </head><body><style>.x{}</style><script>var a=1</script><!-- c --><div id="root"><h1>Help Center</h1><p>${'word '.repeat(150)}</p></div></body></html>`;
 
@@ -35,6 +36,14 @@ describe('the live SEO contract checker', () => {
     expect(head.description!.length).toBeGreaterThan(60);
     expect(head.h1).toBe(true);
     expect(ldTypes(head.ld)).toEqual(['BreadcrumbList', 'FAQPage']);
+    expect(head.ogImage).toBe('https://smarter.poker/images/og-poker-arena.jpg');
+  });
+
+  it('proves the share card the landing names is a real image on the live site (phase 6)', () => {
+    const src = readFileSync(join(ROOT, 'scripts/ci/check-live-seo-contract.mjs'), 'utf8');
+    expect(src).toContain('async function checkShareImage(head)');
+    expect(src).toContain("if (entry.route === '/') await checkShareImage(head);");
+    expect(src).toContain('expected 200 image/*');
   });
 
   it('reports a JSON-LD block that does not parse instead of ignoring it', () => {

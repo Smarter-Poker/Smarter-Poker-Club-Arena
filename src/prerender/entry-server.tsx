@@ -85,7 +85,17 @@ export function renderPublicPage(path: string): PrerenderedPage {
         basename={ROUTER_BASENAME}
         location={`${ROUTER_BASENAME}${path === '/' ? '' : path}`}
       >
-        <Page />
+        {/* At runtime AppLayout supplies <main id="main-content"> around every
+            route but the landing, which is its own main. The static page a
+            reader gets before, or without, JavaScript has the same landmark
+            (discoverability phase 6, 2026-09-17). */}
+        {path === '/' ? (
+          <Page />
+        ) : (
+          <main id="main-content" tabIndex={-1}>
+            <Page />
+          </main>
+        )}
       </StaticRouter>
     </StrictMode>
   );

@@ -26,7 +26,12 @@ import { WEB_APP_URL, WEB_ORIGIN } from './appBase';
 import { FAQ_ITEMS } from '../pages/helpContent';
 
 export const SITE_NAME = 'Smarter.Poker';
-export const DEFAULT_OG_IMAGE = `${WEB_ORIGIN}/images/og-card.jpg`;
+/**
+ * Poker Arena's own 1200x630 share card (discoverability phase 6, 2026-09-17),
+ * served by the World Hub from public/images/og-poker-arena.jpg. Before this
+ * every arena link previewed as the generic Smarter.Poker poster.
+ */
+export const DEFAULT_OG_IMAGE = `${WEB_ORIGIN}/images/og-poker-arena.jpg`;
 export const ROBOTS_INDEX =
   'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
 export const ROBOTS_NOINDEX = 'noindex, nofollow';

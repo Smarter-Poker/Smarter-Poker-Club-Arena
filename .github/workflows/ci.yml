@@ -1090,7 +1090,9 @@ jobs:
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Observed earlier checks: 13m39s; unchanged V31: 3m53s. Keep every check.
+    # Case/statement/cleanup limits remain bounded by their existing drivers.
+    timeout-minutes: 20
     permissions:
       contents: read
       actions: read

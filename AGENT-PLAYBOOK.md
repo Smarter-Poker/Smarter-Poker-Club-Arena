@@ -1,4 +1,4 @@
-> **Current owner instruction (September 16):** Read [AGENTS.md](AGENTS.md) before this historical playbook. Task `01a0ab39-71ca-7821-825d-4943a0a6a0a3` retains sole integration and publication authority. Use the original GitHub/Vercel/Hetzner paths. After verified and reported restoration, that owner may deliver the six pending workstreams in the exact order recorded there. Retired local/custom pipelines and external error telemetry must not return. Historical autopilot, automatic-merge, watchdog and repair directions below are inactive. Preserve pending application work and use the configured credential store.
+> **Current owner instruction (September 17):** Use [PUBLISHING.md](PUBLISHING.md) for the active push, protected merge, publication and live-verification procedure. Each authorized agent owns its delivery independently and may work and publish in parallel. There is no restoration-owner approval or numbered release queue. This later owner instruction supersedes conflicting historical release directions below. Retired local/custom publishers, autopilot, watchdog/repair release paths and external error telemetry remain inactive. Preserve required technical checks, production safeguards and other agents’ work.
 
 # RULE 0 — "EM BARS" MEANS EM DASHES (—), NOT HAMBURGER BARS
 
@@ -103,23 +103,17 @@ finished and simply never proposed. Every rule below is one of those, fixed.
 
 ## 1. THE THIRTY-SECOND VERSION
 
-```bash
-# 1. Claim your own working tree. NEVER work in the shared clone.
-eval "$(bash scripts/agent-workspace.sh <your-agent-name> fix/<short-slug>)"
+Read [PUBLISHING.md](PUBLISHING.md) for the current owner-approved route.
 
-# 2. Stage only the exact paths you changed, then commit.
-git add path/to/file path/to/other-file
-git commit -m "fix(scope): what changed"
+1. Recover or create your own branch/worktree; preserve existing work and PRs.
+2. Commit only intended paths with the ordinary hooks, then push your branch.
+3. Find the existing PR or create one if missing. Read the actual required checks.
+4. When the required checks pass, complete the protected squash merge yourself.
+5. Follow the existing provider publisher and verify the deployed revision and affected behavior.
 
-# 3. Push. THE PULL REQUEST OPENS ITSELF.
-git push origin HEAD:refs/heads/<your-branch>
-
-# 4. STOP. You are done.
-```
-
-`agent-open-pr.yml` opens the pull request within seconds of the push, on
-`create` AND on `push`, for any branch name. **You do not open it** - the
-workflow owns proposal and merge, and a hand-opened pull request races it.
+Each authorized agent publishes independently. Do not wait for the restoration
+task or earlier numbered deliveries. Provider concurrency and real code/schema
+dependencies still apply. A branch push does not finish a publication task.
 
 **`gh` IS installed on this Mac.** `/opt/homebrew/bin/gh`, v2.86.0, logged in
 as `Smarter-Poker` (verified 2026-09-12). This paragraph called it absent for
@@ -141,8 +135,8 @@ install. The hook now repairs PATH for every tool its guards require, and
 `tests/the-docs-describe-this-environment.law.test.ts` fails if this paragraph
 ever goes back to calling `gh` absent while a guard demands it.
 
-Autopilot enables squash auto-merge within seconds, keeps the branch fresh, and
-GitHub merges it the moment the required checks are green. **You never merge.**
+The authorized agent completes its protected merge and live verification.
+Disabled autopilot is not part of the current delivery path.
 
 If you do only one thing from this document, do step 1. Sharing a checkout is
 the single largest cause of destroyed work here.
@@ -217,10 +211,10 @@ bash scripts/agent-trees-audit.sh              # what is at risk right now
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.github/workflows/agent-branch-proposal.yml`      | Emits an unprivileged branch signal; it receives no App, PAT, production, or publish credential                                             |
 | `.github/workflows/agent-open-pr.yml`              | Consumes the signal through `workflow_run`, so PR authority always executes reviewed default-branch code                                    |
-| `.github/workflows/agent-autopilot.yml`            | Reacts to native PR events and enables protected squash auto-merge; it has no timer, refresher, or fallback token                           |
+| `.github/workflows/agent-autopilot.yml`            | Retired and disabled; agents complete their own protected merges using PUBLISHING.md                           |
 | `.github/scripts/queue-pr.sh`                      | Squash only, never `--admin`; refuses direct merge unless the base has required checks                                                      |
 | `.github/workflows/production-integrity-audit.yml` | Club Arena-only, read-only evidence comparing direct Hetzner/public provenance and engine health against `main`; it cannot publish or retry |
-| `.github/workflows/estate-integrity.yml`           | Checks that all seven repos retain rulesets, no bypass actors, byte-identical shared guards, correct file modes, and a live Autopilot       |
+| `.github/workflows/estate-integrity.yml`           | Checks that all seven repos retain rulesets, no bypass actors, byte-identical shared guards, correct file modes, and repository safeguards; this is not authorization to reactivate retired autopilot       |
 
 ### Your work cannot regress silently
 
@@ -265,7 +259,7 @@ Each one caused a real, dated incident.
 | Work in the shared clone                                             | One HEAD, one index. Agent B's `checkout -b` takes agent A's edits with it. Eight abandoned stashes and six `backup/*` branches were the evidence                                                                                                                                                                                                                |
 | `gh pr merge --admin`                                                | Bypasses required checks. Red code reached `main` four times                                                                                                                                                                                                                                                                                                     |
 | `gh pr merge --merge` / `--rebase`                                   | Disabled here. The API call fails **silently** while the agent reports success                                                                                                                                                                                                                                                                                   |
-| A polling script (`wait_and_merge.sh`, `while true; do gh run list`) | Fragile and unobservable. Autopilot already does this, server-side                                                                                                                                                                                                                                                                                               |
+| A polling script (`wait_and_merge.sh`, `while true; do gh run list`) | Scheduled merge/repair loops are retired. Use the existing event-driven publisher and retain its actual result                                                                                                                                                                                                                                                                                               |
 | `git push` / `--force` to `main`                                     | Blocked by the ruleset. A force-push once rewound `main` and dropped four commits already live in production                                                                                                                                                                                                                                                     |
 | `git pull --rebase origin main` on the Mac clone                     | Strands the clone mid-rebase. Preserve explicit local work, then continue in a fresh isolated worktree from `origin/main`                                                                                                                                                                                                                                        |
 | `--no-verify`                                                        | Skips every hook, and each one is there because something was lost                                                                                                                                                                                                                                                                                               |
@@ -383,16 +377,11 @@ They were one of these four:
 
 ### 1. Waiting for something that finishes without you
 
-The single largest waste. Do not `sleep`-and-poll a deploy, a check, or a merge.
-Native repository events open the pull request and Autopilot arms protected
-merge; the owning publisher and read-only production audit leave durable run
-evidence. Section 5 forbids `wait_and_merge.sh` by name; this is
-the same rule for the same reason, and "I'll just check every 30 seconds"
-is that script written by hand.
-
-Push, open the PR, **stop**. Check once at the end if you must. A poll loop also
-burns a tool call and a slice of context per iteration, so it costs tokens as
-well as minutes.
+Record the pending run and revision, continue other authorized work, and inspect
+the result afterward. Complete the protected merge when its actual required
+checks pass and verify the owning publisher's live result. Do not depend on
+retired autopilot or a scheduled repair/merge loop. Do not end a delivery claim
+at branch push; use [PUBLISHING.md](PUBLISHING.md).
 
 ### 2. Re-solving the same setup, once per worktree
 
@@ -530,10 +519,10 @@ Inside a workflow the question does not arise: the App (id 4680372) has Checks
 permission, so anything running in Actions can read them. Only the local PAT
 cannot.
 
-**And you should not be polling in the first place.** Open the PR and stop.
-Autopilot merges it when the checks go green. Checking once to see _why_
-something is BLOCKED is fine; sitting in a loop waiting is the thing the
-forbidden `wait_and_merge.sh` scripts did.
+**Own the release through its actual result.** Continue other authorized work
+while providers run, inspect the result afterward, and complete the protected
+merge/publication steps in [PUBLISHING.md](PUBLISHING.md). Do not introduce
+a polling repair loop or depend on disabled autopilot.
 
 ### The configured GitHub CLI/API credential is the sanctioned path
 

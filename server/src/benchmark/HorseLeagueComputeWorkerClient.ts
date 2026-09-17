@@ -997,7 +997,9 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
       rejectJoin = reject;
     });
     try {
-      void Promise.resolve(this.worker.terminate()).then(resolveJoin, rejectJoin);
+      void Promise.resolve(this.worker.terminate())
+        .then(() => resolveJoin())
+        .catch(rejectJoin);
     } catch (error) {
       rejectJoin(error);
     }

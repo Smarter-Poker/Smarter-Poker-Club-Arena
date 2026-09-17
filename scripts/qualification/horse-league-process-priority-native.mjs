@@ -67,6 +67,7 @@ const owned = [];
 const clients = [];
 const timerHandles = new Set();
 let Adapter;
+let parityChannelHub;
 
 async function hash(path) {
   const h = createHash('sha256');
@@ -284,7 +285,7 @@ try {
   const required = new Set([
     'benchmark/HorseLeagueComputeWorkerClient.ts', 'benchmark/HorseLeagueComputeProcess.ts',
     'benchmark/HorseLeagueComputeWorker.ts', 'benchmark/HorseLeagueComputeProtocol.ts',
-    'benchmark/HorseLeagueProcessPriority.ts',
+    'benchmark/HorseLeagueProcessPriority.ts', 'hub/ChannelHub.ts',
   ]);
   const seen = new Set();
   for (const item of request.candidateFiles) {
@@ -298,6 +299,10 @@ try {
     observations.sourceFiles.push({ path: rel, sha256: item.sha256 });
   }
   assert.equal(required.size, 0, 'candidate boundary pins missing');
+  // The real in-process parity path imports this singleton through
+  // HorseLeague -> supabase barrel -> seats -> financialPush. Its lobby
+  // interval is referenced, so this finite supervisor must own its cleanup.
+  ({ channelHub: parityChannelHub } = await import(pathToFileURL(join(candidateRoot, 'hub/ChannelHub.ts')).href));
   const runtime = await import(pathToFileURL(join(candidateRoot, 'benchmark/HorseLeagueComputeWorkerClient.ts')).href);
   Adapter = runtime.LowPriorityComputeProcess;
   assert.equal(typeof Adapter, 'function');
@@ -532,6 +537,15 @@ try {
   }
   if (observations.cleanup.some((item) => !item.confirmed)) {
     observations.status = 'FAILED_TERMINAL_UNCONFIRMED'; process.exitCode = 1;
+  }
+  if (parityChannelHub) {
+    try {
+      parityChannelHub.close();
+      observations.supervisorCleanup = { parityChannelHubClosed: true };
+    } catch (error) {
+      observations.supervisorCleanup = { parityChannelHubClosed: false, error: String(error).slice(0, 1000) };
+      observations.status = 'FAILED_SUPERVISOR_CLEANUP'; process.exitCode = 1;
+    }
   }
   observations.parent.finalNice = getPriority(0);
   if (observations.parent.finalNice !== observations.parent.nice) {

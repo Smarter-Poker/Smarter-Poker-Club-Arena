@@ -213,7 +213,7 @@ describe('Horse League actual-terminal join bookkeeping (unit model)', () => {
     expect(child.kill).toHaveBeenCalledTimes(1);
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
     child.exit(null, 'SIGTERM');
-    await first;
+    await expect(first).resolves.toBeUndefined();
     expect(terminal).toBe(true);
   });
 
@@ -230,7 +230,7 @@ describe('Horse League actual-terminal join bookkeeping (unit model)', () => {
     expect(terminal).toBe(false);
     expect(child.kill).not.toHaveBeenCalled();
     child.emit('close', -2, null);
-    await joined;
+    await expect(joined).resolves.toBeUndefined();
     expect(terminal).toBe(true);
     await expect(value.ready()).rejects.toThrow('spawn ENOENT');
   });

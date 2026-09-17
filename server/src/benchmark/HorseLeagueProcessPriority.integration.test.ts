@@ -77,6 +77,7 @@ it('verifies the Linux inherited-priority boundary with explicit remaining quali
     'HorseLeagueProcessPriority.test.ts',
     'HorseLeagueComputeProcessBoundary.test.ts',
   ].map((name) => `benchmark/${name}`);
+  runtimePaths.push('hub/ChannelHub.ts');
   const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: serverRoot,
     encoding: 'utf8',
@@ -166,6 +167,7 @@ it('verifies the Linux inherited-priority boundary with explicit remaining quali
     expect(result.sourceFiles).toEqual(request.candidateFiles);
     expect(result.cleanup.length).toBeGreaterThan(0);
     expect(result.cleanup.every((entry: { confirmed: boolean }) => entry.confirmed)).toBe(true);
+    expect(result.supervisorCleanup).toEqual({ parityChannelHubClosed: true });
     expect(
       child.pid && groupExists(child.pid),
       'no owned process remains after successful receipt'

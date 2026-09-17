@@ -41,5 +41,7 @@ describe('indexnow public routes', () => {
     expect(wf).toMatch(/conclusion == 'success'/);
     expect(wf).not.toMatch(/schedule:/);
     expect(wf).toMatch(/node scripts\/indexnow-public-routes\.mjs/);
+    expect(wf).not.toMatch(/workflow_run\.head_sha/);
+    expect(wf).toMatch(/continue-on-error: true/);
   });
 });

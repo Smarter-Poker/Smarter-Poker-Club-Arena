@@ -21638,6 +21638,7 @@ function LiveTablePage({
     isSizingOpen: raiseIntent.open,
     isSpectator: !tableState.players.some((p) => p?.isHero),
     isModalOpen:
+      showMustMoveLobby ||
       showSettings ||
       showInsurance ||
       showRIT ||
@@ -21686,6 +21687,7 @@ function LiveTablePage({
     },
     onClosePanel: () => {
       // Escape key → close ALL open modals/overlays
+      setShowMustMoveLobby(false);
       setIsChatCollapsed(true);
       setShowSettings(false);
       setIsReactionPickerOpen(false);

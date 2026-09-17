@@ -32,6 +32,12 @@
    live data. No gold, no amber, no browns.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Keep Join Game and Close below the live announcement strip. Its existing
+   measured height includes the safe area and disappears when the strip does. */
+.mml-overlay {
+  top: var(--mtt-ticker-h, 0px);
+}
+
 /* ─── The chassis ─── */
 .mml-panel {
   --mml-panel: var(--realism-panel, #0b1017);

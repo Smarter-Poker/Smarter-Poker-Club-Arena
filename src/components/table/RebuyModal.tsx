@@ -24,6 +24,8 @@ interface RebuyModalProps {
   onConfirm: () => void;
   onClose: () => void;
   isProcessing: boolean;
+  /** A prior submission needs its original receipt, not a new purchase. */
+  purchaseUnconfirmed?: boolean;
   /**
    * The club whose host runs the Diamond Games (Dan 2026-09-10: a player who
    * cannot cover a rebuy is offered the diamonds-to-chips door rather than a
@@ -43,6 +45,7 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
   onConfirm,
   onClose,
   isProcessing,
+  purchaseUnconfirmed = false,
   diamondGamesClubId,
   onPlayDiamonds,
 }) => {
@@ -54,9 +57,14 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
   const totalCost = Math.round((Number(rebuyCost) + Number(rebuyFee)) * 100) / 100;
   // Gate on the TOTAL — this is the number the server debits.
   const canAfford = walletBalance >= totalCost;
+  const canConfirm = purchaseUnconfirmed || canAfford;
+  const dismiss = () => {
+    if (isProcessing || purchaseUnconfirmed) return;
+    onClose();
+  };
 
   return (
-    <div className="rebuyModalOverlay" onClick={onClose}>
+    <div className="rebuyModalOverlay" onClick={dismiss}>
       <div
         className="rebuyModalContent"
         onClick={(e) => e.stopPropagation()}
@@ -69,8 +77,8 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
           <button
             type="button"
             className="rebuyCloseBtn"
-            onClick={onClose}
-            disabled={isProcessing}
+            onClick={dismiss}
+            disabled={isProcessing || purchaseUnconfirmed}
             aria-label="Close Rebuy"
           >
             ×
@@ -112,7 +120,12 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
               />
             )}
           </div>
-          {!canAfford && (
+          {purchaseUnconfirmed && (
+            <div className="rebuyWarning" role="alert">
+              Rebuy Not Confirmed. Retry To Check The Same Purchase.
+            </div>
+          )}
+          {!canAfford && !purchaseUnconfirmed && (
             <div className="rebuyWarning">
               Insufficient Balance - You Need {money(totalCost)} To Rebuy
             </div>
@@ -122,8 +135,8 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
           <button
             type="button"
             className="rebuyDeclineBtn"
-            onClick={onClose}
-            disabled={isProcessing}
+            onClick={dismiss}
+            disabled={isProcessing || purchaseUnconfirmed}
           >
             Decline
           </button>
@@ -133,13 +146,17 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
             onClick={() => {
               // Guard here too: the disabled attribute alone loses a race if a
               // second tap lands in the same frame as the first.
-              if (!canAfford || isProcessing) return;
+              if (!canConfirm || isProcessing) return;
               soundService.playBuyInConfirm();
               onConfirm();
             }}
-            disabled={!canAfford || isProcessing}
+            disabled={!canConfirm || isProcessing}
           >
-            {isProcessing ? 'Processing...' : `Rebuy ${money(totalCost)}`}
+            {isProcessing
+              ? 'Processing...'
+              : purchaseUnconfirmed
+                ? 'Retry Confirmation'
+                : `Rebuy ${money(totalCost)}`}
           </button>
         </div>
       </div>

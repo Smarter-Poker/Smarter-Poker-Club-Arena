@@ -127,10 +127,11 @@ async function signInTemporaryAccount(
   account: TemporaryCustomizationAccount
 ): Promise<Page> {
   const page = await context.newPage();
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: RESPONSE_TIMEOUT });
-  await page
-    .waitForURL((url) => url.pathname.includes('/auth'), { timeout: 20_000 })
-    .catch(() => undefined);
+  // The public landing page deliberately does not redirect signed-out visitors.
+  // These contexts are empty: enter a protected route and require real sign-in.
+  const protectedURL = new URL('notifications', baseURL).toString();
+  await page.goto(protectedURL, { waitUntil: 'domcontentloaded', timeout: RESPONSE_TIMEOUT });
+  await page.waitForURL((url) => url.pathname.includes('/auth'), { timeout: 20_000 });
 
   if (page.url().includes('/auth')) {
     const email = page.locator('input[type="email"]').first();
@@ -146,13 +147,29 @@ async function signInTemporaryAccount(
     await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 45_000 });
   }
 
+  // Wait for persistence, then reject any other identity before account writes.
+  const signedInUser = await page.waitForFunction(
+    () => {
+      try {
+        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
+        return session?.user?.id || session?.currentSession?.user?.id || null;
+      } catch {
+        return null;
+      }
+    },
+    undefined,
+    { timeout: 30_000 }
+  );
+  expect(await signedInUser.jsonValue()).toBe(account.id);
+  await signedInUser.dispose();
+
   await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
   // The canonical lobby is intentionally a standalone full-bleed route. It
   // does not mount AppLayout, which owns the server-backed profile decision
   // used by ensurePlayableProfile. Probe a known protected layout route just
   // like global setup and the realtime certification do; otherwise the test
   // waits for a gate that cannot exist on `/` and can never reach checkout.
-  await page.goto(new URL('notifications', baseURL).toString(), {
+  await page.goto(protectedURL, {
     waitUntil: 'domcontentloaded',
     timeout: RESPONSE_TIMEOUT,
   });

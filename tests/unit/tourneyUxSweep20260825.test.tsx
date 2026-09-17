@@ -498,7 +498,7 @@ describe('Item 10 - busting holds action so the rebuy can be offered', () => {
     expect(src).toMatch(/if \(tableState\.isHandInProgress && !eliminationSignalled\) return;/);
   });
 
-  it('an unanswered rebuy prompt cannot hold the player forever', () => {
+  it('an unanswered rebuy prompt requests decline after two minutes and awaits confirmation', () => {
     /* The modal branch cancelled the 5s deadline and set nothing in its place.
        PersistentTableLayer HIDES rather than unmounts, so navigating away with
        the prompt open left the hold active for the rest of the session. */
@@ -507,7 +507,11 @@ describe('Item 10 - busting holds action so the rebuy can be offered', () => {
        appears SOMEWHERE in a 15,000-line file is satisfied by the rebuy re-arm
        just as happily as by the backstop. Assert the timer is installed WITH
        the constant. */
-    expect(src).toMatch(/hold\.deadline = setTimeout\([\s\S]{0,600}BUST_HOLD_MODAL_MS/);
+    const backstop = sliceCall(src, 'hold.deadline = setTimeout(async');
+    expect(backstop).toMatch(/,\s*BUST_HOLD_MODAL_MS\s*\)$/);
+    expect(backstop).toMatch(
+      /await GameServerAPI\.notifyServerRejectRebuy\(tableId\)[\s\S]*?if \(outcome\?\.success !== true\) \{[\s\S]*?return;[\s\S]*?setShowRebuyModal\(false\);[\s\S]*?releaseBustHoldRef\.current\?\.\(\)/
+    );
   });
 
   it('a slow rebuy check cannot open a modal over a table the player has left', () => {
@@ -536,23 +540,29 @@ describe('Item 10 - busting holds action so the rebuy can be offered', () => {
     expect(tourneyWatcher).toMatch(/beginBustHold\(\)/);
   });
 
-  it('declining releases immediately and rebuying cancels the deferred exit', () => {
+  it('confirmed decline releases the hold and confirmed rebuy cancels the deferred exit', () => {
     expect(src).toMatch(/bustHoldRef\.current\.pendingExit = null;\s*releaseBustHold\(\);/);
     /* 2026-08-26, third audit: this used to be a single 400-char window match
        that `onConfirmRebuy` satisfied — so the CONFIRM path proved the claim
        about the DECLINE path, and deleting `onCloseRebuyModal` entirely still
        passed. Slice each handler and assert inside it. */
-    const confirm = src.slice(src.indexOf('onConfirmRebuy'), src.indexOf('onCloseRebuyModal'));
+    const confirm = sliceBlockAfter(src, 'onConfirmRebuy={');
     expect(confirm, 'a rebuy must discard the deferred exit').toMatch(
       /bustHoldRef\.current\.pendingExit = null;/
     );
     expect(confirm).toMatch(/releaseBustHold\(\)/);
-
-    const decline = src.slice(
-      src.indexOf('onCloseRebuyModal'),
-      src.indexOf('onCloseRebuyModal') + 1200
+    expect(confirm).toMatch(
+      /if \(purchase\?\.success !== true\) throw[\s\S]*?rebuyPurchasePendingRef\.current = false;[\s\S]*?bustHoldRef\.current\.pendingExit = null;\s*releaseBustHold\(\)/
     );
-    expect(decline, 'declining must release the hold immediately').toMatch(/releaseBustHold\(\)/);
+
+    const decline = sliceBlockAfter(src, 'onCloseRebuyModal={');
+    expect(decline, 'confirmed decline must release the hold').toMatch(/releaseBustHold\(\)/);
+    expect(decline).toMatch(
+      /if \(rebuyProcessingRef\.current \|\| rebuyPurchasePendingRef\.current\) return;/
+    );
+    expect(decline).toMatch(
+      /await GameServerAPI\.notifyServerRejectRebuy\(tableId\)[\s\S]*?if \(outcome\?\.success !== true\) \{[\s\S]*?return;[\s\S]*?setShowRebuyModal\(false\);[\s\S]*?releaseBustHold\(\)/
+    );
   });
 });
 
@@ -954,7 +964,17 @@ describe('Second audit - busting cannot strand a player at a dead seat', () => {
   });
 
   it('the backstop does not cancel a rebuy that is mid-flight', () => {
-    expect(src).toMatch(/if \(rebuyProcessingRef\.current\) \{/);
+    const backstop = sliceCall(src, 'hold.deadline = setTimeout(async');
+    expect(backstop).toMatch(
+      /if \(rebuyProcessingRef\.current \|\| rebuyPurchasePendingRef\.current\) return;[\s\S]*?await GameServerAPI\.notifyServerRejectRebuy\(tableId\)/
+    );
+    // A second blind timeout was the old unsafe fallback. Unknown purchases
+    // retain receipt recovery instead of being ejected by a later timer.
+    expect(backstop.match(/setTimeout\(/g)).toHaveLength(1);
+    const release = sliceCall(src, 'const releaseBustHold = useCallback(');
+    expect(release).toMatch(
+      /if \(rebuyPurchasePendingRef\.current\) return;[\s\S]*?hold\.active = false;/
+    );
   });
 });
 

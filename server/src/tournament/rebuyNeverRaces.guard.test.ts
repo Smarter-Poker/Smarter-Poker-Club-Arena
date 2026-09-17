@@ -13,11 +13,69 @@
  * PLAYER IS NEEDED FIRST, IF THEY TRULY SHOULD BE IN THE SAME TABLE, SAME
  * SEAT, ITS ALLOWED."
  */
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { handleRejectRebuy } from '../handlers/reject_rebuy.js';
 import { sliceBetween } from '../testHelpers/sourceWindow.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+const declineIO = vi.hoisted(() => ({ sendJSON: vi.fn(), reportError: vi.fn() }));
+vi.mock('../http/respond.js', () => ({ sendJSON: declineIO.sendJSON }));
+vi.mock('../http/auth.js', () => ({
+  authenticateRequest: vi.fn(async () => ({ userId: 'player' })),
+}));
+vi.mock('../http/body.js', () => ({
+  readBody: vi.fn(async () => JSON.stringify({ tableId: 'table' })),
+}));
+vi.mock('../services/errorReporter.js', () => ({ reportError: declineIO.reportError }));
+
+describe('the real rebuy decline handler acknowledges only its owner', () => {
+  beforeEach(() => vi.clearAllMocks());
+  it.each([null, undefined, {}])(
+    'refuses unavailable engine %s rather than acknowledging a no-op',
+    async (engine) => {
+      await handleRejectRebuy({} as any, {} as any, {
+        gameServer: { getTableEngine: () => engine },
+      });
+      expect(declineIO.sendJSON).toHaveBeenCalledWith(
+        expect.anything(),
+        503,
+        expect.objectContaining({ success: false })
+      );
+    }
+  );
+  it('waits for the durable decline before acknowledging it', async () => {
+    let finish!: () => void;
+    const rejectRebuy = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const work = handleRejectRebuy({} as any, {} as any, {
+      gameServer: { getTableEngine: () => ({ rejectRebuy }) },
+    });
+    await vi.waitFor(() => expect(rejectRebuy).toHaveBeenCalledWith('player'));
+    expect(declineIO.sendJSON).not.toHaveBeenCalled();
+    finish();
+    await work;
+    expect(declineIO.sendJSON).toHaveBeenCalledWith(expect.anything(), 200, { success: true });
+  });
+  it('does not acknowledge a failed durable decline', async () => {
+    await handleRejectRebuy({} as any, {} as any, {
+      gameServer: {
+        getTableEngine: () => ({
+          rejectRebuy: async () => {
+            throw new Error('Lost receipt');
+          },
+        }),
+      },
+    });
+    expect(declineIO.sendJSON).toHaveBeenCalledWith(expect.anything(), 500, expect.anything());
+    expect(declineIO.sendJSON).not.toHaveBeenCalledWith(expect.anything(), 200, expect.anything());
+  });
+});
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = path.join(HERE, '..', '..', '..', 'supabase', 'migrations');

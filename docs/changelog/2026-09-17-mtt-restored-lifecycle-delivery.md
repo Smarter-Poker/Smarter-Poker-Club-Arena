@@ -28,6 +28,7 @@ installed migration name without changing SQL bytes.
 ## Verification before submission
 
 - 532 affected engine cases across19 files passed; both TypeScript checks passed.
+- The complete engine suite passed:12,046 cases, with145 existing skips.
 - 350 affected client cases across20 files passed across the initial run and the
   final18-case card rerun. The only initial client failure expected donor markup;
   its exact visible-label assertion now uses the restored layout and still
@@ -47,6 +48,15 @@ headb8cc58274cc184ae3baba2e0a2a33d93122ceb16, all client/engine shards,
 accounting, compilation and production build passed before this composition.
 Final protected checks, merge, publication and connected live behavior remain
 separate requirements.
+
+The first ordinary push found two directly connected verification defects. Git
+fixtures inherited the pre-push repository environment, so their temporary
+`git init` addressed the calling repository instead. Local fixture and classifier
+Git calls now discard inherited Git context and retain regressions using only a
+disposable decoy repository. The late-registration bundle pin now explicitly
+admits its second pure display helper and rejects runtime dependencies in that
+helper. Neither correction bypasses the normal hooks or weakens the application
+assertions.
 
 ## Work still assigned
 

@@ -59,7 +59,9 @@ on:
 # only case where cancelling was ever safe. A run for the sha the check is
 # actually evaluated against can no longer be killed by a newer push.
 #
-# The cost is that a superseded sha's run finishes instead of dying early.
+# The current PR event now retires its verified obsolete heads explicitly.
+# That bounded step also handles jobs whose always() ignores normal cancellation.
+# Historically, a superseded sha's run finished instead of dying early.
 # That is a few runner-minutes. The thing it buys is that no pull request can
 # be stranded by a check that will never speak again, which cost six of them.
 # ═══════════════════════════════════════════════════════════════════════════
@@ -99,6 +101,8 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
+      pull-requests: read
+      actions: write
     outputs:
       src: ${{ steps.f.outputs.src }}
       server: ${{ steps.f.outputs.server }}
@@ -123,6 +127,14 @@ jobs:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/ci/classify-ci-changes.mjs
+      # Keep always() failure-reporting gates intact. Normal cancellation can
+      # leave their old jobs queued; this one event retires only proven older
+      # heads of this same PR, never current checks or a production workflow.
+      - name: Retire this PR's superseded CI attempts
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/retire-superseded-pr-ci.mjs
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)

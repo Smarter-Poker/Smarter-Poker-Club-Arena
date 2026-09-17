@@ -95,6 +95,7 @@ const engineWs = new EngineWebSocketServer({
   // cards for the current hand (public state alone leaves reconnecting players
   // blind and auto-folded).
   onResync: (tableId, userId) => {
+    gameServer.replayMaintenancePresentation(tableId);
     const engine = gameServer.getTableEngine(tableId);
     void engine?.rePushHoleCards(userId);
     // 2026-09-04 (disconnect audit item 11): and the engine's copy of this

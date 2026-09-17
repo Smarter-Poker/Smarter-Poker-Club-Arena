@@ -355,7 +355,18 @@ export interface PlayerActions {
   error?: string;
 }
 
+export interface MaintenancePresentation {
+  active: boolean;
+  phase: 'last_hand' | 'counting_down' | 'finalizing' | 'resuming' | 'idle';
+  break_id: number | null;
+  break_ends_at: number | null;
+  scheduled_ends_at: number | null;
+  reason: string;
+  timestamp: number;
+}
+
 export interface ServerStatus {
+  maintenance?: { presentation?: MaintenancePresentation };
   running: boolean;
   uptime: number;
   activeTables: number;
@@ -601,7 +612,7 @@ export async function getAvailableActions(
  */
 export async function getServerStatus(): Promise<ServerStatus | null> {
   try {
-    const response = await engineFetch(`${GAME_SERVER_URL}/health`);
+    const response = await engineFetch(`${GAME_SERVER_URL}/health`, { cache: 'no-store' });
     if (!response.ok) return null;
     return (await response.json()) as ServerStatus;
   } catch (err) {

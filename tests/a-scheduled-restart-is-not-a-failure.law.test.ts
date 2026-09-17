@@ -222,7 +222,7 @@ describe('LAW 7 - a player who joins after the announcement is covered too', () 
     );
     const code = blankNonCode(TABLE_PAGE);
     expect(
-      code.indexOf('useMaintenanceBreak()'),
+      code.indexOf('useMaintenanceBreak(tableId)'),
       'the break must be read before the socket that consumes it'
     ).toBeLessThan(code.indexOf('useEngineTableState('));
   });

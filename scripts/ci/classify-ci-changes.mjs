@@ -70,7 +70,7 @@ export function classifyChangedPaths(paths) {
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   const diamondGames = matches(
-    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-plinko-denominations|diamond-crash-clicked-multiplier|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/
+    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-plinko-denominations|diamond-crash-clicked-multiplier|diamond-spins-claimed-daily-bonus|diamond-wheel-funded-awards)\.sql|tests\/fixtures\/(diamond-wheel-v2-(receipts|state)|diamond-spins\/wheel-earned-postgres-receipts)\.json|tests\/unit\/wheel(ServerReceipts|EarnedPostgresContract)\.test\.ts|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|DiamondWheelService|WheelBonusEntryService|diamondBonusRecovery)\.ts|src\/hooks\/use(BonusBudget|EarnedBonus)\.ts|src\/components\/games\/BonusSetup\.tsx|src\/utils\/(crashReceipt|bonusGameBudget|wheelAward|wheelPendingSpin|wheelFairness)\.ts|src\/pages\/Diamond(Choice|Crash|Plinko|Wheel)Page\.tsx)$/
   );
 
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.

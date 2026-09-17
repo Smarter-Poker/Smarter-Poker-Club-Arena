@@ -538,7 +538,7 @@ function normaliseDrop(raw: Record<string, unknown>): PlinkoDrop {
   };
 }
 
-function normaliseState(raw: Record<string, unknown>): GameState {
+export function normaliseState(raw: Record<string, unknown>): GameState {
   const config = raw.config ? rec(raw.config) : undefined;
   const pool = raw.pool ? rec(raw.pool) : undefined;
   const player = raw.player ? rec(raw.player) : undefined;

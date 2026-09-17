@@ -265,3 +265,102 @@ describe('complete sealed bonus receipts', () => {
       ).toBe(vector.chips);
   });
 });
+
+describe('earned wheel receipt identity', () => {
+  const awardId = '00000000-0000-0000-0000-000000000021';
+  const budget = {
+    base: 200,
+    doubled: true,
+    denomination: 1,
+    award: { id: awardId, entryDiamonds: 100, boostMultiplier: 2 as const },
+  };
+  const awardedCrash = {
+    ...openCrash,
+    award_id: awardId,
+    bet_diamonds: 300,
+    bet_chips: 3,
+    bonus: {
+      ...crash.bonus,
+      base_diamonds: 200,
+      added_diamonds: 100,
+      total_diamonds: 300,
+      entry_diamonds: 100,
+      boost_multiplier: 2,
+    },
+  };
+  it('redeems the saved award without sending a fresh base debit and retains an unknown result', async () => {
+    const input = { ...crashRequest, budget };
+    rpc.mockResolvedValueOnce({ error: new Error('Disconnected'), data: null });
+    await expect(DiamondBonusService.start(input, 'player-a')).rejects.toThrow('Disconnected');
+    expect(pendingBonus('player-a', input.clubId, 'crash')).toEqual(input);
+    rpc.mockResolvedValueOnce({ error: null, data: awardedCrash });
+    await expect(DiamondBonusService.start(input, 'player-a')).resolves.toEqual(awardedCrash);
+    expect(rpc.mock.calls[1]).toEqual(rpc.mock.calls[0]);
+    expect(rpc.mock.calls[0][0]).toBe('fn_wheel_bonus_start');
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_award_id: awardId, p_double: true });
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('p_base_diamonds');
+    expect(pendingBonus('player-a', input.clubId, 'crash')).toBeNull();
+  });
+  it.each([
+    { award_id: '00000000-0000-0000-0000-000000000022' },
+    { award_id: undefined },
+    { bonus: { ...awardedCrash.bonus, added_diamonds: 200 } },
+    { bonus: { ...awardedCrash.bonus, entry_diamonds: 200 } },
+    { bonus: { ...awardedCrash.bonus, boost_multiplier: 1 } },
+  ])('keeps the exact pending identity after a substituted award receipt', async (change) => {
+    const input = { ...crashRequest, budget };
+    rpc.mockResolvedValueOnce({ error: null, data: { ...awardedCrash, ...change } });
+    await expect(DiamondBonusService.start(input, 'player-a')).rejects.toThrow(
+      'Could Not Be Verified'
+    );
+    expect(pendingBonus('player-a', input.clubId, 'crash')).toEqual(input);
+  });
+  it('accepts maximum upgraded Plinko funding but does not loosen legacy or incomplete receipts', () => {
+    const drops = Array.from({ length: 75 }, (_, index) => ({ ...plinko.drops[0], index }));
+    const receipt = {
+      ...plinko,
+      award_id: awardId,
+      bet_diamonds: 7500,
+      diamonds_per_drop: 100,
+      drops,
+      payout_chips: drops.reduce((sum, ball) => sum + Math.round(ball.payout_chips * 100), 0) / 100,
+      bonus: {
+        ...plinko.bonus,
+        base_diamonds: 5000,
+        added_diamonds: 2500,
+        total_diamonds: 7500,
+        entry_diamonds: 2500,
+        boost_multiplier: 2,
+      },
+    };
+    expect(parsePlinkoBonus(receipt).drops).toHaveLength(75);
+    expect(() => parsePlinkoBonus({ ...receipt, award_id: undefined })).toThrow();
+    expect(() =>
+      parsePlinkoBonus({ ...receipt, bonus: { ...receipt.bonus, boost_multiplier: 1 } })
+    ).toThrow();
+    expect(() =>
+      parsePlinkoBonus({ ...receipt, bonus: { ...receipt.bonus, entry_diamonds: '2500' } })
+    ).toThrow();
+  });
+  it('keeps maximum upgraded Choice action/history receipts identity bound', () => {
+    const receipt = {
+      ...source.mines,
+      award_id: awardId,
+      bet_diamonds: 7500,
+      bet_chips: 75,
+      bonus: {
+        id: source.mines.id,
+        base_diamonds: 5000,
+        added_diamonds: 2500,
+        total_diamonds: 7500,
+        entry_diamonds: 2500,
+        boost_multiplier: 2,
+      },
+    };
+    expect(parseChoiceRound(receipt).bet_diamonds).toBe(7500);
+    expect(() => parseChoiceRound({ ...receipt, award_id: undefined })).toThrow();
+    expect(() =>
+      parseChoiceRound({ ...receipt, bonus: { ...receipt.bonus, added_diamonds: 5000 } })
+    ).toThrow();
+  });
+});

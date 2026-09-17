@@ -19,6 +19,21 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
     'src/pages/DiamondChoicePage.tsx',
     'src/pages/DiamondCrashPage.tsx',
     'src/pages/DiamondPlinkoPage.tsx',
+    'tests/sql/diamond-wheel-funded-awards.sql',
+    'tests/fixtures/diamond-wheel-v2-receipts.json',
+    'tests/fixtures/diamond-spins/wheel-earned-postgres-receipts.json',
+    'tests/unit/wheelServerReceipts.test.ts',
+    'tests/unit/wheelEarnedPostgresContract.test.ts',
+    'src/services/DiamondWheelService.ts',
+    'src/services/WheelBonusEntryService.ts',
+    'src/hooks/useEarnedBonus.ts',
+    'src/hooks/useBonusBudget.ts',
+    'src/components/games/BonusSetup.tsx',
+    'src/utils/bonusGameBudget.ts',
+    'src/utils/wheelAward.ts',
+    'src/utils/wheelPendingSpin.ts',
+    'src/utils/wheelFairness.ts',
+    'src/pages/DiamondWheelPage.tsx',
   ])('admits the accounting job for %s', (path) => {
     expect(classifyChangedPaths([path]).server).toBe(true);
     expect(classifyChangedPaths([path]).tests).toBe(true);

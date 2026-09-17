@@ -1,5 +1,6 @@
 import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
+import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -17,7 +18,12 @@ import {
   parsePlinkoBonus,
   type PlinkoBonus,
 } from '../services/DiamondBonusService';
-import { bonusTotal, gameChips, validSpinAmount } from '../utils/bonusGameBudget';
+import {
+  bonusTotal,
+  bonusWalletDebit,
+  gameChips,
+  validBonusBudget,
+} from '../utils/bonusGameBudget';
 import { randomClientSeed, hmacSha256Hex, sha256Hex } from '../utils/wheelFairness';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
@@ -35,9 +41,12 @@ function DiamondPlinkoGame() {
   const { user } = useAuthUser();
   const navigate = useNavigate();
   const [uuid, setUuid] = useState<string | null>(null);
-  const [state, setState] = useState<GameState | null>(null);
+  const [legacyState, setState] = useState<GameState | null>(null);
   const [quotedAmount, setQuotedAmount] = useState<number | null>(null);
-  const [budget, setBudget] = useBonusBudget(clubId, 'plinko');
+  const [selectedBudget, setBudget] = useBonusBudget(clubId, 'plinko');
+  const earned = useEarnedBonus(uuid, 'plinko', selectedBudget);
+  const budget = earned.budget;
+  const state = (earned.gameState as GameState | null) ?? legacyState;
   const [tableVersion, setTableVersion] = useState(2);
   const [ticket, setTicket] = useState<{ id: string; hash: string } | null>(null);
   const [seed, setSeed] = useState(randomClientSeed);
@@ -63,12 +72,13 @@ function DiamondPlinkoGame() {
       ? result.multipliers_cents
       : (table?.multipliers_cents ?? result?.multipliers_cents ?? []);
   const blocked =
-    !validSpinAmount(budget.base) ||
+    !earned.ready ||
+    !validBonusBudget(budget) ||
     quotedAmount !== total ||
     !state?.available ||
     state.frozen ||
     !state.player?.is_member ||
-    state.player.spendable < total ||
+    state.player.spendable < bonusWalletDebit(budget) ||
     !table ||
     !state.bets.some(
       (b) => b.bet_diamonds === total && b.cap_cents >= table.max_multiplier_cents
@@ -90,7 +100,7 @@ function DiamondPlinkoGame() {
     async (id: string, amount: number) => {
       const g = ++generation.current;
       setQuotedAmount(null);
-      const next = await DiamondGamesService.getState(id, 'plinko', amount);
+      const next = await DiamondGamesService.getState(id, 'plinko', Math.min(amount, 5000));
       if (live.current && g === generation.current) {
         setState(next);
         setQuotedAmount(amount);
@@ -137,14 +147,27 @@ function DiamondPlinkoGame() {
     };
   }, [clubId, user?.id, newTicket, setBudget]);
   useEffect(() => {
-    if (!uuid || !validSpinAmount(budget.base)) return;
+    if (!uuid || !validBonusBudget(budget)) return;
     void load(uuid, total).catch((e) => {
       reportError(e, 'DiamondPlinkoPage.quote');
       if (live.current) setError('The Entry Could Not Be Checked. Try Refresh.');
     });
   }, [uuid, total, budget.base, load]);
 
+  useEffect(() => {
+    if (!earned.recoveredResult || result || animating || uncertain) return;
+    try {
+      const saved = parsePlinkoBonus(earned.recoveredResult);
+      setResult(saved);
+      setLanded(saved.drops.length);
+    } catch (error) {
+      reportError(error, 'DiamondPlinkoPage.awardRecovery');
+      setError('Your Saved Wheel Bonus Could Not Be Verified.');
+    }
+  }, [earned.recoveredResult, result, animating, uncertain]);
+
   const accept = (next: PlinkoBonus, animate: boolean) => {
+    earned.consume(next.award_id);
     setResult(next);
     setLanded(animate ? 0 : next.drops.length);
     setAnimating(animate);
@@ -201,7 +224,8 @@ function DiamondPlinkoGame() {
         accept(next, false);
       }
       if (!live.current) return;
-      await load(uuid, validSpinAmount(budget.base) ? total : 100);
+      await earned.refresh();
+      await load(uuid, validBonusBudget(budget) ? total : 100);
       if (!live.current) return;
       if (!ticket || uncertain) await newTicket();
       if (live.current) setError(null);
@@ -288,6 +312,10 @@ function DiamondPlinkoGame() {
           !animating && (
             <BonusSetup
               budget={budget}
+              entryReady={earned.ready}
+              awardLoading={earned.loading}
+              awardError={earned.error}
+              onRefresh={() => void earned.refresh()}
               onChange={setBudget}
               diamonds={state?.player?.spendable ?? null}
               disabled={busy || uncertain}
@@ -323,7 +351,7 @@ function DiamondPlinkoGame() {
             value:
               animating && result
                 ? `${landed}/${result.drops.length}`
-                : validSpinAmount(budget.base)
+                : validBonusBudget(budget)
                   ? String(total / budget.denomination)
                   : '0',
           },
@@ -372,13 +400,20 @@ function DiamondPlinkoGame() {
         </p>
         {!animating && blocked && state && (
           <p className="sc-copy">
-            {!state.available
-              ? 'Plinko Is Not Open Here Yet.'
-              : !state.player?.is_member
-                ? 'Join The Club To Play.'
-                : state.player.spendable < total
-                  ? 'Buy More Diamonds Or Change Your Entry.'
-                  : 'Refresh To Check This Entry And The Available Prize Cover.'}
+            {!earned.ready
+              ? (earned.error ??
+                (earned.loading
+                  ? 'Checking Your Wheel Award'
+                  : 'Win Plinko On Diamond Spins To Play.'))
+              : !state.available
+                ? 'Plinko Is Not Open Here Yet.'
+                : !state.player?.is_member
+                  ? 'Join The Club To Play.'
+                  : state.player.spendable < bonusWalletDebit(budget)
+                    ? budget.award
+                      ? 'Buy More Diamonds Or Turn Off Double Down.'
+                      : 'Buy More Diamonds Or Change Your Entry.'
+                    : 'Refresh To Check This Entry And The Available Prize Cover.'}
           </p>
         )}
       </GameConsole>

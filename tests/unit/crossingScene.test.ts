@@ -30,12 +30,11 @@ describe('the road is clear until a confirmed failed crossing', () => {
     expect(collisionFrame(0, true).finished).toBe(true);
   });
 });
-describe('only playable Diamond games hide the surrounding app chrome', () => {
-  it('matches the four game routes and keeps wheel, operations, and other pages intact', () => {
-    for (const game of ['plinko', 'crash', 'crossing', 'mines'])
+describe('the wheel and playable Diamond games hide the surrounding app chrome', () => {
+  it('matches the wheel and four game routes while preserving operations and other pages', () => {
+    for (const game of ['wheel', 'plinko', 'crash', 'crossing', 'mines'])
       expect(isDiamondGameRoute(`/clubs/example/${game}`)).toBe(true);
     for (const route of [
-      '/clubs/example/wheel',
       '/clubs/example/diamond-games',
       '/clubs/example/diamond-games-operations',
       '/clubs/example',

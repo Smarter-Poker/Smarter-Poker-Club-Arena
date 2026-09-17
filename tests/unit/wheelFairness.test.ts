@@ -94,3 +94,42 @@ describe('the browser recomputes a spin exactly as Postgres does', () => {
     expect(forged.fair).toBe(false);
   });
 });
+
+// Independent Python hashlib vectors for the two new server draw domains.
+it.each([
+  ['wheel-v2', 248433345962604, 88261],
+  ['wheel-v2-upgrade', 116590784161425, 41421],
+])(
+  'verifies the distinct %s draw without changing legacy fairness',
+  async (domain, roll, point) => {
+    const eligible = [1, 2, 3, 4].map((ord) => ({ ord, weight: 25000 }));
+    const v = await verifyWheelSpin({
+      domain: domain as 'wheel-v2' | 'wheel-v2-upgrade',
+      serverSeed: SEED,
+      serverSeedHash: SEED_HASH,
+      clientSeed: 'lucky-seven',
+      nonce: 7,
+      roll,
+      weightTotal: 100000,
+      eligible,
+      outcomeOrd: Math.floor(point / 25000) + 1,
+    });
+    expect(v.fair).toBe(true);
+    expect(v.computedPoint).toBe(point);
+    expect(
+      (
+        await verifyWheelSpin({
+          domain: domain === 'wheel-v2' ? 'wheel-v2-upgrade' : 'wheel-v2',
+          serverSeed: SEED,
+          serverSeedHash: SEED_HASH,
+          clientSeed: 'lucky-seven',
+          nonce: 7,
+          roll,
+          weightTotal: 100000,
+          eligible,
+          outcomeOrd: Math.floor(point / 25000) + 1,
+        })
+      ).fair
+    ).toBe(false);
+  }
+);

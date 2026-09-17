@@ -123,3 +123,37 @@ describe('a Diamond game continuation keeps its accepted round', () => {
     }
   );
 });
+
+it('retains the accepted Choice award identity and funding through every later action', async () => {
+  const raw = fixtures.receipts.mines;
+  const original = {
+    ...raw,
+    award_id: '00000000-0000-0000-0000-000000000071',
+    bet_diamonds: 200,
+    bet_chips: 2,
+    bonus: {
+      id: raw.id,
+      base_diamonds: 200,
+      added_diamonds: 0,
+      total_diamonds: 200,
+      entry_diamonds: 100,
+      boost_multiplier: 2,
+    },
+  };
+  const open = parseChoiceRound({ ...original, status: 'open', proof: null, payout_chips: 0 });
+  rpc.mockResolvedValueOnce({ error: null, data: original });
+  await expect(DiamondChoiceService.act(open, 'cashout', null)).resolves.toEqual(original);
+  rpc.mockResolvedValueOnce({
+    error: null,
+    data: {
+      ...original,
+      bonus: { ...original.bonus, base_diamonds: 100, added_diamonds: 100, boost_multiplier: 1 },
+    },
+  });
+  await expect(DiamondChoiceService.act(open, 'cashout', null)).rejects.toThrow('Does Not Match');
+  rpc.mockResolvedValueOnce({
+    error: null,
+    data: { ...original, award_id: '00000000-0000-0000-0000-000000000072' },
+  });
+  await expect(DiamondChoiceService.act(open, 'cashout', null)).rejects.toThrow('Does Not Match');
+});

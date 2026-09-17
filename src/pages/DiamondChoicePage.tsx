@@ -1,5 +1,6 @@
 import { pendingBonus } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
+import { useEarnedBonus } from '../hooks/useEarnedBonus';
 import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -9,7 +10,13 @@ import BonusSetup from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
 import { useGameCooldown } from '../hooks/useGameCooldown';
-import { bonusTotal, gameChips, validSpinAmount } from '../utils/bonusGameBudget';
+import {
+  bonusTotal,
+  bonusWalletDebit,
+  earnedReceiptBudget,
+  gameChips,
+  validBonusBudget,
+} from '../utils/bonusGameBudget';
 import { DiamondBonusService, BonusRefusal } from '../services/DiamondBonusService';
 import ChoiceScene from '../components/games/ChoiceScene';
 import {
@@ -50,11 +57,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const { user } = useAuthUser();
   const navigate = useNavigate();
   const [uuid, setUuid] = useState<string | null>(null);
-  const [state, setState] = useState<ChoiceState | null>(null);
+  const [legacyState, setState] = useState<ChoiceState | null>(null);
   const [quotedEntry, setQuotedEntry] = useState<string | null>(null);
   const [round, setRound] = useState<ChoiceRound | null>(null);
   const [mode, setMode] = useState(game === 'mines' ? '5' : 'steady');
-  const [budget, setBudget] = useBonusBudget(clubId, game);
+  const [selectedBudget, setBudget] = useBonusBudget(clubId, game);
+  const earned = useEarnedBonus(uuid, game, selectedBudget, mode);
+  const budget = earned.budget;
+  const state = (earned.gameState as ChoiceState | null) ?? legacyState;
   const bet = bonusTotal(budget);
   const [seed, setSeed] = useState(randomClientSeed);
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -77,7 +87,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     async (id: string) => {
       const g = ++generation.current;
       setQuotedEntry(null);
-      const next = await DiamondChoiceService.state(id, game, mode, bet);
+      const next = await DiamondChoiceService.state(id, game, mode, Math.min(bet, 5000));
       if (!mounted.current || generation.current !== g) return;
       setState(next);
       setQuotedEntry(`${id}:${game}:${mode}:${bet}`);
@@ -88,14 +98,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         setBudget((current) =>
           bonusTotal(current) === next.open_round!.bet_diamonds
             ? current
-            : {
+            : (earnedReceiptBudget(next.open_round! as unknown as Record<string, unknown>) ?? {
                 base:
                   next.open_round!.bet_diamonds > 2500
                     ? next.open_round!.bet_diamonds / 2
                     : next.open_round!.bet_diamonds,
                 doubled: next.open_round!.bet_diamonds > 2500,
                 denomination: 1,
-              }
+              })
         );
         setTicket(null);
         if (!heldStart.current) {
@@ -196,6 +206,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           await DiamondBonusService.start(heldStart.current, user?.id ?? '')
         );
         if (!mounted.current) return;
+        earned.consume(recovered.award_id);
         currentRound.current = recovered;
         setRound(recovered);
         heldStart.current = null;
@@ -203,6 +214,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         setUncertain(false);
         setTicket(null);
       }
+      await earned.refresh();
       await load(uuid);
       if (mounted.current) setError(null);
     } catch (e) {
@@ -223,7 +235,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     }
   };
   const blocked =
-    !validSpinAmount(budget.base) ||
+    !earned.ready ||
+    !validBonusBudget(budget) ||
     quotedEntry !== `${uuid}:${game}:${mode}:${bet}` ||
     !state?.available ||
     state.frozen ||
@@ -231,7 +244,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     state.max_steps < 1 ||
     state.rounds_today >= state.daily_limit ||
     waitSeconds > 0 ||
-    state.diamonds < bet;
+    state.diamonds < bonusWalletDebit(budget);
   const start = async () => {
     if (
       !uuid ||
@@ -277,6 +290,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         )
       );
       if (!mounted.current) return;
+      earned.consume(next.award_id);
       currentRound.current = next;
       setRound(next);
       heldStart.current = null;
@@ -386,6 +400,10 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           !open && (
             <BonusSetup
               budget={budget}
+              entryReady={earned.ready}
+              awardLoading={earned.loading}
+              awardError={earned.error}
+              onRefresh={() => void earned.refresh()}
               onChange={setBudget}
               diamonds={state?.diamonds ?? null}
               disabled={busy || uncertain}
@@ -488,19 +506,24 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                 ? game === 'mines'
                   ? 'Reveal A Tile Or Book The Win.'
                   : 'Cross The Next Street Or Book The Win.'
-                : !state
-                  ? 'Loading Your Game'
-                  : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
-                    ? 'Checking Your Entry'
-                    : blocked
-                      ? state.diamonds < bet
-                        ? 'Not Enough Diamonds For This Bet'
-                        : !state.is_member
-                          ? 'Join The Club To Play'
-                          : !state.available
-                            ? 'This Game Is Not Open Here Yet'
-                            : 'This Bet Is Not Available Right Now'
-                      : `${compactChips(bet)} Diamonds To Play. ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
+                : !earned.ready
+                  ? (earned.error ??
+                    (earned.loading
+                      ? 'Checking Your Wheel Award'
+                      : 'Win This Game On Diamond Spins To Play.'))
+                  : !state
+                    ? 'Loading Your Game'
+                    : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
+                      ? 'Checking Your Entry'
+                      : blocked
+                        ? state.diamonds < bonusWalletDebit(budget)
+                          ? 'Not Enough Diamonds For This Bet'
+                          : !state.is_member
+                            ? 'Join The Club To Play'
+                            : !state.available
+                              ? 'This Game Is Not Open Here Yet'
+                              : 'This Bet Is Not Available Right Now'
+                        : `${compactChips(bet)} Diamonds To Play. ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
             </p>
           )}
         </div>

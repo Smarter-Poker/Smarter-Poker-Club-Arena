@@ -1,4 +1,4 @@
-/** Only the four playable games take over the screen; wheel and operations keep their shell. */
+/** The wheel and its four earned games take over the screen; operations retain their shell. */
 export function isDiamondGameRoute(pathname: string): boolean {
-  return /^\/clubs\/[^/]+\/(?:plinko|crash|crossing|mines)\/?$/.test(pathname);
+  return /^\/clubs\/[^/]+\/(?:wheel|plinko|crash|crossing|mines)\/?$/.test(pathname);
 }

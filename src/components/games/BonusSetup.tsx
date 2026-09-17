@@ -1,6 +1,7 @@
 import {
   plinkoAllocations,
-  validSpinAmount,
+  validBonusBudget,
+  bonusWalletDebit,
   bonusTotal,
   type BonusBudget,
 } from '../../utils/bonusGameBudget';
@@ -15,6 +16,10 @@ export default function BonusSetup({
   disabled,
   plinko = false,
   clubId,
+  entryReady = true,
+  awardLoading = false,
+  awardError,
+  onRefresh,
 }: {
   budget: BonusBudget;
   onChange: (value: BonusBudget) => void;
@@ -22,31 +27,75 @@ export default function BonusSetup({
   disabled: boolean;
   plinko?: boolean;
   clubId: string;
+  entryReady?: boolean;
+  awardLoading?: boolean;
+  awardError?: string | null;
+  onRefresh?: () => void;
 }) {
   const navigate = useNavigate();
-  const valid = validSpinAmount(budget.base),
+  const valid = validBonusBudget(budget),
     total = bonusTotal(budget);
   const choices = valid ? plinkoAllocations(total) : [];
   const change = (next: BonusBudget) => {
-    if (validSpinAmount(next.base) && bonusTotal(next) % next.denomination !== 0)
-      next.denomination = 1;
+    if (validBonusBudget(next) && bonusTotal(next) % next.denomination !== 0) next.denomination = 1;
     onChange(next);
   };
+  const debit = bonusWalletDebit(budget);
+  if (!entryReady)
+    return (
+      <section className={styles.setup} aria-label="Your Bonus Setup">
+        <p className={styles.total} role={awardError ? 'alert' : 'status'}>
+          {awardError ??
+            (awardLoading
+              ? 'Checking Your Wheel Award'
+              : 'Win This Game On Diamond Spins To Play.')}
+        </p>
+        <div className={styles.links}>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => navigate(`/clubs/${clubId}/diamond-games`)}
+          >
+            Spin The Wheel
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => navigate('/marketplace?tab=diamonds')}
+          >
+            Buy More
+          </button>
+          {awardError && onRefresh && (
+            <button type="button" disabled={disabled} onClick={onRefresh}>
+              Refresh
+            </button>
+          )}
+        </div>
+      </section>
+    );
   return (
     <section className={styles.setup} aria-label="Your Bonus Setup">
-      <label className={styles.entry}>
-        Entry Diamonds
-        <input
-          type="number"
-          inputMode="numeric"
-          min={25}
-          max={2500}
-          step={1}
-          value={Number.isNaN(budget.base) ? '' : budget.base}
-          disabled={disabled}
-          onChange={(event) => change({ ...budget, base: event.target.valueAsNumber })}
-        />
-      </label>
+      {budget.award ? (
+        <div className={styles.entry}>
+          <span>{budget.award.boostMultiplier === 2 ? 'Upgraded Wheel Award' : 'Wheel Award'}</span>
+          <strong>{budget.base.toLocaleString()} Diamonds Funded</strong>
+          <small>Your Original Spin: {budget.award.entryDiamonds.toLocaleString()} Diamonds</small>
+        </div>
+      ) : (
+        <label className={styles.entry}>
+          Entry Diamonds
+          <input
+            type="number"
+            inputMode="numeric"
+            min={25}
+            max={2500}
+            step={1}
+            value={Number.isNaN(budget.base) ? '' : budget.base}
+            disabled={disabled}
+            onChange={(event) => change({ ...budget, base: event.target.valueAsNumber })}
+          />
+        </label>
+      )}
       <label className={styles.double}>
         <input
           type="checkbox"
@@ -54,7 +103,12 @@ export default function BonusSetup({
           disabled={disabled || !valid}
           onChange={(event) => change({ ...budget, doubled: event.target.checked })}
         />
-        <span>Double Down{valid ? ` · +${budget.base.toLocaleString()} Diamonds` : ''}</span>
+        <span>
+          Double Down
+          {valid
+            ? ` · +${(budget.award?.entryDiamonds ?? budget.base).toLocaleString()} Diamonds`
+            : ''}
+        </span>
       </label>
       {plinko && valid && (
         <fieldset className={styles.drops} disabled={disabled}>
@@ -87,9 +141,9 @@ export default function BonusSetup({
             : `${total.toLocaleString()} Diamonds In This Round`
           : 'Enter 25-2,500 Whole Diamonds.'}
       </p>
-      {diamonds !== null && valid && diamonds < total && (
+      {diamonds !== null && valid && diamonds < debit && (
         <p className={styles.short}>
-          You Need {(total - diamonds).toLocaleString()} More Diamonds.
+          You Need {(debit - diamonds).toLocaleString()} More Diamonds.
         </p>
       )}
       <div className={styles.links}>

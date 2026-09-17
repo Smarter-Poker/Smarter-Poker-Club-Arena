@@ -1,5 +1,5 @@
 import type { BonusGame, BonusStart } from './DiamondBonusService';
-import { validSpinAmount, bonusTotal, PLINKO_DIAMONDS_PER_DROP } from '../utils/bonusGameBudget';
+import { validBonusBudget, bonusTotal, PLINKO_DIAMONDS_PER_DROP } from '../utils/bonusGameBudget';
 const key = (user: string, club: string, game: BonusGame) =>
   `diamond-spins-pending:${user}:${club}:${game}`;
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -18,7 +18,7 @@ export function pendingBonus(user: string, club: string, game: BonusGame): Bonus
     !v.seed.length ||
     v.seed.length > 64 ||
     !v.budget ||
-    !validSpinAmount(v.budget.base) ||
+    !validBonusBudget(v.budget) ||
     typeof v.budget.doubled !== 'boolean' ||
     !PLINKO_DIAMONDS_PER_DROP.includes(v.budget.denomination as 1) ||
     bonusTotal(v.budget) % v.budget.denomination !== 0

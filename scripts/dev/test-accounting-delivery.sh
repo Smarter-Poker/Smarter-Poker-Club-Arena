@@ -60,6 +60,10 @@ export PGOPTIONS='-c statement_timeout=90000 -c lock_timeout=2000 -c timezone=UT
   -f "$diamond/invoice-constraints.sql" -f "$diamond/invoice-seed.sql" \
   -f "$diamond/invoice-triggers.sql" -f "$diamond/union-clubs-triggers.sql"
 
+"${diamond_psql[@]}" -f "$diamond/wheel-v2-dependencies.sql" \
+  -f "$diamond/wheel-v2-current-preimages.sql" \
+  -f "$root/supabase/migrations/20260917202351_diamond_wheel_twelve_prizes_and_funded_game_awards.sql"
+
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 funding_status=0
 "${diamond_psql[@]}" -f "$root/tests/sql/diamond-games-funding-identity.sql" \
@@ -122,3 +126,4 @@ run_game_probe() {
 }
 run_game_probe diamond-plinko-denominations 'NOTICE:  PASS Plinko denominations: nine choices, Double Down, exact drop budget, sealed outcomes, owner custody, Promo payout, replay and invalid allocation rollback'
 run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked multiplier: exact 2.57x, no late rescue, auto and cap preserved, future and foreign requests refused, one payout on replay'
+run_game_probe diamond-wheel-funded-awards 'NOTICE:  PASS Wheel v2: twelve fixed outcomes, exact model, sealed Upgrade, owner custody, inventory, prepaid four-game budgets, Double Down, replay identity, reserved cover, claimed Mint entry, independent welcome and private authority'

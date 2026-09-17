@@ -1,3 +1,4 @@
+import type { WheelSpinResult, WheelSegment } from '../services/DiamondWheelService';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DIAMOND WHEEL FAIRNESS - recompute a spin in the browser
@@ -23,6 +24,7 @@
 const TWO_48 = 281474976710656n; // 2^48
 
 export interface WheelFairnessInput {
+  domain?: 'wheel-v2' | 'wheel-v2-upgrade';
   serverSeed: string;
   serverSeedHash: string;
   clientSeed: string;
@@ -96,7 +98,10 @@ export function pickOrd(
 
 export async function verifyWheelSpin(input: WheelFairnessInput): Promise<WheelFairnessVerdict> {
   const computedHash = await sha256Hex(input.serverSeed);
-  const hmac = await hmacSha256Hex(input.serverSeed, `${input.clientSeed}:${input.nonce}`);
+  const hmac = await hmacSha256Hex(
+    input.serverSeed,
+    `${input.domain ? `${input.domain}:` : ''}${input.clientSeed}:${input.nonce}`
+  );
   const computedRoll = rollFromHmacHex(hmac);
   const computedPoint = pointFromRoll(computedRoll, input.weightTotal);
   const computedOrd = pickOrd(computedPoint, input.eligible);
@@ -122,4 +127,42 @@ export function randomClientSeed(): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+/** Verify every draw on the saved table. Upgrade is a distinct committed draw,
+ * never a second payment or a client-selected game. Legacy tables remain readable. */
+export async function verifyWheelReceiptFairness(
+  receipt: WheelSpinResult,
+  legacySegments: WheelSegment[] = []
+): Promise<WheelFairnessVerdict> {
+  const verify = (fairness: WheelSpinResult['fairness'], table: WheelSegment[], ord: number) =>
+    verifyWheelSpin({
+      domain: fairness.domain,
+      serverSeed: fairness.server_seed,
+      serverSeedHash: fairness.server_seed_hash,
+      clientSeed: fairness.client_seed,
+      nonce: fairness.nonce,
+      roll: fairness.roll,
+      weightTotal: fairness.weight_total,
+      eligible: table.filter((s) => fairness.eligible_ords.includes(s.ord)),
+      outcomeOrd: ord,
+    });
+  const first = await verify(
+    receipt.fairness,
+    receipt.segments ?? legacySegments,
+    receipt.outcome.ord
+  );
+  if (!receipt.secondary) return first;
+  const second = await verify(
+    receipt.secondary.fairness,
+    receipt.secondary.segments,
+    receipt.secondary.outcome.ord
+  );
+  return {
+    ...first,
+    hashMatches: first.hashMatches && second.hashMatches,
+    rollMatches: first.rollMatches && second.rollMatches,
+    outcomeMatches: first.outcomeMatches && second.outcomeMatches,
+    fair: first.fair && second.fair,
+  };
 }

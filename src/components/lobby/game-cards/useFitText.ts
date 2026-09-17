@@ -43,10 +43,18 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
 
     const fit = () => {
       el.style.setProperty('--fit', '1');
-      /* clientWidth is an integer, so on an 82.8px face it reports 83 and
-         licenses 0.2px of overflow. Take the fractional box where there is no
-         border to subtract, and the integer content box where there is. */
-      const available = Math.min(zone.clientWidth, zone.getBoundingClientRect().width);
+      /* Compare text and zone in the same layout coordinates. A parent's
+         pop-open scale changes getBoundingClientRect but not scrollWidth,
+         otherwise fitting during that animation permanently halves the text.
+         Computed width retains fractional pixels without the transform. */
+      const css = getComputedStyle(zone);
+      const pixels = (value: string) => Number.parseFloat(value) || 0;
+      const innerWidth =
+        pixels(css.width) +
+        (css.boxSizing === 'border-box'
+          ? -pixels(css.borderLeftWidth) - pixels(css.borderRightWidth)
+          : pixels(css.paddingLeft) + pixels(css.paddingRight));
+      const available = Math.min(zone.clientWidth, innerWidth || zone.clientWidth);
       const needed = el.scrollWidth * scaleX;
       if (!available || !needed) return;
       /* Already fits at its designed size: never grow it. */
@@ -57,14 +65,17 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
 
       let ratio = Math.max(minRatio, available / needed);
       for (let pass = 0; pass < 4; pass += 1) {
-        el.style.setProperty('--fit', ratio.toFixed(4));
+        el.style.setProperty('--fit', String(Math.floor(ratio * 10000) / 10000));
         const actual = el.scrollWidth * scaleX;
         if (actual <= available || ratio <= minRatio) break;
         const corrected = Math.max(minRatio, ratio * (available / actual));
         if (ratio - corrected < 0.0005) break;
         ratio = corrected;
       }
-      el.style.setProperty('--fit', ratio >= 0.995 ? '1' : ratio.toFixed(4));
+      el.style.setProperty(
+        '--fit',
+        ratio >= 0.995 ? '1' : String(Math.floor(ratio * 10000) / 10000)
+      );
     };
 
     fit();

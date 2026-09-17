@@ -1,0 +1,284 @@
+{
+  "captured_at": "2026-09-17T20:09:07.004373+00:00",
+  "project": "kuklfnapbkmacvwxktbh",
+  "transport": "Supabase execute_sql; SELECT catalog only",
+  "scope": "Exact current function preimages, Choice/Crash helpers, feature pricing schema and current Choice/inventory triggers; synthetic policy prices only. No production monetary activity.",
+  "inputs": {
+    "server-contract-preimages.json": {
+      "sha256": "014e65657bc5fe204b4f04be1eae3708429d51e2246d251d9794a22dd5ba01ad"
+    },
+    "state-function-preimages.json": {
+      "sha256": "f0e5ea910a25915a27cf32499f4c19d9ff72cbbb42f99bf880c8e28028adda9a"
+    },
+    "cover-read-preimages.json": {
+      "sha256": "30e0ba02dd0f4dc2316887820d9c3add2855261b6adcbd576c14c7bde89123eb"
+    },
+    "crash-missing-preimages.json": {
+      "sha256": "77a7c89dbac40d79a16a2b1c2af99cc41f2d2a700f6d0c8fa45dca86c45f5602"
+    },
+    "choice-inventory-trigger-preimages.json": {
+      "sha256": "10a47f54aea5dbd8c1f86cb8d2eb6c3318baf6061b2e40a855a47ee2dcec5e13"
+    },
+    "wheel-v2-modified-preimages.json": {
+      "sha256": "61e2e631b6ada60ff40c34b0ac04f0ae2375bbf771e289dd99180b857d4ca58d"
+    },
+    "wheel-v2-dependencies.sql": {
+      "sha256": "0772854bf93e03a84d57c0e8fbabb102f4c467b6984cc06577285c67f235a353"
+    },
+    "wheel-v2-current-preimages.sql": {
+      "sha256": "8fe99f42a0ab6262edcaab223b8079043b33b56baead1419d2a45eb56c6892ce"
+    },
+    "fn_wheel_state-7.sql": {
+      "sha256": "3050d1a010aacc291a45acbab4fdb7f7da8aa3e49e765b9cea306333d9f4f1da"
+    },
+    "funding-config-readonly-preimages.json": {
+      "sha256": "4fc4d15a9dd8fe1d384a265f214b5abac1191858b13f64cbb8dd2fa30da892fa",
+      "location": "outputs/diamond-wheel-upgrade-20260917/funding-config-readonly-preimages.json"
+    }
+  },
+  "replaced_functions": [
+    {
+      "proname": "fn_choice_result",
+      "signature": "fn_choice_result(diamond_choice_rounds)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "c189fad9ce62ba8e04de8bd4f7be2512"
+    },
+    {
+      "proname": "fn_choice_start",
+      "signature": "fn_choice_start(uuid,text,text,integer,uuid,text,integer)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "definition_md5": "d718028146e256a48ee316201165247f"
+    },
+    {
+      "proname": "fn_crash_decide",
+      "signature": "fn_crash_decide(crash_rounds,boolean,text,integer)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "3500451ebb21437d019fc89fb685019a"
+    },
+    {
+      "proname": "fn_crash_round_result",
+      "signature": "fn_crash_round_result(crash_rounds)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "69442379c4534a5c0257cce056d93600"
+    },
+    {
+      "proname": "fn_crash_start",
+      "signature": "fn_crash_start(uuid,uuid,text,integer,integer)",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition_md5": "650ccfc6f2f28ab1984d0cba980e6902"
+    },
+    {
+      "proname": "fn_diamond_game_admit",
+      "signature": "fn_diamond_game_admit(text,uuid,uuid,text,integer)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "53dd3be456e4a082379080b91a627f19"
+    },
+    {
+      "proname": "fn_diamond_game_cap_cents",
+      "signature": "fn_diamond_game_cap_cents(diamond_game_configs,diamond_game_pools,numeric,numeric,integer)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "acc5de42bb3322b852e859ec77697b51"
+    },
+    {
+      "proname": "fn_diamond_game_state",
+      "signature": "fn_diamond_game_state(uuid,text)",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition_md5": "e42863b2c1c3dd3b79f9a2329ebc82b0"
+    },
+    {
+      "proname": "fn_diamond_game_take_bet",
+      "signature": "fn_diamond_game_take_bet(uuid,integer,boolean,text,text,text,jsonb,uuid,text)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "76f173360d844f0a351f36ee4a074a97"
+    },
+    {
+      "proname": "fn_diamond_games_spent_today",
+      "signature": "fn_diamond_games_spent_today(uuid,uuid)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "6ec73d342420776ed33d357028a43b82"
+    },
+    {
+      "proname": "fn_plinko_bonus_run",
+      "signature": "fn_plinko_bonus_run(uuid,uuid,text,integer,integer,integer)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "b4ddac50688521c9ff411c4d2392e044"
+    },
+    {
+      "proname": "fn_wheel_spin_core",
+      "signature": "fn_wheel_spin_core(uuid,uuid,text,boolean,uuid)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition_md5": "6f0ac5103fb5f4f0f762c1d7a9a31838"
+    },
+    {
+      "proname": "fn_wheel_spin_result",
+      "signature": "fn_wheel_spin_result(wheel_spins)",
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "definition_md5": "557fc4b8ab6c27acfbf143cdef5ab469"
+    }
+  ],
+  "triggers": [
+    {
+      "relname": "diamond_choice_rounds",
+      "tgname": "diamond_choice_immutable",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER diamond_choice_immutable BEFORE DELETE OR UPDATE ON diamond_choice_rounds FOR EACH ROW EXECUTE FUNCTION fn_choice_immutable()",
+      "proname": "fn_choice_immutable"
+    },
+    {
+      "relname": "feature_purchases",
+      "tgname": "trg_deliver_card_back_entitlement",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER trg_deliver_card_back_entitlement AFTER INSERT ON feature_purchases FOR EACH ROW EXECUTE FUNCTION trg_deliver_card_back_entitlement()",
+      "proname": "trg_deliver_card_back_entitlement"
+    },
+    {
+      "relname": "feature_purchases",
+      "tgname": "trg_deliver_table_studio_entitlement",
+      "tgenabled": "O",
+      "definition": "CREATE TRIGGER trg_deliver_table_studio_entitlement AFTER INSERT ON feature_purchases FOR EACH ROW EXECUTE FUNCTION trg_deliver_table_studio_entitlement()",
+      "proname": "trg_deliver_table_studio_entitlement"
+    }
+  ],
+  "feature_pricing_schema": [
+    {
+      "udt": "uuid",
+      "type": "uuid",
+      "table": "feature_pricing",
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "feature_pricing",
+      "column": "feature",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "int4",
+      "type": "integer",
+      "table": "feature_pricing",
+      "column": "diamond_cost",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "feature_pricing",
+      "column": "usage_type",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "feature_pricing",
+      "column": "description",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "_text",
+      "type": "ARRAY",
+      "table": "feature_pricing",
+      "column": "vip_tiers_included",
+      "default": "'{}'::text[]",
+      "nullable": "YES"
+    },
+    {
+      "udt": "timestamptz",
+      "type": "timestamp with time zone",
+      "table": "feature_pricing",
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "YES"
+    },
+    {
+      "udt": "uuid",
+      "type": "uuid",
+      "table": "feature_purchases",
+      "column": "id",
+      "default": "gen_random_uuid()",
+      "nullable": "NO"
+    },
+    {
+      "udt": "uuid",
+      "type": "uuid",
+      "table": "feature_purchases",
+      "column": "user_id",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "feature_purchases",
+      "column": "feature",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "int4",
+      "type": "integer",
+      "table": "feature_purchases",
+      "column": "cost",
+      "default": "0",
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "feature_purchases",
+      "column": "usage_type",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "int4",
+      "type": "integer",
+      "table": "feature_purchases",
+      "column": "uses_remaining",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "timestamptz",
+      "type": "timestamp with time zone",
+      "table": "feature_purchases",
+      "column": "expires_at",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "timestamptz",
+      "type": "timestamp with time zone",
+      "table": "feature_purchases",
+      "column": "created_at",
+      "default": "now()",
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "feature_purchases",
+      "column": "source",
+      "default": "'purchase'::text",
+      "nullable": "NO"
+    }
+  ],
+  "configuration_proof_functions": [
+    {
+      "signature": "fn_diamond_game_set_config(uuid,text,jsonb)",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition_sha256": "96f3a6fa5465217129d8ffc447ed7a77483ed3f975bd0de50c56b9aadbe2af04"
+    },
+    {
+      "signature": "fn_plinko_table_audit(integer)",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition_sha256": "84f4721111c774ac73d5cec934bfb1fe797f319e556d33d830d9628de22f6802"
+    }
+  ]
+}

@@ -133,3 +133,25 @@ describe('index.html', () => {
     expect(html).toMatch(/application\/ld\+json/);
   });
 });
+
+describe('the Help Center FAQPage schema', () => {
+  it('is built from the questions the page renders, and only those', async () => {
+    const { FAQ_ITEMS } = await import('../src/pages/helpContent');
+    const entry = resolveSeo('/help');
+    const graph = Array.isArray(entry.jsonLd) ? entry.jsonLd : [entry.jsonLd];
+    const faq = graph.find((n) => n && (n as { '@type'?: string })['@type'] === 'FAQPage') as
+      | { mainEntity: Array<{ name: string; acceptedAnswer: { text: string } }> }
+      | undefined;
+    expect(faq).toBeDefined();
+    expect(faq!.mainEntity.map((q) => q.name)).toEqual(FAQ_ITEMS.map((i) => i.question));
+    expect(faq!.mainEntity.every((q) => q.acceptedAnswer.text.length > 20)).toBe(true);
+  });
+
+  it('gives each public page the title its component sets, so the title never changes after hydration', () => {
+    expect(resolveSeo('/legal/fair-gaming').title).toBe('Fair Gaming Policy');
+    expect(resolveSeo('/legal/tos').title).toBe('Terms Of Service');
+    expect(resolveSeo('/legal/privacy').title).toBe('Privacy Policy');
+    expect(resolveSeo('/legal/promotions').title).toBe('Promotion Rules');
+    expect(resolveSeo('/help').title).toBe('Help Center');
+  });
+});

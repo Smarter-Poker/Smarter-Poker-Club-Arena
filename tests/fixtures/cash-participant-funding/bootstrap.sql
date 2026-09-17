@@ -1,0 +1,34 @@
+-- Reuse the existing chip-journal probe's controlled policy fixture. Money
+-- mutations and all new evidence code below are real PostgreSQL functions.
+ALTER TABLE chip_ledger ADD COLUMN status text NOT NULL DEFAULT 'posted';
+CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+CREATE SCHEMA extensions; CREATE EXTENSION pgcrypto WITH SCHEMA extensions;
+ALTER TABLE clubs ADD COLUMN asset text NOT NULL DEFAULT 'chips',ADD COLUMN owner_id uuid;
+ALTER TABLE tables ADD COLUMN max_players int DEFAULT 9,ADD COLUMN is_vip_only boolean DEFAULT false,ADD COLUMN status text DEFAULT 'active';
+ALTER TABLE table_seats ADD COLUMN occupancy_id uuid NOT NULL DEFAULT gen_random_uuid(),ADD COLUMN auto_rebuy boolean DEFAULT false;
+ALTER TABLE club_members ADD COLUMN updated_at timestamptz,ADD COLUMN role text;
+CREATE TABLE transaction_idempotency_keys(key uuid PRIMARY KEY,user_id uuid,action text,amount numeric);
+CREATE TABLE table_addon_idempotency(key text PRIMARY KEY,user_id uuid,table_id uuid,amount numeric,applied_to_seat boolean);
+CREATE TABLE table_pending_addons(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),table_id uuid,user_id uuid,amount numeric,kind text DEFAULT 'addon',created_at timestamptz DEFAULT now(),resolved_at timestamptz,applied_to_stack numeric,refunded numeric);
+CREATE TABLE profiles(id uuid PRIMARY KEY,is_vip boolean,vip_expires_at timestamptz,is_horse boolean);
+CREATE TABLE blacklists(id uuid,user_id uuid,expires_at timestamptz,club_id uuid,union_id uuid);
+CREATE TABLE table_waitlist(table_id uuid,user_id uuid,status text,hold_expires_at timestamptz,notified_at timestamptz);
+CREATE TABLE cash_seat_moves(to_table_id uuid,state text,swap_move_id uuid,player_id uuid);
+CREATE TABLE wallet_transactions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid,wallet_type text,type text,amount numeric,category text,description text,table_id uuid,balance_after numeric);
+CREATE TABLE engine_table_leases(table_id uuid PRIMARY KEY,instance_id text,lease_generation uuid,protocol_version int,heartbeat_at timestamptz);
+CREATE TABLE hand_atomic_commits(table_id uuid,hand_number bigint,hand_id uuid,payload_hash text,stack_result jsonb,committed_at timestamptz DEFAULT now(),PRIMARY KEY(table_id,hand_number));
+CREATE TABLE settlement_idempotency_keys(table_id uuid,hand_id uuid,status text,result jsonb,error text,attempt_count integer,first_attempt_at timestamptz,last_attempt_at timestamptz,completed_at timestamptz,UNIQUE(table_id,hand_id));
+CREATE TABLE ca_settlements(id uuid DEFAULT gen_random_uuid(),settlement_type text,external_ref text,state text,table_id uuid,hand_id uuid,idempotency_key text,error_detail text,totals jsonb,UNIQUE(settlement_type,external_ref));
+CREATE TABLE ca_seat_stack_rebases(settlement_id uuid,table_id uuid,hand_id uuid,hand_number bigint,user_id uuid,engine_before numeric,db_before numeric,engine_after numeric,written numeric);
+CREATE TABLE wallet_credit_idempotency(key text UNIQUE,user_id uuid,amount numeric);
+CREATE TABLE hand_projection_outbox(hand_id uuid,table_id uuid,hand_number bigint);
+ALTER TABLE hand_history ALTER COLUMN id SET DEFAULT gen_random_uuid();
+ALTER TABLE hand_history ALTER COLUMN created_at SET DEFAULT now();
+CREATE TABLE rake_attributions(hand_id uuid,player_id uuid,club_id uuid);
+CREATE FUNCTION fn_caller_session_is_live() RETURNS boolean LANGUAGE sql AS 'SELECT true';
+CREATE FUNCTION fn_caller_is_engine() RETURNS boolean LANGUAGE sql AS 'SELECT true';
+CREATE FUNCTION fn_engine_lease_stale_seconds() RETURNS int LANGUAGE sql AS 'SELECT 30';
+CREATE FUNCTION fn_nit_check(uuid,uuid,numeric) RETURNS jsonb LANGUAGE sql AS 'SELECT ''{"ok":true}''::jsonb';
+CREATE FUNCTION fn_seat_club_for_user(uuid,uuid,uuid) RETURNS uuid LANGUAGE sql AS 'SELECT $3';
+CREATE FUNCTION fn_ensure_club_wallet(uuid,uuid) RETURNS void LANGUAGE plpgsql AS $$ BEGIN IF NOT EXISTS(SELECT 1 FROM club_members WHERE user_id=$1 AND club_id=$2) THEN RAISE EXCEPTION 'fixture wallet absent'; END IF; END $$;
+CREATE FUNCTION fn_pnl_evidence_cents(jsonb) RETURNS numeric LANGUAGE sql AS 'SELECT $1::text::numeric';

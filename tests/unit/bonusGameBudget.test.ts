@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { plinkoAllocations, validSpinAmount } from '../../src/utils/bonusGameBudget';
 describe('the spin balance is conserved across Plinko denominations', () => {
-  it('offers the six requested choices for a 100 diamond spin', () => {
+  it('offers each supported whole-diamond choice for a 100 diamond spin', () => {
     expect(plinkoAllocations(100).map((x) => [x.drops, x.diamondsPerDrop])).toEqual([
       [100, 1],
+      [50, 2],
+      [25, 4],
       [20, 5],
       [10, 10],
+      [5, 20],
       [4, 25],
       [2, 50],
       [1, 100],

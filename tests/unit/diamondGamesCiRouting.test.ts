@@ -7,6 +7,8 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
   it.each([
     'tests/sql/diamond-games-funding-identity.sql',
     'tests/sql/diamond-games-bank-fallback.sql',
+    'tests/sql/diamond-plinko-denominations.sql',
+    'tests/sql/diamond-crash-clicked-multiplier.sql',
     'tests/sql/diamond-spins-claimed-daily-bonus.sql',
     'tests/fixtures/accounting-delivery/diamond-games/functions.sql',
     'src/services/DiamondBonusService.ts',
@@ -20,6 +22,13 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
   ])('admits the accounting job for %s', (path) => {
     expect(classifyChangedPaths([path]).server).toBe(true);
     expect(classifyChangedPaths([path]).tests).toBe(true);
+  });
+
+  it.each([
+    'tests/e2e/css/diamond-games-playfield.spec.ts',
+    'tests/e2e/helpers/diamond-games-fixture.mjs',
+  ])('runs the actual browser fixture when %s changes', (path) => {
+    expect(classifyChangedPaths([path]).src).toBe(true);
   });
 
   it('preserves unrelated UI and documentation classification', () => {

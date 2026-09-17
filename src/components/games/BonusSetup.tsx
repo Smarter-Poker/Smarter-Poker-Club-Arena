@@ -1,4 +1,3 @@
-import { SpadeConsole } from '../console/SpadeConsole';
 import {
   plinkoAllocations,
   validSpinAmount,
@@ -6,9 +5,9 @@ import {
   type BonusBudget,
 } from '../../utils/bonusGameBudget';
 import { useNavigate } from 'react-router-dom';
-import styles from '../../pages/diamondGames.module.css';
+import styles from './BonusSetup.module.css';
 
-/** No debit occurs here. The entire chosen entry is accepted by one server request. */
+/** These controls quote one atomic entry; changing a selection never debits a wallet. */
 export default function BonusSetup({
   budget,
   onChange,
@@ -25,8 +24,8 @@ export default function BonusSetup({
   clubId: string;
 }) {
   const navigate = useNavigate();
-  const valid = validSpinAmount(budget.base);
-  const total = bonusTotal(budget);
+  const valid = validSpinAmount(budget.base),
+    total = bonusTotal(budget);
   const choices = valid ? plinkoAllocations(total) : [];
   const change = (next: BonusBudget) => {
     if (validSpinAmount(next.base) && bonusTotal(next) % next.denomination !== 0)
@@ -34,17 +33,10 @@ export default function BonusSetup({
     onChange(next);
   };
   return (
-    <SpadeConsole
-      crest="diamond"
-      title="Your Bonus"
-      eyebrow="Before You Play"
-      pill={budget.doubled ? 'Doubled' : 'Entry'}
-      foot="foot"
-    >
-      <label className={styles.seedField}>
+    <section className={styles.setup} aria-label="Your Bonus Setup">
+      <label className={styles.entry}>
         Entry Diamonds
         <input
-          className={styles.seedInput}
           type="number"
           inputMode="numeric"
           min={25}
@@ -55,50 +47,54 @@ export default function BonusSetup({
           onChange={(event) => change({ ...budget, base: event.target.valueAsNumber })}
         />
       </label>
-      <p className="sc-copy">
-        Choose 25 To 2,500 Diamonds. You Can Double Your Entry Once Before The Game Starts.
-      </p>
-      <label className={styles.bonusToggle}>
+      <label className={styles.double}>
         <input
           type="checkbox"
           checked={budget.doubled}
           disabled={disabled || !valid}
           onChange={(event) => change({ ...budget, doubled: event.target.checked })}
         />
-        <span>Double Down{valid ? `: Add ${budget.base.toLocaleString()} Diamonds` : ''}</span>
+        <span>Double Down{valid ? ` · +${budget.base.toLocaleString()} Diamonds` : ''}</span>
       </label>
-      {plinko && valid ? (
-        <label className={styles.seedField}>
-          Diamonds Per Drop
-          <select
-            className={styles.seedInput}
-            value={budget.denomination}
-            disabled={disabled}
-            onChange={(event) => change({ ...budget, denomination: Number(event.target.value) })}
-          >
+      {plinko && valid && (
+        <fieldset className={styles.drops} disabled={disabled}>
+          <legend>Diamonds Per Drop</legend>
+          <div className={styles.choices}>
             {choices.map((choice) => (
-              <option key={choice.diamondsPerDrop} value={choice.diamondsPerDrop}>
-                {choice.drops} {choice.drops === 1 ? 'Drop' : 'Drops'} At {choice.diamondsPerDrop}{' '}
-                {choice.diamondsPerDrop === 1 ? 'Diamond' : 'Diamonds'} Each
-              </option>
+              <button
+                type="button"
+                key={choice.diamondsPerDrop}
+                disabled={disabled}
+                aria-pressed={budget.denomination === choice.diamondsPerDrop}
+                onClick={() => change({ ...budget, denomination: choice.diamondsPerDrop })}
+                aria-label={`${choice.diamondsPerDrop} ${choice.diamondsPerDrop === 1 ? 'Diamond' : 'Diamonds'} Per Drop, ${choice.drops} ${choice.drops === 1 ? 'Drop' : 'Drops'}`}
+              >
+                <strong>
+                  {choice.diamondsPerDrop} <span>◆</span>
+                </strong>
+                <small>
+                  {choice.drops} {choice.drops === 1 ? 'Drop' : 'Drops'}
+                </small>
+              </button>
             ))}
-          </select>
-        </label>
-      ) : null}
-      <p className="sc-copy" aria-live="polite">
+          </div>
+        </fieldset>
+      )}
+      <p className={styles.total} aria-live="polite">
         {valid
-          ? `${total.toLocaleString()} Diamonds In This Bonus.`
-          : 'Enter A Whole Number From 25 To 2,500.'}
+          ? plinko
+            ? `${total / budget.denomination} ${total / budget.denomination === 1 ? 'Drop' : 'Drops'} × ${budget.denomination} ${budget.denomination === 1 ? 'Diamond' : 'Diamonds'} = ${total.toLocaleString()} Diamonds`
+            : `${total.toLocaleString()} Diamonds In This Round`
+          : 'Enter 25–2,500 Whole Diamonds.'}
       </p>
-      {diamonds !== null && valid && diamonds < total ? (
-        <p className="sc-copy">
-          You Need {(total - diamonds).toLocaleString()} More Diamonds To Start.
+      {diamonds !== null && valid && diamonds < total && (
+        <p className={styles.short}>
+          You Need {(total - diamonds).toLocaleString()} More Diamonds.
         </p>
-      ) : null}
-      <div className={styles.bonusLinks}>
+      )}
+      <div className={styles.links}>
         <button
           type="button"
-          className={styles.back}
           disabled={disabled}
           onClick={() => navigate('/marketplace?tab=diamonds')}
         >
@@ -106,13 +102,12 @@ export default function BonusSetup({
         </button>
         <button
           type="button"
-          className={styles.back}
           disabled={disabled}
           onClick={() => navigate(`/clubs/${clubId}/earn-diamonds`)}
         >
           Earn Diamonds
         </button>
       </div>
-    </SpadeConsole>
+    </section>
   );
 }

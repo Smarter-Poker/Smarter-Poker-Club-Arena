@@ -39,11 +39,16 @@ diamond="$root/tests/fixtures/accounting-delivery/diamond-games"
 diamond_psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55487 -U postgres -d diamond_games_probe)
 # Match the original database-owner trigger context; client identities remain
 # synthetic authenticated claims, never a service-role override in the probes.
-export PGOPTIONS='-c statement_timeout=90000 -c lock_timeout=2000'
+# Catalog timestamp witnesses are captured in UTC, independent of the runner host.
+export PGOPTIONS='-c statement_timeout=90000 -c lock_timeout=2000 -c timezone=UTC'
 "${diamond_psql[@]}" \
   -f "$diamond/schema.sql" -f "$diamond/auth.sql" \
   -f "$diamond/functions.sql" -f "$diamond/constraints.sql" \
-  -f "$diamond/policy.sql" -f "$diamond/seed.sql" -f "$diamond/triggers.sql" \
+  -f "$diamond/policy.sql" -f "$diamond/seed.sql" \
+  -f "$diamond/play-schema.sql" -f "$diamond/play-functions.sql" -f "$diamond/crash-functions.sql" -f "$diamond/play-seed.sql" \
+  -f "$diamond/triggers.sql" -f "$diamond/play-triggers.sql" -f "$diamond/crash-triggers.sql" \
+  -f "$root/supabase/migrations/20260917184000_plinko_per_drop_choices.sql" \
+  -f "$root/supabase/migrations/20260917184500_crash_cashout_keeps_the_clicked_multiplier.sql" \
   -f "$root/supabase/migrations/20260914100738_a_funding_replay_belongs_to_the_same_request.sql" \
   -f "$root/supabase/migrations/20260914132533_a_claimed_tenth_day_bonus_carries_one_mint_funded_spin.sql"
 
@@ -101,3 +106,19 @@ fi
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-after-bank.jsonl"
 cmp "$fixture/diamond-before.jsonl" "$fixture/diamond-after-bank.jsonl"
 echo 'PASS: Diamond Main Bank payout, invoice and notification rows rolled back'
+
+# New game regressions require their exact success witness and all-row rollback.
+run_game_probe() {
+  local name="$1" expected="$2"
+  "${diamond_psql[@]}" -f "$root/tests/sql/$name.sql" > "$fixture/$name.stdout" 2> "$fixture/$name.stderr"
+  cat "$fixture/$name.stdout" "$fixture/$name.stderr"
+  if [ "$(grep -Fc "$expected" "$fixture/$name.stderr")" -ne 1 ] || grep -Eq 'ERROR:|WARNING:|FATAL:|PANIC:' "$fixture/$name.stderr"; then
+    echo "$name did not reach its complete success witness" >&2
+    exit 1
+  fi
+  "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/$name-after.jsonl"
+  cmp "$fixture/diamond-before.jsonl" "$fixture/$name-after.jsonl"
+  echo "PASS: $name and all money legs rolled back"
+}
+run_game_probe diamond-plinko-denominations 'NOTICE:  PASS Plinko denominations: nine choices, Double Down, exact drop budget, sealed outcomes, owner custody, Promo payout, replay and invalid allocation rollback'
+run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked multiplier: exact 2.57x, no late rescue, auto and cap preserved, future and foreign requests refused, one payout on replay'

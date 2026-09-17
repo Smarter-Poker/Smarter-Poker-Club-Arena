@@ -105,8 +105,8 @@ const open = {
   ...settled,
   status: 'open',
   outcome: null,
-  elapsed_ms: 0,
-  multiplier_now_cents: 100,
+  elapsed_ms: 8000,
+  multiplier_now_cents: 257,
   fairness: {
     commit_id: settled.fairness.commit_id,
     client_seed: settled.fairness.client_seed,
@@ -176,6 +176,24 @@ afterEach(() => {
 });
 
 describe('Crash settles one displayed round once', () => {
+  it('binds the visible hundredth to the click and freezes it while confirmation is pending', async () => {
+    backend.crashSettle.mockResolvedValueOnce(open);
+    await mountOpen();
+    const shown = screen.getByText('Climbing').nextElementSibling!.textContent!;
+    const cents = Math.round(Number(shown.replace('x', '')) * 100);
+    backend.crashSettle.mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Book The Win' }));
+    expect(backend.crashSettle).toHaveBeenCalledWith(
+      open.round_id,
+      true,
+      expect.objectContaining({ round_id: open.round_id }),
+      cents
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(screen.getByText('Climbing').nextElementSibling!.textContent).toBe(shown);
+  });
   it('does not apply a previous proof verdict while the next entry is pending', async () => {
     const proof = deferred<{
       fair: boolean;
@@ -186,6 +204,7 @@ describe('Crash settles one displayed round once', () => {
     backend.verify.mockReturnValue(proof.promise);
     backend.crashSettle.mockResolvedValueOnce(settled);
     await mountOpen();
+    fireEvent.click(screen.getByText('Check Any Round'));
     fireEvent.click(screen.getByRole('button', { name: 'Verify Round' }));
     expect(backend.verify).toHaveBeenCalledTimes(1);
     backend.start.mockReturnValue(new Promise(() => {}));

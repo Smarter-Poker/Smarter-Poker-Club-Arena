@@ -4,8 +4,7 @@ import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { DeckConsole } from '../components/console/DeckConsole';
-import { SpadeConsole } from '../components/console/SpadeConsole';
+import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import BonusSetup from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
@@ -60,6 +59,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const [seed, setSeed] = useState(randomClientSeed);
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sceneBusy, setSceneBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState(false);
   const [verified, setVerified] = useState<boolean | null>(null);
@@ -301,7 +301,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     }
   };
   const act = async (action: 'pick' | 'cashout', cell: number | null) => {
-    if (!uuid || !round || round.status !== 'open' || busyRef.current || uncertain) return;
+    if (!uuid || !round || round.status !== 'open' || busyRef.current || uncertain || sceneBusy)
+      return;
     busyRef.current = true;
     generation.current++;
     setQuotedEntry(null);
@@ -312,6 +313,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       const next = await DiamondChoiceService.act(round, action, cell);
       if (!mounted.current) return;
       currentRound.current = next;
+      if (
+        game === 'crossing' &&
+        action === 'pick' &&
+        (next.status !== round.status || next.picked.length !== round.picked.length)
+      )
+        setSceneBusy(true);
       setRound(next);
       triggerHaptic(next.status === 'lost' ? 'heavy' : 'light');
       await load(uuid);
@@ -329,7 +336,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const open = round?.status === 'open';
   const picks = round?.picked.length ?? 0;
   const prizes = open ? round.prizes : (state?.prizes ?? []);
-  const prize = open && picks > 0 ? prizes[picks - 1] : prizes[0];
+  const prize =
+    round?.status === 'lost'
+      ? 0
+      : round?.status === 'cashed'
+        ? round.payout_chips
+        : open && picks > 0
+          ? prizes[picks - 1]
+          : 0;
+  const nextPrize = open ? prizes[picks] : round ? undefined : prizes[0];
   const ladder = ROAD_LADDERS[(round?.mode ?? mode) as RoadRisk];
   const roadEnd =
     game === 'crossing' && round?.proof && ladder
@@ -357,7 +372,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const cashLabel = open && picks > 0 ? 'Book The Win' : 'Refresh';
   const phase = round?.status ?? 'idle';
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${styles.fullscreenPage}`}>
       <button
         type="button"
         className={styles.back}
@@ -366,16 +381,18 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         ‹ Diamond Spins
       </button>
       <DiamondSpinsTabs clubId={clubId ?? ''} />
-      {!open && (
-        <BonusSetup
-          budget={budget}
-          onChange={setBudget}
-          diamonds={state?.diamonds ?? null}
-          disabled={busy || uncertain}
-          clubId={clubId ?? ''}
-        />
-      )}
-      <DeckConsole
+      <GameConsole
+        setup={
+          !open && (
+            <BonusSetup
+              budget={budget}
+              onChange={setBudget}
+              diamonds={state?.diamonds ?? null}
+              disabled={busy || uncertain}
+              clubId={clubId ?? ''}
+            />
+          )
+        }
         title={title}
         eyebrow="Diamond Spins"
         pill={status}
@@ -388,14 +405,14 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             disabled: busy || open || uncertain,
           },
           {
-            label: 'Bet',
-            value: compactChips(bet),
+            label: game === 'mines' ? 'Revealed' : 'Street',
+            value: String(picks),
             disabled: true,
           },
-          { label: game === 'mines' ? 'Revealed' : 'Street', value: String(picks), ink: 'silver' },
+          { label: 'Current Prize', value: gameChips(prize ?? 0), ink: 'gold' },
           {
-            label: 'Chip Prize',
-            value: prize === undefined ? 'N/A' : gameChips(prize),
+            label: 'Next Prize',
+            value: nextPrize === undefined ? '—' : gameChips(nextPrize),
             ink: 'gold',
           },
         ]}
@@ -403,7 +420,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           label: uncertain ? 'Check Round' : cashLabel,
           onClick: () =>
             open && picks > 0 && !uncertain ? void act('cashout', null) : void refresh(),
-          disabled: busy,
+          disabled: busy || sceneBusy,
         }}
         primary={{
           label: open
@@ -414,7 +431,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               ? `Ready In ${waitSeconds}s`
               : 'Start Round',
           onClick: () => (open ? void act('pick', picks) : void start()),
-          disabled: busy || uncertain || (open ? game === 'mines' : blocked || !ticket),
+          disabled:
+            busy || sceneBusy || uncertain || (open ? game === 'mines' : blocked || !ticket),
         }}
       >
         <TodayLine
@@ -425,6 +443,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         />
         <ChoiceScene
           game={game}
+          roundId={round?.id}
+          onSettled={() => setSceneBusy(false)}
           phase={phase}
           picked={round?.picked ?? []}
           mines={round?.proof?.mine_cells ?? null}
@@ -484,8 +504,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             </p>
           )}
         </div>
-      </DeckConsole>
-      <SpadeConsole
+      </GameConsole>
+      <GamePanel
         title="Your Game"
         pill="Rules"
         eyebrow={`${compactChips(state?.diamonds ?? 0)} Diamonds`}
@@ -505,8 +525,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             The Win Is Booked.
           </p>
         ) : null}
-      </SpadeConsole>
-      <SpadeConsole title="Round Proof" pill="Sealed" eyebrow="Sealed Before Play" foot="foot">
+      </GamePanel>
+      <GamePanel title="Round Proof" pill="Sealed" eyebrow="Sealed Before Play" foot="foot">
         <p className={`sc-copy ${styles.proofHash}`}>
           {open ? round.server_seed_hash : (ticket?.hash ?? 'Preparing Your Ticket')}
         </p>
@@ -550,8 +570,8 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
               : 'The Outcome Could Not Be Verified.'}
           </p>
         ) : null}
-      </SpadeConsole>
-      <SpadeConsole title="Recent Rounds" pill="Saved" foot="foot">
+      </GamePanel>
+      <GamePanel title="Recent Rounds" pill="Saved" foot="foot">
         {(state?.history ?? []).length === 0 ? (
           <p className="sc-copy">Your Completed Rounds Will Appear Here.</p>
         ) : (
@@ -564,7 +584,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             </div>
           ))
         )}
-      </SpadeConsole>
+      </GamePanel>
     </div>
   );
 }

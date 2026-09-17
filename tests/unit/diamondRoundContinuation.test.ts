@@ -21,6 +21,23 @@ const expectedCrash = normaliseCrash({
 beforeEach(() => rpc.mockReset());
 
 describe('a Diamond game continuation keeps its accepted round', () => {
+  it('sends the clicked hundredth unchanged to the authenticated cash-out endpoint', async () => {
+    rpc.mockResolvedValue({ data: crash, error: null });
+    await DiamondGamesService.crashSettle(crash.round_id, true, expectedCrash, 257);
+    expect(rpc).toHaveBeenCalledWith('fn_crash_cashout', {
+      p_round_id: crash.round_id,
+      p_multiplier_cents: 257,
+    });
+  });
+  it.each([100, 257.5, NaN, Infinity])(
+    'refuses an invalid clicked multiplier %s before sending',
+    async (cents) => {
+      await expect(
+        DiamondGamesService.crashSettle(crash.round_id, true, expectedCrash, cents)
+      ).rejects.toThrow('Cash Out Starts At 1.01x');
+      expect(rpc).not.toHaveBeenCalled();
+    }
+  );
   it('accepts the saved PostgreSQL Crash settlement for the same round', async () => {
     rpc.mockResolvedValue({ data: crash, error: null });
     const result = await DiamondGamesService.crashSettle(crash.round_id, true, expectedCrash);

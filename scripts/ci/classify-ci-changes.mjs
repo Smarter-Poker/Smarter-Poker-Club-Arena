@@ -49,7 +49,7 @@ export function classifyChangedPaths(paths) {
   // These maintained verification inputs execute in the existing CSS browser
   // job. A test-only correction must run its connected browser regressions.
   const cashLobbyBrowser = matches(
-    /^tests\/e2e\/(?:mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline)\.ts)$/
+    /^tests\/e2e\/(?:css\/diamond-games-playfield\.spec\.ts|helpers\/diamond-games-fixture\.mjs|mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline)\.ts)$/
   );
   const nativeIsolationTool = matches(/^scripts\/ci\/build_pg17_isolationtester\.py$/);
   const horsePriority = matches(
@@ -70,7 +70,7 @@ export function classifyChangedPaths(paths) {
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   const diamondGames = matches(
-    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/
+    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-plinko-denominations|diamond-crash-clicked-multiplier|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/
   );
 
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.

@@ -144,10 +144,10 @@ describe('choice-game entry quotes belong to the selected settings', () => {
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
-      fireEvent.click(screen.getByRole('button', { name: label }));
+      fireEvent.click(screen.getByRole('button', { name: `Change ${label}` }));
       await act(async () => {});
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeDisabled();
-      fireEvent.click(screen.getByRole('button', { name: label }));
+      fireEvent.click(screen.getByRole('button', { name: `Change ${label}` }));
       await act(async () => {});
       await act(async () => {
         latest.resolve({ ...state, max_steps: 8, prizes: Array(8).fill(2) });

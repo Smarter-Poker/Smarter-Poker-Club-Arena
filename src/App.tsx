@@ -1,3 +1,4 @@
+import { isDiamondGameRoute } from './utils/diamondGameRoute';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — App Component
@@ -298,6 +299,8 @@ import RouteSeo from './components/seo/RouteSeo';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
 function ClubFooterMount({ clubId }: { clubId?: string }) {
+  const location = useLocation();
+  if (isDiamondGameRoute(location.pathname)) return null;
   return <ClubBottomNav clubId={clubId} />;
 }
 

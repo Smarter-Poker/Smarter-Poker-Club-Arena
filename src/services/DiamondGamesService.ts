@@ -675,14 +675,28 @@ const DiamondGamesService = {
   },
 
   /**
-   * A tick (cashout = false) asks the server what the round is now; a cash-out
-   * (cashout = true) asks it to settle at the multiplier its clock reads.
+   * A tick reads server state. New manual cash-outs bind the displayed hundredth;
+   * the server still owns crash, cap, automatic targets and wallet settlement.
    */
-  async crashSettle(roundId: string, cashout: boolean, expected?: CrashRound): Promise<CrashRound> {
-    const { data, error } = await supabase.rpc('fn_crash_settle', {
-      p_round_id: roundId,
-      p_cashout: cashout,
-    });
+  async crashSettle(
+    roundId: string,
+    cashout: boolean,
+    expected?: CrashRound,
+    displayedCents?: number
+  ): Promise<CrashRound> {
+    if (
+      cashout &&
+      displayedCents !== undefined &&
+      (!Number.isSafeInteger(displayedCents) || displayedCents < 101)
+    )
+      throw new Error('Cash Out Starts At 1.01x');
+    const { data, error } =
+      cashout && displayedCents !== undefined
+        ? await supabase.rpc('fn_crash_cashout', {
+            p_round_id: roundId,
+            p_multiplier_cents: displayedCents,
+          })
+        : await supabase.rpc('fn_crash_settle', { p_round_id: roundId, p_cashout: cashout });
     if (error) throw error;
     const receipt = rec(data);
     validateCrashSettlement(receipt, roundId, expected);

@@ -1,7 +1,7 @@
 /** Spin pricing and Plinko denominations are amounts of diamonds, not prize multipliers. */
 export const MIN_DIAMOND_SPIN = 25;
 export const MAX_DIAMOND_SPIN = 2500;
-export const PLINKO_DIAMONDS_PER_DROP = [1, 5, 10, 25, 50, 100] as const;
+export const PLINKO_DIAMONDS_PER_DROP = [1, 2, 4, 5, 10, 20, 25, 50, 100] as const;
 
 export function validSpinAmount(amount: number): boolean {
   return Number.isSafeInteger(amount) && amount >= MIN_DIAMOND_SPIN && amount <= MAX_DIAMOND_SPIN;

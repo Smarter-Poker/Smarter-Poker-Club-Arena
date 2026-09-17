@@ -4,8 +4,7 @@ import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { DeckConsole } from '../components/console/DeckConsole';
-import { SpadeConsole } from '../components/console/SpadeConsole';
+import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import BonusSetup from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import { useGameCooldown } from '../hooks/useGameCooldown';
@@ -279,22 +278,24 @@ function DiamondPlinkoGame() {
         .reduce((sum, ball) => sum + Math.round(ball.payout_chips * 100), 0) / 100
     : 0;
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${styles.fullscreenPage}`}>
       <button className={styles.back} onClick={() => navigate(`/clubs/${clubId}/diamond-games`)}>
         ‹ Diamond Spins
       </button>
       <DiamondSpinsTabs clubId={clubId ?? ''} />
-      {!animating && (
-        <BonusSetup
-          budget={budget}
-          onChange={setBudget}
-          diamonds={state?.player?.spendable ?? null}
-          disabled={busy || uncertain}
-          plinko
-          clubId={clubId ?? ''}
-        />
-      )}
-      <DeckConsole
+      <GameConsole
+        setup={
+          !animating && (
+            <BonusSetup
+              budget={budget}
+              onChange={setBudget}
+              diamonds={state?.player?.spendable ?? null}
+              disabled={busy || uncertain}
+              plinko
+              clubId={clubId ?? ''}
+            />
+          )
+        }
         title="Diamond Plinko"
         eyebrow="Diamond Spins"
         pill={uncertain ? 'Check Bonus' : animating ? 'Dropping' : result ? 'Completed' : 'Ready'}
@@ -346,7 +347,7 @@ function DiamondPlinkoGame() {
         />
         <div ref={stageRef}>
           <PlinkoBoard
-            width={Math.max(240, width)}
+            width={Math.max(240, Math.min(680, width))}
             multipliersCents={painted}
             path={null}
             dropKey={result ? Number.parseInt(result.id.slice(0, 8), 16) : 0}
@@ -379,14 +380,14 @@ function DiamondPlinkoGame() {
                   : 'Refresh To Check This Entry And The Available Prize Cover.'}
           </p>
         )}
-      </DeckConsole>
-      <SpadeConsole title="How To Play" pill="Rules" foot="foot">
+      </GameConsole>
+      <GamePanel title="How To Play" pill="Rules" foot="foot">
         <p className="sc-copy">
           Your Entry Is Divided Into Drops At The Value You Choose. Each Ball Lands In A Prize Slot.
           All Diamonds In This Bonus Are Played Together, And Your Chips Are Booked Automatically.
         </p>
-      </SpadeConsole>
-      <SpadeConsole
+      </GamePanel>
+      <GamePanel
         title="Bonus Proof"
         pill={verified === true ? 'Verified' : 'Sealed'}
         eyebrow="Sealed Before Play"
@@ -422,9 +423,9 @@ function DiamondPlinkoGame() {
               : 'The Bonus Could Not Be Verified.'}
           </p>
         )}
-      </SpadeConsole>
+      </GamePanel>
       {result && !animating && (
-        <SpadeConsole title="Your Results" pill={`${result.drops.length} Drops`} foot="foot">
+        <GamePanel title="Your Results" pill={`${result.drops.length} Drops`} foot="foot">
           {result.multipliers_cents.map((mult, slot) => {
             const balls = result.drops.filter((b) => b.slot === slot);
             return balls.length ? (
@@ -436,7 +437,7 @@ function DiamondPlinkoGame() {
               </div>
             ) : null;
           })}
-        </SpadeConsole>
+        </GamePanel>
       )}
     </div>
   );

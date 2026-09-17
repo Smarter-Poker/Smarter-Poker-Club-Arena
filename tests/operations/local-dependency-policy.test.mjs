@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { localDependencyPolicy } from '../../scripts/local-dependency-policy.mjs';
+// The required repository-local validation step also exercises merge-hook scope.
+import './precommit-lint-base.test.mjs';
 
 function fixture(
   t,

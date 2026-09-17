@@ -67,3 +67,9 @@ scripts/qualification/cash-pot-check-evidence.md
 scripts/qualification/cash-native-hosted.manifest.json
 scripts/qualification/class4-hand-outcome-evidence.manifest.json
 scripts/qualification/alert-evidence-hosted.manifest.json
+
+# Retained financial qualification inputs are checked against their original
+# exact-byte seals. Their source capture, not Prettier, owns formatting.
+scripts/ci/probes/bbj-bank-replay/funded/source/
+scripts/ci/probes/bbj-bank-replay/funded/regressions/original/
+scripts/ci/probes/bbj-bank-replay/funded/provenance/

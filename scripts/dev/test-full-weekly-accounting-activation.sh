@@ -109,10 +109,18 @@ if len(str(fixture / 'socket' / '.s.PGSQL.55507').encode()) > 100:
 PY
 mkdir "$fixture/socket"
 fixture_db=postgres
-"$pgbin/initdb" -D "$fixture/data" -U postgres -A trust --no-locale -E UTF8 > "$fixture/initdb.log" 2>&1
+fixture_bootstrap=postgres
+# The bootstrap superuser cannot be demoted. Only the acceptance cluster later
+# tests managed postgres permissions, so give it a separate bootstrap identity.
+if [ "$phase" = acceptance ]; then fixture_bootstrap=accounting_fixture_bootstrap; fi
+"$pgbin/initdb" -D "$fixture/data" -U "$fixture_bootstrap" -A trust --no-locale -E UTF8 > "$fixture/initdb.log" 2>&1
 "$pgbin/pg_ctl" -D "$fixture/data" -l "$fixture/server.log" \
   -o "-k $fixture/socket -p 55507 -h '' -c shared_preload_libraries=pg_cron -c cron.database_name=$fixture_db -c cron.launch_active_jobs=off" start > "$fixture/start.log" 2>&1
 started=1
+if [ "$phase" = acceptance ]; then
+  "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -U "$fixture_bootstrap" -h "$fixture/socket" -p 55507 -d postgres \
+    -c 'CREATE ROLE postgres LOGIN SUPERUSER CREATEDB CREATEROLE REPLICATION BYPASSRLS; ALTER DATABASE postgres OWNER TO postgres;'
+fi
 psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -U postgres -h "$fixture/socket" -p 55507)
 "${psql[@]}" -d "$fixture_db" \
   -f "$fixture_baseline" -f "$work/policies.sql" -f "$work/access.sql" -f "$work/seed-registry.sql" \

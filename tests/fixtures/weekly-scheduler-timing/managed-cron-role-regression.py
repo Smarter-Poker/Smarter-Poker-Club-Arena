@@ -98,7 +98,10 @@ def main(password_file):
           " FROM pg_proc p WHERE p.pronamespace='cron'::regnamespace AND p.proname='unschedule'"
           " AND p.pronargs=1 AND p.proargtypes[0] IN('text'::regtype,'name'::regtype) LOOP"
           " EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO postgres',target);END LOOP;END $grant$;"
-          "ALTER ROLE postgres NOSUPERUSER BYPASSRLS;COMMIT;")
+          "COMMIT;")
+    # The runner keeps its separate bootstrap account unchanged. The distinct
+    # fixture administrator commits this before the tested caller connects.
+    query("ALTER ROLE postgres NOSUPERUSER BYPASSRLS;", role=owner)
     privileges = json.loads(query("SELECT jsonb_build_object('superuser',(SELECT rolsuper FROM pg_roles WHERE rolname=current_user),"
         "'bypass_rls',(SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user),"
         "'owner',(SELECT pg_get_userbyid(extowner) FROM pg_extension WHERE extname='pg_cron'),"

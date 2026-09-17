@@ -36,6 +36,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:performance": "node scripts/ci/route-performance.mjs",
+    "test:a11y": "node scripts/ci/public-a11y.mjs",
     "db:plan": "supabase db push --dry-run",
     "types:generate": "npx supabase gen types typescript --project-id kuklfnapbkmacvwxktbh --schema public > src/types/supabase.ts",
     "db:push": "supabase db push",

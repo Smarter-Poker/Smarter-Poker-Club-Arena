@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -323,6 +324,25 @@ def main(password_file):
         invoice_id=(invoice.get("invoice") or {}).get("id")
         if invoice.get("success") is not True or not isinstance(invoice_id,str) or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",invoice_id):
             raise AssertionError(f"actual invoice generation did not confirm: {invoice}")
+        invoice_row=invoice["invoice"]
+        invoice_agent=invoice_row.get("agent_id")
+        invoice_debt=invoice_row.get("debt_owed")
+        if invoice_agent != "e6371000-0000-4000-8000-000000000228" or type(invoice_debt) not in (int,float) or Decimal(str(invoice_debt)) != Decimal(35):
+            raise AssertionError(f"actual invoice request identity changed: {invoice}")
+        invoice_dates=[]
+        for field in ("period_start","period_end","due_date"):
+            value=invoice_row.get(field)
+            # Validate finite zoned timestamps, retaining the exact returned
+            # text and microseconds. Escape SQL literals independently.
+            try:
+                parsed=datetime.fromisoformat(value)
+            except (TypeError,ValueError):
+                raise AssertionError(f"invalid original invoice {field}: {value}") from None
+            if parsed.utcoffset() is None:
+                raise AssertionError(f"invalid original invoice {field}: {value}")
+            invoice_dates.append("E'"+value.replace("\\","\\\\").replace("'","''")+"'::timestamptz")
+        invoice_replay_sql=(f"SELECT fn_generate_credit_invoice('{invoice_agent}'::uuid,"
+            f"{invoice_dates[0]},{invoice_dates[1]},{Decimal(str(invoice_debt))}::numeric,{invoice_dates[2]})")
         a,aid=session();b,bid=session()
         paid=result(a,f"SELECT fn_process_credit_invoice_payment('{invoice_id}'::uuid,5,'external',pg_temp.cr_id(1860),'Synthetic external payment reference 1860')","payment")
         if paid.get("success") is not True or paid.get("credit_used_after") != 30:
@@ -349,8 +369,13 @@ def main(password_file):
         # changing it. The new manager helper must hold membership SHARE before
         # waiting there, so a later direct disable cannot overtake the decision.
         h,hid=session();a,aid=session(3);m,mid=session()
-        duplicate=result(h,f"SELECT fn_generate_credit_invoice(agent_id,period_start,period_end,debt_owed,due_date) FROM credit_invoices WHERE id='{invoice_id}'::uuid","existing_invoice")
-        if duplicate.get("success") is not True or duplicate.get("duplicate") is not True:
+        # Owner RLS does not expose this agent's raw invoice. Reuse the original
+        # generator receipt so the same authenticated function actually runs.
+        duplicate=result(h,invoice_replay_sql,"existing_invoice")
+        duplicate_row=duplicate.get("invoice")
+        if duplicate.get("success") is not True or duplicate.get("duplicate") is not True or not isinstance(duplicate_row,dict) or any(
+                duplicate_row.get(field) != invoice_row[field]
+                for field in ("id","agent_id","period_start","period_end","debt_owed","due_date")):
             raise AssertionError("existing invoice replay did not establish actual agent lock")
         send(a,"SELECT pg_temp.cr_try_apply(1870,28,1,90,7,25,3);\n\\echo manager_decision\n")
         blocked(aid,hid)

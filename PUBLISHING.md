@@ -63,3 +63,14 @@ Follow the operating law's failure classification immediately. Repair build/test
 ## Publication timing
 
 Push ready changes, run checks, complete protected merge, build and stage as soon as their prerequisites pass, throughout the hour. Do not hold these stages until `:55`. World Hub and Club Arena client publication have no hourly gate. Only game-engine activation uses its certified maintenance window; the immutable image must be prepared beforehand, followed by immediate live identity, behavior and rollback-budget verification at cutover. Commander and shared-package delivery retain their own component rules above. See the operating law for failed-attempt recovery.
+
+### Route by the changed behavior
+
+| Change | Required route | Hourly activation gate |
+| --- | --- | --- |
+| Client pages, buttons, styles, assets or browser behavior with no new engine dependency | Client checks, protected merge, existing static publisher, both public build-info endpoints and affected behavior | None |
+| Engine runtime or its release control | Required engine checks, protected merge, immediate engine staging/build, certified activation and proof | Engine activation only |
+| Client and engine together | Validate compatibility; stage both promptly and identify the exact dependency before exposing behavior that requires the new engine | Only the dependent behavior and engine activation; unrelated client work remains independent |
+| Database or financial change | Applicable database/financial qualification and installation safeguards | Existing DDL/freeze restrictions where applicable, not a blanket client publication hold |
+
+CI classification and deployment selection are separate. A client financial change may correctly require database/server tests without requiring an engine restart. Do not rename files or weaken checks to evade that qualification. A docs-only or client-only merge can invoke the lightweight engine detector; a verified unchanged engine tree must produce no engine deployment request. Provider runner queues and the static publisher's own serialization are not hourly maintenance gates.

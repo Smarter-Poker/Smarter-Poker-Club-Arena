@@ -767,7 +767,10 @@ export class HorseFleetManager {
    * queue is now the release signal, so a horse in it would delay the person
    * it is supposed to be making room for.
    */
-  private async humansWaitingByTable(horseIdSet: Set<string>): Promise<Map<string, number>> {
+  private async humansWaitingByTable(
+    horseIdSet: Set<string>,
+    shouldContinue?: () => boolean
+  ): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     try {
       /* PAGED (2026-09-06). A bare `.select()` is capped at db-max-rows (1,000)
@@ -790,8 +793,9 @@ export class HorseFleetManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseFleet.humansWaiting', maxRows: 50_000 }
+        { label: 'HorseFleet.humansWaiting', maxRows: 50_000, shouldContinue }
       );
+      if (shouldContinue?.() === false) return out;
       if (!page.complete) {
         // Fails CLOSED, as the original did on error: nobody is asked to leave
         // on a half-read queue. One more cycle of waiting costs a person 30
@@ -835,7 +839,10 @@ export class HorseFleetManager {
    * Human rows are NEVER touched here — a person's place in line is theirs
    * until they sit, leave, or their seat offer expires.
    */
-  private async pruneHorseWaitlist(horseIdSet: Set<string>): Promise<void> {
+  private async pruneHorseWaitlist(
+    horseIdSet: Set<string>,
+    shouldContinue?: () => boolean
+  ): Promise<void> {
     try {
       /* PAGED (2026-09-06), same reason as humansWaitingByTable above and with
          a sharper edge: this method's whole job is to DRAIN the queue, and a
@@ -868,8 +875,9 @@ export class HorseFleetManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseFleet.pruneWaitlist', maxRows: 50_000 }
+        { label: 'HorseFleet.pruneWaitlist', maxRows: 50_000, shouldContinue }
       );
+      if (shouldContinue?.() === false) return;
       const excess = page.rows
         .filter((r) => horseIdSet.has(r.user_id as string))
         .map((r) => r.id as string);
@@ -877,6 +885,7 @@ export class HorseFleetManager {
       // Chunked so the request line stays sane if a queue ever inflates again
       // (10,004 horse rows on 2026-08-31).
       for (let i = 0; i < excess.length; i += 200) {
+        if (shouldContinue?.() === false) break;
         const { error: updErr } = await supabase
           .from('table_waitlist')
           .update({ status: 'cleared' })
@@ -957,6 +966,7 @@ export class HorseFleetManager {
     // THE FREEZE IS TOTAL (Dan 2026-09-03): seeding is a seat INSERT and a buy-in.
     // start() runs this once immediately; a boot inside the break must not.
     if (generation !== undefined && !this.lifecycleIsCurrent(generation)) return;
+    const readIsCurrent = () => generation === undefined || this.lifecycleIsCurrent(generation);
     if (isMaintenanceFrozen()) return;
     if (this.seeding) return; // Prevent concurrent seeding
     this.seeding = true;
@@ -1056,8 +1066,9 @@ export class HorseFleetManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseFleet.openTables', maxRows: 50_000 }
+        { label: 'HorseFleet.openTables', maxRows: 50_000, shouldContinue: readIsCurrent }
       );
+      if (!readIsCurrent()) return;
 
       // FAIL CLOSED, exactly as the seat map does. A partial table list is not
       // a smaller floor, it is a floor with holes in it that nothing will ever
@@ -1183,8 +1194,9 @@ export class HorseFleetManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseFleet.activeSeats', maxRows: 50_000 }
+        { label: 'HorseFleet.activeSeats', maxRows: 50_000, shouldContinue: readIsCurrent }
       );
+      if (!readIsCurrent()) return;
 
       // FAIL CLOSED. A partial seat map is precisely the state that produced
       // ~150,000 failed buy-ins a day: every seat we cannot see reads as empty.
@@ -1232,8 +1244,9 @@ export class HorseFleetManager {
             if (cursor) q = q.gt('id', cursor);
             return q;
           },
-          { label: 'HorseFleet.pendingMoves', maxRows: 50_000 }
+          { label: 'HorseFleet.pendingMoves', maxRows: 50_000, shouldContinue: readIsCurrent }
         );
+        if (!readIsCurrent()) return;
         if (!pmPage.complete) {
           // Fail LOUD but open: a reservation we cannot see costs a wasted
           // buy-in attempt (the executor reports `destination_full`), whereas
@@ -1320,8 +1333,9 @@ export class HorseFleetManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseFleet.validHorses', maxRows: 50_000 }
+        { label: 'HorseFleet.validHorses', maxRows: 50_000, shouldContinue: readIsCurrent }
       );
+      if (!readIsCurrent()) return;
       if (!horsePage.complete) {
         beat.reason = 'horse_pool_incomplete';
         console.warn('[HorseFleet] Seeding cycle SKIPPED - the horse pool came back incomplete.');
@@ -1427,8 +1441,14 @@ export class HorseFleetManager {
               if (cursor) q = q.gt('user_id', cursor);
               return q;
             },
-            { label: 'HorseFleet.bankrolls', maxRows: 50_000, idKey: 'user_id' }
+            {
+              label: 'HorseFleet.bankrolls',
+              maxRows: 50_000,
+              idKey: 'user_id',
+              shouldContinue: readIsCurrent,
+            }
           );
+          if (!readIsCurrent()) return;
           if (!brPage.complete) {
             allComplete = false;
             break;
@@ -1501,8 +1521,9 @@ export class HorseFleetManager {
             if (cursor) q = q.gt('id', cursor);
             return q;
           },
-          { label: 'HorseFleet.rejoinConstraints', maxRows: 50_000 }
+          { label: 'HorseFleet.rejoinConstraints', maxRows: 50_000, shouldContinue: readIsCurrent }
         );
+        if (!readIsCurrent()) return;
         if (rejoinPage.complete) {
           rejoin = buildRejoinConstraints(rejoinPage.rows, Date.now());
         } else {
@@ -1545,8 +1566,9 @@ export class HorseFleetManager {
             if (cursor) q = q.gt('id', cursor);
             return q;
           },
-          { label: 'HorseFleet.disabledGames', maxRows: 50_000 }
+          { label: 'HorseFleet.disabledGames', maxRows: 50_000, shouldContinue: readIsCurrent }
         );
+        if (!readIsCurrent()) return;
         if (disabledPage.complete) {
           disabledGameIds = buildDisabledGameIds(disabledPage.rows);
         } else {
@@ -1618,8 +1640,9 @@ export class HorseFleetManager {
             if (cursor) q = q.gt('id', cursor);
             return q;
           },
-          { label: 'HorseFleet.tournamentBookings', maxRows: 50_000 }
+          { label: 'HorseFleet.tournamentBookings', maxRows: 50_000, shouldContinue: readIsCurrent }
         );
+        if (!readIsCurrent()) return;
         /* The tournament each open tournament table belongs to. Only tables
            that are not closed, because a seat at a closed table is history in
            `fn_concurrent_game_load` too. */
@@ -1641,8 +1664,9 @@ export class HorseFleetManager {
             if (cursor) q = q.gt('id', cursor);
             return q;
           },
-          { label: 'HorseFleet.tournamentTables', maxRows: 50_000 }
+          { label: 'HorseFleet.tournamentTables', maxRows: 50_000, shouldContinue: readIsCurrent }
         );
+        if (!readIsCurrent()) return;
         if (bookingPage.complete && tournamentTablePage.complete) {
           const tournamentByTableId = new Map<string, string>();
           for (const row of tournamentTablePage.rows) {
@@ -1784,8 +1808,9 @@ export class HorseFleetManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseFleet.horseIds', maxRows: 50_000 }
+        { label: 'HorseFleet.horseIds', maxRows: 50_000, shouldContinue: readIsCurrent }
       );
+      if (!readIsCurrent()) return;
       // A horse missing from this set reads as a HUMAN, which triggers the
       // short-handed-human rescue path and reorders the whole seeding queue.
       if (!idPage.complete) {
@@ -2116,7 +2141,8 @@ export class HorseFleetManager {
          Claiming first is what makes the hold mean something. */
       /* Who is actually waiting for a seat, read once for the whole floor.
          This is the only input to the 2026-09-02 release rule. */
-      const humansWaitingByTable = await this.humansWaitingByTable(horseIdSet);
+      const humansWaitingByTable = await this.humansWaitingByTable(horseIdSet, readIsCurrent);
+      if (!readIsCurrent()) return;
 
       /* HORSES DO NOT QUEUE ANY MORE (Dan 2026-09-02): every horse row comes
          out of every waiting list, on a full table as much as a sparse one.
@@ -2124,7 +2150,8 @@ export class HorseFleetManager {
          the loop below - that was one round trip per table, 1,131 of them in
          sequence, and on a saturated database it is what stretched a 30-second
          cycle to 47 minutes. See the cycle-duration warning in finally. */
-      await this.pruneHorseWaitlist(horseIdSet);
+      await this.pruneHorseWaitlist(horseIdSet, readIsCurrent);
+      if (!readIsCurrent()) return;
 
       /* WHERE EACH HORSE IS ALREADY REPRESENTING A CLUB, per scope. The seat
          it holds decides its wallet for a second seat in the same union
@@ -2283,7 +2310,8 @@ export class HorseFleetManager {
             surplusTableIds,
             seatBudget,
             rejoin,
-            disabledGameIds
+            disabledGameIds,
+            readIsCurrent
           );
       seatBudget -= claimed;
       beat.seatsFilled += claimed;
@@ -2451,7 +2479,7 @@ export class HorseFleetManager {
                 if (cursor) q = q.gt('id', cursor);
                 return q;
               },
-              { label: 'HorseFleet.doorRecheck', maxRows: 50_000 }
+              { label: 'HorseFleet.doorRecheck', maxRows: 50_000, shouldContinue: readIsCurrent }
             );
             if (doorPage.complete) {
               doors = doorsFromRows(doorPage.rows);
@@ -2469,6 +2497,7 @@ export class HorseFleetManager {
         }
       };
       for (const table of tablesToSeed) {
+        if (!readIsCurrent()) break;
         let diag: OpeningFeederDiag | null = null;
         try {
           /* THE DIAGNOSTIC IS OPENED FIRST (2026-09-06). It used to be created
@@ -3299,6 +3328,7 @@ export class HorseFleetManager {
              take them. See HorseStaleTable. */
           if (table.cluster_id && cleared.length > 0) {
             await readDoorsOnce();
+            if (!readIsCurrent()) break;
             if (!isStillSeatable(doors, table.id)) {
               staleTablesSkipped++;
               noteSkip(diag, 'stale_snapshot');
@@ -3900,6 +3930,7 @@ export class HorseFleetManager {
     } catch (err: any) {
       reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
+      if (!readIsCurrent()) beat.reason = 'lifecycle_stopped';
       // Logging can throw EPIPE/EAGAIN. Neither a diagnostic nor a failed
       // heartbeat may leave the overlap guard permanently held. Keep the
       // final write owned until it settles, then release on every exit path.
@@ -4284,7 +4315,8 @@ export class HorseFleetManager {
     rejoin: RejoinConstraints = EMPTY_REJOIN_CONSTRAINTS,
     /* Games the operator has switched off (18.4), read this cycle. Empty
        when the read failed: fail open, same as the seeding loop. */
-    disabledGameIds: ReadonlySet<string> = new Set<string>()
+    disabledGameIds: ReadonlySet<string> = new Set<string>(),
+    shouldContinue?: () => boolean
   ): Promise<number> {
     let claimed = 0;
     try {
@@ -4314,8 +4346,9 @@ export class HorseFleetManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseFleet.offeredSeats', maxRows: 50_000 }
+        { label: 'HorseFleet.offeredSeats', maxRows: 50_000, shouldContinue }
       );
+      if (shouldContinue?.() === false) return claimed;
       if (!offerPage.complete) {
         console.warn(
           '[HorseFleet] seat-offer read incomplete - answering the offers it did read; ' +
@@ -4338,6 +4371,7 @@ export class HorseFleetManager {
       }
 
       for (const offer of mine as any[]) {
+        if (shouldContinue?.() === false) break;
         // The cap counts a claimed seat like any other: a fleet at its ceiling
         // takes no new seats by any route.
         if (claimed >= budget) break;

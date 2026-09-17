@@ -177,6 +177,272 @@ const flush = async () => {
   });
 };
 
+function deferredRpc() {
+  let resolve!: (reply: { data: unknown; error: unknown }) => void;
+  const promise = new Promise<{ data: unknown; error: unknown }>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe('a player can leave the game waiting list', () => {
+  const queued = () =>
+    lobby({ seated: false, table_id: null, waitlist: { on_list: true, position: 2, waiting: 3 } });
+  const show = () =>
+    render(<MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />);
+
+  it('shows the caller place and cancels through the game door, then refreshes it', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: queued(), error: null })
+      .mockResolvedValueOnce({ data: { ok: true, cancelled: 1, released_offers: 1 }, error: null })
+      .mockResolvedValue({
+        data: lobby({ seated: false, waitlist: { on_list: false, position: null, waiting: 2 } }),
+        error: null,
+      });
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'Leave Waiting List' }));
+    await waitFor(() =>
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_cash_game_leave_waitlist', { p_game_id: GAME })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Leave Waiting List' })).toBeNull()
+    );
+    expect(mocks.toast.info).toHaveBeenCalledWith('You Have Left The Waiting List.');
+  });
+
+  it.each([
+    { seated: true, waitlist: { on_list: true, position: 2, waiting: 3 } },
+    { seated: false, waitlist: { on_list: false, position: null, waiting: 3 } },
+    { seated: false, waitlist: null },
+  ])('does not offer cancellation to a seated or unlisted viewer (%j)', async (me) => {
+    mocks.rpc.mockResolvedValue({ data: lobby(me), error: null });
+    show();
+    await screen.findByText('NLH 1/2 Madness');
+    expect(screen.queryByRole('button', { name: 'Leave Waiting List' })).toBeNull();
+  });
+
+  it.each([
+    { data: null, error: { message: 'database secret 42501' } },
+    { data: { ok: false, cancelled: 0 }, error: null },
+    { data: { ok: true, cancelled: -1 }, error: null },
+    { data: { ok: true, cancelled: '1' }, error: null },
+  ])(
+    'keeps the caller queued and uses house copy for a failed or malformed reply (%j)',
+    async (reply) => {
+      mocks.rpc.mockResolvedValueOnce({ data: queued(), error: null }).mockResolvedValue(reply);
+      show();
+      fireEvent.click(await screen.findByRole('button', { name: 'Leave Waiting List' }));
+      await waitFor(() =>
+        expect(mocks.toast.warning).toHaveBeenCalledWith(
+          'Could Not Leave The Waiting List. Please Try Again.'
+        )
+      );
+      expect(mocks.toast.info).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Leave Waiting List' })).toBeEnabled();
+      expect(screen.getByText('You Are Number 2 On The Waiting List.')).toBeTruthy();
+    }
+  );
+
+  it('ignores a late cancellation after close and allows only one same-render request', async () => {
+    const reply = deferredRpc();
+    mocks.rpc.mockResolvedValueOnce({ data: queued(), error: null }).mockReturnValue(reply.promise);
+    const props = { gameId: GAME, currentTableId: FEEDER, onClose: vi.fn() };
+    const { rerender } = render(<MustMoveLobbyModal isOpen {...props} />);
+    const button = await screen.findByRole('button', { name: 'Leave Waiting List' });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_cash_game_leave_waitlist')
+    ).toHaveLength(1);
+    rerender(<MustMoveLobbyModal isOpen={false} {...props} />);
+    await act(async () =>
+      reply.resolve({ data: { ok: true, cancelled: 1, released_offers: 1 }, error: null })
+    );
+    expect(mocks.toast.info).not.toHaveBeenCalled();
+    expect(mocks.toast.warning).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('lobby replies belong to the current game and opening', () => {
+  it('does not restore the previous game when its read finishes last', async () => {
+    const oldRead = deferredRpc();
+    const current = lobby();
+    current.game = { ...current.game, id: 'g-2', name: 'The Current Game' };
+    mocks.rpc
+      .mockReturnValueOnce(oldRead.promise)
+      .mockResolvedValue({ data: current, error: null });
+    const { rerender } = render(
+      <MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
+    );
+    rerender(
+      <MustMoveLobbyModal isOpen gameId="g-2" currentTableId="other-table" onClose={vi.fn()} />
+    );
+    await screen.findByText('The Current Game');
+    await act(async () => oldRead.resolve({ data: lobby(), error: null }));
+    expect(screen.queryByText('NLH 1/2 Madness')).toBeNull();
+    expect(screen.getByText('The Current Game')).toBeTruthy();
+  });
+
+  it('hides old game actions immediately while the replacement game is loading', async () => {
+    const nextRead = deferredRpc();
+    mocks.rpc
+      .mockResolvedValueOnce({ data: lobby(), error: null })
+      .mockReturnValue(nextRead.promise);
+    const { rerender } = render(
+      <MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
+    );
+    await screen.findByRole('button', { name: 'Request Any Table' });
+    rerender(
+      <MustMoveLobbyModal isOpen gameId="g-2" currentTableId="other-table" onClose={vi.fn()} />
+    );
+    expect(screen.queryByRole('button', { name: 'Request Any Table' })).toBeNull();
+    expect(screen.queryByText('NLH 1/2 Madness')).toBeNull();
+  });
+
+  it('ignores a late join after the lobby is closed and reopened', async () => {
+    const joinReply = deferredRpc();
+    mocks.rpc.mockImplementation((name: string) =>
+      name === 'fn_cash_game_join'
+        ? joinReply.promise
+        : Promise.resolve({ data: lobby({ seated: false }), error: null })
+    );
+    const onClose = vi.fn();
+    const onGoToTable = vi.fn();
+    const props = { gameId: GAME, currentTableId: FEEDER, onClose, onGoToTable };
+    const { rerender } = render(<MustMoveLobbyModal isOpen {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Join Game' }));
+    rerender(<MustMoveLobbyModal isOpen={false} {...props} />);
+    rerender(<MustMoveLobbyModal isOpen {...props} />);
+    await act(async () =>
+      joinReply.resolve({ data: { ok: true, action: 'seat', table_id: MAIN2 }, error: null })
+    );
+    expect(onGoToTable).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mocks.toast.success).not.toHaveBeenCalled();
+    expect((screen.getByRole('button', { name: 'Join Game' }) as HTMLButtonElement).disabled).toBe(
+      false
+    );
+  });
+
+  it('does not resurrect the old corner after a game switch', async () => {
+    const oldRead = deferredRpc();
+    const current = lobby({ seat_change: { available: false, used_at: null, request: null } });
+    current.game.id = 'g-2';
+    mocks.rpc
+      .mockReturnValueOnce(oldRead.promise)
+      .mockResolvedValue({ data: current, error: null });
+    const { rerender } = render(
+      <CashClusterHUD gameId={GAME} onOpenLobby={vi.fn()} onSeatChange={vi.fn()} />
+    );
+    rerender(<CashClusterHUD gameId="g-2" onOpenLobby={vi.fn()} onSeatChange={vi.fn()} />);
+    await flush();
+    await act(async () => oldRead.resolve({ data: lobby(), error: null }));
+    expect(screen.queryByText('Seat Change')).toBeNull();
+  });
+
+  it('does not replace a fresh corner update with an older poll', async () => {
+    const oldRead = deferredRpc();
+    const current = lobby({ seat_change: { available: false, used_at: null, request: null } });
+    mocks.rpc
+      .mockReturnValueOnce(oldRead.promise)
+      .mockResolvedValue({ data: current, error: null });
+    const props = { gameId: GAME, onOpenLobby: vi.fn(), onSeatChange: vi.fn() };
+    const { rerender } = render(<CashClusterHUD refreshKey={0} {...props} />);
+    rerender(<CashClusterHUD refreshKey={1} {...props} />);
+    await flush();
+    await act(async () => oldRead.resolve({ data: lobby(), error: null }));
+    expect(screen.queryByText('Seat Change')).toBeNull();
+  });
+
+  it('does not navigate from a corner join after a game switch', async () => {
+    const joinReply = deferredRpc();
+    const waiting = lobby({ seated: false, waitlist: { on_list: true, waiting: 1, position: 1 } });
+    mocks.rpc.mockImplementation((name: string) =>
+      name === 'fn_cash_game_join'
+        ? joinReply.promise
+        : Promise.resolve({ data: waiting, error: null })
+    );
+    const props = { onGoToTable: vi.fn(), onOpenLobby: vi.fn(), onSeatChange: vi.fn() };
+    const { rerender } = render(<CashClusterHUD gameId={GAME} {...props} />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'A Chair Is Open In This Game - Take It' })
+    );
+    rerender(<CashClusterHUD gameId="g-2" {...props} />);
+    await act(async () =>
+      joinReply.resolve({ data: { ok: true, action: 'seat', table_id: MAIN2 }, error: null })
+    );
+    expect(props.onGoToTable).not.toHaveBeenCalled();
+  });
+
+  it('does not let an old failure erase a newer successful read', async () => {
+    const oldRead = deferredRpc();
+    mocks.rpc
+      .mockReturnValueOnce(oldRead.promise)
+      .mockResolvedValue({ data: lobby(), error: null });
+    const props = { gameId: GAME, onOpenLobby: vi.fn(), onSeatChange: vi.fn() };
+    const { rerender } = render(<CashClusterHUD refreshKey={0} {...props} />);
+    rerender(<CashClusterHUD refreshKey={1} {...props} />);
+    await screen.findByText('Seat Change');
+    await act(async () => oldRead.resolve({ data: null, error: { message: 'GAME_NOT_FOUND' } }));
+    expect(screen.getByText('Seat Change')).toBeTruthy();
+  });
+
+  it('suppresses a seat-change response after unmount', async () => {
+    const reply = deferredRpc();
+    mocks.rpc.mockImplementation((name: string) =>
+      name === 'fn_cash_seat_change_request'
+        ? reply.promise
+        : Promise.resolve({ data: lobby(), error: null })
+    );
+    const { unmount } = render(
+      <MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Request Any Table' }));
+    unmount();
+    await act(async () =>
+      reply.resolve({ data: { ok: true, action: 'listed', position: 1 }, error: null })
+    );
+    expect(mocks.toast.success).not.toHaveBeenCalled();
+    expect(mocks.toast.warning).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits one join for two taps before React renders and still honors its reply', async () => {
+    const reply = deferredRpc();
+    mocks.rpc.mockImplementation((name: string) =>
+      name === 'fn_cash_game_join'
+        ? reply.promise
+        : Promise.resolve({ data: lobby({ seated: false }), error: null })
+    );
+    const onGoToTable = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <MustMoveLobbyModal
+        isOpen
+        gameId={GAME}
+        currentTableId={FEEDER}
+        onClose={onClose}
+        onGoToTable={onGoToTable}
+      />
+    );
+    const button = await screen.findByRole('button', { name: 'Join Game' });
+    act(() => {
+      button.click();
+      button.click();
+    });
+    expect(mocks.rpc.mock.calls.filter(([name]) => name === 'fn_cash_game_join')).toHaveLength(1);
+    await act(async () =>
+      reply.resolve({ data: { ok: true, action: 'seat', table_id: MAIN2 }, error: null })
+    );
+    expect(onGoToTable).toHaveBeenCalledExactlyOnceWith(MAIN2);
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(mocks.toast.success).toHaveBeenCalledOnce();
+  });
+});
+
 beforeEach(() => {
   mocks.rpc.mockReset();
   for (const k of Object.keys(mocks.toast) as (keyof typeof mocks.toast)[])
@@ -283,19 +549,27 @@ describe('the lobby on a read that fails', () => {
   });
 
   it('keeps the last read on screen under the notice for a passing failure', async () => {
-    mocks.rpc.mockResolvedValueOnce({ data: lobby(), error: null });
-    const { rerender } = render(
-      <MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
-    );
-    await screen.findByText('NLH 1/2 Madness');
-    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'PGRST002: schema cache' } });
-    rerender(
-      <MustMoveLobbyModal isOpen={false} gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
-    );
-    rerender(<MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />);
-    await screen.findByText(LOBBY_READ_FALLBACK);
-    expect(screen.getByText('NLH 1/2 Madness')).toBeTruthy();
-    expect(screen.queryByText(/PGRST002/)).toBeNull();
+    vi.useFakeTimers();
+    try {
+      mocks.rpc.mockResolvedValueOnce({ data: lobby(), error: null });
+      const { unmount } = render(
+        <MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />
+      );
+      await flush();
+      expect(screen.getByText('NLH 1/2 Madness')).toBeTruthy();
+      mocks.rpc.mockResolvedValue({ data: null, error: { message: 'PGRST002: schema cache' } });
+      // A failed poll retains this opening; close/reopen deliberately starts a new one.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MUST_MOVE_LOBBY_POLL_MS);
+      });
+      expect(mocks.rpc).toHaveBeenCalledTimes(2);
+      expect(screen.getByText(LOBBY_READ_FALLBACK)).toBeTruthy();
+      expect(screen.getByText('NLH 1/2 Madness')).toBeTruthy();
+      expect(screen.queryByText(/PGRST002/)).toBeNull();
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

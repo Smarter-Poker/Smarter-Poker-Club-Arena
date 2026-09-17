@@ -222,6 +222,10 @@ export class ClusterController {
   private lastSummary: ClusterTickSummary | null = null;
   /** Debounce handles, one per game with a wake pending. */
   private wakeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** A debounce ending does not end the RPC it admitted. */
+  private readonly wakeInFlight = new Set<string>();
+  /** Changes arriving during that RPC need one later pass, not overlapping RPCs. */
+  private readonly wakeAgain = new Set<string>();
   /** Wakes that reached the RPC (for the summary line and tests). */
   private wakesFiredCount = 0;
   private wakesCoalescedCount = 0;
@@ -321,6 +325,7 @@ export class ClusterController {
     this.timer = null;
     for (const t of this.wakeTimers.values()) clearTimeout(t);
     this.wakeTimers.clear();
+    this.wakeAgain.clear();
     if (activeController === this) activeController = null;
 
     const drain = this.drainLifecycleJobs();
@@ -339,7 +344,7 @@ export class ClusterController {
     return {
       fired: this.wakesFiredCount,
       coalesced: this.wakesCoalescedCount,
-      pending: this.wakeTimers.size,
+      pending: this.wakeTimers.size + this.wakeAgain.size,
     };
   }
 
@@ -350,16 +355,31 @@ export class ClusterController {
    */
   wake(gameId: string): void {
     if (!this.running || !gameId) return;
+    if (this.wakeInFlight.has(gameId)) {
+      this.wakeAgain.add(gameId);
+      this.wakesCoalescedCount++;
+      return;
+    }
     if (this.wakeTimers.has(gameId)) {
       this.wakesCoalescedCount++;
       return;
     }
     const generation = this.lifecycleGeneration;
     const handle = setTimeout(() => {
+      if (!this.lifecycleIsCurrent(generation)) return;
       this.wakeTimers.delete(gameId);
+      this.wakeInFlight.add(gameId);
       this.launchLifecycleJob(
         generation,
-        () => this.tickGame(gameId),
+        async () => {
+          try {
+            await this.tickGame(gameId);
+          } finally {
+            this.wakeInFlight.delete(gameId);
+            const again = this.wakeAgain.delete(gameId);
+            if (again && this.lifecycleIsCurrent(generation)) this.wake(gameId);
+          }
+        },
         'ClusterController.wake_tick_error',
         { game_id: gameId }
       );
@@ -370,7 +390,8 @@ export class ClusterController {
   /**
    * One game, now, through the per-game RPC. The frozen check is the same as
    * the pass's; the SQL repeats it. Never overlaps itself for the same game
-   * because the debounce map holds one handle per game.
+   * because wakeInFlight retains the game until its actual request settles.
+   * Any changes received meanwhile become one new debounced wake afterwards.
    */
   private async tickGame(gameId: string): Promise<void> {
     const generation = this.lifecycleGeneration;
@@ -378,6 +399,10 @@ export class ClusterController {
     if (frozen() || !this.running) return;
     const rpc = this.deps.rpc ?? supabase.rpc.bind(supabase);
     const row = this.rowByGame.get(gameId);
+    // A full pass may replace or retire this hint while the wake is waiting.
+    // Its old Main 1 must not be started after the newer roster wins.
+    const wakeIsCurrent = () =>
+      this.lifecycleIsCurrent(generation) && this.rowByGame.get(gameId) === row;
     // A horse is a buyer. The fleet counted, this cycle, how many could sit
     // at Main 1; that is the game's horse demand.
     const eligible = row?.main1_table_id ? this.deps.eligibleHorseCount(row.main1_table_id) : 0;
@@ -386,7 +411,7 @@ export class ClusterController {
       p_game_id: gameId,
       p_eligible_horses: eligible,
     });
-    if (!this.lifecycleIsCurrent(generation)) return;
+    if (!wakeIsCurrent()) return;
     if (error) {
       reportError(error, 'ClusterController.wake_rpc_failed', { game_id: gameId });
       return;
@@ -402,7 +427,8 @@ export class ClusterController {
       result,
       summary,
       'wake',
-      generation
+      generation,
+      wakeIsCurrent
     );
   }
 
@@ -479,6 +505,11 @@ export class ClusterController {
       this.inTick = true;
       this.tickStartedAt = startedAt;
       const mySerial = ++this.tickSerial;
+      // Releasing a stalled pass's latch does not cancel its asynchronous
+      // work. Only the replacement pass may update hints or wake a dealer.
+      const passIsCurrent = () =>
+        this.tickSerial === mySerial &&
+        (generation === null || this.lifecycleIsCurrent(generation));
       this.passCount++;
       try {
         const rpc = this.deps.rpc ?? supabase.rpc.bind(supabase);
@@ -492,7 +523,7 @@ export class ClusterController {
 
         summary.rpcs++;
         const { data, error } = await rpc('fn_cash_clusters_tick_all', { p_eligible: eligible });
-        if (generation !== null && !this.lifecycleIsCurrent(generation)) return summary;
+        if (!passIsCurrent()) return summary;
         if (error) {
           reportError(error, 'ClusterController.pass_failed');
           summary.errors++;
@@ -529,7 +560,7 @@ export class ClusterController {
         const seen: ClusterRow[] = [];
 
         for (const entry of results) {
-          if (generation !== null && !this.lifecycleIsCurrent(generation)) return summary;
+          if (!passIsCurrent()) return summary;
           if (!entry || typeof entry.game_id !== 'string') continue;
           const row: ClusterRow = {
             game_id: entry.game_id,
@@ -563,9 +594,10 @@ export class ClusterController {
             (entry.result ?? {}) as ClusterTickResult,
             summary,
             'pass',
-            generation
+            generation,
+            passIsCurrent
           );
-          if (generation !== null && !this.lifecycleIsCurrent(generation)) return summary;
+          if (!passIsCurrent()) return summary;
         }
 
         /* A RESTED GAME ANSWERS THE WAKE (2026-09-05, 20260906011113). A game
@@ -577,7 +609,7 @@ export class ClusterController {
          to `summary.rested` either, which the SQL has already counted once. */
         const restedRows = Array.isArray(pass.rested_games) ? pass.rested_games : [];
         for (const entry of restedRows) {
-          if (generation !== null && !this.lifecycleIsCurrent(generation)) return summary;
+          if (!passIsCurrent()) return summary;
           if (!entry || typeof entry.game_id !== 'string') continue;
           const row: ClusterRow = {
             game_id: entry.game_id,
@@ -631,8 +663,10 @@ export class ClusterController {
     result: ClusterTickResult,
     summary: ClusterTickSummary,
     via: 'pass' | 'wake',
-    generation: number | null = null
+    generation: number | null = null,
+    stillCurrent: () => boolean = () => generation === null || this.lifecycleIsCurrent(generation)
   ): Promise<void> {
+    if (!stillCurrent()) return;
     try {
       if (Array.isArray(result.actions) && result.actions.length > 0) {
         summary.actions.push({ game_id: g.game_id, actions: result.actions });
@@ -654,7 +688,7 @@ export class ClusterController {
         !this.deps.hasEngine(g.main1_table_id)
       ) {
         const seated = await this.deps.seatedCount(g.main1_table_id);
-        if (generation !== null && !this.lifecycleIsCurrent(generation)) return;
+        if (!stillCurrent()) return;
         if (seated > 0) {
           // NEVER AWAITED. ensureEngine resolves when engine.start()
           // resolves, and start() returns only once the table has enough

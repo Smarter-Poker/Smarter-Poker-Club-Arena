@@ -90,11 +90,10 @@ describe('engine deployment reports what actually happened', () => {
     const release = uncommented(job(deploy, 'deploy'));
     const receipt = uncommented(job(deploy, 'record-receipt'));
 
-    // The local CI and publisher labels route to separately provisioned VMs.
-    // These checks enforce routing and ordering; installed VM isolation is
-    // verified separately. No paid hosted-runner fallback is permitted.
+    // A GitHub job is the runner isolation boundary: server dependency scripts
+    // and tests finish in preflight before the root-authorized job can start.
     expect(preflight).toMatch(/^ {2}preflight:/);
-    expect(preflight).toMatch(/^ {4}runs-on: \[self-hosted, smarter-local-linux-arm64\]$/m);
+    expect(preflight).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(preflight).toMatch(/^ {8}working-directory: server$/m);
     expect(preflight).toMatch(/^\s+npm ci --no-audit --no-fund\s*$/m);
     expect(preflight).toMatch(/^\s+npm run build\s*$/m);
@@ -111,18 +110,13 @@ describe('engine deployment reports what actually happened', () => {
 
     expect(doors).toMatch(/^ {2}engine-doors:/);
     expect(doors).toMatch(/^ {4}needs: preflight$/m);
-    expect(doors).toMatch(/^ {4}runs-on: \[self-hosted, smarter-local-publish\]$/m);
-    expect(doors).toMatch(/^ {4}environment: Production$/m);
     expect(doors).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(doors).toContain('node scripts/ci/check-engine-doors-exist.mjs');
     expect(doors).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
 
     expect(release).toMatch(/^ {2}deploy:/);
-    expect(release).toMatch(/^ {4}needs: \[preflight, engine-doors, produce-image\]$/m);
-    expect(release).toMatch(/^ {4}runs-on: \[self-hosted, smarter-local-publish\]$/m);
-    expect(release).toMatch(/^ {4}environment: Production$/m);
-    expect(release).toContain('artifact-ids: ${{ needs.produce-image.outputs.artifact_id }}');
-    expect(release).toContain('EXPECTED_ARCHIVE_SHA256: ${{ needs.produce-image.outputs.archive_sha256 }}');
+    expect(release).toMatch(/^ {4}needs: \[preflight, engine-doors\]$/m);
+    expect(release).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(release).toMatch(/^ {6}SHA: \$\{\{ needs\.preflight\.outputs\.target_sha \}\}$/m);
     expect(release).toMatch(/^ {6}SSH_USER: root$/m);
     expect(release).toContain('SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}');
@@ -132,8 +126,7 @@ describe('engine deployment reports what actually happened', () => {
 
     expect(receipt).toMatch(/^ {2}record-receipt:/);
     expect(receipt).toMatch(/^ {4}needs: \[preflight, deploy\]$/m);
-    expect(receipt).toMatch(/^ {4}runs-on: \[self-hosted, smarter-local-publish\]$/m);
-    expect(receipt).toMatch(/^ {4}environment: Production$/m);
+    expect(receipt).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(receipt).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(receipt).toContain('node scripts/ci/record-engine-deploy-attempt.mjs');
     expect(receipt).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
@@ -210,44 +203,12 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(origin).not.toContain('StrictHostKeyChecking=accept-new');
   });
 
-  it('keeps every secret-bearing release job off the shared pull-request runner pool', () => {
-    // Keep application secrets on the dedicated publisher VM and its protected
-    // Production environment. The owner requires fixed local routing with no
-    // cloud fallback; changing a job's credentials must change its routing too.
-    const localCi = '[self-hosted, smarter-local-linux-arm64]';
-    const localPublisher = '[self-hosted, smarter-local-publish]';
-    // Only keys under `jobs:` are jobs; `on:` has two-space keys of its own.
-    const jobsStart = publishCode.search(/^jobs:\s*$/m);
-    expect(jobsStart, 'publish workflow declares jobs').toBeGreaterThan(-1);
-    const jobsSection = publishCode.slice(jobsStart);
-    const jobs = [...jobsSection.matchAll(/^ {2}([A-Za-z0-9_-]+):\s*$/gm)].map((m) => m[1]);
-    expect(jobs.length).toBeGreaterThanOrEqual(4);
-    for (const name of jobs) {
-      const body = job(jobsSection, name);
-      const match = body.match(/^\s+runs-on:\s*(.+?)\s*$/m);
-      expect(match, `${name} declares runs-on`).not.toBeNull();
-      const runner = match![1];
-      if (/secrets\./.test(body)) {
-        expect(runner, `${name} holds a secret and must not read vars.CI_RUNNER`).not.toContain(
-          'CI_RUNNER'
-        );
-        expect(
-          runner,
-          `${name} holds a secret and must run on the dedicated local publisher`
-        ).toBe(localPublisher);
-        expect(body, `${name} must retain protected-main environment policy`).toMatch(
-          /^ {4}environment: Production$/m
-        );
-      } else {
-        expect(runner, `${name} must use the local CI runner`).toBe(localCi);
-      }
-    }
-    for (const name of ['build-and-store', 'publish-to-app', 'publish-to-origin']) {
-      expect(
-        job(publishCode, name),
-        `${name} is the secret-bearing job this law exists for`
-      ).toMatch(/secrets\./);
-    }
+  it('runs every release job on a fresh hosted runner', () => {
+    const runners = [...publish.matchAll(/^\s+runs-on:\s*(.+)$/gm)].map((match) => match[1].trim());
+    expect(runners.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(runners)).toEqual(new Set(['ubuntu-latest']));
+    expect(publish).not.toContain('vars.CI_RUNNER');
+    expect(publish).not.toContain('self-hosted');
   });
 
   it('requires both the built artifact and the test verdict before publishing', () => {

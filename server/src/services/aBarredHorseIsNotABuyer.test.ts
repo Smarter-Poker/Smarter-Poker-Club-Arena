@@ -156,9 +156,7 @@ describe('the buy-in brings the floor', () => {
     expect(CLAIM).toContain('if (rejoin.barred.has(offerDoorKey)) continue;');
     expect(CLAIM).toMatch(/seatClub,\s*rejoin\.rejoinFloor\.get\(offerDoorKey\)\s*\)/);
     // and the cycle passes what it read
-    expect(SEED).toMatch(
-      /surplusTableIds,\s*seatBudget,\s*rejoin,\s*disabledGameIds,\s*readIsCurrent\s*\)/
-    );
+    expect(SEED).toMatch(/surplusTableIds,\s*seatBudget,\s*rejoin,\s*disabledGameIds\s*\)/);
   });
 });
 

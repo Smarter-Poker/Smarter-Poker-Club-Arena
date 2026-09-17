@@ -1,39 +1,28 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   BBJ "QUALIFYING HANDS" - printed on the jackpot console's glass
-   (#ClubArenaConsole)
-
-   This panel paints nothing of its own: it is a page of the BBJInfoModal
-   console, so the frame is the master's and each game family is a row on
-   the black glass under an engraved rule - the games in silver, YOUR GAME
-   as a lit blue word, the minimum hand as the real card art, the note as
-   copy. No block, no box, no corner. Sizes are cqw against the console.
-   No :hover.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* BBJ "Qualifying Hands" tab — one block per game family. */
 
 .bbj-qh {
-  --bbjq-rule: 1px solid #000;
-  --bbjq-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
   display: flex;
   flex-direction: column;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  gap: 10px;
 }
 
 .bbj-qh__intro {
-  margin: 0 0 2.4cqw;
-  color: #d7dee7;
-  font:
-    500 3.4cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .bbj-qh__block {
-  display: grid;
-  gap: 1.2cqw;
-  padding: 2.4cqw 0;
-  border-top: var(--bbjq-rule);
-  box-shadow: var(--bbjq-rule-lit);
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.bbj-qh__block.is-current {
+  border-color: rgba(213, 218, 226, 0.35);
+  background: rgba(213, 218, 226, 0.07);
 }
 
 .bbj-qh__block.is-ineligible {
@@ -42,58 +31,51 @@
 
 .bbj-qh__head {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.6cqw 2.4cqw;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
 .bbj-qh__games {
-  color: #e4e7ec;
-  font-size: 3.8cqw;
+  font-size: 12.5px;
   font-weight: 800;
-  letter-spacing: 0.02em;
-  text-shadow:
-    0 -0.18cqw 0 rgb(255 255 255 / 55%),
-    0 0.25cqw 0 #6d747c,
-    0 0.45cqw 0 #050607;
+  color: #fff;
 }
 
-.bbj-qh__here,
-.bbj-qh__minimum {
-  color: #45adff;
-  font-size: 2.6cqw;
+.bbj-qh__here {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(213, 218, 226, 0.18);
+  color: #d5dae2;
+  font-size: 8.5px;
   font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  text-shadow: 0 0 0.9cqw rgb(49 168 255 / 70%);
+  letter-spacing: 0.5px;
 }
 
 .bbj-qh__label {
   display: block;
-  color: #9aa5b3;
-  font-size: 2.6cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .bbj-qh__cards {
   display: flex;
+  gap: 4px;
   flex-wrap: wrap;
-  gap: 1cqw;
+  margin-bottom: 8px;
 }
 
 .bbj-qh__note {
   margin: 0;
-  color: #d7dee7;
-  font:
-    500 3.2cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .bbj-qh__note--off {
-  color: #9aa5b3;
+  color: rgba(255, 255, 255, 0.45);
+  font-style: italic;
 }

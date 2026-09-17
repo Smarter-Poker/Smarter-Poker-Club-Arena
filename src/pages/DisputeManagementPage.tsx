@@ -8,14 +8,6 @@
  * - Start review, resolve, escalate, or withdraw disputes
  * - Open count badge for unresolved disputes
  * - Real-time updates via Supabase subscription
- *
- * #ClubArenaConsole: the shared integrity header stays (it carries its own
- * approved club art and the section navigation); the docket beneath it is one
- * console - the status filters as lit words, the search printed on the glass,
- * every case a row between engraved rules, and the review / resolve /
- * escalate controls as lit words inside the expanded case. Every loader
- * guard, realtime channel, bus listener, keyboard handler and aria contract of
- * the generic page is kept; only the paint changed.
  */
 
 import {
@@ -38,8 +30,7 @@ import {
   type DisputeResolution,
 } from '../services/DisputeService';
 import './DisputeManagementPage.css';
-import { SpadeConsole } from '../components/console/SpadeConsole';
-import { titleCase } from '../utils/titleCase';
+import PageSkeleton from '../components/common/PageSkeleton';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -240,10 +231,10 @@ export default function DisputeManagementPage() {
     const created = new Date(createdAt).getTime();
     const slaMs = 72 * 60 * 60 * 1000; // 72 hours
     const remaining = created + slaMs - Date.now();
-    if (remaining <= 0) return { text: 'SLA Breached', urgent: true };
+    if (remaining <= 0) return { text: 'SLA breached', urgent: true };
     const hours = Math.floor(remaining / (60 * 60 * 1000));
-    if (hours < 12) return { text: `${hours}h Left`, urgent: true };
-    return { text: `${hours}h Left`, urgent: false };
+    if (hours < 12) return { text: `${hours}h left`, urgent: true };
+    return { text: `${hours}h left`, urgent: false };
   };
 
   const statusCounts = {
@@ -254,19 +245,16 @@ export default function DisputeManagementPage() {
     escalated: disputes.filter((d) => d.status === 'escalated').length,
   };
 
-  /* The status prints in the master's own ink rather than in a drawn badge:
-     gold while it waits, blue under review, green once resolved, red when
-     escalated, muted when withdrawn. */
   const getStatusBadge = (status: DisputeStatus) => {
     const map: Record<DisputeStatus, string> = {
-      open: 'sc-ink--gold',
-      under_review: 'sc-ink--blue',
-      resolved: 'sc-ink--green',
-      escalated: 'sc-ink--red',
-      withdrawn: 'sc-ink--muted',
+      open: 'badge-open',
+      under_review: 'badge-review',
+      resolved: 'badge-resolved',
+      escalated: 'badge-escalated',
+      withdrawn: 'badge-withdrawn',
     };
-    const ink = map[status] || map.open;
-    return <span className={`dmp__status ${ink}`}>{titleCase(status.replace('_', ' '))}</span>;
+    const badgeClass = map[status] || map.open;
+    return <span className={`dispute-badge ${badgeClass}`}>{status.replace('_', ' ')}</span>;
   };
 
   const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: FilterTab) => {
@@ -311,186 +299,165 @@ export default function DisputeManagementPage() {
         ]}
       />
       <div className="dispute-management-page">
-        <SpadeConsole
-          className="dmp__console"
-          eyebrow="Live Case Docket"
-          title={clubId ? 'Club Disputes' : 'Account Disputes'}
-          titleId="dispute-docket-title"
-          pill={statusCounts.open > 0 ? `${statusCounts.open} Open` : 'Clear'}
-          pillInk={statusCounts.open > 0 ? 'gold' : 'green'}
-          foot="foot"
+        <div className="dispute-header">
+          <div>
+            <p className="dispute-kicker">Live Case Docket</p>
+            <h2>{clubId ? 'Club Transaction Disputes' : 'Account Disputes'}</h2>
+          </div>
+          {statusCounts.open > 0 && (
+            <span className="open-count-badge">{statusCounts.open} Open</span>
+          )}
+        </div>
+
+        {/* Filter Tabs */}
+        <div className="dispute-tabs" role="tablist" aria-label="Filter Disputes By Status">
+          {FILTER_TABS.map((tab) => (
+            <button
+              key={tab}
+              id={`dispute-filter-${tab}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab}
+              aria-controls="dispute-case-panel"
+              tabIndex={activeTab === tab ? 0 : -1}
+              className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab)}
+              onKeyDown={(event) => handleTabKeyDown(event, tab)}
+            >
+              {tab === 'under_review' ? 'Reviewing' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {statusCounts[tab] > 0 && <span className="tab-count">{statusCounts[tab]}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="dispute-search">
+          <label htmlFor="dispute-search">Search Cases</label>
+          <input
+            id="dispute-search"
+            type="text"
+            placeholder="Player, Reason, Target, Or Amount"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        {/* Disputes List */}
+        <div
+          id="dispute-case-panel"
+          role="tabpanel"
+          aria-labelledby={`dispute-filter-${activeTab}`}
         >
-          {/* Filter Tabs */}
-          <div className="dmp__tabs" role="tablist" aria-label="Filter Disputes By Status">
-            {FILTER_TABS.map((tab) => (
-              <button
-                key={tab}
-                id={`dispute-filter-${tab}`}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab}
-                aria-controls="dispute-case-panel"
-                tabIndex={activeTab === tab ? 0 : -1}
-                className={`dmp-word dmp__tab ${activeTab === tab ? 'sc-ink--white' : 'sc-ink--muted'}`}
-                onClick={() => setActiveTab(tab)}
-                onKeyDown={(event) => handleTabKeyDown(event, tab)}
-              >
-                {tab === 'under_review' ? 'Reviewing' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-                {statusCounts[tab] > 0 && (
-                  <span className="dmp__tab-count sc-ink--blue">{statusCounts[tab]}</span>
-                )}
+          {loading ? (
+            <div className="loading-state">
+              <PageSkeleton variant="list" />
+              <p>Loading Disputes…</p>
+            </div>
+          ) : loadError ? (
+            <div className="dispute-state dispute-error" role="alert">
+              <strong>Dispute Docket Unavailable</strong>
+              <p>The Live Case Feed Could Not Be Loaded. No Dispute Records Were Changed.</p>
+              <button type="button" onClick={() => void loadDisputes()}>
+                Retry Case Feed
               </button>
-            ))}
-          </div>
-
-          {/* Search */}
-          <div className="dmp__search">
-            <label htmlFor="dispute-search" className="dmp__search-label sc-label sc-ink--blue">
-              Search Cases
-            </label>
-            <input
-              id="dispute-search"
-              type="text"
-              className="dmp__field"
-              placeholder="Player, Reason, Target, Or Amount"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          {/* Disputes List */}
-          <div
-            id="dispute-case-panel"
-            className="dmp__panel"
-            role="tabpanel"
-            aria-labelledby={`dispute-filter-${activeTab}`}
-          >
-            {loading ? (
-              <p className="sc-copy sc-copy--center dmp__state" aria-busy="true">
-                Loading Disputes...
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="empty-state">
+              <span className="empty-signal" aria-hidden="true" />
+              <strong>Docket Clear</strong>
+              <p>
+                {activeTab === 'all'
+                  ? 'No Disputes Have Been Filed.'
+                  : `No ${activeTab.replace('_', ' ')} Disputes Match This View.`}
               </p>
-            ) : loadError ? (
-              <div className="dmp__state" role="alert">
-                <strong className="dmp__state-title sc-ink--red">Dispute Docket Unavailable</strong>
-                <p className="sc-copy">
-                  The Live Case Feed Could Not Be Loaded. No Dispute Records Were Changed.
-                </p>
-                <button
-                  type="button"
-                  className="dmp-word sc-ink--white"
-                  onClick={() => void loadDisputes()}
-                >
-                  Retry Case Feed
-                </button>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="dmp__state">
-                <strong className="dmp__state-title sc-ink--green">Docket Clear</strong>
-                <p className="sc-copy sc-copy--center">
-                  {activeTab === 'all'
-                    ? 'No Disputes Have Been Filed.'
-                    : titleCase(`No ${activeTab.replace('_', ' ')} Disputes Match This View.`)}
-                </p>
-              </div>
-            ) : (
-              <ul className="dmp__list">
-                {filtered.map((dispute) => (
-                  <li key={dispute.id} className="dmp__case">
-                    <button
-                      type="button"
-                      className="dmp__case-head"
-                      aria-expanded={expandedId === dispute.id}
-                      aria-controls={`dispute-case-${dispute.id}`}
-                      onClick={() => {
-                        const newId = expandedId === dispute.id ? null : dispute.id;
-                        setExpandedId(newId);
-                        // Reset form state when switching cards to prevent stale data carry-over
-                        if (newId !== expandedId) {
-                          setResolutionText('');
-                          setAdjustmentAmount('');
-                          setAdjustmentType('none');
-                        }
-                      }}
-                    >
-                      <span className="dmp__case-meta">
-                        {getStatusBadge(dispute.status)}
-                        {/* The disputed sum is a term of the case a staff member
-                            rules on to the chip: exact, never compacted. */}
-                        <span className="dmp__amount sc-ink--silver">
-                          {dispute.amount.toLocaleString()} Chips
-                        </span>
+            </div>
+          ) : (
+            <div className="dispute-list">
+              {filtered.map((dispute) => (
+                <div key={dispute.id} className={`dispute-card status-${dispute.status}`}>
+                  <button
+                    type="button"
+                    className="dispute-card-header"
+                    aria-expanded={expandedId === dispute.id}
+                    aria-controls={`dispute-case-${dispute.id}`}
+                    onClick={() => {
+                      const newId = expandedId === dispute.id ? null : dispute.id;
+                      setExpandedId(newId);
+                      // Reset form state when switching cards to prevent stale data carry-over
+                      if (newId !== expandedId) {
+                        setResolutionText('');
+                        setAdjustmentAmount('');
+                        setAdjustmentType('none');
+                      }
+                    }}
+                  >
+                    <div className="dispute-meta">
+                      {getStatusBadge(dispute.status)}
+                      <span className="dispute-amount">
+                        {dispute.amount.toLocaleString()} Chips
                       </span>
-                      <span className="dmp__case-target">
-                        <span className="dmp__target-type sc-ink--blue">
-                          {titleCase(dispute.targetType.replace('_', ' '))}
-                        </span>
-                        <span className="dmp__submitter sc-ink--muted">
-                          By {titleCase(dispute.submitterName)}
-                        </span>
-                      </span>
-                      <span className="dmp__case-date sc-ink--muted">
-                        {new Date(dispute.createdAt).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                        {(dispute.status === 'open' || dispute.status === 'under_review') &&
-                          (() => {
-                            const sla = getSlaRemaining(dispute.createdAt);
-                            if (!sla) return null;
-                            return (
-                              <span
-                                className={`dmp__sla ${sla.urgent ? 'sc-ink--red' : 'sc-ink--gold'}`}
-                              >
-                                {sla.text}
-                              </span>
-                            );
-                          })()}
-                      </span>
-                    </button>
+                    </div>
+                    <div className="dispute-target">
+                      <span className="target-type">{dispute.targetType.replace('_', ' ')}</span>
+                      <span className="dispute-submitter">By {dispute.submitterName}</span>
+                    </div>
+                    <div className="dispute-date">
+                      {new Date(dispute.createdAt).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {(dispute.status === 'open' || dispute.status === 'under_review') &&
+                        (() => {
+                          const sla = getSlaRemaining(dispute.createdAt);
+                          if (!sla) return null;
+                          return (
+                            <span className={sla.urgent ? 'sla-time sla-urgent' : 'sla-time'}>
+                              {sla.text}
+                            </span>
+                          );
+                        })()}
+                    </div>
+                  </button>
 
-                    <p className="sc-copy dmp__reason">
-                      <span className="dmp__reason-label sc-ink--blue">Reason:</span>{' '}
-                      {titleCase(dispute.reason)}
-                    </p>
+                  <div className="dispute-reason">
+                    <strong>Reason:</strong> {dispute.reason}
+                  </div>
 
-                    {dispute.resolution && (
-                      <p className="sc-copy dmp__reason">
-                        <span className="dmp__reason-label sc-ink--green">Resolution:</span>{' '}
-                        {titleCase(dispute.resolution)}
-                      </p>
-                    )}
+                  {dispute.resolution && (
+                    <div className="dispute-resolution-text">
+                      <strong>Resolution:</strong> {dispute.resolution}
+                    </div>
+                  )}
 
-                    {/* Expanded Actions */}
-                    {expandedId === dispute.id &&
-                      dispute.status !== 'resolved' &&
-                      dispute.status !== 'withdrawn' && (
-                        <div className="dmp__actions" id={`dispute-case-${dispute.id}`}>
-                          {dispute.status === 'open' && (
-                            <button
-                              type="button"
-                              className="dmp-word sc-ink--white"
-                              onClick={() => handleStartReview(dispute.id)}
-                              disabled={reviewing === dispute.id}
-                            >
-                              {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
-                            </button>
-                          )}
+                  {/* Expanded Actions */}
+                  {expandedId === dispute.id &&
+                    dispute.status !== 'resolved' &&
+                    dispute.status !== 'withdrawn' && (
+                      <div className="dispute-actions" id={`dispute-case-${dispute.id}`}>
+                        {dispute.status === 'open' && (
+                          <button
+                            className="action-btn review"
+                            onClick={() => handleStartReview(dispute.id)}
+                            disabled={reviewing === dispute.id}
+                          >
+                            {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
+                          </button>
+                        )}
 
-                          {(dispute.status === 'open' || dispute.status === 'under_review') && (
-                            <div className="dmp__form">
+                        {(dispute.status === 'open' || dispute.status === 'under_review') && (
+                          <>
+                            <div className="resolution-form">
                               <textarea
-                                className="dmp__field dmp__field--area"
                                 aria-label="Resolution Notes"
                                 placeholder="Enter Resolution Notes..."
                                 value={resolutionText}
                                 onChange={(e) => setResolutionText(e.target.value)}
                                 rows={2}
                               />
-                              <div className="dmp__adjust">
+                              <div className="adjustment-row">
                                 <select
-                                  className="dmp__field dmp__field--select"
                                   aria-label="Balance Adjustment Type"
                                   value={adjustmentType}
                                   onChange={(e) => setAdjustmentType(e.target.value as any)}
@@ -501,7 +468,6 @@ export default function DisputeManagementPage() {
                                 </select>
                                 {adjustmentType !== 'none' && (
                                   <input
-                                    className="dmp__field"
                                     aria-label="Balance Adjustment Amount"
                                     type="number"
                                     placeholder="Amount"
@@ -510,18 +476,16 @@ export default function DisputeManagementPage() {
                                   />
                                 )}
                               </div>
-                              <div className="dmp__form-actions">
+                              <div className="resolution-actions">
                                 <button
-                                  type="button"
-                                  className="dmp-word sc-ink--green"
+                                  className="action-btn resolve"
                                   onClick={() => handleResolve(dispute.id)}
                                   disabled={resolving === dispute.id}
                                 >
                                   {resolving === dispute.id ? 'Resolving...' : 'Resolve Dispute'}
                                 </button>
                                 <button
-                                  type="button"
-                                  className="dmp-word sc-ink--red"
+                                  className="action-btn escalate"
                                   onClick={() => handleEscalate(dispute.id)}
                                   disabled={escalating === dispute.id}
                                 >
@@ -529,15 +493,15 @@ export default function DisputeManagementPage() {
                                 </button>
                               </div>
                             </div>
-                          )}
-                        </div>
-                      )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </SpadeConsole>
+                          </>
+                        )}
+                      </div>
+                    )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

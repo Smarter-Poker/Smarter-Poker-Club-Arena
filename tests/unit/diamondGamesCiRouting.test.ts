@@ -6,6 +6,7 @@ import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 describe('Diamond Games retain their financial PostgreSQL qualification', () => {
   it.each([
     'tests/sql/diamond-games-funding-identity.sql',
+    'tests/sql/diamond-games-bank-fallback.sql',
     'tests/sql/diamond-spins-claimed-daily-bonus.sql',
     'tests/fixtures/accounting-delivery/diamond-games/functions.sql',
     'src/services/DiamondBonusService.ts',

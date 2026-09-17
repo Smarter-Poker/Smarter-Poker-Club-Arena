@@ -88,9 +88,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   protected async dealingLoop(): Promise<void> {
-    // A roster read can retire mirrors before its arrival proof is available.
-    // Keep the prior occupancies until that observation can be announced.
-    let deferredRosterBeforeArrival: Map<string, SeatedPlayer['occupancy_id']> | null = null;
     while (this.running) {
       try {
         // FIX 211: Await any pending postHandTasks before reloading players
@@ -227,15 +224,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // 22-30 times in six hours. Each step now stamps its own phase and
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
-        const previousOccupancies: Map<string, SeatedPlayer['occupancy_id']> =
-          deferredRosterBeforeArrival ??
-          new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
-        const nextRoster = await this.prepareNextHand();
-        if (!this.lifecycleCanMutate()) return;
-        // A leave and rejoin can both commit between reads. User identity is
-        // unchanged, but entry debt, button eligibility and presence belonged
-        // to the old stay. Retire those mirrors before adopting the new seat.
-        this.adoptSeatRoster(nextRoster);
+        const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
+        this.seatedPlayers = await this.prepareNextHand();
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player
@@ -246,23 +236,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // adopted BEFORE the sit-out restore, because that restore registers
         // the player and restoreFsmStates never clobbers a live entry. See
         // ServerTableEngineBase.adoptMovedPresence.
-        if (!(await this.adoptMovedPresence())) {
-          if (!this.lifecycleCanMutate()) return;
-          deferredRosterBeforeArrival = previousOccupancies;
-          await this.sleep(5000);
-          continue;
-        }
-        if (!this.lifecycleCanMutate()) return;
-        deferredRosterBeforeArrival = null;
+        this.adoptMovedPresence();
         this.restoreSitOutsFromSeats();
-
-        const previousSeatedIds = new Set(previousOccupancies.keys());
-        if (!this.isTournamentTable()) {
-          for (const p of this.seatedPlayers) {
-            if (previousOccupancies.get(p.user_id) !== p.occupancy_id)
-              previousSeatedIds.delete(p.user_id);
-          }
-        }
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.
@@ -293,15 +268,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         // Bible V8 §4.2: Detect new joiners. Any userId that appears in
         // seatedPlayers but wasn't known before is a new player. After the
-        // first dealingLoop iteration a cash entrant waits for the big blind
-        // or posts to enter. Automatic moves carry their own paid-entry
-        // marker. On boot, restore outstanding entry holds before seeding
-        // button eligibility for players who were already playing.
+        // first dealingLoop iteration every such player is registered — which
+        // since 2026-08-25 no longer means "wait for the big blind". Cash entry
+        // is free and the release a few lines below happens on this same tick.
+        // The set now exists only so the two positional hold-outs (never dealt
+        // into the small blind, never handed the button on your first hand) get
+        // a chance to look at the seat before the deal. On the very first
+        // iteration — cold start OR crash recovery — all seated players are
+        // treated as the initial roster and none of that applies.
         // A SEAT CHANGED (2026-09-05): an arrival or a departure seen in the
         // rows this iteration wakes the game's ClusterController tick.
-        let rosterChanged = [...previousOccupancies.keys()].some(
-          (id) => !this.seatedPlayers.some((p) => p.user_id === id)
-        );
+        let rosterChanged = false;
         if (this.dealingLoopFirstIteration) {
           // Dan 2026-08-30: BEFORE the veteran seeding below, because that
           // seeding is what used to destroy the hold. Both halves of the fix
@@ -891,16 +868,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // so the notice only ever speaks of a hand that is about to be dealt
         // (2026-09-05: it used to run at load_seats, on idle iterations too).
         // Bounded like every other step.
-        const movesKnown = await this.withStepBudget(
+        await this.withStepBudget(
           'announce_seat_moves',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           this.announcePendingSeatMoves()
         );
-        if (!movesKnown) {
-          if (!this.lifecycleCanMutate()) return;
-          await this.sleep(3000);
-          continue;
-        }
         if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
           await this.awaitPauseGate();
           if (!this.running) break;
@@ -1309,9 +1281,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             ? err.message
             : (err as any)?.message ||
               (typeof err === 'object' ? JSON.stringify(err) : String(err));
-        // BUG-SENTRY-7463185461 FIX: 'fetch failed' is the Node.js wording for
+        // BUG-error reporting-7463185461 FIX: 'fetch failed' is the Node.js wording for
         // a transient Supabase network blip — same as browser's 'Failed to fetch'.
-        // Both must be listed or they increment consecutiveErrors and fire Sentry.
+        // Both must be listed or they increment consecutiveErrors and fire error reporting.
         // The list this used to carry inline now lives on the base, because
         // `start()` needs the same answer and a second copy is how the two
         // paths came to disagree — survivable here, fatal there.
@@ -1605,9 +1577,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async refreshBlinds(): Promise<void> {
     if (!this.tableInfo || !this.isTournamentTable()) return;
-    // BUG-SENTRY-7463185461 FIX: retry up to 3x on transient fetch failures.
+    // BUG-error reporting-7463185461 FIX: retry up to 3x on transient fetch failures.
     // A single Node.js 'TypeError: fetch failed' (Supabase network blip) was
-    // bubbling through to dealingLoop, triggering the Sentry error reporter
+    // bubbling through to dealingLoop, triggering the error reporting error reporter
     // and incrementing consecutiveErrors toward the 10-error shutdown threshold.
     // Retrying here absorbs one-off network hiccups before they reach the loop.
     const MAX_ATTEMPTS = 3;
@@ -1676,12 +1648,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               current.seat_number === p.seat_number &&
               current.occupancy_id === p.occupancy_id
           ) &&
-          (this.isTournamentTable() ||
-            (!this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
-              !this.waitingForBB.has(p.user_id) &&
-              !this.isHeldForSwap(p.user_id)))
+          (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
       );
-      if (players.length < this.minPlayersToDeal()) return;
+      if (players.length < 2) return;
       if (!this.tableInfo) return;
 
       // GLOBAL HAND NUMBER (2026-08-18). Allocated from the database sequence at
@@ -2769,8 +2738,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
         // Only initialize time bank if player is NEW (don't reset existing pool per session)
         if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
-          const allowance = tbExtras.get(p.user_id);
-          const tbTotal = this.timeBankBaseSeconds + (allowance?.extraSeconds ?? 0);
+          const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
           // ── REVERTED 2026-08-25, same day it shipped. Read this before trying
           //    the restart-fidelity time-bank restore again. ──
           //
@@ -2800,13 +2768,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
             remainingSeconds: tbTotal,
             usesRemaining: Math.ceil(tbTotal / 20),
-            unlimitedActivations: allowance?.unlimitedActivations === true,
           });
           this.timeBankMeta.set(p.user_id, {
             initialSeconds: tbTotal,
             baseSeconds: this.timeBankBaseSeconds,
             dbConsumedSeconds: 0,
-            ...(allowance?.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
           });
         }
         this.disconnectEngine.registerPlayer(

@@ -3,7 +3,7 @@
  *  ERROR REPORTER — Centralized Error Capture Utility
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Wraps console.error + Sentry.captureException into a single call.
+ * Writes normalized errors to the existing console reporting path.
  * Use this in service-level and page-level catch blocks for production
  * visibility into errors that would otherwise be silently swallowed.
  *
@@ -35,8 +35,6 @@
  * wrapped a second time as a backstop. Nothing here mutates the caller's
  * error: the caller still owns it, still shows it, still rethrows it.
  */
-
-import { captureException, addBreadcrumb } from '../core/SentryInit';
 
 /** `String(value)` that cannot throw — Symbols and hostile `toString`s included. */
 function safeString(value: unknown): string {
@@ -161,7 +159,7 @@ function buildReport(error: unknown, context: string): Error {
    * server's own sentence - toasted "[CashGameCreateFlow.create_failed]
    * Failed to fetch" with the context in square brackets. Found by
    * tests/cash-games-are-created-from-a-template.law.test.tsx (must-move
-   * audit, lane I). Now the copy is unconditional: Sentry gets the prefixed
+   * audit, lane I). Now the copy is unconditional: the log gets the prefixed
    * copy with the original name and stack, the caller's object never changes.
    *
    * WHAT THE COPY DID NOT FIX, found 2026-09-12 in horse_bug_reports: the
@@ -174,8 +172,8 @@ function buildReport(error: unknown, context: string): Error {
    * `window.onerror` and HorseBugReporter filed it as a SECOND critical bug.
    * 2,686 rows in one 98-minute session on 2026-04-02, another 158 on
    * 2026-08-29, exactly one per rejection, and not one of the underlying
-   * IndexedDB failures ever reached Sentry because the throw happened on the
-   * line before `captureException`.
+   * IndexedDB failures ever reached the error log because the throw happened on the
+   * line before the report write.
    */
   const reported = new Error(`[${context}] ${baseMessage}`);
   const originalName = safeReadString(error, 'name');
@@ -190,19 +188,17 @@ function buildReport(error: unknown, context: string): Error {
 }
 
 /**
- * Report an error to both console and Sentry.
+ * Report an error to the local console.
  * @param error - The error object or message string
  * @param context - A short string identifying where the error occurred (e.g. 'WalletService.lockForBuyIn')
- * @param extra - Optional additional data to attach to the Sentry event
+ * @param extra - Optional additional data to attach to the log entry
  */
 export function reportError(error: unknown, context: string, extra?: Record<string, any>): void {
   try {
     // Always log to console for dev visibility
-    console.error(`[${context}]`, error);
-
-    captureException(buildReport(error, context), {
-      errorContext: { source: context, ...extra },
-    });
+    const reported = buildReport(error, context);
+    if (extra === undefined) console.error(`[${context}]`, reported);
+    else console.error(`[${context}]`, reported, extra);
   } catch (reporterFailure) {
     /**
      * THE BACKSTOP. Nothing above is expected to throw any more, and if
@@ -225,14 +221,13 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
 
 /**
  * Report a warning-level issue (non-fatal but noteworthy).
- * Appears in Sentry breadcrumbs for debugging context.
+ * Appears in local logs for debugging context.
  */
 export function reportWarning(message: string, context: string, data?: Record<string, any>): void {
-  console.warn(`[${context}] ${message}`);
-  addBreadcrumb({
-    message: `[${context}] ${message}`,
-    category: 'warning',
-    level: 'warning',
-    data,
-  });
+  try {
+    if (data === undefined) console.warn(`[${context}] ${message}`);
+    else console.warn(`[${context}] ${message}`, data);
+  } catch {
+    // Reporting must not replace the caller's control flow.
+  }
 }

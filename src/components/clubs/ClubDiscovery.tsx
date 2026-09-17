@@ -1,54 +1,14 @@
 /**
  * ♠ CLUB ARENA — Club Discovery
  * Browse and search for clubs to join
- *
- * ── ON THE SPADE CONSOLE (#ClubArenaConsole) ────────────────────────────────
- * This component sits directly under the Clubs page header console, and until
- * now it did not look like it belonged there: a rounded navy `--radius-xl`
- * card per club with an inset highlight, a 48px rounded logo well, a
- * `--radius-full` tag pill, a gradient level badge, a green pulsing dot, a
- * star-glyph rating and a `--fb-blue` gradient JOIN button - one frame sitting
- * on another frame, immediately beneath a picture that paints all of those in
- * the art. It also printed the top three clubs TWICE: once in a horizontally
- * snapping "featured" rail of gradient tiles with a HOT badge, and again in
- * the grid below. Dan: "NOTHING CAN BE COPY PASTED OR OVERLAPPED."
- *
- * It is now the same spade master the page above it is drawn from, cut into
- * head / rails / foot by SpadeConsole:
- *
- *   - DISCOVER CLUBS engraved in the header well, the number of clubs on show
- *     in the well's painted pill slot;
- *   - the search field is a groove cut into the glass (a black hairline with a
- *     light lip), never a bordered box; the four views are lit words, never
- *     drawn tabs;
- *   - every club is a ROW on the glass: its name in engraved silver, its
- *     figures as label/value pairs in the master's lit blue and silver,
- *     separated by engraved rules. Dan 2026-09-09, on the four-bay deck:
- *     "I DON'T LIKE THE 4 BOXES, AND THE WAY IT STICKS OUT ON THE SIDES" -
- *     the bays belong to the buy-in family, everything else prints rows;
- *   - the foot is the flat closing cap. There is no pair of actions that
- *     belongs to the whole list, and the foot paints BOTH plates, so a single
- *     plate would leave the other painted and empty. The two per-club actions
- *     are lit words on the glass instead.
- *
- * The "featured" three keep their meaning without a second copy of themselves:
- * the first three rows of a list longer than three carry a lit HOT flag, which
- * is what the rail was saying.
- *
- * Nothing about the data changed. The queries, the explicit column list, the
- * filter ordering, the bus subscription, the mounted guard, the stagger and
- * every reportError below are the ones that were here.
  */
 
-import React, { useState, useEffect, useId } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { ClubsService } from '../../services/ClubsService';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { getClubLevel } from '../../utils/clubLevels';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { SpadeConsole } from '../console/SpadeConsole';
-import PageSkeleton from '../common/PageSkeleton';
-import { compactChips } from '../../utils/format';
 import './ClubDiscovery.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -71,35 +31,13 @@ interface ClubDiscoveryProps {
   onViewClub?: (club: Club) => void;
 }
 
-type Filter = 'all' | 'popular' | 'active' | 'new';
-
-/** The four views, spelled out rather than capitalised from the key: the
-    Title Case gate reads the source, not the runtime. */
-const FILTERS: ReadonlyArray<{ key: Filter; label: string }> = [
-  { key: 'all', label: 'All' },
-  { key: 'popular', label: 'Popular' },
-  { key: 'active', label: 'Active' },
-  { key: 'new', label: 'New' },
-];
-
-/** Singular and plural, because "1 Clubs" in the pill slot reads unfinished. */
-const countPill = (n: number) => `${n} ${n === 1 ? 'Club' : 'Clubs'}`;
-
-/** The stagger that walks each row on. Unchanged; the animation law keeps it. */
-const rowAnimationStyle = (shown: boolean) => ({
-  opacity: shown ? 1 : 0,
-  transform: shown ? 'translateY(0)' : 'translateY(8px)',
-  transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-});
-
 export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onViewClub }) => {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<Filter>('popular');
+  const [filter, setFilter] = useState<'all' | 'popular' | 'active' | 'new'>('popular');
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
-  const searchId = useId();
 
   useEffect(() => {
     loadClubs();
@@ -195,157 +133,200 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
       club.tags.some((tag) => tag.toLowerCase().includes(search.toLowerCase()))
   );
 
-  /* The rail used to print these three a second time, above the list they are
-     already at the top of. The flag says the same thing in one copy. */
-  const hotCount = filteredClubs.length > 3 ? 3 : 0;
+  const renderStars = (rating: number) => {
+    const full = Math.floor(rating);
+    const half = rating % 1 >= 0.5;
+    return (
+      <span className="stars">
+        {'★'.repeat(full)}
+        {half && '½'}
+        <span className="rating-value">{rating.toFixed(1)}</span>
+      </span>
+    );
+  };
 
   return (
-    <SpadeConsole
-      className="club-discovery"
-      aria-busy={loading || undefined}
-      eyebrow="Club Arena"
-      title="Discover Clubs"
-      pill={loading ? 'Loading' : countPill(filteredClubs.length)}
-      pillInk={loading || filteredClubs.length === 0 ? 'muted' : 'blue'}
-      foot="foot"
-    >
-      {/* A groove cut into the glass, not a bordered box: a black hairline
-          with a light lip, the cut the master's own chrome rules are made of. */}
-      <div className="club-discovery__search">
-        <label className="club-discovery__search-label sc-label sc-ink--blue" htmlFor={searchId}>
-          Search
-        </label>
+    <div className="club-discovery">
+      <div className="discovery-header">
+        <h2>Discover Clubs</h2>
+      </div>
+
+      {/* Search */}
+      <div className="search-bar">
+        <span className="search-icon">⌕</span>
         <input
-          id={searchId}
-          className="club-discovery__search-field"
-          type="search"
+          type="text"
           placeholder="Search Clubs By Name, Game, Or Tag..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
-      {/* The four views are lit words cut into the glass, not drawn tabs: the
-          art paints no tab, so nothing here draws one either. */}
-      <div className="club-discovery__views" role="group" aria-label="Club Views">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            type="button"
-            aria-pressed={filter === f.key}
-            className={`club-discovery__view ${
-              filter === f.key ? 'sc-ink--silver' : 'sc-ink--muted'
-            }`}
-            onClick={() => setFilter(f.key)}
-          >
-            {f.label}
-          </button>
-        ))}
+      {/* Filters */}
+      <div className="filter-row">
+        <div className="filter-group">
+          {(['all', 'popular', 'active', 'new'] as const).map((f) => (
+            <button key={f} className={filter === f ? 'active' : ''} onClick={() => setFilter(f)}>
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {loading ? (
-        <div className="club-discovery__loading">
-          <PageSkeleton variant="list" />
-        </div>
-      ) : filteredClubs.length === 0 ? (
-        <p className="sc-copy sc-copy--center club-discovery__empty">
-          No Clubs Found Matching Your Criteria
-        </p>
-      ) : (
-        <ol className="club-discovery__list">
-          {filteredClubs.map((club, i) => (
-            <li
-              key={club.id}
-              className="club-discovery__row"
-              style={rowAnimationStyle(visibleItems.has(i))}
+      {/* Q3 Phase 14: Featured / Hot Clubs Carousel */}
+      {!loading && filteredClubs.length > 3 && (
+        <div
+          className="featured-carousel"
+          style={{
+            display: 'flex',
+            gap: '12px',
+            overflowX: 'auto',
+            padding: '12px 0',
+            scrollSnapType: 'x mandatory',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+          }}
+        >
+          {filteredClubs.slice(0, 3).map((club) => (
+            <div
+              key={`featured-${club.id}`}
+              onClick={() => onViewClub?.(club)}
+              style={{
+                minWidth: '200px',
+                scrollSnapAlign: 'start',
+                cursor: 'pointer',
+                background: 'linear-gradient(135deg, rgba(255,107,53,0.12), rgba(255,53,107,0.12))',
+                border: '1px solid rgba(255,107,53,0.2)',
+                borderRadius: '14px',
+                padding: '14px',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
             >
-              <div className="club-discovery__row-head">
-                <h3 className="club-discovery__name sc-ink--silver">{club.name}</h3>
-                {i < hotCount && (
-                  <span className="club-discovery__flag sc-label sc-ink--gold">Hot</span>
-                )}
-                {club.isPrivate && (
-                  <span className="club-discovery__flag sc-label sc-ink--blue">Private</span>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '6px',
+                  right: '6px',
+                  background: 'linear-gradient(90deg, #ff6b35, #ff356b)',
+                  color: '#fff',
+                  fontSize: '0.6rem',
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: '8px',
+                }}
+              >
+                HOT
+              </div>
+              <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '4px' }}>
+                {club.name}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #8b9dc3)' }}>
+                {club.memberCount} Members
+              </div>
+              {club.activeTableCount > 0 && (
+                <div
+                  style={{
+                    fontSize: '0.65rem',
+                    color: '#10b981',
+                    fontWeight: 700,
+                    marginTop: '4px',
+                  }}
+                >
+                  ● {club.activeTableCount} Tables Live
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Club Grid */}
+      <div className="clubs-grid">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => <div key={i} className="club-card skeleton" />)
+        ) : filteredClubs.length === 0 ? (
+          <div className="empty-state">
+            <span>⌂</span>
+            <p>No Clubs Found Matching Your Criteria</p>
+          </div>
+        ) : (
+          filteredClubs.map((club, i) => (
+            <div
+              key={club.id}
+              className="club-card"
+              onClick={() => onViewClub?.(club)}
+              style={{
+                opacity: visibleItems.has(i) ? 1 : 0,
+                transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
+                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              }}
+            >
+              <div className="club-header">
+                <div className="club-logo">
+                  {club.logo ? (
+                    <img loading="lazy" decoding="async" src={club.logo} alt={club.name} />
+                  ) : (
+                    <span>{club.name[0]}</span>
+                  )}
+                </div>
+                <div className="club-meta">
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {club.name}
+                    {club.levelInfo && (
+                      <span
+                        style={{
+                          fontSize: '0.6rem',
+                          padding: '2px 6px',
+                          borderRadius: '10px',
+                          background: club.levelInfo.gradient,
+                          color: '#fff',
+                          fontWeight: 700,
+                          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                        }}
+                      >
+                        Lv.{club.levelInfo.level}
+                      </span>
+                    )}
+                  </h3>
+                  {club.isPrivate && <span className="private-badge">◈</span>}
+                </div>
+              </div>
+              <p className="club-desc">{club.description}</p>
+              <div className="club-tags">
+                {club.tags.slice(0, 3).map((tag) => (
+                  <span key={tag} className="tag">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+              <div className="club-stats">
+                <span> {club.memberCount}</span>
+                <span> {club.activeTableCount} Tables</span>
+                {club.activeTableCount > 0 && (
+                  <span className="live-indicator">
+                    <span className="live-pulse" />
+                    Live
+                  </span>
                 )}
               </div>
-
-              <p className="sc-copy club-discovery__desc">{club.description}</p>
-
-              <dl className="club-discovery__facts">
-                <div className="club-discovery__fact">
-                  <dt className="club-discovery__fact-label sc-label sc-ink--blue">Members</dt>
-                  <dd className="club-discovery__fact-value sc-ink--silver">
-                    {compactChips(club.memberCount)}
-                  </dd>
-                </div>
-                <div className="club-discovery__fact">
-                  <dt className="club-discovery__fact-label sc-label sc-ink--blue">Tables</dt>
-                  {/* The green pulsing dot is gone; the figure itself lights up
-                      when a club has games running, which is what the dot said. */}
-                  <dd
-                    className={`club-discovery__fact-value ${
-                      club.activeTableCount > 0 ? 'sc-ink--green' : 'sc-ink--silver'
-                    }`}
-                  >
-                    {club.activeTableCount > 0
-                      ? `${compactChips(club.activeTableCount)} Live`
-                      : compactChips(club.activeTableCount)}
-                  </dd>
-                </div>
-                {club.levelInfo && (
-                  <div className="club-discovery__fact">
-                    <dt className="club-discovery__fact-label sc-label sc-ink--blue">Level</dt>
-                    <dd className="club-discovery__fact-value sc-ink--silver">
-                      {`Lv.${club.levelInfo.level} ${club.levelInfo.tierLabel}`}
-                    </dd>
-                  </div>
-                )}
-                {club.tags.length > 0 && (
-                  <div className="club-discovery__fact">
-                    <dt className="club-discovery__fact-label sc-label sc-ink--blue">Games</dt>
-                    <dd className="club-discovery__fact-value sc-ink--silver">
-                      {club.tags.slice(0, 3).join(', ')}
-                    </dd>
-                  </div>
-                )}
-                {club.rating > 0 && (
-                  <div className="club-discovery__fact">
-                    <dt className="club-discovery__fact-label sc-label sc-ink--blue">Rating</dt>
-                    {/* Whole stars, rounded DOWN, so a printed figure never
-                        overstates a club. The star glyphs are gone with the
-                        rest of the stuck-on icons. */}
-                    <dd className="club-discovery__fact-value sc-ink--silver">
-                      {`${Math.floor(club.rating)} / 5`}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-
-              {/* Two lit words, not a clickable card with a gradient button
-                  inside it: both actions are real buttons a keyboard reaches. */}
-              <div className="club-discovery__row-actions">
+              <div className="club-footer">
+                {renderStars(club.rating)}
                 <button
-                  type="button"
-                  className="club-discovery__word sc-ink--silver"
-                  aria-label={`View ${club.name}`}
-                  onClick={() => onViewClub?.(club)}
-                >
-                  View Club
-                </button>
-                <button
-                  type="button"
-                  className="club-discovery__word sc-ink--blue"
-                  aria-label={club.isPrivate ? `Request To Join ${club.name}` : `Join ${club.name}`}
-                  onClick={() => onJoinRequest?.(club.id)}
+                  className="join-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onJoinRequest?.(club.id);
+                  }}
                 >
                   {club.isPrivate ? 'Request' : 'Join'}
                 </button>
               </div>
-            </li>
-          ))}
-        </ol>
-      )}
-    </SpadeConsole>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 };
 

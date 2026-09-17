@@ -97,7 +97,7 @@ export default function DisputeSubmitModal({
       onClose();
     } catch (err) {
       // The failure used to be swallowed entirely: the player got a friendly
-      // line and nobody, in Sentry or anywhere else, ever learned that disputes
+      // line and nobody, in error reporting or anywhere else, ever learned that disputes
       // were failing to file.
       reportError(err, 'DisputeSubmitModal.handleSubmit', { clubId, targetType });
       toast.error('Failed to submit dispute. Please try again.');

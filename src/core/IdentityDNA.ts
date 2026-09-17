@@ -19,7 +19,6 @@ import { readLocalSession as readLocalSessionShared, SPA_AUTH_BREADCRUMB } from 
 import { masterBus } from './MasterBus';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
 import { postgresSyncHooks } from '../services/PostgresSyncHooks';
-import { setSentryUser, clearSentryUser } from './SentryInit';
 import { clearSessionCache } from '../hooks/useSessionCache';
 import { useHeaderDataStore } from '../stores/useHeaderDataStore';
 import { reportError } from '../utils/errorReporter';
@@ -202,14 +201,6 @@ class IdentityDNACore {
                 this.loadProfileInBackground(session.user.id);
                 this.updateStatus(true, session);
 
-                // Set Sentry user context
-                setSentryUser({
-                  id: session.user.id,
-                  email: session.user.email,
-                  username:
-                    session.user.user_metadata?.username || session.user.email?.split('@')[0],
-                });
-
                 masterBus.emit('AUTH_STATE_CHANGED', {
                   userId: session.user.id,
                   isAuthenticated: true,
@@ -255,7 +246,6 @@ class IdentityDNACore {
             // touched it, so the next person to use the device was served
             // the previous account's cached clubs, hand history and lobby.
             clearUserCaches();
-            clearSentryUser(); // Clear Sentry user context
             postgresSyncHooks.destroy(); // Shut down external DB listener
             this.updateStatus(false, null);
             masterBus.emit('AUTH_STATE_CHANGED', {
@@ -437,7 +427,7 @@ class IdentityDNACore {
     if (error) {
       // PGRST116 = row not found (new user, profile not yet created)
       // 42501 = permission denied — expected when anon/unauthenticated session hits RLS
-      // Both are non-actionable — do not report to Sentry
+      // Both are non-actionable — do not report to error reporting
       const isBenign =
         error.code === 'PGRST116' ||
         error.code === '42501' ||

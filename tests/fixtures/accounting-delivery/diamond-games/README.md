@@ -47,15 +47,29 @@ Both executions reject unexpected warnings/errors and compare every public/auth
 table before and after rollback. Nontransactional PostgreSQL sequence advances
 are excluded from those row comparisons.
 
-The captured trigger predicates remain intact. These probes do not exercise
-tournament settlement, rake-wallet credits, manual journal mutation, or the
-bank-shortfall invoice branch: the synthetic Promo wallets cover the original
-Wheel prizes. Their real root trigger definitions are retained, but unrelated
-branch dependency programs are not imported. This fixture does not certify those
-paths or live financial behavior. The original complete assertions do exercise
-funding identity, claimed-ticket issuance, canonical Mint refusal, atomic entry
-funding/settlement, replay, welcome independence and private-door permissions.
+The captured trigger predicates remain intact. The bank-fallback extension adds
+only the actual invoice, message, notification and outbox schema/functions reached
+by the shared payout writer, plus their declared foreign-key and policy creation
+dependencies. `schema-provenance.json` and `function-provenance.json` bind the
+read-only catalog and original owner/grant metadata. No outbox worker runs.
+The added tables remain subject to their original constraints and triggers.
 
-The existing CI classifier sends changes to these two probes, their financial
+The third maintained probe pays from Promo first, consumes exactly a one-cent
+Main Bank shortfall, and exercises empty-Promo payments under all four game
+payout categories, for both Union and standalone Club hosts. It checks physical
+journal-store identity, logical invoice-party identity, stored player balances,
+actual invoice/message/notification records, and unrelated host/affiliated-Club
+wallet isolation. Insufficient combined cover must leave every public/auth row
+unchanged. Deferred constraints must succeed before the complete PASS notice;
+the runner also requires exit zero, completed rollback and identical row snapshots.
+These are shared-writer checks, not full browser playthroughs of the four games.
+
+The fixture does not exercise tournament settlement, rake-wallet credits, agent
+or credit workflows, reminder scheduling, live push delivery, or production RLS.
+Their declared but unexercised trigger branches remain intact. The original two
+probes retain their complete funding-identity, claimed-ticket, canonical-Mint,
+entry/settlement, replay, welcome-independence and private-permission assertions.
+
+The existing CI classifier sends changes to all three probes, their financial
 client callers, and this fixture to the existing accounting PostgreSQL job. No
 new workflow, scheduled task or alternative financial implementation is added.

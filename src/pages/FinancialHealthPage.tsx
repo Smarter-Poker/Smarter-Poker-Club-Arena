@@ -1,14 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  FINANCIAL HEALTH PAGE - Admin Financial System Monitoring (#ClubArenaConsole)
+ *  FINANCIAL HEALTH PAGE — Admin Financial System Monitoring
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * One flow, one console. The cron's status, the last ledger reconciliation and
- * the last credit suspension check print as rows on the black glass between
- * engraved rules, each section with its own lit "Run Now"; the two quick
- * actions (Financial Alerts, Disputes) ride the painted plates. Every timer,
- * bus listener, visibility refresh and handler of the generic page is kept;
- * only the paint changed.
  *
  * Shows:
  * - Ledger reconciliation status
@@ -25,7 +18,6 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
-import { SpadeConsole } from '../components/console/SpadeConsole';
 import './FinancialHealthPage.css';
 import { reportError } from '../utils/errorReporter';
 
@@ -122,193 +114,166 @@ export default function FinancialHealthPage() {
 
   if (initialLoad && !status) {
     return (
-      <div className="financial-health-page">
-        <SpadeConsole
-          className="fhp__console"
-          eyebrow="Financial Admin"
-          title="Financial Health"
-          titleId="financial-health-title"
-          pill="Loading"
-          pillInk="muted"
-          foot="foot"
-        >
-          <p className="sc-copy sc-copy--center fhp__state">Loading Health Status...</p>
-        </SpadeConsole>
+      <div className="financial-health-page" style={{ padding: '16px' }}>
+        <div className="fh-header">
+          <h2>Financial Health Dashboard</h2>
+        </div>
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.3)' }}>
+          Loading Health Status...
+        </div>
       </div>
     );
   }
 
-  const running = Boolean(status?.isRunning);
-
   return (
     <div className="financial-health-page">
-      <SpadeConsole
-        className="fhp__console"
-        eyebrow="Financial Admin"
-        title="Financial Health"
-        titleId="financial-health-title"
-        pill={running ? 'Running' : 'Stopped'}
-        pillInk={running ? 'green' : 'red'}
-        plates={{
-          secondary: { label: 'Alerts', onClick: () => navigate('/financial-alerts') },
-          primary: { label: 'Disputes', ink: 'white', onClick: () => navigate('/disputes') },
-        }}
-      >
-        {/* System Status */}
-        <section className="fhp__section" aria-labelledby="fhp-system-status">
-          <div className="fhp__section-head">
-            <h3 id="fhp-system-status" className="fhp__section-title sc-label sc-ink--silver">
-              System Status
-            </h3>
-            <button
-              type="button"
-              className="fhp-word sc-ink--white"
-              onClick={loadStatus}
-              title="Refresh"
-            >
-              Refresh
-            </button>
-          </div>
-          <div className="fhp__row">
-            <span className="fhp__row-label sc-ink--blue">Financial Cron</span>
-            <span className={`fhp__row-value ${running ? 'sc-ink--green' : 'sc-ink--red'}`}>
-              {running ? 'Running' : 'Stopped'}
-            </span>
-          </div>
-          <div className="fhp__row">
-            <span className="fhp__row-label sc-ink--blue">Reconciliation Interval</span>
-            <span className="fhp__row-value sc-ink--silver">
-              {status ? formatInterval(status.config.reconciliationIntervalMs) : '-'}
-            </span>
-          </div>
-          <div className="fhp__row">
-            <span className="fhp__row-label sc-ink--blue">Suspension Check</span>
-            <span className="fhp__row-value sc-ink--silver">
-              Every {status ? formatInterval(status.config.suspensionCheckIntervalMs) : '-'}
-            </span>
-          </div>
-          <div className="fhp__row">
-            <span className="fhp__row-label sc-ink--blue">Auto-Suspend</span>
-            <span
-              className={`fhp__row-value ${status?.config.autoSuspendEnabled ? 'sc-ink--gold' : 'sc-ink--silver'}`}
-            >
-              {status?.config.autoSuspendEnabled ? 'Enabled' : 'Log-Only'}
-            </span>
-          </div>
-        </section>
+      <div className="fh-header">
+        <h2>Financial Health Dashboard</h2>
+        <button className="fh-refresh-btn" onClick={loadStatus} title="Refresh">
+          ↻
+        </button>
+      </div>
 
-        {/* Ledger Reconciliation */}
-        <section className="fhp__section" aria-labelledby="fhp-ledger">
-          <div className="fhp__section-head">
-            <h3 id="fhp-ledger" className="fhp__section-title sc-label sc-ink--silver">
-              Ledger Reconciliation
-            </h3>
-            <button
-              type="button"
-              className="fhp-word sc-ink--white"
-              onClick={handleManualReconciliation}
-              disabled={manualReconciling}
-            >
-              {manualReconciling ? 'Running...' : 'Run Now'}
-            </button>
+      {/* System Status */}
+      <section className="fh-section">
+        <h3>System Status</h3>
+        <div className="fh-status-grid">
+          <div className={`fh-status-card ${status?.isRunning ? 'healthy' : 'error'}`}>
+            <span className="fh-status-indicator">{status?.isRunning ? '✓' : '✕'}</span>
+            <div>
+              <div className="fh-status-label">Financial Cron</div>
+              <div className="fh-status-value">{status?.isRunning ? 'Running' : 'Stopped'}</div>
+            </div>
           </div>
-          {status?.lastReconciliation ? (
-            <>
-              <div className="fhp__row">
-                <span className="fhp__row-label sc-ink--blue">Result</span>
-                <span
-                  className={`fhp__row-value ${status.lastReconciliation.isBalanced ? 'sc-ink--green' : 'sc-ink--red'}`}
-                >
-                  {status.lastReconciliation.isBalanced
-                    ? 'Ledger Balanced'
-                    : 'Ledger Drift Detected'}
-                </span>
+          <div className="fh-status-card info">
+            <span className="fh-status-indicator">◷</span>
+            <div>
+              <div className="fh-status-label">Reconciliation Interval</div>
+              <div className="fh-status-value">
+                {status ? formatInterval(status.config.reconciliationIntervalMs) : '-'}
               </div>
-              <div className="fhp__row">
-                <span className="fhp__row-label sc-ink--blue">Difference</span>
-                {/* A drift figure is a number the admin acts on to the chip, so it
-                    prints exactly rather than compacted. */}
-                <span className="fhp__row-value sc-ink--silver">
-                  {status.lastReconciliation.difference.toLocaleString()} Chips
-                </span>
+            </div>
+          </div>
+          <div className="fh-status-card info">
+            <span className="fh-status-indicator">◆</span>
+            <div>
+              <div className="fh-status-label">Suspension Check</div>
+              <div className="fh-status-value">
+                Every {status ? formatInterval(status.config.suspensionCheckIntervalMs) : '-'}
               </div>
-              <div className="fhp__row">
-                <span className="fhp__row-label sc-ink--blue">Last Checked</span>
-                <span className="fhp__row-value sc-ink--muted">
-                  {formatDateTime(status.lastReconciliation.checkedAt, {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </span>
+            </div>
+          </div>
+          <div
+            className={`fh-status-card ${status?.config.autoSuspendEnabled ? 'warning' : 'info'}`}
+          >
+            <span className="fh-status-indicator">
+              {status?.config.autoSuspendEnabled ? '▲' : '◉'}
+            </span>
+            <div>
+              <div className="fh-status-label">Auto-Suspend</div>
+              <div className="fh-status-value">
+                {status?.config.autoSuspendEnabled ? 'Enabled' : 'Log-Only'}
               </div>
-            </>
-          ) : (
-            <p className="sc-copy fhp__state">No Reconciliation Runs Yet</p>
-          )}
-        </section>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        {/* Credit Suspension */}
-        <section className="fhp__section" aria-labelledby="fhp-suspension">
-          <div className="fhp__section-head">
-            <h3 id="fhp-suspension" className="fhp__section-title sc-label sc-ink--silver">
-              Credit Suspension Check
-            </h3>
-            <button
-              type="button"
-              className="fhp-word sc-ink--white"
-              onClick={handleManualSuspensionCheck}
-              disabled={refreshing}
-            >
-              {refreshing ? 'Checking...' : 'Run Now'}
-            </button>
+      {/* Ledger Reconciliation */}
+      <section className="fh-section">
+        <div className="fh-section-header">
+          <h3>Ledger Reconciliation</h3>
+          <button
+            className="fh-action-btn"
+            onClick={handleManualReconciliation}
+            disabled={manualReconciling}
+          >
+            {manualReconciling ? 'Running...' : 'Run Now'}
+          </button>
+        </div>
+        {status?.lastReconciliation ? (
+          <div
+            className={`fh-result-card ${status.lastReconciliation.isBalanced ? 'balanced' : 'drift'}`}
+          >
+            <div className="fh-result-icon">{status.lastReconciliation.isBalanced ? '✓' : '⚠'}</div>
+            <div className="fh-result-body">
+              <div className="fh-result-title">
+                {status.lastReconciliation.isBalanced ? 'Ledger Balanced' : 'Ledger Drift Detected'}
+              </div>
+              <div className="fh-result-detail">
+                Difference: {status.lastReconciliation.difference.toLocaleString()} Chips
+              </div>
+              <div className="fh-result-time">
+                Last Checked:{' '}
+                {formatDateTime(status.lastReconciliation.checkedAt, {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </div>
+            </div>
           </div>
-          {status?.lastSuspensionCheck ? (
-            <>
-              {status.lastSuspensionCheck.checkedAt && (
-                <div className="fhp__row">
-                  <span className="fhp__row-label sc-ink--blue">Last Attempt</span>
-                  <span className="fhp__row-value sc-ink--muted">
-                    {formatDateTime(status.lastSuspensionCheck.checkedAt)}
-                  </span>
-                </div>
-              )}
-              {status.lastSuspensionCheck.unavailable && (
-                <p className="sc-copy fhp__alert sc-ink--gold" role="alert">
-                  Suspension Check Unavailable Or Incomplete. Counts Below Are Partial.{' '}
-                  {status.lastSuspensionCheck.disabled
-                    ? 'Automatic Checks Are Paused After Repeated Failures. Reload The App To Retry.'
-                    : 'Run Again To Retry.'}
-                </p>
-              )}
-              {/* Value before label in the DOM: the suspension test reads the
-                  figure as the label's previous sibling. The row reverses them
-                  visually so the label still leads. */}
-              <div className="fhp__row fhp__row--stat">
-                <span className="fhp__row-value sc-ink--silver">
-                  {status.lastSuspensionCheck.agentsChecked}
-                </span>
-                <span className="fhp__row-label sc-ink--blue">Agents Checked</span>
+        ) : (
+          <div className="fh-empty">No Reconciliation Runs Yet</div>
+        )}
+      </section>
+
+      {/* Credit Suspension */}
+      <section className="fh-section">
+        <div className="fh-section-header">
+          <h3>Credit Suspension Check</h3>
+          <button
+            className="fh-action-btn"
+            onClick={handleManualSuspensionCheck}
+            disabled={refreshing}
+          >
+            {refreshing ? 'Checking...' : 'Run Now'}
+          </button>
+        </div>
+        {status?.lastSuspensionCheck ? (
+          <div className="fh-suspension-stats">
+            {status.lastSuspensionCheck.checkedAt && (
+              <div>Last Attempt: {formatDateTime(status.lastSuspensionCheck.checkedAt)}</div>
+            )}
+            {status.lastSuspensionCheck.unavailable && (
+              <div role="alert">
+                Suspension Check Unavailable Or Incomplete. Counts Below Are Partial.{' '}
+                {status.lastSuspensionCheck.disabled
+                  ? 'Automatic Checks Are Paused After Repeated Failures. Reload The App To Retry.'
+                  : 'Run Again To Retry.'}
               </div>
-              <div className="fhp__row fhp__row--stat">
-                <span className="fhp__row-value sc-ink--gold">
-                  {status.lastSuspensionCheck.agentsWarned}
-                </span>
-                <span className="fhp__row-label sc-ink--blue">Warned</span>
-              </div>
-              <div className="fhp__row fhp__row--stat">
-                <span className="fhp__row-value sc-ink--red">
-                  {status.lastSuspensionCheck.agentsSuspended}
-                </span>
-                <span className="fhp__row-label sc-ink--blue">Suspended</span>
-              </div>
-            </>
-          ) : (
-            <p className="sc-copy fhp__state">No Suspension Checks Run Yet</p>
-          )}
-        </section>
-      </SpadeConsole>
+            )}
+            <div className="fh-stat">
+              <span className="fh-stat-value">{status.lastSuspensionCheck.agentsChecked}</span>
+              <span className="fh-stat-label">Agents Checked</span>
+            </div>
+            <div className="fh-stat warning">
+              <span className="fh-stat-value">{status.lastSuspensionCheck.agentsWarned}</span>
+              <span className="fh-stat-label">Warned</span>
+            </div>
+            <div className="fh-stat danger">
+              <span className="fh-stat-value">{status.lastSuspensionCheck.agentsSuspended}</span>
+              <span className="fh-stat-label">Suspended</span>
+            </div>
+          </div>
+        ) : (
+          <div className="fh-empty">No Suspension Checks Run Yet</div>
+        )}
+      </section>
+
+      {/* Quick Actions */}
+      <section className="fh-section">
+        <h3>Quick Actions</h3>
+        <div className="fh-quick-actions">
+          <button className="fh-nav-btn" onClick={() => navigate('/financial-alerts')}>
+            Financial Alerts
+          </button>
+          <button className="fh-nav-btn" onClick={() => navigate('/disputes')}>
+            ⚖ Dispute Management
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

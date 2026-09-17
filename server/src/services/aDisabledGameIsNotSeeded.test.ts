@@ -182,9 +182,7 @@ describe('a seat call on a disabled game is not answered', () => {
     expect(skipAt).toBeLessThan(CLAIM.indexOf('const expiresAt'));
     expect(skipAt).toBeLessThan(CLAIM.indexOf('await this.seatHorse('));
     // and the cycle passes what it read
-    expect(SEED).toMatch(
-      /surplusTableIds,\s*seatBudget,\s*rejoin,\s*disabledGameIds,\s*readIsCurrent\s*\)/
-    );
+    expect(SEED).toMatch(/surplusTableIds,\s*seatBudget,\s*rejoin,\s*disabledGameIds\s*\)/);
   });
 
   /* PIN MOVED 2026-09-05: THREE callers now, still one predicate. The third

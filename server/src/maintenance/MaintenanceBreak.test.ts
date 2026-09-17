@@ -37,9 +37,6 @@ class FakeEngine {
   holdBeforeNextHand = false;
   atGate = false;
   running = true;
-  hasSettlementInFlight(): boolean {
-    return false;
-  }
   budgets: number[] = [];
   resumeCount = 0;
   /** Set when hand-for-hand tries to resume this table. */
@@ -701,7 +698,7 @@ describe('the restart gate', () => {
     expect(mb.readyForRestart()).toBe(true);
   });
 
-  it('ignores a stopped engine with no settlement still in flight', async () => {
+  it('ignores a stopped engine: it has no hand to protect', async () => {
     const { mb, engines } = build(2);
     const list = [...engines.values()];
     list[0].deal();
@@ -710,47 +707,6 @@ describe('the restart gate', () => {
     await mb.beginCountdown();
     expect(mb.readyForRestart()).toBe(true);
   });
-
-  it.each([true, false])(
-    'keeps an owned settlement behind the restart gate when running=%s',
-    async (running) => {
-      const { mb, engines } = build(1);
-      const engine = engines.get('t0')!;
-      engine.running = running;
-      const completed = deferred<void>();
-      let pending = true;
-      void completed.promise.then(() => {
-        pending = false;
-      });
-      engine.hasSettlementInFlight = () => pending;
-      await mb.announceLastHand();
-      await mb.beginCountdown();
-      expect(engine.isBetweenHands()).toBe(true);
-      expect(mb.snapshot().unparkedTables).toBe(1);
-      expect(mb.readyForRestart()).toBe(false);
-      completed.resolve();
-      await completed.promise;
-      expect(mb.snapshot().unparkedTables).toBe(0);
-      expect(mb.readyForRestart()).toBe(true);
-      await mb.stop();
-    }
-  );
-
-  it.each(['hasSettlementInFlight', 'isRunning', 'isBetweenHands'] as const)(
-    'holds the restart gate when %s cannot be inspected',
-    async (method) => {
-      const { mb, engines } = build(1);
-      const engine = engines.get('t0')!;
-      engine[method] = () => {
-        throw new Error('inspection unavailable');
-      };
-      await mb.announceLastHand();
-      await mb.beginCountdown();
-      expect(mb.snapshot().unparkedTables).toBe(1);
-      expect(mb.readyForRestart()).toBe(false);
-      await mb.stop();
-    }
-  );
 
   it('shuts again once too little break remains to finish a restart inside it', async () => {
     const { mb } = build(1);
@@ -1921,38 +1877,6 @@ describe('the real engine treats a maintenance pause as paused', () => {
     ({ ServerTableEngine } = await import('../engine/ServerTableEngine.js'));
     new ServerTableEngine(TBL);
   }, 120_000);
-
-  it.each([true, false])(
-    'the real settlement promise holds restart readiness when running=%s',
-    async (running) => {
-      const engine = new ServerTableEngine(TBL);
-      engine.running = running;
-      const settlement = deferred<void>();
-      engine.trackSettlementInFlight(settlement.promise);
-      const mb = new MaintenanceBreak({
-        engines: () => [[TBL, engine]],
-        isRunning: () => true,
-        emit: () => {},
-        store: new FakeStore(),
-      });
-      try {
-        await mb.announceLastHand();
-        await mb.beginCountdown();
-        expect(engine.isBetweenHands()).toBe(true);
-        expect(engine.hasSettlementInFlight()).toBe(true);
-        expect(mb.snapshot().unparkedTables).toBe(1);
-        expect(mb.readyForRestart()).toBe(false);
-        settlement.resolve();
-        await settlement.promise;
-        expect(engine.hasSettlementInFlight()).toBe(false);
-        expect(mb.readyForRestart()).toBe(true);
-      } finally {
-        settlement.resolve();
-        await mb.stop();
-        await engine.stop();
-      }
-    }
-  );
 
   // A generous per-case budget for the same reason: none of these cases does
   // any real work, but a saturated runner can stall any of them for seconds.

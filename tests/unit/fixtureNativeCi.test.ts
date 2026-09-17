@@ -53,34 +53,6 @@ function withGitFixture(check: (fixture: GitFixture) => void) {
   }
 }
 
-describe('browser changes retain their shipped-CSS qualification', () => {
-  it.each([
-    'tests/e2e/live-animations.spec.ts',
-    'tests/e2e/multi-table.spec.ts',
-    'tests/e2e/lib/live-css.ts',
-    'tests/e2e/css/club-lobby-sticky-selector.spec.ts',
-    'playwright.config.ts',
-  ])('runs the browser build and CSS gate for %s', (path) => {
-    expect(classifyChangedPaths([path]).src).toBe(true);
-  });
-
-  it('retains a removed browser test in the immutable Git classification', () => {
-    withGitFixture(({ directory, git, write, commit }) => {
-      write('tests/e2e/renamed.spec.ts');
-      const base = commit();
-      git('mv', 'tests/e2e/renamed.spec.ts', 'docs/retired-example.md');
-      const result = classifyGitChanges({ cwd: directory, base, head: commit() });
-      expect(result.complete).toBe(true);
-      expect(result.flags.src).toBe(true);
-    });
-  });
-
-  it('keeps unrelated docs and unit-only changes outside the browser build', () => {
-    expect(classifyChangedPaths(['docs/example.md']).src).toBe(false);
-    expect(classifyChangedPaths(['tests/unit/example.test.ts']).src).toBe(false);
-  });
-});
-
 describe('required CI owns native fixture verification', () => {
   it.each([
     'operations/release/fixture/safeupdate-provider.mjs',

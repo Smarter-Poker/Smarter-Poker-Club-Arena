@@ -1,6 +1,21 @@
-import { performance } from 'node:perf_hooks';
-/** Historical review rates remain diagnostic; paired decisions must stay identical. */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+/**
+ * V41 (2026-09-05) - THE REST OF THE TAG TABLE REACHES A DECISION
+ *
+ * Dan: "there is absolutely no point to keep upgrading and enhancing the
+ * logic of the horses if nothing reads the tags."
+ *
+ * Measured in the week to 2026-09-05: 38 distinct leak tags, of which six
+ * reached a live decision (V40, Omaha only). The hold em stack-off family
+ * (3,423 hands, -58 to -101bb each), the river raise wars (8,291 hands,
+ * -60 to -96bb) and limped-pot bloat (4,592 hands, -77.8bb) reached nothing.
+ *
+ * These tests pin, for each new load: the profile parses; the family split
+ * keeps NLH tags out of the Omaha load; a tagged horse and an untagged horse
+ * in the SAME spot decide differently in the direction the tag says; the
+ * receipt fires; and a horse with no profile is byte-identical with the flag
+ * on or off.
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   HorseLogic,
   resolveHorseStyle,
@@ -248,72 +263,102 @@ describe('V41 loads - the profile parses and the family split holds', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('historical review signals cannot control live policy', () => {
-  const cases = [
-    ['hold em pressure', topPairFacingPotBarrel, TAGGED_NLH],
-    [
-      'limped pot',
-      limpedPotFacingBomb,
-      {
-        leaksHoldem: { limped_pot_bloat: 7 },
-        leaksHandsHoldem: 100,
-      },
-    ],
-    [
-      'river escalation',
-      riverRaisedAfterBet,
-      {
-        leaksHoldem: { river_raise_war: 3, river_raise_paidoff: 4 },
-        leaksHandsHoldem: 100,
-      },
-    ],
-  ] as const;
+describe('V41 hold em stack-off load - the V20 cap reads it', () => {
+  it('a tagged horse folds top-pair-rag-kicker to a pot-sized barrel more often than a clean one', () => {
+    const clean = rate(topPairFacingPotBarrel, {}, (a) => a === 'fold');
+    const tagged = rate(topPairFacingPotBarrel, TAGGED_NLH, (a) => a === 'fold');
+    expect(tagged).toBeGreaterThan(clean);
+  });
 
-  it.each(cases)(
-    '%s retains exact paired decisions with reports and the legacy switch',
-    (_name, make, signals) => {
-      // Freeze compute-budget timing only for deterministic policy comparison.
-      // Real clocks and worker scheduling are covered by the native probe.
-      const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
-      try {
-        for (let trial = 1; trial <= 80; trial++) {
-          const play = (mods: HorseProfileMods, opts = {}) => {
-            seedFastRandom(trial * 7919 + 41);
-            HorseMind.reset();
-            const { hero, gs } = make();
-            return HorseLogic.decide(hero, gs, 'balanced', { aggression: 1.1, ...mods }, opts);
-          };
-          const clean = play({});
-          expect(play(signals)).toEqual(clean);
-          expect(play(signals, { v41Leaks: false })).toEqual(clean);
-        }
-      } finally {
-        clock.mockRestore();
-      }
-    }
-  );
-
-  it('reports ignored evidence without issuing retired applied receipts', () => {
+  it('the receipt fires for the tagged horse and not for the clean one', () => {
     enableBrainTelemetry();
     const { hero, gs } = topPairFacingPotBarrel();
     HorseLogic.decide(hero, gs, 'balanced', TAGGED_NLH, { telemetry: true });
     const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
-    expect(fires.phase14_review_signal_ignored).toBe(1);
-    expect(
-      Object.keys(fires).some((k) => k.startsWith('v41_') || k === 'v40_leak_profile_read')
-    ).toBe(false);
+    expect(fires.v41_nlh_leak_read ?? 0).toBeGreaterThan(0);
     HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: true });
-    expect(drainFires().some((r) => r.feature === 'phase14_review_signal_ignored')).toBe(false);
-    HorseLogic.decide(hero, gs, 'balanced', TAGGED_NLH, { telemetry: true, v41Leaks: false });
-    expect(drainFires().some((r) => r.feature === 'phase14_review_signal_ignored')).toBe(false);
+    const clean = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+    expect(clean.v41_nlh_leak_read ?? 0).toBe(0);
   });
 
-  it('retains the structural river guard for a non-nut flush', () => {
-    expect(rate(riverRaisedAfterBet, {}, (a) => a === 'raise' || a === 'all_in')).toBe(0);
+  it('with the flag off a tagged horse plays like a clean one', () => {
+    const off = rate(topPairFacingPotBarrel, TAGGED_NLH, (a) => a === 'fold', { v41Leaks: false });
+    const clean = rate(topPairFacingPotBarrel, {}, (a) => a === 'fold');
+    expect(off).toBe(clean);
   });
 
-  it('retains the diagnostic sample threshold and legacy league option', () => {
+  it('a tagged bar is 8% of reviewed hands', () => {
     expect(LEAK_LOAD_TAGGED).toBe(0.08);
-    expect(LEAGUE_MATCHUPS.find((m) => m.name === 'full_vs_v2_legacy')!.b.v41Leaks).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('V41 limped-pot bloat load - a limped pot stays small', () => {
+  const TAGGED_LIMP: HorseProfileMods = {
+    leaksHoldem: { limped_pot_bloat: 7 },
+    leaksHandsHoldem: 100,
+  };
+  it('a tagged horse with one pair folds or calls, never raises, a big turn bet in a limped pot', () => {
+    const cleanRaise = rate(limpedPotFacingBomb, {}, (a) => a === 'raise' || a === 'all_in');
+    const taggedRaise = rate(
+      limpedPotFacingBomb,
+      TAGGED_LIMP,
+      (a) => a === 'raise' || a === 'all_in'
+    );
+    expect(taggedRaise).toBeLessThanOrEqual(cleanRaise);
+    const cleanFold = rate(limpedPotFacingBomb, {}, (a) => a === 'fold');
+    const taggedFold = rate(limpedPotFacingBomb, TAGGED_LIMP, (a) => a === 'fold');
+    expect(taggedFold).toBeGreaterThanOrEqual(cleanFold);
+  });
+  it('the read receipt fires only in a limped pot', () => {
+    enableBrainTelemetry();
+    const { hero, gs } = limpedPotFacingBomb();
+    HorseLogic.decide(hero, gs, 'balanced', TAGGED_LIMP, { telemetry: true });
+    const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+    expect(fires.v41_limp_bloat_read ?? 0).toBeGreaterThan(0);
+    // The raised pot above: same horse, no limped-pot read.
+    const raised = topPairFacingPotBarrel();
+    HorseLogic.decide(raised.hero, raised.gs, 'balanced', TAGGED_LIMP, { telemetry: true });
+    const none = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+    expect(none.v41_limp_bloat_read ?? 0).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('V41 river-war load - a raised river bet gets respect, and no re-raise below a boat', () => {
+  const TAGGED_WAR: HorseProfileMods = {
+    leaksHoldem: { river_raise_war: 3, river_raise_paidoff: 4 },
+    leaksHandsHoldem: 100,
+  };
+  it('a tagged horse never re-raises the river raise with a non-nut flush', () => {
+    const taggedRaise = rate(
+      riverRaisedAfterBet,
+      TAGGED_WAR,
+      (a) => a === 'raise' || a === 'all_in'
+    );
+    expect(taggedRaise).toBe(0);
+  });
+  it('a tagged horse folds the raised river at least as often as a clean one', () => {
+    const clean = rate(riverRaisedAfterBet, {}, (a) => a === 'fold');
+    const tagged = rate(riverRaisedAfterBet, TAGGED_WAR, (a) => a === 'fold');
+    expect(tagged).toBeGreaterThanOrEqual(clean);
+  });
+  it('the receipt fires where the tag was earned', () => {
+    enableBrainTelemetry();
+    const { hero, gs } = riverRaisedAfterBet();
+    HorseLogic.decide(hero, gs, 'balanced', TAGGED_WAR, { telemetry: true });
+    const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+    expect(fires.v41_river_war_read ?? 0).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('V41 league wiring', () => {
+  it('is switched off in full_vs_v2_legacy', () => {
+    const legacy = LEAGUE_MATCHUPS.find((m) => m.name === 'full_vs_v2_legacy')!.b as Record<
+      string,
+      unknown
+    >;
+    expect(legacy.v41Leaks).toBe(false);
   });
 });

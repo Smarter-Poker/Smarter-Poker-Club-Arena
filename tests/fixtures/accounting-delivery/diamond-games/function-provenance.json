@@ -1,0 +1,1164 @@
+{
+  "schema": "diamond-bank-invoice-function-source/v1",
+  "prepared_at": "2026-09-16T06:33:13.425184+00:00",
+  "scope": "Main Bank payout invoice/delivery closure and exact trigger/policy creation dependencies; no app, SQL or production execution by author",
+  "release_worktree": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915",
+  "release_head_observed": "0ad0b4d89c7ea3309fb77ec6891e5b5c0925be21",
+  "source_artifacts": [
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "sha256": "56c793c9c22afc4a2e6c657af8e567a302c811dd49bfd16aa00693ced6d68676"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "sha256": "eff3e53701f2fccc366ee20d8545df8ad034c8794fda384cf08df3900166ca27"
+    }
+  ],
+  "fresh_capture_observed_at": "2026-09-16T06:23:31.43967+00:00",
+  "fresh_capture_read_only": "on",
+  "candidate": {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-functions.sql",
+    "sha256": "0d72111ffbd454fc8c53fb1e701f7a5b019b3e7672ad32aec1a002020576bc2d",
+    "bytes": 80976
+  },
+  "functions": [
+    {
+      "name": "fn_club_bank_role",
+      "identity": "public.fn_club_bank_role(uuid,uuid)",
+      "oid_at_capture": "15205490",
+      "definition_md5": "b36e67efcfaba2f867d62140322a8ed8",
+      "definition_sha256": "a7acc0d4cb14546fc344887e8db9895f990b83d13dd85ad64430fe8a415e74d2",
+      "definition_bytes": 697,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "fn_club_is_in_downline",
+      "identity": "public.fn_club_is_in_downline(uuid,uuid,uuid)",
+      "oid_at_capture": "14766772",
+      "definition_md5": "7ef407fa51a823f823a6167e40488e7a",
+      "definition_sha256": "26db9db8b0587db35ea0f0d15dede5dafd5691e42207d1bdc85c22846eaaaaa6",
+      "definition_bytes": 783,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "fn_club_cashier_scope",
+      "identity": "public.fn_club_cashier_scope(uuid,uuid)",
+      "oid_at_capture": "15781159",
+      "definition_md5": "166dddd19d1419cc8b17861003e0239a",
+      "definition_sha256": "9380b6dee1e181df33cd9bb08386ead0c6ca71ec7c9385b40e0239d96432cd77",
+      "definition_bytes": 550,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "fn_club_cashier_can_transact",
+      "identity": "public.fn_club_cashier_can_transact(uuid,uuid,uuid)",
+      "oid_at_capture": "15781160",
+      "definition_md5": "a812c44870554f37cddb36edf600e386",
+      "definition_sha256": "464c30387e50c9cc219e9f501d424f3be9d8cd8f6a6171d03c1b9db8b13a601e",
+      "definition_bytes": 602,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "fn_is_any_union_overseer",
+      "identity": "public.fn_is_any_union_overseer(uuid)",
+      "oid_at_capture": "14387162",
+      "definition_md5": "d028cf7f9aaf723b9552951373233cf4",
+      "definition_sha256": "568dd52ac891b253151f3b3cc691ea94154adfc4a65a7436eb5c27fe2b0d2d97",
+      "definition_bytes": 753,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "fn_union_oversees_club",
+      "identity": "public.fn_union_oversees_club(uuid,uuid)",
+      "oid_at_capture": "14203614",
+      "definition_md5": "fa80c12a2e192bc3cd4e3bea8bf65724",
+      "definition_sha256": "4e3c1b603cc6e703885fa638c13df9c568f5b9639849006ce5860a23343e529b",
+      "definition_bytes": 490,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "fn_is_club_admin_uid",
+      "identity": "public.fn_is_club_admin_uid(uuid)",
+      "oid_at_capture": "4653442",
+      "definition_md5": "021940a1e457cf22312eb139d3d05267",
+      "definition_sha256": "f60911a69306ab6d5a35060e73aef87ec626e9d708b7abb914b90dfc7a98a96f",
+      "definition_bytes": 423,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "fn_is_platform_admin",
+      "identity": "public.fn_is_platform_admin()",
+      "oid_at_capture": "4653440",
+      "definition_md5": "ed89787c7b832e76a886734e16a27c3d",
+      "definition_sha256": "ad88e129cc0d59baaf8460c2c99ffd4bb42cd2027c51d8c18aa48f69aebe11a2",
+      "definition_bytes": 375,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "is_admin",
+      "identity": "public.is_admin()",
+      "oid_at_capture": "14145510",
+      "definition_md5": "6894ad8f32e25c765121b281e75e0ba4",
+      "definition_sha256": "c582e31ac1983029acb1c0893b95287a1e5380e2acaf6db68b8da5d931ac0bb4",
+      "definition_bytes": 258,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-policy-functions.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "PUBLIC",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "anon",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "policy_creation_dependency"
+    },
+    {
+      "name": "fn_accounting_next_invoice_number",
+      "identity": "public.fn_accounting_next_invoice_number()",
+      "oid_at_capture": "31371460",
+      "definition_md5": "dcb7a6315174e984f767268d04cfdb8b",
+      "definition_sha256": "c353dab9a9879567ee6ba321fba13a0dd432d4a6f8e90dcb0eba3babdad531e9",
+      "definition_bytes": 514,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "direct_invoice_path",
+      "maintained_migration": {
+        "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914113214_accounting_transfers_deliver_one_invoice_message_and_notification.sql",
+        "sha256": "22bd9edc2591c81b75f1d9731452026b58ef9de1ebb3f0d01da0b26b66bf63aa",
+        "body_byte_equal": true
+      }
+    },
+    {
+      "name": "fn_accounting_party_users",
+      "identity": "public.fn_accounting_party_users(text,uuid)",
+      "oid_at_capture": "31371461",
+      "definition_md5": "2436b25400e0ee73dbbe3158fdb47b0d",
+      "definition_sha256": "aac16b5cb193464aa22d43c45a62f2a5bbf65e933808953747c6ac1d27c31efc",
+      "definition_bytes": 817,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "direct_invoice_path",
+      "maintained_migration": {
+        "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914113214_accounting_transfers_deliver_one_invoice_message_and_notification.sql",
+        "sha256": "22bd9edc2591c81b75f1d9731452026b58ef9de1ebb3f0d01da0b26b66bf63aa",
+        "body_byte_equal": true
+      }
+    },
+    {
+      "name": "fn_deliver_accounting_invoice",
+      "identity": "public.fn_deliver_accounting_invoice(uuid)",
+      "oid_at_capture": "31371462",
+      "definition_md5": "8aeee5f47863f0496c9cdf86490eb084",
+      "definition_sha256": "e7779bbd52348f3533e39a627866a63a5bc1fbc19fa58d9a7b127a0e85a281f7",
+      "definition_bytes": 9311,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "direct_invoice_path",
+      "maintained_migration": {
+        "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914124421_clubs_receive_one_weekly_accounting_statement.sql",
+        "sha256": "99c1798d22fa1f5a4cd74315220f9312b877a8801135ef4e082881216886c7d1",
+        "body_byte_equal": true
+      }
+    },
+    {
+      "name": "fn_invoice_accounting_ledger_transfer",
+      "identity": "public.fn_invoice_accounting_ledger_transfer(uuid)",
+      "oid_at_capture": "31371466",
+      "definition_md5": "dd1871aa89f1709b9b45cb16542b5fa9",
+      "definition_sha256": "e590d921b174dbcbe3bd18c0f9dcd78c818df3e1097bb50091e314d77fb4c588",
+      "definition_bytes": 4178,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "direct_invoice_path",
+      "maintained_migration": {
+        "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914124421_clubs_receive_one_weekly_accounting_statement.sql",
+        "sha256": "99c1798d22fa1f5a4cd74315220f9312b877a8801135ef4e082881216886c7d1",
+        "body_byte_equal": true
+      }
+    },
+    {
+      "name": "fn_accounting_invoice_deliver_on_insert",
+      "identity": "public.fn_accounting_invoice_deliver_on_insert()",
+      "oid_at_capture": "31371467",
+      "definition_md5": "4fb74e8fcf5caa0294c55deeefbbc6b3",
+      "definition_sha256": "560656ccefca7986592c08d5b5dba5a8f5cf16944b1b3ff8b6906096a44fd18a",
+      "definition_bytes": 261,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "direct_invoice_path",
+      "maintained_migration": {
+        "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914113214_accounting_transfers_deliver_one_invoice_message_and_notification.sql",
+        "sha256": "22bd9edc2591c81b75f1d9731452026b58ef9de1ebb3f0d01da0b26b66bf63aa",
+        "body_byte_equal": true
+      }
+    },
+    {
+      "name": "fn_accounting_document_immutable",
+      "identity": "public.fn_accounting_document_immutable()",
+      "oid_at_capture": "31371455",
+      "definition_md5": "a8a356e5a24454bd797643f8551e48e7",
+      "definition_sha256": "35369ca901d4dbcde99dbb30cced2f0aaa12f24f5c5ea40d5d56b836dfe00131",
+      "definition_bytes": 1729,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "direct_invoice_path",
+      "maintained_migration": {
+        "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914113315_transaction_receipts_require_a_source_and_preserve_issued_figures.sql",
+        "sha256": "e01b20cc9b9f2ada651a4fd413d74cd75f02cae90f1d59f4d488c5c63eacb8bd",
+        "body_byte_equal": true
+      }
+    },
+    {
+      "name": "fn_accounting_conversation_audience_guard",
+      "identity": "public.fn_accounting_conversation_audience_guard()",
+      "oid_at_capture": "31371458",
+      "definition_md5": "c2fcd73c25c19def216af801d3d1d408",
+      "definition_sha256": "9eda717d59005676a09bad2ffb6be35ede26c7da612284117b85bac83d0ff7af",
+      "definition_bytes": 890,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "direct_invoice_path",
+      "maintained_migration": {
+        "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914113214_accounting_transfers_deliver_one_invoice_message_and_notification.sql",
+        "sha256": "22bd9edc2591c81b75f1d9731452026b58ef9de1ebb3f0d01da0b26b66bf63aa",
+        "body_byte_equal": true
+      }
+    },
+    {
+      "name": "fn_accounting_discussion_observed",
+      "identity": "public.fn_accounting_discussion_observed()",
+      "oid_at_capture": "31416597",
+      "definition_md5": "453801a9093b4537bb44f0e9c0962312",
+      "definition_sha256": "f6bd134daabd08a83ee705a4e47e29779260b8ba99ff3490f6c82bdceaf764a4",
+      "definition_bytes": 350,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "direct_invoice_path",
+      "maintained_migration": {
+        "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-ca-diamond-games-release-20260915/supabase/migrations/20260914124421_clubs_receive_one_weekly_accounting_statement.sql",
+        "sha256": "99c1798d22fa1f5a4cd74315220f9312b877a8801135ef4e082881216886c7d1",
+        "body_byte_equal": true
+      }
+    },
+    {
+      "name": "fn_accounting_agreement_capture",
+      "identity": "public.fn_accounting_agreement_capture()",
+      "oid_at_capture": "31387295",
+      "definition_md5": "746fab25cd56f6ad761325e7c0d525d5",
+      "definition_sha256": "5e59daffe411a92505facb523e3b2bf90e8a60bccb939dd6d18fdaa35705b46c",
+      "definition_bytes": 1777,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_accounting_credit_document_on_insert",
+      "identity": "public.fn_accounting_credit_document_on_insert()",
+      "oid_at_capture": "31371473",
+      "definition_md5": "64b3c2467897361d25e4646613ca6b7d",
+      "definition_sha256": "ca25c925f9ccc025cbbbff11cbc43c92ad746e34d171acd6d819c5e8e414b5b6",
+      "definition_bytes": 1850,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_agents_staff_earn_no_rakeback",
+      "identity": "public.fn_agents_staff_earn_no_rakeback()",
+      "oid_at_capture": "18044213",
+      "definition_md5": "17346b77ec8f5a1d6d42dca3eb06e061",
+      "definition_sha256": "5fcdffb9dae75b2c7c8d5d8bb2c2e820c56e6891192e998e42494b9bc94abdb5",
+      "definition_bytes": 518,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_block_message_field_reassignment",
+      "identity": "public.fn_block_message_field_reassignment()",
+      "oid_at_capture": "4669165",
+      "definition_md5": "062e3e25130dc0e627f1f442be26d6a2",
+      "definition_sha256": "2be27736dfd415a0d02cb7a3fe4a02e9b4dad9fb7a54f1c9ae1d98255aa4ff52",
+      "definition_bytes": 849,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_ca_autoledger_delete",
+      "identity": "public.fn_ca_autoledger_delete()",
+      "oid_at_capture": "18300106",
+      "definition_md5": "c6d7e02df8b654fbccc3e8844418bd01",
+      "definition_sha256": "0fc4b35573c9e0528fdb75c216f5cdbca02086f0dac7429404cf9bdcbc1046ed",
+      "definition_bytes": 2075,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_ca_reject_automated_user_club_row",
+      "identity": "public.fn_ca_reject_automated_user_club_row()",
+      "oid_at_capture": "18509489",
+      "definition_md5": "7c73094df30c90f94a78cbbd5d24f504",
+      "definition_sha256": "3c81ef93599b008e8d9e1fa3655978f4f790013eb4fba203603ac0c89eaf1ebb",
+      "definition_bytes": 1539,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_deep_stack_society_cannot_be_deleted_by_accident",
+      "identity": "public.fn_deep_stack_society_cannot_be_deleted_by_accident()",
+      "oid_at_capture": "18514545",
+      "definition_md5": "213a7fa40330c703cb23dc001a99d31e",
+      "definition_sha256": "20b0778d5b6690d439e13650cb2927331b2330ca13f12f4999d6441048cb1155",
+      "definition_bytes": 1177,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_enforce_agent_commission_bounds",
+      "identity": "public.fn_enforce_agent_commission_bounds()",
+      "oid_at_capture": "14489598",
+      "definition_md5": "3e4f5df422b121391cc40f711ae5b5ee",
+      "definition_sha256": "b901d0a4856c9c6ac5d3eb9bb174430a2aa66ea26fc1f5c8b6af84fc62233cc5",
+      "definition_bytes": 2384,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_guard_retired_club_mutation",
+      "identity": "public.fn_guard_retired_club_mutation()",
+      "oid_at_capture": "22319481",
+      "definition_md5": "b82be212e7ccf2a15637c231861ff993",
+      "definition_sha256": "daddd438ebf98f96a34086f1ed3fa52ecf4fe8ee9f53648ef59ea6d09b42021f",
+      "definition_bytes": 3724,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_mirror_notification_to_push_outbox",
+      "identity": "public.fn_mirror_notification_to_push_outbox()",
+      "oid_at_capture": "14238799",
+      "definition_md5": "a726e393ab7ef02aa7a5a9f0622bee64",
+      "definition_sha256": "2536d0b5a8be0d7301e341283eff84de6df095c53601735edd76ef4e0429810c",
+      "definition_bytes": 5817,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "reached_delivery_trigger"
+    },
+    {
+      "name": "fn_notification_action_url",
+      "identity": "public.fn_notification_action_url(text,jsonb,jsonb)",
+      "oid_at_capture": "15837829",
+      "definition_md5": "b9120a5238a41e1960da7ac244493dab",
+      "definition_sha256": "d6514f3df65d5ea5bb837d4988a7cb2b1004e9402f80133d485c3f11cf5fb675",
+      "definition_bytes": 4818,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "PUBLIC",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "anon",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_notification_fill_action_url",
+      "identity": "public.fn_notification_fill_action_url()",
+      "oid_at_capture": "15837831",
+      "definition_md5": "75cf1f6fe863aa76a27bb7f6889f6b4f",
+      "definition_sha256": "a46c9ba0fe37cb955082f5f170fc58aba3fab63ede08919e06df985fb0fea1f0",
+      "definition_bytes": 586,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "reached_delivery_trigger"
+    },
+    {
+      "name": "fn_poker_reject_diamond_hierarchy",
+      "identity": "public.fn_poker_reject_diamond_hierarchy()",
+      "oid_at_capture": "24566571",
+      "definition_md5": "49037a2bf4322d2a327bc9141a7a7a89",
+      "definition_sha256": "6023e5d3e23781ce6c107ecd62ffb3b48eac29ef68112716964a289430ee615d",
+      "definition_bytes": 380,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "fn_update_conversation_last_message",
+      "identity": "public.fn_update_conversation_last_message()",
+      "oid_at_capture": "27574",
+      "definition_md5": "e7c6e6e94b5895f256d4dce018789e65",
+      "definition_sha256": "d2420c322d7a8f6781d6f02cdcd3027065a0fab69ab91e663f2bb55d2c485079",
+      "definition_bytes": 403,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "reached_delivery_trigger",
+      "source_representation": {
+        "encoding": "PostgreSQL DO with E-string EXECUTE",
+        "reason": "Preserve the captured trailing space in the function body while satisfying strict source-patch whitespace validation",
+        "decoded_definition_byte_equal": true,
+        "decoded_definition_bytes": 403,
+        "decoded_definition_sha256": "d2420c322d7a8f6781d6f02cdcd3027065a0fab69ab91e663f2bb55d2c485079",
+        "runtime_pg_get_functiondef_md5_expected": "e7c6e6e94b5895f256d4dce018789e65",
+        "representation_sha256": "e551c9b243e1e311fd0cf79dc3d7e9791fa08a6f6ef6f9ec434953594257e148",
+        "independent_literal_decode_checked": true,
+        "sql_executed": false
+      }
+    },
+    {
+      "name": "fn_url_encode_segment",
+      "identity": "public.fn_url_encode_segment(text)",
+      "oid_at_capture": "15838087",
+      "definition_md5": "b8ad06c73720e2bf56326c3cd3d05cc6",
+      "definition_sha256": "7874e3e105b77f5ffbb232e0f95c6c4e8c07d7c5cb7bb813f83be9954c6b742b",
+      "definition_bytes": 634,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "PUBLIC",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "anon",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "guard_agent_wallet_direct_update",
+      "identity": "public.guard_agent_wallet_direct_update()",
+      "oid_at_capture": "17730971",
+      "definition_md5": "736aa9e92265453c3015223562108141",
+      "definition_sha256": "bed3e4ae542301ac491e6ae5f7a4180584937f4f707e816a6f216ead934db706",
+      "definition_bytes": 1643,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "sync_agent_wallet_columns",
+      "identity": "public.sync_agent_wallet_columns()",
+      "oid_at_capture": "2324073",
+      "definition_md5": "3a3d351dd05b5dc13b525b7eb4635e5c",
+      "definition_sha256": "dafc03ac2cf43cb1287467ccde5a823913551f3a3227fc893180be9ec7cc1eeb",
+      "definition_bytes": 931,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "sync_notification_read_state",
+      "identity": "public.sync_notification_read_state()",
+      "oid_at_capture": "14145578",
+      "definition_md5": "c90c577563f3d7a4ac6cfe2ab75df629",
+      "definition_sha256": "6792fae5985380dd5141286a1f50c12ad2dcefb7f06cf5dc353efc7e9275cbdf",
+      "definition_bytes": 916,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "reached_delivery_trigger"
+    },
+    {
+      "name": "trg_claim_tournament_reminder",
+      "identity": "public.trg_claim_tournament_reminder()",
+      "oid_at_capture": "25652359",
+      "definition_md5": "e086e31234939947973c12f857b598e9",
+      "definition_sha256": "87f28276fa7eb8cc0aed4fa38bae544185aa7daae2ab9abd544daab610066f3d",
+      "definition_bytes": 3047,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    },
+    {
+      "name": "trg_fn_live_invite_notification",
+      "identity": "public.trg_fn_live_invite_notification()",
+      "oid_at_capture": "5970224",
+      "definition_md5": "6b52de626a63699541e21df2fe871b60",
+      "definition_sha256": "855f93156282b198b634f2a69ef1e6c8f05ec73939d55f95d0c07337cafef9e1",
+      "definition_bytes": 1636,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "reached_delivery_trigger"
+    },
+    {
+      "name": "zz_closed_period_is_immutable",
+      "identity": "public.zz_closed_period_is_immutable()",
+      "oid_at_capture": "23735287",
+      "definition_md5": "7c50bd632593b3f79950049b427cbd70",
+      "definition_sha256": "bb8678ed6c222ce9a79d0548a45c2dcbb2333664a4b42b7adb6a5dcd9774f814",
+      "definition_bytes": 1530,
+      "definition_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "access_source": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "authenticated",
+          "privilege": "EXECUTE",
+          "grantable": false
+        },
+        {
+          "role": "service_role",
+          "privilege": "EXECUTE",
+          "grantable": false
+        }
+      ],
+      "scope": "retained_trigger_or_alternate_branch_helper"
+    }
+  ],
+  "existing_captured_functions_reused": [
+    {
+      "name": "fn_ca_autoledger",
+      "capture": "/Users/smarter.poker/Documents/Codex/2026-09-14/pl/outputs/diamond-games-pr4682-20260916/bank-fixture-candidate/invoice-catalog.json",
+      "body_byte_equal": true,
+      "definition_byte_equal": true,
+      "captured_owner": "postgres",
+      "captured_acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "existing_fixture_execute_grants_equal": true,
+      "owner_rule": "Existing fixture creates captured function under postgres, matching its source owner; no override emitted."
+    }
+  ],
+  "existing_fixture_helpers": [
+    "fn_accounting_transfer_document_on_insert()",
+    "fn_is_union_overseer(uuid,uuid)",
+    "auth.uid()",
+    "auth.role()"
+  ],
+  "reached_new_tables": [
+    "agents",
+    "settlement_invoices",
+    "accounting_invoice_counters",
+    "accounting_conversations",
+    "accounting_invoice_deliveries",
+    "social_pages",
+    "social_conversations",
+    "social_conversation_participants",
+    "social_messages",
+    "notifications",
+    "push_outbox"
+  ],
+  "existing_tables_read": [
+    "profiles",
+    "clubs",
+    "club_members",
+    "unions",
+    "union_admins",
+    "union_wallets",
+    "chip_ledger"
+  ],
+  "preserved_unreached_branches": {
+    "agents": "read-only and unseeded; all original trigger definitions retained, their mutation bodies unexercised",
+    "credit_invoices_credit_payments_settlement_periods": "FK closure only; no seeded rows or writes, original trigger bodies unexercised",
+    "trg_claim_tournament_reminder": "original event predicate excludes accounting invoice outbox entries",
+    "fn_accounting_discussion_observed": "trigger WHEN excludes invoice messages",
+    "fn_block_message_field_reassignment": "UPDATE-only; this path inserts messages",
+    "general_action_url_helpers": "invoice supplies action_url; original alternative URL branches retained",
+    "row_level_security": "actual policy expressions/required helpers retained; fixture runs as captured owner so production HTTP/JWT/RLS acceptance is not claimed"
+  },
+  "unreached_transitive_dependencies_not_claimed_qualified": [
+    "agents mutation: fn_accounting_agreement_terms and accounting_agreement_history",
+    "agents commission mutation: fn_union_setting",
+    "automated-agent mutation: fn_ca_house_board_allows_automation",
+    "protected Deep Stack DELETE: deep_stack_delete_attempts",
+    "credit mutation and tournament-reminder branches remain outside this payout probe"
+  ],
+  "constraints": [
+    "Restore captured noninternal triggers and original RLS policy declarations after function loading",
+    "Flush deferred constraints before asserting durable push outbox receipts and before success terminal",
+    "No trigger suppression, simplified financial functions, external dispatch or new scheduled mechanism"
+  ],
+  "validation": {
+    "source_hash_checks": true,
+    "core_migration_bodies_byte_equal": 8,
+    "sql_executed": false,
+    "tests_executed": false,
+    "production_actions": false,
+    "all_function_definitions_byte_equal_fresh_capture": 38,
+    "all_owner_acl_statements_match_fresh_capture": 38,
+    "sql_creation_order": "fn_club_bank_role and fn_club_is_in_downline precede fn_club_cashier_scope, which precedes fn_club_cashier_can_transact; original fixture fn_is_union_overseer/auth helpers precede this file; original table schema and invoice-schema precede functions; policies/triggers follow.",
+    "raw_declarations_byte_equal_fresh_capture": 37,
+    "escaped_declaration_decodes_byte_equal_fresh_capture": 1,
+    "other_source_bytes_unchanged": true,
+    "physical_trailing_whitespace_lines": 0,
+    "strict_patch_apply_check": "Pending parent v2 artifact admission; no bypass or suppression"
+  },
+  "source_representation_revision": {
+    "version": 2,
+    "predecessor_sql_sha256": "cca522980de8c2617b7aa4a5e16d41cc6013e96fb6490e096758473ea13573cd",
+    "change": "Only fn_update_conversation_last_message DDL is emitted via byte-preserving escaped EXECUTE; other declarations and ACLs unchanged",
+    "immutable_v1_artifacts_modified": false
+  }
+}

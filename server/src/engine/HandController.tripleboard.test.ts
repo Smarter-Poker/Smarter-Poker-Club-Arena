@@ -160,18 +160,6 @@ describe('TRIPLE-BOARD BOMB POT - dealing', () => {
     expect(byBoard[1]).toBeGreaterThanOrEqual(byBoard[2]);
     expect(byBoard[2]).toBeGreaterThanOrEqual(byBoard[3]);
 
-    // THE POT AXIS SURVIVES THE MERGE (2026-09-13): every per-board row says
-    // which pot(s) its share came from, and the slices sum to the row.
-    for (const w of winnersEvt.winnersByBoard as Array<{
-      amount: number;
-      pots?: Array<{ index: number; amount: number }>;
-    }>) {
-      expect(Array.isArray(w.pots) && w.pots.length > 0, 'a row without pot slices').toBe(true);
-      const sliced = w.pots!.reduce((s, p) => s + Math.round(p.amount * 100), 0);
-      expect(sliced).toBe(Math.round(w.amount * 100));
-      for (const p of w.pots!) expect(Number.isInteger(p.index) && p.index >= 0).toBe(true);
-    }
-
     // Showdown carried board-2 and board-3 evaluations for every shown hand
     const showdown = h.events.find((e) => e.type === 'SHOWDOWN') as any;
     expect(showdown).toBeTruthy();

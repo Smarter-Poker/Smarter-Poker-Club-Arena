@@ -308,7 +308,7 @@ export default function MyItemsTab({
                 );
                 return (
                   <tr key={it.id}>
-                    <td data-label="Item" className={styles.dataItemName}>
+                    <td style={{ fontWeight: 700 }}>
                       <span className={styles.rowWithArt}>
                         <span className={styles.rowArt} aria-hidden="true">
                           <ItemArt category={it.category} seed={it.item_id || it.id} />
@@ -316,25 +316,30 @@ export default function MyItemsTab({
                         {it.item_name || 'Unknown Item'}
                       </span>
                     </td>
-                    <td data-label="Category">
+                    <td>
                       <span className={styles.categorySmall}>{it.category || '-'}</span>
                     </td>
-                    <td data-label="Price Paid" className={styles.dataValuePrice}>
+                    <td style={{ fontWeight: 800, color: '#00d4ff' }}>
                       {fmt(it.price_paid)} {rowUnit}
                     </td>
-                    <td data-label="Acquired" className={styles.dataValueMuted}>
+                    <td style={{ fontSize: '12px', color: '#8b8d91' }}>
                       {timeAgo(it.acquired_at)}
                     </td>
-                    <td data-label="Status">
+                    <td>
                       <span
-                        className={`${styles.inventoryStatus} ${
-                          redeemed ? styles.inventoryStatusMuted : styles.inventoryStatusActive
-                        }`}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '8px',
+                          color: redeemed ? '#8b8d91' : '#31A24C',
+                          background: redeemed ? 'rgba(139,141,145,0.12)' : 'rgba(49,162,76,0.12)',
+                        }}
                       >
                         {statusLabel}
                       </span>
                     </td>
-                    <td data-label="Actions">
+                    <td>
                       {!redeemed && !delivered && (
                         <button
                           className={styles.emptyButton}
@@ -342,7 +347,7 @@ export default function MyItemsTab({
                           onClick={() => handleRedeem(it.id)}
                           disabled={redeeming !== null}
                         >
-                          {redeeming === it.id ? 'Redeeming' : 'Redeem'}
+                          {redeeming === it.id ? '...' : 'Redeem'}
                         </button>
                       )}
                     </td>
@@ -387,37 +392,40 @@ export default function MyItemsTab({
                 <tbody>
                   {purchases.map((p) => (
                     <tr key={p.id}>
-                      <td data-label="Item" className={styles.dataItemName}>
-                        {p.item_name || 'Unknown Item'}
-                      </td>
-                      <td data-label="Category">
+                      <td style={{ fontWeight: 600 }}>{p.item_name || 'Unknown Item'}</td>
+                      <td>
                         <span className={styles.categorySmall}>{p.item_category || '-'}</span>
                       </td>
-                      <td data-label="Paid" className={styles.dataValuePrice}>
+                      <td style={{ color: '#00d4ff', fontWeight: 700 }}>
                         {fmt(p.price_paid)} {unitOf(p.currency)}
                       </td>
-                      <td data-label="When" className={styles.dataValueMuted}>
+                      <td style={{ fontSize: '12px', color: '#8b8d91' }}>
                         {timeAgo(p.created_at)}
                       </td>
-                      <td data-label="Status">
+                      <td>
                         <span
-                          className={`${styles.inventoryStatus} ${
-                            p.refunded_at
-                              ? styles.inventoryStatusMuted
-                              : styles.inventoryStatusActive
-                          }`}
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: '8px',
+                            color: p.refunded_at ? '#8b8d91' : '#31A24C',
+                            background: p.refunded_at
+                              ? 'rgba(139,141,145,0.12)'
+                              : 'rgba(49,162,76,0.12)',
+                          }}
                           title={p.refunded_at ? `Refunded ${timeAgo(p.refunded_at)}` : undefined}
                         >
                           {p.refunded_at ? 'Refunded' : 'Paid'}
                         </span>
                       </td>
                       {isAdmin && (
-                        <td data-label="Actions">
+                        <td>
                           {/* A refunded purchase cannot be refunded again — the
                               server answers "already refunded". Say so here
                               instead of offering the action. */}
                           {p.refunded_at || deliveredPurchaseIds.has(p.id) ? (
-                            <span className={styles.dataValueMuted}>-</span>
+                            <span style={{ fontSize: '11px', color: '#8b8d91' }}>-</span>
                           ) : (
                             <button
                               className={styles.btnDeleteSmall}
@@ -426,7 +434,7 @@ export default function MyItemsTab({
                               }
                               disabled={refunding !== null}
                             >
-                              {refunding === p.id ? 'Refunding' : 'Refund'}
+                              {refunding === p.id ? '...' : 'Refund'}
                             </button>
                           )}
                         </td>

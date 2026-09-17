@@ -21,11 +21,9 @@
  *   showing a spinner forever is worse than a tab saying there is nothing yet.
  */
 
-import { compactChips } from '../../../utils/format';
 import type { Tournament } from '../../../types/database.types';
 import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
 import { computePlacePrize, prizePoolAvailableToPlaces } from '../../../lib/payoutMath';
-import { UNIT_CENTS_ASSET_NOT_READ } from '../../../../server/src/tournament/tournamentUnit';
 import { parsePayoutStructure } from '../../../lib/payoutStructure';
 
 export { parsePayoutStructure } from '../../../lib/payoutStructure';
@@ -227,18 +225,14 @@ export function chips(n: number | null | undefined): string {
   return Math.round(v).toLocaleString();
 }
 
-/**
- * Compact chips, Dan's rule: 1,250 -> 1.2K, 5,000 -> 5K, 447,000 -> 447K.
- *
- * This used to be a second, competing formatter - it ROUNDED (1,250 read
- * "1.3K", overstating what a player has) and it kept the tenth on a round
- * figure ("5.0K", a decimal on a forward-facing page, which Dan forbids).
- * Both rules are wrong and both were visible on the tournament cards. There is
- * one compact formatter on this platform now; this name stays because 25 call
- * sites use it, but it delegates.
- */
+/** Compact chips for tight columns: 1,250 -> 1.3K, 447,000 -> 447K. */
 export function chipsCompact(n: number | null | undefined): string {
-  return compactChips(n);
+  const v = Number(n);
+  if (!Number.isFinite(v) || v === 0) return '0';
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 1_000) return `${(v / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}K`;
+  return String(Math.round(v));
 }
 
 /**
@@ -332,26 +326,13 @@ export function lastPaidPlace(raw: unknown): number {
  * rule now lives in src/lib/payoutMath.ts, byte-identical to the server's.
  *
  * A player must never be shown one number and paid another.
- *
- * THE UNIT IS STATED, NOT INHERITED (2026-09-13). `computePlacePrize` gained a
- * `unitCents` parameter that defaulted to a cent, and every display in this
- * app - the lobby panel, the info panel, Rewards, Detail Overview and the
- * tournament page - omitted it. A default is not a decision, and CLAUDE.md
- * 10.86 rule 1 is about exactly this: a signal that answers confidently when it
- * cannot tell. The parameter is required now and this wrapper names its answer.
- *
- * It is the chip unit because this is a projection drawn from a tournament row
- * and a payout structure; none of the five callers has read the club's asset,
- * and every tournament that can currently exist is a chip tournament. When
- * Diamond tournaments open, this wrapper takes the unit from its callers -
- * `UNIT_CENTS_ASSET_NOT_READ` is what finds them.
  */
 export function placePrize(
   pool: number,
   structure: Array<{ place?: number; percentage?: number }>,
   place: number
 ): number {
-  return computePlacePrize(Number(pool), structure, Number(place), UNIT_CENTS_ASSET_NOT_READ);
+  return computePlacePrize(Number(pool), structure, Number(place));
 }
 
 /**

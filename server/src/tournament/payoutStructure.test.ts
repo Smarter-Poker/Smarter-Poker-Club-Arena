@@ -30,7 +30,6 @@ import {
   spinStoredStructureIsStale,
 } from './payoutStructure.js';
 import { computePlacePrize } from './payoutMath.js';
-import { CHIP_UNIT_CENTS } from './tournamentUnit.js';
 import { SPIN_TIERS } from '../config/spinSpec.js';
 import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
@@ -198,7 +197,7 @@ describe('a rebuilt Spin structure pays out exactly the pool', () => {
         const structure = resolvePayoutStructure({ variant: 'spin', spin_multiplier: mult })!;
         expect(structure, `${mult}x must resolve to a structure`).not.toBeNull();
         const total = structure
-          .map((p) => computePlacePrize(pool, structure, p.place, CHIP_UNIT_CENTS))
+          .map((p) => computePlacePrize(pool, structure, p.place))
           .reduce((s, n) => s + n, 0);
         expect(Math.round(total * 100) / 100, `${mult}x on ${pool}`).toBe(pool);
       }
@@ -303,17 +302,13 @@ describe('the structure is trimmed to the field that can fill it', () => {
   it('moves the residual onto the last place a player actually held', () => {
     // The whole point, in money. 10,000 pool, 9-place structure, 8 entrants.
     const stranded =
-      10000 -
-      NINE.reduce((sum, p) => sum + computePlacePrize(10000, NINE, p.place, CHIP_UNIT_CENTS), 0);
+      10000 - NINE.reduce((sum, p) => sum + computePlacePrize(10000, NINE, p.place), 0);
     // Untrimmed, place 9 holds the residual and nobody is there to take it.
-    expect(computePlacePrize(10000, NINE, 9, CHIP_UNIT_CENTS)).toBeCloseTo(250, 2);
+    expect(computePlacePrize(10000, NINE, 9)).toBeCloseTo(250, 2);
     expect(stranded).toBeCloseTo(0, 2); // the pool balances only if place 9 pays
 
     const trimmed = trimStructureToField(NINE, 8)!;
-    const paid = trimmed.reduce(
-      (sum, p) => sum + computePlacePrize(10000, trimmed, p.place, CHIP_UNIT_CENTS),
-      0
-    );
+    const paid = trimmed.reduce((sum, p) => sum + computePlacePrize(10000, trimmed, p.place), 0);
     expect(paid).toBeCloseTo(10000, 2);
 
     /**
@@ -325,12 +320,12 @@ describe('the structure is trimmed to the field that can fill it', () => {
      * factor. The last place still takes the rounding residual on top, so the
      * eight places sum to the pool to the cent.
      */
-    expect(computePlacePrize(10000, trimmed, 1, CHIP_UNIT_CENTS)).toBeCloseTo(3076.92, 2);
-    expect(computePlacePrize(10000, trimmed, 8, CHIP_UNIT_CENTS)).toBeCloseTo(461.55, 2);
+    expect(computePlacePrize(10000, trimmed, 1)).toBeCloseTo(3076.92, 2);
+    expect(computePlacePrize(10000, trimmed, 8)).toBeCloseTo(461.55, 2);
     // Nobody is paid less than they would have been in a full field.
     for (const p of trimmed) {
-      expect(computePlacePrize(10000, trimmed, p.place, CHIP_UNIT_CENTS)).toBeGreaterThanOrEqual(
-        computePlacePrize(10000, NINE, p.place, CHIP_UNIT_CENTS)
+      expect(computePlacePrize(10000, trimmed, p.place)).toBeGreaterThanOrEqual(
+        computePlacePrize(10000, NINE, p.place)
       );
     }
   });

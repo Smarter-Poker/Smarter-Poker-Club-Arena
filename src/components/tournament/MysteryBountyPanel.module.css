@@ -1,86 +1,91 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   MYSTERY BOUNTY PANEL - on the spade console (2026-09-08)
-
-   The frame, the crest, the header well, the pill slot, the inks and the flat
-   closing cap come from the approved master via SpadeConsole.css. This sheet
-   only types the ladder, the award history and the leaderboard on the black
-   glass between the rails.
-
-   The four-tile pool grid, the per-tier colour swatch, the rounded section
-   cards and the filled leaderboard rows are all gone: every figure is a row
-   with its label in the master's lit blue on the left, its value in silver on
-   the right, and an engraved rule between rows - a black cut with a light lip,
-   the same cut the master's own chrome rules are made of.
-
-   The ONE thing still drawn is the live dot beside the activation line. It
-   carries `mbPulse`, which has to keep playing (CLAUDE.md 10.6), and it is a
-   lit indicator rather than a card, tile, pill or button.
-
-   Sizes are cqw against the console; no :hover anywhere.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/*
+ * MYSTERY BOUNTY LOBBY PANEL
+ *
+ * Mobile first (375px), then scale. Every row is a grid rather than a table so
+ * a long username cannot push the money column off the right edge on a phone.
+ */
 
 .panel {
-  margin: 0 auto;
-  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px 0;
+  max-width: 100%;
 }
 
-/* ── Section 10: the advertised top bounty ───────────────────────────────── */
+/* ── Headline: the advertised top bounty ── */
 
 .headline {
-  display: grid;
-  justify-items: center;
-  gap: 1.2cqw;
-  padding: 1cqw 1cqw 3cqw;
+  border: 1px solid rgba(111, 220, 255, 0.35);
+  background: linear-gradient(180deg, rgba(111, 220, 255, 0.12), rgba(15, 23, 42, 0.6));
+  border-radius: 10px;
+  padding: 14px 12px;
   text-align: center;
 }
 
 .headlineLabel {
-  font-size: 2.7cqw;
+  display: block;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  font-weight: 800;
+  color: #6fdcff;
+  text-transform: uppercase;
 }
 
 .headlineValue {
-  font-size: 9cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
+  display: block;
+  font-size: 30px;
   line-height: 1.1;
+  font-weight: 900;
+  color: #fff;
+  margin-top: 4px;
+  word-break: break-word;
 }
 
 .headlineSub {
-  color: #9aa5b3;
-  font:
-    500 3cqw/1.45 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  display: block;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 6px;
 }
-
-/* ── Activation status / largest bounty lines ────────────────────────────── */
 
 .status {
   display: flex;
-  gap: 2.4cqw;
   align-items: center;
   justify-content: center;
-  padding: 2.4cqw 1cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  color: #d7dee7;
-  font:
-    600 3.1cqw/1.4 Inter,
-    system-ui,
-    sans-serif;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 8px 10px;
   text-align: center;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.statusPending {
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.statusActive {
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.statusComplete {
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.08);
 }
 
 .livePulse {
-  flex: 0 0 auto;
-  width: 2cqw;
-  height: 2cqw;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #35d95a;
-  box-shadow: 0 0 1.4cqw rgb(53 217 90 / 70%);
+  background: currentColor;
   animation: mbPulse 1.4s ease-in-out infinite;
+  flex: 0 0 auto;
 }
 
 @keyframes mbPulse {
@@ -88,331 +93,375 @@
   100% {
     opacity: 1;
   }
-
   50% {
     opacity: 0.25;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .livePulse {
-    animation: none;
-  }
-}
+/* ── Pool summary ── */
 
-/* ── Rows on the glass ───────────────────────────────────────────────────── */
-
-.rows {
+.poolGrid {
   display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
 }
 
-.figure {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: baseline;
-  padding: 2.2cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+.poolCell {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+  min-width: 0;
 }
 
-.figureValue {
-  justify-self: end;
-  font-size: 3.8cqw;
+.poolCellLabel {
+  display: block;
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.poolCellValue {
+  display: block;
+  font-size: 15px;
   font-weight: 800;
-  letter-spacing: 0.02em;
-  text-align: right;
+  color: #e2e8f0;
+  margin-top: 2px;
+  word-break: break-word;
 }
 
-/* ── The three sections ──────────────────────────────────────────────────── */
+/* ── Sections ── */
 
 .section {
-  display: grid;
-  padding-top: 3cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .sectionHead {
   display: flex;
-  gap: 3cqw;
   align-items: baseline;
   justify-content: space-between;
-  padding: 0 0.5cqw 1.6cqw;
+  gap: 8px;
 }
 
 .sectionTitle {
-  margin: 0;
-  font-size: 4.2cqw;
+  font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  color: #e2e8f0;
+  letter-spacing: 0.3px;
+  margin: 0;
 }
 
 .sectionNote {
-  flex: 0 0 auto;
-  font-size: 2.6cqw;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .empty {
-  padding: 3cqw 1cqw;
+  color: #64748b;
+  font-size: 12px;
+  font-style: italic;
+  padding: 10px 8px;
+  text-align: center;
 }
 
-/* ── The ladder ──────────────────────────────────────────────────────────── */
+/* ── Tier ladder rows ── */
 
 .tierRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: start;
-  padding: 2.4cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
 }
 
-/* An exhausted tier stays on screen (section 33). It reads quieter; it is
-   never hidden and never struck through. */
 .tierRowExhausted {
-  opacity: 0.72;
+  background: rgba(15, 23, 42, 0.55);
+  border-style: dashed;
+  border-color: #334155;
+}
+
+.tierSwatch {
+  width: 10px;
+  height: 26px;
+  border-radius: 3px;
+  align-self: center;
 }
 
 .tierMain {
-  display: grid;
-  gap: 0.6cqw;
   min-width: 0;
 }
 
 .tierAmount {
-  font-size: 4.2cqw;
+  display: block;
+  font-size: 15px;
   font-weight: 800;
-  letter-spacing: 0.02em;
+  color: #fff;
+  word-break: break-word;
+}
+
+.tierAmountExhausted {
+  color: #94a3b8;
 }
 
 .tierName {
-  font-size: 2.6cqw;
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 1px;
 }
 
 .tierWonBy {
-  font-size: 2.9cqw;
-  font-weight: 600;
+  display: block;
+  font-size: 11px;
+  color: #10b981;
+  margin-top: 2px;
   overflow-wrap: anywhere;
 }
 
 .tierCounts {
-  display: grid;
-  justify-items: end;
-  gap: 0.6cqw;
   text-align: right;
+  white-space: nowrap;
 }
 
 .tierRemaining {
-  font-size: 3.2cqw;
+  display: block;
+  font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
+  color: #10b981;
+}
+
+.tierRemainingZero {
+  color: #ef4444;
 }
 
 .tierOriginal {
-  font-size: 2.6cqw;
-  font-weight: 600;
-  white-space: nowrap;
+  display: block;
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 1px;
 }
 
-/* ── The award history ───────────────────────────────────────────────────── */
+.collapseBtn {
+  align-self: flex-start;
+  background: none;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 6px 10px;
+  min-height: 32px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* ── Award history rows ── */
 
 .awardRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: start;
-  padding: 2.4cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
 }
 
-.awardMain {
-  display: grid;
-  gap: 0.6cqw;
-  min-width: 0;
+.awardHeadline {
+  border-color: rgba(111, 220, 255, 0.45);
+  background: rgba(111, 220, 255, 0.07);
 }
 
 .awardWinners {
-  font-size: 3.8cqw;
+  font-size: 13px;
+  color: #e2e8f0;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.awardMeta {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
   overflow-wrap: anywhere;
 }
 
 .awardTier {
-  font-size: 2.6cqw;
-}
-
-.awardMeta {
-  font-size: 2.8cqw;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.awardSide {
-  display: grid;
-  justify-items: end;
-  gap: 0.6cqw;
-  text-align: right;
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 2px;
+  display: block;
 }
 
 .awardAmount {
-  font-size: 4cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
+  font-size: 15px;
+  font-weight: 900;
+  color: #10b981;
+  text-align: right;
   white-space: nowrap;
 }
 
 .awardWhen {
-  font-size: 2.6cqw;
-  font-weight: 600;
+  display: block;
+  font-size: 10px;
+  color: #64748b;
+  text-align: right;
+  margin-top: 2px;
   white-space: nowrap;
 }
 
-/* ── The leaderboard ─────────────────────────────────────────────────────── */
+/* ── Leaderboard ── */
 
 .lbRow {
-  appearance: none;
   display: grid;
-  grid-template-columns: 7cqw minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: baseline;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
   width: 100%;
-  margin: 0;
-  padding: 2.4cqw 0.5cqw;
-  border: 0;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  background: transparent;
-  font: inherit;
   text-align: left;
   cursor: pointer;
+  font: inherit;
+  min-height: 44px;
+  touch-action: manipulation;
 }
 
-.lbRow:active {
-  filter: brightness(1.2);
-}
-
-.lbRow:focus-visible {
-  outline: 0.5cqw solid #8fd4ff;
-  outline-offset: -0.5cqw;
-}
-
-/* The viewer's own row is lit, never filled. */
-.lbRowMe .lbName {
-  color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 55%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+.lbRowMe {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.35);
 }
 
 .lbRank {
-  font-size: 4cqw;
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.02em;
+  color: #64748b;
   text-align: center;
 }
 
 .lbName {
-  display: grid;
-  gap: 0.4cqw;
-  min-width: 0;
-  font-size: 3.8cqw;
+  font-size: 13px;
+  color: #e2e8f0;
   font-weight: 700;
-  letter-spacing: 0.02em;
   overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .lbCount {
-  font-size: 2.6cqw;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 400;
+  margin-top: 1px;
 }
 
 .lbEarnings {
-  justify-self: end;
-  font-size: 4cqw;
+  font-size: 14px;
   font-weight: 800;
-  letter-spacing: 0.02em;
+  color: #10b981;
   text-align: right;
   white-space: nowrap;
 }
 
-/* ── One player's payout (section 41) ────────────────────────────────────── */
+/* ── Player payout drill-down (section 41) ── */
 
 .playerCard {
-  display: grid;
-  padding-top: 3cqw;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .playerHead {
   display: flex;
-  gap: 3cqw;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  padding: 0 0.5cqw 1.6cqw;
+  gap: 8px;
 }
 
 .playerName {
-  min-width: 0;
-  font-size: 4.4cqw;
+  font-size: 15px;
   font-weight: 800;
-  letter-spacing: 0.02em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #fff;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
-/* A lit word on the glass, not a drawn control. */
 .playerClose {
-  appearance: none;
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 0.8cqw 1.6cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 2.8cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 18px;
   cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  touch-action: manipulation;
 }
 
-.playerClose:active,
-.collapseBtn:active {
-  filter: brightness(1.3);
+.playerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.playerClose:focus-visible,
-.collapseBtn:focus-visible {
-  outline: 0.5cqw solid #8fd4ff;
-  outline-offset: 0.4cqw;
+.playerStat {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 0;
 }
 
-/* ── The collapse controls ───────────────────────────────────────────────── */
-
-.collapseBtn {
-  appearance: none;
-  justify-self: center;
-  margin: 2cqw 0 0;
-  padding: 1.2cqw 3cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.2cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.16em;
+.playerStatLabel {
+  display: block;
+  font-size: 10px;
+  color: #64748b;
   text-transform: uppercase;
-  cursor: pointer;
+  letter-spacing: 0.4px;
+}
+
+.playerStatValue {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  color: #e2e8f0;
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.playerTotal {
+  grid-column: 1 / -1;
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.playerTotalValue {
+  color: #10b981;
+  font-size: 18px;
+}
+
+@media (min-width: 640px) {
+  .poolGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .playerGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }

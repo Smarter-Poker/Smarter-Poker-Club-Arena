@@ -48,3 +48,6 @@ POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-tournament-re
 
 # Mystery inventory, generation binding and concurrent replay use the same PG17 binaries.
 POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-mystery-reservation-pg17.py"
+
+# Provider retirement preserves records while removing application access.
+python3 "$probe_dir/test_retired_error_telemetry.py"

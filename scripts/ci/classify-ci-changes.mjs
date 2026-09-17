@@ -17,19 +17,13 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
-  // The loaded-rule comparator and the server Spin law read this rule file.
-  // A rule-only edit must not skip their existing directly triggered suites.
-  const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
-  const spinComparator = matches(/^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/);
-  // The existing accounting job must own these financial probes. Client request
-  // and receipt changes must retain that qualification as well as unit tests.
-  const diamondGames = matches(/^(tests\/sql\/(diamond-games-funding-identity|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/);
+  // Diamond request/receipt changes and retained real SQL probes must reach
+  // the existing required PostgreSQL accounting job.
+  const diamondGames = matches(/^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/);
   return {
-    // Browser specifications, their shared fixtures and runner configuration
-    // can break shipped-CSS qualification without changing application source.
-    src: broad || matches(/^(src\/|tests\/e2e\/|playwright\.config\.)/),
-    server: broad || spinRules || diamondGames || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/)/),
-    tests: broad || spinRules || spinComparator || diamondGames || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
+    src: broad || matches(/^src\//),
+    server: broad || diamondGames || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/)/),
+    tests: broad || diamondGames || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
     phase4: matches(phase4),
     fixture: matches(fixture),
   };

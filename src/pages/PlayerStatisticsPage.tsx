@@ -22,46 +22,16 @@
  * nine rows of 0.0% - a wall of zeroes reads as a real player who never raises,
  * which is a worse lie than admitting there is no data.
  *
- * ── THE CONSOLE (#ClubArenaConsole) ──────────────────────────────────────────
- *
- * This page used to be a chamfered hero with a clip-path frame, a cyan-railed
- * control slab and three rounded cards holding gradient pills and gold buttons -
- * a frame around a frame around a frame, every part of it drawn in CSS. It is
- * now printed on the spade master, like Club Rules and Club Announcements: the
- * felt photograph is a STANDALONE BANNER with nothing drawn around it, and every
- * section below is one console - identity, controls, and one console per figure
- * group, each figure a row on the black glass with its label in the master's lit
- * blue on the left and its value in silver on the right, separated by an
- * engraved rule rather than a drawn divider.
- *
- * NOT A GRID OF BOXES (Dan 2026-09-09: "I DON'T LIKE THE 4 BOXES, AND THE WAY IT
- * STICKS OUT ON THE SIDES"). The three figure groups were a three-column grid of
- * bordered cards; they are three consoles of rows now.
- *
- * TWO ACTIONS OR NONE. The foot art paints both plates, so a console with one
- * action would leave the other painted and empty. Confirm and Try Again are lit
- * words on the glass instead, and every console here closes on the flat cap.
- *
- * COLOUR IS THE MASTER'S. The page used to carry its own copy of the
- * ClubMembersPage tokens (arena cyan, vip gold) and a "no green" note that
- * belonged to that palette. The console's inks replace both: silver for values,
- * lit blue for labels, green for a positive club result and red for a negative
- * one, which is the ink §3.4 of the standard assigns to chips in and chips out.
- *
- * Mobile-first at 375px, verified at 393px. Everything sizes in cqw against the
- * console, so a 320px phone and a 430px one get the same picture.
+ * Palette and tokens are ClubMembersPage's. No green, no purple.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
-import StandardContentLayout from '../components/layouts/StandardContentLayout';
-import { SpadeConsole } from '../components/console/SpadeConsole';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { enumToTitleCase } from '../utils/titleCase';
-import { compactChips } from '../utils/format';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import ClubRosterService, {
@@ -109,15 +79,11 @@ function count(value: number): string {
   return (value ?? 0).toLocaleString();
 }
 
-/**
- * Chips off the felt are compact and never carry a decimal point (Dan: "NEVER
- * USE DECIMAL POINTS ON ANY FORWARD FACING PAGE ... once something hits over
- * 1,000 use 1K"). This used to print two decimals on every figure, so a club
- * result of 120 read "120.00". `compactChips` rounds DOWN and keeps the sign,
- * so a negative net stays negative and nothing is ever overstated.
- */
 function money(value: number): string {
-  return compactChips(value ?? 0);
+  return (value ?? 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 /** 'no_limit_holdem' is not a label. 'All Variants' is the null variant. */
@@ -265,29 +231,12 @@ export default function PlayerStatisticsPage() {
   }, [customFrom, customTo, toast]);
 
   const hasHands = !!stats && stats.hands > 0;
-  const gameLabel = variantLabel(variant);
-
-  /* The word in the header's painted pill slot: the window these figures belong
-     to, or why there are none. Every value is one short word, because the slot
-     is painted at a fixed width and a fitted label must never touch its rim. */
-  const statePill =
-    loadFailed && !stats
-      ? 'Offline'
-      : stats?.is_overall
-        ? 'Lifetime'
-        : hasHands
-          ? RANGE_LABEL[rangeMode]
-          : undefined;
 
   /* ── Render ─────────────────────────────────────────────────────────────── */
 
   return (
     <div className="player-stats-page" aria-busy={loading}>
-      {/* The felt is a standalone picture with nothing drawn around it: no
-          chamfer, no rail, no border, no gold tick. Dan: "THEY SHOULD JUST BE
-          STAND ALONE IMAGES WITH FRAMES AROUND THEM." The frames below are the
-          consoles; this is the establishing shot they open on. */}
-      <header className="ps-hero">
+      <header className="ps-hero" aria-labelledby="ps-page-title">
         <img
           className="ps-hero__art"
           src={PLAYER_INSTRUMENT_ART}
@@ -312,223 +261,175 @@ export default function PlayerStatisticsPage() {
           <span className="ps-header__location">Players / Performance</span>
           <span className="ps-header__spacer" aria-hidden="true" />
         </div>
+        <div className="ps-hero__content">
+          <span className="ps-eyebrow">Measured From Verified Hands</span>
+          <h1 id="ps-page-title" className="ps-title">
+            Player Performance
+          </h1>
+          <p>Read Playing Style, Volume, And Club Results Across Any Recorded Game Window.</p>
+          {stats?.authorized && stats.hands > 0 && (
+            <dl className="ps-hero__readouts" aria-label="Selected Range Summary">
+              <HeroReadout label="Hands" value={count(stats.hands)} />
+              <HeroReadout label="Win Rate" value={pct(stats.win_rate)} />
+              <HeroReadout
+                label="Net"
+                value={money(stats.net)}
+                tone={stats.net > 0 ? 'up' : stats.net < 0 ? 'down' : undefined}
+              />
+            </dl>
+          )}
+        </div>
       </header>
 
-      <StandardContentLayout className="ps-body">
-        <SpadeConsole
-          className="ps-console"
-          eyebrow="Players"
-          title="Player Performance"
-          titleId="ps-page-title"
-          subtitle="Measured From Verified Hands"
-          pill={statePill}
-          pillInk={loadFailed && !stats ? 'red' : 'blue'}
-          foot="foot"
-        >
-          <p className="sc-copy">
-            Read Playing Style, Volume, And Club Results Across Any Recorded Game Window.
-          </p>
-          {stats?.authorized && stats.hands > 0 && (
-            <div className="ps-rows" role="group" aria-label="Selected Range Summary">
-              <StatRow label="Hands" value={count(stats.hands)} />
-              <StatRow label="Win Rate" value={pct(stats.win_rate)} />
-              <StatRow label="Net" value={money(stats.net)} signed={stats.net} />
-            </div>
-          )}
-        </SpadeConsole>
-
-        <SpadeConsole
-          className="ps-console"
-          eyebrow="Player Performance"
-          title="Instrument Controls"
-          subtitle="Choose The Game And Ledger Window"
-          foot="foot"
-        >
-          <label className="ps-variant">
-            <span className="ps-variant__label sc-label sc-ink--blue">Game</span>
-            <select
-              value={variant ?? ''}
-              onChange={(e) => setVariant(e.target.value === '' ? null : e.target.value)}
-            >
-              <option value="">All Variants</option>
-              {knownVariants.map((v) => (
-                <option key={v} value={v}>
-                  {variantLabel(v)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {/* Four windows, four lit words on the glass. The master paints two
-              plates and no segmented control, so this is not drawn as one:
-              nothing here has a box, a rim or a fill. The chosen word is lit
-              in the master's blue, the rest sit in muted ink. */}
-          <div className="ps-range__tabs" role="group" aria-label="Statistics Date Range">
-            {(Object.keys(RANGE_LABEL) as StatsRange[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={
-                  rangeMode === mode
-                    ? 'ps-range__word sc-ink--blue'
-                    : 'ps-range__word sc-ink--muted'
-                }
-                aria-pressed={rangeMode === mode}
-                onClick={() => chooseRange(mode)}
-              >
-                {RANGE_LABEL[mode]}
-              </button>
-            ))}
-          </div>
-
-          {rangeMode === 'custom' && (
-            <div className="ps-range__custom">
-              <label className="ps-date">
-                <span className="sc-label sc-ink--blue">From</span>
-                <input
-                  type="date"
-                  value={customFrom}
-                  max={customTo || undefined}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                />
-              </label>
-              <label className="ps-date">
-                <span className="sc-label sc-ink--blue">To</span>
-                <input
-                  type="date"
-                  value={customTo}
-                  min={customFrom || undefined}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                />
-              </label>
-              {/* One action, so it is a lit word on the glass and not a plate:
-                  the foot art paints BOTH plates and a lone one reads broken. */}
-              <button type="button" className="ps-word sc-ink--blue" onClick={confirmCustomRange}>
-                Confirm
-              </button>
-            </div>
-          )}
-
-          {/* The caption names the range the figures on screen BELONG to. While
-              a new range or variant loads the figures below are dimmed. */}
-          <p className="ps-range__caption sc-label sc-ink--muted" aria-live="polite">
-            {loading && stats
-              ? 'Loading The Selected Range...'
-              : stats?.is_overall
-                ? 'Showing Lifetime Totals'
-                : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
-          </p>
-        </SpadeConsole>
-
-        {loading && !stats ? (
-          <PageSkeleton variant="stats" />
-        ) : loadFailed && !stats ? (
-          <SpadeConsole
-            className="ps-console"
-            eyebrow={gameLabel}
-            title="Could Not Load Statistics"
-            foot="foot"
+      <section className="ps-controls" aria-labelledby="ps-controls-title">
+        <div className="ps-controls__heading">
+          <h2 id="ps-controls-title">Instrument Controls</h2>
+          <span>Choose The Game And Ledger Window</span>
+        </div>
+        <label className="ps-variant">
+          <span className="ps-variant__label">Game</span>
+          <select
+            value={variant ?? ''}
+            onChange={(e) => setVariant(e.target.value === '' ? null : e.target.value)}
           >
-            <div className="ps-empty" role="alert">
-              <p className="sc-copy sc-copy--center">
-                This Player's Statistics Are Still There. We Just Could Not Reach Them Right Now.
-              </p>
-              <button
-                type="button"
-                className="ps-word sc-ink--blue"
-                onClick={() => setReloadKey((n) => n + 1)}
-              >
-                Try Again
-              </button>
-            </div>
-          </SpadeConsole>
-        ) : notFound || !stats ? (
-          <EmptyStats
-            game={gameLabel}
-            heading="Member Not Found"
-            body="This Player Is Not A Member Of This Club."
-          />
-        ) : !stats.authorized ? (
-          <EmptyStats
-            game={gameLabel}
-            heading="Statistics Restricted"
-            body="Your Club Role Does Not Permit Access To This Player's Private Performance Data."
-          />
-        ) : !hasHands ? (
-          <EmptyStats
-            game={gameLabel}
-            heading="No Hands In This Range"
-            body={`${gameLabel} Has No Recorded Hands For The Dates You Chose. Widen The Range Or Choose Another Game.`}
-          />
-        ) : (
-          <>
-            <SpadeConsole
-              className={loading ? 'ps-console ps-console--busy' : 'ps-console'}
-              aria-busy={loading || undefined}
-              eyebrow={gameLabel}
-              title="Playing Style"
-              foot="foot"
-            >
-              <div className="ps-rows">
-                <StatRow label="VPIP" value={pct(stats.vpip)} />
-                <StatRow label="PFR" value={pct(stats.pfr)} />
-                {/* Per hand dealt, and labelled so. The old figure divided 3-bets
-                    by the hands this player was 3-bet in after opening, and read
-                    316.7% for one of the club's most active players. */}
-                <StatRow
-                  label="3-Bet Per Hand"
-                  value={`${pct(stats.three_bet)} (${count(stats.three_bets)})`}
-                />
-                <StatRow
-                  label="Fold To 3-Bet"
-                  value={
-                    stats.faced_three_bets > 0
-                      ? `${pct(stats.fold_to_three_bet)} Of ${count(stats.faced_three_bets)}`
-                      : 'Never 3-Bet After Opening'
-                  }
-                />
-                <StatRow
-                  label="C-Bet"
-                  value={
-                    stats.cbet_opportunities > 0
-                      ? `${pct(stats.cbet)} Of ${count(stats.cbet_opportunities)}`
-                      : 'No Flop Led As Aggressor'
-                  }
-                />
-              </div>
-            </SpadeConsole>
+            <option value="">All Variants</option>
+            {knownVariants.map((v) => (
+              <option key={v} value={v}>
+                {variantLabel(v)}
+              </option>
+            ))}
+          </select>
+        </label>
 
-            <SpadeConsole
-              className={loading ? 'ps-console ps-console--busy' : 'ps-console'}
-              aria-busy={loading || undefined}
-              eyebrow={gameLabel}
-              title="Volume"
-              foot="foot"
+        <div className="ps-range__tabs" role="group" aria-label="Statistics Date Range">
+          {(Object.keys(RANGE_LABEL) as StatsRange[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={rangeMode === mode ? 'active' : ''}
+              aria-pressed={rangeMode === mode}
+              onClick={() => chooseRange(mode)}
             >
-              {/* total_games, total_hands and winner were three labels on two
-                  numbers: hands twice, and hands won as "Winner". */}
-              <div className="ps-rows">
-                <StatRow label="Hands" value={count(stats.hands)} />
-                <StatRow label="Hands Won" value={count(stats.hands_won)} />
-                <StatRow label="Win Rate" value={pct(stats.win_rate)} />
-              </div>
-            </SpadeConsole>
+              {RANGE_LABEL[mode]}
+            </button>
+          ))}
+        </div>
 
-            <SpadeConsole
-              className={loading ? 'ps-console ps-console--busy' : 'ps-console'}
-              aria-busy={loading || undefined}
-              eyebrow={gameLabel}
-              title="Club Result"
-              foot="foot"
-            >
-              <div className="ps-rows">
-                <StatRow label="Net" value={money(stats.net)} signed={stats.net} />
-                <StatRow label="Fees" value={money(stats.fees)} />
-              </div>
-            </SpadeConsole>
-          </>
+        {rangeMode === 'custom' && (
+          <div className="ps-range__custom">
+            <label className="ps-date">
+              <span>From</span>
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={(e) => setCustomFrom(e.target.value)}
+              />
+            </label>
+            <label className="ps-date">
+              <span>To</span>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={(e) => setCustomTo(e.target.value)}
+              />
+            </label>
+            <button type="button" className="ps-range__confirm" onClick={confirmCustomRange}>
+              Confirm
+            </button>
+          </div>
         )}
-      </StandardContentLayout>
+
+        {/* The caption names the range the figures on screen BELONG to. While
+            a new range or variant loads the figures below are dimmed. */}
+        <p className="ps-range__caption" aria-live="polite">
+          {loading && stats
+            ? 'Loading The Selected Range...'
+            : stats?.is_overall
+              ? 'Showing Lifetime Totals'
+              : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
+        </p>
+      </section>
+
+      {loading && !stats ? (
+        <PageSkeleton variant="stats" />
+      ) : loadFailed && !stats ? (
+        <div className="ps-empty" role="alert">
+          <span className="ps-empty__mark" aria-hidden="true">
+            !
+          </span>
+          <p className="ps-empty__heading">Could Not Load Statistics</p>
+          <p className="ps-empty__body">
+            This Player's Statistics Are Still There. We Just Could Not Reach Them Right Now.
+          </p>
+          <button
+            type="button"
+            className="ps-range__pill"
+            onClick={() => setReloadKey((n) => n + 1)}
+          >
+            Try Again
+          </button>
+        </div>
+      ) : notFound || !stats ? (
+        <EmptyStats heading="Member Not Found" body="This Player Is Not A Member Of This Club." />
+      ) : !stats.authorized ? (
+        <EmptyStats
+          heading="Statistics Restricted"
+          body="Your Club Role Does Not Permit Access To This Player's Private Performance Data."
+        />
+      ) : !hasHands ? (
+        <EmptyStats
+          heading="No Hands In This Range"
+          body={`${variantLabel(variant)} Has No Recorded Hands For The Dates You Chose. Widen The Range Or Choose Another Game.`}
+        />
+      ) : (
+        <div className={loading ? 'ps-cards ps-cards--busy' : 'ps-cards'} aria-busy={loading}>
+          <section className="ps-card">
+            <h2 className="ps-card__title">Playing Style</h2>
+            <StatRow label="VPIP" value={pct(stats.vpip)} />
+            <StatRow label="PFR" value={pct(stats.pfr)} />
+            {/* Per hand dealt, and labelled so. The old figure divided 3-bets
+                by the hands this player was 3-bet in after opening, and read
+                316.7% for one of the club's most active players. */}
+            <StatRow
+              label="3-Bet Per Hand"
+              value={`${pct(stats.three_bet)} (${count(stats.three_bets)})`}
+            />
+            <StatRow
+              label="Fold To 3-Bet"
+              value={
+                stats.faced_three_bets > 0
+                  ? `${pct(stats.fold_to_three_bet)} Of ${count(stats.faced_three_bets)}`
+                  : 'Never 3-Bet After Opening'
+              }
+            />
+            <StatRow
+              label="C-Bet"
+              value={
+                stats.cbet_opportunities > 0
+                  ? `${pct(stats.cbet)} Of ${count(stats.cbet_opportunities)}`
+                  : 'No Flop Led As Aggressor'
+              }
+            />
+          </section>
+
+          <section className="ps-card">
+            <h2 className="ps-card__title">Volume</h2>
+            {/* total_games, total_hands and winner were three labels on two
+                numbers: hands twice, and hands won as "Winner". */}
+            <StatRow label="Hands" value={count(stats.hands)} />
+            <StatRow label="Hands Won" value={count(stats.hands_won)} />
+            <StatRow label="Win Rate" value={pct(stats.win_rate)} />
+          </section>
+
+          <section className="ps-card">
+            <h2 className="ps-card__title">Club Result</h2>
+            <StatRow label="Net" value={money(stats.net)} signed={stats.net} />
+            <StatRow label="Fees" value={money(stats.fees)} />
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -538,31 +439,47 @@ export default function PlayerStatisticsPage() {
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /**
- * One figure on the glass: the label in the master's lit blue on the left, the
- * value in engraved silver on the right, an engraved rule cut between rows.
- * Nothing is drawn - no card, no tile, no divider.
- *
  * `signed` is the raw number behind `value`, supplied only where the figure can
- * legitimately go below zero. It picks the console's own ink for chips in and
- * chips out (§3.4 of the standard): green up, red down.
+ * legitimately go below zero. Positive is arena cyan, negative is --danger-red.
+ * There is no green in this product.
  */
 function StatRow({ label, value, signed }: { label: string; value: string; signed?: number }) {
-  const ink = signed === undefined || signed === 0 ? 'silver' : signed > 0 ? 'green' : 'red';
+  const tone =
+    signed === undefined || signed === 0 ? '' : signed > 0 ? ' ps-stat--up' : ' ps-stat--down';
 
   return (
-    <div className="ps-row">
-      <span className="ps-row__label sc-label sc-ink--blue">{label}</span>
-      <span className={`ps-row__value sc-ink--${ink}`}>{value}</span>
+    <div className={`ps-stat${tone}`}>
+      <span className="ps-stat__label">{label}</span>
+      <span className="ps-stat__value">{value}</span>
     </div>
   );
 }
 
-function EmptyStats({ game, heading, body }: { game: string; heading: string; body: string }) {
+function HeroReadout({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'up' | 'down';
+}) {
   return (
-    <SpadeConsole className="ps-console" eyebrow={game} title={heading} foot="foot">
-      <div className="ps-empty">
-        <p className="sc-copy sc-copy--center">{body}</p>
-      </div>
-    </SpadeConsole>
+    <div className={`ps-hero__readout${tone ? ` ps-hero__readout--${tone}` : ''}`}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function EmptyStats({ heading, body }: { heading: string; body: string }) {
+  return (
+    <div className="ps-empty">
+      <span className="ps-empty__mark" aria-hidden="true">
+        ○
+      </span>
+      <p className="ps-empty__heading">{heading}</p>
+      <p className="ps-empty__body">{body}</p>
+    </div>
   );
 }

@@ -111,11 +111,6 @@ const SECTIONS: LegalDocumentSection[] = [
             Your Account And Gameplay Data Live Here.
           </li>
           <li>
-            <strong>Sentry:</strong> Crash And Error Reporting. An Error Report Carries Your User ID
-            And Username, The Device And App Version, And What Went Wrong. It Does Not Carry Your
-            Email Address. In The Mobile App No Session Replay Is Recorded.
-          </li>
-          <li>
             <strong>PostHog:</strong> Product Analytics (Which Screens And Features Are Used). In
             The Mobile App This Runs Only If You Allow It, And You Can Change Your Answer In
             Settings At Any Time. It Never Receives Hands, Chips Or Messages.

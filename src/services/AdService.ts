@@ -173,32 +173,6 @@ type AdEventType = 'impression' | 'viewable' | 'click' | 'dismiss';
  */
 const seenThisLoad = new Set<string>();
 
-/**
- * Where this player is, as the edge saw them. Both the Hub and Club Arena are
- * served from smarter.poker, and Vercel stamps x-vercel-ip-country on every
- * request, so a same-origin GET /api/geo answers once per page load. It is a
- * hint, not a credential: a flight with a country list is shown only to a
- * player known to be inside it, and nothing is unlocked by it. Unknown
- * (failed fetch, local dev, no header) is null, and a gated flight is simply
- * not served to an unknown location.
- */
-let countryOnce: Promise<string | null> | null = null;
-export function playerCountry(): Promise<string | null> {
-  if (countryOnce) return countryOnce;
-  countryOnce = (async () => {
-    try {
-      const res = await fetch('/api/geo', { credentials: 'omit', cache: 'no-store' });
-      if (!res.ok) return null;
-      const body = (await res.json()) as { country?: unknown };
-      const c = typeof body.country === 'string' ? body.country.trim().toUpperCase() : '';
-      return /^[A-Z]{2}$/.test(c) ? c : null;
-    } catch {
-      return null;
-    }
-  })();
-  return countryOnce;
-}
-
 export const AdService = {
   /**
    * What should this player see in this slot right now?
@@ -214,7 +188,6 @@ export const AdService = {
         p_slot: slot,
         p_club_id: clubId ?? null,
         p_limit: limit,
-        p_country: await playerCountry(),
       });
       if (error) {
         reportError(error, 'AdService.resolve', { slot });

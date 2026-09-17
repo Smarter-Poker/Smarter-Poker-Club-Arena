@@ -9,7 +9,7 @@
  * without touching this file but can never silently shrink or corrupt.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { normalizeThrowableError, throwableService } from '../../src/services/ThrowableService';
+import { throwableService } from '../../src/services/ThrowableService';
 import { supabase } from '../../src/lib/supabase';
 
 const CATEGORIES = ['reactions', 'throws', 'sports', 'cheers', 'premium'] as const;
@@ -85,8 +85,7 @@ describe('throwable purchase failures stay handled without telemetry', () => {
     const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValueOnce(failure);
     await expect(throwableService.useThrowable('test-user', 'beer')).resolves.toEqual({
       success: false,
-      error: 'Could Not Send Reaction',
-      retrySameRequest: true,
+      error: 'Throw unavailable, please try again',
     });
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('fn_use_throwable_v2', {
@@ -99,21 +98,9 @@ describe('throwable purchase failures stay handled without telemetry', () => {
     const rpc = vi.spyOn(supabase, 'rpc').mockRejectedValueOnce(new Error('network unavailable'));
     await expect(throwableService.useThrowable('test-user', 'beer')).resolves.toEqual({
       success: false,
-      error: 'Could Not Send Reaction',
-      retrySameRequest: true,
+      error: 'Unexpected error',
     });
     expect(rpc).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('ThrowableService refusal copy', () => {
-  it('maps server codes to safe Title Case messages', () => {
-    expect(normalizeThrowableError('authentication required')).toBe('Authentication Required');
-    expect(normalizeThrowableError('Insufficient diamonds')).toBe('Insufficient Diamonds');
-    expect(normalizeThrowableError('RATE_LIMITED')).toBe(
-      'Please Wait Before Sending Another Throwable'
-    );
-    expect(normalizeThrowableError('private lower-level failure')).toBe('Could Not Send Reaction');
   });
 });
 
@@ -154,7 +141,6 @@ describe('uncertain throw receipts', () => {
     await expect(throwableService.useThrowable('receipt-retry-user', 'beer')).resolves.toEqual({
       success: true,
       requestId: first.p_request_id,
-      idempotent: true,
     });
     expect(rpc.mock.calls[1][1]).toEqual(rpc.mock.calls[0][1]);
     expect(sessionStorage.getItem('throwable-pending:receipt-retry-user:beer')).toBeNull();
@@ -174,7 +160,6 @@ describe('uncertain throw receipts', () => {
     await expect(throwableService.useThrowable('receipt-restored-user', 'beer')).resolves.toEqual({
       success: false,
       error: 'Insufficient Diamonds',
-      retrySameRequest: false,
     });
     expect(rpc).toHaveBeenCalledWith('fn_use_throwable_v2', {
       p_throwable_id: 'beer',

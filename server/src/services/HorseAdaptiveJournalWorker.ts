@@ -1,14 +1,5 @@
 import { Worker } from 'node:worker_threads';
 import {
-  parseDiscoveryReceipt,
-  unknownDiscovery,
-  type DiscoveryReceipt,
-} from './horseAdaptiveJournal/discoveryReceipt.js';
-import {
-  parseCaptureQueueHealth,
-  type CaptureQueueHealth,
-} from './horseAdaptiveJournal/captureHealth.js';
-import {
   parseJournalQueueHealth,
   type JournalQueueHealth,
 } from './horseAdaptiveJournal/queueHealth.js';
@@ -33,19 +24,6 @@ export type JournalWorkerStatus = Readonly<{
   phase: 'stopped' | 'starting' | 'ready' | 'recovering' | 'failed' | 'stopping';
   cycles: number;
   completed: number;
-  capturesAdmitted: number;
-  captureSlicesContinued: number;
-  capturesRefined: number;
-  capturesRecovered: number;
-  captureGaps: number;
-  lastCapture: string | null;
-  modelsRecorded: number;
-  modelsRefused: number;
-  modelUncertain: number;
-  lastModel: string | null;
-  lastModelAt: number | null;
-  lastDiscovery: DiscoveryReceipt;
-  discoveryReceivedAt: number | null;
   quarantined: number;
   uncertain: number;
   restarts: number;
@@ -55,11 +33,8 @@ export type JournalWorkerStatus = Readonly<{
   lastMessageAt: number | null;
   queueHealth: JournalQueueHealth;
   queueHealthReceivedAt: number | null;
-  captureQueueHealth: CaptureQueueHealth;
-  captureQueueHealthReceivedAt: number | null;
 }>;
 const workStates = new Set([
-  'skipped',
   'unavailable',
   'idle',
   'completed',
@@ -69,23 +44,10 @@ const workStates = new Set([
   'lease_lost',
 ]);
 const retentionStates = new Set(['skipped', 'pruned', 'unavailable', 'unknown']);
-const captureStates = new Set([
-  'idle',
-  'admitted',
-  'continued',
-  'captured',
-  'refined',
-  'gap',
-  'deferred',
-  'unknown',
-  'unavailable',
-  'lease_lost',
-]);
 
 /** Explicit lifecycle ownership for one separate journal worker. Starting this
- * service discovers retained public actors and journals qualified observations;
- * it does not claim complete source coverage or activate a policy. Its bootstrap
- * owner must stop it before releasing that ownership. */
+ * service does not discover observations, claim completeness or activate a
+ * policy. Its bootstrap owner must stop it before releasing that ownership. */
 export class HorseAdaptiveJournalWorker {
   private desired = false;
   private owner: Owner | null = null;
@@ -97,19 +59,6 @@ export class HorseAdaptiveJournalWorker {
     phase: 'stopped',
     cycles: 0,
     completed: 0,
-    capturesAdmitted: 0,
-    captureSlicesContinued: 0,
-    capturesRefined: 0,
-    capturesRecovered: 0,
-    captureGaps: 0,
-    lastCapture: null,
-    modelsRecorded: 0,
-    modelsRefused: 0,
-    modelUncertain: 0,
-    lastModel: null,
-    lastModelAt: null,
-    lastDiscovery: unknownDiscovery(),
-    discoveryReceivedAt: null,
     quarantined: 0,
     uncertain: 0,
     restarts: 0,
@@ -119,8 +68,6 @@ export class HorseAdaptiveJournalWorker {
     lastMessageAt: null,
     queueHealth: Object.freeze({ status: 'unknown' }),
     queueHealthReceivedAt: null,
-    captureQueueHealth: Object.freeze({ status: 'unknown' }),
-    captureQueueHealthReceivedAt: null,
   };
   constructor(
     private readonly factory: () => Child = () =>
@@ -139,19 +86,7 @@ export class HorseAdaptiveJournalWorker {
       (h.status !== 'snapshot' || Math.abs(Date.now() - h.sampledAtMs) <= 75000)
         ? h
         : Object.freeze({ status: 'unknown' as const });
-    const c = this.summary.captureQueueHealth;
-    const captureHealth =
-      this.summary.phase === 'ready' &&
-      this.summary.captureQueueHealthReceivedAt !== null &&
-      Math.abs(Date.now() - this.summary.captureQueueHealthReceivedAt) <= 75000 &&
-      (c.status !== 'snapshot' || Math.abs(Date.now() - c.sampledAtMs) <= 75000)
-        ? c
-        : Object.freeze({ status: 'unknown' as const });
-    return Object.freeze({
-      ...this.summary,
-      queueHealth: health,
-      captureQueueHealth: captureHealth,
-    });
+    return Object.freeze({ ...this.summary, queueHealth: health });
   }
   start(): boolean {
     if (this.stopping || this.owner?.reaping) return false;
@@ -170,10 +105,6 @@ export class HorseAdaptiveJournalWorker {
       activeSince: null,
       queueHealth: Object.freeze({ status: 'unknown' }),
       queueHealthReceivedAt: null,
-      captureQueueHealth: Object.freeze({ status: 'unknown' }),
-      captureQueueHealthReceivedAt: null,
-      lastDiscovery: unknownDiscovery(),
-      discoveryReceivedAt: null,
     });
     let child: Child;
     try {
@@ -239,15 +170,6 @@ export class HorseAdaptiveJournalWorker {
       this.update({ lastMessageAt: owner.lastMessageAt });
       return;
     }
-    if (r.type === 'CAPTURE_HEALTH' && owner.ready && owner.activeAt !== null) {
-      this.update({
-        captureQueueHealth: parseCaptureQueueHealth(r.value),
-        captureQueueHealthReceivedAt: Date.now(),
-      });
-      owner.lastMessageAt = Date.now();
-      this.update({ lastMessageAt: owner.lastMessageAt });
-      return;
-    }
     if (r.type === 'QUEUE_HEALTH' && owner.ready && owner.activeAt !== null) {
       this.update({
         queueHealth: parseJournalQueueHealth(r.value),
@@ -270,67 +192,16 @@ export class HorseAdaptiveJournalWorker {
       typeof r.work === 'string' &&
       workStates.has(r.work) &&
       typeof r.retention === 'string' &&
-      retentionStates.has(r.retention) &&
-      (r.model !== undefined
-        ? r.work === 'skipped' &&
-          r.retention === 'skipped' &&
-          r.acquisition === undefined &&
-          r.discovery === undefined &&
-          typeof r.model === 'string' &&
-          [
-            'recorded',
-            'refused',
-            'idle',
-            'unknown',
-            'lease_lost',
-            'capacity_full',
-            'disabled',
-          ].includes(String(r.model))
-        : r.discovery !== undefined
-          ? r.work === 'skipped' && r.retention === 'skipped' && r.acquisition === undefined
-          : r.acquisition === undefined
-            ? r.work !== 'skipped'
-            : r.work === 'skipped' &&
-              r.retention === 'skipped' &&
-              typeof r.acquisition === 'string' &&
-              captureStates.has(r.acquisition))
+      retentionStates.has(r.retention)
     ) {
       owner.activeAt = null;
       this.update({
         cycles: this.summary.cycles + 1,
         completed: this.summary.completed + (r.work === 'completed' ? 1 : 0),
-        capturesAdmitted: this.summary.capturesAdmitted + (r.acquisition === 'admitted' ? 1 : 0),
-        captureSlicesContinued:
-          this.summary.captureSlicesContinued + (r.acquisition === 'continued' ? 1 : 0),
-        capturesRefined: this.summary.capturesRefined + (r.acquisition === 'refined' ? 1 : 0),
-        capturesRecovered: this.summary.capturesRecovered + (r.acquisition === 'captured' ? 1 : 0),
-        captureGaps: this.summary.captureGaps + (r.acquisition === 'gap' ? 1 : 0),
-        lastCapture: typeof r.acquisition === 'string' ? r.acquisition : this.summary.lastCapture,
-        modelsRecorded: this.summary.modelsRecorded + (r.model === 'recorded' ? 1 : 0),
-        modelsRefused:
-          this.summary.modelsRefused +
-          (r.model === 'refused' || r.model === 'capacity_full' ? 1 : 0),
-        modelUncertain:
-          this.summary.modelUncertain + (r.model === 'unknown' || r.model === 'lease_lost' ? 1 : 0),
-        lastModel: typeof r.model === 'string' ? r.model : this.summary.lastModel,
-        lastModelAt: typeof r.model === 'string' ? Date.now() : this.summary.lastModelAt,
-        lastDiscovery:
-          r.discovery !== undefined
-            ? parseDiscoveryReceipt(r.discovery)
-            : this.summary.lastDiscovery,
-        discoveryReceivedAt:
-          r.discovery !== undefined ? Date.now() : this.summary.discoveryReceivedAt,
         quarantined: this.summary.quarantined + (r.work === 'quarantined' ? 1 : 0),
         uncertain:
           this.summary.uncertain +
-          (['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(r.work) ||
-          ['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(String(r.acquisition)) ||
-          (r.discovery !== undefined &&
-            ['unavailable', 'deferred', 'unknown'].includes(
-              parseDiscoveryReceipt(r.discovery).status
-            ))
-            ? 1
-            : 0),
+          (['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(r.work) ? 1 : 0),
         lastWork: r.work,
         lastRetention: r.retention,
         activeSince: null,

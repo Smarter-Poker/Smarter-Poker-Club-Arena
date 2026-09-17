@@ -1,37 +1,26 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   TABLE SETTINGS - on the spade console (#ClubArenaConsole, 2026-09-13)
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  SETTINGS PANEL — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master with the crest lifted out and the rails bridged flat
-   (components/console/SpadeConsole.css, crest="flat"); this file only lays
-   the rows on the black glass between the rails, an engraved rule (a black
-   cut with a lit edge above it) between each. A switch is a lit word, the
-   animation speed is three lit words, the two painted plates in the foot are
-   the actions. The volume slider is the one control the art cannot paint,
-   and it runs up and down. Sizes are cqw against the console. No :hover
-   (tests/no-hover-effects.law.test.ts). No frame on a frame.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
 .settings-overlay {
-  --stp-rule: 1px solid #000;
-  --stp-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
   position: fixed;
   inset: 0;
-  z-index: 600;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: rgb(2 4 7 / 88%);
-  color: #e6e9ee;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  color-scheme: dark;
-  animation: stpFadeIn calc(0.2s * var(--animation-speed, 1)) ease;
+  justify-content: flex-end;
+  z-index: 600;
+  animation: fadeIn 0.2s ease;
 }
 
-@keyframes stpFadeIn {
+@keyframes fadeIn {
   from {
     opacity: 0;
   }
@@ -41,238 +30,392 @@
   }
 }
 
-/* The dialog is the console and nothing else. metallic-popups.css paints a
-   steel shell on .settings-panel with !important at 0,0,0 (a :where list);
-   these longhands at 0,2,0 switch it off so the art is the only frame. */
-.settings-panel.settings-panel {
-  width: min(100%, 560px);
-  min-width: 0;
-  height: auto;
-  margin: auto 0;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  outline: 0;
-  animation: stpRise calc(0.35s * var(--animation-speed, 1))
-    var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PANEL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-panel {
+  width: 380px;
+  max-width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(28, 33, 40, 0.95) 0%, rgba(22, 27, 34, 0.98) 100%);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    -10px 0 50px rgba(0, 0, 0, 0.5),
+    -2px 0 0 rgba(255, 255, 255, 0.04);
+  animation: settingsPanelSlideIn 0.35s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-@keyframes stpRise {
+@keyframes settingsPanelSlideIn {
   from {
-    transform: translateY(12px);
+    transform: translateX(100%);
     opacity: 0.8;
   }
 
   to {
-    transform: translateY(0);
+    transform: translateX(0);
     opacity: 1;
   }
 }
 
-.stp__console {
-  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
-}
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
-.settings-panel .sc__title,
-.settings-panel .sc__eyebrow {
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-}
-
-/* ── Sections and rows on the glass ─────────────────────────────────────── */
-
-.stp__section {
+/* SAFE AREA (Dan 2026-09-05, with a screenshot): on an iPhone this panel is
+   full-height, so its header sat UNDER the status bar and the Dynamic Island -
+   the title collided with the clock and the X could not be tapped at all. The
+   panel had no `env(safe-area-inset-*)` anywhere in the file. A full-bleed
+   sheet has to pay the inset itself; nothing above it will. */
+.settings-panel__header {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.stp__section + .stp__section {
-  padding-top: 3cqw;
-  border-top: var(--stp-rule);
-  box-shadow: var(--stp-rule-lit);
-}
-
-.stp__heading {
-  margin: 0 0 1cqw;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 2.7cqw;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.stp__row {
-  display: flex;
-  gap: 3cqw;
-  align-items: center;
   justify-content: space-between;
-  min-height: 44px;
-  padding: 2.2cqw 0;
-}
-
-.stp__row + .stp__row {
-  border-top: var(--stp-rule);
-  box-shadow: var(--stp-rule-lit);
-}
-
-.stp__info {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 0.6cqw;
-  min-width: 0;
-}
-
-.stp__label {
-  font-size: 3.9cqw;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.stp__desc {
-  color: #9aa5b3;
-  font:
-    500 3.1cqw/1.4 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.stp__eyebrow {
-  font-size: 2.4cqw;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.stp__value {
-  font-size: 3.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Lit words: the switch, the choice, the launcher ────────────────────── */
-
-.stp-word {
-  appearance: none;
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 2cqw;
   align-items: center;
-  justify-content: flex-end;
-  min-width: 14cqw;
+  padding: 20px;
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.settings-panel__header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(24, 119, 242, 0.3) 50%, transparent 100%);
+}
+
+.settings-panel__title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #e4e6eb;
+  margin: 0;
+}
+
+/* 44x44 is the smallest reliable touch target on iOS; the X was smaller and
+   sitting in the inset, which is two reasons it could not be hit. */
+.settings-panel__close {
+  min-width: 44px;
   min-height: 44px;
-  margin: 0;
-  padding: 1.6cqw 0;
-  border: 0;
-  background: transparent;
-  font:
-    800 4cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.16em;
-  text-align: right;
-  text-transform: uppercase;
-  white-space: nowrap;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.stp-word:active {
-  filter: brightness(1.25);
-}
-
-.stp-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.6cqw;
-}
-
-.stp__choices {
+  width: 36px;
+  height: 36px;
   display: flex;
-  flex: 0 0 auto;
-  gap: 3.4cqw;
-}
-
-.stp-word--choice {
-  min-width: 0;
-  font-size: 3.4cqw;
-}
-
-.stp-word--avatar {
-  gap: 2.4cqw;
-}
-
-/* metallic-popups.css bevels every button inside a dialog with !important
-   at 0,0,1. A lit word paints nothing: the longhands are restated at 0,3,0
-   (SpadeConsole.css does the same for its plates). */
-[role='dialog'] .stp-word.stp-word {
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-/* The avatar is the one picture in a row; it wears the hairline frame every
-   portrait in Club Arena wears, never a chrome ring. */
-.settings-avatar-preview {
-  width: 9cqw;
-  height: 9cqw;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 0.5px solid #000;
-}
-
-/* ── The slider: up and down, never side to side ────────────────────────── */
-
-.stp__row--slider {
-  align-items: stretch;
-}
-
-.settings-item__slider {
-  flex: 0 0 auto;
-  width: 44px;
-  height: 30cqw;
-  margin: 0;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  accent-color: #45adff;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  color: #8b949e;
+  font-size: 1.5rem;
   cursor: pointer;
-  touch-action: pan-x;
+  transition: all 0.2s ease;
 }
 
-/* metallic-popups.css recesses every input inside a dialog into a steel well
-   with !important; a range track is not a text field. */
-[role='dialog'] .settings-item__slider.settings-item__slider {
-  border: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
+.settings-panel__close:active {
+  transform: scale(0.95);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BODY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SECTION
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-section {
+  margin-bottom: 24px;
+}
+
+.settings-section__title {
+  padding: 0 20px;
+  margin: 0 0 12px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #1877f2;
+  text-shadow: 0 0 12px rgba(24, 119, 242, 0.2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SETTING ITEM
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  transition: background 0.15s ease;
+}
+
+.settings-item--toggle {
+  cursor: pointer;
+}
+
+.settings-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  margin-right: 16px;
+}
+
+.settings-item__label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #e4e6eb;
+}
+
+.settings-item__description {
+  font-size: 0.75rem;
+  color: #6e7681;
+}
+
+.settings-item__value {
+  font-size: 0.8125rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: #8b949e;
+}
+
+/* Slider */
+.settings-item__slider {
+  width: 100%;
+  height: 6px;
+  margin-top: 8px;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  outline: none;
+}
+
+.settings-item__slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  background: #1877f2;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .settings-item__slider:disabled {
   opacity: 0.3;
-  cursor: not-allowed;
 }
 
-.settings-item__slider:focus-visible {
-  outline: 2px solid #8fd4ff;
-  outline-offset: 2px;
+/* Select */
+.settings-item__select select {
+  padding: 8px 12px;
+  font-size: 16px; /* was 0.8125rem; under 16px makes iOS zoom the page on focus */
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #e4e6eb;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
 }
 
-/* Reduced motion collapses the motion, never the meaning: the rows are
-   simply there. */
-@media (prefers-reduced-motion: reduce) {
-  .settings-overlay,
-  .settings-panel.settings-panel {
-    animation: none;
+.settings-item__select select:focus {
+  border-color: #1877f2;
+  box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOGGLE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-toggle {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.settings-toggle input {
+  display: none;
+}
+
+.settings-toggle__slider {
+  display: block;
+  width: 44px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-toggle__slider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.settings-toggle input:checked + .settings-toggle__slider {
+  background: #3fb950;
+  border-color: rgba(63, 185, 80, 0.3);
+  box-shadow: 0 0 12px rgba(63, 185, 80, 0.2);
+}
+
+.settings-toggle input:checked + .settings-toggle__slider::after {
+  left: 22px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Same reason as the header: the home indicator sits over the last ~34px, so
+   Reset To Defaults was flush against it and hard to press. */
+.settings-panel__footer {
+  padding: 16px 20px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  background: rgba(0, 0, 0, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative;
+}
+
+.settings-panel__footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+}
+
+.settings-panel__reset {
+  width: 100%;
+  padding: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #8b949e;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-panel__reset:active {
+  transform: scale(0.98);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .settings-panel {
+    width: 100%;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CUSTOMIZATION SECTION
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-item--action {
+  cursor: pointer;
+}
+.settings-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(24, 119, 242, 0.12);
+  border: 1px solid rgba(24, 119, 242, 0.25);
+  border-radius: 10px;
+  color: #60a5fa;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.settings-avatar-preview {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.settings-item--studio {
+  position: relative;
+  overflow: hidden;
+  margin-top: 8px;
+  padding: 14px 12px;
+  border: 1px solid rgba(174, 185, 195, 0.25);
+  border-left: 3px solid #36b9ff;
+  border-radius: 4px;
+  background:
+    linear-gradient(110deg, rgba(54, 185, 255, 0.14), transparent 42%),
+    linear-gradient(145deg, #17212a, #090e13);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.06),
+    0 9px 24px rgba(0, 0, 0, 0.26);
+}
+
+.settings-item--studio::after {
+  content: '';
+  position: absolute;
+  right: -26px;
+  top: -38px;
+  width: 90px;
+  height: 90px;
+  border: 1px solid rgba(215, 173, 88, 0.16);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.settings-item__eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #67caff;
+  font:
+    800 9px/1 'JetBrains Mono',
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.settings-action-btn--studio {
+  position: relative;
+  z-index: 1;
+  min-height: 42px;
+  flex: 0 0 auto;
+  border: 1px solid #73d2ff;
+  border-radius: 3px;
+  color: #061019;
+  background: linear-gradient(#6ed1ff, #249bd3);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.55),
+    0 0 16px rgba(54, 185, 255, 0.16);
+  font-family: 'Rajdhani', Inter, sans-serif;
+  letter-spacing: 0.035em;
 }

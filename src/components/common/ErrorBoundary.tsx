@@ -1,17 +1,5 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  ERROR BOUNDARY — Sentry-Enhanced Error Handling
- * ═══════════════════════════════════════════════════════════════════════════════
- * Catches React rendering errors and reports them to Sentry with full context.
- * Provides user feedback dialog for error reporting.
- *
- * Uses lazy-loaded Sentry via dynamic import — no static @sentry/react import,
- * keeping the error boundary out of the critical bundle path.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-
 import { Component, ErrorInfo, ReactNode } from 'react';
-import { getSentryAsync } from '../../core/SentryInit';
+import { reportError } from '../../utils/errorReporter';
 
 interface Props {
   children: ReactNode;
@@ -20,7 +8,6 @@ interface Props {
 
 interface State {
   hasError: boolean;
-  eventId: string | null;
 }
 
 class ErrorBoundary extends Component<Props, State> {
@@ -28,16 +15,15 @@ class ErrorBoundary extends Component<Props, State> {
     super(props);
     this.state = {
       hasError: false,
-      eventId: null,
     };
   }
 
   static getDerivedStateFromError(_: Error): State {
-    return { hasError: true, eventId: null };
+    return { hasError: true };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    reportError(error, 'ErrorBoundary', { componentStack: errorInfo.componentStack });
 
     // Auto-reload on stale chunk errors (happens after new deployments)
     if (
@@ -80,42 +66,7 @@ class ErrorBoundary extends Component<Props, State> {
       }
       return;
     }
-
-    // Capture exception with Sentry (lazy-loaded) and get event ID
-    getSentryAsync()
-      .then((Sentry) => {
-        if (!Sentry) return;
-        Sentry.withScope((scope) => {
-          scope.setContext('react', {
-            componentStack: errorInfo.componentStack,
-          });
-
-          const eventId = Sentry.captureException(error);
-          this.setState({ eventId });
-        });
-      })
-      .catch(() => {
-        /* Sentry unavailable */
-      });
   }
-
-  handleReportClick = () => {
-    if (!this.state.eventId) return;
-    const eventId = this.state.eventId;
-    getSentryAsync()
-      .then((Sentry) => {
-        if (!Sentry) return;
-        Sentry.showReportDialog({
-          eventId,
-          title: 'Help Us Fix This Issue',
-          subtitle: 'Tell Us What Happened',
-          subtitle2: 'Your feedback helps us improve Club Arena',
-        });
-      })
-      .catch(() => {
-        /* Sentry unavailable */
-      });
-  };
 
   render() {
     if (this.state.hasError) {
@@ -171,8 +122,8 @@ class ErrorBoundary extends Component<Props, State> {
                   lineHeight: '1.6',
                 }}
               >
-                We've Been Notified And Are Working On A Fix. You Can Help Us By Providing More
-                Details About What Happened.
+                Please Reload The Page. If The Problem Continues, Contact Support And Describe What
+                Happened.
               </p>
 
               <div
@@ -183,25 +134,6 @@ class ErrorBoundary extends Component<Props, State> {
                   flexWrap: 'wrap',
                 }}
               >
-                {this.state.eventId && (
-                  <button
-                    onClick={this.handleReportClick}
-                    style={{
-                      padding: '0.75rem 1.5rem',
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '1rem',
-                      fontWeight: '500',
-                      cursor: 'pointer',
-                      transition: 'transform 0.2s',
-                    }}
-                  >
-                    Report Feedback
-                  </button>
-                )}
-
                 <button
                   onClick={() => window.location.reload()}
                   style={{
@@ -219,18 +151,6 @@ class ErrorBoundary extends Component<Props, State> {
                   Reload Page
                 </button>
               </div>
-
-              {this.state.eventId && (
-                <p
-                  style={{
-                    marginTop: '2rem',
-                    fontSize: '0.875rem',
-                    color: 'rgba(255, 255, 255, 0.5)',
-                  }}
-                >
-                  Error ID: {this.state.eventId}
-                </p>
-              )}
             </div>
           </div>
         )

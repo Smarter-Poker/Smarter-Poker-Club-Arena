@@ -60,14 +60,6 @@ Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
 });
 
-// Mock Sentry
-vi.mock('@sentry/react', () => ({
-  captureException: vi.fn(),
-  withErrorBoundary: (component: any) => component,
-  withScope: vi.fn((callback) => callback({ setContext: vi.fn() })),
-  showReportDialog: vi.fn(),
-}));
-
 // Mock Supabase
 //
 // TEST-INFRA FIX 2026-08-15: `from: vi.fn()` returns UNDEFINED, so the very
@@ -99,10 +91,35 @@ vi.mock('../src/lib/supabase', () => ({
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
       for (const method of [
-        'select', 'insert', 'update', 'upsert', 'delete', 'eq', 'neq', 'gt',
-        'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in', 'contains',
-        'containedBy', 'rangeGt', 'rangeLt', 'overlaps', 'match', 'not', 'or',
-        'filter', 'order', 'limit', 'range', 'abortSignal', 'returns',
+        'select',
+        'insert',
+        'update',
+        'upsert',
+        'delete',
+        'eq',
+        'neq',
+        'gt',
+        'gte',
+        'lt',
+        'lte',
+        'like',
+        'ilike',
+        'is',
+        'in',
+        'contains',
+        'containedBy',
+        'rangeGt',
+        'rangeLt',
+        'overlaps',
+        'match',
+        'not',
+        'or',
+        'filter',
+        'order',
+        'limit',
+        'range',
+        'abortSignal',
+        'returns',
       ]) {
         builder[method] = vi.fn(chain);
       }

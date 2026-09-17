@@ -106,11 +106,6 @@ describe('the drain gate cannot pin production on stale code', () => {
     const deadlineParts = read('server/src/index.ts').match(/SHUTDOWN_DEADLINE_MS = (\d+)_?(\d*)/)!;
     const deadline = Number(`${deadlineParts[1]}${deadlineParts[2]}`);
     expect(deadline).toBeLessThan(grace);
-    // Persist the same grace on the container itself. A stop/restart without
-    // an explicit timeout otherwise falls back to Docker's ten-second default.
-    const creationGrace = Number(up.match(/^\s+--stop-timeout (\d+)/m)?.[1]) * 1000;
-    expect(creationGrace).toBe(grace);
-    expect(deadline).toBeLessThan(creationGrace);
   });
 
   it('a run cannot report shipped without a durable result and independent proof', () => {

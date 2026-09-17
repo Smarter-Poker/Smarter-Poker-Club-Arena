@@ -8,8 +8,7 @@ import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { calculateContestablePot } from '../PokerEngine.js';
-import { horseVariantRulesFor } from '../VariantRules.js';
-import { horsePolicyRegistration } from '../HorsePolicyRegistry.js';
+import { horseVariantRulesFor, isKnownVariant } from '../VariantRules.js';
 import { buildJointCardLayout, type JointCardLayoutInput } from '../multiway/JointCardLayout.js';
 import { validateDealtSeatCensus } from '../multiway/DealtSeatCensus.js';
 import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
@@ -59,7 +58,7 @@ import type {
   CommitDecisionEffectsRequest,
   HorseDecisionStatusRequest,
 } from './protocol.js';
-import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
+import { buildHorseDecisionKey } from './protocol.js';
 
 export interface HorseDecisionWorkerDependencies {
   startServices(): Promise<HorseDecisionWorkerReadiness>;
@@ -518,8 +517,7 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('horse state contains private seat cards');
     }
-    if (!horsePolicyRegistration(gs.gameVariant))
-      throw new Error('horse state gameVariant has no canonical policy owner');
+    if (!isKnownVariant(gs.gameVariant)) throw new Error('horse state gameVariant is unknown');
     const expectedRules = horseVariantRulesFor(gs.gameVariant);
     const rules = gs.variantRules;
     if (
@@ -1035,10 +1033,7 @@ export class HorseDecisionWorkerRuntime {
 
   private executeFast(request: FastHorseDecisionRequest): void {
     const canonicalRng = this.deps.saveRng();
-    const rngBefore = this.requestRngSeed(
-      { ...request, decisionKey: validatedHorsePolicySamplingKey(request) },
-      'fast'
-    );
+    const rngBefore = this.requestRngSeed(request, 'fast');
     this.deps.restoreRng(rngBefore);
     const startedAt = this.deps.now();
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;
@@ -1072,10 +1067,7 @@ export class HorseDecisionWorkerRuntime {
       rngAfter,
       computeMs,
       governorScale,
-      // A caught policy failure may have prepared plans before degrading to
-      // check/fold. Those plans do not belong to the fallback action and must
-      // never reach the later authoritative effect-commit path.
-      effects: captured.value.policyFallback === 'brain_exception' ? [] : captured.effects,
+      effects: captured.effects,
     });
   }
 

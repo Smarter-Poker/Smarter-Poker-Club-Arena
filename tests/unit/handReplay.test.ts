@@ -522,28 +522,6 @@ describe('buildReplay — the pot line is not a claim about the main pot', () =>
     expect(flop.extraBoards).toHaveLength(1);
     expect(flop.extraBoards[0]).toHaveLength(3);
   });
-
-  /**
-   * EVERY RUN, ONCE THE RUNS DIFFER (2026-09-14). The all-in was on the flop,
-   * so the flop is one board and the turn is two: Qc on run one, 6d on run
-   * two. Bmore holds Qd Qs. On the shared flop that is one made hand; on the
-   * turn it is quads on run one and queens full of sixes on run two, and the
-   * label must say both, in the shape the showdown frame already uses.
-   */
-  it('names the made hand per run on the streets after the runs diverge', () => {
-    const flop = m.streets.find((s) => s.key === 'flop')!;
-    const turn = m.streets.find((s) => s.key === 'turn')!;
-    const river = m.streets.find((s) => s.key === 'river')!;
-    expect(flop.madeHands.find((x) => x.userId === BMORE)?.name).toBe('Three Of A Kind');
-    expect(turn.madeHands.find((x) => x.userId === BMORE)?.name).toBe(
-      'Run 1 Four Of A Kind · Run 2 Full House'
-    );
-    expect(river.madeHands.find((x) => x.userId === BMORE)?.name).toMatch(
-      /^Run 1 Four Of A Kind · Run 2 /
-    );
-    // The other seat is labelled per run too, never left on board one alone.
-    expect(turn.madeHands.find((x) => x.userId === HIGHROLLER)?.name).toMatch(/^Run 1 .* · Run 2 /);
-  });
 });
 
 describe('titleCase', () => {

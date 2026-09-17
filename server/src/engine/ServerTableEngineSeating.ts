@@ -82,12 +82,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const maxBuyIn = this.getMaxBuyIn();
     const midHand = !!this.handController;
 
-    // A Diamond CASH seat tops up through custody. A Diamond TOURNAMENT seat
-    // has no top-up (seatCanAddFunds says so, the custody door refuses a
-    // tournament table, and a tournament rebuy is the manager's own door), so
-    // it takes the chip tournament path below and is refused there exactly as
-    // a chip tournament seat is: a tournament table has no buy-in headroom.
-    if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
+    if (this.tableInfo?.arena?.asset === 'diamonds') {
       return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
     }
 
@@ -418,7 +413,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * next engine start) picks it up. Nothing is dropped on the floor.
    */
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
-    if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
+    if (this.tableInfo?.arena?.asset === 'diamonds') {
       /* This used to return here and nothing else, because a Diamond seat had
          no mid-hand lane at all. It has one now, and it is an INTENT lane: no
          `table_pending_addons` row was ever written, so there is nothing for

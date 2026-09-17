@@ -57,17 +57,6 @@ const NEAR_MISS_LABELS: Record<string, string> = {
   mini_loser_below_bar: 'Mini: Losing Hand Below The Qualifying Bar',
   mini_double_board: 'Mini: Double Board Hand',
   unspecified: 'Reason Not Recorded',
-  /* THE PAYOUT'S OWN REFUSALS (2026-09-12). These arrive as the suffix of a
-     `mini_refused:<reason>` row - a hand that CLEARED the bar and was turned
-     away by fn_bbj_mini_payout - and without a label each rendered as raw
-     snake_case to an operator, on the one row on this panel that is an
-     incident rather than a statistic. The five are the complete set that
-     function can return; `theMiniBarIsPerVariant` holds this list against it. */
-  reserve_at_floor: 'The Backup Reserve Was At Its Floor',
-  mini_disabled_for_club: 'The Mini Was Switched Off For This Club',
-  mini_disabled_for_tier: 'The Mini Was Switched Off For These Stakes',
-  no_mini_amount_for_tier: 'No Mini Amount Is Set For These Stakes',
-  pool_not_found: 'The Jackpot Pool Could Not Be Found',
 };
 
 function nearMissLabel(reason: string | null | undefined): string {

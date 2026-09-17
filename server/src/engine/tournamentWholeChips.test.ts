@@ -104,11 +104,7 @@ describe('the invariant is asserted where the payload is built, not after the fa
     );
     const call = SETTLEMENT.indexOf('checkTournamentWholeChips(');
     expect(call).toBeGreaterThan(0);
-    // The observer returns the original commit promise. Pin the awaited
-    // operation and its captured hand identity as well as the gate order.
-    const commit = SETTLEMENT.search(
-      /result = await this\.observeSettlementAwait\(\s*'hand_history_write',\s*persistenceGeneration,\s*snap\.handNumber,\s*commitAuthoritativeHand\s*\)/
-    );
+    const commit = SETTLEMENT.indexOf('result = await commitAuthoritativeHand();');
     expect(commit).toBeGreaterThan(0);
     expect(call).toBeLessThan(commit);
     expect(SETTLEMENT).toContain("'Tournament.fractional_seat_stack'");

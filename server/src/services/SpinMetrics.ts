@@ -107,7 +107,7 @@ export interface SpinMetricsSnapshot {
   secondsSinceLastStart: number | null;
   /** Spin boards sitting in REGISTERING. Pairs with the number above. */
   openBoards: number;
-  /** Partly filled, open, unstarted Spins; the view does not filter wait age or draws. */
+  /** Spins sitting open past their fill deadline. */
   unfilledWaits: number;
   /** Clubs whose reserve pool cannot cover the top tier. */
   reserveThinClubs: number;
@@ -345,7 +345,7 @@ export class SpinMetrics {
     );
     gauge(
       'poker_spin_unfilled_waits',
-      'Partly filled, open Spins with no recorded start; count includes all wait ages and booked draws',
+      'Spins sitting open past their fill deadline',
       s.unfilledWaits
     );
     gauge(

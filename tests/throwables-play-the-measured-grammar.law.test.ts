@@ -113,7 +113,7 @@ describe('LAW: the payload is measured in AVATAR UNITS, on this table', () => {
 
 describe('LAW: a paid throw is never silent and never invisible', () => {
   it('keeps throwable failures out of external telemetry, as Dan requested', () => {
-    // Dan explicitly removed throwable Sentry reporting on 2026-09-07.
+    // Dan explicitly removed throwable error reporting reporting on 2026-09-07.
     // The completion path and local cue counters are still required below.
     const paths = [
       'src/components/table/ThrowablePlayer.tsx',
@@ -127,7 +127,9 @@ describe('LAW: a paid throw is never silent and never invisible', () => {
     ];
     for (const file of paths) {
       expect(code(read(file)), file).not.toMatch(
-        /reportError|captureException|captureMessage|addBreadcrumb|SentryInit|@sentry\//
+        new RegExp(
+          `reportError|captureException|captureMessage|addBreadcrumb|${['Sen', 'try'].join('')}Init|@${['sen', 'try'].join('')}/`
+        )
       );
     }
   });

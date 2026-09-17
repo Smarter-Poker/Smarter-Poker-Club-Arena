@@ -887,7 +887,6 @@
     }
   ],
   "unexercised_trigger_branches_not_expanded": [
-    "fn_accounting_transfer_document_on_insert",
     "fn_ca_attested_day_is_restated",
     "fn_ca_capture_tournament_charge_entitlement",
     "fn_ca_escrow_on_overlay_leg",
@@ -1431,5 +1430,11 @@
       "body_sha256": "540a91a39157f4bbff88c516a04cca29d1c32f59c974b94f9ca5cd3f0de3b87d",
       "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/outputs/diamond-games-source-preparation-20260915/financial-closure/fixture-composition-20260916/ledger-trigger-functions.json"
     }
-  ]
+  ],
+  "bank_fallback_extension": {
+    "schema_provenance": "schema-provenance.json",
+    "function_provenance": "function-provenance.json",
+    "probe": "tests/sql/diamond-games-bank-fallback.sql",
+    "scope": "Actual bank payout invoice/delivery closure; original accepted table/function witnesses remain preserved below."
+  }
 }

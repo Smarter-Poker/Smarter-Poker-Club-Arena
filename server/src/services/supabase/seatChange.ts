@@ -56,7 +56,7 @@ export function seatChangeRefusalCode(message: string | null | undefined): strin
  *
  * `toTableId` null means "any table but Main 1", which is what the client's
  * own Request Any Table button sends. An ordinary refusal is NOT reported to
- * Sentry - a horse being told SEAT_CHANGE_NO_OTHER_TABLE is the system
+ * error reporting - a horse being told SEAT_CHANGE_NO_OTHER_TABLE is the system
  * working - but an unexpected failure is, because a door that has started
  * refusing everybody is worth knowing about.
  */

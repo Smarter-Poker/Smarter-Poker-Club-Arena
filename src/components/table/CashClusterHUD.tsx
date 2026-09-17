@@ -42,14 +42,17 @@
  * used here yet. The markup, the test ids and every sentence are unchanged.
  */
 
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  fetchCashGameLobby,
   joinCashGame,
   joinGameRefusalText,
   pendingMoveNotice,
   waitlistedText,
+  type CashGameLobby,
 } from '../../services/cashGameLobby';
 import { useToast } from '../common/Toast';
-import { useCashGameLobby } from './useCashGameLobby';
+import { isGameGone } from './mustMoveLobbyCopy';
 import './CashClusterHUD.css';
 
 export const CASH_CLUSTER_HUD_POLL_MS = 10_000;
@@ -76,12 +79,37 @@ export function CashClusterHUD({
   onGoToTable,
 }: CashClusterHUDProps) {
   const toast = useToast();
-  const {
-    lobby,
-    busy: joining,
-    load,
-    beginAction,
-  } = useCashGameLobby(gameId, true, CASH_CLUSTER_HUD_POLL_MS, refreshKey);
+  const [lobby, setLobby] = useState<CashGameLobby | null>(null);
+  const [joining, setJoining] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchCashGameLobby(gameId);
+      if (mountedRef.current) setLobby(data);
+    } catch (err) {
+      /* A passing failure keeps the last read - the poll is still running and
+         the lobby itself reports errors. A game that is GONE is different
+         (audit 2026-09-09, lane H): this corner used to keep its last figures
+         through GAME_NOT_FOUND too, so a stale tab on a table whose game had
+         closed kept a lit SEAT CHANGE button that opened a lobby for a ghost.
+         Nothing read for a game that no longer exists is worth keeping. */
+      if (mountedRef.current && isGameGone(err)) setLobby(null);
+    }
+  }, [gameId]);
+
+  useEffect(() => {
+    void load();
+    const id = window.setInterval(() => void load(), CASH_CLUSTER_HUD_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [load, refreshKey]);
 
   const me = lobby?.me ?? null;
   const moveNotice = me?.seated ? pendingMoveNotice(me.pending_move) : null;
@@ -110,11 +138,10 @@ export function CashClusterHUD({
   const chairOpenInCluster = openTables.length > 0;
 
   const takeChair = async () => {
-    const action = beginAction();
-    if (!action) return;
+    if (joining) return;
+    setJoining(true);
     try {
       const r = await joinCashGame(gameId);
-      if (!action.isCurrent()) return;
       if (r.action === 'waitlisted') {
         toast.info(waitlistedText(r));
       } else if (r.table_id) {
@@ -122,9 +149,9 @@ export function CashClusterHUD({
       }
       await load();
     } catch (err) {
-      if (action.isCurrent()) toast.warning(joinGameRefusalText(err));
+      toast.warning(joinGameRefusalText(err));
     } finally {
-      action.finish();
+      if (mountedRef.current) setJoining(false);
     }
   };
 

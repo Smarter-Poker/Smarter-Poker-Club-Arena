@@ -835,21 +835,25 @@ if EXACT_INSTANCE="$(exact_runtime_instance)"; then
 fi
 release_engine_lock
 
-# The same original timeout now bounds only immutable local-image validation
-# and the host image lock. Hetzner cannot compile: absence or mismatch refuses
-# before release mutation. Forward-only source admission is repeated afterward.
-# Keep the original maximum budget and absolute not-after epoch unchanged.
+# The durable unit, not the SSH session, owns image construction. The outer
+# timeout bounds both the host build-lock wait and Docker itself. A source
+# check after the build repeats protected-main containment and the sealed
+# high-water ordering before the candidate waits for a certified table break.
 assert_time_remaining
 create_image_lease
+# The builder owns up to 1,800s of FIFO lock wait and 1,500s of bounded Docker
+# work. Its parent must cover both phases; otherwise a current SHA queued
+# behind a stale long build can be killed five minutes into its own build and
+# leave no surviving release for the next certified break.
 BUILD_REMAINING="$(remaining_seconds)" \
-  || die 'immutable release not-after epoch expired before image validation'
+  || die 'immutable release not-after epoch expired before image construction'
 [ "$BUILD_REMAINING" -gt 16 ] \
-  || die 'immutable release not-after epoch has no bounded image-validation budget'
+  || die 'immutable release not-after epoch has no bounded image-build budget'
 BUILD_TIMEOUT=$((BUILD_REMAINING - 16))
 [ "$BUILD_TIMEOUT" -le 3450 ] || BUILD_TIMEOUT=3450
 timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
-  "$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF" --require-prebuilt \
-  || die 'required locally built immutable engine image is unavailable'
+  "$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF" \
+  || die 'bounded immutable engine image build failed'
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
 

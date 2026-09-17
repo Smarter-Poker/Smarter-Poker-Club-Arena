@@ -9,7 +9,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import { HORSE_REVIEW_SIGNAL_KEYS } from '../HorseReviewSignals.js';
 
 import type { HorseDecideOpts, HorseGameStateV2, HorseProfileMods } from '../HorseLogic.js';
 import type { HorseMindDecisionEffect, ReadScope } from '../HorseMind.js';
@@ -36,7 +35,7 @@ export type LiveHorseDecideOpts = Omit<
 export interface LiveHorseDecisionSnapshot extends HorseDecisionFence {
   /** Epoch captured while this turn snapshot was authoritative, before FIFO wait. */
   decisionTimeMs: number;
-  /** Full input digest, including diagnostic evidence, validated by the worker. */
+  /** Stable serialization of the hand/decision state that keys mixed strategy. */
   decisionKey: string;
   player: SeatPlayer;
   gameState: HorseGameStateV2;
@@ -76,8 +75,8 @@ function canonicalDecisionValue(value: unknown, path = '$'): unknown {
 }
 
 /**
- * Bind worker validation to every supplied decision input, including diagnostics.
- * The raw millisecond clock is reduced to the exact hour bucket used by
+ * Bind deterministic mixed-strategy sampling to every input HorseLogic can
+ * read. The raw millisecond clock is reduced to the exact hour bucket used by
  * moodOf(), so same-hour replay is stable while an actual strategy input is
  * not omitted. The digest keeps hero cards and public hand history out of log
  * keys without weakening worker-side equality validation.
@@ -95,37 +94,6 @@ export function buildHorseDecisionKey(input: HorseDecisionKeyInput): string {
   });
   const digest = createHash('sha256').update(JSON.stringify(material)).digest('hex');
   return `phase5-v1:${digest}`;
-}
-
-/**
- * Sampling excludes observational evidence; the FULL decision key above still
- * validates it. Empty option/modifier bags normalize to absent, so adding only
- * review metadata cannot choose another mixed strategy. Authored modifiers,
- * persona, state, fence, decision hour and all other options remain bound.
- * Reuse the digest only after the caller has validated the full request key.
- */
-export function validatedHorsePolicySamplingKey(
-  input: HorseDecisionKeyInput & { decisionKey: string }
-): string {
-  function project<T extends object>(
-    value: T | undefined,
-    excluded: readonly string[]
-  ): T | undefined {
-    if (!value) return undefined;
-    const entries = Object.entries(value).filter(
-      ([key, item]) => item !== undefined && !excluded.includes(key)
-    );
-    if (!entries.length) return undefined;
-    return entries.length === Object.keys(value).length
-      ? value
-      : (Object.fromEntries(entries) as T);
-  }
-  const mods = project(input.mods, HORSE_REVIEW_SIGNAL_KEYS);
-  // Legacy v41Leaks now controls diagnostic telemetry only.
-  const opts = project(input.opts, ['v41Leaks']);
-  return mods === input.mods && opts === input.opts
-    ? input.decisionKey
-    : buildHorseDecisionKey({ ...input, mods, opts });
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {

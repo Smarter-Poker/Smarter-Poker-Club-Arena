@@ -22,7 +22,7 @@
  * and whether they already bought it. A client copy of those rules would be a
  * second authority to drift from.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import type { Card, RabbitHuntRevealResult } from './RabbitHunt';
@@ -66,67 +66,23 @@ export function useRabbitHuntReveal({
   const [cards, setCards] = useState<Card[]>([]);
   const [vipRemaining, setVipRemaining] = useState<number | null>(null);
   const [packRemaining, setPackRemaining] = useState<number | null>(null);
-  const [stateUserId, setStateUserId] = useState(userId);
   /* State does not update until React renders. This synchronous mutex makes
      the paid endpoint single-flight even when two taps land in one frame. */
   const inFlightRef = useRef(false);
-  const requestRef = useRef(0);
-  const activeUserRef = useRef(userId);
-
-  // Auth can change while the atomic charge-and-reveal call is pending. Mark
-  // the old continuation stale during render, before an account-change effect
-  // can run, and release the replacement account from the old account's lock.
-  if (activeUserRef.current !== userId) {
-    activeUserRef.current = userId;
-    requestRef.current += 1;
-    inFlightRef.current = false;
-  }
-
-  const stateBelongsToActiveUser = stateUserId === userId;
-  const visibleIsRevealing = stateBelongsToActiveUser ? isRevealing : false;
-  const visibleHasRevealed = stateBelongsToActiveUser ? hasRevealed : false;
-  const visibleCards = stateBelongsToActiveUser ? cards : [];
-  const visibleVipRemaining = stateBelongsToActiveUser ? vipRemaining : null;
-  const visiblePackRemaining = stateBelongsToActiveUser ? packRemaining : null;
-
-  useEffect(() => {
-    setStateUserId(userId);
-    setIsRevealing(false);
-    setHasRevealed(false);
-    setCards([]);
-    setVipRemaining(null);
-    setPackRemaining(null);
-  }, [userId]);
 
   const reset = useCallback(() => {
-    requestRef.current += 1;
-    inFlightRef.current = false;
-    setStateUserId(activeUserRef.current);
-    setIsRevealing(false);
     setCards([]);
     setHasRevealed(false);
-    setVipRemaining(null);
-    setPackRemaining(null);
-  }, []);
-
-  const setActiveVipRemaining = useCallback((remaining: number | null) => {
-    setStateUserId(activeUserRef.current);
-    setVipRemaining(remaining);
   }, []);
 
   const reveal = useCallback(
     async (handNumber?: number) => {
-      if (inFlightRef.current || visibleIsRevealing || visibleHasRevealed || disabled) return;
+      if (inFlightRef.current || isRevealing || hasRevealed || disabled) return;
       if (!userId) {
         toast.error('Please Log In To Use Rabbit Hunt');
         return;
       }
-      const requestedUserId = userId;
-      const requestId = ++requestRef.current;
-      const isCurrentRequest = () =>
-        activeUserRef.current === requestedUserId && requestRef.current === requestId;
       inFlightRef.current = true;
-      setStateUserId(requestedUserId);
       setIsRevealing(true);
       try {
         /* One call: it charges and returns the cards, or it charges nothing
@@ -134,10 +90,10 @@ export function useRabbitHuntReveal({
            has no cards - the failure the old fetch-then-charge dance could
            not close from the client. */
         const result = await onReveal(handNumber);
-        if (!isCurrentRequest()) return;
 
         if (!result.success || !result.cards || result.cards.length === 0) {
           toast.error(result.error || 'Rabbit Hunt Is Not Available For This Hand');
+          setIsRevealing(false);
           return;
         }
 
@@ -161,28 +117,24 @@ export function useRabbitHuntReveal({
         setCards(result.cards);
         setHasRevealed(true);
       } catch (error) {
-        if (isCurrentRequest()) {
-          reportError(error, 'RabbitHunt.Rabbit_hunt_failed');
-          toast.error('Rabbit Hunt Failed');
-        }
+        reportError(error, 'RabbitHunt.Rabbit_hunt_failed');
+        toast.error('Rabbit Hunt Failed');
       } finally {
-        if (isCurrentRequest()) {
-          inFlightRef.current = false;
-          setIsRevealing(false);
-        }
+        inFlightRef.current = false;
+        setIsRevealing(false);
       }
     },
-    [disabled, onReveal, toast, userId, visibleHasRevealed, visibleIsRevealing]
+    [disabled, hasRevealed, isRevealing, onReveal, toast, userId]
   );
 
   return {
     reveal,
-    isRevealing: visibleIsRevealing,
-    hasRevealed: visibleHasRevealed,
-    cards: visibleCards,
-    vipRemaining: visibleVipRemaining,
-    packRemaining: visiblePackRemaining,
+    isRevealing,
+    hasRevealed,
+    cards,
+    vipRemaining,
+    packRemaining,
     reset,
-    setVipRemaining: setActiveVipRemaining,
+    setVipRemaining,
   };
 }

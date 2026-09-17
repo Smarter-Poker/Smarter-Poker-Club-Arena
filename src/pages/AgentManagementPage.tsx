@@ -4,47 +4,17 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * Admin dashboard for managing agents, commissions, and credit lines
  * Real Supabase integration — no demo data
- *
- * ── #ClubArenaConsole (2026-09-09) ────────────────────────────────────────
- * The page was a gradient header bar with two pill buttons, a four-tile
- * summary grid, a six-pill tab rail, a stack of rounded agent cards each
- * carrying an avatar disc, five capsule badges, a four-tile stat grid, a
- * three-tile wallet row and a drawn progress bar, and TWO BORDERED HTML
- * TABLES (credit limits, payables) that ran off the side of a 393px phone.
- * It is now printed on Dan's approved spade master: one console per section,
- * every figure a row on the black glass with its label in the master's lit
- * blue on the left and its value in engraved silver on the right, separated
- * by the engraved rule the master cuts between its own rows. The two tables
- * are one row per agent with their fields stacked as label/value pairs.
- *
- * WHAT DID NOT CHANGE, AND MUST NOT. This page moves real chips and changes
- * real permissions, so every one of these is byte-identical: handleCreateAgent,
- * handleSetCreditLimit, handleSuspendAgent, handleReinstateAgent,
- * handlePromoteAgent, executeBan (fn_ca_ban_club_player, its reason minimum
- * and its expiry options), AgentService.claimBackDistribution and its confirm
- * dialog, the ChipTransferModal / PlayerInviteModal / CommissionHistoryModal
- * wiring (userId, never agent.id), the QUERY_LIMITS cap notice, the swipe
- * handlers, the stagger timers, and every commission, rakeback and credit
- * figure. Not one number, gate or handler was touched - only what draws them.
- *
- * THE FIGURES STAY EXACT. `compactChips` is used for the COUNTS in the
- * summary. It is not used for the money: a credit limit, a credit draw and an
- * unsettled commission are the sums an operator sets and then pays, and
- * `compactChips` floors below 1,000 - it would print a 750.40 commission as
- * "750" on the screen the club pays it from. `formatMoney` is untouched.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './AgentManagementPage.module.css';
-import StandardContentLayout from '../components/layouts/StandardContentLayout';
-import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import ConfirmModal from '@/components/common/ConfirmModal';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { AgentService, type Agent, type ReversibleDistribution } from '@/services/AgentService';
 import { MembershipService, type ClubMembership } from '@/services/MembershipService';
 import { exportToCSV } from '../lib/export';
-import { compactChips, fmt, fmtChips, timeAgo } from '../utils/format';
+import { fmt, fmtChips, timeAgo } from '../utils/format';
 import { isAuthzError } from '../utils/clubDashboard';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { supabase } from '@/lib/supabase';
@@ -516,44 +486,6 @@ export default function AgentManagementPage() {
     return 'healthy';
   };
 
-  /* The ink a utilisation reads in. Same three thresholds as the badge it
-     replaces (90 critical, 75 warning) - only the dress changed. */
-  const utilizationInk = (agent: Agent): ConsoleInk => {
-    const status = getUtilizationStatus(agent);
-    return status === 'critical' ? 'red' : status === 'warning' ? 'gold' : 'green';
-  };
-
-  /* Lifted verbatim out of the old header button so the foot's painted plate
-     can call it. Same rows, same columns, same filename, same silent-catch. */
-  const handleExportAgents = () => {
-    try {
-      exportToCSV(
-        agents.map((a) => ({
-          displayName: a.displayName || 'Unknown',
-          role: a.role,
-          status: a.status,
-          commissionRate: `${((a.commissionRate || 0) * 100).toFixed(0)}%`,
-          creditLimit: a.creditLimit,
-          totalPlayers: a.totalPlayers,
-          weeklyRake: a.weeklyRakeGenerated,
-        })),
-        'agents_list.csv',
-        [
-          { key: 'displayName', label: 'Agent' },
-          { key: 'role', label: 'Role' },
-          { key: 'status', label: 'Status' },
-          { key: 'commissionRate', label: 'Commission' },
-          { key: 'creditLimit', label: 'Credit Limit' },
-          { key: 'totalPlayers', label: 'Players' },
-          { key: 'weeklyRake', label: 'Weekly Rake' },
-        ]
-      );
-    } catch (e) {
-      reportError(e, 'AgentManagementPage.map');
-      /* silent */
-    }
-  };
-
   // Direct credit limit assignment (real Supabase call)
   const handleSetCreditLimit = async (agentId: string, limit: number) => {
     if (!user?.id) return;
@@ -830,7 +762,7 @@ export default function AgentManagementPage() {
   // No club selected
   if (!clubId) {
     return (
-      <StandardContentLayout className={styles.page}>
+      <div className={styles.page}>
         <EmptyState
           icon="CLUB"
           eyebrow="Club Context Required"
@@ -839,33 +771,23 @@ export default function AgentManagementPage() {
           description="Agent Roles, Commissions, Credit Lines, And Players Belong To One Club. Open This Tool From That Club's Operations Menu."
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
         />
-      </StandardContentLayout>
+      </div>
     );
   }
 
   // Loading state
   if (isLoading) {
     return (
-      <StandardContentLayout className={styles.page}>
-        <SpadeConsole
-          className={styles.console}
-          aria-busy
-          eyebrow="Club Arena"
-          title="Agent Management"
-          pill="Loading"
-          pillInk="muted"
-          foot="foot"
-        >
-          <PageSkeleton variant="dashboard" />
-        </SpadeConsole>
-      </StandardContentLayout>
+      <div className={styles.page}>
+        <PageSkeleton variant="dashboard" />
+      </div>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <StandardContentLayout className={styles.page}>
+      <div className={styles.page}>
         <ErrorState
           message={error}
           onRetry={() => {
@@ -877,103 +799,122 @@ export default function AgentManagementPage() {
               .finally(() => setIsLoading(false));
           }}
         />
-      </StandardContentLayout>
+      </div>
     );
   }
 
   return (
-    <StandardContentLayout className={styles.page}>
-      {/* ── The head: the roster's own figures as rows on the glass ──── */}
-      <SpadeConsole
-        className={styles.console}
-        eyebrow="Club Arena"
-        title="Agent Management"
-        subtitle="Manage Agents, Commissions, And Credit Lines"
-        pill={compactChips(totalAgents)}
-        pillInk={totalAgents === 0 ? 'muted' : 'blue'}
-        foot="plates"
-        /* TWO ACTIONS OR NONE: the foot paints both plates, so Export is
-           always present and simply disabled with an empty roster, rather
-           than leaving a painted plate with no word on it. */
-        plates={{
-          secondary: {
-            label: 'Export',
-            disabled: agents.length === 0,
-            onClick: handleExportAgents,
-          },
-          primary: {
-            label: 'Add Agent',
-            ink: 'white',
-            onClick: () => setShowAddModal(true),
-          },
-        }}
-      >
-        {/* AgentService.getAgents reads at most QUERY_LIMITS.MODERATE rows. A
-            club at the cap sees exactly the cap, which used to look like the
-            whole roster. */}
-        {agents.length >= QUERY_LIMITS.MODERATE && (
-          <p className="sc-copy" role="status">
-            Showing The First {fmt(QUERY_LIMITS.MODERATE)} Agents. The Club Has More; The Summary
-            Counts Only These.
-          </p>
+    <div className={styles.page}>
+      {/* Header */}
+      <div className={styles.header}>
+        <div>
+          <h1>Agent Management</h1>
+          <p className={styles.subtitle}>Manage Agents, Commissions, And Credit Lines</p>
+        </div>
+        <button className={styles.addButton} onClick={() => setShowAddModal(true)}>
+          + Add Agent
+        </button>
+        {agents.length > 0 && (
+          <button
+            className={styles.addButton}
+            style={{
+              background: 'rgba(65,105,225,0.15)',
+              color: '#4169E1',
+              border: '1px solid rgba(65,105,225,0.3)',
+            }}
+            onClick={() => {
+              try {
+                exportToCSV(
+                  agents.map((a) => ({
+                    displayName: a.displayName || 'Unknown',
+                    role: a.role,
+                    status: a.status,
+                    commissionRate: `${((a.commissionRate || 0) * 100).toFixed(0)}%`,
+                    creditLimit: a.creditLimit,
+                    totalPlayers: a.totalPlayers,
+                    weeklyRake: a.weeklyRakeGenerated,
+                  })),
+                  'agents_list.csv',
+                  [
+                    { key: 'displayName', label: 'Agent' },
+                    { key: 'role', label: 'Role' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'commissionRate', label: 'Commission' },
+                    { key: 'creditLimit', label: 'Credit Limit' },
+                    { key: 'totalPlayers', label: 'Players' },
+                    { key: 'weeklyRake', label: 'Weekly Rake' },
+                  ]
+                );
+              } catch (e) {
+                reportError(e, 'AgentManagementPage.map');
+                /* silent */
+              }
+            }}
+          >
+            Export
+          </button>
         )}
+      </div>
 
-        <dl className={styles.facts}>
-          <div className={styles.fact}>
-            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Active Agents</dt>
-            <dd className={`${styles.factValue} sc-ink--silver`}>
-              {compactChips(activeAgents)}/{compactChips(totalAgents)}
-            </dd>
-          </div>
-          <div className={styles.fact}>
-            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Total Players</dt>
-            <dd className={`${styles.factValue} sc-ink--silver`}>{compactChips(totalPlayers)}</dd>
-          </div>
-          <div className={styles.fact}>
-            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Weekly Rake</dt>
-            <dd className={`${styles.factValue} sc-ink--green`}>{formatMoney(weeklyRake)}</dd>
-          </div>
-          <div className={styles.fact}>
-            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Credit Extended</dt>
-            <dd className={`${styles.factValue} sc-ink--gold`}>
-              {formatMoney(totalCreditExtended)}
-            </dd>
-          </div>
-        </dl>
+      {/* AgentService.getAgents reads at most QUERY_LIMITS.MODERATE rows. A
+          club at the cap sees exactly the cap, which used to look like the
+          whole roster. */}
+      {agents.length >= QUERY_LIMITS.MODERATE && (
+        <p className={styles.capNotice} role="status">
+          Showing The First {fmt(QUERY_LIMITS.MODERATE)} Agents. The Club Has More; The Summary
+          Cards Count Only These.
+        </p>
+      )}
 
-        {/* The six views are lit words cut into the glass. The master paints
-            no tab, so nothing here draws one. */}
-        <nav className={styles.rail} role="tablist" aria-label="Agent Views">
-          {(
-            [
-              'agents',
-              'players',
-              'hierarchy',
-              'credit-limits',
-              'commissions',
-              'payouts',
-            ] as TabType[]
-          ).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              className={`${styles.railWord} ${
-                activeTab === tab ? 'sc-ink--silver' : 'sc-ink--muted'
-              }`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab === 'agents' && 'Agents'}
-              {tab === 'players' && 'Players'}
-              {tab === 'hierarchy' && 'Hierarchy'}
-              {tab === 'credit-limits' && 'Credit Limits'}
-              {tab === 'commissions' && 'Commissions'}
-              {tab === 'payouts' && 'Payouts'}
-            </button>
-          ))}
-        </nav>
-      </SpadeConsole>
+      {/* Summary Cards */}
+      <div className={styles.summaryGrid}>
+        <div className={styles.summaryCard}>
+          <div>
+            <span className={styles.summaryValue}>
+              {fmt(activeAgents)}/{fmt(totalAgents)}
+            </span>
+            <span className={styles.summaryLabel}>Active Agents</span>
+          </div>
+        </div>
+        <div className={styles.summaryCard}>
+          <div>
+            <span className={styles.summaryValue}>{fmt(totalPlayers)}</span>
+            <span className={styles.summaryLabel}>Total Players</span>
+          </div>
+        </div>
+        <div className={styles.summaryCard}>
+          <div>
+            <span className={styles.summaryValue}>{formatMoney(weeklyRake)}</span>
+            <span className={styles.summaryLabel}>Weekly Rake</span>
+          </div>
+        </div>
+        <div className={styles.summaryCard}>
+          <div>
+            <span className={styles.summaryValue}>{formatMoney(totalCreditExtended)}</span>
+            <span className={styles.summaryLabel}>Credit Extended</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <nav className={styles.tabNav}>
+        {(
+          ['agents', 'players', 'hierarchy', 'credit-limits', 'commissions', 'payouts'] as TabType[]
+        ).map((tab) => (
+          <button
+            key={tab}
+            className={`${styles.tabButton} ${activeTab === tab ? styles.active : ''}`}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab === 'agents' && ' Agents'}
+            {tab === 'players' && 'Players'}
+            {tab === 'hierarchy' && 'Hierarchy'}
+            {tab === 'credit-limits' && 'Credit Limits'}
+            {tab === 'commissions' && ' Commissions'}
+            {tab === 'payouts' && ' Payouts'}
+          </button>
+        ))}
+      </nav>
 
       {/* Tab Content — Swipeable */}
       <div className={styles.content} {...swipeHandlers}>
@@ -981,203 +922,170 @@ export default function AgentManagementPage() {
         {/* AGENTS TAB */}
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'agents' && (
-          <SpadeConsole
-            className={styles.console}
-            eyebrow="Agent Network"
-            title="Agents"
-            pill={agents.length === 0 ? 'Empty' : compactChips(agents.length)}
-            pillInk={agents.length === 0 ? 'muted' : 'blue'}
-            foot="foot"
-          >
-            {agents.length === 0 ? (
-              <div className={styles.empty}>
-                <span className="sc-label sc-ink--muted">No Agents Yet</span>
-                <p className="sc-copy sc-copy--center">
-                  Promote A Member To Start The Agent Network For This Club.
-                </p>
-              </div>
-            ) : (
-              <ol className={styles.list}>
-                {agents.map((agent) => (
-                  /* THE STAGGER STILL PLAYS. Same `visibleAgents` set, same
-                     step, same eight-pixel lift - it runs on the global
-                     `animationsFadeInUp` keyframe now instead of a module
-                     copy of it. */
-                  <li
-                    key={agent.id}
-                    className={styles.row}
-                    style={
-                      visibleAgents.has(agent.id)
-                        ? {
-                            opacity: 0,
-                            transform: 'translateY(8px)',
-                            animation: 'animationsFadeInUp 0.4s ease-out forwards',
-                          }
-                        : { opacity: 0, transform: 'translateY(8px)' }
-                    }
-                  >
-                    <span className={`${styles.rowName} sc-ink--silver`}>
-                      {agent.displayName || 'Unknown Agent'}
-                    </span>
-                    {/* Words in the master's own ink, never capsules. */}
-                    <span className={styles.rowFlags}>
-                      <span className="sc-label sc-ink--blue">
+          <div className={styles.agentsList}>
+            {agents.map((agent) => (
+              <div
+                key={agent.id}
+                className={`${styles.agentCard} ${agent.status !== 'active' ? styles.inactive : ''} ${visibleAgents.has(agent.id) ? styles.fadeInUp : styles.hidden}`}
+                style={
+                  visibleAgents.has(agent.id)
+                    ? undefined
+                    : { opacity: 0, transform: 'translateY(8px)' }
+                }
+              >
+                <div className={styles.agentHeader}>
+                  <div className={styles.agentAvatar}>
+                    {(agent.displayName || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className={styles.agentInfo}>
+                    <h3>{agent.displayName || 'Unknown Agent'}</h3>
+                    <div className={styles.agentMeta}>
+                      <span className={`${styles.badge} ${styles[agent.role]}`}>
                         {agent.role === 'super_agent'
                           ? 'Super Agent'
                           : agent.role === 'agent'
                             ? 'Agent'
                             : 'Sub-Agent'}
                       </span>
-                      <span
-                        className={`sc-label ${
-                          agent.status === 'active' ? 'sc-ink--green' : 'sc-ink--red'
-                        }`}
-                      >
+                      <span className={`${styles.badge} ${styles[agent.status]}`}>
                         {agent.status}
                       </span>
                       {agent.parentAgentName && (
-                        <span className="sc-label sc-ink--muted">
-                          Under: {agent.parentAgentName}
-                        </span>
-                      )}
-                    </span>
-
-                    <dl className={styles.facts}>
-                      <div className={styles.fact}>
-                        <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Commission</dt>
-                        <dd className={`${styles.factValue} sc-ink--silver`}>
-                          {formatPercent(agent.commissionRate)}
-                        </dd>
-                      </div>
-                      <div className={styles.fact}>
-                        <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Rakeback</dt>
-                        <dd className={`${styles.factValue} sc-ink--silver`}>
-                          {formatPercent(agent.playerRakebackRate)}
-                        </dd>
-                      </div>
-                      <div className={styles.fact}>
-                        <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Players</dt>
-                        <dd className={`${styles.factValue} sc-ink--silver`}>
-                          {fmt(agent.activePlayerCount)}/{fmt(agent.totalPlayers)}
-                        </dd>
-                      </div>
-                      <div className={styles.fact}>
-                        <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Weekly Rake</dt>
-                        <dd className={`${styles.factValue} sc-ink--green`}>
-                          {formatMoney(agent.weeklyRakeGenerated)}
-                        </dd>
-                      </div>
-                      {/* Three balances used to sit beside one glyph and two
-                          empty spans, so two of the three had no name. */}
-                      <div className={styles.fact}>
-                        <dt className={styles.walletLabel}>Agent</dt>
-                        <dd className={`${styles.factValue} sc-ink--silver`}>
-                          {formatMoney(agent.businessBalance)}
-                        </dd>
-                      </div>
-                      <div className={styles.fact}>
-                        <dt className={styles.walletLabel}>Player</dt>
-                        <dd className={`${styles.factValue} sc-ink--silver`}>
-                          {formatMoney(agent.playerBalance)}
-                        </dd>
-                      </div>
-                      <div className={styles.fact}>
-                        <dt className={styles.walletLabel}>Promo</dt>
-                        <dd className={`${styles.factValue} sc-ink--silver`}>
-                          {formatMoney(agent.promoBalance)}
-                        </dd>
-                      </div>
-                      {!agent.isPrepaid && (
-                        /* The drawn progress bar is gone. The same three
-                           thresholds now colour the figure itself, which says
-                           the same thing without painting a control. */
-                        <div className={styles.fact}>
-                          <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>
-                            Credit Line
-                          </dt>
-                          <dd className={`${styles.factValue} sc-ink--${utilizationInk(agent)}`}>
-                            {formatMoney(agent.creditUsed)} / {formatMoney(agent.creditLimit)} (
-                            {(getCreditUtilization(agent) || 0).toFixed(0)}% Used)
-                          </dd>
-                        </div>
-                      )}
-                    </dl>
-
-                    <div className={styles.rowActions}>
-                      {agent.status === 'active' ? (
-                        <>
-                          <button
-                            type="button"
-                            className={`${styles.word} sc-ink--red`}
-                            onClick={() => handleSuspendAgent(agent.id)}
-                          >
-                            Suspend
-                          </button>
-                          <button
-                            type="button"
-                            className={`${styles.word} sc-ink--blue`}
-                            onClick={() => {
-                              setTransferAgentId(agent.userId);
-                              setShowTransferModal(true);
-                            }}
-                          >
-                            Transfer
-                          </button>
-                          {agent.role === 'agent' && (
-                            <button
-                              type="button"
-                              className={`${styles.word} sc-ink--gold`}
-                              onClick={() => handlePromoteAgent(agent.id, agent.role)}
-                            >
-                              Promote
-                            </button>
-                          )}
-                          {agent.role === 'super_agent' && (
-                            <button
-                              type="button"
-                              className={`${styles.word} sc-ink--gold`}
-                              onClick={() => handlePromoteAgent(agent.id, agent.role)}
-                            >
-                              Demote
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className={`${styles.word} sc-ink--blue`}
-                            onClick={() => {
-                              setPlayerInviteAgentUserId(agent.userId);
-                              setShowPlayerInviteModal(true);
-                            }}
-                          >
-                            Add Player
-                          </button>
-                          <button
-                            type="button"
-                            className={`${styles.word} sc-ink--blue`}
-                            onClick={() => {
-                              setCommissionAgentId(agent.id);
-                              setCommissionAgentName(agent.displayName || 'Agent');
-                              setShowCommissionModal(true);
-                            }}
-                          >
-                            History
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          className={`${styles.word} sc-ink--green`}
-                          onClick={() => handleReinstateAgent(agent.id)}
-                        >
-                          Reinstate
-                        </button>
+                        <span className={styles.parentAgent}>Under: {agent.parentAgentName}</span>
                       )}
                     </div>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </SpadeConsole>
+                  </div>
+                  <div className={styles.agentActions}>
+                    {agent.status === 'active' ? (
+                      <>
+                        <button
+                          className={styles.actionBtn}
+                          onClick={() => handleSuspendAgent(agent.id)}
+                        >
+                          Suspend
+                        </button>
+                        <button
+                          className={`${styles.actionBtn} ${styles.transfer}`}
+                          onClick={() => {
+                            setTransferAgentId(agent.userId);
+                            setShowTransferModal(true);
+                          }}
+                        >
+                          Transfer
+                        </button>
+                        {agent.role === 'agent' && (
+                          <button
+                            className={`${styles.actionBtn} ${styles.promote}`}
+                            onClick={() => handlePromoteAgent(agent.id, agent.role)}
+                          >
+                            Promote
+                          </button>
+                        )}
+                        {agent.role === 'super_agent' && (
+                          <button
+                            className={`${styles.actionBtn} ${styles.demote}`}
+                            onClick={() => handlePromoteAgent(agent.id, agent.role)}
+                          >
+                            Demote
+                          </button>
+                        )}
+                        <button
+                          className={`${styles.actionBtn}`}
+                          onClick={() => {
+                            setPlayerInviteAgentUserId(agent.userId);
+                            setShowPlayerInviteModal(true);
+                          }}
+                        >
+                          Add Player
+                        </button>
+                        <button
+                          className={`${styles.actionBtn}`}
+                          onClick={() => {
+                            setCommissionAgentId(agent.id);
+                            setCommissionAgentName(agent.displayName || 'Agent');
+                            setShowCommissionModal(true);
+                          }}
+                        >
+                          History
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className={`${styles.actionBtn} ${styles.primary}`}
+                        onClick={() => handleReinstateAgent(agent.id)}
+                      >
+                        Reinstate
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className={styles.agentStats}>
+                  <div className={styles.statItem}>
+                    <span className={styles.statLabel}>Commission</span>
+                    <span className={styles.statValue}>{formatPercent(agent.commissionRate)}</span>
+                  </div>
+                  <div className={styles.statItem}>
+                    <span className={styles.statLabel}>Rakeback</span>
+                    <span className={styles.statValue}>
+                      {formatPercent(agent.playerRakebackRate)}
+                    </span>
+                  </div>
+                  <div className={styles.statItem}>
+                    <span className={styles.statLabel}>Players</span>
+                    <span className={styles.statValue}>
+                      {fmt(agent.activePlayerCount)}/{fmt(agent.totalPlayers)}
+                    </span>
+                  </div>
+                  <div className={styles.statItem}>
+                    <span className={styles.statLabel}>Weekly Rake</span>
+                    <span className={styles.statValue}>
+                      {formatMoney(agent.weeklyRakeGenerated)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className={styles.walletRow}>
+                  <div className={styles.walletItem}>
+                    {/* Three balances used to sit beside one glyph and two
+                        empty spans, so two of the three had no name. */}
+                    <span className={styles.walletLabel}>Agent</span>
+                    <span>{formatMoney(agent.businessBalance)}</span>
+                  </div>
+                  <div className={styles.walletItem}>
+                    <span className={styles.walletLabel}>Player</span>
+                    <span>{formatMoney(agent.playerBalance)}</span>
+                  </div>
+                  <div className={styles.walletItem}>
+                    <span className={styles.walletLabel}>Promo</span>
+                    <span>{formatMoney(agent.promoBalance)}</span>
+                  </div>
+                </div>
+
+                {!agent.isPrepaid && (
+                  <div className={styles.creditBar}>
+                    <div className={styles.creditHeader}>
+                      <span>
+                        Credit Line: {formatMoney(agent.creditUsed)} /{' '}
+                        {formatMoney(agent.creditLimit)}
+                      </span>
+                      <span
+                        className={`${styles.utilBadge} ${styles[getUtilizationStatus(agent)]}`}
+                      >
+                        {(getCreditUtilization(agent) || 0).toFixed(0)}% Used
+                      </span>
+                    </div>
+                    <div className={styles.creditProgress}>
+                      <div
+                        className={`${styles.creditFill} ${styles[getUtilizationStatus(agent)]}`}
+                        style={{ width: `${Math.min(getCreditUtilization(agent), 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
@@ -1208,37 +1116,29 @@ export default function AgentManagementPage() {
                 already claimed back and the seconds left are all the
                 database's, from fn_agent_wallet_reversible. */}
             {recentDistributions.length > 0 && (
-              <SpadeConsole
-                className={styles.console}
-                eyebrow="Agent Wallet"
-                title="Sends You Can Still Take Back"
-                pill={compactChips(recentDistributions.length)}
-                pillInk="gold"
-                foot="foot"
-              >
+              <div className={styles.reversibleBlock}>
+                <h3 className={styles.reversibleHeading}>Sends You Can Still Take Back</h3>
                 {recentDistributions.map((tx) => {
                   const mins = Math.floor(tx.seconds_left / 60);
                   const secs = tx.seconds_left % 60;
                   const partial = Number(tx.claimed_back) > 0;
                   return (
-                    <div key={tx.transaction_id} className={styles.row}>
-                      <span className={`${styles.rowName} sc-ink--silver`}>
-                        {fmtChips(tx.remaining)} Chips To {tx.to_name}
-                      </span>
-                      <span className={`${styles.rowMeta} sc-ink--muted`}>
-                        {partial
-                          ? `${fmtChips(tx.claimed_back)} Of ${fmtChips(tx.amount)} Already Taken Back - `
-                          : ''}
-                        {/* Gold while the window is open, red inside the last
-                            ten seconds, exactly as a countdown reads
-                            everywhere else on the master. */}
-                        <span className={tx.seconds_left <= 10 ? 'sc-ink--red' : 'sc-ink--gold'}>
-                          {mins}:{String(secs).padStart(2, '0')} Left
-                        </span>
-                      </span>
+                    <div key={tx.transaction_id} className={styles.reversibleRow}>
+                      <div>
+                        <div className={styles.reversibleAmount}>
+                          {fmtChips(tx.remaining)} Chips To {tx.to_name}
+                        </div>
+                        <div className={styles.reversibleMeta}>
+                          {partial
+                            ? `${fmtChips(tx.claimed_back)} Of ${fmtChips(tx.amount)} Already Taken Back - `
+                            : ''}
+                          <span className={styles.reversibleClock}>
+                            {mins}:{String(secs).padStart(2, '0')} Left
+                          </span>
+                        </div>
+                      </div>
                       <button
-                        type="button"
-                        className={`${styles.word} sc-ink--red`}
+                        className={styles.reversibleBtn}
                         onClick={async () => {
                           if (
                             !(await confirmDialog({
@@ -1280,7 +1180,7 @@ export default function AgentManagementPage() {
                     </div>
                   );
                 })}
-              </SpadeConsole>
+              </div>
             )}
           </div>
         )}
@@ -1329,138 +1229,122 @@ export default function AgentManagementPage() {
         {/* CREDIT LIMITS TAB — Direct Assignment */}
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'credit-limits' && (
-          /* THE TABLE IS GONE, AND HAD TO GO. Seven columns of credit figures
-             on a 393px phone scrolled sideways off the screen; this is one row
-             per agent with its fields stacked as label/value pairs. The Save /
-             Cancel / Edit controls and handleSetCreditLimit are unchanged. */
-          <SpadeConsole
-            className={styles.console}
-            eyebrow="Credit Limit Assignment"
-            title="Credit Limits"
-            pill={compactChips(agents.length)}
-            pillInk="blue"
-            foot="foot"
-          >
-            <p className="sc-copy">
-              Assign Credit Limits Directly. Clubs Set Limits For Agents. Agents Set Limits For
-              Sub-Agents.
-            </p>
+          <div className={styles.creditLimitsSection}>
+            <div className={styles.creditHierarchy}>
+              <h2>Credit Limit Assignment</h2>
+              <p>
+                Assign Credit Limits Directly. Clubs Set Limits For Agents. Agents Set Limits For
+                Sub-Agents.
+              </p>
+            </div>
 
-            <ol className={styles.list}>
-              {agents.map((agent) => (
-                <li key={agent.id} className={styles.row}>
-                  <span className={`${styles.rowName} sc-ink--silver`}>{agent.displayName}</span>
-                  <span className={styles.rowFlags}>
-                    <span className="sc-label sc-ink--blue">
-                      {AGENT_ROLE_LABELS[agent.role] || agent.role}
-                    </span>
-                    {agent.status !== 'active' && (
-                      <span className="sc-label sc-ink--red">{agent.status}</span>
-                    )}
-                  </span>
-
-                  <dl className={styles.facts}>
-                    <div className={styles.fact}>
-                      <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Assigned By</dt>
-                      <dd className={`${styles.factValue} sc-ink--silver`}>
-                        {/* A super agent is assigned by the club, the same as an
-                            agent; only a sub-agent hangs off a parent. The old
-                            two-branch test sent super agents down the parent
-                            branch and printed the word "Agent" where the club
-                            belonged. */}
-                        {agent.parentAgentName || 'Club'}
-                      </dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Credit Limit</dt>
-                      <dd className={`${styles.factValue} sc-ink--silver`}>
-                        {editingLimit === agent.id ? (
-                          <input
-                            type="number"
-                            className={`${styles.groove} sc-ink--silver`}
-                            value={newLimit}
-                            onChange={(e) => setNewLimit(Number(e.target.value))}
-                            aria-label="Credit Limit"
-                            autoFocus
-                          />
-                        ) : (
-                          formatMoney(agent.creditLimit)
-                        )}
-                      </dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Used</dt>
-                      <dd className={`${styles.factValue} sc-ink--silver`}>
-                        {formatMoney(agent.creditUsed)}
-                      </dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Utilization</dt>
-                      <dd className={`${styles.factValue} sc-ink--${utilizationInk(agent)}`}>
-                        {(getCreditUtilization(agent) || 0).toFixed(0)}%
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <div className={styles.rowActions}>
-                    {editingLimit === agent.id ? (
-                      <>
-                        <button
-                          type="button"
-                          className={`${styles.word} sc-ink--green`}
-                          onClick={() => handleSetCreditLimit(agent.id, newLimit)}
-                        >
-                          Save
-                        </button>
-                        {/* This button had NO CONTENT - an emoji was stripped
-                            from it and the empty wrapper was left, so beside
-                            Save there was an invisible control that only a
-                            screen reader could find. */}
-                        <button
-                          type="button"
-                          className={`${styles.word} sc-ink--muted`}
-                          onClick={() => setEditingLimit(null)}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`${styles.word} sc-ink--blue`}
-                        onClick={() => {
-                          setEditingLimit(agent.id);
-                          setNewLimit(agent.creditLimit);
-                        }}
+            <table className={styles.creditTable}>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>Role</th>
+                  <th>Assigned By</th>
+                  <th>Credit Limit</th>
+                  <th>Used</th>
+                  <th>Utilization</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.map((agent) => (
+                  <tr key={agent.id} className={agent.status !== 'active' ? styles.inactive : ''}>
+                    <td className={styles.agentCell}>{agent.displayName}</td>
+                    <td>
+                      <span className={`${styles.badge} ${styles[agent.role]}`}>
+                        {AGENT_ROLE_LABELS[agent.role] || agent.role}
+                      </span>
+                    </td>
+                    <td className={styles.assignedBy}>
+                      {/* A super agent is assigned by the club, the same as an
+                          agent; only a sub-agent hangs off a parent. The old
+                          two-branch test sent super agents down the parent
+                          branch and printed the word "Agent" where the club
+                          belonged. */}
+                      {agent.parentAgentName || 'Club'}
+                    </td>
+                    <td>
+                      {editingLimit === agent.id ? (
+                        <input
+                          type="number"
+                          className={styles.limitInput}
+                          value={newLimit}
+                          onChange={(e) => setNewLimit(Number(e.target.value))}
+                          autoFocus
+                        />
+                      ) : (
+                        <span className={styles.limitAmount}>{formatMoney(agent.creditLimit)}</span>
+                      )}
+                    </td>
+                    <td>{formatMoney(agent.creditUsed)}</td>
+                    <td>
+                      <span
+                        className={`${styles.utilBadge} ${styles[getUtilizationStatus(agent)]}`}
                       >
-                        Edit
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
+                        {(getCreditUtilization(agent) || 0).toFixed(0)}%
+                      </span>
+                    </td>
+                    <td>
+                      {editingLimit === agent.id ? (
+                        <div className={styles.editActions}>
+                          <button
+                            className={`${styles.actionBtn} ${styles.approve}`}
+                            onClick={() => handleSetCreditLimit(agent.id, newLimit)}
+                          >
+                            Save
+                          </button>
+                          {/* This button had NO CONTENT - an emoji was stripped
+                              from it and the empty wrapper was left, so beside
+                              Save there was an invisible control that only a
+                              screen reader could find. */}
+                          <button
+                            className={styles.actionBtn}
+                            onClick={() => setEditingLimit(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className={styles.actionBtn}
+                          onClick={() => {
+                            setEditingLimit(agent.id);
+                            setNewLimit(agent.creditLimit);
+                          }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
-            <div className={styles.rules}>
-              <span className="sc-label sc-ink--blue">Credit Assignment Rules</span>
-              <ul className={styles.ruleList}>
-                <li className="sc-copy">
-                  <strong>Club To Agent:</strong> Club Owner Assigns Credit Limits When Creating An
+            <div className={styles.creditNote}>
+              <h3> Credit Assignment Rules</h3>
+              <ul>
+                <li>
+                  <strong>Club → Agent:</strong> Club Owner Assigns Credit Limits When Creating An
                   Agent
                 </li>
-                <li className="sc-copy">
-                  <strong>Agent To Sub-Agent:</strong> Agents Assign Limits To Their Sub-Agents
+                <li>
+                  <strong>Agent → Sub-Agent:</strong> Agents Assign Limits To Their Sub-Agents
                   (Cannot Exceed Their Own Limit)
                 </li>
-                <li className="sc-copy">
+                <li>
                   <strong>Adjustable:</strong> Limits Can Be Changed Anytime By The Assigning Level
                 </li>
-                <li className="sc-copy">
+                <li>
                   <strong>Suspension:</strong> Agents At 90%+ Utilization Should Be Reviewed
                 </li>
               </ul>
             </div>
-          </SpadeConsole>
+          </div>
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
@@ -1491,85 +1375,70 @@ export default function AgentManagementPage() {
               rather than reciting a timetable nobody maintains.
             */}
 
-            {/* SIX COLUMNS OF COMMISSION ON A 393px PHONE, GONE. One row per
-                agent with its fields stacked; every figure is the ledger's,
-                unchanged. */}
-            <SpadeConsole
-              className={styles.console}
-              eyebrow="Commission Ledger"
-              title="What This Club Owes Its Agents"
-              pill={payables ? fmtChips(payables.total_owed) : undefined}
-              pillInk="gold"
-              foot="foot"
-            >
+            <div className={styles.upcomingPayouts}>
+              <h3>What This Club Owes Its Agents</h3>
               {payablesError ? (
-                <p className="sc-copy sc-ink--red">{payablesError}</p>
+                <p className={styles.payoutNote}>{payablesError}</p>
               ) : !payables ? (
-                <p className="sc-copy" aria-busy="true">
+                <p className={styles.payoutNote} aria-busy="true">
                   Reading The Commission Ledger
                 </p>
               ) : (
                 <>
-                  <p className="sc-copy">
-                    Unsettled Commission Across {fmt(payables.agents)}{' '}
-                    {payables.agents === 1 ? 'Agent' : 'Agents'}, From {fmt(payables.total_rows)}{' '}
-                    Earned {payables.total_rows === 1 ? 'Row' : 'Rows'}
-                  </p>
-                  <ol className={styles.list}>
-                    {payables.rows.map((row) => (
-                      <li key={row.agent_id} className={styles.row}>
-                        <span className={`${styles.rowName} sc-ink--silver`}>{row.name}</span>
-                        <span className={styles.rowFlags}>
-                          <span className="sc-label sc-ink--blue">
-                            {AGENT_ROLE_LABELS[row.role] || row.role}
-                          </span>
-                        </span>
-                        <dl className={styles.facts}>
-                          <div className={styles.fact}>
-                            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Owed</dt>
-                            <dd className={`${styles.factValue} sc-ink--gold`}>
-                              {fmtChips(row.owed)}
-                            </dd>
-                          </div>
-                          <div className={styles.fact}>
-                            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>
-                              Earned Rows
-                            </dt>
-                            <dd className={`${styles.factValue} sc-ink--silver`}>
-                              {fmt(row.rows_behind)}
-                            </dd>
-                          </div>
-                          <div className={styles.fact}>
-                            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>
-                              Oldest Unsettled
-                            </dt>
-                            <dd className={`${styles.factValue} sc-ink--silver`}>
+                  <div className={styles.payoutHeadline}>
+                    <div>
+                      <div className={styles.payoutTotal}>{fmtChips(payables.total_owed)}</div>
+                      <div className={styles.payoutTotalLabel}>
+                        Unsettled Commission Across {fmt(payables.agents)}{' '}
+                        {payables.agents === 1 ? 'Agent' : 'Agents'}, From{' '}
+                        {fmt(payables.total_rows)} Earned{' '}
+                        {payables.total_rows === 1 ? 'Row' : 'Rows'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.tableScroll}>
+                    <table className={styles.payoutTable}>
+                      <thead>
+                        <tr>
+                          <th>Agent</th>
+                          <th>Role</th>
+                          <th>Owed</th>
+                          <th>Earned Rows</th>
+                          <th>Oldest Unsettled</th>
+                          <th>Funding</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payables.rows.map((row) => (
+                          <tr key={row.agent_id}>
+                            <td>{row.name}</td>
+                            <td>{AGENT_ROLE_LABELS[row.role] || row.role}</td>
+                            <td className={styles.netPayout}>{fmtChips(row.owed)}</td>
+                            <td>{fmt(row.rows_behind)}</td>
+                            <td>
                               {row.oldest_unsettled
                                 ? timeAgo(row.oldest_unsettled)
                                 : 'Nothing Owed'}
-                            </dd>
-                          </div>
-                          <div className={styles.fact}>
-                            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Funding</dt>
-                            <dd className={`${styles.factValue} sc-ink--silver`}>
+                            </td>
+                            <td>
                               {row.is_prepaid
                                 ? 'Prepaid'
                                 : `${fmtChips(row.credit_used)} Of ${fmtChips(row.credit_limit)} Drawn`}
-                            </dd>
-                          </div>
-                        </dl>
-                      </li>
-                    ))}
-                  </ol>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                   {payables.agents > payables.rows.length && (
-                    <p className="sc-copy">
+                    <p className={styles.payoutNote}>
                       Showing The {fmt(payables.rows.length)} Agents Who Are Owed The Most, Of{' '}
                       {fmt(payables.agents)}. The Total Above Counts Every One Of Them.
                     </p>
                   )}
                 </>
               )}
-            </SpadeConsole>
+            </div>
           </div>
         )}
       </div>
@@ -1735,9 +1604,7 @@ export default function AgentManagementPage() {
                   Credit Limit * <span className={styles.formHint}>(Required)</span>
                 </label>
                 <div className={styles.creditInputGroup}>
-                  {/* The chip glyph that used to sit here was a mark stuck on
-                      top of a control; the field says what it holds instead. */}
-                  <span className={styles.currencySymbol}>Chips</span>
+                  <span className={styles.currencySymbol}>◉</span>
                   <input
                     type="number"
                     min="0"
@@ -1755,7 +1622,7 @@ export default function AgentManagementPage() {
 
               {/* Summary */}
               <div className={styles.formSummary}>
-                <h4>Agent Summary</h4>
+                <h4> Agent Summary</h4>
                 <div className={styles.summaryGrid}>
                   <div>
                     Role: <strong>{newAgentForm.role.replace('_', ' ')}</strong>
@@ -1788,7 +1655,7 @@ export default function AgentManagementPage() {
                 onClick={handleCreateAgent}
                 disabled={isCreating || !newAgentForm.userId || newAgentForm.creditLimit <= 0}
               >
-                {isCreating ? 'Creating...' : 'Create Agent'}
+                {isCreating ? 'Creating...' : ' Create Agent'}
               </button>
             </div>
           </div>
@@ -1926,6 +1793,6 @@ export default function AgentManagementPage() {
         onConfirm={executeConfirmAction}
         onCancel={() => setConfirmAction(null)}
       />
-    </StandardContentLayout>
+    </div>
   );
 }

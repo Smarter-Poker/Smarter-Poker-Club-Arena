@@ -17,7 +17,6 @@ import { EmptyState } from './EmptyState';
 interface PageErrorBoundaryProps {
   children: React.ReactNode;
   pageName?: string;
-  fallback?: (context: { error: Error | null; retry: () => void }) => React.ReactNode;
 }
 
 interface PageErrorBoundaryState {
@@ -47,7 +46,7 @@ export class PageErrorBoundary extends React.Component<
 
     // 2026-08-21: this boundary used to ONLY console.error. So when the player
     // stats page started showing "Something Went Wrong" in production, there
-    // was no record of it anywhere - not in client_crash_log, not in Sentry -
+    // was no record of it anywhere - not in client_crash_log, not in error reporting -
     // and the only way to find out what had happened was to ask the person
     // looking at the screen. A boundary that swallows the error and tells
     // nobody is a boundary that turns a five-minute fix into an afternoon.
@@ -104,9 +103,6 @@ export class PageErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
-      if (this.props.fallback) {
-        return this.props.fallback({ error: this.state.error, retry: this.handleRetry });
-      }
       return (
         <EmptyState
           icon="FAULT"

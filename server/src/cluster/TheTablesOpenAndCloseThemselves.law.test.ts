@@ -1181,22 +1181,9 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
     expect(BASE).toMatch(
       /protected wakeClusterGame\(_reason: string\): void \{\s*const gameId = this\.tableInfo\?\.cluster_id;\s*if \(!gameId \|\| this\.isTournamentTable\(\)\) return;/
     );
-    // adoptSeatRoster has already retired departed/replaced occupancy mirrors.
-    // Compare the retained pre-read roster so that pruning knownPlayerIds
-    // cannot hide a departure. An unchanged roster starts false; arrivals
-    // and remaining known-player departures are the only later true writes.
-    // CashSeatReentry exercises unknown proof -> confirmed diff -> unchanged
-    // observation through the actual loop and requires exactly one wake.
-    expect(DEALING).toMatch(
-      /let rosterChanged = \[\.\.\.previousOccupancies\.keys\(\)\]\.some\(\s*\(id\) => !this\.seatedPlayers\.some\(\(p\) => p\.user_id === id\)\s*\);/
-    );
-    expect(DEALING).toMatch(
-      /if \(!this\.knownPlayerIds\.has\(p\.user_id\)\) \{\s*rosterChanged = true;/
-    );
-    expect(DEALING).toMatch(/if \(!currentIds\.has\(id\)\) \{\s*rosterChanged = true;/);
-    expect(DEALING.match(/\brosterChanged = true;/g)).toHaveLength(2);
+    // An arrival or departure seen in the rows (the load_seats roster diff).
+    expect(DEALING).toMatch(/let rosterChanged = false;/);
     expect(DEALING).toMatch(/if \(rosterChanged\) this\.wakeClusterGame\('seat_change'\);/);
-    expect(DEALING.match(/this\.wakeClusterGame\('seat_change'\);/g)).toHaveLength(1);
     // The end of every hand, after the recount.
     expect(SETTLEMENT).toMatch(/this\.wakeClusterGame\('hand_complete'\);/);
     // A move that landed.

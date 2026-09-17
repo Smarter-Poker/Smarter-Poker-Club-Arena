@@ -12,7 +12,7 @@
  * So the app installs ONE shim at boot, before any fetch: a relative `/api/`
  * request is sent to https://smarter.poker instead. Nothing else changes -
  * headers, method, body, credentials - and the Hub answers with CORS for the
- * two app origins (World Hub middleware section 0). Supabase, Sentry, PostHog
+ * two app origins (World Hub middleware section 0). Supabase, error reporting, PostHog
  * and every absolute URL pass straight through.
  *
  * Installed from main.tsx's native boot path. Never loaded on the web.

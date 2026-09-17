@@ -34,10 +34,10 @@ function loopAtRest(arm: (engine: any) => void) {
   engine.knownPlayerIds = new Set(players.map((p) => p.user_id));
   engine.dealingLoopFirstIteration = false;
   engine.prepareNextHand = vi.fn(async () => players);
-  engine.adoptMovedPresence = vi.fn();
+  engine.adoptMovedPresence = vi.fn().mockResolvedValue(true);
   engine.restoreSitOutsFromSeats = vi.fn();
   engine.evictExpiredSitOuts = vi.fn(async () => {});
-  engine.announcePendingSeatMoves = vi.fn(async () => {});
+  engine.announcePendingSeatMoves = vi.fn(async () => true);
   engine.persistPresenceForRestart = vi.fn(async () => {});
   engine.hasOpenBountyReveal = () => false;
   engine.awaitNextHandRest = vi.fn(async () => arm(engine));

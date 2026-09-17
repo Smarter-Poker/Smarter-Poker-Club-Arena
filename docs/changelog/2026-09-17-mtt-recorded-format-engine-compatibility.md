@@ -17,3 +17,5 @@ assertions. Source pins follow recorded format and effective capacity while
 retaining paid-seat and separate seating-RPC checks. The affected client checks
 pass 53 assertions and the ten affected server files pass 172. The scheduled
 single-table size expression retains its previous numeric behavior unchanged.
+
+The provider checks exposed missing packaging metadata. The branch now carries the exact already-installed preparation inventory also owned by PR4804, avoiding phantom RPC references. The import-free shared capacity classifier is explicitly reviewed in the entry-module list because the existing synchronous buy-in utility needs its predicate. The unchanged build measures 150 kB gzip for the entry and remains within both bundle limits. Both original gate failures reproduce locally and pass with only the two inventory fragments. No application behavior or database objects change in this correction.

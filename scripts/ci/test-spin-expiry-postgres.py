@@ -87,12 +87,14 @@ COMPLETED_CONSUMER = 'scripts/qualification/spin-history-retention-completed.sql
 COMPLETED_CAPTURE_TIME = '2026-09-17T07:35:54.523723+00:00'
 REPLACEMENTS.update({name: name for name in (*RETENTION_INPUTS, *COMPLETED_INPUTS)})
 PURE_MANIFEST = 'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json'
-PURE_MANIFEST_SHA256 = '635dd1e785c49058bd15752d89ca7ef12648f6bdeba0289ecd31e27af1623e2a'
+PURE_MANIFEST_SHA256 = 'a35df0cdf919067a27646cf55272748a4feb6fd418a896156b57fd84a651cdfe'
 PURE_COMPONENT = 'supabase/components/spin-mixed-basis-evidence.sql'
 PURE_SHAPE = 'scripts/qualification/spin-mixed-basis-shape.sql'
+PURE_PREIMAGE = 'scripts/qualification/spin-mixed-basis-evidence.preimage.sql'
+PURE_PREIMAGE_SHA256 = 'f0d703e56be6f6bd171a2ed56cd4943a5021fd4bfc9da57a60c706d1af7d8572'
 PURE_QUALIFIER = 'scripts/qualification/spin-mixed-basis-pure.sql'
 PURE_ORACLE = 'scripts/qualification/fixtures/spin-history-retention/database-state.sql'
-PURE_INPUTS = (PURE_COMPONENT, PURE_SHAPE, PURE_QUALIFIER, PURE_ORACLE, PURE_MANIFEST)
+PURE_INPUTS = (PURE_COMPONENT, PURE_SHAPE, PURE_PREIMAGE, PURE_QUALIFIER, PURE_ORACLE, PURE_MANIFEST)
 PURE_STAGE = 'mixed_pure_evidence_rollback'
 REPLACEMENTS.update({name: name for name in PURE_INPUTS})
 RETENTION_STAGES = {
@@ -316,10 +318,17 @@ def validate_pure_sources(files):
         require(pin(files[name]) == expected, 'pure source pin mismatch: ' + name)
     require(manifest['full_qualification'] is False and manifest['stage'] == {
         'name': PURE_STAGE, 'role': 'postgres', 'path': PURE_QUALIFIER}, 'pure scope or role differs')
+    require(digest(files[PURE_PREIMAGE]) == PURE_PREIMAGE_SHA256
+            and manifest['regression_preimage'] == {
+                'commit': '5ce406fbf32f562762910db2ed324839be01b683', 'path': PURE_COMPONENT, 'sha256': PURE_PREIMAGE_SHA256,
+                'qualifier_input': PURE_PREIMAGE, 'control_sqlstate': 'PZ020',
+                'control_message': 'mixed shape accepted relative modern commit timestamps'},
+            'pure regression preimage provenance differs')
     qualifier = files[PURE_QUALIFIER].decode()
     expected_sources = {
         'mixed_component_source': {'path': PURE_COMPONENT, 'remove_outer_transaction': ['BEGIN;', 'COMMIT;']},
-        'mixed_shape_source': {'path': PURE_SHAPE, 'remove_outer_transaction': ['BEGIN;', 'ROLLBACK;']}}
+        'mixed_shape_source': {'path': PURE_SHAPE, 'remove_outer_transaction': ['BEGIN;', 'ROLLBACK;']},
+        'mixed_preimage_source': {'path': PURE_PREIMAGE, 'remove_outer_transaction': ['BEGIN;', 'COMMIT;']}}
     require(manifest['embedded_sources'] == expected_sources, 'pure embedded source inventory differs')
     for delimiter, spec in expected_sources.items():
         parts = qualifier.split('$' + delimiter + '$')
@@ -343,7 +352,8 @@ def validate_pure_sources(files):
 
 def validate_pure_result(value):
     fixed = {'qualification': 'spin_mixed_basis_pure_evidence', 'shape_positive': 1,
-             'shape_negative': 21, 'key_scalar_controls': 17, 'private_invocation_refusals': 9,
+             'shape_negative': 24, 'key_scalar_controls': 17, 'private_invocation_refusals': 9,
+             'relative_timestamp_regression_reproduced': True, 'relative_timestamp_refusal_verified': True,
              'installed_authority_verified': True, 'missing_preimage_refused': True,
              'duplicate_install_refused': True, 'inner_and_outer_rollback_verified': True,
              'business_rows_unchanged': True, 'historical_original_rows_qualified': False,

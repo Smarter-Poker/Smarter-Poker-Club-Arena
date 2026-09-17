@@ -297,8 +297,6 @@ BEGIN
               encode(extensions.digest(convert_to((commit_row->'post_commit_payload')::text,'UTF8'),'sha256'),'hex')
          OR commit_row->>'committed_at' IS NULL
          OR commit_row->>'post_commit_completed_at' IS NULL
-         OR COALESCE(commit_row->>'committed_at','')!~'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
-         OR COALESCE(commit_row->>'post_commit_completed_at','')!~'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
          OR NOT isfinite((commit_row->>'committed_at')::timestamptz)
          OR NOT isfinite((commit_row->>'post_commit_completed_at')::timestamptz)
          OR (commit_row->>'post_commit_completed_at')::timestamptz<(commit_row->>'committed_at')::timestamptz THEN

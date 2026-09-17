@@ -308,12 +308,38 @@ BEGIN
  IF result->>'reason' IS DISTINCT FROM 'stack_continuity_or_history' THEN
   RAISE EXCEPTION 'mixed conserved-but-discontinuous stack control failed: %',result;
  END IF;
+ -- Both relative values used to pass finite/order checks at transaction time.
+ -- One changed field alone could fail the ordering check and miss this defect.
+ changed:=jsonb_set(jsonb_set(sample,'{commits,0,committed_at}','"now"'::jsonb),
+   '{commits,0,post_commit_completed_at}','"now"'::jsonb);
+ result:=public.fn_ca_spin_mixed_history_shape_v1(changed);
+ IF result->'shape_ok'='true'::jsonb THEN
+  RAISE EXCEPTION 'mixed shape accepted relative modern commit timestamps' USING ERRCODE='PZ020';
+ END IF;
+ IF result->'shape_ok' IS DISTINCT FROM 'false'::jsonb
+    OR result->>'reason' IS DISTINCT FROM 'modern_commit_or_required_completion' THEN
+  RAISE EXCEPTION 'mixed shape relative timestamp control wrong refusal: %',result;
+ END IF;
+ -- Isolate both format checks with a finite absolute alias and valid ordering.
+ -- Either missing regex must fail independently of the other field's guard.
+ FOR item IN SELECT * FROM (VALUES
+  ('committed_at','epoch','2026-09-15T00:00:01Z'),
+  ('post_commit_completed_at','1969-12-31T23:59:59Z','epoch')
+ ) cases(name,committed,completed) LOOP
+  changed:=jsonb_set(jsonb_set(sample,'{commits,0,committed_at}',to_jsonb(item.committed)),
+    '{commits,0,post_commit_completed_at}',to_jsonb(item.completed));
+  result:=public.fn_ca_spin_mixed_history_shape_v1(changed);
+  IF result->'shape_ok' IS DISTINCT FROM 'false'::jsonb
+     OR result->>'reason' IS DISTINCT FROM 'modern_commit_or_required_completion' THEN
+   RAISE EXCEPTION 'mixed shape relative % control wrong refusal: %',item.name,result;
+  END IF;
+ END LOOP;
  IF tested<>20 OR EXISTS (SELECT 1 FROM unnest(ARRAY['anon','authenticated','service_role']) role_name
      WHERE has_function_privilege(role_name,'public.fn_ca_spin_mixed_history_shape_v1(jsonb)','EXECUTE')
         OR has_function_privilege(role_name,'public.fn_ca_accepted_tournament_settlement_fact(jsonb)','EXECUTE')) THEN
   RAISE EXCEPTION 'mixed shape control count/private execute boundary failed';
  END IF;
- RAISE NOTICE 'mixed shape: one positive and 21 negative native controls passed; no financial qualification';
+ RAISE NOTICE 'mixed shape: one positive and 24 negative native controls passed; no financial qualification';
 END;
 $test$;
 ROLLBACK;

@@ -17,8 +17,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 11348,
-      "sha256": "4c6bde624c3458c82db6ea3502c7359956f55e8def378917b4496c279e683f2b"
+      "bytes": 11372,
+      "sha256": "537d46fe270c18dd3b118a9536a2a634b85485d77c5a5b7387ab6190488ec6b9"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 41903,
-      "sha256": "93fcc268a6db82f997cb429dfed71a554da6d314c2538f4bc76acd83c0fba3af"
+      "bytes": 42041,
+      "sha256": "c4b358c2269636d4757507d0150e122cfd40deba80f7b857329e80c48f181398"
     }
   },
   "nativePgCron": {

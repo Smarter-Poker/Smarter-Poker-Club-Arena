@@ -35,7 +35,8 @@ def pure_source_files():
 def pure_result():
     # Independent expected protocol only. The actual original SQL supplies proof.
     return {'qualification': 'spin_mixed_basis_pure_evidence', 'shape_positive': 1,
-            'shape_negative': 21, 'key_scalar_controls': 17, 'private_invocation_refusals': 9,
+            'shape_negative': 24, 'key_scalar_controls': 17, 'private_invocation_refusals': 9,
+            'relative_timestamp_regression_reproduced': True, 'relative_timestamp_refusal_verified': True,
             'installed_authority_verified': True, 'missing_preimage_refused': True,
             'duplicate_install_refused': True, 'inner_and_outer_rollback_verified': True,
             'business_rows_unchanged': True, 'historical_original_rows_qualified': False,
@@ -1123,7 +1124,7 @@ class PureEvidenceTests(unittest.TestCase):
         files = pure_source_files()
         W.validate_pure_sources(files)
         self.assertEqual(set(W.decode(files[W.PURE_MANIFEST])['files']),
-                         {W.PURE_COMPONENT, W.PURE_SHAPE, W.PURE_QUALIFIER, W.PURE_ORACLE})
+                         {W.PURE_COMPONENT, W.PURE_SHAPE, W.PURE_PREIMAGE, W.PURE_QUALIFIER, W.PURE_ORACLE})
         self.assertFalse(any('terminal' in name or 'receipt-lane' in name for name in W.PURE_INPUTS))
         for name in W.PURE_INPUTS:
             missing = dict(files); missing.pop(name)
@@ -1132,12 +1133,23 @@ class PureEvidenceTests(unittest.TestCase):
                 with self.subTest(name=name), self.assertRaises(RuntimeError): W.validate_pure_sources(value)
 
     def test_rebound_manifest_cannot_hide_embedded_authority_or_include_drift(self):
-        for mode in ('component', 'shape', 'include', 'scope', 'role'):
+        for mode in ('component', 'shape', 'preimage', 'embedded_preimage', 'preimage_commit', 'preimage_error', 'include', 'scope', 'role'):
             files = pure_source_files(); manifest = W.decode(files[W.PURE_MANIFEST])
             if mode in ('component', 'shape'):
                 path = W.PURE_COMPONENT if mode == 'component' else W.PURE_SHAPE
                 files[path] += b'-- source no longer matches embedded body\n'
                 manifest['files'][path] = W.pin(files[path])
+            if mode == 'preimage':
+                # Even rebinding the manifest cannot redefine the original HEAD bytes.
+                files[W.PURE_PREIMAGE] += b'-- original authority changed\n'
+                manifest['files'][W.PURE_PREIMAGE] = W.pin(files[W.PURE_PREIMAGE])
+                manifest['regression_preimage']['sha256'] = W.digest(files[W.PURE_PREIMAGE])
+            if mode == 'embedded_preimage':
+                files[W.PURE_QUALIFIER] = files[W.PURE_QUALIFIER].replace(
+                    b'$mixed_preimage_source$-- SOURCE-ONLY', b'$mixed_preimage_source$-- CHANGED', 1)
+                manifest['files'][W.PURE_QUALIFIER] = W.pin(files[W.PURE_QUALIFIER])
+            if mode == 'preimage_commit': manifest['regression_preimage']['commit'] = '0' * 40
+            if mode == 'preimage_error': manifest['regression_preimage']['control_sqlstate'] = 'P0001'
             if mode == 'include':
                 files[W.PURE_QUALIFIER] += b'\n\\ir spin-mixed-basis-terminal.sql\n'
                 manifest['files'][W.PURE_QUALIFIER] = W.pin(files[W.PURE_QUALIFIER])

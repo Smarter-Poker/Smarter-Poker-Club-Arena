@@ -427,6 +427,7 @@ describe('required CI owns native fixture verification', () => {
 const spinExpiryAccountingPaths = [
   'supabase/components/spin-mixed-basis-evidence.sql',
   'scripts/qualification/spin-mixed-basis-shape.sql',
+  'scripts/qualification/spin-mixed-basis-evidence.preimage.sql',
   'scripts/qualification/spin-mixed-basis-pure.sql',
   'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json',
   'scripts/qualification/fixtures/spin-history-retention/capture-closure.sql',
@@ -544,6 +545,7 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     'scripts/qualification/spin-mixed-basis-pure.sql.bak',
     'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json.bak',
     'scripts/qualification/spin-mixed-basis-shape.sql.bak',
+    'scripts/qualification/spin-mixed-basis-evidence.preimage.sql.bak',
     'supabase/components/spin-history-retention.sql.bak',
     'scripts/qualification/spin-history-retention.sql.bak',
     'scripts/qualification/spin-history-retention-completed.sql.bak',

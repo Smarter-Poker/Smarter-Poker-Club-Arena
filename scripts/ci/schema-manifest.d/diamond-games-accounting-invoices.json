@@ -1,0 +1,45 @@
+{
+  "tables": [
+    "accounting_conversations",
+    "accounting_invoice_counters",
+    "accounting_invoice_deliveries"
+  ],
+  "columns": {
+    "settlement_invoices": [
+      "source_ledger_id"
+    ],
+    "accounting_conversations": [
+      "scope_id",
+      "issuer_type",
+      "issuer_id",
+      "sender_id",
+      "recipient_id",
+      "conversation_id",
+      "last_discussion_at"
+    ],
+    "accounting_invoice_counters": [
+      "year",
+      "next_number"
+    ],
+    "accounting_invoice_deliveries": [
+      "invoice_id",
+      "recipient_id",
+      "message_id",
+      "notification_id",
+      "delivered_at",
+      "delivery_mode"
+    ]
+  },
+  "functions": [
+    "fn_accounting_conversation_audience_guard",
+    "fn_accounting_credit_document_on_insert",
+    "fn_accounting_document_immutable",
+    "fn_accounting_invoice_deliver_on_insert",
+    "fn_accounting_next_invoice_number",
+    "fn_accounting_party_users",
+    "fn_accounting_transfer_document_on_insert",
+    "fn_deliver_accounting_invoice",
+    "fn_invoice_accounting_ledger_transfer"
+  ],
+  "_owner": "Diamond Games: installed accounting invoice dependencies verified read-only 2026-09-17"
+}

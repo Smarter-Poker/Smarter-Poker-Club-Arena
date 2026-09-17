@@ -1,0 +1,10 @@
+CREATE TABLE hand_history_retention_policy(id boolean PRIMARY KEY DEFAULT true,horse_retention_days integer NOT NULL DEFAULT 7,note text,updated_at timestamptz);
+INSERT INTO hand_history_retention_policy VALUES(true,7,'Original retained fixture policy',now());
+ALTER TABLE hand_history ADD COLUMN players jsonb,ADD COLUMN has_human boolean DEFAULT false,ADD COLUMN reported boolean DEFAULT false,ADD COLUMN tournament_id uuid;
+ALTER TABLE tournaments ADD COLUMN variant text,ADD COLUMN tournament_type text;
+CREATE TABLE bbj_payouts(table_id uuid,hand_number bigint);
+CREATE TABLE tournament_knockout_candidates(hand_id uuid,state text);
+CREATE TABLE tournament_terminal_settlements(tournament_id uuid);
+CREATE TABLE tournament_cancellation_receipts(tournament_id uuid);
+CREATE TABLE ca_hand_player_idx(hand_id uuid);
+CREATE TABLE ca_hand_facts(hand_id uuid,user_id uuid,played_at timestamptz);

@@ -1,0 +1,9 @@
+# Cash P&L reads original accepted receipts
+
+The cash P&L evidence reader now has a positive path for an accepted hand with a complete original dealt roster, original single-account funding and conserved signed amounts. It uses the original funding club, including cross-club players and horses with zero rake or zero delta. It verifies the original accepted envelope hash, both distinct hand identities, manifest, actual debit and pending-delivery links. Latest membership or current seats cannot alter the result.
+
+The accepted transaction also retains its original atomic, successful stack claim and final settlement records in the immutable financial receipt. Ordinary seven-day horse hand-history pruning therefore cannot erase weekly accounting evidence. This does not change game-history retention. Contradictory remaining live records still fail qualification.
+
+The existing native original-transaction fixture exercises the reader, with independent participant deltas of +9, -10 and 0 against 1 chip rake. It includes all-horse zero-rake qualification, historical membership changes, signed external net refusal, missing original population, changed hashes, conflicting journals/claims and successful reads after game records are pruned. It runs through the existing accounting CI entry point.
+
+This evidence certifies one cash hand and the original chip-funding club only. It is not whole-week completeness, a general beneficial-ownership contract, an external-bank receipt or permission to pay. Full-period population, opening/closing obligations, tournament results and commercial terms must qualify before the existing weekly owner may close and pay. No payment owner, scheduler or repair process is added.

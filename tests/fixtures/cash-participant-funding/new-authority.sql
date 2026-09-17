@@ -37,6 +37,7 @@ CREATE TABLE public.cash_hand_provenance_receipts (
  table_id uuid NOT NULL, hand_number bigint NOT NULL, hand_id uuid NOT NULL,
  accepted_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  payload_hash text NOT NULL, accepted_request jsonb NOT NULL, manifest_id uuid,
+ atomic_receipt jsonb NOT NULL, stack_claim jsonb NOT NULL, stack_settlement jsonb NOT NULL,
  version integer NOT NULL DEFAULT 1 CHECK(version=1),
  status text NOT NULL CHECK(status IN ('captured','uncertified')),
  game_scope jsonb, participants jsonb NOT NULL,
@@ -215,6 +216,7 @@ CREATE FUNCTION public.fn_cash_accept_hand_provenance(p_table uuid,p_number bigi
  p_stacks jsonb,p_rake numeric,p_bbj numeric,p_inflow numeric,p_hash text,p_request jsonb)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE m public.cash_hand_participant_manifests%ROWTYPE; x jsonb; y jsonb; v_id uuid;
+ v_atomic jsonb; v_claim jsonb; v_settlement jsonb; v_stack_hand uuid;
  v_n integer; v_count integer; v_delta numeric:=0; v_people jsonb:='[]'; v_issues jsonb:='[]'; v_tournament uuid;
 BEGIN
  IF p_request IS NULL OR p_request->'stacks' IS DISTINCT FROM p_stacks
@@ -224,12 +226,21 @@ BEGIN
   RAISE EXCEPTION 'Original cash accepted request hash mismatch' USING ERRCODE='23514'; END IF;
  SELECT tournament_id INTO v_tournament FROM public.tables WHERE id=p_table;
  IF v_tournament IS NOT NULL THEN RETURN; END IF;
+ -- Keep original accounting proof independently of the seven-day game-history retention.
+ SELECT to_jsonb(a) INTO STRICT v_atomic FROM public.hand_atomic_commits a
+  WHERE a.table_id=p_table AND a.hand_number=p_number AND a.hand_id=p_hand AND a.payload_hash=p_hash;
+ v_stack_hand:=(v_atomic->'stack_result'->>'hand_id')::uuid;
+ SELECT to_jsonb(k) INTO STRICT v_claim FROM public.settlement_idempotency_keys k
+  WHERE k.table_id=p_table AND k.hand_id=v_stack_hand AND k.status='succeeded'
+   AND k.completed_at IS NOT NULL AND k.result=v_atomic->'stack_result';
+ SELECT to_jsonb(c) INTO STRICT v_settlement FROM public.ca_settlements c
+  WHERE c.table_id=p_table AND c.hand_id=v_stack_hand AND c.settlement_type='hand_stacks' AND c.state='final';
  SELECT count(DISTINCT value->>'funding_manifest_id'),count(*) FILTER(WHERE value->>'funding_manifest_id' IS NOT NULL)
  INTO v_n,v_count FROM jsonb_array_elements(p_stacks);
  IF v_count=0 THEN
-  INSERT INTO public.cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,status,participants,
+  INSERT INTO public.cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,atomic_receipt,stack_claim,stack_settlement,status,participants,
    signed_external_net,rake,bbj,all_players_included,funding_provenance_complete,issues)
-  VALUES(p_table,p_number,p_hand,p_hash,p_request,'uncertified',p_stacks,p_inflow,p_rake,p_bbj,false,false,
+  VALUES(p_table,p_number,p_hand,p_hash,p_request,v_atomic,v_claim,v_settlement,'uncertified',p_stacks,p_inflow,p_rake,p_bbj,false,false,
    '["original_dealt_manifest_missing"]');
   RETURN;
  END IF;
@@ -268,9 +279,9 @@ BEGIN
  -- A signed net is conserved, but external-bank linkage and commercial terms
  -- must still be proven separately. Captured funding is not whole-period PNL.
  IF coalesce(p_inflow,0)<>0 THEN v_issues:=v_issues||'"external_bank_receipt_not_certified"'::jsonb; END IF;
- INSERT INTO public.cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,manifest_id,status,
+ INSERT INTO public.cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,atomic_receipt,stack_claim,stack_settlement,manifest_id,status,
   game_scope,participants,signed_external_net,rake,bbj,all_players_included,funding_provenance_complete,issues)
- VALUES(p_table,p_number,p_hand,p_hash,p_request,v_id,CASE WHEN jsonb_array_length(v_issues)=0 THEN 'captured' ELSE 'uncertified' END,
+ VALUES(p_table,p_number,p_hand,p_hash,p_request,v_atomic,v_claim,v_settlement,v_id,CASE WHEN jsonb_array_length(v_issues)=0 THEN 'captured' ELSE 'uncertified' END,
   m.game_scope,v_people,coalesce(p_inflow,0),coalesce(p_rake,0),coalesce(p_bbj,0),true,m.funding_provenance_complete,v_issues);
 END $$;
 REVOKE ALL ON FUNCTION public.fn_cash_accept_hand_provenance(uuid,bigint,uuid,jsonb,numeric,numeric,numeric,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;

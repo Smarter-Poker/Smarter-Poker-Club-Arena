@@ -579,11 +579,11 @@ lone horse was denied a dealing engine that a lone human would have received.
 Both were put to Dan on 2026-08-27 with the costs stated. His answers are
 BINDING and are recorded here so nobody re-opens them as a "bug":
 
-**1. Hand-history retention: STAYS AT 7 DAYS.** Horse-only hands are pruned
+**1. Hand-history retention: EIGHT DAYS (owner update September 17, 2026).** Horse-only hands are pruned
 after `hand_history_retention_policy.horse_retention_days`; hands a human was
 dealt into are kept forever. Equalising would cost ~0.5 GB/day (~15 GB/month)
 on a table already at 3.6 GB — 221k hands/day, 99.95% of them horse-only. Dan
-chose to leave it at 7. **This is the one sanctioned asymmetry in the entire
+originally chose seven days and explicitly increased it to eight on September 17. **This is the one sanctioned asymmetry in the entire
 law, it is a STORAGE decision rather than a player-treatment one, and it is
 Dan's to change — it is a config row, not code. Do not "fix" it.**
 

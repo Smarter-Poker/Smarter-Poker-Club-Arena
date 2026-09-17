@@ -17,7 +17,7 @@ All four evidence tables refuse UPDATE, DELETE and TRUNCATE. External roles cann
 - `cash_participant_funding_receipts`: immutable actual debit/journal/account/club/user/occupancy/asset records. Receipt IDs are prospective operation identities, not historical attribution.
 - `cash_funding_application_receipts`: exact pending funding delivery or refund and the occupancy actually credited.
 - `cash_hand_participant_manifests`: immutable actual predeal roster, original game scope, exact lease and funding references; unique table/hand number.
-- `cash_hand_provenance_receipts`: immutable accepted `hand_id`, `payload_hash`, full `accepted_request`, exact manifest reference, participants with `stack_before`, `stack_after`, `poker_delta`, signed external net and truthful completeness flags.
+- `cash_hand_provenance_receipts`: immutable accepted `hand_id`, `payload_hash`, full `accepted_request`, original atomic/stack-claim/final-settlement snapshots, exact manifest reference, participants with `stack_before`, `stack_after`, `poker_delta`, signed external net and truthful completeness flags. The original accounting proof survives ordinary pruning of game history.
 
 `funding_provenance_complete` means an original admission and a single actual funding account are evidenced, with pending delivery to the same occupancy. It does not establish a commercial beneficial-ownership allocation. Mixed wallet/treasury funding, legacy admissions, moved occupancies without original continuity, unsupported assets, and absent external-bank links remain uncertified. Nonzero external net is conserved but carries `external_bank_receipt_not_certified`. An all-horse hand is included without treating an `is_horse` flag as evidence of treasury funding.
 

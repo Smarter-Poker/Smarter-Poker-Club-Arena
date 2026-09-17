@@ -19,7 +19,9 @@ COPY src/ ./src/
 # game host. Resource CI compares every emitted runtime file to the full build.
 # The runtime project omits unit-test entrypoints and unused declarations.
 # Full test compilation and execution remain in the exact-source CI preflight.
-RUN ulimit -c 0 && node --max-old-space-size=768 ./node_modules/typescript/bin/tsc --project tsconfig.runtime.json --noCheck
+# The 512 MiB V8 heap leaves native/compiler and BuildKit room inside the
+# canonical 640 MiB no-swap builder. Resource CI proves exact runtime output.
+RUN ulimit -c 0 && node --max-old-space-size=512 ./node_modules/typescript/bin/tsc --project tsconfig.runtime.json --noCheck
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

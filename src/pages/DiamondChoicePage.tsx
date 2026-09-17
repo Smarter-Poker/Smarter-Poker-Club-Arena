@@ -412,7 +412,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           { label: 'Current Prize', value: gameChips(prize ?? 0), ink: 'gold' },
           {
             label: 'Next Prize',
-            value: nextPrize === undefined ? '—' : gameChips(nextPrize),
+            value: nextPrize === undefined ? 'N/A' : gameChips(nextPrize),
             ink: 'gold',
           },
         ]}

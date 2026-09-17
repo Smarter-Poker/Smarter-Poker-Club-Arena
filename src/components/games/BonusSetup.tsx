@@ -85,7 +85,7 @@ export default function BonusSetup({
           ? plinko
             ? `${total / budget.denomination} ${total / budget.denomination === 1 ? 'Drop' : 'Drops'} × ${budget.denomination} ${budget.denomination === 1 ? 'Diamond' : 'Diamonds'} = ${total.toLocaleString()} Diamonds`
             : `${total.toLocaleString()} Diamonds In This Round`
-          : 'Enter 25–2,500 Whole Diamonds.'}
+          : 'Enter 25-2,500 Whole Diamonds.'}
       </p>
       {diamonds !== null && valid && diamonds < total && (
         <p className={styles.short}>

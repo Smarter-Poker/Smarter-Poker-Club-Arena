@@ -53,22 +53,33 @@ describe('Diamond Spins bust invitation', () => {
   it('removes a dismissed offer when session storage is unavailable', () => {
     state.retainExit = true;
     state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
-    // happy-dom's concrete sessionStorage prototype can differ from the
-    // global Storage constructor, so spy on the object that owns the method.
-    const write = vi
-      .spyOn(Object.getPrototypeOf(sessionStorage) as Storage, 'setItem')
-      .mockImplementation(() => {
-        throw new Error('Storage unavailable');
-      });
+    const storage = sessionStorage;
+    const write = vi.fn(() => {
+      throw new Error('Storage unavailable');
+    });
+    // Storage methods may already be bound by the DOM environment. Replace the
+    // exact global getter so the component receives the throwing write fixture.
+    const storageGetter = vi.spyOn(globalThis, 'sessionStorage', 'get').mockReturnValue({
+      get length() {
+        return storage.length;
+      },
+      clear: () => storage.clear(),
+      getItem: (key) => storage.getItem(key),
+      key: (index) => storage.key(index),
+      removeItem: (key) => storage.removeItem(key),
+      setItem: write,
+    });
     try {
       const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
       fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
       expect(write).toHaveBeenCalledWith('diamond-spins-bust:player-a:club-a', 'dismissed');
+      expect(write.mock.results[0].type).toBe('throw');
+      expect(storage.getItem('diamond-spins-bust:player-a:club-a')).toBeNull();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       rerender(<DiamondBustPrompt clubId="club-a" />);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     } finally {
-      write.mockRestore();
+      storageGetter.mockRestore();
     }
   });
 

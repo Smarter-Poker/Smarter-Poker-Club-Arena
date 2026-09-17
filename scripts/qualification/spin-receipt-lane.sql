@@ -36,9 +36,13 @@ BEGIN
     GRANT CREATE ON SCHEMA public TO service_role;
     ALTER FUNCTION public.fn_ca_share_settlement_lane_for_table(uuid) OWNER TO service_role;
    END IF;
-   IF mode<>1 AND md5(pg_get_functiondef('public.fn_ca_share_settlement_lane_for_table(uuid)'::regprocedure))
-        IS DISTINCT FROM '409b14ee72ce888d3b26524c52d49a68' THEN
-    RAISE EXCEPTION 'authority-only fault unexpectedly changed shared helper source'; END IF;
+   -- A constant regprocedure cast resolves when its SQL expression is planned.
+   -- The missing-helper case must not plan the authority-only source lookup.
+   IF mode<>1 THEN
+    IF md5(pg_get_functiondef('public.fn_ca_share_settlement_lane_for_table(uuid)'::regprocedure))
+         IS DISTINCT FROM '409b14ee72ce888d3b26524c52d49a68' THEN
+     RAISE EXCEPTION 'authority-only fault unexpectedly changed shared helper source'; END IF;
+   END IF;
    BEGIN
     EXECUTE src.forward_sql;
     RAISE EXCEPTION 'receipt lane accepted missing or changed shared authority %',mode;

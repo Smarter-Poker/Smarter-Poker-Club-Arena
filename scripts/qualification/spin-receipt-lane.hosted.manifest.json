@@ -63,8 +63,8 @@
       "bytes": 18128
     },
     "scripts/qualification/spin-receipt-lane.sql": {
-      "sha256": "331d9cc6ce2f8a3e6336f4bb3b979d4006d4e4d94b7683c7b9356d5b3389ba6f",
-      "bytes": 7840
+      "sha256": "1cf313bc14aa867668619b74f5a7e878e028c5af6905563c3e04f9a9e1a82164",
+      "bytes": 8019
     },
     "supabase/components/spin-mixed-basis-receipt-lane.rollback.sql": {
       "sha256": "b4506629162e3603df25dc98f2e7910f795fdbac23e64665215a41953c15f41c",

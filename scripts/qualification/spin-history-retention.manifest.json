@@ -27,8 +27,8 @@
       "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12"
     },
     "scripts/qualification/fixtures/spin-history-retention/estate.sql": {
-      "bytes": 11914,
-      "sha256": "24c7db4fa5c95ca49c2bcafb6b19e5152f2cdb155e01d07a7e694493eb91ca59"
+      "bytes": 14658,
+      "sha256": "11528125a0f91a6808e98603400d8b8927637c2db9e897eccbe7f90e422761b9"
     },
     "scripts/qualification/fixtures/spin-history-retention/history-writer-authority.json": {
       "bytes": 30344,

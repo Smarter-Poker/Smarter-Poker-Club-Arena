@@ -28,11 +28,13 @@ BEGIN
    OR md5(pg_get_functiondef('public.fn_create_seat_first_game_atomic(uuid,jsonb)'::regprocedure))<>'92cbf5680d78bdbaa4309412b3d19dfd'
    OR md5(pg_get_functiondef('public.atomic_cancel_tournament(uuid,uuid)'::regprocedure))<>'6dac23baee41ff69ee0e1243f0a26c8e'
    OR md5(pg_get_functiondef('public.fn_ca_tournament_cancellation_receipt(uuid,uuid)'::regprocedure))<>'cf0bf7f56e2e50376626c37b59cfaca8'
+   OR md5(pg_get_functiondef('public.fn_cash_template_defaults(text,text)'::regprocedure))<>'f8616b0433f0420032a6233879876c79'
+   OR NOT has_function_privilege(current_user,'public.fn_cash_template_defaults(text,text)','EXECUTE')
    OR md5(pg_get_functiondef('public.fn_ca_insert_hand_with_awards(jsonb,jsonb)'::regprocedure))<>'e7f05bb7d61360be7424c5f429066047' THEN
    RAISE EXCEPTION 'retention estate: exact principals and actual writer authorities required';
  END IF;
  FOREACH n IN ARRAY ARRAY['clubs','unions','union_clubs','union_creators','club_members',
-   'tournaments','tables','table_seats','tournament_players','tournament_escrow',
+   'tournaments','cash_games','tables','table_seats','tournament_players','tournament_escrow',
    'tournament_terminal_settlements','tournament_cancellation_receipts','hand_history',
    'hand_atomic_commits','settlement_idempotency_keys','hand_history_retention_policy',
    'chip_ledger','wallet_transactions','chip_transactions','ca_mint_ledger'] LOOP
@@ -103,10 +105,48 @@ RESET ROLE;
 -- This is not a terminal/payment bypass; cancellation below is still canonical.
 UPDATE public.tournaments SET variant=NULL
 WHERE id IN(SELECT tournament_id FROM retention_cases WHERE name IN('unknown','cancelled_unknown'));
+-- Gate 7 requires every open cash table to belong to cash_games. This is a
+-- declared zero-money starting estate, not cash-creator/gameplay qualification.
+-- Use the existing pure template and real parent/table triggers; do not close
+-- the cash positive control or omit its stakes to bypass the parent requirement.
+INSERT INTO public.cash_games(id,club_id,union_id,name,template_name,variant,
+  sb,bb,handedness,ruleset_snapshot,created_by,must_move)
+SELECT extensions.uuid_generate_v5(execution,'retention-cash-game'),club_id,club_id,
+ 'Retention cash control','classic','nlh',1,2,6,
+ public.fn_cash_template_defaults('classic','nlh')||jsonb_build_object(
+   'seats',6,'sb',1,'bb',2,'table_mode','manual'),owner_user,false
+FROM retention_inputs;
 INSERT INTO public.tables(id,club_id,union_id,name,game_type,game_variant,status,
-  small_blind,big_blind,min_buy_in,max_buy_in,max_players,current_players,created_by)
-SELECT extensions.uuid_generate_v5(execution,'retention-cash-table'),club_id,club_id,
- 'Retention cash control','cash','nlh','waiting',1,2,20,200,6,0,owner_user FROM retention_inputs;
+  small_blind,big_blind,min_buy_in,max_buy_in,max_players,current_players,created_by,
+  cluster_id,role,main_index,lifecycle)
+SELECT extensions.uuid_generate_v5(q.execution,'retention-cash-table'),q.club_id,q.club_id,
+ 'Retention cash control','cash','nlh','waiting',g.sb,g.bb,
+ (g.ruleset_snapshot->>'min_buyin_bb')::numeric*g.bb,
+ (g.ruleset_snapshot->>'max_buyin_bb')::numeric*g.bb,6,0,q.owner_user,
+ g.id,'main',1,'live'
+FROM retention_inputs q JOIN public.cash_games g
+ ON g.id=extensions.uuid_generate_v5(q.execution,'retention-cash-game');
+DO $cash_parent_evidence$
+BEGIN
+ IF (SELECT count(*) FROM public.cash_games)<>1 OR NOT EXISTS(
+  SELECT 1 FROM retention_inputs q
+  JOIN public.cash_games g ON g.id=extensions.uuid_generate_v5(q.execution,'retention-cash-game')
+  JOIN public.tables t ON t.id=extensions.uuid_generate_v5(q.execution,'retention-cash-table')
+  WHERE g.club_id=q.club_id AND g.union_id=q.club_id AND g.created_by=q.owner_user
+   AND g.template_name='classic' AND g.variant='nlh' AND g.sb=1 AND g.bb=2 AND g.handedness=6
+   AND g.enabled IS TRUE AND g.state='live' AND g.must_move IS FALSE
+   AND g.ruleset_snapshot=public.fn_cash_template_defaults('classic','nlh')||jsonb_build_object(
+     'seats',6,'sb',1,'bb',2,'table_mode','manual')
+   AND t.cluster_id=g.id AND t.tournament_id IS NULL AND t.club_id=q.club_id AND t.union_id=q.club_id
+   AND t.game_type='cash' AND t.game_variant='nlh' AND t.status='waiting' AND t.is_deleted IS FALSE
+   AND t.role='main' AND t.main_index=1 AND t.lifecycle='live' AND t.current_players=0
+   AND t.small_blind=g.sb AND t.big_blind=g.bb AND t.max_players=g.handedness
+   AND t.min_buy_in=(g.ruleset_snapshot->>'min_buyin_bb')::numeric*g.bb
+   AND t.max_buy_in=(g.ruleset_snapshot->>'max_buyin_bb')::numeric*g.bb
+   AND t.seat_game_scope='cluster:'||g.id::text AND t.seat_admission_key='cash'
+   AND t.terminal_closed_at IS NULL) THEN
+  RAISE EXCEPTION 'retention estate: exact open cash parent/table projection differs'; END IF;
+END $cash_parent_evidence$;
 UPDATE retention_cases SET table_id=(SELECT extensions.uuid_generate_v5(execution,'retention-cash-table') FROM retention_inputs)
 WHERE tournament_id IS NULL;
 -- Canonical cancellation is called BEFORE any history exists; its real guard

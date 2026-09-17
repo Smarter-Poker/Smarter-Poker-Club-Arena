@@ -74,36 +74,156 @@ describe('actual worker issue ownership and volatile plan application', () => {
       await h.close();
     }
   });
-  it.each([60000, 60001])('keeps the exact %dms issue boundary without renewal', async (age) => {
-    const h = workerHarness();
-    try {
-      const result = await h.fast();
-      h.advance(age);
-      h.runtime.receive(commitOf(result, 2));
-      await h.runtime.drain();
-      expect(h.messages.at(-1)?.type).toBe(age === 60000 ? 'ACK' : 'ERROR');
-      expect(h.applied()).toBe(age === 60000 ? 1 : 0);
-    } finally {
-      await h.close();
+  it.each([60000, 60001])(
+    'retains pending ownership across the former %dms compute lifetime',
+    async (age) => {
+      const h = workerHarness();
+      try {
+        const result = await h.fast();
+        h.advance(age);
+        h.runtime.receive(commitOf(result, 2));
+        await h.runtime.drain();
+        expect(h.messages.at(-1)).toMatchObject({
+          type: 'ACK',
+          planDisposition: 'applied_volatile',
+        });
+        expect(h.applied()).toBe(1);
+      } finally {
+        await h.close();
+      }
     }
-  });
-  it('evicts the oldest issue at the actual 128-record ceiling', async () => {
+  );
+  it('refuses new issuance at128 without evicting any pending issue', async () => {
     const h = workerHarness();
     try {
       const first = await h.fast();
       let last = first;
       for (let n = 2; n <= 129; n++) last = await h.fast(requestAt(n, undefined, 1000100 + n));
+      expect(first.planIssueDisposition).toBe('issued');
+      expect(last.planIssueDisposition).toBe('capacity_unavailable');
       h.runtime.receive(commitOf(first, 130));
       await h.runtime.drain();
-      expect(h.messages.at(-1)?.type).toBe('ERROR');
+      expect(h.messages.at(-1)?.type).toBe('ACK');
       h.runtime.receive(commitOf(last, 131));
       await h.runtime.drain();
-      expect(h.messages.at(-1)?.type).toBe('ACK');
+      expect(h.messages.at(-1)).toMatchObject({ type: 'ERROR', planRefusal: 'issue_absent' });
       expect(h.applied()).toBe(1);
     } finally {
       await h.close();
     }
   });
+  it.each(['empty', 'applied', 'retired'] as const)(
+    'reclaims a %s entry before pending ownership at128',
+    async (terminal) => {
+      const h = workerHarness();
+      try {
+        const pending = await h.fast();
+        const decide = h.deps.decide;
+        if (terminal === 'empty') h.deps.decide = () => wager();
+        const reclaimable = await h.fast(requestAt(2, undefined, 1000102));
+        h.deps.decide = decide;
+        if (terminal === 'applied') h.runtime.receive(commitOf(reclaimable, 3));
+        if (terminal === 'retired')
+          h.runtime.receive({
+            type: 'RETIRE_DECISION_EFFECTS',
+            requestId: 3,
+            generation: reclaimable.generation,
+            fence: reclaimable.fence,
+            planBinding: reclaimable.planBinding,
+            reason: 'decision_finalized',
+          });
+        await h.runtime.drain();
+        for (let n = 4; n <= 130; n++)
+          expect((await h.fast(requestAt(n, undefined, 1000100 + n))).planIssueDisposition).toBe(
+            'issued'
+          );
+        h.runtime.receive(commitOf(pending, 131));
+        await h.runtime.drain();
+        expect(h.messages.at(-1)).toMatchObject({
+          type: 'ACK',
+          planDisposition: 'applied_volatile',
+        });
+        h.runtime.receive(commitOf(reclaimable, 132));
+        await h.runtime.drain();
+        expect(h.messages.at(-1)).toMatchObject({ type: 'ERROR', planRefusal: 'issue_absent' });
+      } finally {
+        await h.close();
+      }
+    }
+  );
+  it.each(['wrong_binding', 'exact', 'applied'] as const)(
+    'keeps exact retirement ownership for %s',
+    async (mode) => {
+      const h = workerHarness();
+      try {
+        const fast = await h.fast();
+        if (mode === 'applied') {
+          h.runtime.receive(commitOf(fast, 2));
+          await h.runtime.drain();
+        }
+        const binding = structuredClone(fast.planBinding);
+        if (mode === 'wrong_binding') (binding as any).actorId = 'other';
+        const retirement = {
+          type: 'RETIRE_DECISION_EFFECTS' as const,
+          requestId: 3,
+          generation: fast.generation,
+          fence: fast.fence,
+          planBinding: binding,
+          reason: 'decision_finalized' as const,
+        };
+        h.runtime.receive(retirement);
+        await h.runtime.drain();
+        expect(h.messages.at(-1)).toMatchObject(
+          mode === 'wrong_binding'
+            ? { type: 'ERROR', planRefusal: 'binding_mismatch' }
+            : {
+                type: 'ACK',
+                planDisposition: mode === 'applied' ? 'already_applied_volatile' : 'retired',
+              }
+        );
+        h.runtime.receive({ ...retirement, requestId: 4 });
+        await h.runtime.drain();
+        if (mode === 'exact')
+          expect(h.messages.at(-1)).toMatchObject({
+            type: 'ACK',
+            planDisposition: 'already_retired',
+          });
+        h.runtime.receive(commitOf(fast, 5));
+        await h.runtime.drain();
+        expect(h.messages.at(-1)).toMatchObject(
+          mode === 'exact' ? { type: 'ERROR', planRefusal: 'issue_retired' } : { type: 'ACK' }
+        );
+        expect(h.applied()).toBe(mode === 'exact' ? 0 : 1);
+      } finally {
+        await h.close();
+      }
+    }
+  );
+  it.each(['empty_first', 'empty_second'] as const)(
+    'does not bypass reissue ambiguity with %s',
+    async (mode) => {
+      const h = workerHarness();
+      try {
+        const decide = h.deps.decide;
+        if (mode === 'empty_first') h.deps.decide = () => wager();
+        const first = await h.fast();
+        h.deps.decide = mode === 'empty_second' ? () => wager() : decide;
+        const next = await h.fast(requestAt(2));
+        expect(next.planIssueDisposition).toBe('reissue_unavailable');
+        for (const [fast, requestId] of [
+          [first, 3],
+          [next, 4],
+        ] as const) {
+          h.runtime.receive(commitOf(fast, requestId));
+          await h.runtime.drain();
+          expect(h.messages.at(-1)?.type).toBe('ERROR');
+        }
+        expect(h.applied()).toBe(0);
+      } finally {
+        await h.close();
+      }
+    }
+  );
   it.each([false, true])('retains unapplied reissue ambiguity when changed=%s', async (changed) => {
     const h = workerHarness();
     try {
@@ -208,6 +328,28 @@ describe('actual worker issue ownership and volatile plan application', () => {
       await h.runtime.drain();
       expect(h.messages.at(-1)?.type).toBe('ERROR');
       expect(h.applied()).toBe(0);
+    } finally {
+      await h.close();
+    }
+  });
+  it('does not erase an applied original when its repeated FAST send throws', async () => {
+    let throwFast = false;
+    const h = workerHarness({}, (m) => {
+      if (throwFast && m.type === 'FAST_RESULT') throw Error('repeat send failed');
+    });
+    try {
+      const original = await h.fast();
+      h.runtime.receive(commitOf(original, 2));
+      await h.runtime.drain();
+      throwFast = true;
+      await h.fast(requestAt());
+      h.runtime.receive(commitOf(original, 3));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'ACK',
+        planDisposition: 'already_applied_volatile',
+      });
+      expect(h.applied()).toBe(1);
     } finally {
       await h.close();
     }

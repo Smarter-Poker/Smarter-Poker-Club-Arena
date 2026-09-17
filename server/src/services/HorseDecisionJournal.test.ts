@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, chmodSync, rmSync, readFileSync, statSync, symlinkSync } from 'node:fs';
+import {
+  mkdtempSync,
+  chmodSync,
+  rmSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+  readdirSync,
+  writeFileSync,
+  mkdirSync,
+  linkSync,
+} from 'node:fs';
+import { gunzipSync } from 'node:zlib';
+import { Worker } from 'node:worker_threads';
+import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -7,7 +21,10 @@ import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)(
   'node:sqlite'
 ) as typeof import('node:sqlite');
-import { HorseDecisionJournalStore } from './horseDecisionJournal/store.js';
+import {
+  HorseDecisionJournalStore,
+  horseJournalCapacityReason,
+} from './horseDecisionJournal/store.js';
 import {
   horseJournalJson,
   journalHash,
@@ -24,7 +41,10 @@ const folder = () => {
   folders.push(p);
   return p;
 };
-const store = (dir: string, limits?: { maxBytes?: number; maxRecords?: number }) => {
+const store = (
+  dir: string,
+  limits?: ConstructorParameters<typeof HorseDecisionJournalStore>[1]
+) => {
   const s = new HorseDecisionJournalStore(dir, limits);
   stores.push(s);
   return s;
@@ -80,7 +100,7 @@ describe('private durable Horse journal storage', () => {
     const dir = folder(),
       value = record();
     const module = new URL('./horseDecisionJournal/store.ts', import.meta.url).href;
-    const script = `import { HorseDecisionJournalStore } from ${JSON.stringify(module)};const s=new HorseDecisionJournalStore(process.argv[1]);s.append(JSON.parse(process.argv[2]));process.exit(0);`;
+    const script = `import { HorseDecisionJournalStore, horseJournalCapacityReason } from ${JSON.stringify(module)};const s=new HorseDecisionJournalStore(process.argv[1]);s.append(JSON.parse(process.argv[2]));process.exit(0);`;
     execFileSync(
       process.execPath,
       ['--import', 'tsx', '--input-type=module', '-e', script, dir, JSON.stringify(value)],
@@ -291,4 +311,292 @@ describe('bounded isolated Horse journal publisher', () => {
     expect(notes).not.toContain('phase15_journal_recorded');
     expect(w.terminate).toHaveBeenCalledOnce();
   });
+});
+
+describe('bounded immutable Horse archive custody', () => {
+  const options = (dir: string, patch = {}) => ({
+    directory: join(dir, 'archive'),
+    maxBytes: 1024 * 1024,
+    maxSegments: 100,
+    ...patch,
+  });
+  const catalog = (dir: string) =>
+    new DatabaseSync(join(dir, 'archive', 'horse-journal-archive.sqlite'));
+  it('preserves a full legacy database byte-for-byte and joins original envelopes across restart', () => {
+    const dir = folder(),
+      legacy = store(dir, { maxRecords: 1 });
+    legacy.append(record());
+    expect(() => legacy.append(record(2))).toThrow('capacity');
+    legacy.close();
+    const original = readFileSync(join(dir, 'horse-decisions.sqlite'));
+    const s = store(dir, { archive: options(dir) });
+    expect(s.appendBatch([record(), record(2)])).toEqual(['replayed', 'recorded']);
+    expect(s.readHand(record().handKey)).toEqual([record(), record(2)]);
+    const files = readdirSync(join(dir, 'archive', 'segments'));
+    expect(files).toHaveLength(1);
+    expect(gunzipSync(readFileSync(join(dir, 'archive', 'segments', files[0]!))).toString()).toBe(
+      horseJournalJson(record(2)) + '\n'
+    );
+    expect(statSync(join(dir, 'archive', 'segments', files[0]!)).mode & 0o777).toBe(0o600);
+    s.close();
+    const reopened = store(dir, { archive: options(dir) });
+    expect(reopened.append(record(2))).toBe('replayed');
+    expect(readFileSync(join(dir, 'horse-decisions.sqlite'))).toEqual(original);
+    expect(reopened.storageStats().archive).toMatchObject({
+      records: 1,
+      segments: 1,
+      pendingSegments: 0,
+    });
+  });
+  it('reads existing archives without applying a new smaller writer quota', () => {
+    const dir = folder(),
+      a = store(dir, { archive: options(dir) });
+    a.append(record());
+    a.close();
+    const s = store(dir, {
+      readOnly: true,
+      archive: options(dir, { maxBytes: 1, maxSegments: 1 }),
+    });
+    expect(s.readHand(record().handKey)).toEqual([record()]);
+    expect(s.storageStats().archive).toMatchObject({ maxBytes: 1024 * 1024, maxSegments: 100 });
+    expect(() => s.append(record(2))).toThrow('read only');
+  });
+  it('coordinates competing connections and rejects conflicts atomically across both tiers', () => {
+    const dir = folder(),
+      legacy = store(dir);
+    legacy.append(record());
+    legacy.close();
+    const a = store(dir, { archive: options(dir) }),
+      b = store(dir, { archive: options(dir) });
+    expect(a.append(record(2))).toBe('recorded');
+    expect(b.append(record(2))).toBe('replayed');
+    for (const sequence of [1, 2])
+      expect(() => b.appendBatch([record(3), record(sequence, { changed: true })])).toThrow(
+        'identity conflict'
+      );
+    expect(a.readHand(record().handKey)).toEqual([record(), record(2)]);
+  });
+  it.each(['maxBytes', 'maxSegments'] as const)(
+    'reserves %s atomically and never deletes earlier custody',
+    (key) => {
+      const dir = folder(),
+        s = store(dir, { archive: options(dir, { [key]: key === 'maxBytes' ? 1 : 1 }) });
+      if (key === 'maxSegments') s.append(record());
+      expect(() => s.append(record(2))).toThrow(
+        key === 'maxBytes' ? 'byte_capacity' : 'segment_capacity'
+      );
+      expect(s.storageStats().archive).toMatchObject({
+        records: key === 'maxBytes' ? 0 : 1,
+        pendingSegments: 0,
+      });
+    }
+  );
+  it('retains a reserved batch after index failure and recovers exact bytes once at reopen', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) }),
+      native = catalog(dir);
+    native.exec(
+      "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+    );
+    expect(() => s.appendBatch([record(), record(2)])).toThrow('synthetic interruption');
+    expect(s.storageStats().archive).toMatchObject({ records: 2, segments: 1, pendingSegments: 1 });
+    expect(() => s.readHand(record().handKey)).toThrow('custody pending');
+    const files = readdirSync(join(dir, 'archive', 'segments'));
+    expect(files).toHaveLength(1);
+    const bytes = readFileSync(join(dir, 'archive', 'segments', files[0]!));
+    s.close();
+    native.exec('DROP TRIGGER fail_index');
+    native.close();
+    const recovered = store(dir, { archive: options(dir) });
+    expect(recovered.appendBatch([record(), record(2)])).toEqual(['replayed', 'replayed']);
+    expect(recovered.storageStats().archive).toMatchObject({
+      records: 2,
+      segments: 1,
+      pendingSegments: 0,
+    });
+    expect(readFileSync(join(dir, 'archive', 'segments', files[0]!))).toEqual(bytes);
+  });
+  it('recovers publication interrupted between hard-link creation and staging unlink', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) }),
+      native = catalog(dir);
+    native.exec(
+      "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+    );
+    expect(() => s.append(record())).toThrow();
+    const row = native.prepare('SELECT sha FROM archive_pending').get()!,
+      final = join(dir, 'archive', 'segments', row.sha + '.ndjson.gz');
+    // Reconstruct the precise interrupted hard-link publication state.
+    linkSync(final, join(dir, 'archive', 'segments', row.sha + '.pending'));
+    native.exec('DROP TRIGGER fail_index');
+    native.close();
+    expect(s.append(record())).toBe('replayed');
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual([row.sha + '.ndjson.gz']);
+  });
+  it.each(['missing', 'changed', 'hardlink'] as const)(
+    'refuses %s custody on both replay and read',
+    (damage) => {
+      const dir = folder(),
+        s = store(dir, { archive: options(dir) });
+      s.append(record());
+      const path = join(
+        dir,
+        'archive',
+        'segments',
+        readdirSync(join(dir, 'archive', 'segments'))[0]!
+      );
+      if (damage === 'missing') rmSync(path);
+      else if (damage === 'changed') writeFileSync(path, 'invalid');
+      else linkSync(path, join(dir, 'extra-link'));
+      expect(() => s.append(record())).toThrow();
+      expect(() => s.readHand(record().handKey)).toThrow();
+    }
+  );
+  it('refuses legacy mutation rather than pairing archive custody with a changed source', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) });
+    s.append(record());
+    const other = store(dir);
+    other.append(record(2));
+    expect(() => s.append(record(3))).toThrow('legacy file changed');
+    expect(() => s.readHand(record().handKey)).toThrow('legacy file changed');
+    expect(() => store(dir, { archive: options(dir) })).toThrow('legacy identity changed');
+  });
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN])(
+    'refuses invalid archive resource allocation %s',
+    (n) => {
+      for (const key of ['maxBytes', 'maxSegments'])
+        expect(() => store(folder(), { archive: options(folder(), { [key]: n }) })).toThrow(
+          'configuration'
+        );
+    }
+  );
+  it('refuses a present incomplete archive instead of silently reading legacy only', () => {
+    const dir = folder(),
+      s = store(dir);
+    s.close();
+    mkdirSync(join(dir, 'archive'), { mode: 0o700 });
+    expect(() => store(dir, { readOnly: true, archive: options(dir) })).toThrow();
+    expect(readdirSync(join(dir, 'archive'))).toEqual([]);
+  });
+  it('retains the one reserved batch before file creation and replaces only its partial staging bytes', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) });
+    const sha = journalHash(horseJournalJson(record()) + '\n');
+    const stage = join(dir, 'archive', 'segments', sha + '.pending');
+    mkdirSync(stage, { mode: 0o700 });
+    expect(() => s.append(record())).toThrow('not private');
+    expect(s.storageStats().archive).toMatchObject({ pendingSegments: 1, records: 1 });
+    rmSync(stage, { recursive: true });
+    writeFileSync(stage, 'interrupted', { mode: 0o600 });
+    expect(s.append(record())).toBe('replayed');
+    expect(s.readHand(record().handKey)).toEqual([record()]);
+    expect(readdirSync(join(dir, 'archive', 'segments'))).toEqual([sha + '.ndjson.gz']);
+  });
+  it('reports a changed writer allocation and refuses the stale writer without losing exact replay', () => {
+    const dir = folder(),
+      a = store(dir, { archive: options(dir) });
+    a.append(record());
+    const b = store(dir, { archive: options(dir, { maxBytes: 1 }) });
+    expect(() => a.append(record(2))).toThrow('writer allocation changed');
+    expect(b.append(record())).toBe('replayed');
+    expect(() => b.append(record(2))).toThrow('byte_capacity');
+    expect(b.storageStats().archive).toMatchObject({ maxBytes: 1, records: 1 });
+  });
+  it.each([
+    [new Error('horse_archive_byte_capacity'), 'archive_bytes'],
+    [new Error('horse_archive_segment_capacity'), 'archive_segments'],
+    [{ code: 'ERR_SQLITE_ERROR', errcode: 13 }, 'archive_storage_capacity'],
+    [{ code: 'ENOSPC' }, 'archive_storage_capacity'],
+    [new Error('private-path-or-record'), undefined],
+  ])('emits only a finite capacity reason', (error, expected) => {
+    expect(horseJournalCapacityReason(error)).toBe(expected);
+  });
+  it('preserves the combined 256-record read bound', () => {
+    const dir = folder(),
+      legacy = store(dir);
+    legacy.append(record());
+    legacy.close();
+    const s = store(dir, { archive: options(dir) });
+    for (let first = 2; first <= 257; first += 16)
+      s.appendBatch(Array.from({ length: 16 }, (_, i) => record(first + i)));
+    expect(() => s.readHand(record().handKey)).toThrow('read exceeds bounds');
+  });
+  it('bounds cumulative decode work independently of the selected hand bytes', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) });
+    for (let batch = 0; batch < 10; batch++) {
+      const rows = [record(batch * 10 + 1)];
+      for (let i = 2; i <= 8; i++)
+        rows.push(
+          makeHorseJournalRecord(
+            {
+              producerId: record().producerId,
+              sequence: batch * 10 + i,
+              atMs: 1000,
+              sourceRelease: null,
+              kind: 'decision',
+              handKey: journalHash('other'),
+              turnKey: record().turnKey,
+            },
+            { large: 'x'.repeat(490000) }
+          )
+        );
+      s.appendBatch(rows);
+    }
+    expect(() => s.readHand(record().handKey)).toThrow('decode bounds');
+  });
+  it('the actual dedicated worker writes configured archive custody beyond a full legacy spool', async () => {
+    const dir = folder(),
+      legacy = store(dir, { maxRecords: 1 });
+    legacy.append(record());
+    legacy.close();
+    const tsx = pathToFileURL(createRequire(import.meta.url).resolve('tsx/esm/api')).href;
+    const entry = new URL('./horseDecisionJournal/worker.ts', import.meta.url).href;
+    const code = `import { tsImport } from ${JSON.stringify(tsx)}; await tsImport(${JSON.stringify(entry)}, ${JSON.stringify(import.meta.url)});`;
+    const worker = new Worker(new URL('data:text/javascript,' + encodeURIComponent(code)), {
+      workerData: { directory: dir, archive: options(dir) },
+    });
+    try {
+      const next = () =>
+        new Promise<any>((resolve, reject) => {
+          worker.once('message', resolve);
+          worker.once('error', reject);
+        });
+      expect(await next()).toEqual({ type: 'READY' });
+      const reply = next();
+      worker.postMessage({ type: 'APPEND', records: [record(2)] });
+      expect(await reply).toMatchObject({
+        type: 'ACK',
+        receipts: [{ status: 'recorded', eventId: record(2).eventId }],
+      });
+      const stopped = next();
+      worker.postMessage({ type: 'STOP' });
+      expect(await stopped).toEqual({ type: 'STOPPED' });
+      const reader = store(dir, { readOnly: true, archive: options(dir) });
+      expect(reader.readHand(record().handKey)).toEqual([record(), record(2)]);
+    } finally {
+      await worker.terminate();
+    }
+  });
+});
+
+describe('archive capacity reporting uses the existing terminal failure path', () => {
+  it.each(['archive_bytes', 'archive_segments', 'archive_storage_capacity'])(
+    'reports %s without acknowledging uncaptured records',
+    async (reason) => {
+      const w = new FakeWorker(),
+        notes: string[] = [],
+        p = new HorseDecisionJournalPublisher(w, (x) => notes.push(x));
+      p.record('decision', 'hand', 'turn', {});
+      w.emit({ type: 'READY' });
+      w.emit({ type: 'UNAVAILABLE', reason });
+      p.record('decision', 'hand', 'turn2', {});
+      await p.stop();
+      expect(notes).toContain('phase15_journal_' + reason);
+      expect(notes).not.toContain('phase15_journal_recorded');
+      expect(notes).toContain('phase15_journal_capture_unavailable');
+      expect(w.terminate).toHaveBeenCalledTimes(1);
+    }
+  );
 });

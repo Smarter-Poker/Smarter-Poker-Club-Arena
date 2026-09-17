@@ -1,8 +1,8 @@
 # Horse Brain Phases 6–15: completion implementation plan
 
-Prepared September 17, 2026 against protected source `4a2bff6f782b7d6ee5ab191b9c611b97decc9760` while that engine release proceeds through its existing publisher. This document plans the next implementation work. It does not activate a strategy, certify all fifteen phases, or replace the deployment's live verification.
+Prepared September 17, 2026 against protected source `4a2bff6f782b7d6ee5ab191b9c611b97decc9760`. That engine release subsequently published and produced natural-use evidence. This document plans the remaining implementation work. It does not activate a strategy, certify all fifteen phases, or replace deployment verification.
 
-The owner requested this plan during the maintenance-window wait. Development remains strictly within Horse Brain. Continue the current publication independently; no item below is an invented prerequisite for that already qualified release.
+The owner subsequently authorized closing the live audit defects. The [live audit repair record](horse-brain-live-audit-repairs-2026-09-17.md) covers plan-update ownership, private archive capture and accepted-history origin. Those concrete failures take priority over the general expansion sequence below. Development remains strictly within Horse Brain; unrelated deliveries proceed independently through their existing safeguards.
 
 ## Completion target
 

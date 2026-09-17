@@ -931,7 +931,7 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
     expect(h.rng()).toBe(101);
     expect(h.latency).toEqual([{ scope: 'plo4', ms: 6 }]);
-    expect(h.features).toEqual(['phase5_canonical_state']);
+    expect(h.features).toEqual(['phase5_canonical_state', 'phase15_plan_issue_no_effects']);
     expect(h.frozenSnapshots).toEqual([true]);
   });
 

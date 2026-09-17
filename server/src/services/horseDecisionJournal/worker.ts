@@ -1,12 +1,14 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { HorseDecisionJournalStore } from './store.js';
+import { HorseDecisionJournalStore, horseJournalCapacityReason } from './store.js';
 import { validateHorseJournalRecord } from './record.js';
 import { horseJournalFailureKind } from './failure.js';
 
 if (isMainThread || !parentPort) throw Error('Horse journal requires its private worker');
 const port = parentPort;
 try {
-  const store = new HorseDecisionJournalStore(workerData.directory);
+  const store = new HorseDecisionJournalStore(workerData.directory, {
+    archive: workerData.archive,
+  });
   port.on('message', (message: unknown) => {
     if (message && typeof message === 'object' && 'type' in message && message.type === 'STOP') {
       store.close();
@@ -31,11 +33,17 @@ try {
       });
     } catch (error) {
       // No paths, cards, identities or SQL errors in runtime/public messages.
-      port.postMessage({ type: horseJournalFailureKind(error) });
+      port.postMessage({
+        type: horseJournalFailureKind(error),
+        reason: horseJournalCapacityReason(error),
+      });
     }
   });
   port.postMessage({ type: 'READY' });
 } catch (error) {
-  port.postMessage({ type: horseJournalFailureKind(error) });
+  port.postMessage({
+    type: horseJournalFailureKind(error),
+    reason: horseJournalCapacityReason(error),
+  });
   port.close();
 }

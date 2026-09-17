@@ -1250,6 +1250,9 @@ export abstract class ServerTableEngineBase {
     amount?: number;
     timestamp: number;
     stage: string;
+    origin?: import('../types.js').AcceptedActionOrigin;
+    /** Authored only by the uncalled-return event handler, never by a player. */
+    historyEvent?: 'uncalled_bet_returned';
     /** V12.3: a short all-in is not a raise (TDA 44). Persisting this makes
      *  hand_history replayable by HorseMind, which requires it to count an
      *  all-in as aggression at all. */

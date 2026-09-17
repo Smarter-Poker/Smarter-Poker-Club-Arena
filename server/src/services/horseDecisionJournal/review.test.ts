@@ -27,7 +27,10 @@ const turn = (x: any) =>
   journalHash(
     JSON.stringify([x.generation, x.fence, x.requestId, x.decisionKey, x.decisionTimeMs])
   );
-function fixture(variant: Parameters<typeof jointPolicyFixture>[0] = 'nlh') {
+function fixture(
+  variant: Parameters<typeof jointPolicyFixture>[0] = 'nlh',
+  historyPrefix: readonly Record<string, unknown>[] = []
+) {
   const raw = jointPolicyFixture(variant, 1, 'cash', 'preflop');
   const { hero, state } = JSON.parse(JSON.stringify(raw), (k, v) =>
     typeof v === 'string' && /^p[0-9]$/.test(v)
@@ -45,7 +48,7 @@ function fixture(variant: Parameters<typeof jointPolicyFixture>[0] = 'nlh') {
     player: hero,
     gameState: state,
     style: 'balanced',
-    handJournalContext: captureHorseHandJournalContext(state.actionHistory),
+    handJournalContext: captureHorseHandJournalContext([...historyPrefix, ...state.actionHistory]),
   };
   snapshot.decisionKey = buildHorseDecisionKey(snapshot);
   const decision = { action: 'call' as const, thinkTime: 50 };
@@ -79,7 +82,7 @@ function fixture(variant: Parameters<typeof jointPolicyFixture>[0] = 'nlh') {
     stage: 'preflop' as const,
   };
   settleHorseExecutionWitness(w, { applied: true, acceptedActions: [{ record, intended: true }] });
-  const ordinal = state.actionHistory.length;
+  const ordinal = historyPrefix.length + state.actionHistory.length;
   const a = {
     type: 'OBSERVE_COMPLETED_HAND',
     requestId: 3,
@@ -89,6 +92,7 @@ function fixture(variant: Parameters<typeof jointPolicyFixture>[0] = 'nlh') {
     committedHandId: hand,
     bigBlind: state.bigBlind,
     actions: [
+      ...historyPrefix,
       ...state.actionHistory,
       {
         ...record,
@@ -146,6 +150,66 @@ const directory = () => {
   return d;
 };
 describe('private retained-hand journal consumer', () => {
+  const returned = () => ({
+    seat: 1,
+    userId: '20000000-0000-4000-8000-000000000001',
+    action: 'return',
+    amount: 100,
+    timestamp: 1002,
+    stage: 'flop',
+    historyEvent: 'uncalled_bet_returned',
+  });
+
+  it('reconciles explicit forced posts and returned accounting rows without changing the Horse ordinal', () => {
+    const post = {
+      ...returned(),
+      action: 'sb',
+      amount: 1,
+      timestamp: 999,
+      stage: 'preflop',
+      dead: false,
+      origin: 'forced',
+    };
+    const { historyEvent: _event, ...forcedPost } = post;
+    const f = fixture('nlh', [forcedPost]);
+    f.a.actions.push(returned());
+    const before = JSON.stringify(f.a);
+    expect(f.w.handAnchor).toMatchObject({ status: 'anchored', actionOrdinal: 1 });
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      acceptedHorseActions: 1,
+      matchedActions: 1,
+      gaps: [],
+      completePopulation: false,
+      activationAllowed: false,
+    });
+    expect(JSON.stringify(f.a)).toBe(before);
+  });
+
+  it.each([
+    { name: 'legacy absent marker', patch: { historyEvent: undefined } },
+    { name: 'zero returned amount', patch: { amount: 0 } },
+    { name: 'unknown marker', patch: { historyEvent: 'accounting' } },
+    { name: 'null marker', patch: { historyEvent: null } },
+    { name: 'array marker', patch: { historyEvent: ['uncalled_bet_returned'] } },
+    { name: 'object marker', patch: { historyEvent: { type: 'uncalled_bet_returned' } } },
+    { name: 'ordinary player choice', patch: { action: 'call', origin: 'player' } },
+    { name: 'discard choice', patch: { action: 'discard' } },
+    ...['unknown', 'forced', 'pre_action', 'player', 'horse_policy', 'horse_fallback', null].map(
+      (origin) => ({ name: `supplied origin ${origin}`, patch: { origin } })
+    ),
+    { name: 'legacy return with forced origin', patch: { historyEvent: undefined, origin: 'forced' } },
+  ])('keeps $name unqualified instead of inventing event provenance', ({ patch }) => {
+    const f = fixture();
+    f.a.actions.push({ ...returned(), ...patch });
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'incomplete',
+      gaps: expect.arrayContaining(['action_origin_unavailable']),
+      completePopulation: false,
+      activationAllowed: false,
+    });
+  });
+
   it.each([
     'nlh',
     'plo4',

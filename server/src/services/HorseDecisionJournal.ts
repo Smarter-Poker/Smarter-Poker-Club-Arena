@@ -1,3 +1,4 @@
+import { runtimeHorseJournalArchiveOptions } from './horseDecisionJournal/config.js';
 import { Worker } from 'node:worker_threads';
 import { randomUUID } from 'node:crypto';
 import { resolveReleaseIdentity } from '../releaseIdentity.js';
@@ -289,6 +290,12 @@ export class HorseDecisionJournalPublisher {
       return;
     }
     if (
+      message?.type === 'UNAVAILABLE' &&
+      typeof message.reason === 'string' &&
+      ['archive_bytes', 'archive_segments', 'archive_storage_capacity'].includes(message.reason)
+    )
+      this.count(message.reason);
+    if (
       message?.type !== 'ACK' ||
       !this.inFlight ||
       !Array.isArray(message.receipts) ||
@@ -365,8 +372,9 @@ export function startHorseDecisionJournal(): void {
     const entry = import.meta.url.endsWith('.ts')
       ? './horseDecisionJournal/worker.ts'
       : './horseDecisionJournal/worker.js';
+    const archive = runtimeHorseJournalArchiveOptions(directory);
     const createWriter = () =>
-      new Worker(new URL(entry, import.meta.url), { workerData: { directory } });
+      new Worker(new URL(entry, import.meta.url), { workerData: { directory, archive } });
     publisher = new HorseDecisionJournalPublisher(createWriter(), noteFire, {
       restart: createWriter,
     });

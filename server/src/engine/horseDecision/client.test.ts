@@ -215,6 +215,7 @@ const ready = {
 
 const fastResult = (requestId: number, fence: string): FastHorseDecisionResult => ({
   type: 'FAST_RESULT' as const,
+  planIssueDisposition: 'no_effects',
   requestId,
   planBinding: undefined as any, // Filled by the actual sent-job fixture adapter above.
   generation: 7,
@@ -227,15 +228,41 @@ const fastResult = (requestId: number, fence: string): FastHorseDecisionResult =
   effects: [],
 });
 
-// Priority-order controls use an explicitly synthetic empty FAST batch. Actual
-// issue/acceptance/application is qualified separately by the new worker chain.
-function transportOnlyCommitFixture(): FastHorseDecisionResult {
-  const request = { ...snapshot('accepted-action'), type: 'DECIDE_FAST' as const, requestId: 1 };
-  return {
-    ...fastResult(1, request.fence),
-    planBinding: horsePlanBatchBindingFromRequest(request),
-    effects: [],
-  };
+// These ordering controls obtain an actual client-owned result from the fake
+// worker transport. Application/table authority is covered by the real chain.
+async function transportOnlyCommitFixture(
+  client: LiveHorseDecisionWorkerClient,
+  worker: FakeWorker
+): Promise<FastHorseDecisionResult> {
+  const input = snapshot(
+    '33333333-3333-4333-8333-333333333333:1000100:1:44444444-4444-4444-8444-444444444444:7'
+  );
+  input.gameState.stage = 'flop';
+  input.gameState.actionHistory = [
+    { seat: 2, userId: 'horse-2', timestamp: 12, stage: 'preflop', action: 'call', amount: 2 },
+  ];
+  input.decisionKey = buildHorseDecisionKey(input);
+  const pending = client.decideFast(input);
+  const graph = new HorsePolicyGraph(() => 0);
+  let decision: FastHorseDecisionResult['decision'] | null = null;
+  for (const node of HORSE_POLICY_ORDER)
+    decision = graph.run(node, decision, () => ({
+      decision: { action: 'bet', amount: 10, thinkTime: 0 },
+    })).decision;
+  worker.emitMessage({
+    ...fastResult(1, input.fence),
+    planIssueDisposition: 'issued',
+    decision: graph.finish(decision!),
+    effects: [
+      {
+        type: 'plan',
+        handKey: 'plan-hand-v1:33333333-3333-4333-8333-333333333333:1000100',
+        userId: 'horse-1',
+        barrelIntent: true,
+      },
+    ],
+  });
+  return pending;
 }
 
 describe('LiveHorseDecisionWorkerClient', () => {
@@ -511,6 +538,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
           },
         })).decision;
       reply.decision = graph.finish(value!);
+      reply.planIssueDisposition = 'issued';
       reply.effects = [
         {
           type: 'plan',
@@ -572,6 +600,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
           decision: { action: 'bet' as const, amount: 10, thinkTime: 0 },
         })).decision;
       reply.decision = originGraph.finish(originDecision!);
+      reply.planIssueDisposition = 'issued';
       reply.effects = [
         {
           type: 'raise_plan',
@@ -1316,6 +1345,57 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(onFatal).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps an expired commit unknown and retires only after its late exact ACK, without replay', async () => {
+    vi.useFakeTimers();
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 1,
+      jobTimeoutMs: 10,
+    });
+    try {
+      worker.emitMessage(ready);
+      const owned = await transportOnlyCommitFixture(client, worker);
+      const commit = client.commitDecisionEffects(owned);
+      const rejected = expect(commit).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+      vi.advanceTimersByTime(10);
+      await rejected;
+      expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(1);
+      expect(worker.sent.filter((m: any) => m.type === 'RETIRE_DECISION_EFFECTS')).toHaveLength(0);
+      worker.emitMessage({
+        type: 'ACK',
+        requestId: 2,
+        generation: owned.generation,
+        fence: owned.fence,
+        operation: 'COMMIT_DECISION_EFFECTS',
+        planDisposition: 'applied_volatile',
+      });
+      expect(worker.sent.at(-1)).toMatchObject({
+        type: 'RETIRE_DECISION_EFFECTS',
+        requestId: 3,
+        planBinding: owned.planBinding,
+      });
+      worker.emitMessage({
+        type: 'ACK',
+        requestId: 3,
+        generation: owned.generation,
+        fence: owned.fence,
+        operation: 'RETIRE_DECISION_EFFECTS',
+        planDisposition: 'already_applied_volatile',
+      });
+      await expect(client.commitDecisionEffects(owned)).rejects.toThrow(
+        'no available client ownership'
+      );
+      expect(client.status().phase).toBe('ready');
+      expect(worker.sent.filter((m: any) => m.type === 'COMMIT_DECISION_EFFECTS')).toHaveLength(1);
+    } finally {
+      const stopping = client.stop();
+      worker.emitMessage({ type: 'STOPPED' });
+      await stopping;
+      vi.useRealTimers();
+    }
+  });
+
   it('orders an accepted action effect after older work and before synchronous successors', async () => {
     const worker = new FakeWorker();
     const client = new LiveHorseDecisionWorkerClient({
@@ -1323,6 +1403,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
       maxInFlight: 1,
     });
     worker.emitMessage(ready);
+    const owned = await transportOnlyCommitFixture(client, worker);
     const active = client.decideFast(snapshot('active'));
     const older = client.decideFast(snapshot('older'));
     let successor!: ReturnType<typeof client.decideFast>;
@@ -1330,29 +1411,30 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
     client.runWithDispatchBarrier(() => {
       successor = client.decideFast(snapshot('successor'));
-      committed = client.commitDecisionEffects(transportOnlyCommitFixture());
+      committed = client.commitDecisionEffects(owned);
     });
 
-    worker.emitMessage(fastResult(1, 'active'));
+    worker.emitMessage(fastResult(2, 'active'));
     await active;
-    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 2 });
-    worker.emitMessage(fastResult(2, 'older'));
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+    worker.emitMessage(fastResult(3, 'older'));
     await older;
     expect(worker.sent.at(-1)).toMatchObject({
       type: 'COMMIT_DECISION_EFFECTS',
-      requestId: 4,
-      fence: 'accepted-action',
+      requestId: 5,
+      fence: owned.fence,
     });
     worker.emitMessage({
       type: 'ACK',
-      requestId: 4,
+      requestId: 5,
       generation: 7,
-      fence: 'accepted-action',
+      fence: owned.fence,
       operation: 'COMMIT_DECISION_EFFECTS',
+      planDisposition: 'applied_volatile',
     });
     await committed;
-    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
-    worker.emitMessage(fastResult(3, 'successor'));
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 4 });
+    worker.emitMessage(fastResult(4, 'successor'));
     await successor;
   });
 
@@ -1799,37 +1881,39 @@ describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
       maxInFlight: 2,
     });
     worker.emitMessage(ready);
+    const owned = await transportOnlyCommitFixture(client, worker);
     const running = client.decideFast(snapshot('running'));
     const older = client.decideFast(snapshot('older'));
     const olderStill = client.decideFast(snapshot('older-still'));
-    expect(requestIds(worker)).toEqual([1, 2]);
+    expect(requestIds(worker)).toEqual([1, 2, 3]);
     let successor!: ReturnType<typeof client.decideFast>;
     let committed!: ReturnType<typeof client.commitDecisionEffects>;
 
     client.runWithDispatchBarrier(() => {
       successor = client.decideFast(snapshot('successor'));
-      committed = client.commitDecisionEffects(transportOnlyCommitFixture());
+      committed = client.commitDecisionEffects(owned);
     });
-    expect(requestIds(worker)).toEqual([1, 2]);
+    expect(requestIds(worker)).toEqual([1, 2, 3]);
 
-    worker.emitMessage(fastResult(1, 'running'));
+    worker.emitMessage(fastResult(2, 'running'));
     await running;
-    worker.emitMessage(fastResult(2, 'older'));
+    worker.emitMessage(fastResult(3, 'older'));
     await older;
-    // Older work first (3), then the commit (5), then its causal successor (4).
-    expect(requestIds(worker)).toEqual([1, 2, 3, 5]);
-    worker.emitMessage(fastResult(3, 'older-still'));
+    // Older work first (4), then the commit (6), then its causal successor (5).
+    expect(requestIds(worker)).toEqual([1, 2, 3, 4, 6]);
+    worker.emitMessage(fastResult(4, 'older-still'));
     await olderStill;
-    expect(requestIds(worker)).toEqual([1, 2, 3, 5, 4]);
+    expect(requestIds(worker)).toEqual([1, 2, 3, 4, 6, 5]);
     worker.emitMessage({
       type: 'ACK',
-      requestId: 5,
+      requestId: 6,
       generation: 7,
-      fence: 'accepted-action',
+      fence: owned.fence,
       operation: 'COMMIT_DECISION_EFFECTS',
+      planDisposition: 'applied_volatile',
     });
     await committed;
-    worker.emitMessage(fastResult(4, 'successor'));
+    worker.emitMessage(fastResult(5, 'successor'));
     await successor;
   });
 

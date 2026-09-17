@@ -125,7 +125,10 @@ export default function DiamondWheel({
     let frame = 0;
     let previous = performance.now();
     const animate = (now: number) => {
-      const elapsed = Math.min(50, now - previous);
+      // Use visible elapsed time, not a frame-count surrogate. Clamping each
+      // slow frame lengthens the selected spin on busy or software-rendered
+      // devices. Visibility changes below reset the clock for background tabs.
+      const elapsed = Math.max(0, now - previous);
       previous = now;
       if (document.hidden) {
         frame = requestAnimationFrame(animate);

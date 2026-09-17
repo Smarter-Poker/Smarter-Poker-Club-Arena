@@ -59,6 +59,45 @@ describe('the wheel owes its complete visible reveal', () => {
     expect(sounds.playSpinPeg).not.toHaveBeenCalled();
   });
 
+  it('keeps the selected duration on a slow visible renderer instead of stretching every frame', () => {
+    let frame: FrameRequestCallback | null = null;
+    let now = 0;
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((fn) => {
+      frame = fn;
+      return 1;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    const landed = vi.fn();
+    const segments = Array.from(
+      { length: 12 },
+      (_, i) =>
+        ({ ord: i + 1, kind: 'chips', amount: 1, weight: 1, label: '1 Chip' }) as WheelSegment
+    );
+    const { container } = render(
+      <DiamondWheel segments={segments} landingOrd={3} spinKey={1} spinning onLanded={landed} />
+    );
+    const advance = (ms: number) =>
+      act(() => {
+        now += ms;
+        const callback = frame!;
+        frame = null;
+        callback(now);
+      });
+    while (now + 200 < WHEEL_SPIN_MS) advance(200);
+    expect(landed).not.toHaveBeenCalled();
+    advance(WHEEL_SPIN_MS - now);
+    expect(landed).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-wheel-rotor]')).toHaveAttribute(
+      'transform',
+      `rotate(${wheelLandingRotation(0, 2, 12)} 500 500)`
+    );
+    expect(sounds.playSpinResult).toHaveBeenCalledTimes(1);
+    advance(500);
+    expect(landed).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the result and matching peg sounds pending during a hidden tab', () => {
     let frame: FrameRequestCallback | null = null;
     let now = 0;

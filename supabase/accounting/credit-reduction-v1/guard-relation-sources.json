@@ -1040,7 +1040,9 @@
       {
         "cmd": "SELECT",
         "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR (fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'all'::text) OR ((fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'downline'::text) AND fn_club_cashier_can_transact(club_id, ( SELECT auth.uid() AS uid), user_id)))",
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "tablename": "agents",
         "permissive": "PERMISSIVE",
         "policyname": "agents_cashier_scoped_read",
@@ -1050,7 +1052,9 @@
       {
         "cmd": "ALL",
         "qual": "true",
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "tablename": "agents",
         "permissive": "PERMISSIVE",
         "policyname": "agents_svc",
@@ -1060,7 +1064,9 @@
       {
         "cmd": "SELECT",
         "qual": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
-        "roles": ["authenticated"],
+        "roles": [
+          "authenticated"
+        ],
         "tablename": "agents",
         "permissive": "PERMISSIVE",
         "policyname": "union_overseer_read",
@@ -1206,7 +1212,9 @@
       {
         "name": "agents_agent_wallet_balance_nonneg",
         "type": "c",
-        "columns": [28],
+        "columns": [
+          28
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (agent_wallet_balance >= 0::numeric)",
@@ -1217,18 +1225,25 @@
       {
         "name": "agents_club_id_fkey",
         "type": "f",
-        "columns": [3],
+        "columns": [
+          3
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
-        "foreign_columns": [1],
+        "foreign_columns": [
+          1
+        ],
         "initially_deferred": false,
         "referenced_relation": "clubs"
       },
       {
         "name": "agents_club_id_user_id_key",
         "type": "u",
-        "columns": [3, 2],
+        "columns": [
+          3,
+          2
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "UNIQUE (club_id, user_id)",
@@ -1239,7 +1254,9 @@
       {
         "name": "agents_commission_rate_check",
         "type": "c",
-        "columns": [8],
+        "columns": [
+          8
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (commission_rate >= 0::numeric AND commission_rate <= 0.70)",
@@ -1250,7 +1267,9 @@
       {
         "name": "agents_credit_used_check",
         "type": "c",
-        "columns": [11],
+        "columns": [
+          11
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (credit_used >= 0::numeric)",
@@ -1261,18 +1280,26 @@
       {
         "name": "agents_parent_in_same_club",
         "type": "f",
-        "columns": [3, 7],
+        "columns": [
+          3,
+          7
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "FOREIGN KEY (club_id, parent_agent_id) REFERENCES agents(club_id, id)",
-        "foreign_columns": [3, 1],
+        "foreign_columns": [
+          3,
+          1
+        ],
         "initially_deferred": false,
         "referenced_relation": "agents"
       },
       {
         "name": "agents_pkey",
         "type": "p",
-        "columns": [1],
+        "columns": [
+          1
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "PRIMARY KEY (id)",
@@ -1283,7 +1310,9 @@
       {
         "name": "agents_player_rakeback_rate_check",
         "type": "c",
-        "columns": [9],
+        "columns": [
+          9
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (player_rakeback_rate >= 0::numeric AND player_rakeback_rate <= 0.50)",
@@ -1294,7 +1323,9 @@
       {
         "name": "agents_promo_wallet_balance_nonneg",
         "type": "c",
-        "columns": [30],
+        "columns": [
+          30
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (promo_wallet_balance >= 0::numeric)",
@@ -1305,7 +1336,9 @@
       {
         "name": "agents_role_check",
         "type": "c",
-        "columns": [5],
+        "columns": [
+          5
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (role = ANY (ARRAY['super_agent'::text, 'agent'::text, 'sub_agent'::text]))",
@@ -1316,7 +1349,9 @@
       {
         "name": "agents_status_check",
         "type": "c",
-        "columns": [6],
+        "columns": [
+          6
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (status = ANY (ARRAY['active'::text, 'suspended'::text, 'frozen'::text]))",
@@ -1327,7 +1362,11 @@
       {
         "name": "check_credit",
         "type": "c",
-        "columns": [11, 10, 12],
+        "columns": [
+          11,
+          10,
+          12
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (credit_used <= credit_limit OR is_prepaid = true)",
@@ -1338,7 +1377,9 @@
       {
         "name": "chk_player_wallet_balance_is_two_decimal_places",
         "type": "c",
-        "columns": [29],
+        "columns": [
+          29
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "CHECK (player_wallet_balance IS NULL OR player_wallet_balance = round(player_wallet_balance, 2))",
@@ -1349,22 +1390,30 @@
       {
         "name": "fk_agents_parent",
         "type": "f",
-        "columns": [7],
+        "columns": [
+          7
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "FOREIGN KEY (parent_agent_id) REFERENCES agents(id)",
-        "foreign_columns": [1],
+        "foreign_columns": [
+          1
+        ],
         "initially_deferred": false,
         "referenced_relation": "agents"
       },
       {
         "name": "fk_agents_user_id_profiles",
         "type": "f",
-        "columns": [2],
+        "columns": [
+          2
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
-        "foreign_columns": [1],
+        "foreign_columns": [
+          1
+        ],
         "initially_deferred": false,
         "referenced_relation": "profiles"
       }
@@ -1683,7 +1732,9 @@
       {
         "cmd": "SELECT",
         "qual": "(EXISTS ( SELECT 1\n   FROM agents a\n  WHERE ((a.id = credit_assignments.agent_id) AND ((a.user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM clubs c\n          WHERE ((c.id = a.club_id) AND ((c.owner_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n                   FROM club_members cm\n                  WHERE ((cm.club_id = a.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)) AND (cm.role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text])))))))))))))",
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "tablename": "credit_assignments",
         "permissive": "PERMISSIVE",
         "policyname": "credit_assignments_read",
@@ -1693,7 +1744,9 @@
       {
         "cmd": "ALL",
         "qual": "true",
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "tablename": "credit_assignments",
         "permissive": "PERMISSIVE",
         "policyname": "credit_assignments_svc",
@@ -1708,18 +1761,24 @@
       {
         "name": "credit_assignments_agent_id_fkey",
         "type": "f",
-        "columns": [2],
+        "columns": [
+          2
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
-        "foreign_columns": [1],
+        "foreign_columns": [
+          1
+        ],
         "initially_deferred": false,
         "referenced_relation": "agents"
       },
       {
         "name": "credit_assignments_pkey",
         "type": "p",
-        "columns": [1],
+        "columns": [
+          1
+        ],
         "validated": true,
         "deferrable": false,
         "definition": "PRIMARY KEY (id)",

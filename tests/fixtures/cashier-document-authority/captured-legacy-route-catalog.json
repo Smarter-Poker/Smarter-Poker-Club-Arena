@@ -7,7 +7,9 @@
     "source_md5": "e5678d793e117234e5c9782027bd2719",
     "owner": "postgres",
     "security_definer": false,
-    "proconfig": ["search_path=public, extensions"],
+    "proconfig": [
+      "search_path=public, extensions"
+    ],
     "proacl": "{postgres=X/postgres,service_role=X/postgres}",
     "anon_execute": false,
     "authenticated_execute": false,
@@ -21,7 +23,9 @@
     "source_md5": "81383d11a44e17565d80c61e9ee5b673",
     "owner": "postgres",
     "security_definer": false,
-    "proconfig": ["search_path=public, extensions"],
+    "proconfig": [
+      "search_path=public, extensions"
+    ],
     "proacl": "{postgres=X/postgres,service_role=X/postgres}",
     "anon_execute": false,
     "authenticated_execute": false,
@@ -35,7 +39,9 @@
     "source_md5": "81ff91c09b7d9a39449f454ed64c6cfd",
     "owner": "postgres",
     "security_definer": false,
-    "proconfig": ["search_path=public, extensions"],
+    "proconfig": [
+      "search_path=public, extensions"
+    ],
     "proacl": "{postgres=X/postgres,service_role=X/postgres}",
     "anon_execute": false,
     "authenticated_execute": false,
@@ -49,7 +55,9 @@
     "source_md5": "fc69c5f315ac9f03159ad5e8b0370d83",
     "owner": "postgres",
     "security_definer": false,
-    "proconfig": ["search_path=public, extensions"],
+    "proconfig": [
+      "search_path=public, extensions"
+    ],
     "proacl": "{postgres=X/postgres,service_role=X/postgres}",
     "anon_execute": false,
     "authenticated_execute": false,

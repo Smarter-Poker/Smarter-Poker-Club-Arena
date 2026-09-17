@@ -3,11 +3,16 @@
     "catalog": {
       "functions": [
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "credit_agent_commission_from_rake",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "void",
           "strict": false,
           "body_md5": "1583ac138b7687091e7c5a049f0639e9",
@@ -33,11 +38,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_accounting_agreement_capture",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "11d390970f6b042b70aee5489d64c71e",
@@ -63,11 +73,17 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_admin_update_agent",
           "owner": "postgres",
-          "config": ["search_path=public, extensions"],
+          "config": [
+            "search_path=public, extensions"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "084072db7fc3598ce60ebabbc907e50e",
@@ -93,11 +109,15 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres"],
+          "acl": [
+            "postgres=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_agent_approve_cashout",
           "owner": "postgres",
-          "config": ["search_path=public, extensions"],
+          "config": [
+            "search_path=public, extensions"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "07db082ff1c1501dba55029cf1871141",
@@ -123,11 +143,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_agent_wallet_claim_back_phase2_core_20260831",
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "c75e9cdb7e3b197fc83422f9f6e0d722",
@@ -153,11 +178,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_agent_wallet_send_core_20260830",
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "1ca40e16c6eccd331f6d65b4436edfc1",
@@ -183,11 +213,17 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_agent_wallet_send",
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "38d088732280d8b2cb605c87eda4af3f",
@@ -213,11 +249,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_agents_staff_earn_no_rakeback",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "02c5777d18d107a531b681970dc37b61",
@@ -243,11 +284,17 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_apply_credit_payment",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "90bcf62a0428604e4e522d46b75f0897",
@@ -273,11 +320,17 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_assign_agent_to_super_agent",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "3c110478d9556a0e5b13011d851979f5",
@@ -303,11 +356,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_ca_autoledger_delete",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "068d3b8072fa0b3ea4d025630f6d43d1",
@@ -333,11 +391,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_ca_autoledger",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "936fc64feb1ee48cd7d4ea0ac8d2c121",
@@ -363,11 +426,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_ca_reject_automated_user_club_row",
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "cf49d581f597ce8235f3a30073bd54f6",
@@ -393,11 +461,17 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_club_set_member_role",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "dada5e8d70f18793c3412c481873585a",
@@ -423,11 +497,17 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_create_agent",
           "owner": "postgres",
-          "config": ["search_path=public, extensions"],
+          "config": [
+            "search_path=public, extensions"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "fce4b7c5ee003bfc2b3b772acbf65e45",
@@ -453,11 +533,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_deep_stack_society_cannot_be_deleted_by_accident",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "066dd18bd32f040beae30c770ea64688",
@@ -483,11 +568,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_enforce_agent_commission_bounds",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "47a56128bb5a41236178fece349ee13d",
@@ -513,11 +603,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_ensure_agent_row",
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "uuid",
           "strict": false,
           "body_md5": "95ea37fdc89cd68957a8c9aaa37e8ff1",
@@ -543,11 +638,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_guard_retired_club_mutation",
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "f056528dab49bf3260faed436a1dee71",
@@ -573,11 +673,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_notify_credit_request",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "2fae87c824f34211ec24fbbeaaf4a595",
@@ -603,11 +708,17 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_pay_credit_invoice_from_wallet",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "665683453a5114933d719676bcf7a7ed",
@@ -633,11 +744,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_poker_reject_diamond_hierarchy",
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "b9f2cff86b7418d8de4f8557aeebf98a",
@@ -663,11 +779,17 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "fn_process_credit_invoice_payment",
           "owner": "postgres",
-          "config": ["search_path=public"],
+          "config": [
+            "search_path=public"
+          ],
           "result": "jsonb",
           "strict": false,
           "body_md5": "21a917e911fe657310fc38dfc318a50c",
@@ -693,11 +815,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "guard_agent_wallet_direct_update",
           "owner": "postgres",
-          "config": ["search_path=public, pg_temp"],
+          "config": [
+            "search_path=public, pg_temp"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "dba4edcf075d454d6c3b2d2eeeb7cbfd",
@@ -723,11 +850,16 @@
           "direct_relation_dependencies": null
         },
         {
-          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
           "kind": "f",
           "name": "sync_agent_wallet_columns",
           "owner": "postgres",
-          "config": ["search_path=public, extensions"],
+          "config": [
+            "search_path=public, extensions"
+          ],
           "result": "trigger",
           "strict": false,
           "body_md5": "64bcf2cf603fb4c0cd1ed9c9cf3af8ba",
@@ -1780,7 +1912,9 @@
             {
               "cmd": "SELECT",
               "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR (fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'all'::text) OR ((fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'downline'::text) AND fn_club_cashier_can_transact(club_id, ( SELECT auth.uid() AS uid), user_id)))",
-              "roles": ["authenticated"],
+              "roles": [
+                "authenticated"
+              ],
               "tablename": "agents",
               "permissive": "PERMISSIVE",
               "policyname": "agents_cashier_scoped_read",
@@ -1790,7 +1924,9 @@
             {
               "cmd": "ALL",
               "qual": "true",
-              "roles": ["service_role"],
+              "roles": [
+                "service_role"
+              ],
               "tablename": "agents",
               "permissive": "PERMISSIVE",
               "policyname": "agents_svc",
@@ -1800,7 +1936,9 @@
             {
               "cmd": "SELECT",
               "qual": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
-              "roles": ["authenticated"],
+              "roles": [
+                "authenticated"
+              ],
               "tablename": "agents",
               "permissive": "PERMISSIVE",
               "policyname": "union_overseer_read",
@@ -2150,11 +2288,16 @@
               "function_definition_md5": "91f3ff61ee7527b0688ce1a1f11db752"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "accounting_agreement_history",
               "type": 29,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_accounting_agreement_capture()",
               "internal": false,
@@ -2167,11 +2310,16 @@
               "function_definition_md5": "746fab25cd56f6ad761325e7c0d525d5"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "guard_agent_wallet_direct_update",
               "type": 23,
               "owner": "postgres",
-              "config": ["search_path=public, pg_temp"],
+              "config": [
+                "search_path=public, pg_temp"
+              ],
               "enabled": "O",
               "function": "guard_agent_wallet_direct_update()",
               "internal": false,
@@ -2184,11 +2332,16 @@
               "function_definition_md5": "736aa9e92265453c3015223562108141"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "poker_arena_no_hierarchy",
               "type": 23,
               "owner": "postgres",
-              "config": ["search_path=public, pg_temp"],
+              "config": [
+                "search_path=public, pg_temp"
+              ],
               "enabled": "O",
               "function": "fn_poker_reject_diamond_hierarchy()",
               "internal": false,
@@ -2201,11 +2354,16 @@
               "function_definition_md5": "49037a2bf4322d2a327bc9141a7a7a89"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_agents_commission_bounds",
               "type": 23,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_enforce_agent_commission_bounds()",
               "internal": false,
@@ -2218,11 +2376,16 @@
               "function_definition_md5": "3e4f5df422b121391cc40f711ae5b5ee"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_agents_human_user_club_only",
               "type": 23,
               "owner": "postgres",
-              "config": ["search_path=public, pg_temp"],
+              "config": [
+                "search_path=public, pg_temp"
+              ],
               "enabled": "O",
               "function": "fn_ca_reject_automated_user_club_row()",
               "internal": false,
@@ -2235,11 +2398,16 @@
               "function_definition_md5": "7c73094df30c90f94a78cbbd5d24f504"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_agents_staff_earn_no_rakeback",
               "type": 23,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_agents_staff_earn_no_rakeback()",
               "internal": false,
@@ -2252,11 +2420,16 @@
               "function_definition_md5": "17346b77ec8f5a1d6d42dca3eb06e061"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_ca_autoledger",
               "type": 17,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_autoledger()",
               "internal": false,
@@ -2269,11 +2442,16 @@
               "function_definition_md5": "2ff8923b4c2d8fd3d343cf37acce0f2c"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_ca_autoledger_delete",
               "type": 11,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_autoledger_delete()",
               "internal": false,
@@ -2286,11 +2464,16 @@
               "function_definition_md5": "c6d7e02df8b654fbccc3e8844418bd01"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_ca_autoledger_insert",
               "type": 5,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_ca_autoledger()",
               "internal": false,
@@ -2303,11 +2486,16 @@
               "function_definition_md5": "2ff8923b4c2d8fd3d343cf37acce0f2c"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_deep_stack_agents_are_protected",
               "type": 11,
               "owner": "postgres",
-              "config": ["search_path=public"],
+              "config": [
+                "search_path=public"
+              ],
               "enabled": "O",
               "function": "fn_deep_stack_society_cannot_be_deleted_by_accident()",
               "internal": false,
@@ -2320,11 +2508,16 @@
               "function_definition_md5": "213a7fa40330c703cb23dc001a99d31e"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_guard_retired_club_mutation",
               "type": 31,
               "owner": "postgres",
-              "config": ["search_path=public, pg_temp"],
+              "config": [
+                "search_path=public, pg_temp"
+              ],
               "enabled": "O",
               "function": "fn_guard_retired_club_mutation()",
               "internal": false,
@@ -2337,11 +2530,16 @@
               "function_definition_md5": "b82be212e7ccf2a15637c231861ff993"
             },
             {
-              "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+              "acl": [
+                "postgres=X/postgres",
+                "service_role=X/postgres"
+              ],
               "name": "trg_sync_agent_wallets",
               "type": 19,
               "owner": "postgres",
-              "config": ["search_path=public, extensions"],
+              "config": [
+                "search_path=public, extensions"
+              ],
               "enabled": "O",
               "function": "sync_agent_wallet_columns()",
               "internal": false,
@@ -2360,7 +2558,9 @@
             {
               "name": "agents_agent_wallet_balance_nonneg",
               "type": "c",
-              "columns": [28],
+              "columns": [
+                28
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (agent_wallet_balance >= 0::numeric)",
@@ -2371,18 +2571,25 @@
             {
               "name": "agents_club_id_fkey",
               "type": "f",
-              "columns": [3],
+              "columns": [
+                3
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
-              "foreign_columns": [1],
+              "foreign_columns": [
+                1
+              ],
               "initially_deferred": false,
               "referenced_relation": "clubs"
             },
             {
               "name": "agents_club_id_user_id_key",
               "type": "u",
-              "columns": [3, 2],
+              "columns": [
+                3,
+                2
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "UNIQUE (club_id, user_id)",
@@ -2393,7 +2600,9 @@
             {
               "name": "agents_commission_rate_check",
               "type": "c",
-              "columns": [8],
+              "columns": [
+                8
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (commission_rate >= 0::numeric AND commission_rate <= 0.70)",
@@ -2404,7 +2613,9 @@
             {
               "name": "agents_credit_used_check",
               "type": "c",
-              "columns": [11],
+              "columns": [
+                11
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (credit_used >= 0::numeric)",
@@ -2415,7 +2626,9 @@
             {
               "name": "agents_pkey",
               "type": "p",
-              "columns": [1],
+              "columns": [
+                1
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "PRIMARY KEY (id)",
@@ -2426,7 +2639,9 @@
             {
               "name": "agents_player_rakeback_rate_check",
               "type": "c",
-              "columns": [9],
+              "columns": [
+                9
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (player_rakeback_rate >= 0::numeric AND player_rakeback_rate <= 0.50)",
@@ -2437,7 +2652,9 @@
             {
               "name": "agents_promo_wallet_balance_nonneg",
               "type": "c",
-              "columns": [30],
+              "columns": [
+                30
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (promo_wallet_balance >= 0::numeric)",
@@ -2448,7 +2665,9 @@
             {
               "name": "agents_role_check",
               "type": "c",
-              "columns": [5],
+              "columns": [
+                5
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (role = ANY (ARRAY['super_agent'::text, 'agent'::text, 'sub_agent'::text]))",
@@ -2459,7 +2678,9 @@
             {
               "name": "agents_status_check",
               "type": "c",
-              "columns": [6],
+              "columns": [
+                6
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (status = ANY (ARRAY['active'::text, 'suspended'::text, 'frozen'::text]))",
@@ -2470,7 +2691,11 @@
             {
               "name": "check_credit",
               "type": "c",
-              "columns": [11, 10, 12],
+              "columns": [
+                11,
+                10,
+                12
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (credit_used <= credit_limit OR is_prepaid = true)",
@@ -2481,7 +2706,9 @@
             {
               "name": "chk_player_wallet_balance_is_two_decimal_places",
               "type": "c",
-              "columns": [29],
+              "columns": [
+                29
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "CHECK (player_wallet_balance IS NULL OR player_wallet_balance = round(player_wallet_balance, 2))",
@@ -2492,22 +2719,30 @@
             {
               "name": "fk_agents_parent",
               "type": "f",
-              "columns": [7],
+              "columns": [
+                7
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "FOREIGN KEY (parent_agent_id) REFERENCES agents(id)",
-              "foreign_columns": [1],
+              "foreign_columns": [
+                1
+              ],
               "initially_deferred": false,
               "referenced_relation": "agents"
             },
             {
               "name": "fk_agents_user_id_profiles",
               "type": "f",
-              "columns": [2],
+              "columns": [
+                2
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
-              "foreign_columns": [1],
+              "foreign_columns": [
+                1
+              ],
               "initially_deferred": false,
               "referenced_relation": "profiles"
             }
@@ -2826,7 +3061,9 @@
             {
               "cmd": "SELECT",
               "qual": "(EXISTS ( SELECT 1\n   FROM agents a\n  WHERE ((a.id = credit_assignments.agent_id) AND ((a.user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM clubs c\n          WHERE ((c.id = a.club_id) AND ((c.owner_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n                   FROM club_members cm\n                  WHERE ((cm.club_id = a.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)) AND (cm.role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text])))))))))))))",
-              "roles": ["public"],
+              "roles": [
+                "public"
+              ],
               "tablename": "credit_assignments",
               "permissive": "PERMISSIVE",
               "policyname": "credit_assignments_read",
@@ -2836,7 +3073,9 @@
             {
               "cmd": "ALL",
               "qual": "true",
-              "roles": ["service_role"],
+              "roles": [
+                "service_role"
+              ],
               "tablename": "credit_assignments",
               "permissive": "PERMISSIVE",
               "policyname": "credit_assignments_svc",
@@ -2886,18 +3125,24 @@
             {
               "name": "credit_assignments_agent_id_fkey",
               "type": "f",
-              "columns": [2],
+              "columns": [
+                2
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE",
-              "foreign_columns": [1],
+              "foreign_columns": [
+                1
+              ],
               "initially_deferred": false,
               "referenced_relation": "agents"
             },
             {
               "name": "credit_assignments_pkey",
               "type": "p",
-              "columns": [1],
+              "columns": [
+                1
+              ],
               "validated": true,
               "deferrable": false,
               "definition": "PRIMARY KEY (id)",
@@ -3042,7 +3287,10 @@
       ],
       "transaction_isolation": "repeatable read",
       "transaction_read_only": "on",
-      "missing_named_functions": ["fn_guard_agent_agreement", "fn_review_credit_request"],
+      "missing_named_functions": [
+        "fn_guard_agent_agreement",
+        "fn_review_credit_request"
+      ],
       "function_candidate_count": 25
     }
   }

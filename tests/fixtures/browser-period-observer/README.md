@@ -36,20 +36,20 @@ Authenticated and service callers both require a non-null, nonzero actual `auth.
 
 Every successful return has exactly these15 fields:
 
-| Field                    | Meaning                                                   |
-| ------------------------ | --------------------------------------------------------- |
-| contract_version         | Numeric1                                                  |
-| actor_user_id            | Actual expected actor UUID                                |
-| scope_kind, scope_id     | Exact union or standalone-club key                        |
-| period_start, period_end | Exact canonical week, UTC ISO text                        |
-| observed_at              | Statement observation timestamp, UTC ISO text             |
-| expected_run_at          | Existing schedule-rule result only                        |
-| record_found             | Whether the exact canonical journal key exists            |
-| state                    | no_recorded_run, unavailable, running, incomplete, posted |
-| recorded_scheduled_at    | Validated actual scheduled timestamp or explicit null     |
-| attempts                 | Actual positive integer or explicit null                  |
-| started_at, finished_at  | Validated actual timestamps or explicit null              |
-| posted                   | Boolean true only for qualified posted state              |
+| Field | Meaning |
+|---|---|
+| contract_version | Numeric1 |
+| actor_user_id | Actual expected actor UUID |
+| scope_kind, scope_id | Exact union or standalone-club key |
+| period_start, period_end | Exact canonical week, UTC ISO text |
+| observed_at | Statement observation timestamp, UTC ISO text |
+| expected_run_at | Existing schedule-rule result only |
+| record_found | Whether the exact canonical journal key exists |
+| state | no_recorded_run, unavailable, running, incomplete, posted |
+| recorded_scheduled_at | Validated actual scheduled timestamp or explicit null |
+| attempts | Actual positive integer or explicit null |
+| started_at, finished_at | Validated actual timestamps or explicit null |
+| posted | Boolean true only for qualified posted state |
 
 No monetary values, raw result, failure reason, payee/club counts or IDs, error code, accounting_version, history or fabricated timestamps leave this reader. Function UTC/ISO configuration preserves actual stored microseconds. `statement_timeout=10s` and `lock_timeout=2s` are retained settings, not proof of a per-function elapsed-time bound or confirmed upstream cancellation.
 

@@ -66,9 +66,15 @@
     "deal_shares": [],
     "fully_settled": true,
     "table_closure": {
-      "source_seat_ids": ["d6000000-0000-4000-8000-000000000002"],
-      "closed_table_ids": ["d5000000-0000-4000-8000-000000000002"],
-      "released_seat_ids": ["d6000000-0000-4000-8000-000000000002"],
+      "source_seat_ids": [
+        "d6000000-0000-4000-8000-000000000002"
+      ],
+      "closed_table_ids": [
+        "d5000000-0000-4000-8000-000000000002"
+      ],
+      "released_seat_ids": [
+        "d6000000-0000-4000-8000-000000000002"
+      ],
       "source_seat_count": 1,
       "closed_table_count": 1,
       "released_seat_count": 1
@@ -161,9 +167,15 @@
     "deal_shares": [],
     "fully_settled": true,
     "table_closure": {
-      "source_seat_ids": ["d6000000-0000-4000-8000-000000000002"],
-      "closed_table_ids": ["d5000000-0000-4000-8000-000000000002"],
-      "released_seat_ids": ["d6000000-0000-4000-8000-000000000002"],
+      "source_seat_ids": [
+        "d6000000-0000-4000-8000-000000000002"
+      ],
+      "closed_table_ids": [
+        "d5000000-0000-4000-8000-000000000002"
+      ],
+      "released_seat_ids": [
+        "d6000000-0000-4000-8000-000000000002"
+      ],
       "source_seat_count": 1,
       "closed_table_count": 1,
       "released_seat_count": 1

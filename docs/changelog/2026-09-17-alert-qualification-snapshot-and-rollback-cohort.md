@@ -36,6 +36,15 @@ formula and apostrophe escaping. Existing export tests cover all 32 low control
 characters plus DEL, with all 151 tests across the three affected files passing.
 No assertion or required hook was disabled.
 
+The same hook reformatted captured weekly-accounting records. Its existing
+raw-byte admission check then failed on functions.json, with 69 mismatched
+bindings. All 46 captured JSON/fixture-document witnesses are restored exactly
+from protected main and explicitly excluded from Prettier. The 24 maintained
+test/helper bindings now name their reviewed formatted source; original capture
+hashes are preserved. The unchanged admission check passes after this repair,
+and the existing 37-component source builder and wrapper binding checks pass.
+Source generation is not database execution or accounting activation.
+
 A connected review of the current tournament terminal found a separate defect:
 the receipt installer could accept a terminal/places cohort that its matching
 reverse refused. Forward admission now requires the same two complete original

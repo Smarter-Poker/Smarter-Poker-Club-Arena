@@ -137,7 +137,9 @@
       {
         "cmd": "SELECT",
         "qual": "(agent_id IN ( SELECT a.id\n   FROM agents a\n  WHERE (a.user_id = ( SELECT auth.uid() AS uid))))",
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "tablename": "credit_invoices",
         "permissive": "PERMISSIVE",
         "policyname": "credit_invoices_select_own",
@@ -331,7 +333,9 @@
       {
         "cmd": "SELECT",
         "qual": "(invoice_id IN ( SELECT ci.id\n   FROM (credit_invoices ci\n     JOIN agents a ON ((a.id = ci.agent_id)))\n  WHERE (a.user_id = ( SELECT auth.uid() AS uid))))",
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "tablename": "credit_payments",
         "permissive": "PERMISSIVE",
         "policyname": "credit_payments_select_own",
@@ -496,7 +500,9 @@
       {
         "cmd": "ALL",
         "qual": "true",
-        "roles": ["service_role"],
+        "roles": [
+          "service_role"
+        ],
         "tablename": "wallets",
         "permissive": "PERMISSIVE",
         "policyname": "Service role full access wallets",
@@ -506,7 +512,9 @@
       {
         "cmd": "INSERT",
         "qual": null,
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "tablename": "wallets",
         "permissive": "PERMISSIVE",
         "policyname": "Users can insert own wallets",
@@ -516,7 +524,9 @@
       {
         "cmd": "SELECT",
         "qual": "(( SELECT auth.uid() AS uid) = user_id)",
-        "roles": ["public"],
+        "roles": [
+          "public"
+        ],
         "tablename": "wallets",
         "permissive": "PERMISSIVE",
         "policyname": "Users can read own wallets",

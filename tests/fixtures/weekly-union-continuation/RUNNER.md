@@ -4,12 +4,12 @@
 
 The protected owner must supply these public inputs:
 
-| Input                        | Contract                                                                                                                                                                                                                                                                          |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PG_BIN`                     | Existing canonical absolute directory containing the admitted `postgres`, `initdb`, `pg_ctl`, `psql`, `pg_dump`, and `pg_config` executables. Server and provider must be PostgreSQL 17, with actual `pg_cron` already available. No default provider or dependency installation. |
-| `ACCOUNTING_FIXTURE_PARENT`  | Existing reserved scratch directory outside the checkout; short ASCII path without spaces, sufficient for a Unix socket under 100 bytes. This location is used for one newly created cluster only.                                                                                |
-| `ACCOUNTING_TEST_OUTPUT_DIR` | Existing reserved durable artifact directory, outside the checkout and separate from scratch. Its new `weekly-union-continuation-<execution-id>` child must not already exist.                                                                                                    |
-| `ACCOUNTING_EXECUTION_ID`    | The plan's public UUID for traceability. Supplying an ID does not authorize execution or prove admission.                                                                                                                                                                         |
+| Input | Contract |
+| --- | --- |
+| `PG_BIN` | Existing canonical absolute directory containing the admitted `postgres`, `initdb`, `pg_ctl`, `psql`, `pg_dump`, and `pg_config` executables. Server and provider must be PostgreSQL 17, with actual `pg_cron` already available. No default provider or dependency installation. |
+| `ACCOUNTING_FIXTURE_PARENT` | Existing reserved scratch directory outside the checkout; short ASCII path without spaces, sufficient for a Unix socket under 100 bytes. This location is used for one newly created cluster only. |
+| `ACCOUNTING_TEST_OUTPUT_DIR` | Existing reserved durable artifact directory, outside the checkout and separate from scratch. Its new `weekly-union-continuation-<execution-id>` child must not already exist. |
+| `ACCOUNTING_EXECUTION_ID` | The plan's public UUID for traceability. Supplying an ID does not authorize execution or prove admission. |
 
 The protected plan must bind the final runner, fixture/include closure and component bytes to its admitted source, qualify the readonly provider and shell/Python runtime, reserve storage/runtime, and supervise the process. This payload supplies no scheduler, capacity admission, publication or independent cleanup authority. PostgreSQL commands have finite connection/start/stop and per-statement/lock limits; both schema captures additionally have a 20-second owned-process deadline, a 3-second TERM grace and a 2-second KILL/reap grace. The protected executor must still enforce its approved overall wall-clock/resource limit, including filesystem and provider stalls. Real database time must have passed the latest fixture book close, `2026-09-14T07:00:00Z`; the script does not override the real `now()` checks.
 

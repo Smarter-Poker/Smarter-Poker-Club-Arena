@@ -18,7 +18,32 @@
     "lifetime_rake_generated": 31
   },
   "unchanged_live_ordinals": [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26
   ],
   "scope": "One CREATE TABLE literal only. A fixture-only placeholder reserves dropped ordinal27 and is immediately dropped before all defaults/constraints/indexes/triggers; original schema remains untouched. No pg_catalog mutation. This reconstructs observed live attnum/conkey positions, not the unobserved removed column name/type/storage history.",
   "other_captured_tables_with_no_ordinal_gaps": {

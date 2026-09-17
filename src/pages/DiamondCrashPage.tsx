@@ -86,9 +86,9 @@ const AUTO_PAUSE_MS = 1500;
 
 const AUTO_PRESETS = [0, 150, 200, 300, 500, 1000, 2000, 5000] as const;
 
-/** Chips as the player reads them: whole figures compact, a fractional prize exact (it IS the prize). */
+/** A prize is an exact ledger amount, including all digits of large wins. */
 function chipsLabel(v: number): string {
-  return Number.isInteger(v) ? compactChips(v) : v.toFixed(2);
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /**

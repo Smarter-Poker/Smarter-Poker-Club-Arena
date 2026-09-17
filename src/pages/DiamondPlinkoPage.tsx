@@ -320,11 +320,12 @@ function DiamondPlinkoGame() {
           },
           {
             label: 'Drops',
-            value: result
-              ? `${landed}/${result.drops.length}`
-              : validSpinAmount(budget.base)
-                ? String(total / budget.denomination)
-                : '0',
+            value:
+              animating && result
+                ? `${landed}/${result.drops.length}`
+                : validSpinAmount(budget.base)
+                  ? String(total / budget.denomination)
+                  : '0',
           },
           { label: 'Chip Prize', value: gameChips(shownWin), ink: 'gold' },
         ]}

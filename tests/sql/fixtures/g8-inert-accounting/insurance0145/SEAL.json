@@ -1,0 +1,41 @@
+{
+  "schema": "accounting-source-packet/v1",
+  "source_only": true,
+  "execution_authority": false,
+  "publication_authority": false,
+  "predecessor_seal_sha256": "bb2b0515f372bb9d7fe2bf0a8d100f7d1c1b280a6216a98ebe425cf1971a087c",
+  "files": {
+    "DEPENDENCIES.json": {
+      "bytes": 1965,
+      "sha256": "5bdfd4e1237977f0d1980980f059dfcbcef4c84bfda58cb06a179864a4981d09"
+    },
+    "HANDOFF.md": {
+      "bytes": 4744,
+      "sha256": "dcbfd9f189f86d4e7b6026e3d7d5fc7d27aa9a7a769faf750e0fa1f380527367"
+    },
+    "SOURCE-CHECKS.json": {
+      "bytes": 443,
+      "sha256": "8e16b908e454269b28a6820e4bf58128309bcc8585b4564bd3c912a3e1c3a297"
+    },
+    "case-baseline.json": {
+      "bytes": 3365,
+      "sha256": "f297aa85ebe8f0628259669398ae27cfa15d2340c4e46adbf0064074bc9924aa"
+    },
+    "case-vectors.json": {
+      "bytes": 210808,
+      "sha256": "4347e0d593c44385c4234574a6351303529998129526f476d27317f968e78bfb"
+    },
+    "cases.sql": {
+      "bytes": 133497,
+      "sha256": "2afb465749df18ebc40a7f185cc26c2c5011697060bb3235d1391a99975f993e"
+    },
+    "definition.sql": {
+      "bytes": 17465,
+      "sha256": "d02b9708435e2fa754c98ae890bd33e992c633397432e08dd4d5910251f370d5"
+    },
+    "predecessor-regression.sql": {
+      "bytes": 3265,
+      "sha256": "ddef2577a576a82f9df15ffbfced24e55b11cf0e4a348fcd3d2f12002ecc0bea"
+    }
+  }
+}

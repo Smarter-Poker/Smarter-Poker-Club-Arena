@@ -1,3 +1,5 @@
+> Current execution authority: root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. This dated plan supplies scope/dependency context only; it does not assign new work or override current delivery policy.
+
 # SWARM BRIEF - Diamond Economy audit, standard and fixes (2026-09-02, ~23:00 UTC)
 
 > Historical lane brief. Current release authority is `.github/DEPLOYMENT.md`.

@@ -14,6 +14,7 @@ import {
 import { createProgressSilenceGuard } from './support/progressSilence';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { remainingObservationMs } from './support/observationDeadline';
+import { assertInitialTableOwnership } from './support/initialTableOwnership';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -642,15 +643,20 @@ async function certifyReadOnlyTournamentFormat(
       preOutageTransports,
       `${candidate.name} did not have exactly one live transport before outage`
     ).toHaveLength(1);
-    expect(
+    // acquire() deliberately re-subscribes when a prepared facade hands over
+    // to the live client. The server keeps one subscriber for that transport
+    // and table. Require one transport throughout initial acquisition, then
+    // no further acquisition during the actual observed hand cycle.
+    assertInitialTableOwnership(
       journal.matchingFrames({
         direction: 'sent',
         tableId: candidate.id,
         type: 'SUBSCRIBE',
         since: navigationStartedAt,
       }),
-      `${candidate.name} created duplicate table owners`
-    ).toHaveLength(1);
+      preOutageTransports[0]!,
+      progressStartedAt
+    );
 
     try {
       await context.setOffline(true);

@@ -88,6 +88,7 @@ scripts/ci/fixtures/mtt-break-authoring/scope-authority.json
 # Exact captured receipt-lane authority and reviewed qualification seals.
 scripts/qualification/fixtures/spin-receipt-lane/authority.json
 scripts/qualification/spin-receipt-lane.hosted.manifest.json
+scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json
 scripts/qualification/spin-receipt-lane.md
 
 # Exact captured accounting records and bound fixture witnesses retain their

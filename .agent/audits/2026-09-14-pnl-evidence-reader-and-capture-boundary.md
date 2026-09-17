@@ -22,13 +22,13 @@ The reader does not relabel or rewrite existing issued invoices. The old `fn_uni
 
 Read-only production definitions on September 14:
 
-| Source | MD5 |
-| --- | --- |
+| Source                              | MD5                                |
+| ----------------------------------- | ---------------------------------- |
 | `fn_ca_settle_hand_stacks_absolute` | `04e0218bf245c99a60b4d34f233c3b7a` |
-| `fn_ca_commit_hand_settlement` | `8c0acda3b19e958ecd5bbbc07c845afe` |
-| `fn_stamp_seat_club` | `467104f7e791b76328ce5e20b42ba81b` |
-| `fn_union_club_invoice` | `bee79493a9a724e043b658ba328d663f` |
-| `fn_union_eco_adjustment` | `4bef87530456c7c0d291c59c70eb41cd` |
+| `fn_ca_commit_hand_settlement`      | `8c0acda3b19e958ecd5bbbc07c845afe` |
+| `fn_stamp_seat_club`                | `467104f7e791b76328ce5e20b42ba81b` |
+| `fn_union_club_invoice`             | `bee79493a9a724e043b658ba328d663f` |
+| `fn_union_eco_adjustment`           | `4bef87530456c7c0d291c59c70eb41cd` |
 
 The accepted stack writer keeps each player's canonical `user_id`, `stack`, `stack_before`, and, for exact generations, `seat_id`/`seat_joined_at`. It does not keep every participant's original funding club, union or asset identity in that canonical request. Its union/cash receipt time and club ownership cannot be recovered safely from current membership. One bounded live example, hand 10981144, had two participants, two delta inputs, two exact seat-generation inputs, and zero recorded participant clubs. Its durable atomic result matched the succeeded stack claim exactly. This is a one-hand observation plus an installed-writer contract inspection, not a weekly coverage measurement.
 
@@ -64,11 +64,11 @@ Coverage includes stale/absent/duplicate exact boundary candidates; full and par
 
 Native definition MD5s:
 
-| Function | MD5 |
-| --- | --- |
-| `fn_pnl_evidence_cents` | `8d712bd799c3dfa691f2d8d9ff5101e8` |
-| `fn_pnl_cash_hand_evidence` | `dbfd6a81a39c1c552efccfde3049aa4c` |
-| `fn_union_pnl_evidence_report` | `501b5a243800f96ef549aa4b137bc7bf` |
+| Function                               | MD5                                |
+| -------------------------------------- | ---------------------------------- |
+| `fn_pnl_evidence_cents`                | `8d712bd799c3dfa691f2d8d9ff5101e8` |
+| `fn_pnl_cash_hand_evidence`            | `dbfd6a81a39c1c552efccfde3049aa4c` |
+| `fn_union_pnl_evidence_report`         | `501b5a243800f96ef549aa4b137bc7bf` |
 | `fn_union_pnl_posted_payment_evidence` | `58fba36103ba1b8034453f6cac14a86c` |
 
 The component remains unapplied. Its report is deliberately not a claim that union P&L/ECO/square-up is complete.

@@ -95,3 +95,42 @@ restoration commit `ea498c1fa`. Silent Revert Guard run `35185140110` requires a
 human-applied `revert-approved` label for this recovery. The PR identifies the
 files and rationale. Do not self-apply that label or alter the guard, messages
 or application bytes to evade it. Required checks and publication remain open.
+
+The first hosted full check exposed two recovery-integration defects: lifecycle
+tests contained a Mac-only configured-directory marker, and the Horse behavior
+register omitted the new private discard-attribution guard. The last successful
+equivalent run is `35184697729` on `fbed3db635654aa1bfec375190f19c77a7dd7350`;
+invariant job `105084133350` and client shard-three job `105084371037` passed.
+Both guards' implementations match that baseline; the lifecycle test was absent
+there. The repair uses the platform temporary path and actual owned fixture
+directory, and documents only the third Horse identification predicate under
+the register's existing rule. Its retained actual-controller regression still
+requires both human and Horse discards while attributing only the Horse receipt.
+No check detection or test assertion is removed or weakened.
+
+The installed private reader was also invoked through the live engine's actual
+authenticated service transport at `2026-09-17T05:26:28Z`: HTTP 200, zero rows,
+`dayObservation=missing`, `sourceCoverage=not_established`, and both GTO and
+activation flags false. The three prior closed UTC days had no audit rows.
+These are explicit access/baseline observations, not deployed consumer or
+daily-audit coverage proof.
+
+The complete hosted engine matrix on `da1fea11b45c` exposed additional retained
+integration mismatches. Atomic telemetry and tuner completion source was paired
+with older wiring assertions, and the fake worker matched a same-ID CANCEL when
+constructing a late decision reply. Repairs preserve the real admission fences,
+restore the retained compatible assertions, and bind fake replies to the original
+request type. The data ledger now accounts for both worker-owned hand controls,
+the client/witness/flush emitters and the existing discard-capture-gap counter.
+The ESM guard recognizes explicit native `.mjs` fixture modules while retaining
+extensionless and TypeScript-only refusal controls.
+
+Ten unchanged Phase 9 cases identified a real missing recovery prerequisite:
+restored main had lost the already reviewed two-seat-table RIT refusal. Only that
+retained `HEADS_UP_SEATS` import and configuration guard are restored; a two-player
+pot at a larger cash table remains eligible. No unrelated base-engine changes
+are copied from the historical candidate.
+
+The next build also detected main advancing to `abf5f90849` (PR #4690), so the
+owned branch must incorporate that entry-occupancy repair before fresh checks.
+The failed source was behind main; no build/provenance safeguard is bypassed.

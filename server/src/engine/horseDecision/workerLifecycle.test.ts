@@ -202,7 +202,8 @@ const lifecycle = (rows: readonly HorseJournalRecord[]) =>
 
 describe('valid private Horse request lifecycle', () => {
   it('bounds undispatched retirement capture without retaining an unlimited second queue', async () => {
-    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/private/test-only-configured-marker');
+    // This fake worker only checks whether capture is configured; it opens no path.
+    vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', join(tmpdir(), 'horse-client-configured-marker'));
     let messageListener: ((message: HorseDecisionWorkerResponse) => void) | undefined;
     const sent: any[] = [];
     const worker = {
@@ -233,10 +234,10 @@ describe('valid private Horse request lifecycle', () => {
   it.each(['cancelled', 'expired'] as const)(
     'routes actual client queue %s through validation, publisher, disk and reader',
     async (outcome) => {
-      vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', '/private/test-only-configured-marker');
       const h = harness(),
         sent: any[] = [],
         onFatal = vi.fn();
+      vi.stubEnv('HORSE_DECISION_JOURNAL_DIR', h.directory);
       let clientListener: ((message: HorseDecisionWorkerResponse) => void) | undefined;
       const worker = {
         postMessage: (message: any) => {

@@ -63,9 +63,19 @@ class FakeWorker implements WorkerLike {
   emitMessage(message: any): void {
     // Fixture-only producer migration: derive new metadata from the exact sent
     // job. This fake ACK/transport harness does not prove worker issue ownership.
+    // CANCEL reuses the request ID but carries no producer snapshot. A late
+    // valid result must retain the binding from its original decision request.
+    const requestType =
+      message?.type === 'FAST_RESULT'
+        ? 'DECIDE_FAST'
+        : message?.type === 'DEEP_RESULT'
+          ? 'DECIDE_DEEP'
+          : null;
     const request = [...this.sent]
       .reverse()
-      .find((item: any) => item?.requestId === message?.requestId) as any;
+      .find(
+        (item: any) => item?.requestId === message?.requestId && item?.type === requestType
+      ) as any;
     if (
       message?.type === 'FAST_RESULT' &&
       request?.type === 'DECIDE_FAST' &&

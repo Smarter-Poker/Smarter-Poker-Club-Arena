@@ -380,6 +380,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'fast authoritative decisions capture opponent-memory effects; speculative deep replays read without observing twice',
     'V50'
   ),
+  {
+    ...flag(
+      'mindObservationHand',
+      'worker-owned table/allocated-hand coordinate separates basic observation deduplication across tables; null refuses ingestion, omission preserves direct/offline legacy compatibility; not an accepted-hand UUID or learning authority',
+      'Phase15',
+      'HorseLogic.decide -> HorseMind.observe'
+    ),
+    source:
+      'HorseDecisionWorkerRuntime.executeFast -> horseMindHandFromDecision(original request); caller options cannot supply it',
+  },
+  {
+    ...flag(
+      'mindPlanContext',
+      'worker-owned hand namespace binds future-street plan reads/effects and FAST/DEEP replay; explicit unavailable hand prevents a live legacy-key fallback, omission preserves direct/offline compatibility; not controller acceptance authority',
+      'Phase15',
+      'HorseLogic.decidePostflop -> horsePlanHandKey -> HorseMind plan reads/effects'
+    ),
+    source:
+      'HorseDecisionWorkerRuntime.executeFast/executeDeep -> horsePlanContextFromDecision(original request); caller options cannot supply it',
+  },
   flag('mind', 'the whole opponent-intelligence layer (reads + writes)', 'V3'),
   flag('streetIQ', 'position/initiative/scare/texture reads', 'V4'),
   flag('handReading', 'street-by-street range narrowing from the full history', 'V5'),
@@ -2191,6 +2211,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase15_journal_*',
     'HorseDecisionJournalPublisher',
     'private host-local journal capture, queue admission, exact disk acknowledgement or explicit gap; enqueued is not durable, recorded is not complete coverage, full replay or a GTO verdict',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_discard_capture_unavailable',
+    'LiveHorseDecisionWorkerClient.observeDiscardExecution',
+    'private accepted-discard evidence could not be queued or acknowledged; an explicit capture gap, not evidence that the controller discard failed',
     'Phase15'
   ),
   receipt(

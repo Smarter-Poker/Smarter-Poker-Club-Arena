@@ -68,9 +68,7 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     // _handlePlayerActionInner, so the clock must be started there too -
     // verified on production 2026-09-04: before this, zero samples with no
     // human seated.
-    const horseAt = turns.search(
-      /handControllerRef\.performAction\(\s*seat,\s*action as any,\s*amount,/
-    );
+    const horseAt = turns.search(/applied = attemptAction\(\s*action as ActionType,\s*amount,/);
     expect(horseAt).toBeGreaterThan(0);
     const afterHorse = turns.slice(horseAt);
     expect(afterHorse.indexOf('this.lastActionAcceptedAtMs = Date.now()')).toBeGreaterThan(0);
@@ -83,7 +81,7 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     // treatment (CLAUDE.md 10.5). Keying on the same `applied` that
     // markProgress() uses is what makes it whichever-attempt-landed.
     const degradeAt = afterHorse.search(
-      /performAction\(\s*seat,\s*'fold' as any,\s*undefined,\s*'horse_fallback'/
+      /attemptAction\(\s*'fold',\s*undefined,\s*'horse_fallback'/
     );
     const countAt = afterHorse.indexOf('actionsFleetTotal.inc(');
     expect(degradeAt).toBeGreaterThan(0);
@@ -132,13 +130,16 @@ describe('LAW 7 - the clock measures action-to-broadcast, not the gap between ac
   it('the horse path arms before its action and restores when nothing lands', () => {
     const seg = sliceMethod(turns, 'protected scheduleHorseAction(');
     expect(seg).toContain('const horseClockWasArmed');
+    expect(seg).toMatch(
+      /handControllerRef\.performAction\(\s*seat,\s*attemptedAction,\s*attemptedAmount,/
+    );
     const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
-    const act = seg.search(/handControllerRef\.performAction\(\s*seat,\s*action as any,\s*amount,/);
+    const act = seg.search(/applied = attemptAction\(\s*action as ActionType,\s*amount,/);
     expect(arm).toBeGreaterThan(-1);
     expect(act).toBeGreaterThan(-1);
     expect(arm).toBeLessThan(act);
     // the degrade re-arms, and total failure restores
-    expect(seg).toMatch(/performAction\(\s*seat,\s*'fold' as any,\s*undefined,\s*'horse_fallback'/);
+    expect(seg).toMatch(/attemptAction\(\s*'fold',\s*undefined,\s*'horse_fallback'/);
     expect(turns).toMatch(/this\.lastActionAcceptedAtMs = horseClockWasArmed;/);
   });
 

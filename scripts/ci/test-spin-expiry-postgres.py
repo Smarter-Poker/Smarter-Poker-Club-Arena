@@ -44,7 +44,7 @@ CLEAN_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
              'PYTHONDONTWRITEBYTECODE': '1'}
 REPLACEMENTS = {'scripts/qualification/spin-expiry-business-races.md': 'scripts/qualification/spin-expiry-business-races.md', 'scripts/qualification/spin-expiry-business-races.py': 'scripts/qualification/spin-expiry-business-races.py', 'scripts/qualification/spin-expiry-business-state.sql': 'scripts/qualification/spin-expiry-business-state.sql', 'scripts/qualification/spin-expiry-committed-refund-oracle.py': 'scripts/qualification/spin-expiry-committed-refund-oracle.py', 'scripts/qualification/spin-expiry-committed-refund-state.sql': 'scripts/qualification/spin-expiry-committed-refund-state.sql', 'scripts/qualification/spin-expiry-committed-refund.authority.json': 'scripts/qualification/spin-expiry-committed-refund.authority.json', 'scripts/qualification/spin-expiry-committed-refund.md': 'scripts/qualification/spin-expiry-committed-refund.md', 'scripts/qualification/spin-expiry-committed-refund.py': 'scripts/qualification/spin-expiry-committed-refund.py', 'scripts/qualification/spin-expiry-lock-order.authority.json': 'scripts/qualification/spin-expiry-lock-order.authority.json', 'scripts/qualification/spin-expiry-lock-order.component-inputs.sql': 'scripts/qualification/spin-expiry-lock-order.component-inputs.sql', 'scripts/qualification/spin-expiry-lock-order.md': 'scripts/qualification/spin-expiry-lock-order.md', 'scripts/qualification/spin-expiry-lock-order.sql': 'scripts/qualification/spin-expiry-lock-order.sql', 'scripts/qualification/spin-expiry-real-funded-fixture.sql': 'scripts/qualification/spin-expiry-real-funded-fixture.sql', 'supabase/components/spin-expiry-lock-order.rollback.sql': 'supabase/components/spin-expiry-lock-order.rollback.sql', 'supabase/components/spin-expiry-lock-order.sql': 'supabase/components/spin-expiry-lock-order.sql'}
 RETENTION_MANIFEST = 'scripts/qualification/spin-history-retention.manifest.json'
-RETENTION_MANIFEST_SHA256 = '2f9f2d01943c8c607c79f16a3607132aca42a7210a854bacbb3fd4beaa43c160'
+RETENTION_MANIFEST_SHA256 = '28713cfccf94b94cb3e633ae6657f125c66aafbc2c9b704fc7f67624d25ced78'
 RETENTION_INPUTS = (
     'scripts/qualification/fixtures/spin-history-retention/capture-closure.sql',
     'scripts/qualification/fixtures/spin-history-retention/capture-provider.sql',
@@ -61,6 +61,8 @@ RETENTION_INPUTS = (
     'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql',
     'scripts/qualification/fixtures/spin-history-retention/sequence-authority-capture.json',
     'scripts/qualification/fixtures/spin-history-retention/sequence-authority.sql',
+    'scripts/qualification/fixtures/spin-history-retention/social-alias-reference.sql',
+    'scripts/qualification/fixtures/spin-history-retention/social-alias-reference-authority.json',
     'scripts/qualification/fixtures/spin-history-retention/state.sql',
     'scripts/qualification/spin-history-retention-behavior.sql',
     'scripts/qualification/spin-history-retention.md',
@@ -70,7 +72,7 @@ RETENTION_INPUTS = (
     'scripts/qualification/spin-history-retention.manifest.json',
 )
 COMPLETED_MANIFEST = 'scripts/qualification/spin-history-retention-completed.manifest.json'
-COMPLETED_MANIFEST_SHA256 = '02486260a8f94c9d72fd9f1c7a037b486c5818d80aa5aa80ba1c51e2d04fb35e'
+COMPLETED_MANIFEST_SHA256 = 'da47a522ed73666857a91eb1646e9d313122dcaac6826ba2534654eac0e71967'
 COMPLETED_INPUTS = (
     'scripts/qualification/fixtures/spin-history-retention/capture-completed-start.sql',
     'scripts/qualification/fixtures/spin-history-retention/completed-start-authority.json',

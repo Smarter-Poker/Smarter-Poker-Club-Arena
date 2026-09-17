@@ -79,3 +79,4 @@ scripts/qualification/spin-history-retention.manifest.json
 scripts/qualification/fixtures/spin-history-retention/completed-start-authority.json
 scripts/qualification/spin-history-retention-completed.manifest.json
 scripts/qualification/spin-history-retention-completed.md
+scripts/qualification/fixtures/spin-history-retention/social-alias-reference-authority.json

@@ -65,6 +65,7 @@ BEGIN;
 CREATE TEMP TABLE retention_completed_inputs AS SELECT
  :'execution_uuid'::uuid execution, :'ordinary_user_uuid'::uuid horse,
  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'retention-authentic-completed-late-history') hand_id;
+\ir fixtures/spin-history-retention/social-alias-reference.sql
 DO $projection$
 DECLARE q record; p jsonb; returned uuid;
 BEGIN

@@ -27,8 +27,8 @@
       "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12"
     },
     "scripts/qualification/fixtures/spin-history-retention/estate.sql": {
-      "bytes": 11883,
-      "sha256": "c36c12c20d9a3b73466919559ab12a240e2a6fd537dfa5174b330ebb53d158be"
+      "bytes": 11914,
+      "sha256": "24c7db4fa5c95ca49c2bcafb6b19e5152f2cdb155e01d07a7e694493eb91ca59"
     },
     "scripts/qualification/fixtures/spin-history-retention/history-writer-authority.json": {
       "bytes": 30344,
@@ -93,6 +93,14 @@
     "supabase/components/spin-history-retention.sql": {
       "bytes": 11817,
       "sha256": "c219d11b2ae7c337d8425509ce6bed56ffb4d1247945acc8d085d885b74e7048"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/social-alias-reference.sql": {
+      "bytes": 5282,
+      "sha256": "28a962a40c8ba3ad50ad0a4f12bcfe1320faafd583ff27347858e7d3481a796f"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/social-alias-reference-authority.json": {
+      "bytes": 48993,
+      "sha256": "8bb86518a663c44b50fdbe8cf375d9b97a212ae55eb0c08a53aa02581b42ab63"
     }
   },
   "evidence": {
@@ -214,6 +222,9 @@
       "scripts/qualification/fixtures/spin-history-retention/component-inputs.sql",
       "scripts/qualification/spin-expiry-business-state.sql",
       "scripts/qualification/fixtures/spin-history-retention/state.sql"
+    ],
+    "scripts/qualification/fixtures/spin-history-retention/estate.sql": [
+      "scripts/qualification/fixtures/spin-history-retention/social-alias-reference.sql"
     ]
   }
 }

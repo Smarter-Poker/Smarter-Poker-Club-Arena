@@ -59,6 +59,7 @@ CROSS JOIN LATERAL (VALUES(q.owner_user),(q.horse)) u(id);
 SELECT set_config('app.club_membership_source','',true);
 -- Exercise the actual server-owned profile update and its real social trigger;
 -- no trigger is disabled and all resulting auxiliary rows must roll back.
+\ir social-alias-reference.sql
 UPDATE public.profiles SET is_horse=true WHERE id=(SELECT horse FROM retention_inputs);
 DO $horse_social_evidence$
 BEGIN

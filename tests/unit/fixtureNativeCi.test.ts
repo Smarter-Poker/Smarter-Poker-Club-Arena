@@ -424,6 +424,8 @@ const spinExpiryAccountingPaths = [
   'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql',
   'scripts/qualification/fixtures/spin-history-retention/sequence-authority-capture.json',
   'scripts/qualification/fixtures/spin-history-retention/sequence-authority.sql',
+  'scripts/qualification/fixtures/spin-history-retention/social-alias-reference.sql',
+  'scripts/qualification/fixtures/spin-history-retention/social-alias-reference-authority.json',
   'scripts/qualification/fixtures/spin-history-retention/state.sql',
   'scripts/qualification/spin-history-retention-behavior.sql',
   'scripts/qualification/spin-history-retention.md',

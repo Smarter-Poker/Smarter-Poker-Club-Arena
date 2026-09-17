@@ -639,7 +639,7 @@ class RetentionSourceTests(unittest.TestCase):
     def test_actual_frozen_packet_pins_and_full_relative_include_graph(self):
         files = retention_source_files()
         W.validate_retention_sources(files)
-        self.assertEqual(len(W.RETENTION_INPUTS), 22)
+        self.assertEqual(len(W.RETENTION_INPUTS), 24)
         # The catalog's shared oracle must be staged in addition to the new packet.
         manifest = json.loads(files[W.RETENTION_MANIFEST])
         self.assertIn('scripts/qualification/spin-expiry-business-state.sql',

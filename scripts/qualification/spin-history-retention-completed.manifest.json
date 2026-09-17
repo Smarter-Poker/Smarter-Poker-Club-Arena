@@ -21,8 +21,8 @@
       "sha256": "9bc5ed046ef7eb38c7697a4f3691154fc4f346ec2c7153d39dbb26865105f116"
     },
     "scripts/qualification/spin-history-retention-completed.sql": {
-      "bytes": 10791,
-      "sha256": "2753663dadc3180c16379929cc050e8efdc482ce4472b6492a5dfba604a48232"
+      "bytes": 10854,
+      "sha256": "9e74b246802a479a0d6171d38b5d3326ba28ae93236a3b651da172662784b053"
     },
     "scripts/qualification/spin-history-retention-completed.md": {
       "bytes": 8256,
@@ -38,7 +38,8 @@
     "scripts/qualification/spin-history-retention-completed.sql": [
       "fixtures/spin-history-retention/completed-start-input.sql",
       "fixtures/spin-history-retention/database-state.sql",
-      "fixtures/spin-history-retention/component-inputs.sql"
+      "fixtures/spin-history-retention/component-inputs.sql",
+      "fixtures/spin-history-retention/social-alias-reference.sql"
     ]
   },
   "capture": {
@@ -105,7 +106,7 @@
   },
   "consumed_retention_manifest": {
     "path": "scripts/qualification/spin-history-retention.manifest.json",
-    "sha256": "2f9f2d01943c8c607c79f16a3607132aca42a7210a854bacbb3fd4beaa43c160",
+    "sha256": "28713cfccf94b94cb3e633ae6657f125c66aafbc2c9b704fc7f67624d25ced78",
     "all_existing_leaf_pins_match": true
   },
   "integration": {

@@ -1166,4 +1166,3 @@ REVOKE ALL ON FUNCTION public.fn_wheel_spin_result(wheel_spins) FROM PUBLIC,anon
 GRANT EXECUTE ON FUNCTION public.fn_wheel_spin_result(wheel_spins) TO service_role;
 GRANT EXECUTE ON FUNCTION public.fn_wheel_spin_result(wheel_spins) TO authenticated;
 SET check_function_bodies=on;
-

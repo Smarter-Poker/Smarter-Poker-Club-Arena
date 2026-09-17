@@ -303,7 +303,7 @@
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-seat-move-authority.raw.txt": "2ca4ebcb887713e661a2661833726cc80ef151c04d1a9185e616b5495c774781",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-successor-provenance.json": "58289123ad4fee1e1f402b9dd7120ea267dab4cf792bbc608f59d6da1989b23d",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c",
-    "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "cd173b15400a8d0dcc3861a80e22511df741e8732b0fb9dece85e8e0b7038f3f"
+    "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "0c43c6d516c0f72aeb0e5c5ba7c35c70ad16dd3dbe239896bcd83b2b600b21af"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -1105,5 +1105,22 @@
       }
     ],
     "focused_validation": "Actual isolated PostgreSQL17.11 passed bootstrap/create/demote/reconnect withpostgresNOSUPERUSER,BYPASSRLS anddatabaseownerpostgres. No financial source changed; full hosted qualification pending."
+  },
+  "managed_cron_settings_correction_20260917": {
+    "failed_run": 35248124931,
+    "failed_job": 105293650908,
+    "path": "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py",
+    "prior_sha256": "cd173b15400a8d0dcc3861a80e22511df741e8732b0fb9dece85e8e0b7038f3f",
+    "sha256": "0c43c6d516c0f72aeb0e5c5ba7c35c70ad16dd3dbe239896bcd83b2b600b21af",
+    "observed_production_permissions": {
+      "current_user": "postgres",
+      "session_user": "postgres",
+      "pg_monitor_usage": true,
+      "pg_read_all_settings_usage": true,
+      "cron_database_name": "postgres",
+      "cron_timezone": "GMT"
+    },
+    "reason": "Preserve the unchanged provider settings guards by reproducing the observed read-only monitoring role in the isolated managed caller; no production privilege changes.",
+    "focused_validation": "Exact maintained managed-cron-role-regression.py passed with actual local PostgreSQL17.11 and pg_cron1.6.8 against prior accepted schema: oldLOCK42501, exact source transition and rollback, job272 staleupdate40001, job271 retirementguardrefusal and preserved concurrent rows, final272 timing race40001. No job launched. Full final hosted job remains required."
   }
 }

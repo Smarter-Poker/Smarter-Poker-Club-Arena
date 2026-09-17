@@ -101,15 +101,18 @@ def main(password_file):
           "COMMIT;")
     # The runner keeps its separate bootstrap account unchanged. The distinct
     # fixture administrator commits this before the tested caller connects.
-    query("ALTER ROLE postgres NOSUPERUSER BYPASSRLS;", role=owner)
+    # Production postgres inherits pg_monitor, including the read-only settings
+    # privilege required by the unmodified provider/timezone guards.
+    query("GRANT pg_monitor TO postgres;ALTER ROLE postgres NOSUPERUSER BYPASSRLS;", role=owner)
     privileges = json.loads(query("SELECT jsonb_build_object('superuser',(SELECT rolsuper FROM pg_roles WHERE rolname=current_user),"
         "'bypass_rls',(SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user),"
+        "'monitor',pg_has_role(current_user,'pg_monitor','USAGE'),"
         "'owner',(SELECT pg_get_userbyid(extowner) FROM pg_extension WHERE extname='pg_cron'),"
         "'select',has_table_privilege(current_user,'cron.job','SELECT'),'writes',"
         "EXISTS(SELECT 1 FROM unnest(ARRAY['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'])p"
         " WHERE has_table_privilege(current_user,'cron.job',p)),"
         "'alter',has_function_privilege(current_user,'cron.alter_job(bigint,text,text,text,text,boolean)','EXECUTE'));"))
-    if privileges != {"superuser": False, "bypass_rls": True, "owner": owner,
+    if privileges != {"superuser": False, "bypass_rls": True, "monitor": True, "owner": owner,
                       "select": True, "writes": False, "alter": True}:
         raise AssertionError("managed caller privileges do not reproduce the observed restriction")
 

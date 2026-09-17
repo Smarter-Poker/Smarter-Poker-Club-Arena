@@ -26,9 +26,9 @@ The table explicitly revokes service-role default write grants, then grants SELE
 
 The fixture exercises controlled central delivery, not live Messenger audiences or production volume. Those require integrated release verification. No native result is a claim that historical source contracts are known.
 
-| Function | Reviewed production preimage MD5 | Native post-migration MD5 |
-| --- | --- | --- |
-| `fn_settle_round2_club_to_agents(uuid,timestamptz,timestamptz)` | `1f79888c067c5e4892442d88a66affbf` | `c03c212bf251276d906b9bbf3568de47` |
+| Function                                                           | Reviewed production preimage MD5   | Native post-migration MD5          |
+| ------------------------------------------------------------------ | ---------------------------------- | ---------------------------------- |
+| `fn_settle_round2_club_to_agents(uuid,timestamptz,timestamptz)`    | `1f79888c067c5e4892442d88a66affbf` | `c03c212bf251276d906b9bbf3568de47` |
 | `fn_settle_round3_agents_to_players(uuid,timestamptz,timestamptz)` | `422380ee15a8e452cf8044c0e91bbddd` | `8132e8213c5432466aac403750358438` |
 
 ## Lead-owner integration requirements
@@ -63,11 +63,11 @@ The six-transfer fixture produces exactly six source invoices and ten private Me
 
 Standalone tests cover the same routing and direct-club player payment, exact club isolation among NULL-coordinator clubs, later union membership, explicit scope identity even when union and club UUIDs are equal, invalid scope rejection, restored context, complete rollback, and private execution grants. The forward-upgrade fixture proves existing immutable union receipts survive the schema upgrade and replay without new transfers.
 
-| Final shared function | Native definition MD5 |
-| --- | --- |
+| Final shared function                                                      | Native definition MD5              |
+| -------------------------------------------------------------------------- | ---------------------------------- |
 | `fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz)` | `7d17e883dc9a26febe835655f80ccdbc` |
-| `fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)` | `404e23af8a37939355a4f5176791dfad` |
-| `fn_settle_round2_club_to_agents(uuid,timestamptz,timestamptz)` wrapper | `5d5071f48af1872b459777b7c4a5e74f` |
+| `fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)`   | `404e23af8a37939355a4f5176791dfad` |
+| `fn_settle_round2_club_to_agents(uuid,timestamptz,timestamptz)` wrapper    | `5d5071f48af1872b459777b7c4a5e74f` |
 | `fn_settle_round3_agents_to_players(uuid,timestamptz,timestamptz)` wrapper | `ca110e4463f2d5339242d31c07fecd6c` |
 
 Native evidence: `/Users/smarter.poker/Documents/Codex/2026-09-14/un/work/routed-accounting-shared-native.log`. This lane still made no production mutation, commit, push, or rate change. Native integrated delivery does not certify deployed Messenger behavior, production volumes, commercial agreements, or the entire accounting task.
@@ -118,12 +118,12 @@ The authorized read-only summary calls the existing private tournament quality c
 
 `bash scripts/dev/test-scope-weekly-accounting.sh` passed **65 PostgreSQL assertions**. It loads actual statement/delivery functions, invoice triggers, Messenger conversations/messages/notification writes, source view, fee net-plan and quality checker, plus the coordinator owner's historical scope and settled-period creator draft. Paid stage headers and original bank/source receipts are controlled fixture inputs; actual R2/R3 transfers are independently covered by the 93-check routed suite. Tests include departed/zero-source clubs, a club joining after the period, standalone scope after joining a union, private cash plus recognized tournament funding, separate downstream totals, owner/union access, exact GUC scope, malformed period data, wrong bank destination, deferred recognition, missing stage/period proof, notification rollback, immutable issued figures, duplicate period refusal, and two competing issuers resulting in one weekly document, one delivery, and no new chip transfer.
 
-| Final statement function | Native definition MD5 |
-| --- | --- |
-| `fn_club_weekly_accounting_summary(uuid)` | `08e8809611b60e14aa090ecc46ac40e9` |
+| Final statement function                                              | Native definition MD5              |
+| --------------------------------------------------------------------- | ---------------------------------- |
+| `fn_club_weekly_accounting_summary(uuid)`                             | `08e8809611b60e14aa090ecc46ac40e9` |
 | `fn_issue_scope_weekly_accounting(text,uuid,timestamptz,timestamptz)` | `e73d9e7d8807ac4244d8131e4b2bc407` |
-| `fn_issue_club_weekly_accounting(uuid,timestamptz,timestamptz)` | `5bbb7a8239c3edc916b6d2f936f26325` |
-| `fn_deliver_accounting_invoice(uuid)` | `0291df67e104292f018647d10d4d862e` |
+| `fn_issue_club_weekly_accounting(uuid,timestamptz,timestamptz)`       | `5bbb7a8239c3edc916b6d2f936f26325` |
+| `fn_deliver_accounting_invoice(uuid)`                                 | `0291df67e104292f018647d10d4d862e` |
 | `fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)` | `499582f36664ab6ffc2116b22740ae69` |
 
 Reviewed live preimage hashes were fetched read-only before drafting: summary `fd8af5960df5b5da23b4e9a6497ae63b`, union issuer `3d37ae48c223ec49afc1ad468237e0b5`, and delivery `8aeee5f47863f0496c9cdf86490eb084`. Native log: `/Users/smarter.poker/Documents/Codex/2026-09-14/un/work/scope-weekly-native.log`. Dependency order includes the complete tournament source bundle, mixed source140015, certificate141013, version-3 R1 source close14141800, and the root coordinator's historical scope/settled-period creator. This lane did not apply production DDL, perform accounting payments, commit, push, or certify live automation.

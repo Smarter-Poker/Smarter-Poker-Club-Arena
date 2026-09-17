@@ -15,14 +15,7 @@ const cleanEnv = Object.fromEntries(
     ([key]) =>
       !key.startsWith('GIT_') &&
       !key.startsWith('GITHUB_') &&
-      ![
-        'GITHUB_ACTIONS',
-        'GITHUB_RUN_ID',
-        'GITHUB_REPOSITORY',
-        'STRICT_PROVENANCE',
-        'CA_BUILD_PURPOSE',
-        'CA_DIST',
-      ].includes(key)
+      !['STRICT_PROVENANCE', 'CA_DIST', 'CA_BUILD_PURPOSE'].includes(key)
   )
 );
 const fixtureEnv = {

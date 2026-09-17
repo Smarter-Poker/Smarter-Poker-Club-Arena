@@ -1,7 +1,7 @@
 import { parse } from 'yaml';
 import { afterEach, expect, test } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 const sourceRoot = process.env.PROVENANCE_REVIEW_ROOT || process.cwd();
@@ -105,7 +105,7 @@ function fixture() {
     });
   const provenance = () =>
     JSON.parse(readFileSync(path.join(repo, 'dist/ca-provenance.json'), 'utf8'));
-  return { git, run, provenance, base, head, control, mergeBase, currentMain, eventPath };
+  return { git, run, provenance, base, head, control, mergeBase, currentMain, eventPath, outer };
 }
 
 test('a real captured PR merge builds after main advances and remains marked validation-only', () => {
@@ -129,6 +129,37 @@ test('the same stale tree remains refused for a production publisher', () => {
   });
   expect(result.status).toBe(1);
   expect(f.provenance()).toMatchObject({ validationOnly: false, behindMain: 1 });
+});
+
+test('explicit strict publication refuses a stale tree even in a valid PR context', () => {
+  const f = fixture();
+  const result = f.run({ STRICT_PROVENANCE: '1' });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('1 commit(s) BEHIND origin/main');
+  expect(f.provenance()).toMatchObject({ validationOnly: false, pullRequest: null, behindMain: 1 });
+});
+
+test('a failed ancestry count cannot qualify a PR snapshot as readable history', () => {
+  const f = fixture();
+  // Inject a command failure at the Git transport boundary. All other commands
+  // still inspect the real fixture graph; unknown must not become fresh.
+  const bin = path.join(f.outer, 'fault-bin');
+  mkdirSync(bin);
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const shim = path.join(bin, 'git');
+  writeFileSync(
+    shim,
+    `#!${process.execPath}\n` +
+      `const {spawnSync}=require('node:child_process');\n` +
+      `const args=process.argv.slice(2);\n` +
+      `if(args[0]==='rev-list' && args[1]==='--count') process.exit(42);\n` +
+      `const result=spawnSync(${JSON.stringify(realGit)},args,{stdio:'inherit'});\n` +
+      `process.exit(result.status ?? 1);\n`
+  );
+  chmodSync(shim, 0o700);
+  const result = f.run({ PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain('Invalid PR build validation identity');
 });
 
 test('wrong workflow or source cannot acquire the CI validation exception', () => {

@@ -2,6 +2,8 @@
 
 **Non-engine delivery: push, publish, verify and finish without waiting for `:55`.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
 
+Implementation status: PR #4788 separately delivers the additional engine recovery opportunity, split post-deploy jobs and parallel accounting/engine CI. Verify those capabilities in the current workflow and runtime before using them. Publishing these instructions does not install an engine change.
+
 Read [AGENTS.md](AGENTS.md) and [the operating law](docs/agent-policy/OPERATING-LAW.md), including immediate failed-deployment recovery.
 
 Current owner instruction, September 17, 2026. This is the active publication procedure for local and cloud agents. It supersedes older root-only authority, numbered delivery queues, stop-after-push directions, retired local-build procedures and reliance on disabled agent autopilot.

@@ -18,7 +18,13 @@ import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { ClubCardGenerator } from './ClubCardGenerator';
 import { captureCashoutAccountGuard } from './CashoutService';
-import { prepareCashoutOperation, captureCashoutStart, assertCashoutStartCurrent, runCashoutOperation, recoverCashoutOperation } from './CashoutOperation';
+import {
+  prepareCashoutOperation,
+  captureCashoutStart,
+  assertCashoutStartCurrent,
+  runCashoutOperation,
+  recoverCashoutOperation,
+} from './CashoutOperation';
 
 // Module-level circuit breaker — resets after 5 min cooldown
 const _membershipBreaker = (() => {
@@ -640,13 +646,27 @@ export async function leaveClub(clubId: string): Promise<void> {
   for (const row of pendingCashouts ?? []) {
     assertCurrent();
     const amount = Number(row.amount);
-    if (row.club_id !== resolvedId || row.player_id !== userId || row.status !== 'pending' ||
-        typeof row.amount !== 'string' || !/^(0|[1-9]\d*)\.\d{2}$/.test(row.amount) ||
-        !Number.isFinite(amount) || amount <= 0 || amount > 1e9 || amount.toFixed(2) !== row.amount) {
+    if (
+      row.club_id !== resolvedId ||
+      row.player_id !== userId ||
+      row.status !== 'pending' ||
+      typeof row.amount !== 'string' ||
+      !/^(0|[1-9]\d*)\.\d{2}$/.test(row.amount) ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > 1e9 ||
+      amount.toFixed(2) !== row.amount
+    ) {
       throw new Error('Could Not Verify The Pending Cashout. Leaving Was Stopped.');
     }
-    const prepared = await prepareCashoutOperation({ userId, clubId: resolvedId, targetId: row.id,
-      playerId: row.player_id, kind: 'cashout_cancel', amount, isCurrent,
+    const prepared = await prepareCashoutOperation({
+      userId,
+      clubId: resolvedId,
+      targetId: row.id,
+      playerId: row.player_id,
+      kind: 'cashout_cancel',
+      amount,
+      isCurrent,
     });
     assertCurrent();
     const start = captureCashoutStart(prepared);
@@ -678,16 +698,13 @@ export async function leaveClub(clubId: string): Promise<void> {
   //    to strand chips. This replaces the old flow that DEBITED the player's main
   //    wallet (wrong account and direction) and then deleted the membership
   //    regardless of whether the debit RPC returned false.
-  const { data: leaveResult, error: leaveErr } = await retryAsync(
-    () => {
-      assertCurrent();
-      return supabase.rpc('fn_member_leave_to_treasury', {
-        p_club_id: resolvedId,
-        p_user_id: userId,
-      });
-    },
-    2
-  );
+  const { data: leaveResult, error: leaveErr } = await retryAsync(() => {
+    assertCurrent();
+    return supabase.rpc('fn_member_leave_to_treasury', {
+      p_club_id: resolvedId,
+      p_user_id: userId,
+    });
+  }, 2);
 
   assertCurrent();
   if (leaveErr) {

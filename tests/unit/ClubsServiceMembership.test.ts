@@ -77,7 +77,8 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
-vi.mock('../../src/utils/clubIdResolver', () => ({
+vi.mock('../../src/utils/clubIdResolver', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/utils/clubIdResolver')>()),
   resolveClubUUID: vi.fn().mockResolvedValue('club-uuid-1'),
 }));
 

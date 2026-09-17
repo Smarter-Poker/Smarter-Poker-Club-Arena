@@ -1,0 +1,83 @@
+{
+  "status": "unapplied_candidate",
+  "components": [
+    {
+      "name": "20260914131539_cash_commissions_account_for_every_contributor_once.sql",
+      "sha256": "8c6d1a19848f12d7dbe382db32cf50c9a2349efe8cb5b79c5997b0b18576a129"
+    },
+    {
+      "name": "20260914132216_cash_rakeback_periods_require_one_certified_week.sql",
+      "sha256": "4fadda5764b8d31d529856e6be444b9c2b8902ef87c9aebda6902a8cd6154091"
+    },
+    {
+      "name": "20260914132449_rakeback_follows_recorded_hierarchy_in_one_funded_transaction.sql",
+      "sha256": "cbf51b0276f365cc201943c9059c7bafeb414e27d915b1b979d5373d9a150a95"
+    },
+    {
+      "name": "20260914133404_routed_invoice_roles_follow_the_recorded_payment.sql",
+      "sha256": "25f54193a5289c89fe1edcb9eb70bfe8ea25600510b159def933ce27150cb68b"
+    },
+    {
+      "name": "20260914135008_standalone_clubs_use_the_same_atomic_routed_stages.sql",
+      "sha256": "67fa42f3813b0ab87087b180c57a6157df34d9e47d098e7f2b848158a5241f27"
+    },
+    {
+      "name": "20260914135530_tournament_fees_share_one_recorded_earning_authority.sql",
+      "sha256": "c8ddbbe689086ef955ae72b7023632d1eb440435edb717f8ce0f8698e3a20aa6"
+    },
+    {
+      "name": "20260914140015_recognized_cash_and_tournament_sources_share_one_payment_route.sql",
+      "sha256": "67ef2df020d058cdc9995be72de79a81b4c7c3e3b43851d9fc5d1228b1d575ca"
+    },
+    {
+      "name": "20260914141013_weekly_player_certificates_include_recognized_tournament_fees.sql",
+      "sha256": "373d0498d75c42887d70ca58e23cf0f3d5618ed33f5f434794cc792520cef7fc"
+    },
+    {
+      "name": "20260914141800_union_close_matches_recorded_earnings_to_every_bank_credit.sql",
+      "sha256": "1202e0311dfc513f75fee95f5794fd095106cd57e7aa07aee5f1f17dc7148f0a"
+    },
+    {
+      "name": "20260914142256_weekly_statements_follow_recorded_union_and_standalone_books.sql",
+      "sha256": "2cda1ff48e005a667430618e39d76e1ff693222558be9b09414c87261ad42d26"
+    },
+    {
+      "name": "20260914142600_unions_and_standalone_clubs_share_one_weekly_run_journal.sql",
+      "sha256": "433c5fa4e530555acc0f961c3d4c20de14b8b08286133a9e57a98b64f4e07e98"
+    },
+    {
+      "name": "20260914143500_weekly_conservation_requires_recorded_scope_and_payment_receipts.sql",
+      "sha256": "38f18f4101a38abf8a5beecb6ee7aef4d4ec58138c7ed6f74e98d1d30a7a0a00"
+    },
+    {
+      "name": "20260914144442_cash_accounting_refusals_are_durable_and_retryable.sql",
+      "sha256": "b4796c032b394ca2f3f4dfc759ea1e7991167a39b70aec007e20afbb1f3f2fb6"
+    },
+    {
+      "name": "20260914145000_legacy_claims_enter_only_automatic_weekly_accounting.sql",
+      "sha256": "7451fd5f9b9e66b22684a0b45cf706bf9ff316667c0b444dad3940fc70852f05"
+    },
+    {
+      "name": "20260914145706_cash_compatibility_calls_share_durable_source_authority.sql",
+      "sha256": "a9fac16453f2209501374267c30d97880b18368ffd3e94530519c1fd0331a834"
+    },
+    {
+      "name": "20260914150500_agent_agreements_preserve_club_scope_and_atomic_role_changes.sql",
+      "sha256": "60405d9f4403d2b4f3856e43b8578799ab32fe5b9d061d0b2026a6534fa7b721"
+    },
+    {
+      "name": "20260914152500_unresolved_cash_sources_prevent_weekly_close.sql",
+      "sha256": "28587dc311b2e2b9103109123683de9dfdeaadecff51916f5f76b45f94422afd"
+    }
+  ],
+  "sha256": "8d9023f2dd7aee1f819ef5f87daec7b2a88d2830545af8e001b7632a93d30910",
+  "excluded_installed_migrations": [
+    "20260914132918",
+    "20260914132929",
+    "20260914132940",
+    "20260914140459",
+    "20260914141405",
+    "20260914151155"
+  ],
+  "not_yet_included": []
+}

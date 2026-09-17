@@ -137,6 +137,16 @@ describe('the public arena is readable without JavaScript', () => {
     );
   });
 
+  it('a heading inside a script does not satisfy the h1 guard', () => {
+    // index.html's last-resort screen is a JS string containing `<h1 ...>`.
+    const words = Array.from({ length: 130 }, (_, i) => `w${i}`).join(' ');
+    const shellScript = `<script>root.innerHTML = '<div><h1>Loading Failed</h1></div>'</script>`;
+    const doc = `<html><head>${shellScript}<meta name="robots" content="index, follow" /><link rel="canonical" href="https://smarter.poker/hub/club-arena/help" /></head><body>${shellScript}<div id="root"><p>${words}</p></div></body></html>`;
+    expect(() => verifyDocument('/help', doc)).toThrow(/no <h1>/);
+    const withHeading = doc.replace(`<p>${words}</p>`, `<h1>Help Center</h1><p>${words}</p>`);
+    expect(verifyDocument('/help', withHeading)).toBeGreaterThanOrEqual(130);
+  });
+
   it('verifyDocument refuses an empty, noindex or uncanonical page', () => {
     const base =
       '<html><head><meta name="robots" content="index, follow" /><link rel="canonical" href="https://smarter.poker/hub/club-arena/help" /></head><body><div id="root"><h1>Help</h1></div></body></html>';

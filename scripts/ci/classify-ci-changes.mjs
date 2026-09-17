@@ -13,6 +13,10 @@ const mttPreparation =
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
+// These maintained SQL components and fixture inputs feed the existing required
+// PostgreSQL accounting job even when no server application source changes.
+const accounting =
+  /^(supabase\/accounting\/|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =
   /^(supabase\/components\/(?:spin-expiry-lock-order|spin-history-retention)(?:\.rollback)?\.sql$|scripts\/qualification\/(?:spin-expiry-|spin-history-retention(?:-behavior\.sql|(?:-completed)?\.(?:sql|md|manifest\.json))$|fixtures\/spin-history-retention\/)|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
@@ -95,6 +99,7 @@ export function classifyChangedPaths(paths) {
       phase4Changed ||
       matches(mttPreparation) ||
       commitmentAudit ||
+      matches(accounting) ||
       nativeIsolationTool ||
       spinRules ||
       horsePriority ||

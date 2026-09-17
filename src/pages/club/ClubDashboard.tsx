@@ -479,7 +479,6 @@ export default function ClubDashboard() {
       // CHIPS_WITHDRAWN removed 2026-09-04: no partial cash-out at a cash table.
       'ANNOUNCEMENT_CHANGED',
       'HAND_COMPLETED',
-      'SETTLEMENT_CYCLE_COMPLETED',
       // COLLUSION_DETECTED removed 2026-08-28: nothing emits it client-side.
       'AGENT_UPDATED',
       'MEMBER_ROLE_CHANGED',

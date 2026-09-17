@@ -8,18 +8,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { supabase } from '../../lib/supabase';
-import { retryAsync } from '../../utils/retryAsync';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './AgentCommissionDashboard.css';
 import { reportError } from '../../utils/errorReporter';
 import { CommissionService } from '../../services/CommissionService';
-import {
-  playerDisplayName,
-  PLAYER_NAME_COLUMNS,
-  type NameableProfile,
-} from '../../utils/playerDisplayName';
+import { leaveForHub } from '../../lib/openExternal';
+import { resolveClubUUIDStrict } from '../../utils/clubIdResolver';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 interface CommissionSummary {
   totalEarned: number;
@@ -60,6 +57,10 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
   const [summary, setSummary] = useState<CommissionSummary | null>(null);
   const [records, setRecords] = useState<CommissionRecord[]>([]);
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
+  const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
+  const [readError, setReadError] = useState(false);
+  const [recordsUnavailable, setRecordsUnavailable] = useState(false);
+  const [subAgentsError, setSubAgentsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'summary' | 'records' | 'subagents'>('summary');
 
@@ -68,8 +69,11 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
   // anywhere in the database. On 2026-08-31 it claimed 26,859.87 owed across 5
   // agents while the ledger held 394,904.61 across 96.
   const [owed, setOwed] = useState<number | null>(null);
-  const [claiming, setClaiming] = useState(false);
-  const [claimProgress, setClaimProgress] = useState<number>(0);
+  const readScope = `${user?.id || ''}:${clubId || ''}`;
+  const readScopeRef = useRef(readScope);
+  readScopeRef.current = readScope;
+  const readGeneration = useRef(0);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
 
   // Stagger animations for each tab
   const { style: summaryStyle } = useStaggerAnimation(summary ? 4 : 0);
@@ -80,13 +84,13 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
     if (user?.id) {
       loadData();
     }
-  }, [user?.id]);
+  }, [user?.id, clubId]);
 
   // ── Real-time bus listeners for commission updates ──
   const loadDataRef = useRef<() => void>(() => {});
   useEffect(() => {
     loadDataRef.current = loadData;
-  }, [user?.id]);
+  }, [user?.id, clubId]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -146,9 +150,28 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
 
   const loadData = async () => {
     if (!user?.id) return;
+    const scope = readScope;
+    const generation = ++readGeneration.current;
+    const current = () =>
+      isMounted.current && readScopeRef.current === scope && readGeneration.current === generation;
     setLoading(true);
+    setSummary(null);
+    setOwed(null);
+    setRecords([]);
+    setSubAgents([]);
+    setResolvedClubId(null);
+    setReadError(false);
+    setRecordsUnavailable(false);
+    setSubAgentsError(null);
 
     try {
+      // Routes may contain a numeric club number or slug. Financial readers and
+      // Messenger require the authoritative UUID; a failed lookup must not widen
+      // the request to every club or send the friendly identifier to a UUID RPC.
+      const canonicalClubId = clubId ? await resolveClubUUIDStrict(clubId) : null;
+      if (!current()) return;
+      setResolvedClubId(canonicalClubId);
+
       // Load commission summary.
       //
       // PHASE 7. Until this phase fn_get_agent_commission_summary was a stub
@@ -160,11 +183,22 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       // is one.
       const { data: summaryData, error: summaryErr } = await supabase.rpc(
         'fn_get_agent_commission_summary',
-        { p_agent_id: user.id, p_club_id: clubId ?? null }
+        { p_agent_id: user.id, p_club_id: canonicalClubId }
       );
+      if (!current()) return;
       if (summaryErr) reportError(summaryErr, 'AgentCommissionDashboard.Summary_RPC_failed');
 
-      if (summaryData) {
+      const summaryAmounts = ['total_earned', 'this_week', 'this_month', 'pending_payout'];
+      if (
+        !summaryErr &&
+        summaryData &&
+        summaryAmounts.every(
+          (key) =>
+            (typeof summaryData[key] === 'number' || typeof summaryData[key] === 'string') &&
+            String(summaryData[key]).trim() !== '' &&
+            Number.isFinite(Number(summaryData[key]))
+        )
+      ) {
         setSummary({
           totalEarned: Number(summaryData.total_earned) || 0,
           thisWeek: Number(summaryData.this_week) || 0,
@@ -175,17 +209,18 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       }
 
       // The real outstanding figure, per club. Cheap enough for a page load
-      // (one indexed sum) and deliberately not inside the claim itself, where
-      // it cost 1,474ms of an 8 second budget.
-      if (clubId && user?.id) {
+      // (one indexed sum). Settlement remains exclusively server scheduled.
+      if (canonicalClubId) {
         try {
-          const amount = await CommissionService.unsettledCommission(clubId, user.id);
-          if (isMounted.current) setOwed(amount);
+          const amount = await CommissionService.unsettledCommission(canonicalClubId, user.id);
+          if (current()) setOwed(amount);
         } catch (e) {
           reportError(e, 'AgentCommissionDashboard.unsettled');
-          if (isMounted.current) setOwed(null);
+          if (current()) setOwed(null);
         }
       }
+
+      if (!current()) return;
 
       // Load recent records.
       //
@@ -210,21 +245,22 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
-      if (clubId) recordsQuery = recordsQuery.eq('club_id', clubId);
+      if (canonicalClubId) recordsQuery = recordsQuery.eq('club_id', canonicalClubId);
 
       const { data: recordsData, error: recordsErr } = await recordsQuery;
-      if (recordsErr) reportError(recordsErr, 'AgentCommissionDashboard.Records_load_failed');
-
-      if (recordsData) {
+      if (!current()) return;
+      if (recordsErr || !Array.isArray(recordsData)) {
+        setRecordsUnavailable(true);
+        reportError(
+          recordsErr || new Error('Commission Records Are Unavailable'),
+          'AgentCommissionDashboard.Records_load_failed'
+        );
+      } else {
         setRecords(
           recordsData.map((r: any) => ({
             id: r.id,
             playerId: r.source_id || '',
-            playerName: r.settled_at
-              ? r.settled_via === 'round2'
-                ? 'settled'
-                : 'claimed'
-              : 'unclaimed',
+            playerName: r.settled_at ? 'paid' : 'unpaid',
             amount: Number(r.amount) || 0,
             rakeAmount: 0,
             commissionRate: 0,
@@ -237,19 +273,37 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
 
       // Load sub-agents
       // parent_agent_id stores agents.id PK (FK), NOT auth.users.id
-      // Must resolve current user's agent PK first
-      const { data: myAgent } = await supabase
+      // Resolve the current user's agent PK in this club. An agent can belong
+      // to several clubs, so a user-only maybeSingle can fail or select wrongly.
+      if (!canonicalClubId) return;
+      const { data: myAgent, error: myAgentError } = await supabase
         .from('agents')
         .select('id')
         .eq('user_id', user.id)
+        .eq('club_id', canonicalClubId)
         .maybeSingle();
 
-      const { data: subAgentsData } = myAgent
-        ? await supabase
-            .from('agents')
-            .select('id, user_id, total_players, commission_rate, created_at')
-            .eq('parent_agent_id', myAgent.id)
-        : { data: null };
+      if (!current()) return;
+      if (myAgentError) {
+        setSubAgentsError('Your Sub-Agents Could Not Be Loaded.');
+        reportError(myAgentError, 'AgentCommissionDashboard.Agent_load_failed');
+        return;
+      }
+      if (!myAgent) return;
+      const { data: subAgentsData, error: subAgentsErr } = await supabase
+        .from('agents')
+        .select('id, user_id, total_players, commission_rate, created_at')
+        .eq('parent_agent_id', myAgent.id)
+        .eq('club_id', canonicalClubId);
+      if (!current()) return;
+      if (subAgentsErr || !Array.isArray(subAgentsData)) {
+        setSubAgentsError('Your Sub-Agents Could Not Be Loaded.');
+        reportError(
+          subAgentsErr || new Error('Sub-Agents Are Unavailable'),
+          'AgentCommissionDashboard.SubAgents_load_failed'
+        );
+        return;
+      }
 
       // PHASE 7. What each downline is owed comes from the ledger, through a
       // definer function, because RLS on agent_commissions lets an agent read
@@ -272,8 +326,11 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       let downlineFailed = false;
       if (myAgent) {
         try {
-          for (const row of await CommissionService.downlineCommission(clubId)) {
+          for (const row of await CommissionService.downlineCommission(canonicalClubId)) {
             downlineOwed[row.agentId] = row.unclaimed;
+          }
+          if (subAgentsData.some((agent: any) => downlineOwed[agent.id] === undefined)) {
+            throw new Error('Sub-Agent Commission Response Is Incomplete');
           }
         } catch (e) {
           downlineFailed = true;
@@ -281,96 +338,83 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         }
       }
 
+      if (!current()) return;
+      if (downlineFailed) setSubAgentsError('Sub-Agent Commission Balances Could Not Be Loaded.');
       if (subAgentsData) {
         // Batch-fetch sub-agent profiles (no FK hint needed)
         const subAgentUserIds = subAgentsData.map((a: any) => a.user_id).filter(Boolean);
         const subProfileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
         if (subAgentUserIds.length > 0) {
           try {
-            const { data: profiles } = await supabase
+            const { data: profiles, error: profilesError } = await supabase
               .from('profiles')
               .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
               .in('id', subAgentUserIds);
+            if (!current()) return;
+            if (profilesError) throw profilesError;
             if (profiles) {
               for (const p of profiles) subProfileMap[p.id] = p;
             }
           } catch (e) {
             reportError(e, 'AgentCommissionDashboard.map');
-            /* non-critical */
+            if (current()) setSubAgentsError('Sub-Agent Details Could Not Be Loaded.');
           }
         }
 
+        if (!current()) return;
         setSubAgents(
           subAgentsData.map((a: any) => ({
             id: a.id,
             username: playerDisplayName(subProfileMap[a.user_id]),
             avatarUrl: subProfileMap[a.user_id]?.avatar_url || '',
             totalPlayers: a.total_players || 0,
-            totalCommission: downlineFailed ? null : (downlineOwed[a.id] ?? 0),
+            totalCommission: downlineFailed ? null : (downlineOwed[a.id] ?? null),
             commissionRate: a.commission_rate || 0,
             joinedAt: new Date(a.created_at),
           }))
         );
       }
     } catch (error) {
-      if (isMounted.current) toast.error('Failed to load commission data');
-    }
-
-    if (isMounted.current) setLoading(false);
-  };
-
-  /**
-   * CLAIM IT.
-   *
-   * This button used to tell the agent "Commissions are paid out automatically
-   * at the weekly settlement." Nothing paid them out - no function, no cron, no
-   * settlement job. It was a reassuring sentence in front of 394,904.61 chips
-   * that had been sitting unclaimed since April.
-   *
-   * fn_agent_claim_commission pays the caller from the club bank and marks the
-   * rows settled. It works in batches, so this reports progress rather than
-   * appearing to hang: the largest agent has 192,135 rows to stamp.
-   */
-  const claimPayout = async () => {
-    if (!clubId || claiming) return;
-    setClaiming(true);
-    setClaimProgress(0);
-    try {
-      const { claimed, stoppedEarly, reason } = await CommissionService.claimCommission(
-        clubId,
-        (soFar) => {
-          if (isMounted.current) setClaimProgress(soFar);
-        }
-      );
-      if (!isMounted.current) return;
-      if (claimed > 0) {
-        toast.success(`${claimed.toLocaleString()} Chips Are Now In Your Balance`);
-      }
-      if (stoppedEarly) {
-        toast.info(reason || 'Some Commission Is Still Owed. Claim Again To Continue.');
-      }
-      await loadData();
-    } catch (e) {
-      reportError(e, 'AgentCommissionDashboard.claim');
-      if (isMounted.current) {
-        // The server's own sentence, which names the shortfall when the club
-        // bank cannot cover the claim.
-        toast.error(e instanceof Error ? e.message : 'The Claim Was Refused');
+      reportError(error, 'AgentCommissionDashboard.load');
+      if (current()) {
+        setReadError(true);
+        toast.error('Failed To Load Commission Data');
       }
     } finally {
-      if (isMounted.current) {
-        setClaiming(false);
-        setClaimProgress(0);
+      if (current()) {
+        setLoadedScope(scope);
+        setLoading(false);
       }
     }
   };
 
-  if (loading) {
+  const pendingCommission = clubId ? owed : (summary?.pendingPayout ?? null);
+
+  if (!user?.id) {
+    return (
+      <div className="agent-commission">
+        <p>Sign In To View Your Commission</p>
+      </div>
+    );
+  }
+
+  if (loading || loadedScope !== readScope) {
     return (
       <div className="agent-commission">
         <div className="loading-state">
           <div className="spinner" />
         </div>
+      </div>
+    );
+  }
+
+  if (readError) {
+    return (
+      <div className="agent-commission empty-state" role="alert">
+        <p>Your Commission Data Could Not Be Loaded.</p>
+        <button className="payout-btn" onClick={() => loadDataRef.current()}>
+          Try Again
+        </button>
       </div>
     );
   }
@@ -399,6 +443,26 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         </button>
       </div>
 
+      {activeTab === 'summary' && (
+        <section className="summary-card" aria-label="Automatic Weekly Settlement">
+          <h3>Automatic Weekly Settlement</h3>
+          <p>Scheduled Every Monday At 4:00 AM Central Time.</p>
+          <p>Unpaid Commission Remains Outstanding Until A Verified Transfer Is Recorded.</p>
+          {resolvedClubId && (
+            <button
+              className="payout-btn"
+              onClick={() =>
+                leaveForHub(
+                  `/hub/messenger?clubId=${encodeURIComponent(resolvedClubId)}&folder=invoices`
+                )
+              }
+            >
+              View Invoices
+            </button>
+          )}
+        </section>
+      )}
+
       {/* Summary Tab */}
       {activeTab === 'summary' && summary && (
         <div className="agent-commission__summary">
@@ -408,23 +472,15 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
             { className: '', label: 'This Month', value: summary.thisMonth },
             {
               className: 'pending',
-              label: 'Unclaimed Commission',
-              value: owed ?? summary.pendingPayout,
+              label: 'Unpaid Commission',
+              value: pendingCommission,
             },
           ].map((card, idx) => (
             <div key={idx} className={`summary-card ${card.className}`} style={summaryStyle(idx)}>
               <span className="label">{card.label}</span>
-              <span className="value">{card.value.toLocaleString()}</span>
-              {card.className === 'pending' && (owed ?? 0) > 0 && (
-                <button
-                  className="payout-btn"
-                  onClick={claimPayout}
-                  disabled={claiming || !clubId}
-                  title={!clubId ? 'Open This From A Club To Claim' : undefined}
-                >
-                  {claiming ? `Claiming... ${claimProgress.toLocaleString()}` : 'Claim Commission'}
-                </button>
-              )}
+              <span className="value">
+                {card.value === null ? 'Unavailable' : card.value.toLocaleString()}
+              </span>
             </div>
           ))}
 
@@ -467,11 +523,11 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
                 },
                 {
                   label: 'Pending',
-                  value: summary.pendingPayout,
+                  value: pendingCommission,
                   color: '#f59e0b',
                   pct:
-                    summary.totalEarned > 0
-                      ? (summary.pendingPayout / summary.totalEarned) * 100
+                    summary.totalEarned > 0 && pendingCommission !== null
+                      ? (pendingCommission / summary.totalEarned) * 100
                       : 0,
                 },
               ].map((tier, i) => (
@@ -486,7 +542,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
                   >
                     <span style={{ color: 'rgba(255,255,255,0.5)' }}>{tier.label}</span>
                     <span style={{ color: tier.color, fontWeight: 600 }}>
-                      {tier.value.toLocaleString()}
+                      {tier.value === null ? 'Unavailable' : tier.value.toLocaleString()}
                     </span>
                   </div>
                   <div
@@ -556,7 +612,14 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       {/* Records Tab */}
       {activeTab === 'records' && (
         <div className="agent-commission__records">
-          {records.length === 0 ? (
+          {recordsUnavailable ? (
+            <div className="empty-state" role="alert">
+              <p>Your Commission Records Could Not Be Loaded.</p>
+              <button className="payout-btn" onClick={() => loadDataRef.current()}>
+                Try Again
+              </button>
+            </div>
+          ) : records.length === 0 ? (
             <div className="empty-state">No Commission Records Yet</div>
           ) : (
             /* PHASE 7. Gross Rake and Rate are gone from this table rather
@@ -581,7 +644,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
                       <span
                         style={{
                           textTransform: 'capitalize',
-                          color: record.playerName === 'claimed' ? '#10b981' : '#f59e0b',
+                          color: record.playerName === 'paid' ? '#10b981' : '#f59e0b',
                         }}
                       >
                         {record.playerName}
@@ -603,7 +666,17 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       {/* Sub-Agents Tab */}
       {activeTab === 'subagents' && (
         <div className="agent-commission__subagents">
-          {subAgents.length === 0 ? (
+          {subAgentsError && (
+            <div className="empty-state" role="alert">
+              <p>{subAgentsError}</p>
+              <button className="payout-btn" onClick={() => loadDataRef.current()}>
+                Try Again
+              </button>
+            </div>
+          )}
+          {!resolvedClubId ? (
+            <div className="empty-state">Select A Club To View Its Sub-Agents.</div>
+          ) : subAgentsError && subAgents.length === 0 ? null : subAgents.length === 0 ? (
             <div className="empty-state">No Sub-Agents Yet</div>
           ) : (
             <div className="subagent-grid">
@@ -623,7 +696,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
                     title={
                       agent.totalCommission === null
                         ? 'This Figure Could Not Be Loaded'
-                        : 'Unclaimed Commission'
+                        : 'Unpaid Commission'
                     }
                   >
                     {agent.totalCommission === null

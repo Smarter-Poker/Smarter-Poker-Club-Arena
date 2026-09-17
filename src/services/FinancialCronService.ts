@@ -18,8 +18,6 @@ import { supabase } from '../lib/supabase';
 import { CreditService } from './CreditService';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
-// [MIGRATION] rakebackEngine removed — server-authoritative (Step 6). Settlement via Supabase RPC.
-import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -135,16 +133,8 @@ export const FinancialCronService = {
       this._config.suspensionCheckIntervalMs
     );
 
-    // WEIGHTED RAKE SWEEP 2026-08-29: the weekly rakeback settlement is NO
-    // LONGER scheduled from the browser. It duplicated two server-side owners
-    // that already run it — the pg_cron pair `union-weekly-rakeback-recompute`
-    // (Sun 23:40 UTC) / `union-weekly-rakeback-close` (Mon 00:10 UTC) and the
-    // engine's RakebackSettlerService sweep — and it fired from whichever
-    // user's tab happened to be open 7 days after page load, which is not a
-    // schedule, it is a coin flip. settle_club_rakeback is also owner-gated
-    // in the database now, so a random member's browser could no longer close
-    // another club's periods anyway. settleAllClubRakebacks() remains callable
-    // for an explicit admin action; nothing schedules it.
+    // Weekly accounting has no browser timer or callable browser payer.
+    // Suspension and dispute diagnostics above retain their existing behavior.
 
     this._isRunning = true;
   },
@@ -242,26 +232,8 @@ export const FinancialCronService = {
       return unknown();
     }
 
-    // Generate this week's credit invoices BEFORE checking for overdue ones. This is the
-    // reliable trigger for the credit-invoice subsystem: fn_generate_all_credit_invoices
-    // anchors period_end to the week boundary and is idempotent per (agent, week), so
-    // running it on the 6h suspension cadence converges to exactly one invoice per agent
-    // per week. Agents with debt therefore always have a current invoice to view/pay in
-    // the portal, and this suspension check then acts on genuinely overdue ones.
-    // (For a fully autonomous server-side trigger independent of an admin session, see the
-    // Open Claw cron handoff — this client cadence covers the common case.)
-    try {
-      const { error: genErr } = await supabase.rpc('fn_generate_all_credit_invoices');
-      if (!current()) return unknown();
-      if (genErr) {
-        unavailable = true;
-        reportError(genErr, 'FinancialCronService.generateCreditInvoices');
-      }
-    } catch (e) {
-      if (!current()) return unknown();
-      unavailable = true;
-      reportError(e, 'FinancialCronService.generateCreditInvoices.exception');
-    }
+    // Invoice generation belongs to the server weekly close. A browser only reads
+    // the resulting obligations; it cannot run billing for every club.
 
     let agentsChecked = 0;
     let agentsSuspended = 0;
@@ -393,88 +365,9 @@ export const FinancialCronService = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // WEEKLY RAKEBACK SETTLEMENT — Persist in-memory rakeback to DB
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Settle rakeback for ALL active clubs. Queries the clubs table for active clubs,
-   * then settles rakeback via Supabase RPC for each, which persists accumulated
-   * rakeback to the `rakeback_periods` table for player claiming via RakebackPage.
-   */
-  async settleAllClubRakebacks(): Promise<{
-    clubsSettled: number;
-    totalDistributed: number;
-  }> {
-    let clubsSettled = 0;
-    let totalDistributed = 0;
-    let periodsRemaining = 0;
-
-    try {
-      const { data: clubs } = await supabase
-        .from('clubs')
-        .select('id')
-        .eq('status', 'active')
-        .limit(QUERY_LIMITS.MODERATE);
-
-      if (!clubs || clubs.length === 0) return { clubsSettled, totalDistributed };
-
-      for (const club of clubs) {
-        try {
-          // Server-authoritative: settle rakeback via Supabase RPC
-          // settle_club_rakeback returns `total_payout`. It has never returned
-          // `total_distributed`, which is what this read until 2026-09-07 - so
-          // clubsSettled and totalDistributed were always 0 and the debug line
-          // below never fired, whatever the RPC actually paid.
-          //
-          // It is also BOUNDED since 2026-09-07 (40 periods / ~4s per call), so
-          // one call per club no longer drains a club. Nothing schedules this
-          // method - start() retired it, the durable drain is the engine's
-          // RakebackSettlerService.runRakebackDrain - so it is left as a single
-          // honest pass for an explicit admin action, and it reports what is
-          // left rather than implying it finished.
-          const { data: settlement, error: settleErr } = await supabase.rpc(
-            'settle_club_rakeback',
-            { p_club_id: club.id }
-          );
-          if (settleErr) {
-            reportError(settleErr, 'FinancialCronService.settleClubRakeback', {
-              clubId: club.id,
-            });
-          } else if (settlement?.success === true) {
-            const paid = Number(settlement.total_payout ?? 0);
-            if (paid > 0) {
-              clubsSettled++;
-              totalDistributed += paid;
-            }
-            periodsRemaining += Number(settlement.periods_remaining ?? 0);
-          } else if (settlement) {
-            // A refusal arrives as HTTP 200 with success:false.
-            reportError(
-              new Error(`settle_club_rakeback refused: ${JSON.stringify(settlement)}`),
-              'FinancialCronService.settleClubRakeback',
-              { clubId: club.id }
-            );
-          }
-        } catch (err) {
-          reportError(err, 'FinancialCronService.settleClubRakeback', {
-            clubId: club.id,
-          });
-        }
-      }
-
-      if (clubsSettled > 0 || periodsRemaining > 0) {
-        console.debug(
-          `[FinancialCron] Rakeback settled for ${clubsSettled} clubs, total distributed: ` +
-            `${totalDistributed.toFixed(2)}; ${periodsRemaining} period(s) still pending ` +
-            `(one bounded pass - the engine settler drains the rest)`
-        );
-      }
-    } catch (err) {
-      reportError(err, 'FinancialCronService.settleAllClubRakebacks');
-    }
-
-    return { clubsSettled, totalDistributed };
+  /** Retired compatibility entry point. Never report zero as a paid result. */
+  async settleAllClubRakebacks(): Promise<never> {
+    throw new Error('Weekly Accounting Is Automatic. Refresh The Recorded Accounting Status.');
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -236,7 +236,12 @@ describe('the identifiers and the labels', () => {
   it('scopes an agent player list to one club', () => {
     expect(AGENTS).toContain('async getAgentPlayers(agentId: string, clubId?: string)');
     expect(AGENTS).toContain(".eq('club_id', scopedClubId)");
-    expect(SUPER).toContain('AgentService.getAgentPlayers(myAgent.id, clubId!)');
+    expect(SUPER).toContain('const resolvedId = await resolveClubUUID(clubId)');
+    expect(SUPER).toContain('agents.some((a) => a.clubId !== resolvedId)');
+    expect(SUPER).toContain('AgentService.getAgentPlayers(myAgent.id, resolvedId)');
+    expect(SUPER.indexOf('await resolveClubUUID(clubId)')).toBeLessThan(
+      SUPER.indexOf('AgentService.getAgentPlayers(myAgent.id, resolvedId)')
+    );
   });
 
   it('resolves the club before it reaches a uuid argument', () => {

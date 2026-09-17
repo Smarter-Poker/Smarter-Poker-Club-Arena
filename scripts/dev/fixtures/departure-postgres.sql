@@ -40,7 +40,11 @@ CREATE TABLE ca_money_rpc_registry(proname text PRIMARY KEY,status text,notes te
 
 -- Read-only production schema inspection: moderation player FK cascades.
 ALTER TABLE tables ADD COLUMN club_id uuid DEFAULT 'cccccccc-cccc-cccc-cccc-cccccccccccc';
-CREATE TABLE profiles(id uuid PRIMARY KEY);
+CREATE TABLE profiles(id uuid PRIMARY KEY,is_vip boolean DEFAULT false,vip_tier text,vip_expires_at timestamptz);
+-- Minimal storage for the real time-bank consumption function; no financial RPC mock.
+CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$SELECT 'service_role'::text$$;
+CREATE TABLE vip_feature_usage_monthly(user_id uuid,feature text,month text,usage_count integer,updated_at timestamptz,PRIMARY KEY(user_id,feature,month));
+CREATE TABLE feature_purchases(id uuid PRIMARY KEY,user_id uuid,feature text,uses_remaining integer,expires_at timestamptz,created_at timestamptz);
 CREATE TABLE anti_cheat_events(
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),event_type text NOT NULL,
  player_id uuid REFERENCES profiles(id) ON DELETE CASCADE,club_id uuid,table_id uuid,

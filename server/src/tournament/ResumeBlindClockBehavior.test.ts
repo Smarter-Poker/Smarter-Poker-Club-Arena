@@ -20,6 +20,7 @@ const methods = [
   'protected suspendLevelClock(',
   'protected async waitForMaintenanceThaw(',
   'async resumeFromBreak()',
+  'protected async clearPersistedBreak()',
   'private async beginAddOnBreak(',
 ].map((signature) => sliceMethod(source, signature).replace(/^(protected|private)\s+/, ''));
 
@@ -40,6 +41,8 @@ const runtime = ts.transpileModule(
 
 function fixture(overrides: Record<string, unknown> = {}) {
   return {
+    id: 'clock-restart',
+    status: 'RUNNING',
     current_level: 0,
     blind_structure: [{ durationMinutes: 10 }],
     level_started_at: '2026-09-09T12:50:00.000Z',
@@ -56,15 +59,27 @@ function harness(
 ) {
   const writes: Record<string, unknown>[] = [];
   const timers = new Set<{ callback: () => unknown; delay: number; unref: () => void }>();
+  const allWrites: Record<string, unknown>[] = [];
   const supabase = {
     from: () => ({
-      update: (patch: Record<string, unknown>) => ({
-        eq: () => {
-          writes.push(patch);
+      update: (patch: Record<string, unknown>) => {
+        const commit = () => {
+          allWrites.push(patch);
+          // Existing assertions name clock writes; retain the complete atomic
+          // row patch separately for the connected cold-reader assertions.
+          if ('level_started_at' in patch)
+            writes.push({ level_started_at: patch.level_started_at });
           Object.assign(tournament, patch);
-          return Promise.resolve({ error: null });
-        },
-      }),
+          return Promise.resolve({ data: { ...tournament }, error: null });
+        };
+        const query: any = {
+          eq: () => query,
+          select: () => query,
+          maybeSingle: commit,
+          then: (resolve: any, reject: any) => commit().then(resolve, reject),
+        };
+        return query;
+      },
     }),
   };
   const reportError = vi.fn();
@@ -116,9 +131,7 @@ function harness(
     scheduleAddOnRetry: vi.fn(),
     reconcileTournamentEntryWindow: vi.fn(async () => {}),
     assertLifecycleCurrent: vi.fn(),
-    clearPersistedBreak: vi.fn(async () => {
-      tournament.on_break = false;
-    }),
+    clearPersistedBreak: vi.fn(actual.clearPersistedBreak),
     trackLifecycleJob: (promise: Promise<unknown>) => promise,
     advanceBlindLevel: vi.fn(async () => {}),
     advanceHandForHandBarrier: vi.fn(),
@@ -130,7 +143,7 @@ function harness(
     },
     clearLifecycleTimeout: (timer: any) => timers.delete(timer),
   };
-  return { state, writes, timers, reportError };
+  return { state, writes, allWrites, timers, reportError };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -558,5 +571,31 @@ describe('the delayed first-level wake has one owner through a pause', () => {
     await original.callback();
     expect(state.blindTimer).toBe(active);
     expect(writes).toHaveLength(1);
+  });
+});
+
+describe('expired-break adoption uses the same atomic resume owner', () => {
+  it('publishes only one credited row after adopting an already expired break', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:02:00.000Z'));
+    const tournament = fixture();
+    const { state, allWrites } = harness(tournament);
+    await state.restore(tournament);
+    expect(allWrites).toEqual([
+      { on_break: false, break_ends_at: null, level_started_at: '2026-09-09T12:55:00.000Z' },
+    ]);
+    expect(state.blindTimer.delay).toBe(180000);
+    expect(state.clearPersistedBreak).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a future booked first level unstarted when adopting an expired break', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:02:00.000Z'));
+    const tournament = fixture({ started_at: '2026-09-09T14:00:00.000Z', level_started_at: null });
+    const { state, allWrites } = harness(tournament);
+    await state.restore(tournament);
+    expect(allWrites).toEqual([{ on_break: false, break_ends_at: null }]);
+    expect(state.blindTimer).toBeNull();
+    expect(state.blindStartTimer.delay).toBe(3480000);
   });
 });

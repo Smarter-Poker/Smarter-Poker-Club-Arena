@@ -258,3 +258,13 @@ it('runs the hook-selection laws for a pre-push-only edit', () => {
     fixture: false,
   });
 });
+
+it('runs the real-Git report regressions for a detector-only edit', () => {
+  expect(classifyChangedPaths(['scripts/ci/detect-silent-revert.mjs'])).toEqual({
+    src: false,
+    server: false,
+    tests: true,
+    phase4: false,
+    fixture: false,
+  });
+});

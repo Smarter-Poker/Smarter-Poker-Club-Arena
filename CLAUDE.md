@@ -1,4 +1,4 @@
-> **Current owner instruction (September 16):** Read [AGENTS.md](AGENTS.md) before this historical playbook. Task `01a0ab39-71ca-7821-825d-4943a0a6a0a3` retains sole integration and publication authority. Use the original GitHub/Vercel/Hetzner paths. After verified and reported restoration, that owner may deliver the six pending workstreams in the exact order recorded there. Retired local/custom pipelines and external error telemetry must not return. Historical autopilot, automatic-merge, watchdog and repair directions below are inactive. Preserve pending application work and use the configured credential store.
+> **Current owner instruction (September 17):** Read [AGENTS.md](AGENTS.md) before this historical playbook. Authorized tasks own protected push, merge, publication and exact live verification independently, without another human approval or manual label. Silent Revert Guard reports historical-content findings for review; it is not a merge gate. Preserve required technical checks and original GitHub/Vercel/Hetzner routes. Retired local/custom publishers, autopilot, watchdogs, repair loops and external error telemetry remain forbidden. Older approval and ordered-delivery directions below are superseded.
 
 # Club Arena -- Agent Instructions
 
@@ -308,7 +308,6 @@ approvals) and `required_status_checks`:
     Server Engine (typecheck + tests)
     Production Build
     CSS Beat E2E (multi-table + animations)
-    Silent Revert Guard
 
 So: a direct push to main is refused, a red check cannot be merged, and
 `ci.yml`'s `if: github.event_name == 'pull_request'` gating is SAFE precisely
@@ -972,13 +971,13 @@ at all — the same shortcut, in the same shape, that 10.5 was written about.
 One binding law, one violation of it, and a stopped job waiting on a ruling
 that 10.5 had already given.
 
-**2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
-accepts `[allow-revert]` or the word "revert" in a commit message on its own —
-on 2026-08-31 an agent amended the token into its own message to get past the
-guard. A detected revert merges only when Dan applies the `revert-approved`
-label to the PR (the check re-runs itself on labeling, and the guard files an
-issue asking for it). If main is broken, prefer a forward fix; it needs no
-label. Do not edit commit messages to route around the guard.
+**2. REVIEW RESTORED CONTENT WITHOUT AN APPROVAL HANDOFF.** The owner removed
+all human-only revert approval on September 17. Silent Revert Guard reports
+exact historical-content restorations so the owning task can repair accidental
+loss or explain an intentional restoration in its PR. No label or additional
+human approval is required. Labels and commit-message tokens do not suppress
+the report. Complete protected delivery after the required technical checks
+pass; preserve other agents' changes and verify publication separately.
 
 **3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
 PR, report the PR number, END YOUR SESSION. Native events open it, Autopilot

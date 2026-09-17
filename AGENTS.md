@@ -1,3 +1,15 @@
+# Current owner publication instruction — September 17, 2026
+
+Authorized tasks independently own their assigned source, protected PR, required checks, merge, publication and live verification. No numbered delivery queue, separate restoration-agent approval or additional human approval applies. Use the existing GitHub-hosted checks and GitHub-to-Hetzner Club Arena publisher; engine changes use the existing GitHub engine release workflows. Do not revive retired local/custom publishers, autopilot, watchers or repair loops.
+
+The human-only `revert-approved` dependency is revoked. Silent Revert Guard reports exact historical-content findings for the owning task to review. Labels and commit-message tokens never suppress the scan, and findings do not create a merge gate. Explain intentional restorations in the PR and repair accidental loss of newer work. Unexpected report execution errors remain visible failures. Preserve required technical checks, financial qualification, maintenance safeguards, provider concurrency, no-force-push protection and exact live revision verification.
+
+This section supersedes conflicting approval, sole-publisher and ordered-release instructions below and in historical repository documents. Scope remains finite; preserve other agents' work, credentials, production data and already installed migrations. Read `/Users/smarter.poker/Documents/AGENTS.md` and `/Users/smarter.poker/Documents/AGENT-HARDENING-STANDARD.md` when available.
+
+---
+
+The following restoration instructions are historical and superseded where they conflict with the current owner instruction above.
+
 # Current owner restoration instruction — September 16, 2026
 
 This repository is under an explicit owner-requested September 13 restoration. This instruction applies to local and cloud agents and overrides older auto-merge, autopilot, backlog, migration, and local-compute directions in this repository.

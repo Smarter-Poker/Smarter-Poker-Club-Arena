@@ -1142,9 +1142,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-credit-invoice-generation.sh
-      - name: Accounting invoices commit with private Messenger and notification receipts
+      - name: Accounting and Diamond entries commit exact invoices and private delivery receipts
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: /tmp
         run: bash scripts/dev/test-accounting-delivery.sh
       - name: Credit payments preserve scope cents replay and delivery atomicity
         env:

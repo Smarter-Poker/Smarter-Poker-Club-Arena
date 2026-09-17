@@ -268,6 +268,7 @@ export default function DetailOverviewTab({
     const fallback = {
       index: Math.max(0, Number(tournament?.current_level) || 0),
       isBreak: false,
+      amountsKnown: false,
       sb: opening?.smallBlind ?? 0,
       bb: opening?.bigBlind ?? 0,
       ante: opening?.ante ?? 0,
@@ -285,6 +286,7 @@ export default function DetailOverviewTab({
       return {
         index: ls.levelIndex,
         isBreak: Boolean(cur?.isBreak),
+        amountsKnown: cur != null,
         sb: sbOf(cur),
         bb: bbOf(cur),
         ante: anteOf(cur),
@@ -711,10 +713,16 @@ export default function DetailOverviewTab({
                   {isRunning ? (level.isBreak ? 'On Break' : 'Blinds') : 'Opening Blinds'}
                 </span>
                 <span className="dov-blind__value">
-                  {chipsCompact(level.sb)} / {chipsCompact(level.bb)}
+                  {level.amountsKnown
+                    ? `${chipsCompact(level.sb)} / ${chipsCompact(level.bb)}`
+                    : '-'}
                 </span>
                 <span className="dov-blind__ante">
-                  {level.ante > 0 ? `Ante ${chipsCompact(level.ante)}` : 'No Ante'}
+                  {!level.amountsKnown
+                    ? 'Current Blinds Unavailable'
+                    : level.ante > 0
+                      ? `Ante ${chipsCompact(level.ante)}`
+                      : 'No Ante'}
                 </span>
               </div>
               <div className="dov-blind dov-blind--next">

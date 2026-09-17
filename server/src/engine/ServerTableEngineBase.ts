@@ -1811,6 +1811,12 @@ export abstract class ServerTableEngineBase {
   private parkedTimeBanks: Record<string, ParkedTimeBank> = {};
   private presenceSave: Promise<void> = Promise.resolve();
   private parkedBankSaveComplete = false;
+  private maintenanceCheckpointGeneration = 0;
+  private readonly timeBankAccountingPending = new Set<Promise<void>>();
+  // An unacknowledged non-idempotent debit must not be retried or certified.
+  private timeBankAccountingUnconfirmed = false;
+  /** See persistPresenceForRestart: the delay before the one retry a refused park write gets. */
+  protected parkWriteRetryMs = 5_000;
   /**
    * CHIP CONTINUITY (Operation Table Stakes, Slice 0). The engine-side mirror
    * of cash_player_session: the stay clock a player ahead of their buy-in
@@ -4586,7 +4592,10 @@ export abstract class ServerTableEngineBase {
    */
   pauseForMaintenance(maxWaitMs: number): void {
     const firstMaintenanceRequest = !this.maintenancePaused;
-    if (firstMaintenanceRequest) this.parkedBankSaveComplete = false;
+    if (firstMaintenanceRequest) {
+      this.parkedBankSaveComplete = false;
+      this.maintenanceCheckpointGeneration++;
+    }
     this.maintenancePaused = true;
     this.holdBeforeNextHand = true;
     if (firstMaintenanceRequest) {
@@ -4935,7 +4944,10 @@ export abstract class ServerTableEngineBase {
     for (const seat of this.seatedPlayers) {
       const bank = this.timeBankEngine.getPlayerBank(this.tableId, seat.user_id);
       const meta = this.timeBankMeta.get(seat.user_id);
-      if (!seat.occupancy_id || !bank || bank.isActive || !meta) continue;
+      if (!bank) continue;
+      if (!seat.occupancy_id || !meta || bank.isActive) {
+        throw new Error('Initialized time bank cannot be checkpointed');
+      }
       saved[seat.user_id] = {
         occupancyId: seat.occupancy_id,
         remainingSeconds: bank.remainingSeconds,
@@ -4964,10 +4976,16 @@ export abstract class ServerTableEngineBase {
       this.seatedPlayers.some((seat) =>
         this.timeBankEngine.getPlayerBank(this.tableId, seat.user_id)
       );
-    return !this.maintenancePaused || !hasBanks || this.parkedBankSaveComplete;
+    return (
+      !this.maintenancePaused ||
+      (!this.timeBankAccountingUnconfirmed &&
+        this.timeBankAccountingPending.size === 0 &&
+        (!hasBanks || this.parkedBankSaveComplete))
+    );
   }
 
   protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {
+    const generation = this.maintenanceCheckpointGeneration;
     const previous = this.presenceSave ?? Promise.resolve();
     let finish!: () => void;
     this.presenceSave = new Promise<void>((resolve) => {
@@ -4976,17 +4994,53 @@ export abstract class ServerTableEngineBase {
     // A slow announcement must not land after the final parked snapshot.
     await previous;
     try {
+      if (generation !== this.maintenanceCheckpointGeneration) return;
+      if (when === 'parked') {
+        this.parkedBankSaveComplete = false;
+        // Complete the real hand-boundary transition, including its accounting
+        // event, before copying balances. Subtracting only in the snapshot lets
+        // the old timer debit once and the restored engine debit it again.
+        this.timeBankEngine.cancelActiveForTable(this.tableId);
+        if (this.timeBankAccountingPending.size > 0) {
+          await Promise.all(this.timeBankAccountingPending);
+        }
+        if (generation !== this.maintenanceCheckpointGeneration) return;
+        if (this.timeBankAccountingUnconfirmed) {
+          throw new Error('Time bank accounting outcome is unconfirmed');
+        }
+      }
       const states = this.disconnectEngine.getFsmStatesForTable(this.tableId);
       const timeBanks = when === 'parked' ? this.captureParkedTimeBanks() : undefined;
-      if (Object.keys(states).length === 0 && !Object.keys(timeBanks ?? {}).length) return;
-      const saved = await savePresenceAtPark({
-        tableId: this.tableId,
-        disconnectStates: states,
-        engineInstance: `${INSTANCE_ID}:${when}`,
-        handNumber: this.handCount,
-        timeBanks,
-      });
-      if (when === 'parked') this.parkedBankSaveComplete = saved;
+      if (Object.keys(states).length === 0 && !Object.keys(timeBanks ?? {}).length) {
+        // captureParkedTimeBanks refuses an initialized but unrestorable bank.
+        // Only a genuinely empty checkpoint can be complete without a write.
+        if (when === 'parked') this.parkedBankSaveComplete = true;
+        return;
+      }
+      const write = () =>
+        savePresenceAtPark({
+          tableId: this.tableId,
+          disconnectStates: states,
+          engineInstance: `${INSTANCE_ID}:${when}`,
+          handNumber: this.handCount,
+          timeBanks,
+        });
+      let saved = await write();
+      if (
+        !saved &&
+        when === 'parked' &&
+        this.maintenancePaused &&
+        generation === this.maintenanceCheckpointGeneration
+      ) {
+        // One more try, five seconds on. A single refused write during the
+        // break's own burst of parks must not decide the restart for the
+        // whole platform; a second refusal leaves the gate shut, as it did.
+        await new Promise<void>((resolve) => setTimeout(resolve, this.parkWriteRetryMs));
+        if (this.maintenancePaused && generation === this.maintenanceCheckpointGeneration)
+          saved = await write();
+      }
+      if (when === 'parked' && generation === this.maintenanceCheckpointGeneration)
+        this.parkedBankSaveComplete = saved;
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');
     } finally {
@@ -5020,6 +5074,7 @@ export abstract class ServerTableEngineBase {
 
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
   resumeFromMaintenance(): void {
+    this.maintenanceCheckpointGeneration++;
     this.maintenancePaused = false;
     if (
       this.tournamentMovePauseOwners.size > 0 ||
@@ -5502,21 +5557,29 @@ export abstract class ServerTableEngineBase {
       const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
       if (owed <= 0) return;
       meta.dbConsumedSeconds += owed;
-      // Promise.resolve() so this is a real Promise with a .catch(), not the
-      // PromiseLike the query builder returns. The enclosing try/catch below
-      // covers only the SYNCHRONOUS part of this statement — see the note on
-      // recordRecoveryEvent() for why the rejection path matters.
-      void Promise.resolve(
+      // Keep the issued amount reserved against duplicate terminal events.
+      // The park must also wait for its acknowledgment: issued is not durable.
+      const pending = Promise.resolve(
         supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
       )
-        .then(({ error }) => {
-          if (error) console.warn('[TimeBank] consume failed:', error.message);
+        .then(({ data, error }) => {
+          if (error || data?.success !== true) {
+            this.timeBankAccountingUnconfirmed = true;
+            console.warn(
+              '[TimeBank] consume unconfirmed:',
+              error?.message ?? data?.error ?? 'missing receipt'
+            );
+          }
         })
         .catch((err: unknown) => {
+          this.timeBankAccountingUnconfirmed = true;
           console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-        });
-    } catch {
-      /* accounting must never break gameplay */
+        })
+        .finally(() => this.timeBankAccountingPending.delete(pending));
+      this.timeBankAccountingPending.add(pending);
+    } catch (err) {
+      this.timeBankAccountingUnconfirmed = true;
+      console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
     }
   }
 

@@ -35,7 +35,7 @@
     "tournament-fee-monitor-native.sql": "4c4cc9a5f5a5c00d9238a34e9d2e8735ce99b577638e2bf4abca35594bd30d83",
     "tournament-terminal-native-seed.sql": "44ca81f4ff50d430c911bfbe71a3ba571cc61b9f8d898d4e031a562f46bb488a",
     "tournament-terminal-native-schema.sql": "052eedcf236669ebe984a52b7d2d9aedbef3fad726f6ede7fa8ac7ec75e9d7b9",
-    "tournament-terminal-native-support.sql": "5366a4f0ad2fe3d76973f59df053b1ecf1a05f121d08bfb4623c1fbf39015574",
+    "tournament-terminal-native-support.sql": "c75764ca69da23d6350afe9ff264a9b99c7fe8ef62c2c11adce1dbc1eaf04358",
     "terminal-marker-native.sql": "04159982bc88085dc6aec118c1c4a1d550c181a5e5aee7bee8af1767204ba6c6",
     "tournament-terminal-native.sql": "f0de77b557d7d15c313dea837b30fd12595f3f47d8e72b0ee0c8b9a1e5a982e5",
     "tournament-extra-native-compile-schema.sql": "0180a16f741b7c6d75e6b4b4ef4dffe142b1d10f27506ac606ec4af0b8d06778"

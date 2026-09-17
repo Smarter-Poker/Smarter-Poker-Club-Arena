@@ -1,7 +1,12 @@
 -- Synthetic zero-prize boundary: the actual terminal core, source writer,
 -- fee bank setter, marker trigger and receipt verifier execute unchanged.
 -- This does not certify the separate nonzero prize/bounty/satellite payers.
-INSERT INTO clubs(id,union_id) VALUES(u(99),u(90));
+-- The settlement fixture already owns this row and its earned-rake state.
+-- Extend that exact row after the terminal catalog adds union_id.
+DO $fixture_club$ BEGIN
+ UPDATE clubs SET union_id=u(90) WHERE id=u(99) AND union_id IS NULL;
+ IF NOT FOUND THEN RAISE EXCEPTION 'terminal fixture requires its existing unassigned club'; END IF;
+END $fixture_club$;
 INSERT INTO union_wallets(union_id) VALUES(u(90));
 UPDATE tournaments SET status='RUNNING',prize_pool=0,bounty_pool=0,bounty_pool_paid=0,prize_pool_finalized=false,is_bounty=false,is_pko=false,is_mystery_bounty=false,on_break=false WHERE id IN(u(5000),u(5100),u(5200));
 INSERT INTO tournament_escrow(tournament_id,prize_balance,bounty_balance,fee_balance) VALUES(u(5000),0,0,1),(u(5100),0,0,1),(u(5200),0,0,1);

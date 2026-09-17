@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parse } from 'yaml';
-import { classifyChangedPaths, classifyGitChanges } from '../../scripts/ci/classify-ci-changes.mjs';
+import {
+  classifyChangedPaths,
+  classifyGitChanges,
+  gitEnvironmentForCwd,
+} from '../../scripts/ci/classify-ci-changes.mjs';
 
 const root = resolve(__dirname, '../..');
 const ci = parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
@@ -24,7 +28,11 @@ function withGitFixture(check: (fixture: GitFixture) => void) {
   const directory = mkdtempSync(join(tmpdir(), 'fixture-ci-git-'));
   try {
     const git = (...args: string[]) =>
-      execFileSync('git', args, { cwd: directory, encoding: 'utf8' }).trim();
+      execFileSync('git', args, {
+        cwd: directory,
+        env: gitEnvironmentForCwd(),
+        encoding: 'utf8',
+      }).trim();
     const write = (name: string, value = 'fixture') => {
       const path = join(directory, name);
       mkdirSync(dirname(path), { recursive: true });
@@ -53,7 +61,88 @@ function withGitFixture(check: (fixture: GitFixture) => void) {
   }
 }
 
+function withForeignGitContext(directory: string, extended: boolean, check: () => void) {
+  // The hostile context points only to a disposable decoy, never the checkout
+  // whose pre-push hook may be running this test.
+  const gitDirectory = join(directory, '.git');
+  try {
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith('GIT_')) vi.stubEnv(key, undefined);
+    }
+    vi.stubEnv('GIT_DIR', gitDirectory);
+    if (extended) {
+      for (const [key, value] of Object.entries({
+        GIT_WORK_TREE: directory,
+        GIT_COMMON_DIR: gitDirectory,
+        GIT_INDEX_FILE: join(gitDirectory, 'index'),
+        GIT_OBJECT_DIRECTORY: join(gitDirectory, 'objects'),
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: join(gitDirectory, 'objects'),
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.bare',
+        GIT_CONFIG_VALUE_0: 'true',
+        GIT_CONFIG_PARAMETERS: "'core.bare=true'",
+      }))
+        vi.stubEnv(key, value);
+    }
+    check();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+}
+
 describe('required CI owns native fixture verification', () => {
+  it.each([false, true])(
+    'isolates fixture writes from foreign Git context (extended=%s)',
+    (extended) => {
+      withGitFixture((decoy) => {
+        const files = ['config', 'index', 'HEAD'];
+        const before = files.map((file) => readFileSync(join(decoy.directory, '.git', file)));
+        withForeignGitContext(decoy.directory, extended, () => {
+          withGitFixture(({ git, write, commit }) => {
+            expect(git('rev-parse', '--is-bare-repository')).toBe('false');
+            write('docs/isolated.md');
+            commit();
+          });
+        });
+        expect(decoy.git('rev-parse', 'HEAD')).toBe(decoy.base);
+        expect(decoy.git('rev-parse', '--is-bare-repository')).toBe('false');
+        files.forEach((file, index) => {
+          expect(readFileSync(join(decoy.directory, '.git', file))).toEqual(before[index]);
+        });
+      });
+    }
+  );
+
+  it.each([false, true])(
+    'classifies the requested repository under foreign Git context (extended=%s)',
+    (extended) => {
+      withGitFixture((decoy) => {
+        withGitFixture(({ directory, base, write, commit }) => {
+          write('scripts/dev/probe-foreign-context.py');
+          const head = commit();
+          withForeignGitContext(decoy.directory, extended, () => {
+            const result = classifyGitChanges({ cwd: directory, base, head });
+            expect(result.complete).toBe(true);
+            expect(result.paths).toEqual(['scripts/dev/probe-foreign-context.py']);
+            expect(result.flags.server).toBe(true);
+            expect(result.flags.fixture).toBe(false);
+          });
+        });
+      });
+    }
+  );
+
+  it.each([
+    'scripts/dev/probe-causal-pko-predecessors-pg17.sh',
+    'scripts/dev/fixtures/causal-pko-predecessors/qualification.sql',
+    'scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh',
+    'scripts/dev/probe-committed-payout-terms-pg17.py',
+    'scripts/dev/probe-tournament-create-payout-depth-pg17.py',
+    'tests/operations/pko-probe-cleanup.test.py',
+  ])('selects the existing accounting job for MTT regression input %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
   it.each([
     'operations/release/fixture/safeupdate-provider.mjs',
     'operations/release/native/component-observation-client.mjs',
@@ -327,13 +416,15 @@ describe('restored provider accounting qualification', () => {
       step.run?.includes('test-full-weekly-accounting-activation.sh')
     )!;
     expect(full.run).toContain('set -euo pipefail');
-    expect(full.run!.indexOf('python3 scripts/ci/build-weekly-accounting-activation.py')).toBeLessThan(
-      full.run!.indexOf('bash scripts/dev/test-full-weekly-accounting-activation.sh')
-    );
+    expect(
+      full.run!.indexOf('python3 scripts/ci/build-weekly-accounting-activation.py')
+    ).toBeLessThan(full.run!.indexOf('bash scripts/dev/test-full-weekly-accounting-activation.sh'));
     expect(full.env?.ACCOUNTING_ACTIVATION_DIR).toBe(
       '${{ runner.temp }}/union-accounting-activation'
     );
-    expect(full.env?.ACCOUNTING_TEST_OUTPUT_DIR).toBe('${{ runner.temp }}/union-accounting-results');
+    expect(full.env?.ACCOUNTING_TEST_OUTPUT_DIR).toBe(
+      '${{ runner.temp }}/union-accounting-results'
+    );
     expect(full.env?.ACCOUNTING_FIXTURE_PARENT).toBe('${{ runner.temp }}/union-accounting-scratch');
   });
 
@@ -344,7 +435,9 @@ describe('restored provider accounting qualification', () => {
     );
     expect(install.run).toContain('-f /usr/share/postgresql/17/extension/pg_cron.control &&');
     expect(install.run).toContain('-f /usr/lib/postgresql/17/lib/pg_cron.so ]]; then exit 0; fi');
-    expect(install.run).toContain('install -y --no-install-recommends postgresql-17 postgresql-17-cron');
+    expect(install.run).toContain(
+      'install -y --no-install-recommends postgresql-17 postgresql-17-cron'
+    );
     expect(install.run).toContain('create_main_cluster = false');
     const evidence = ci.jobs.accounting_postgres.steps.find(
       (step: { name?: string }) => step.name === 'Preserve weekly accounting qualification evidence'

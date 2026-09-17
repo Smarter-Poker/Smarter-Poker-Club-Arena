@@ -81,7 +81,7 @@
     "tests/fixtures/pnl-evidence/verify-wrapper-source-binding.py": "a5990f3c35e6cafb1b802720cc7936a291676f87ac19741052b3245a9548b76f",
     "tests/fixtures/accounting-alert-38644/README.md": "e2a82ec53562ce1ccb691751a5fa9006df80f44de4e1cd889bb578bbf4dc4c69",
     "tests/fixtures/accounting-alert-38644/caller-source-evidence.json": "361724903b7d95010424d92c40a09e21f216ecca21c4bab8c74407f8b3a0dc86",
-    "tests/fixtures/accounting-alert-38644/qualification.json": "0b6eb3f542e57433895f7c77330085b3b1603407ee378b6381b391aeb0f90170",
+    "tests/fixtures/accounting-alert-38644/qualification.json": "ab52dee0cab7e710c5983b72aecf8fc29652a0d5d369e74b2050d7e049488e28",
     "tests/fixtures/accounting-alert-38644/regression.sql": "83b3a5b4f50e9fc0e877991d7573a6a5d2f87ecae4b60545a2557b526ab920a5",
     "tests/fixtures/accounting-alert-38644/source-evidence.json": "9e4370895e29b35b0ba2b635daad73e8031091813e230bb6a7a95b08d8cde0ed",
     "tests/fixtures/weekly-scheduler-fairness/pg-cron-prerequisites.sql": "e1776b8db57090594af5428093a1a18a3aae638ca24f333a87cb0d9cd04e125f",
@@ -969,5 +969,12 @@
     "reason": "Protected main removed the obsolete WaitlistService discarded-read allowance after its canonical join/recovery path began checking readError. Preserve that zero-new-read rule together with every existing Union ratchet tightening. Only this measured repository input changed; all 29 captured fixture entries and other 229 repository entries remain identical.",
     "regression": "Existing tests/unit/discardedErrorReadRatchet.test.ts: audited surfaces remain zero; no source file exceeds its frozen allowance and new files start clean. No test assertion removed by this rebinding.",
     "qualification": "Binding revalidation is source evidence only; the existing native full37 composition still requires its hosted check."
+  },
+  "coordinator_clock_hook_binding": {
+    "commit": "a0063245e969bf14c1a6635bfd89cc8f70da9f4b",
+    "path": "tests/fixtures/accounting-alert-38644/qualification.json",
+    "previous_sha256": "0b6eb3f542e57433895f7c77330085b3b1603407ee378b6381b391aeb0f90170",
+    "sha256": "ab52dee0cab7e710c5983b72aecf8fc29652a0d5d369e74b2050d7e049488e28",
+    "reason": "Ordinary required pre-commit JSON formatting of the reviewed qualification packet; parsed values unchanged. No native assertion or source authority changed."
   }
 }

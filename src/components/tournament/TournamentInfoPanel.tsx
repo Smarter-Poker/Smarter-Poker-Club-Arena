@@ -1,3 +1,8 @@
+import {
+  tournamentEntryWindow,
+  tournamentEntryWindowOpen,
+  type TournamentEntryWindowRow,
+} from '../../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT INFO PANEL (2026-08-23)
@@ -44,7 +49,7 @@ interface Row {
   table_id: string | null;
 }
 
-interface TournamentRow {
+interface TournamentRow extends TournamentEntryWindowRow {
   id: string;
   name: string;
   status: string;
@@ -122,7 +127,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, blind_structure, payout_structure, is_bounty, start_time'
+            'id, name, status, variant, tournament_type, spin_multiplier, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, started_at, blind_structure, payout_structure, is_bounty, start_time'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
@@ -238,8 +243,15 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
    * had no late registration at all — so it never reported the thing it exists
    * to report.
    */
-  const lateRegCap = num(t?.late_reg_levels);
-  const lateRegClosed = lateRegCap <= 0 || num(t?.current_level) >= lateRegCap;
+  const entryWindow = tournamentEntryWindow(t ?? {});
+  const lateRegText =
+    !t || !tournamentEntryWindowOpen(t, Date.now())
+      ? 'Closed'
+      : entryWindow.mode === 'levels'
+        ? `Through Level ${entryWindow.cap}`
+        : entryWindow.mode === 'minutes'
+          ? `${entryWindow.minutes} Minutes`
+          : 'Closed';
 
   const tables = useMemo(() => {
     const byTable = new Map<string, number>();
@@ -297,7 +309,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
               : money(num(t?.buy_in_amount) + num(t?.buy_in_fee))
           )}
           {stat('Level', String(level))}
-          {stat('Late Reg', lateRegClosed ? 'Closed' : `Through Level ${lateRegCap}`)}
+          {stat('Late Reg', lateRegText)}
           {stat('Avg Stack', stats.avg.toLocaleString())}
           {stat('Largest', stats.largest.toLocaleString())}
           {stat('Smallest', stats.smallest.toLocaleString())}

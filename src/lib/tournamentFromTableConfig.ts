@@ -7,7 +7,7 @@
  * without rendering the page. The mapping is where every silently-ignored
  * setting would come back, so it is the part worth pinning.
  */
-import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE } from '../config/blindStructures';
+import { manualTournamentBlindPreset, SPIN_BLIND_STRUCTURE } from '../config/blindStructures';
 import { SPIN_TIERS } from '../config/spinSpec';
 // Type-only: erased at compile time, so this module never boots the Supabase
 // client that TournamentService constructs at import.
@@ -17,6 +17,11 @@ import { payoutEngine } from '../services/PayoutEngine';
 import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
 import { freeBuyConfig } from '../utils/freeBuy';
 import { maxSeatsTheDeckAllows } from '../config/tableSeating';
+import {
+  mttPayoutDepthForChoice,
+  MTT_PAYOUT_DEPTH_REQUIRED,
+  provisionalMttPayoutStructure,
+} from '../../server/src/tournament/mttPayoutDepth';
 /* Value imports as well as the re-export below: `export … from` does not bind
    the names locally, and buildTournamentConfig uses both. */
 import {
@@ -114,6 +119,14 @@ export function buildTournamentConfig(
   gameType: string | undefined
 ): TournamentConfig {
   const isSng = config.gameMode === 'sng';
+  if (isSng && config.payoutStructure === 'payout20') {
+    throw new Error('Choose A Sit And Go Payout Structure');
+  }
+  // The initial ladder alone does not persist the final-field percentage.
+  // Carry the selected engine-supported depth through the actual RPC payload.
+  const payoutPercent =
+    config.gameMode === 'mtt' ? mttPayoutDepthForChoice(config.payoutStructure) : undefined;
+  if (payoutPercent === null) throw new Error(MTT_PAYOUT_DEPTH_REQUIRED);
   /* THE SPIN CATALOGUE IS ENFORCED HERE, NOT ONLY IN THE FORM (2026-08-31).
      The seat dropdown no longer offers "3 Players (Spins)" outside the
      catalogue, but a restored draft or a saved template can carry
@@ -142,25 +155,15 @@ export function buildTournamentConfig(
   // levels, steeper jumps) instead of silently aliasing to turbo.
   const preset = isSpins
     ? SPIN_BLIND_STRUCTURE
-    : (BLIND_STRUCTURES[
-        (
-          {
-            slow: 'deepStack',
-            standard: 'regular',
-            turbo: 'turbo',
-            hyper_turbo: 'hyperTurbo',
-          } as const
-        )[config.blindStructure] ?? 'regular'
-      ] as typeof SPIN_BLIND_STRUCTURE);
+    : manualTournamentBlindPreset(config.blindStructure);
   const levelMinutes = Math.max(1, config.blindsUpMinutes);
   const blindStructure = preset.map((lvl) =>
     lvl.isBreak ? lvl : { ...lvl, durationMinutes: levelMinutes }
   );
 
-  /* Payouts. The owner's Payout Structure choice is HONOURED (2026-08-22 —
-     payout1/2/3 used to fall through to autoSelectPayouts, so all four choices
-     were identical). payoutsForChoice normalizes to exactly 100%, which the
-     service and the engine both require.
+  /* SNGs have a known field; MTT capacity is not a field projection. Keep a
+     bounded provisional MTT structure and persist payoutPercent separately.
+     The database generates its final ladder from the actual funded entrants.
 
      A SPIN IS NOT "WINNER-TAKE-ALL BY DEFINITION" (2026-08-31). That comment
      stood here and it was false: three of the seven tiers in `SPIN_TIERS` pay
@@ -183,7 +186,9 @@ export function buildTournamentConfig(
         place: i + 1,
         percentage: Math.round(pct * 10000) / 100,
       }))
-    : payoutEngine.payoutsForChoice(config.payoutStructure, maxPlayers);
+    : config.gameMode === 'mtt'
+      ? provisionalMttPayoutStructure()
+      : payoutEngine.payoutsForChoice(config.payoutStructure, maxPlayers);
 
   // WHOLE-DOLLAR BUY-IN (Dan 2026-08-20): "Sit and Go and any tournament
   // buy-ins must never be decimal buy-ins, whole numbers only." The Buy-in
@@ -246,6 +251,7 @@ export function buildTournamentConfig(
     minPlayers,
     blindStructure,
     payoutStructure,
+    ...(payoutPercent !== undefined ? { payoutPercent } : {}),
     lateRegistrationLevels: config.gameMode === 'mtt' ? config.lateRegistrationLevel : 0,
     // The MTT start time IS honoured: the discovery loop starts an MTT once
     // start_time has passed and the minimum field is present. An SNG ignores

@@ -16,6 +16,15 @@ const fixture =
 const accounting =
   /^(supabase\/accounting\/|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
 
+export function gitEnvironmentForCwd() {
+  // Hooks export repository context that overrides cwd. These local-only Git
+  // calls must also discard inherited index/object/config overrides so a
+  // foreign fixture cannot read or modify the hook's repository.
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+  );
+}
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
@@ -35,7 +44,9 @@ export function classifyChangedPaths(paths) {
       phase4Changed ||
       commitmentAudit ||
       matches(accounting) ||
-      matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
+      matches(
+        /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
+      ),
     tests:
       broad ||
       commitmentAudit ||
@@ -56,6 +67,7 @@ export function classifyGitChanges({ cwd, base, head }) {
   const git = (...args) =>
     execFileSync('git', args, {
       cwd,
+      env: gitEnvironmentForCwd(),
       maxBuffer: 16 * 1024 * 1024,
       timeout: 30000,
       stdio: ['ignore', 'pipe', 'pipe'],

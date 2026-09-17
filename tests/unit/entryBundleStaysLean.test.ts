@@ -51,10 +51,15 @@ describe('the eager app shell stays free of lazy-only code', () => {
       .split('\n')
       .filter((line) => line.startsWith('import ') && !line.startsWith('import type '));
 
-    // Only the blind-structure parser. Anything else here is the leak returning.
+    // Keep both pure display helpers explicit. Neither may import the lobby or
+    // another runtime dependency into the eagerly mounted ticker.
     expect(valueImports).toEqual([
+      "import { tournamentEntryWindow } from '../../utils/tournamentEntryWindow';",
       "import { blindLevelMinutes, parseBlindStructure } from './tournamentFigures';",
     ]);
+    const entryWindow = read('src/utils/tournamentEntryWindow.ts');
+    expect(entryWindow).not.toMatch(/^import\s+(?!type\b)/m);
+    expect(entryWindow).not.toMatch(/\b(?:import|require)\s*\(/);
   });
 
   it('lobbyEntries still exports lateRegEndMs, so no existing caller changed', () => {

@@ -1262,6 +1262,28 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      - name: PKO heads follow exact accepted knockout dependencies
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B tests/operations/pko-probe-cleanup.test.py
+          bash scripts/dev/probe-causal-pko-predecessors-pg17.sh
+
+      - name: Tournament residuals require complete bounty candidate coverage
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh
+
+      - name: Tournament recovery preserves committed payout terms
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-committed-payout-terms-pg17.py
+
+      - name: Manual tournament depth reaches the current creation authority
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-tournament-create-payout-depth-pg17.py
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

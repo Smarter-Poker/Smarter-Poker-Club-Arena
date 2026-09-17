@@ -1,4 +1,6 @@
 import { buildLadder, type GeneratedBlindLevel } from './blindLadder.js';
+import { mttSpeedForMinutes, type MttClockSpeed } from './mttStructureDescription.js';
+import { isSupportedMttPayoutDepth } from './mttPayoutDepth.js';
 
 /** One engine-owned definition for both scheduled and recurring MTT creators.
  * Existing advertised ladders are preserved; speed and stack depth are separate.
@@ -46,7 +48,7 @@ MTT_BLIND_PRESETS.DEEPSTACK = MTT_BLIND_PRESETS.SLOW;
  * an explicit ladder. Later tapering/acceleration does not relabel the event.
  * Duration precedence and fallback match TournamentManagerBase's clock. */
 export function mttSpeedColumns(structure: readonly unknown[]): {
-  blind_speed: 'standard' | 'slow' | 'turbo' | 'hyper_turbo';
+  blind_speed: MttClockSpeed;
   is_turbo: boolean;
 } {
   const opening = structure.find(
@@ -61,14 +63,7 @@ export function mttSpeedColumns(structure: readonly unknown[]): {
       : Number.isFinite(seconds) && seconds > 0
         ? seconds / 60
         : 10;
-  const speed =
-    openingMinutes <= 2
-      ? 'hyper_turbo'
-      : openingMinutes <= 5
-        ? 'turbo'
-        : openingMinutes >= 12
-          ? 'slow'
-          : 'standard';
+  const speed = mttSpeedForMinutes(openingMinutes)!;
   return { blind_speed: speed, is_turbo: speed === 'turbo' || speed === 'hyper_turbo' };
 }
 
@@ -78,5 +73,5 @@ export function mttPayoutPercent(value: unknown): 10 | 15 | 20 {
   if (typeof value === 'string' && !/^[+-]?\d+$/.test(value.trim())) return 10;
   if (typeof value !== 'string' && typeof value !== 'number') return 10;
   const depth = Number(value);
-  return depth === 15 || depth === 20 ? depth : 10;
+  return isSupportedMttPayoutDepth(depth) ? depth : 10;
 }

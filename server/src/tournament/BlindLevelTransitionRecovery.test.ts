@@ -1,22 +1,27 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 let TournamentManagerBase: (typeof import('./TournamentManagerBase.js'))['TournamentManagerBase'];
+let TournamentManagerEliminations: (typeof import('./TournamentManagerEliminations.js'))['TournamentManagerEliminations'];
 let supabase: (typeof import('../services/supabase.js'))['supabase'];
 let tableStateHub: (typeof import('../transport/TableStateHub.js'))['tableStateHub'];
 
 beforeAll(async () => {
   process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-placeholder-key';
   ({ TournamentManagerBase } = await import('./TournamentManagerBase.js'));
+  ({ TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js'));
   ({ supabase } = await import('../services/supabase.js'));
   ({ tableStateHub } = await import('../transport/TableStateHub.js'));
 });
 beforeEach(() => {
+  setMaintenanceFrozen(false);
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-10T12:10:00.000Z'));
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(tableStateHub, 'emitEvent').mockImplementation(() => {});
 });
 afterEach(() => {
+  setMaintenanceFrozen(false);
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -70,7 +75,12 @@ function fixture() {
     prize_pool_finalized: true,
   };
   const state = manager(row, ['table-one', 'table-two']);
+  const read = vi.fn(async () => ({
+    data: { id: state.tournamentId, status: 'RUNNING', ...structuredClone(row) },
+    error: null as { message: string } | null,
+  }));
   const writes = vi.spyOn(supabase, 'from').mockReturnValue({
+    select: () => ({ eq: () => ({ maybeSingle: read }) }),
     update: (patch: Record<string, unknown>) => ({
       eq: async () => {
         Object.assign(row, patch);
@@ -104,10 +114,215 @@ function fixture() {
   const rpc = vi
     .spyOn(supabase as unknown as { rpc: (name: string, args: any) => Promise<any> }, 'rpc')
     .mockImplementation(async (_name: string, args: any) => publish(args) as never);
-  return { row, state, writes, publish, rpc };
+  return { row, state, writes, publish, rpc, read };
 }
 
 describe('durable atomic blind-level transition', () => {
+  const terminalReceipt = {
+    winnerId: 'winner',
+    winnerAmount: 50,
+    dealShares: [{ userId: 'winner', place: 1, amount: 50 }],
+    tableClosure: { closedTableIds: ['table-one', 'table-two'] },
+    sourceCloseout: { sourceTableIds: ['table-one', 'table-two'] },
+  };
+
+  function retainTerminalCleanup(state: any) {
+    Object.setPrototypeOf(state, TournamentManagerEliminations.prototype);
+    state.broadcast = vi.fn().mockResolvedValue(true);
+    state.cleanupCommittedTablesAndManager = vi.fn().mockResolvedValue(false);
+    state.stop = vi.fn();
+  }
+
+  it.each(['cleanupCommittedTournament', 'cleanupCommittedSatellite', 'settleFinalTableDeal'])(
+    '%s retires the blind clock while exact physical cleanup remains pending',
+    async (method) => {
+      const { state, rpc, writes } = fixture();
+      retainTerminalCleanup(state);
+      state.startBlindTimer(structure, 1000);
+      const queuedWake = state.blindTimer;
+      writes.mockClear();
+      await expect(state[method](terminalReceipt)).resolves.toBe(false);
+      expect(state.clearLifecycleTimeout).toHaveBeenCalledWith(queuedWake);
+      expect(state.blindTimer).toBeNull();
+      expect(state.running).toBe(true);
+      expect(state.tableEngines.size).toBe(2);
+      expect(state.stop).not.toHaveBeenCalled();
+
+      // A callback already delivered before clearTimeout cannot restart work;
+      // nor may maintenance or another caller arm this completed level clock.
+      await queuedWake.callback();
+      state.startBlindTimer(structure, 1000);
+      state.scheduleBlindLevelWake(structure, 1000);
+      expect(state.blindTimer).toBeNull();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(writes).not.toHaveBeenCalled();
+      expect(tableStateHub.emitEvent).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['success', 'refusal'])(
+    'ignores a late blind %s after verified terminal commitment without clearing cleanup ownership',
+    async (result) => {
+      const { state, rpc, publish, writes } = fixture();
+      retainTerminalCleanup(state);
+      let resolve!: (value: unknown) => void;
+      rpc.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }) as never
+      );
+      const advancing = state.advanceBlindLevel(structure);
+      expect(rpc).toHaveBeenCalledOnce();
+      const args = rpc.mock.calls[0][1];
+      await state.cleanupCommittedTournament(terminalReceipt);
+      resolve(
+        result === 'success'
+          ? publish(args)
+          : { data: { ok: false, reason: 'tournament_not_running' }, error: null }
+      );
+      await advancing;
+      expect(state.currentLevel).toBe(0);
+      expect(state.pendingBlindTransition).toBeNull();
+      expect(state.blindTimer).toBeNull();
+      expect(rpc).toHaveBeenCalledOnce();
+      expect(writes).not.toHaveBeenCalled();
+      expect(tableStateHub.emitEvent).not.toHaveBeenCalled();
+      expect(state.running).toBe(true);
+      expect(state.tableEngines.size).toBe(2);
+      expect(state.stop).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not retire a live clock from the precommit finish latch alone', async () => {
+    const { state, rpc } = fixture();
+    state.tournamentFinished = true;
+    await state.advanceBlindLevel(structure);
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(state.currentLevel).toBe(1);
+  });
+
+  it.each([
+    ['paused', 'paused'],
+    ['tournament_not_running', 'tournament_not_running'],
+    ['untrusted response body', 'unverified_receipt'],
+  ])(
+    'records the bounded refusal cause %s without accepting a blind level',
+    async (reason, expected) => {
+      const { state, rpc } = fixture();
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      rpc.mockResolvedValueOnce({ data: { ok: false, reason }, error: null } as never);
+      await state.advanceBlindLevel(structure);
+      const record = errors.mock.calls.find(
+        ([context]) => context === '[Tournament.blind_transition_failed]'
+      );
+      expect((record?.[1] as Error).message).toContain(
+        `${expected}; tournament=level-restart; attemptedLevel=1`
+      );
+      expect((record?.[1] as Error).message).not.toContain('untrusted response body');
+      expect(state.currentLevel).toBe(0);
+      expect(state.blindTimer.delay).toBe(1000);
+      expect(tableStateHub.emitEvent).not.toHaveBeenCalled();
+    }
+  );
+
+  it('holds a due clock locally during maintenance and restores the shifted remaining time', async () => {
+    const { row, state, rpc, writes, read } = fixture();
+    const originalAnchor = state.blindTimerStartedAt;
+    setMaintenanceFrozen(true);
+    await state.advanceBlindLevel(structure);
+    for (let i = 0; i < 3; i++) await state.blindTimer.callback();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
+    expect(state.currentLevel).toBe(0);
+    expect(state.blindTimerStartedAt).toBe(originalAnchor);
+    expect(state.blindTimer.delay).toBe(1000);
+
+    // The level had five minutes left when the seven-minute freeze began.
+    row.level_started_at = '2026-09-10T12:07:00.000Z';
+    vi.setSystemTime(new Date('2026-09-10T12:12:00.000Z'));
+    setMaintenanceFrozen(false);
+    await state.blindTimer.callback();
+    expect(read).toHaveBeenCalledOnce();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(state.blindTimer.delay).toBe(300000);
+    expect(row.level_started_at).toBe('2026-09-10T12:07:00.000Z');
+    vi.setSystemTime(new Date('2026-09-10T12:17:00.000Z'));
+    await state.blindTimer.callback();
+    expect(read).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(state.currentLevel).toBe(1);
+    expect(state.blindTimer.delay).toBe(600000);
+  });
+
+  it('replays a lost publication after thaw using the same level and shifted receipt', async () => {
+    const { row, state, rpc, publish, writes } = fixture();
+    rpc.mockImplementationOnce(async (_name, args) => {
+      publish(args);
+      return { data: null, error: { message: 'response lost' } } as never;
+    });
+    await state.advanceBlindLevel(structure);
+    setMaintenanceFrozen(true);
+    await state.blindTimer.callback();
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(writes).not.toHaveBeenCalled();
+    row.level_started_at = '2026-09-10T12:17:00.000Z';
+    vi.setSystemTime(new Date('2026-09-10T12:17:02.000Z'));
+    setMaintenanceFrozen(false);
+    await state.blindTimer.callback();
+    expect(rpc.mock.calls[1]).toEqual(rpc.mock.calls[0]);
+    expect(state.currentLevel).toBe(1);
+    expect(state.blindTimer.delay).toBe(598000);
+  });
+
+  it('does not overwrite a committed anchor when maintenance starts before the response', async () => {
+    const { row, state, rpc, publish, writes } = fixture();
+    rpc.mockImplementationOnce(async (_name, args) => {
+      const result = publish(args);
+      setMaintenanceFrozen(true);
+      return result as never;
+    });
+    await state.advanceBlindLevel(structure);
+    expect(state.currentLevel).toBe(1);
+    expect(writes).not.toHaveBeenCalled();
+    expect(state.blindTimer.delay).toBe(1000);
+    row.level_started_at = '2026-09-10T12:17:00.000Z';
+    vi.setSystemTime(new Date('2026-09-10T12:17:02.000Z'));
+    setMaintenanceFrozen(false);
+    await state.blindTimer.callback();
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(state.blindTimer.delay).toBe(598000);
+  });
+
+  it.each(['read failure', 'replacement', 'freeze resumed', 'wrong level', 'invalid anchor'])(
+    'retains the clock without publication when thaw resynchronization sees %s',
+    async (fault) => {
+      const { state, rpc, read, row } = fixture();
+      setMaintenanceFrozen(true);
+      await state.advanceBlindLevel(structure);
+      setMaintenanceFrozen(false);
+      read.mockImplementationOnce(async () => {
+        if (fault === 'replacement') state.running = false;
+        if (fault === 'freeze resumed') setMaintenanceFrozen(true);
+        return {
+          data: {
+            id: state.tournamentId,
+            status: 'RUNNING',
+            ...structuredClone(row),
+            current_level: fault === 'wrong level' ? 2 : row.current_level,
+            level_started_at: fault === 'invalid anchor' ? 'bad' : row.level_started_at,
+          },
+          error: fault === 'read failure' ? { message: 'unavailable' } : null,
+        };
+      });
+      await state.blindTimer.callback();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(state.currentLevel).toBe(0);
+      if (fault === 'replacement') expect(state.blindTimer).toBeNull();
+      else expect(state.blindTimer.delay).toBe(1000);
+    }
+  );
+
   it('publishes once for the whole event and announces only its matching receipt', async () => {
     const { state, rpc, writes } = fixture();
     await state.advanceBlindLevel(structure);
@@ -262,6 +477,8 @@ describe('blind rows at manager recovery', () => {
         { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
       ];
       const row: Record<string, any> = {
+        id: 'level-restart',
+        status: 'RUNNING',
         current_level: 0,
         level_started_at: '2026-09-10T12:00:00.000Z',
         blind_structure: structure,

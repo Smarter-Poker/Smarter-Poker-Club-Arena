@@ -46,6 +46,7 @@ interface RakeRow {
   rake_amount: number;
   hand_id: string | null;
   is_tournament: boolean;
+  tournament_id?: string | null;
   player_contributions: Record<string, number> | null;
 }
 
@@ -619,9 +620,9 @@ describe('RakebackSettlerService durable composite cursor', () => {
     expect(warn.mock.calls.some(([message]) => String(message).includes('drain cap reached'))).toBe(
       true
     );
-    expect(warn.mock.calls.some(([message]) => String(message).includes('backlog may remain'))).toBe(
-      true
-    );
+    expect(
+      warn.mock.calls.some(([message]) => String(message).includes('backlog may remain'))
+    ).toBe(true);
     await settler.runSettlement();
     expect(submittedIds()).toEqual(dataset.map((source) => source.id));
     warn.mockRestore();
@@ -675,6 +676,25 @@ describe('cash source receipts protect the durable cursor', () => {
     { data: null, error: null },
     { data: {}, error: null },
     { data: { ok: 1, failed: 0 }, error: null },
+    {
+      data: { ...batchReceipt([sourceReceipt(creditedRow(), { ledger })]), receipt_version: 1 },
+      error: null,
+    },
+    {
+      data: batchReceipt([{ ...sourceReceipt(creditedRow(), { ledger }), rake_record_id: uid(2) }]),
+      error: null,
+    },
+    {
+      data: batchReceipt([
+        sourceReceipt(creditedRow(), { ledger }),
+        sourceReceipt(creditedRow(), { ledger }),
+      ]),
+      error: null,
+    },
+    {
+      data: batchReceipt([{ ...sourceReceipt(creditedRow(), { ledger }), recorded: false }]),
+      error: null,
+    },
     { data: { receipt_version: 3, ok: 1, failed: 0, blocked: 0, receipts: [] }, error: null },
     { data: { receipt_version: 3, ok: 0, failed: 1, blocked: 0, receipts: [] }, error: null },
     { data: null, error: { message: 'timeout after commit' } },
@@ -698,6 +718,136 @@ describe('cash source receipts protect the durable cursor', () => {
     const batches = mockRpc.mock.calls.filter((c) => c[0] === 'fn_credit_agent_commissions_batch');
     expect(batches[0][1]).toEqual(batches[1][1]);
     expect(settlerUpserts()).toHaveLength(1);
+  });
+  it('holds the same source across a delayed old response and accepts its later canonical receipt', async () => {
+    let release!: (value: unknown) => void;
+    let creditCalls = 0;
+    mockRpc.mockImplementation(async (name, args) => {
+      if (name === 'fn_credit_agent_commissions_batch' && creditCalls++ === 0)
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      return success(name, args);
+    });
+    const settler = new RakebackSettlerService();
+    const pending = run(settler);
+    await vi.waitFor(() => expect(creditCalls).toBe(1));
+    expect(settlerUpserts()).toHaveLength(0);
+    release({ data: { ok: 1, failed: 0, first_error: null }, error: null });
+    expect(await pending).toBe('halted');
+    expect(settlerUpserts()).toHaveLength(0);
+    expect(await run(settler)).toBe('more');
+    const batches = mockRpc.mock.calls.filter(
+      ([name]) => name === 'fn_credit_agent_commissions_batch'
+    );
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toEqual(batches[1]);
+    expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_retry_cash_accounting_sources',
+      'fn_credit_agent_commissions_batch',
+      'fn_retry_cash_accounting_sources',
+      'fn_credit_agent_commissions_batch',
+      'fn_rakeback_recompute_periods',
+    ]);
+    expect(settlerUpserts()).toHaveLength(1);
+  });
+  it('joins an admitted canonical RPC before stop resolves and refuses new work after stop', async () => {
+    let release!: (value: unknown) => void;
+    let creditArgs!: Record<string, any>;
+    mockRpc.mockImplementation(async (name, args) => {
+      if (name === 'fn_credit_agent_commissions_batch') {
+        creditArgs = args;
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      }
+      return success(name, args);
+    });
+    const settler = new RakebackSettlerService();
+    // Keep the public launch, actual source retry/dispatch/receipt and stop real.
+    // Only unrelated weekly/observer work is parked for this cash-source case.
+    for (const method of [
+      'runWeeklyFinancialClose',
+      'runTournamentSentinel',
+      'runUnionTreasurySentinel',
+      'runUnionGovernanceSentinel',
+      'runUnionRakeRollupCatchup',
+      'runUnionEcoRecord',
+      'runTournamentChipConservation',
+    ] as const)
+      vi.spyOn(settler as any, method).mockResolvedValue(undefined);
+    const running = settler.runSettlement();
+    await vi.waitFor(() =>
+      expect(
+        mockRpc.mock.calls.filter(([name]) => name === 'fn_credit_agent_commissions_batch')
+      ).toHaveLength(1)
+    );
+    let stopped = false;
+    const stop = settler.stop();
+    void stop.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    expect(settlerUpserts()).toHaveLength(0);
+    const admittedCalls = mockRpc.mock.calls.length;
+    await settler.runSettlement();
+    expect(mockRpc).toHaveBeenCalledTimes(admittedCalls);
+    release(success('fn_credit_agent_commissions_batch', creditArgs));
+    await Promise.all([running, stop]);
+    expect(stopped).toBe(true);
+    expect(settlerUpserts()).toHaveLength(1);
+    expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_retry_cash_accounting_sources',
+      'fn_credit_agent_commissions_batch',
+      'fn_rakeback_recompute_periods',
+      'fn_retry_cash_accounting_sources',
+    ]);
+    const drainedCalls = mockRpc.mock.calls.length;
+    await settler.runSettlement();
+    expect(mockRpc).toHaveBeenCalledTimes(drainedCalls);
+  });
+  it('holds the page if a later chunk returns a legacy response across cutover', async () => {
+    const dataset = Array.from({ length: 151 }, (_, n) => ({
+      ...creditedRow(),
+      id: uid(n + 1),
+      created_at: ts(200 + n),
+      hand_id: uid(10000 + n),
+    }));
+    setup({
+      dataset,
+      ledger: dataset.map((source, n) => ({
+        ...ledger[0],
+        id: uid(20000 + n),
+        rake_record_id: source.id,
+        hand_id: source.hand_id,
+      })),
+    });
+    mockRpc.mockImplementation(async (name, args) =>
+      name === 'fn_credit_agent_commissions_batch' && args.p_items.length === 1
+        ? { data: { ok: 1, failed: 0, first_error: null }, error: null }
+        : success(name, args)
+    );
+    expect(await run()).toBe('halted');
+    expect(settlerUpserts()).toHaveLength(0);
+    expect(scenario.current.durableCursor).toEqual({
+      high_water_mark: ts(100),
+      high_water_mark_id: uid(0),
+    });
+    expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_retry_cash_accounting_sources',
+      'fn_credit_agent_commissions_batch',
+      'fn_credit_agent_commissions_batch',
+    ]);
+    const batches = mockRpc.mock.calls.filter(
+      ([name]) => name === 'fn_credit_agent_commissions_batch'
+    );
+    expect(batches.map(([, args]) => args.p_items.length)).toEqual([150, 1]);
+    expect(
+      batches.flatMap(([, args]) =>
+        args.p_items.map((item: { source_id: string }) => item.source_id)
+      )
+    ).toEqual(dataset.map((source) => source.id));
   });
   it.each(['error', 'throw'] as const)(
     'recovers the final credited period after checkpoint %s without waiting for a new source',
@@ -804,6 +954,34 @@ describe('cash source receipts protect the durable cursor', () => {
       expect(settlerUpserts()).toHaveLength(1);
     }
   );
+  it('leaves both tournament markers to terminal settlement while processing a mixed page', async () => {
+    setup({
+      dataset: [
+        creditedRow(),
+        { ...row(2, 201), is_tournament: true },
+        { ...row(3, 202), tournament_id: uid(777) },
+      ],
+    });
+    expect(await run()).toBe('more');
+    const batches = mockRpc.mock.calls.filter(
+      ([name]) => name === 'fn_credit_agent_commissions_batch'
+    );
+    expect(batches).toEqual([
+      [
+        'fn_credit_agent_commissions_batch',
+        {
+          p_items: [{ source_type: 'cash_rake_record', source_id: uid(1) }],
+        },
+      ],
+    ]);
+    expect(mockRpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_retry_cash_accounting_sources',
+      'fn_credit_agent_commissions_batch',
+      'fn_rakeback_recompute_periods',
+    ]);
+    expect(settlerUpserts()).toHaveLength(1);
+    expect(upsertPayload(settlerUpserts()[0]).high_water_mark_id).toBe(uid(3));
+  });
   it('assigns early UTC Monday cash to the Pacific week that is still open', async () => {
     install({
       settlerState: { high_water_mark: '2026-09-14T06:00:00Z', high_water_mark_id: uid(0) },

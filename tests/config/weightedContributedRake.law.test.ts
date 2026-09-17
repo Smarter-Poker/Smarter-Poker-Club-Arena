@@ -66,6 +66,11 @@ describe('the canonical allocator exists and is the single JS source of shares',
       /supabase\.rpc\('fn_credit_agent_commissions_batch',\s*\{\s*p_items: ids\.map\(\(id\) => \(\{ source_type: 'cash_rake_record', source_id: id \}\)\)/
     );
     expect(settler).toMatch(/readCashSourceBatch\(data, ids\)/);
+    expect(stripComments(read('server/src/services/cashSourceReceipts.ts'))).toContain(
+      'r.receipt_version !== 3'
+    );
+    expect(settler).not.toContain('sharesForRakeRecord');
+    expect(settler).not.toContain('fn_apply_rakeback_player_stats_batch');
     expect(sqlBody(cashSources, 'fn_credit_agent_commissions_batch')).toMatch(
       /public\.fn_process_cash_accounting_source\(record_id\)/
     );

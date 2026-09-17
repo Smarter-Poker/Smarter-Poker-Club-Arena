@@ -38,7 +38,9 @@ const readCode = (p: string) =>
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 describe('the Help FAQ describes the app that shipped', () => {
-  const help = read('pages/HelpPage.tsx');
+  // The FAQ copy moved to pages/helpContent.ts (AEO phase 1, 2026-09-17):
+  // HelpPage and the prerender both render it from there.
+  const help = read('pages/helpContent.ts');
   const settings = read('pages/SettingsPage.tsx');
 
   it('2FA is documented as available, because it is', () => {
@@ -81,7 +83,7 @@ describe('automatic accounting does not offer a browser money button', () => {
     // The routed mounted tests also prove only the scoped observer RPC is called.
     // Direct compatibility calls fail explicitly rather than returning zero-paid success.
     expect(readCode('services/SettlementService.ts')).toMatch(
-      /async executeMondayPayouts\([^\n]+\{ throw new AutomaticWeeklyAccountingOnlyError\(\); \}/
+      /async\s+executeMondayPayouts\([^)]*\)\s*:\s*Promise<\{[^}]*\}>\s*\{\s*throw new AutomaticWeeklyAccountingOnlyError\(\);\s*\}/
     );
   });
 });

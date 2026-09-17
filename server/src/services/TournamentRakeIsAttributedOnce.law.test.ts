@@ -57,5 +57,8 @@ describe('tournament rake is attributed once, at settlement', () => {
   });
   it('has no independent player-stats or commission calculation loop', () => {
     expect(code).not.toMatch(/fn_apply_rakeback_player_stats_batch|statsItems|commissionItems/);
+    expect(code).not.toMatch(/from\('player_stats'\)\.(?:upsert|insert|update)/);
+    expect(code).not.toContain('sharesForRakeRecord');
+    expect(code).toContain('readCashSourceBatch(data, ids)');
   });
 });

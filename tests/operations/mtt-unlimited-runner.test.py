@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import selectors
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -193,6 +194,15 @@ class RunnerSourceBindingTest(unittest.TestCase):
         for relative in ("scripts/ci/test-mtt-unlimited.py", "scripts/ci/mtt_isolation_results.py",
                          "scripts/ci/mtt_unlimited_fixture.py", "scripts/ci/mtt_format_qualification.py"):
             asset(relative)
+        # The L03 inputs are genuine source assets, not fabricated SQL authorities.
+        # These unit tests only validate bytes and orchestration; no SQL executes.
+        authoring = ROOT / "scripts/ci/fixtures/mtt-break-authoring/source-binding.json"
+        manifest = json.loads(authoring.read_text())
+        for relative in [*manifest["files"], str(authoring.relative_to(ROOT)),
+                         "scripts/ci/mtt_break_authoring_native.py"]:
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, path)
         self.execution = types.SimpleNamespace(root=self.root, report={"source_sha256": {}})
 
     def invoke(self):
@@ -215,6 +225,88 @@ class RunnerSourceBindingTest(unittest.TestCase):
                          "scripts/ci/mtt_unlimited_fixture.py", "scripts/ci/mtt_format_qualification.py", self.driver.PREPARATION_CATALOG):
             self.assertEqual(self.execution.report["source_sha256"][relative],
                              hashlib.sha256((self.root / relative).read_bytes()).hexdigest())
+
+    def test_authoring_probe_drift_refuses_before_composition(self):
+        (self.root / "scripts/dev/fixtures/mtt-blind-contract/authoring-native.sql").write_text("changed assertion")
+        self.rejects_before_composition(message="L03 authoring source binding changed")
+
+    def test_authoring_partial_assertion_contract_refuses_before_composition(self):
+        path = self.root / "scripts/ci/fixtures/mtt-break-authoring/source-binding.json"
+        document = json.loads(path.read_text())
+        document["native_assertions"] -= 1
+        path.write_text(json.dumps(document))
+        self.rejects_before_composition(message="L03 authoring source binding shape changed")
+
+    def authoring_wiring(self, fail):
+        # Exercise the maintained caller with explicit fake execution. This checks
+        # call order, template identity and failure propagation, not native SQL.
+        foundation = self.catalog["stages"][0]
+        foundation["probe"] = self.asset(foundation["probe"]["path"],
+            "\\ir ../../../" + foundation["migration"]["path"] +
+            "\n-- QUALIFY_FIRST_FORMAT\n-- REPLAY_FIRST_FORMAT\n-- QUALIFY_REMAINING_FORMATS\n")
+        execution = self.execution
+        execution.output = self.root / "unit-evidence"
+        execution.output.mkdir()
+        execution.pg = self.root
+        execution.start = mock.Mock()
+        execution.discard = mock.Mock()
+        execution.database = mock.Mock(side_effect=["unit-template"] + ["unit-case-" + str(i) for i in range(9)])
+        execution.snapshot = mock.Mock(return_value="unit-data")
+        execution.catalog_snapshot = mock.Mock(return_value="unit-catalog")
+        execution.report.update(native=[], races=[], migration_refusals=[])
+        applied = []
+
+        def sql(_database, _query=None, **kwargs):
+            label = kwargs["label"]
+            if label.startswith("prepare-"):
+                applied.append(label.removeprefix("prepare-"))
+            if label == "original-seats-red":
+                return 3, "", "ERROR: SEAT_FIRST_STACK_MUST_EQUAL_STARTING_CHIPS: unit fixture\n"
+            return 0, "", ""
+
+        execution.sql = mock.Mock(side_effect=sql)
+        tool = self.root / "unit-isolation-tool"
+        tool.write_text("not executable: native unit seam")
+        composition = {"sql": "unit-only SQL never executed", "source_sha256": {}, "limits": []}
+
+        def authoring(actual_execution, root, actual_composition, *, prepared_template, preparation_sources):
+            self.assertIs(actual_execution, execution)
+            self.assertEqual(root, self.root)
+            self.assertIs(actual_composition, composition)
+            self.assertEqual(prepared_template, "unit-template")
+            self.assertEqual(applied, [stage[0] for stage in self.driver.PREPARATION_STAGES])
+            self.assertNotIn(mock.call("unit-template"), execution.discard.call_args_list)
+            for path in ("scripts/ci/mtt_break_authoring_native.py",
+                         "scripts/dev/fixtures/mtt-blind-contract/authoring-native.sql"):
+                self.assertEqual(preparation_sources[path], hashlib.sha256((self.root / path).read_bytes()).hexdigest())
+            if fail:
+                raise RuntimeError("unit authoring refusal")
+            return {"status": "passed"}
+
+        with mock.patch.object(self.driver, "compose", return_value=composition), \
+             mock.patch.object(self.driver, "preparation_supplement_sql", return_value="unit-only"), \
+             mock.patch.object(self.driver, "stock_isolationtester", return_value=tool), \
+             mock.patch.object(self.driver, "qualify_historical_freebuy"), \
+             mock.patch.object(self.driver, "run_drift_cases"), \
+             mock.patch.object(self.driver, "run_lock_cases"), \
+             mock.patch.object(self.driver, "run_preparation_races"), \
+             mock.patch.object(self.driver, "assert_probe_result"), \
+             mock.patch.object(self.driver, "run_authoring_native", side_effect=authoring) as call:
+            if fail:
+                with self.assertRaisesRegex(RuntimeError, "unit authoring refusal"):
+                    self.invoke()
+                self.assertNotIn("source_binding_verified_at_completion", execution.report)
+            else:
+                self.invoke()
+                self.assertIs(execution.report["source_binding_verified_at_completion"], True)
+                execution.discard.assert_called_with("unit-template")
+            call.assert_called_once()
+
+    def test_authoring_receives_template_only_after_all_eight_preparations(self):
+        self.authoring_wiring(fail=False)
+
+    def test_authoring_failure_cannot_be_a_complete_preparation_pass(self):
+        self.authoring_wiring(fail=True)
 
     def test_missing_preparation_stage_is_not_a_partial_pass(self):
         self.catalog["stages"].pop()

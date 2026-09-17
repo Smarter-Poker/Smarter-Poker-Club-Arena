@@ -9,8 +9,15 @@
    through the World Hub. It now waits for a 300 ms pause, the same window
    `useDebounce` already gives the roster and hand searches. The `offset`
    reset on typing is unchanged.
-2. **`encode zstd gzip` on the engine's Caddy site**, in both repository
-   templates (`server/Caddyfile`, `infra/monitoring/engine-01/Caddyfile`).
+2. **`encode zstd gzip` on the engine's Caddy site**, in
+   `infra/monitoring/engine-01/Caddyfile` - the template that mirrors the
+   live box. The identical line for `server/Caddyfile` is deferred to a
+   follow-up: `scripts/ci/classify-ci-changes.mjs` routes any touch of
+   `server/` into the real-PostgreSQL accounting job and the four Server
+   Engine shards, and that suite is currently red on a spin-expiry refund
+   contract that has nothing to do with this change. A Caddy template the
+   repository never deploys is not worth holding a client fix behind a red
+   suite it alone summons.
    The static origin (`infra/ca-origin/Caddyfile`) has compressed since it
    went up; the engine host never did, so `/health`, `/actions` and lobby
    JSON went out uncompressed. WebSocket frames are unaffected. **The live

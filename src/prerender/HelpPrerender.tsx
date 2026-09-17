@@ -30,7 +30,22 @@ export default function HelpPrerender() {
           </div>
         </div>
         <div className={styles.heroArt} aria-hidden="true">
-          <img src={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.png')} alt="" />
+          {/* Discoverability phase 5 (2026-09-17): the 462 KB palette PNG was a
+              third of the Help Center's bytes on a phone; the WebP is 49 KB of the
+              same pixels, and the PNG stays the fallback for a browser without it. */}
+          <picture>
+            <source
+              type="image/webp"
+              srcSet={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.webp')}
+            />
+            <img
+              src={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.png')}
+              alt=""
+              width="960"
+              height="1280"
+              decoding="async"
+            />
+          </picture>
           <span>Support Terminal / Online</span>
         </div>
       </header>

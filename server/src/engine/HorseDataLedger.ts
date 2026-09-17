@@ -2244,6 +2244,54 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase15'
   ),
   receipt(
+    'phase15_plan_issue_*',
+    'HorseDecisionWorkerRuntime.executeFast',
+    'finite original-batch issuance outcomes: issued, no_effects, capacity_unavailable or reissue_unavailable; the total bound stays 128 and pending ownership is not evicted; issuance is not accepted-wager or application proof',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_accepted_*',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the original FAST wager was accepted with no_effects, capacity_unavailable or reissue_unavailable; no effects is distinct from an unavailable nonempty batch, and none of these outcomes claims successful plan application',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_refused_*',
+    'HorseDecisionWorkerRuntime.executeEffectCommit/executeEffectRetirement',
+    'finite refusal reasons: issue_absent, issue_ambiguous, issue_failed, issue_retired, no_effects, binding_mismatch or effects_mismatch; refusal applies no new effects and does not authorize retrying an accepted wager',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_retirement_*',
+    'HorseDecisionWorkerRuntime.executeEffectRetirement / LiveHorseDecisionWorkerClient.retireDecisionEffects',
+    'exact local retirement reports retired, already_retired, already_applied_volatile, issue_absent or issue_failed; client unconfirmed is a transport gap that may retain pending capacity, not proof of retirement or rollback of an applied batch',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_terminal_*',
+    'HorseDecisionWorkerRuntime.issuePlanBatch',
+    'expired or evicted terminal records are reclaimed within the existing bounded map; pending issued records are excluded; reclamation limits duplicate-ACK retention and does not establish durable recovery',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_applied_volatile',
+    'HorseDecisionWorkerRuntime.executeEffectCommit',
+    'the exact detached issued effects applied once in this worker before its ACK; not durable accepted-effect storage, restart recovery or historical replay',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_already_applied_volatile',
+    'HorseDecisionWorkerRuntime.executeEffectCommit',
+    'an exact same-process duplicate was acknowledged from a retained applied record without applying effects again; not fresh-process replay or a new application',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_plan_apply_failed',
+    'HorseDecisionWorkerRuntime.executeEffectCommit',
+    'application threw and may have left partial volatile writes; the batch remains failed without a success ACK or automatic retry, and its materialized state is not certified complete',
+    'Phase15'
+  ),
+  receipt(
     'phase15_graph_*',
     'HorsePolicyGraph.run/finish',
     'live outer graph started, completed or failed; no claim of full internal distribution coverage or authoritative table execution',

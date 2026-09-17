@@ -53,9 +53,13 @@ describe('Diamond Spins bust invitation', () => {
   it('removes a dismissed offer when session storage is unavailable', () => {
     state.retainExit = true;
     state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
-    const write = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
-      throw new Error('Storage unavailable');
-    });
+    // happy-dom's concrete sessionStorage prototype can differ from the
+    // global Storage constructor, so spy on the object that owns the method.
+    const write = vi
+      .spyOn(Object.getPrototypeOf(sessionStorage) as Storage, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('Storage unavailable');
+      });
     try {
       const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
       fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));

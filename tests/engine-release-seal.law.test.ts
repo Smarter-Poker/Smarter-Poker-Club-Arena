@@ -128,7 +128,7 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
     { encoding: 'utf8' }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 6 tests');
+  expect(result.stderr).toContain('Ran 8 tests');
 });
 
 describe('the durable engine release seal', () => {

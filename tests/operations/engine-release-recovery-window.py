@@ -10,6 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
 RECOVERY = SOURCE[SOURCE.index('RECOVERY_REQUESTED=0'):SOURCE.index('persist_break_deadline() {')]
+CERTIFICATE = SOURCE[SOURCE.index('maintenance_certificate() {'):SOURCE.index('# This is one optional event')]
 
 
 def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=False, minute=30, ready=True, becomes_ready=False):
@@ -55,7 +56,41 @@ request_recovery_window
         return result, events.read_text().splitlines() if events.exists() else []
 
 
+def certificate(maintenance, *, running=True, transport=True, http=200):
+    response = json.dumps({'running': running, 'maintenance': maintenance}) + f'\n{http}'
+    script = f'''set -euo pipefail
+MIN_BREAK_REMAINING_MS=285000
+curl() {{ [ {int(transport)} = 1 ] || return 1; printf '%s' {shlex.quote(response)}; }}
+{CERTIFICATE}
+maintenance_certificate
+'''
+    return subprocess.run(['bash'], input=script, text=True, capture_output=True, timeout=5)
+
+
 class RecoveryWindowTests(unittest.TestCase):
+    def test_durable_window_can_be_missed_without_ever_certifying_restart(self):
+        window = {'active': True, 'phase': 'counting_down', 'durableConfirmed': True,
+                  'remainingMs': 300000, 'readyForRestart': False, 'unparkedTables': 2}
+        self.assertEqual(certificate(window).returncode, 1)
+        # This is observation of a real missed opportunity, never cutover authority.
+        for remaining in [280000, 1000, 0]:
+            with self.subTest(remaining=remaining):
+                result = certificate({**window, 'remainingMs': remaining})
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stdout.strip(), str(remaining))
+        self.assertEqual(certificate({**window, 'readyForRestart': True,
+                                      'unparkedTables': 0}).returncode, 0)
+
+    def test_missing_or_unconfirmed_observation_never_qualifies_a_recovery(self):
+        window = {'active': True, 'phase': 'counting_down', 'durableConfirmed': True,
+                  'remainingMs': 1000, 'readyForRestart': False, 'unparkedTables': 2}
+        for override in [{'active': False}, {'durableConfirmed': False}, {'phase': 'idle'}]:
+            with self.subTest(override=override):
+                self.assertEqual(certificate({**window, **override}).returncode, 1)
+        for options in [{'running': False}, {'transport': False}, {'http': 502}]:
+            with self.subTest(options=options):
+                self.assertEqual(certificate(window, **options).returncode, 1)
+
     def test_eligible_release_reserves_and_requests_once_inside_lock(self):
         result, events = invoke()
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -409,11 +409,16 @@ maintenance_certificate() {
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 remaining=int(m.get("remainingMs") or 0) if isinstance(m,dict) else 0
-ok=(d.get("running") is True and isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and m.get("readyForRestart") is True and m.get("unparkedTables")==0)
-if not ok: raise SystemExit(1)
+window=(d.get("running") is True and isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
+if not window: raise SystemExit(1)
+# A straggler can prevent restart certification for the entire real window.
+# Record that missed opportunity separately from permission to cut over. Only
+# this durable health observation qualifies; missing/unreadable health does not.
 if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):
     print(remaining)
     raise SystemExit(2)
+ok=(m.get("readyForRestart") is True and m.get("unparkedTables")==0)
+if not ok: raise SystemExit(1)
 print(remaining)
 ' 2>/dev/null
 }
@@ -938,7 +943,7 @@ while :; do
     # No prepare or break deadline exists yet. Keep the original request's
     # absolute deadline and source-freshness checks while waiting for a later
     # complete certificate; never reduce the candidate-and-recovery reserve.
-    echo "[engine-release-transaction] the certified table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
+    echo "[engine-release-transaction] the durable table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
     bounded_sleep 15
     continue
   fi

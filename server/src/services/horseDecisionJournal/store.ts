@@ -576,37 +576,47 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       records: segment.records.length,
     });
   }
+  /** Caller holds the catalog transaction. Validate every pending segment before
+   * publishing or deciding whether a selected hand is affected; this is at most
+   * one original batch (two segments, sixteen records), never a catalog scan. */
+  private readPendingSegments(): Segment[] {
+    const db = this.catalog!;
+    const sizes = db
+      .prepare('SELECT length(compressed) AS bytes FROM archive_pending LIMIT 3')
+      .all();
+    if (
+      sizes.length > 2 ||
+      sizes.some((s) => Number(s.bytes) < 1 || Number(s.bytes) > DECODE_BYTES + 65536) ||
+      sizes.reduce((n, s) => n + Number(s.bytes), 0) > DECODE_BYTES + 131072
+    )
+      throw Error('Horse archive pending exceeds bounds');
+    const pending = db.prepare('SELECT * FROM archive_pending ORDER BY id LIMIT 3').all();
+    if (pending.length > 2) throw Error('Horse archive pending exceeds bounds');
+    const segments: Segment[] = [];
+    let total = 0,
+      records = 0;
+    for (const row of pending) {
+      if (!(row.compressed instanceof Uint8Array)) throw Error('Horse archive pending corruption');
+      const segment = decodeSegment(
+        Buffer.from(row.compressed),
+        String(row.sha),
+        String(row.compressed_sha),
+        Number(row.bytes),
+        Number(row.decoded_bytes)
+      );
+      total += segment.decodedBytes;
+      records += segment.records.length;
+      if (records > 16 || total > DECODE_BYTES + 16 || segment.records.length !== row.records)
+        throw Error('Horse archive pending exceeds bounds');
+      segments.push(segment);
+    }
+    return segments;
+  }
   private finishPending(inTransaction = false): void {
     const db = this.catalog!;
     if (!inTransaction) db.exec('BEGIN IMMEDIATE');
     try {
-      const sizes = db
-        .prepare('SELECT length(compressed) AS bytes FROM archive_pending LIMIT 3')
-        .all();
-      if (
-        sizes.length > 2 ||
-        sizes.some((s) => Number(s.bytes) < 1 || Number(s.bytes) > DECODE_BYTES + 65536) ||
-        sizes.reduce((n, s) => n + Number(s.bytes), 0) > DECODE_BYTES + 131072
-      )
-        throw Error('Horse archive pending exceeds bounds');
-      const pending = db.prepare('SELECT * FROM archive_pending ORDER BY id LIMIT 3').all();
-      if (pending.length > 2) throw Error('Horse archive pending exceeds bounds');
-      let total = 0,
-        records = 0;
-      for (const row of pending) {
-        if (!(row.compressed instanceof Uint8Array))
-          throw Error('Horse archive pending corruption');
-        const segment = decodeSegment(
-          Buffer.from(row.compressed),
-          String(row.sha),
-          String(row.compressed_sha),
-          Number(row.bytes),
-          Number(row.decoded_bytes)
-        );
-        total += segment.decodedBytes;
-        records += segment.records.length;
-        if (records > 16 || total > DECODE_BYTES + 16 || segment.records.length !== row.records)
-          throw Error('Horse archive pending exceeds bounds');
+      for (const segment of this.readPendingSegments()) {
         this.publishSegment(segment);
         db.prepare('INSERT INTO archive_segments VALUES(?,?,?,?,?)').run(
           segment.sha,
@@ -753,8 +763,12 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
     const db = this.catalog!;
     db.exec('BEGIN');
     try {
-      // Pending custody is deliberately not represented as complete history.
-      if (db.prepare('SELECT id FROM archive_pending LIMIT 1').get())
+      // Validate all pending custody in this same snapshot. A valid unrelated
+      // batch does not invalidate already committed evidence for this hand.
+      // Pending evidence for the selected hand remains explicitly unavailable.
+      const pending = this.readPendingSegments();
+      let decodedBytes = pending.reduce((total, segment) => total + segment.decodedBytes, 0);
+      if (pending.some((segment) => segment.records.some((record) => record.handKey === handKey)))
         throw Error('Horse archive custody pending');
       const rows = db
         .prepare(
@@ -779,7 +793,6 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         group.push(row);
         grouped.set(key, group);
       }
-      let decodedBytes = 0;
       for (const [sha, group] of grouped) {
         const meta = db.prepare('SELECT * FROM archive_segments WHERE sha=?').get(sha);
         if (!meta) throw Error('Horse archive index corruption');

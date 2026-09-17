@@ -1,0 +1,15 @@
+CREATE ROLE anon;
+CREATE ROLE authenticated;
+CREATE ROLE service_role;
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT NULLIF(current_setting('test.uid',true),'')::uuid$$;
+CREATE FUNCTION u(n int) RETURNS uuid LANGUAGE sql IMMUTABLE AS $$SELECT ('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid$$;
+CREATE TABLE ca_declared_money_triggers(table_name text,trigger_name text,note text);
+CREATE TABLE agents(id uuid PRIMARY KEY,club_id uuid,user_id uuid,parent_agent_id uuid,role text,status text,commission_rate numeric,player_rakeback_rate numeric,is_prepaid boolean,agent_wallet_balance numeric,weekly_rake_generated numeric);
+CREATE TABLE club_members(club_id uuid,user_id uuid,agent_id uuid,parent_agent_id uuid,role text,status text,is_active boolean,commission_rate numeric,rakeback_rate numeric,player_rakeback_pct numeric,chip_balance numeric,notes text,PRIMARY KEY(club_id,user_id));
+CREATE TABLE union_clubs(id uuid PRIMARY KEY,club_id uuid,union_id uuid,club_commission_rate numeric,rate_cash numeric,rate_mtt numeric,rate_sng numeric,rate_spin numeric,rate_satellite numeric);
+INSERT INTO agents VALUES(u(1),u(10),u(11),NULL,'agent','active',0.6,0.2,false,500,10);
+INSERT INTO club_members VALUES(u(10),u(12),u(11),NULL,'player','active',true,0,0.2,0.2,100,'Private note excluded from terms');
+INSERT INTO union_clubs VALUES(u(2),u(10),u(20),0.9,0.9,0.88,0.9,0.87,0.85);
+CREATE FUNCTION assert_true(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL: %',label; END IF; RAISE NOTICE 'PASS: %',label; END$$;
+CREATE FUNCTION refuses(statement text,expected text) RETURNS boolean LANGUAGE plpgsql AS $$BEGIN EXECUTE statement; RETURN false; EXCEPTION WHEN OTHERS THEN IF SQLSTATE<>expected THEN RAISE; END IF; RETURN true; END$$;

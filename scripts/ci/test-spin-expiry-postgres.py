@@ -38,6 +38,7 @@ CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.jso
 SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
   'user',current_user,'session_user',session_user,'port',current_setting('port'),
   'address',inet_server_addr(),'listen_addresses',current_setting('listen_addresses'),
+  'autovacuum',current_setting('autovacuum'),
   'unix_socket_directories',current_setting('unix_socket_directories'));"""
 CLEAN_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
              'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
@@ -108,6 +109,7 @@ def validate_server_endpoint(value, socket_path):
     # sessions retain their captured nonsuperuser roles and owned socket checks.
     require(value == {'user': 'fixture_bootstrap', 'session_user': 'fixture_bootstrap',
                       'port': '5432', 'address': None, 'listen_addresses': '',
+                      'autovacuum': 'off',
                       'unix_socket_directories': str(socket_path)},
             'private server endpoint configuration differs')
 
@@ -710,10 +712,13 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
             raise ValueError('PG17 required')
         command('initdb', [str(PG / 'initdb'), '-D', str(data), '-U', 'fixture_bootstrap',
                           '--auth-local=trust', '--auth-host=reject', '--no-locale', '--encoding=UTF8'], timeout=30)
+        # This disposable cluster admits only the explicitly owned race sessions.
+        # max_worker_processes does not disable autovacuum. Prevent its unsolicited
+        # maintenance during natural aging; retain the strict extra-backend refusal.
         with (data / 'postgresql.conf').open('a') as handle:
             handle.write("\nlisten_addresses=''\nport=5432\nunix_socket_directories='" + str(work / 'socket')
                          + "'\nunix_socket_permissions=0700\nshared_buffers='32MB'\nwork_mem='4MB'\nmaintenance_work_mem='64MB'\nmax_connections=8"
-                         + "\nmax_worker_processes=0\nmax_parallel_workers=0\nmax_wal_senders=0\nwal_level=logical"
+                         + "\nautovacuum=off\nmax_worker_processes=0\nmax_parallel_workers=0\nmax_wal_senders=0\nwal_level=logical"
                          + "\nstatement_timeout='20s'\nlock_timeout='3s'\nidle_in_transaction_session_timeout='20s'\n")
         pg_attempted = True
         command('pg_start', [str(PG / 'pg_ctl'), '-D', str(data), '-l', str(work / 'postgres.log'), '-w', '-t', '12', 'start'], timeout=15)

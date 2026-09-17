@@ -90,12 +90,8 @@ export default function AgentPortalPage() {
   // Bus listeners
   useEffect(() => {
     const unsub1 = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadWallet(), 1000);
-    const unsub2 = masterBus.subscribeDebounced('COMMISSION_PAID', () => loadData(), 1000);
-    const unsub3 = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', () => loadData(), 1000);
     return () => {
       unsub1();
-      unsub2();
-      unsub3();
     };
   }, [user?.id, currentClubId]);
 

@@ -339,7 +339,9 @@ describe('tournament table-break retirement is one durable ownership chain', () 
             // live seat. No further break is admissible until bust processing.
             for (const table of tables.filter((row) => row.status === 'running')) {
               for (let chair = 1; chair <= table.max_players; chair++) {
-                if (!seats.some((seat) => seat.table_id === table.id && seat.seat_number === chair)) {
+                if (
+                  !seats.some((seat) => seat.table_id === table.id && seat.seat_number === chair)
+                ) {
                   reserved.push({ table_id: table.id, seat_number: chair, status: 'playing' });
                 }
               }
@@ -355,7 +357,9 @@ describe('tournament table-break retirement is one durable ownership chain', () 
           return readState(breakId);
         }),
       };
-      vi.spyOn(f.manager, 'tableBreakRpc').mockReturnValue(api as unknown as TournamentTableBreakRpc);
+      vi.spyOn(f.manager, 'tableBreakRpc').mockReturnValue(
+        api as unknown as TournamentTableBreakRpc
+      );
       const legacyMove = vi.spyOn(f.manager, 'executePlayerMoves');
       let committedMoves = 0;
       const moves = vi
@@ -365,9 +369,10 @@ describe('tournament table-break retirement is one durable ownership chain', () 
           expect(seat.table_id).toBe(input.sourceTableId);
           expect(tables.find((row) => row.id === input.destinationTableId)?.status).toBe('running');
           expect(
-            seats.some((row) =>
-              row.table_id === input.destinationTableId &&
-              row.seat_number === input.destinationSeatNumber
+            seats.some(
+              (row) =>
+                row.table_id === input.destinationTableId &&
+                row.seat_number === input.destinationSeatNumber
             )
           ).toBe(false);
           const sourceSeatId = seat.id;
@@ -469,8 +474,8 @@ describe('tournament table-break retirement is one durable ownership chain', () 
           : [[playerIds[0]], [playerIds[0], playerIds[1]]]
       );
       expect(
-        rosterSnapshots.some((snapshot) =>
-          JSON.stringify(snapshot) !== JSON.stringify(rosterSnapshots[0])
+        rosterSnapshots.some(
+          (snapshot) => JSON.stringify(snapshot) !== JSON.stringify(rosterSnapshots[0])
         )
       ).toBe(true);
       expect(legacyMove).not.toHaveBeenCalled();
@@ -484,7 +489,9 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       expect(new Set(seats.map((seat) => `${seat.table_id}:${seat.seat_number}`)).size).toBe(3);
       expect(seats.reduce((sum, seat) => sum + seat.stack, 0)).toBe(300);
       expect(f.globalEngines.size).toBe(state === 'clear' || state === 'lost-move' ? 1 : 2);
-      expect(f.unregister).toHaveBeenCalledTimes(state === 'clear' || state === 'lost-move' ? 2 : 1);
+      expect(f.unregister).toHaveBeenCalledTimes(
+        state === 'clear' || state === 'lost-move' ? 2 : 1
+      );
       expect(expansion).toHaveBeenCalledTimes(state === 'lost-close' ? 0 : 1);
       expect(manager.breakOccurredThisCycle).toBe(state === 'lost-close');
       expect(manager.eliminationSweepCursor.nextStage).toBe(state === 'lost-close' ? 5 : 0);

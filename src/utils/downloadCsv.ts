@@ -47,29 +47,56 @@ export function toCsv(header: string[], rows: unknown[][]): string {
  * attribute, and there is no error to notice. Anything that hands the user a
  * file goes through here, so the native branch is written once.
  */
-export function downloadBlob(filename: string, blob: Blob): boolean {
+export function downloadBlob(filename: string, blob: Blob): boolean;
+export function downloadBlob(
+  filename: string,
+  blob: Blob,
+  isCurrent: () => boolean
+): boolean | Promise<boolean>;
+export function downloadBlob(
+  filename: string,
+  blob: Blob,
+  isCurrent?: () => boolean
+): boolean | Promise<boolean> {
+  const check = () => {
+    if (isCurrent && isCurrent() !== true) throw new Error('export_account_or_view_changed');
+  };
+  check();
   if (typeof document === 'undefined' || typeof URL?.createObjectURL !== 'function') return false;
 
   // THE APP (2026-09-08): a webview does not honour the download attribute,
   // so the file goes to the system share sheet (src/lib/native/share.ts).
   if (isNativePlatform()) {
-    void import('../lib/native/share')
-      .then(({ nativeShareBlob }) => nativeShareBlob(blob, filename))
-      .catch(() => {});
+    const sharing = import('../lib/native/share').then(({ nativeShareBlob }) => {
+      check();
+      return nativeShareBlob(blob, filename, undefined, isCurrent);
+    });
+    // Guarded financial exports observe the actual handoff or refusal.
+    if (isCurrent) return sharing;
+    void sharing.catch(() => {});
     return true;
   }
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.rel = 'noopener';
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Deferred, not synchronous: Safari may not have read the blob yet.
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  let handedOff = false;
+  try {
+    check();
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    check();
+    a.click();
+    handedOff = true;
+  } finally {
+    a.remove();
+    // Preserve Safari's read window only after a real handoff. A refused
+    // account/view must release its never-handed-off bytes immediately.
+    if (handedOff) setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    else URL.revokeObjectURL(url);
+  }
   return true;
 }
 

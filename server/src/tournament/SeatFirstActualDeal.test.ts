@@ -56,6 +56,9 @@ function fixture(
     satellite?: boolean;
     resume?: boolean;
     realClock?: boolean;
+    resumeOnBreak?: boolean;
+    resumeRebuild?: boolean;
+    breakClearGate?: Promise<void>;
   } = {}
 ) {
   const spin = options.spin !== false;
@@ -102,7 +105,10 @@ function fixture(
     payout_structure: [{ place: 1, percentage: 100 }],
     start_time: options.preseatLead ? new Date(NOW + options.preseatLead).toISOString() : null,
     started_at: options.resume ? new Date(NOW + (options.preseatLead ?? 0)).toISOString() : null,
-    level_started_at: null,
+    level_started_at: options.resumeOnBreak ? new Date(NOW - 600_000).toISOString() : null,
+    on_break: options.resumeOnBreak ?? false,
+    break_started_at: options.resumeOnBreak ? new Date(NOW - 300_000).toISOString() : null,
+    break_ends_at: options.resumeOnBreak ? new Date(NOW - 1000).toISOString() : null,
     current_level: 0,
   };
   const table = {
@@ -165,7 +171,7 @@ function fixture(
             value = entitlements;
             break;
           case 'tables':
-            value = [table];
+            value = options.resumeRebuild ? [] : [table];
             break;
           case 'table_seats':
             value = seats.map((seat) => ({ ...seat, tables: table }));
@@ -176,11 +182,23 @@ function fixture(
           default:
             throw new Error('Unexpected relation ' + relation);
         }
-        return Promise.resolve({
-          data: patch || head ? null : singular && Array.isArray(value) ? value[0] : value,
+        const response = {
+          data:
+            head || (patch && !singular)
+              ? null
+              : singular && Array.isArray(value)
+                ? value[0]
+                : value,
           count: head ? roster.length : null,
           error: null,
-        }).then(resolve, reject);
+        };
+        const gate =
+          relation === 'tournaments' && patch?.on_break === false
+            ? options.breakClearGate
+            : undefined;
+        return Promise.resolve(gate)
+          .then(() => response)
+          .then(resolve, reject);
       },
     };
     return builder;
@@ -199,24 +217,25 @@ function fixture(
       });
       return {
         error: null,
-        data: name === 'fn_f06_hand_number_state'
-          ? {
-              ok: true,
-              table_id: TABLE,
-              lifecycle: '1',
-              can_reserve: true,
-              blocked_reason: null,
-              used_hand_number_max: '1000000',
-              next_hand_number_candidate: '1000001',
-              unresolved_permit: null,
-            }
-          : {
-              ok: true,
-              table_id: TABLE,
-              lifecycle: '1',
-              hand_number: '1000001',
-              hand_number_high_water: '1000000',
-            },
+        data:
+          name === 'fn_f06_hand_number_state'
+            ? {
+                ok: true,
+                table_id: TABLE,
+                lifecycle: '1',
+                can_reserve: true,
+                blocked_reason: null,
+                used_hand_number_max: '1000000',
+                next_hand_number_candidate: '1000001',
+                unresolved_permit: null,
+              }
+            : {
+                ok: true,
+                table_id: TABLE,
+                lifecycle: '1',
+                hand_number: '1000001',
+                hand_number_high_water: '1000000',
+              },
       };
     }
     if (name === 'fn_f06_begin_hand') {
@@ -642,6 +661,42 @@ describe('actual manager launch reaches the first hand and action timer after th
       await expectFirstHand(f, NOW + 60_000);
       expect(f.row.level_started_at).toBe(new Date(NOW + 60_000).toISOString());
       expect(f.manager.currentLevel).toBe(0);
+    }
+  );
+
+  it.each([false, true])(
+    'keeps a replacement dealer parked until its expired-break clock is acknowledged (rebuild=%s)',
+    async (resumeRebuild) => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const f = fixture({
+        spin: false,
+        timed: true,
+        resume: true,
+        realClock: true,
+        resumeOnBreak: true,
+        resumeRebuild,
+        breakClearGate: gate,
+      });
+      try {
+        await settle();
+        expect(f.manager.startManagedTableEngine).toHaveBeenCalledOnce();
+        expectNoHand(f);
+        expect(f.manager.onBreak).toBe(true);
+        expect(f.engine.pauseRequiresExplicitResume).toBe(true);
+        expect(f.manager.blindTimer).toBeNull();
+        release();
+        await f.started;
+        await settle();
+        await expectFirstHand(f, NOW);
+        expect(f.manager.onBreak).toBe(false);
+        expect(f.manager.blindTimerStartedAt).toBe(Date.parse(f.row.level_started_at));
+      } finally {
+        release();
+        await f.started;
+      }
     }
   );
 

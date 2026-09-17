@@ -356,11 +356,9 @@ export default function FinancialAdminHub() {
   // Bus listeners: refresh stats when financial events fire
   useEffect(() => {
     const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', loadStats, 1000);
-    const unsubSettlement = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', loadStats, 1000);
     const unsubAlert = masterBus.subscribeDebounced('FINANCIAL_ALERT', loadStats, 500);
     return () => {
       unsubBalance();
-      unsubSettlement();
       unsubAlert();
     };
   }, [loadStats]);

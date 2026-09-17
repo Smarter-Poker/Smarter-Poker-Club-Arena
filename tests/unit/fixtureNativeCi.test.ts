@@ -874,3 +874,163 @@ describe('cash failure intake is exercised by the actual hosted scheduler fixtur
     expect(job.steps.indexOf(build[0])).toBeLessThan(job.steps.indexOf(execution[0]));
   });
 });
+
+describe('restored provider accounting qualification', () => {
+  const fixtureDirectories = [
+    'accounting-agreement-history',
+    'accounting-alert-38644',
+    'accounting-delivery',
+    'agent-accounting-statements',
+    'browser-period-observer',
+    'cash-commission-sources',
+    'cash-rake-earning-evidence',
+    'cash-source-compatibility',
+    'cash-source-refusals',
+    'cashier-document-authority',
+    'club-weekly-summary',
+    'correction-document-authority',
+    'correction-writer-authority',
+    'credit-invoice-generation',
+    'credit-reduction-authority',
+    'credit-request-authority',
+    'full-weekly-accounting',
+    'messenger-private-accounting',
+    'mixed-rake-period',
+    'pnl-evidence',
+    'push-health-reader',
+    'push-subscription-ownership',
+    'push-subscription-rotation',
+    'rakeback-history-privacy',
+    'rakeback-write-authority',
+    'routed-accounting',
+    'scope-weekly-accounting',
+    'tournament-fee-lifecycle',
+    'tournament-fee-sources',
+    'unified-weekly-accounting',
+    'union-earned-close',
+    'union-weekly-accounting',
+    'weekly-accounting-coordinator',
+    'weekly-scheduler-fairness',
+    'weekly-scheduler-timing',
+    'weekly-union-continuation',
+  ];
+
+  it.each([
+    'supabase/accounting/weekly-v3/components/20260915150000_credit_reductions_retain_exact_intent_and_private_records.sql',
+    'supabase/accounting/credit-reduction-v1/server-functions.sql',
+    'scripts/ci/build-weekly-accounting-activation.py',
+    ...fixtureDirectories.map((directory) => `tests/fixtures/${directory}/regression.sql`),
+  ])('runs the existing required accounting job for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.src).toBe(false);
+    expect(flags.phase4).toBe(false);
+    expect(flags.fixture).toBe(false);
+    expect(flags.tests).toBe(path.startsWith('tests/'));
+  });
+
+  it.each([
+    'docs/accounting/notes.md',
+    'supabase/accounting-notes/readme.md',
+    'scripts/ci/build-weekly-accounting-activation.py.backup',
+    'tests/fixtures/full-weekly-accounting-other/regression.sql',
+    'tests/fixtures/unrelated-game/regression.sql',
+  ])('does not widen accounting execution to unrelated path %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(false);
+  });
+
+  it('retains prior application, migration and runner classifications and fail-closed input', () => {
+    for (const path of [
+      'server/src/services/Accounting.ts',
+      'supabase/migrations/example.sql',
+      'scripts/dev/test-full-weekly-accounting-activation.sh',
+    ]) {
+      expect(classifyChangedPaths([path])).toEqual({
+        src: false,
+        server: true,
+        tests: true,
+        phase4: false,
+        fixture: false,
+      });
+    }
+    expect(classifyChangedPaths([]).server).toBe(false);
+    expect(Object.values(classifyChangedPaths([''])).every(Boolean)).toBe(true);
+  });
+
+  it('runs each required source suite once on the original provider job', () => {
+    const job = ci.jobs.accounting_postgres;
+    const steps = job.steps as Array<{
+      run?: string;
+      if?: string;
+      env?: Record<string, string>;
+      'continue-on-error'?: boolean;
+    }>;
+    expect(job['runs-on']).toBe('ubuntu-latest');
+    expect(job.if).toBe(ci.jobs.server_shards.if);
+    expect(ci.jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(job['continue-on-error']).not.toBe(true);
+    const requiredRunners = [
+      'union-weekly-accounting',
+      'credit-invoice-generation',
+      'accounting-delivery',
+      'credit-invoice-payment',
+      'agent-accounting-statements',
+      'accounting-agreement-history',
+      'club-weekly-summary',
+      'weekly-accounting-coordinator',
+      'full-weekly-accounting-activation',
+      'cash-commission-sources',
+      'cash-source-refusals',
+      'cash-source-compatibility',
+      'tournament-fee-sources',
+      'scope-weekly-accounting',
+      'unified-weekly-accounting',
+      'push-health-reader',
+    ];
+    for (const runner of requiredRunners) {
+      const command = `bash scripts/dev/test-${runner}.sh`;
+      const matches = steps.filter((step) => step.run?.includes(command));
+      expect(matches, runner).toHaveLength(1);
+      const step = matches[0];
+      expect(step.run!.split(command)).toHaveLength(2);
+      expect(step.if, runner).toBeUndefined();
+      expect(step['continue-on-error'], runner).not.toBe(true);
+      expect(step.env?.PG_BIN, runner).toBe('/usr/lib/postgresql/17/bin');
+      if (runner !== 'full-weekly-accounting-activation') expect(step.run).toBe(command);
+    }
+    const full = steps.find((step) =>
+      step.run?.includes('test-full-weekly-accounting-activation.sh')
+    )!;
+    expect(full.run).toContain('set -euo pipefail');
+    expect(
+      full.run!.indexOf('python3 scripts/ci/build-weekly-accounting-activation.py')
+    ).toBeLessThan(full.run!.indexOf('bash scripts/dev/test-full-weekly-accounting-activation.sh'));
+    expect(full.env?.ACCOUNTING_ACTIVATION_DIR).toBe(
+      '${{ runner.temp }}/union-accounting-activation'
+    );
+    expect(full.env?.ACCOUNTING_TEST_OUTPUT_DIR).toBe(
+      '${{ runner.temp }}/union-accounting-results'
+    );
+    expect(full.env?.ACCOUNTING_FIXTURE_PARENT).toBe('${{ runner.temp }}/union-accounting-scratch');
+  });
+
+  it('requires real pg_cron even when PostgreSQL tools are already present', () => {
+    const install = ci.jobs.accounting_postgres.steps.find(
+      (step: { name?: string }) =>
+        step.name === 'Install PostgreSQL 17 tools without a default database service'
+    );
+    expect(install.run).toContain('-f /usr/share/postgresql/17/extension/pg_cron.control &&');
+    expect(install.run).toContain('-f /usr/lib/postgresql/17/lib/pg_cron.so ]]; then exit 0; fi');
+    expect(install.run).toContain(
+      'install -y --no-install-recommends postgresql-17 postgresql-17-cron'
+    );
+    expect(install.run).toContain('create_main_cluster = false');
+    const evidence = ci.jobs.accounting_postgres.steps.find(
+      (step: { name?: string }) => step.name === 'Preserve weekly accounting qualification evidence'
+    );
+    expect(evidence.if).toBe('always()');
+    expect(evidence.uses).toBe('actions/upload-artifact@v4');
+    expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-results');
+    expect(evidence.with.path).toContain('${{ runner.temp }}/union-accounting-activation');
+  });
+});

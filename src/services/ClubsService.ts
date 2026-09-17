@@ -17,7 +17,8 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { ClubCardGenerator } from './ClubCardGenerator';
-import { cashoutService } from './CashoutService';
+import { captureCashoutAccountGuard } from './CashoutService';
+import { prepareCashoutOperation, captureCashoutStart, assertCashoutStartCurrent, runCashoutOperation, recoverCashoutOperation } from './CashoutOperation';
 
 // Module-level circuit breaker — resets after 5 min cooldown
 const _membershipBreaker = (() => {
@@ -561,8 +562,13 @@ export async function leaveClub(clubId: string): Promise<void> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
-  const resolvedId = await resolveClubUUID(clubId);
   const userId = user.user.id;
+  const isCurrent = captureCashoutAccountGuard(userId);
+  const assertCurrent = () => {
+    if (!isCurrent()) throw new Error('Account Changed. Refresh To Check Your Club Departure.');
+  };
+  const resolvedId = await resolveClubUUID(clubId);
+  assertCurrent();
 
   // 1. Get membership record
   const { data: member, error: memErr } = await supabase
@@ -572,6 +578,7 @@ export async function leaveClub(clubId: string): Promise<void> {
     .eq('user_id', userId)
     .maybeSingle();
 
+  assertCurrent();
   if (memErr || !member) {
     throw new Error('You are not a member of this club');
   }
@@ -617,11 +624,12 @@ export async function leaveClub(clubId: string): Promise<void> {
    * and say so rather than completing a departure that loses money. */
   const { data: pendingCashouts, error: pendingErr } = await supabase
     .from('cashout_requests')
-    .select('id')
+    .select('id, club_id, player_id, amount::text, status')
     .eq('club_id', resolvedId)
     .eq('player_id', userId)
     .eq('status', 'pending');
 
+  assertCurrent();
   if (pendingErr) {
     reportError(pendingErr, 'ClubsService.leaveClub.pendingCashouts', { clubId: resolvedId });
     throw new Error(
@@ -630,11 +638,26 @@ export async function leaveClub(clubId: string): Promise<void> {
   }
 
   for (const row of pendingCashouts ?? []) {
-    // Throws on refusal. cancelCashout reads the RPC's {success,error} envelope,
-    // so a refusal arrives as an Error and not as a silent success.
-    await cashoutService.cancelCashout(row.id, userId);
+    assertCurrent();
+    const amount = Number(row.amount);
+    if (row.club_id !== resolvedId || row.player_id !== userId || row.status !== 'pending' ||
+        typeof row.amount !== 'string' || !/^(0|[1-9]\d*)\.\d{2}$/.test(row.amount) ||
+        !Number.isFinite(amount) || amount <= 0 || amount > 1e9 || amount.toFixed(2) !== row.amount) {
+      throw new Error('Could Not Verify The Pending Cashout. Leaving Was Stopped.');
+    }
+    const prepared = await prepareCashoutOperation({ userId, clubId: resolvedId, targetId: row.id,
+      playerId: row.player_id, kind: 'cashout_cancel', amount, isCurrent,
+    });
+    assertCurrent();
+    const start = captureCashoutStart(prepared);
+    const recovery = await recoverCashoutOperation(start);
+    assertCashoutStartCurrent(start);
+    if (!recovery.found) await runCashoutOperation(start);
+    assertCashoutStartCurrent(start);
+    assertCurrent();
   }
 
+  assertCurrent();
   // 4. If agent, clear downline references (before removing membership)
   if (['agent', 'super_agent', 'sub_agent'].includes(member.role)) {
     try {
@@ -656,14 +679,17 @@ export async function leaveClub(clubId: string): Promise<void> {
   //    wallet (wrong account and direction) and then deleted the membership
   //    regardless of whether the debit RPC returned false.
   const { data: leaveResult, error: leaveErr } = await retryAsync(
-    () =>
-      supabase.rpc('fn_member_leave_to_treasury', {
+    () => {
+      assertCurrent();
+      return supabase.rpc('fn_member_leave_to_treasury', {
         p_club_id: resolvedId,
         p_user_id: userId,
-      }),
+      });
+    },
     2
   );
 
+  assertCurrent();
   if (leaveErr) {
     reportError(leaveErr, 'ClubsService.Leave_club_failed');
     throw new Error('Failed to leave club - please try again');
@@ -680,6 +706,7 @@ export async function leaveClub(clubId: string): Promise<void> {
   // 8. Real-time sync — emit both CLUB_LEFT and CLUB_UPDATED so all listeners react
   try {
     const { masterBus } = await import('../core/MasterBus');
+    assertCurrent();
     masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'member_left' });
     masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'member_left' });
   } catch (e) {

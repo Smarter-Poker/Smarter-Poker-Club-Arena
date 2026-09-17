@@ -1,0 +1,86 @@
+{
+  "status": "captured_read_only_preimage_not_installation_proof",
+  "original_source_file": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/accounting-40398-period-visibility-policy.json",
+  "original_source_sha256": "ac20bd8d464e8cd3ae31dcebbb1962f8324db9661ef06b9a8747697880ecdb0d",
+  "scope": "Read-only current RLS policy and table owner/ACL readback; no user rows or policies changed.",
+  "query": "BEGIN TRANSACTION READ ONLY; SET LOCAL statement_timeout='10000ms'; SELECT clock_timestamp()::text AS observed_at,(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.tablename,p.policyname) FROM pg_policies p WHERE p.schemaname='public' AND p.tablename IN('rakeback_periods','rakeback_period_payouts')) AS policies,(SELECT jsonb_agg(jsonb_build_object('table',c.relname,'owner',pg_get_userbyid(c.relowner),'acl',c.relacl,'rls',c.relrowsecurity) ORDER BY c.relname) FROM pg_class c WHERE c.oid IN('public.rakeback_periods'::regclass,'public.rakeback_period_payouts'::regclass)) AS access;COMMIT;",
+  "result": [
+    {
+      "observed_at": "2026-09-15 00:58:27.649778+00",
+      "policies": [
+        {
+          "cmd": "SELECT",
+          "qual": "(club_id IN ( SELECT c.id\n   FROM clubs c\n  WHERE (c.owner_id = ( SELECT auth.uid() AS uid))))",
+          "roles": [
+            "authenticated"
+          ],
+          "tablename": "rakeback_period_payouts",
+          "permissive": "PERMISSIVE",
+          "policyname": "club owners read own club rakeback",
+          "schemaname": "public",
+          "with_check": null
+        },
+        {
+          "cmd": "ALL",
+          "qual": "true",
+          "roles": [
+            "service_role"
+          ],
+          "tablename": "rakeback_period_payouts",
+          "permissive": "PERMISSIVE",
+          "policyname": "service_role full access",
+          "schemaname": "public",
+          "with_check": "true"
+        },
+        {
+          "cmd": "SELECT",
+          "qual": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = rakeback_periods.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)))))",
+          "roles": [
+            "public"
+          ],
+          "tablename": "rakeback_periods",
+          "permissive": "PERMISSIVE",
+          "policyname": "rakeback_read",
+          "schemaname": "public",
+          "with_check": null
+        },
+        {
+          "cmd": "ALL",
+          "qual": "true",
+          "roles": [
+            "service_role"
+          ],
+          "tablename": "rakeback_periods",
+          "permissive": "PERMISSIVE",
+          "policyname": "rakeback_svc",
+          "schemaname": "public",
+          "with_check": null
+        }
+      ],
+      "access": [
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=rxt/postgres",
+            "authenticated=rxt/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "owner": "postgres",
+          "table": "rakeback_period_payouts"
+        },
+        {
+          "acl": [
+            "postgres=arwdDxtm/postgres",
+            "anon=rxt/postgres",
+            "authenticated=rxt/postgres",
+            "service_role=arwdDxtm/postgres"
+          ],
+          "rls": true,
+          "owner": "postgres",
+          "table": "rakeback_periods"
+        }
+      ]
+    }
+  ]
+}

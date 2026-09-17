@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -20,6 +20,10 @@ const cleanEnv = Object.fromEntries(
         'GITHUB_REPOSITORY',
         'STRICT_PROVENANCE',
         'CA_DIST',
+        'GITHUB_EVENT_NAME',
+        'GITHUB_EVENT_PATH',
+        'GITHUB_REF',
+        'GITHUB_SHA',
       ].includes(key)
   )
 );
@@ -126,6 +130,93 @@ function stamp(dir: string, overrides: Record<string, string> = {}) {
 }
 
 describe('actual build provenance subprocess', () => {
+  function pullRequestFixture() {
+    const dir = repository('current');
+    const base = git(dir, 'rev-parse', 'HEAD');
+    git(dir, 'checkout', '--quiet', '-b', 'feature');
+    git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'feature');
+    const head = git(dir, 'rev-parse', 'HEAD');
+    git(dir, 'checkout', '--quiet', 'main');
+    git(dir, 'merge', '--quiet', '--no-ff', 'feature', '-m', 'PR merge');
+    const merge = git(dir, 'rev-parse', 'HEAD');
+    git(dir, 'checkout', '--quiet', '-b', 'new-main', base);
+    git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'concurrent main');
+    git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git(dir, 'checkout', '--quiet', '--detach', merge);
+    const eventPath = path.join(dir, 'event.json');
+    writeFileSync(
+      eventPath,
+      JSON.stringify({
+        number: 4779,
+        pull_request: {
+          number: 4779,
+          base: { sha: base, ref: 'main' },
+          head: { sha: head },
+        },
+      })
+    );
+    return {
+      dir,
+      base,
+      head,
+      merge,
+      eventPath,
+      env: {
+        GITHUB_ACTIONS: 'true',
+        GITHUB_EVENT_NAME: 'pull_request',
+        GITHUB_REF: 'refs/pull/4779/merge',
+        GITHUB_SHA: merge,
+        GITHUB_EVENT_PATH: eventPath,
+      },
+    };
+  }
+
+  it('tests the exact PR merge when unrelated main advances, retaining real distance and a non-release purpose', () => {
+    const { dir, base, head, merge, env } = pullRequestFixture();
+    const result = stamp(dir, env);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.info).toMatchObject({
+      commit: merge,
+      behindMain: 1,
+      buildPurpose: 'pull-request-validation',
+      pullRequestBase: base,
+      pullRequestHead: head,
+    });
+  });
+
+  it.each([
+    'wrong-head',
+    'wrong-base',
+    'wrong-ref',
+    'wrong-sha',
+    'missing-event',
+    'non-pr-event',
+    'strict-release',
+  ])('refuses stale source with invalid validation context: %s', (scenario) => {
+    const { dir, base, head, eventPath, env } = pullRequestFixture();
+    if (scenario === 'wrong-head' || scenario === 'wrong-base') {
+      writeFileSync(
+        eventPath,
+        JSON.stringify({
+          number: 4779,
+          pull_request: {
+            number: 4779,
+            base: { sha: scenario === 'wrong-base' ? head : base, ref: 'main' },
+            head: { sha: scenario === 'wrong-head' ? base : head },
+          },
+        })
+      );
+    }
+    const overrides: Record<string, string> = { ...env };
+    if (scenario === 'wrong-ref') overrides.GITHUB_REF = 'refs/pull/1/merge';
+    if (scenario === 'wrong-sha') overrides.GITHUB_SHA = head;
+    if (scenario === 'missing-event') overrides.GITHUB_EVENT_PATH = eventPath + '.absent';
+    if (scenario === 'non-pr-event') overrides.GITHUB_EVENT_NAME = 'repository_dispatch';
+    if (scenario === 'strict-release') overrides.STRICT_PROVENANCE = '1';
+    const result = stamp(dir, overrides);
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+  });
+
   it.each([
     ['GitHub Actions', { GITHUB_ACTIONS: 'true' }],
     ['strict local release', { STRICT_PROVENANCE: '1' }],
@@ -186,6 +277,41 @@ describe('actual build provenance subprocess', () => {
     expect(result.status).toBe(0);
     expect(result.info).toMatchObject({ behindMain: 0, aheadMain: 1 });
     expect(existsSync(path.join(dir, 'dist'))).toBe(false);
+  });
+
+  it('executes the actual publisher gate and refuses a validation artifact even at zero distance', () => {
+    const dir = directory();
+    mkdirSync(path.join(dir, 'dist'));
+    const workflow = readFileSync(path.resolve('.github/workflows/publish-club-arena.yml'), 'utf8');
+    const source = workflow.match(
+      /node - "\$EXPECTED_SHA"[^\n]*<<'NODE'\n([\s\S]*?)\n {10}NODE/
+    )?.[1];
+    expect(source).toBeTruthy();
+    const commit = 'a'.repeat(40);
+    const repository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+    const artifact = {
+      schema: 1,
+      commit,
+      builtBy: 'github-actions',
+      dirty: false,
+      historyComplete: true,
+      behindMain: 0,
+      aheadMain: 0,
+      ciRun: `https://github.com/${repository}/actions/runs/12345`,
+    };
+    for (const purpose of ['release', 'pull-request-validation', 'unknown']) {
+      writeFileSync(
+        path.join(dir, 'dist/ca-provenance.json'),
+        JSON.stringify({ ...artifact, buildPurpose: purpose })
+      );
+      const run = spawnSync(process.execPath, ['-', commit, repository, '12345'], {
+        cwd: dir,
+        env: fixtureEnv,
+        encoding: 'utf8',
+        input: source,
+      });
+      expect(run.status, run.stdout + run.stderr).toBe(purpose === 'release' ? 0 : 1);
+    }
   });
 
   it.each(['shallow', 'full'] as const)(

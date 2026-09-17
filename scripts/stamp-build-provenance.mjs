@@ -39,7 +39,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 // CA_DIST: the native build (npm run build:native) writes dist-native/ so the
@@ -82,8 +82,47 @@ const historyComplete =
 const behindMain = hasOriginMain && historyComplete ? gitCount('HEAD..origin/main') : null;
 const aheadMain = hasOriginMain && historyComplete ? gitCount('origin/main..HEAD') : null;
 
+// PR browser/build checks exercise GitHub's immutable merge candidate. A later
+// unrelated merge on main must not prevent those tests from running. This is
+// accepted only for the exact two-parent candidate named by the actual PR event;
+// the artifact is marked validation-only and cannot enter the publisher.
+function pullRequestValidation() {
+  if (
+    process.env.GITHUB_ACTIONS !== 'true' ||
+    process.env.GITHUB_EVENT_NAME !== 'pull_request' ||
+    process.env.STRICT_PROVENANCE === '1' ||
+    historyComplete !== true
+  )
+    return null;
+  try {
+    const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+    const pr = event.pull_request;
+    if (
+      !Number.isSafeInteger(event.number) ||
+      event.number < 1 ||
+      pr?.number !== event.number ||
+      pr?.base?.ref !== 'main' ||
+      process.env.GITHUB_REF !== `refs/pull/${event.number}/merge` ||
+      process.env.GITHUB_SHA !== commit ||
+      !/^[a-f0-9]{40}$/.test(pr?.base?.sha ?? '') ||
+      !/^[a-f0-9]{40}$/.test(pr?.head?.sha ?? '')
+    )
+      return null;
+    const parents = git('show -s --format=%P HEAD').split(' ');
+    if (parents.length !== 2 || parents[0] !== pr.base.sha || parents[1] !== pr.head.sha)
+      return null;
+    return { base: pr.base.sha, head: pr.head.sha };
+  } catch {
+    // Unreadable or mismatched event evidence retains the strict release rule.
+    return null;
+  }
+}
+const validation = pullRequestValidation();
+
 const info = {
   schema: 1,
+  buildPurpose: validation ? 'pull-request-validation' : 'release',
+  ...(validation ? { pullRequestBase: validation.base, pullRequestHead: validation.head } : {}),
   commit,
   commitTime,
   buildTime: new Date().toISOString(),
@@ -134,9 +173,13 @@ if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
     `  Shipping it would erase whatever landed in those commits — that is\n` +
     `  precisely the 2026-08-21 throwables regression.\n\n` +
     `  FIX: merge current origin/main into this feature branch, then rebuild.\n`;
-  if (strictProvenance) {
+  if (strictProvenance && !validation) {
     console.error(msg);
     process.exit(1);
   }
-  console.warn(msg);
+  console.warn(
+    validation
+      ? `PR validation candidate retained; main advanced by ${behindMain} commit(s). This artifact is not publishable.`
+      : msg
+  );
 }

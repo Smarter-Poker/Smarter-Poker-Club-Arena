@@ -1,5 +1,7 @@
 # Horse Brain: Phases 1–5 reference blueprint
 
+> **Current implementation plan — September 17, 2026:** use the [source-grounded Phase 6–15 completion plan](horse-brain-phases6-15-completion-plan-2026-09-17.md), based on protected source `4a2bff6f`. Earlier dated source-only counts and delivery restrictions below are historical; they are not current execution or completion status.
+
 > September 17 delivery status: see the [restored-provider release record](horse-restored-provider-release-2026-09-17.md). Dated verification below remains evidence of its named source, not a fresh release or whole-program completion claim.
 
 > **Current status — September 15, 2026 (source-only).** The reviewed blueprint requirements below remain in force. The owned Club Arena worktree contains 52 maintained runtime source/test/helper edits over `a8ce6b5697ba17cf92d81b8559e74c1d22f9f595`, with 1,547 focused cases prepared; no new tests have been executed and no installation or publication has occurred for these changes. Older counts and status statements below (including 651-case composition snapshots) are historical observations, not current acceptance claims. See [current Horse Brain acceptance record](/Users/smarter.poker/Documents/Codex/2026-09-11/ple/outputs/horse-brain-current-acceptance.md) for current evidence and remaining gates.
@@ -189,7 +191,7 @@ The swarm also exposed truncated cash equity populations: ordinary postflop samp
 | G7 Independent correctness | Negative, boundary, differential/oracle, mutation and consumer tests                                       | Production algorithm used as its own oracle; failed cases omitted               |
 | G8 Performance/replay      | Frozen populations/seeds/work budgets; bounded latency and restart replay where required                   | Faster result achieved by silently reducing useful work or changing seed inputs |
 | G9 Learning/promotion      | Immutable source windows, untouched holdouts, prespecified metric, rollback                                | Observational tag or low sample count becomes causal permission                 |
-| G10 Publication/use        | Reviewed source and artifact identity, qualified native installation, served identity and natural receipts | Local pass, open change, old release or empty dataset called complete           |
+| G10 Publication/use        | Reviewed source and artifact identity, protected provider publication, served identity and natural receipts | Local pass, open change, old release or empty dataset called complete           |
 
 For each gate record **verified now**, **historical only**, **implemented but unverified**, **defective**, **unavailable external input**, or **not applicable with reason**. Do not average these into a completion percentage. Phase-specific strategy depth, critical economic-state tests and predefined promotion criteria from Phase 6/7 remain mandatory.
 

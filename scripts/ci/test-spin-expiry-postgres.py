@@ -44,7 +44,7 @@ CLEAN_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
              'PYTHONDONTWRITEBYTECODE': '1'}
 REPLACEMENTS = {'scripts/qualification/spin-expiry-business-races.md': 'scripts/qualification/spin-expiry-business-races.md', 'scripts/qualification/spin-expiry-business-races.py': 'scripts/qualification/spin-expiry-business-races.py', 'scripts/qualification/spin-expiry-business-state.sql': 'scripts/qualification/spin-expiry-business-state.sql', 'scripts/qualification/spin-expiry-committed-refund-oracle.py': 'scripts/qualification/spin-expiry-committed-refund-oracle.py', 'scripts/qualification/spin-expiry-committed-refund-state.sql': 'scripts/qualification/spin-expiry-committed-refund-state.sql', 'scripts/qualification/spin-expiry-committed-refund.authority.json': 'scripts/qualification/spin-expiry-committed-refund.authority.json', 'scripts/qualification/spin-expiry-committed-refund.md': 'scripts/qualification/spin-expiry-committed-refund.md', 'scripts/qualification/spin-expiry-committed-refund.py': 'scripts/qualification/spin-expiry-committed-refund.py', 'scripts/qualification/spin-expiry-lock-order.authority.json': 'scripts/qualification/spin-expiry-lock-order.authority.json', 'scripts/qualification/spin-expiry-lock-order.component-inputs.sql': 'scripts/qualification/spin-expiry-lock-order.component-inputs.sql', 'scripts/qualification/spin-expiry-lock-order.md': 'scripts/qualification/spin-expiry-lock-order.md', 'scripts/qualification/spin-expiry-lock-order.sql': 'scripts/qualification/spin-expiry-lock-order.sql', 'scripts/qualification/spin-expiry-real-funded-fixture.sql': 'scripts/qualification/spin-expiry-real-funded-fixture.sql', 'supabase/components/spin-expiry-lock-order.rollback.sql': 'supabase/components/spin-expiry-lock-order.rollback.sql', 'supabase/components/spin-expiry-lock-order.sql': 'supabase/components/spin-expiry-lock-order.sql'}
 RETENTION_MANIFEST = 'scripts/qualification/spin-history-retention.manifest.json'
-RETENTION_MANIFEST_SHA256 = 'b08dd0fae57054ea596fbe9a8a2072c26372e2150a20bffe13b37d12161c9539'
+RETENTION_MANIFEST_SHA256 = '2f9f2d01943c8c607c79f16a3607132aca42a7210a854bacbb3fd4beaa43c160'
 RETENTION_INPUTS = (
     'scripts/qualification/fixtures/spin-history-retention/capture-closure.sql',
     'scripts/qualification/fixtures/spin-history-retention/capture-provider.sql',
@@ -70,7 +70,7 @@ RETENTION_INPUTS = (
     'scripts/qualification/spin-history-retention.manifest.json',
 )
 COMPLETED_MANIFEST = 'scripts/qualification/spin-history-retention-completed.manifest.json'
-COMPLETED_MANIFEST_SHA256 = 'ac47c76a7e711b63cb7c4d44f446a7ea225dc80bb816dd6db7a7c453c91327ec'
+COMPLETED_MANIFEST_SHA256 = '02486260a8f94c9d72fd9f1c7a037b486c5818d80aa5aa80ba1c51e2d04fb35e'
 COMPLETED_INPUTS = (
     'scripts/qualification/fixtures/spin-history-retention/capture-completed-start.sql',
     'scripts/qualification/fixtures/spin-history-retention/completed-start-authority.json',
@@ -327,7 +327,7 @@ def validate_completed_sources(files):
     for name, expected in manifest['files'].items():
         require(pin(files[name]) == expected, 'completed retention source pin mismatch: ' + name)
     # Preserve the author provenance separately; consume only the exact adopted
-    # provider revision, including its native-discovered ACL guard correction.
+    # provider revision, including its native-discovered authority/comparison corrections.
     require(manifest['consumed_retention_manifest'] == {
         'path': RETENTION_MANIFEST, 'sha256': RETENTION_MANIFEST_SHA256,
         'all_existing_leaf_pins_match': True}, 'completed retention dependency revision differs')

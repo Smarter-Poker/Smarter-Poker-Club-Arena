@@ -77,7 +77,7 @@ WITH selected AS (
   AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}') THEN RAISE EXCEPTION 'spin retention closure: function drift'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='zz_ca_bomb_hand_keeps_its_award_units' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$trigger$CREATE CONSTRAINT TRIGGER zz_ca_bomb_hand_keeps_its_award_units AFTER INSERT ON public.hand_history DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.bomb_pot IS NOT NULL)) EXECUTE FUNCTION fn_ca_bomb_hand_keeps_its_award_units()$trigger$
+  AND pg_get_triggerdef(t.oid)=$trigger$CREATE CONSTRAINT TRIGGER zz_ca_bomb_hand_keeps_its_award_units AFTER INSERT ON public.hand_history DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.bomb_pot IS NOT NULL)) EXECUTE FUNCTION fn_ca_bomb_hand_keeps_its_award_units()$trigger$
   AND t.tgfoid='public.fn_ca_bomb_hand_keeps_its_award_units()'::regprocedure)
  OR EXISTS(SELECT 1 FROM public.table_pending_addons) THEN RAISE EXCEPTION 'spin retention closure: binding/data drift'; END IF;
 END;
@@ -89,42 +89,42 @@ DO $history_bindings$ BEGIN
   RAISE EXCEPTION 'retention provider: unexpected history binding count'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='hand_history_club_member_stats' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$binding$CREATE TRIGGER hand_history_club_member_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_hand_history_club_member_stats()$binding$ AND t.tgfoid=to_regprocedure('public.trg_hand_history_club_member_stats()')
+  AND pg_get_triggerdef(t.oid)=$binding$CREATE TRIGGER hand_history_club_member_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_hand_history_club_member_stats()$binding$ AND t.tgfoid=to_regprocedure('public.trg_hand_history_club_member_stats()')
   AND md5(pg_get_functiondef(p.oid))='4410a2ecf837afe8a47bb2956542c79e' AND pg_get_userbyid(p.proowner)='postgres'
   AND p.proacl::text='{postgres=X/postgres}') THEN RAISE EXCEPTION 'retention provider: history trigger authority differs %','hand_history_club_member_stats'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='hand_history_fold_stats' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$binding$CREATE TRIGGER hand_history_fold_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_fold_hand_winnings()$binding$ AND t.tgfoid=to_regprocedure('public.fn_fold_hand_winnings()')
+  AND pg_get_triggerdef(t.oid)=$binding$CREATE TRIGGER hand_history_fold_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_fold_hand_winnings()$binding$ AND t.tgfoid=to_regprocedure('public.fn_fold_hand_winnings()')
   AND md5(pg_get_functiondef(p.oid))='59814db07c86250f8642143caad0542b' AND pg_get_userbyid(p.proowner)='postgres'
   AND p.proacl::text='{postgres=X/postgres}') THEN RAISE EXCEPTION 'retention provider: history trigger authority differs %','hand_history_fold_stats'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='hand_history_position_stats' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$binding$CREATE TRIGGER hand_history_position_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_hand_history_position_stats()$binding$ AND t.tgfoid=to_regprocedure('public.trg_hand_history_position_stats()')
+  AND pg_get_triggerdef(t.oid)=$binding$CREATE TRIGGER hand_history_position_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_hand_history_position_stats()$binding$ AND t.tgfoid=to_regprocedure('public.trg_hand_history_position_stats()')
   AND md5(pg_get_functiondef(p.oid))='11a70eefb5afe5e7b28c1bc29425289f' AND pg_get_userbyid(p.proowner)='postgres'
   AND p.proacl::text='{postgres=X/postgres}') THEN RAISE EXCEPTION 'retention provider: history trigger authority differs %','hand_history_position_stats'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='trg_ca_capture_hand_facts' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$binding$CREATE TRIGGER trg_ca_capture_hand_facts BEFORE DELETE ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_hand_facts()$binding$ AND t.tgfoid=to_regprocedure('public.fn_ca_capture_hand_facts()')
+  AND pg_get_triggerdef(t.oid)=$binding$CREATE TRIGGER trg_ca_capture_hand_facts BEFORE DELETE ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_hand_facts()$binding$ AND t.tgfoid=to_regprocedure('public.fn_ca_capture_hand_facts()')
   AND md5(pg_get_functiondef(p.oid))='fcdf4dc8d0db55b61cbbb2f79b60a09e' AND pg_get_userbyid(p.proowner)='postgres'
   AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}') THEN RAISE EXCEPTION 'retention provider: history trigger authority differs %','trg_ca_capture_hand_facts'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='trg_ca_stats_live_from_hand' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$binding$CREATE TRIGGER trg_ca_stats_live_from_hand AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_ca_stats_live_from_hand()$binding$ AND t.tgfoid=to_regprocedure('public.trg_ca_stats_live_from_hand()')
+  AND pg_get_triggerdef(t.oid)=$binding$CREATE TRIGGER trg_ca_stats_live_from_hand AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_ca_stats_live_from_hand()$binding$ AND t.tgfoid=to_regprocedure('public.trg_ca_stats_live_from_hand()')
   AND md5(pg_get_functiondef(p.oid))='3a8af7a54df499afea2049c0392c9a50' AND pg_get_userbyid(p.proowner)='postgres'
   AND p.proacl::text='{postgres=X/postgres}') THEN RAISE EXCEPTION 'retention provider: history trigger authority differs %','trg_ca_stats_live_from_hand'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='trg_enqueue_hand_daily_missions' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$binding$CREATE TRIGGER trg_enqueue_hand_daily_missions AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_enqueue_hand_daily_missions()$binding$ AND t.tgfoid=to_regprocedure('public.fn_enqueue_hand_daily_missions()')
+  AND pg_get_triggerdef(t.oid)=$binding$CREATE TRIGGER trg_enqueue_hand_daily_missions AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_enqueue_hand_daily_missions()$binding$ AND t.tgfoid=to_regprocedure('public.fn_enqueue_hand_daily_missions()')
   AND md5(pg_get_functiondef(p.oid))='a89665914529f8f2b981c26bfd10d6e4' AND pg_get_userbyid(p.proowner)='postgres'
   AND p.proacl::text='{postgres=X/postgres}') THEN RAISE EXCEPTION 'retention provider: history trigger authority differs %','trg_enqueue_hand_daily_missions'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='trg_log_jackpot_hand_deleted' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$binding$CREATE TRIGGER trg_log_jackpot_hand_deleted BEFORE DELETE ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_log_jackpot_hand_deleted()$binding$ AND t.tgfoid=to_regprocedure('public.fn_log_jackpot_hand_deleted()')
+  AND pg_get_triggerdef(t.oid)=$binding$CREATE TRIGGER trg_log_jackpot_hand_deleted BEFORE DELETE ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_log_jackpot_hand_deleted()$binding$ AND t.tgfoid=to_regprocedure('public.fn_log_jackpot_hand_deleted()')
   AND md5(pg_get_functiondef(p.oid))='812b538f4aa1e10ec08fdee35df00d02' AND pg_get_userbyid(p.proowner)='postgres'
   AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}') THEN RAISE EXCEPTION 'retention provider: history trigger authority differs %','trg_log_jackpot_hand_deleted'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.hand_history'::regclass
   AND t.tgname='zz_ca_bomb_hand_keeps_its_award_units' AND t.tgenabled='O'
-  AND pg_get_triggerdef(t.oid,true)=$binding$CREATE CONSTRAINT TRIGGER zz_ca_bomb_hand_keeps_its_award_units AFTER INSERT ON public.hand_history DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.bomb_pot IS NOT NULL)) EXECUTE FUNCTION fn_ca_bomb_hand_keeps_its_award_units()$binding$ AND t.tgfoid=to_regprocedure('public.fn_ca_bomb_hand_keeps_its_award_units()')
+  AND pg_get_triggerdef(t.oid)=$binding$CREATE CONSTRAINT TRIGGER zz_ca_bomb_hand_keeps_its_award_units AFTER INSERT ON public.hand_history DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.bomb_pot IS NOT NULL)) EXECUTE FUNCTION fn_ca_bomb_hand_keeps_its_award_units()$binding$ AND t.tgfoid=to_regprocedure('public.fn_ca_bomb_hand_keeps_its_award_units()')
   AND md5(pg_get_functiondef(p.oid))='4f19a7516985b6e452732a891289ad2b' AND pg_get_userbyid(p.proowner)='postgres'
   AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}') THEN RAISE EXCEPTION 'retention provider: history trigger authority differs %','zz_ca_bomb_hand_keeps_its_award_units'; END IF;
 END $history_bindings$;

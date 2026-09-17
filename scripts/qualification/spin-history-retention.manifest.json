@@ -51,8 +51,8 @@
       "sha256": "2c059d03dd88345f6c3a8cd9061fd9958e3aaa9b39e6b9719b54cf83d7dbdbbd"
     },
     "scripts/qualification/fixtures/spin-history-retention/provider-closure-check.sql": {
-      "bytes": 15309,
-      "sha256": "0f3a43d17955f71a5f7198f131e6cf9099b1469760f0badce30968c2f577fd53"
+      "bytes": 15264,
+      "sha256": "0af3be8b1d3895e150a51d4ad49a14ad6c8334dc6b037f491b2b91fc3d9e1a6b"
     },
     "scripts/qualification/fixtures/spin-history-retention/provider-closure.sql": {
       "bytes": 22706,

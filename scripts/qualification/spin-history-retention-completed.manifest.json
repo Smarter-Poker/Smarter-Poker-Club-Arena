@@ -101,11 +101,11 @@
     "path": "scripts/qualification/spin-history-retention.manifest.json",
     "sha256": "5d663a0ffef24d003698ed8afd8ae5e1ae7cb48b83743fb356ac6f4a83960067",
     "all_existing_leaf_pins_match": false,
-    "note": "Historical author source only; the adopted provider below includes formatting and the actual bomb-handler ACL guard correction."
+    "note": "Historical author source only; the adopted provider below includes formatting and the actual bomb-handler ACL and trigger-deparser comparison corrections."
   },
   "consumed_retention_manifest": {
     "path": "scripts/qualification/spin-history-retention.manifest.json",
-    "sha256": "b08dd0fae57054ea596fbe9a8a2072c26372e2150a20bffe13b37d12161c9539",
+    "sha256": "2f9f2d01943c8c607c79f16a3607132aca42a7210a854bacbb3fd4beaa43c160",
     "all_existing_leaf_pins_match": true
   },
   "integration": {

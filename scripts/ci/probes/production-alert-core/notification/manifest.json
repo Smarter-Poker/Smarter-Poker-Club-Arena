@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "Isolated composed bridge/raiser/escalator source, malformed identity and actual trigger/mirror/owner notification/inbox chain; no money or connected service proof; cash checker complete-evidence and preserved suppression policy through actual financial trigger graph, with real connected control",
+  "scope": "Isolated composed bridge/raiser/escalator source, malformed identity and actual trigger/mirror/owner notification/inbox chain; no money or connected service proof; cash checker complete-evidence and preserved informational incident and no-notification policy through actual financial trigger graph, with real connected control",
   "historicalBaseline": {
     "sourceManifestSha256": "638d8a1ba6927538d9eede3819112f3754cffa9e778f3a01f1db10b8244f5280",
     "receiptSha256": "1d0988d12d1ab8e950a5c23b103df5b5590cfafc98a111528b80d912027e2f5e",
@@ -108,8 +108,8 @@
     },
     "cash_connected": {
       "path": "scripts/qualification/cash-pot-check-connected.sql",
-      "sha256": "518384ebfd7c0ca0a02b906bf77896d7b4183474b57ef9592e1528909e45dec6",
-      "bytes": 13869
+      "sha256": "9e270f4bccbacdcf4c650509937d87a7798bf925faf837ed51b47eb38594191a",
+      "bytes": 18817
     },
     "cash_preimage": {
       "path": "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql",

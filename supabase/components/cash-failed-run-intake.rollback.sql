@@ -330,7 +330,7 @@ $body$;$ddl$;
   RAISE EXCEPTION 'cash failed-run outcome is immutable';
 END
 $body$;$ddl$;
- v_new boolean; v_fn oid; v_rel oid; v_model oid; v_temp text; v_a jsonb; v_b jsonb;
+ v_new boolean; v_fn oid; v_trigger oid; v_rel oid; v_model oid; v_temp text; v_a jsonb; v_b jsonb;
 BEGIN
  PERFORM pg_advisory_xact_lock(hashtextextended('component:cash-failed-run-intake',0));
  IF current_user<>'postgres' OR current_setting('server_version_num')::int NOT BETWEEN 170000 AND 179999
@@ -440,8 +440,26 @@ BEGIN
  IF v_remove THEN
   IF v_fn IS NULL OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='cron.job_run_details'::regclass
     AND tgname='ca_cash_failed_run_intake') THEN RAISE EXCEPTION 'cash intake: installation incomplete'; END IF;
-  DROP TRIGGER ca_cash_failed_run_intake ON cron.job_run_details;
-  DROP FUNCTION public.fn_ca_cash_failed_run_intake();
+  -- postgres owns this handler but does not own the extension's run table.
+  -- DROP TRIGGER therefore lacks authority even though CREATE TRIGGER is granted.
+  -- Dropping our owned function may remove ONLY its one exact normal dependency.
+  SELECT oid INTO STRICT v_trigger FROM pg_trigger
+   WHERE tgrelid='cron.job_run_details'::regclass AND tgname='ca_cash_failed_run_intake';
+  IF (SELECT count(*) FROM pg_depend WHERE refclassid='pg_proc'::regclass
+       AND refobjid=v_fn)<>1
+    OR NOT EXISTS(SELECT 1 FROM pg_depend WHERE refclassid='pg_proc'::regclass
+       AND refobjid=v_fn AND refobjsubid=0 AND classid='pg_trigger'::regclass
+       AND objid=v_trigger AND objsubid=0 AND deptype='n')
+    OR EXISTS(SELECT 1 FROM pg_depend WHERE refclassid='pg_trigger'::regclass AND refobjid=v_trigger)
+    OR EXISTS(SELECT 1 FROM pg_depend WHERE classid='pg_proc'::regclass AND objid=v_fn AND deptype='e') THEN
+    RAISE EXCEPTION 'cash intake: rollback dependency boundary drift';
+  END IF;
+  DROP FUNCTION public.fn_ca_cash_failed_run_intake() CASCADE;
+  IF to_regprocedure('public.fn_ca_cash_failed_run_intake()') IS NOT NULL
+    OR EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='cron.job_run_details'::regclass
+      AND tgname='ca_cash_failed_run_intake') THEN
+    RAISE EXCEPTION 'cash intake: owned handler removal incomplete';
+  END IF;
  ELSE
   IF v_fn IS NULL THEN
    EXECUTE v_handler_ddl;

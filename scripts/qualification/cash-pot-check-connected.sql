@@ -1,6 +1,7 @@
 -- SOURCE ONLY / UNRUN. Same owned PG17 full-schema core fixture; no new database
 -- framework, financial repair, synthetic payment or production execution.
--- Cash's existing severity policy suppresses incident/inbox delivery. The real
+-- Cash's existing critical condition files an informational incident and mirror,
+-- then suppresses notification. Its warning condition files no incident. The
 -- qualifying control must reach that same trigger/raiser/notification graph.
 \set ON_ERROR_STOP on
 BEGIN;
@@ -52,6 +53,9 @@ CREATE TEMP TABLE cash_before AS SELECT pg_temp.cash_business_snapshot() money,
  (SELECT jsonb_agg(to_jsonb(n) ORDER BY id) FROM notifications n) notifications,
  (SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM operational_alert_events e) inbox,
  (SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM push_outbox p) pushes;
+-- A real eligible fixture recipient makes no-notification an actual policy test.
+INSERT INTO ca_incident_recipients(user_id,scope,active,senior)
+ VALUES('47965354-0e56-43ef-931c-ddaab82af765','platform',true,true);
 -- Null table ids and empty participants are valid source rows; every authentic
 -- hand-history constraint/trigger remains enabled. No financial entity is invented.
 INSERT INTO hand_history(id,table_id,hand_number,created_at,pot_size,rake_amount,bbj_amount,
@@ -67,13 +71,45 @@ SELECT pg_temp.cash_connected_assert((SELECT result=jsonb_build_object('ok',true
  'hands_checked',23,'pot_not_distributed',1,'pot_not_distributed_chips',1,
  'no_winner_recorded',21,'no_winner_recorded_chips',620,'conditions_alerted',2)
  FROM cash_results WHERE label='before'), 'original financial arithmetic and result');
-SELECT pg_temp.cash_connected_assert((SELECT count(*)=2 FROM financial_alerts
- WHERE source='fn_cash_pot_conservation_check')
- AND NOT EXISTS(SELECT 1 FROM ca_drift_incidents) AND NOT EXISTS(SELECT 1 FROM ca_incident_file_failures)
+-- The old comment in the bridge is not an early return in the actual raiser:
+-- it persists an info incident, created event and financial mirror, then skips
+-- fn_ca_incident_notify. Assert each real observable instead of erasing it.
+SELECT jsonb_build_object('cash_source_findings',(SELECT count(*) FROM financial_alerts WHERE source='fn_cash_pot_conservation_check'),
+ 'informational_mirrors',(SELECT count(*) FROM financial_alerts WHERE source='drift_incident:financial_alerts:fn_cash_pot_conservation_check'),
+ 'incidents',(SELECT count(*) FROM ca_drift_incidents),'created_events',(SELECT count(*) FROM ca_incident_events WHERE kind='created'),
+ 'incident_failures',(SELECT count(*) FROM ca_incident_file_failures),'notifications',(SELECT count(*) FROM notifications));
+SELECT pg_temp.cash_connected_assert((SELECT count(*)=2 FROM financial_alerts WHERE source='fn_cash_pot_conservation_check')
+ AND (SELECT count(*)=1 FROM financial_alerts WHERE source='fn_cash_pot_conservation_check'
+   AND severity='critical' AND context->>'kind'='pot_not_distributed' AND (context->>'chips')::numeric=1
+   AND context->>'dedupe_key'='pot_not_distributed' AND context->>'hands'='1')
+ AND (SELECT count(*)=1 FROM financial_alerts WHERE source='fn_cash_pot_conservation_check'
+   AND severity='warning' AND context->>'kind'='no_winner_recorded' AND (context->>'chips')::numeric=620
+   AND context->>'dedupe_key'='no_winner_recorded' AND context->>'hands'='21'),
+ 'original exact two cash-source financial findings');
+SELECT pg_temp.cash_connected_assert((SELECT count(*)=1 FROM ca_drift_incidents)
+ AND (SELECT count(*)=1 FROM ca_drift_incidents i JOIN financial_alerts f ON i.metadata->>'alert_id'=f.id::text
+   WHERE f.source='fn_cash_pot_conservation_check' AND f.context->>'kind'='pot_not_distributed'
+   AND i.source='financial_alerts:fn_cash_pot_conservation_check' AND i.severity='info'
+   AND i.classification='ledger_imbalance' AND i.discrepancy_amount=0 AND i.occurrences=1 AND i.status='open'
+   AND i.dedupe_key='fa:fn_cash_pot_conservation_check:e728963d10561045c5d72ce51e57bbf6'
+   AND i.metadata=f.context||jsonb_build_object('alert_id',f.id)),
+ 'original exact informational incident retains the critical cash finding identity');
+SELECT pg_temp.cash_connected_assert((SELECT count(*)=3 FROM financial_alerts)
+ AND (SELECT count(*)=1 FROM financial_alerts f JOIN ca_drift_incidents i ON f.context->>'incident_id'=i.id::text
+   WHERE f.source='drift_incident:financial_alerts:fn_cash_pot_conservation_check' AND f.severity='info'
+   AND f.context->>'alert_id'=i.metadata->>'alert_id' AND f.message='ledger_imbalance drift 0 chips')
+ AND (SELECT count(*)=1 FROM ca_incident_events)
+ AND (SELECT count(*)=1 FROM ca_incident_events e JOIN ca_drift_incidents i ON e.incident_id=i.id
+   WHERE e.kind='created' AND e.detail=jsonb_build_object('source','financial_alerts:fn_cash_pot_conservation_check')),
+ 'original informational financial mirror and one created event persist');
+SELECT pg_temp.cash_connected_assert(NOT EXISTS(SELECT 1 FROM ca_incident_file_failures)
  AND (SELECT jsonb_agg(to_jsonb(n) ORDER BY id) FROM notifications n) IS NOT DISTINCT FROM (SELECT notifications FROM cash_before)
  AND (SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM operational_alert_events e) IS NOT DISTINCT FROM (SELECT inbox FROM cash_before),
- 'original cash findings persist but lose complete evidence and intentionally create no incident/inbox');
-CREATE TEMP TABLE cash_original_financial AS SELECT jsonb_agg(to_jsonb(f) ORDER BY id) rows FROM financial_alerts f;
+ 'original info incident deliberately sends no notification and has no complete cash evidence');
+CREATE TEMP TABLE cash_original_financial AS SELECT
+ (SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM financial_alerts f) rows,
+ (SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM ca_drift_incidents i) incidents,
+ (SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM ca_incident_events e) events;
 \ir ../../supabase/components/cash-pot-check-evidence.sql
 \ir ../../supabase/components/cash-pot-check-evidence.sql
 INSERT INTO cash_results VALUES('after',public.fn_cash_pot_conservation_check(24));
@@ -97,25 +133,44 @@ SELECT pg_temp.cash_connected_assert((SELECT count(*)=1 AND min(anomaly_rows)=22
    AND payload->>'condition_kind'='pot_not_distributed' AND payload->>'preview_count'='1'
    AND payload->>'preview_omitted_count'='0' AND (payload->>'condition_amount')::numeric=1),
  'complete 22-row evidence and both exact original financial links reach actual operational store');
-SELECT pg_temp.cash_connected_assert(NOT EXISTS(SELECT 1 FROM ca_drift_incidents)
- AND NOT EXISTS(SELECT 1 FROM ca_incident_events) AND NOT EXISTS(SELECT 1 FROM ca_incident_file_failures)
+SELECT pg_temp.cash_connected_assert(
+ (SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM ca_drift_incidents i)=(SELECT incidents FROM cash_original_financial)
+ AND (SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM ca_incident_events e)=(SELECT events FROM cash_original_financial),
+ 'six-argument producer dedupe returns before trigger: every original incident/event byte preserved');
+SELECT pg_temp.cash_connected_assert(NOT EXISTS(SELECT 1 FROM ca_incident_file_failures)
  AND (SELECT jsonb_agg(to_jsonb(n) ORDER BY id) FROM notifications n) IS NOT DISTINCT FROM (SELECT notifications FROM cash_before),
- 'cash severity policy retained: no fabricated incident or notification');
+ 'deduped cash evidence changes no original notification or hidden incident failure');
 -- Test actual insert (rather than deduped return) with the candidate. Reset only
 -- to this savepoint afterward, retaining originals and all earlier receipts.
 SAVEPOINT new_cash_alerts;
-UPDATE financial_alerts SET resolved=true,resolved_at=now(),resolution='Isolated fixture fresh-alert path';
+UPDATE financial_alerts SET resolved=true,resolved_at=now(),resolution='Isolated fixture fresh-alert path'
+ WHERE source='fn_cash_pot_conservation_check';
 INSERT INTO cash_results VALUES('fresh',public.fn_cash_pot_conservation_check(24));
 SELECT pg_temp.cash_connected_assert((SELECT count(*)=4 FROM financial_alerts WHERE source='fn_cash_pot_conservation_check')
  AND (SELECT result FROM cash_results WHERE label='fresh')=(SELECT result FROM cash_results WHERE label='before')
  AND (SELECT count(*)=2 FROM ca_cash_pot_check_evidence)
- AND (SELECT count(*)=4 FROM operational_alert_events WHERE source='cash-pot-conservation-measurement')
- AND NOT EXISTS(SELECT 1 FROM ca_drift_incidents) AND NOT EXISTS(SELECT 1 FROM ca_incident_file_failures),
- 'candidate fresh financial inserts traverse unchanged real bridge policy');
+ AND (SELECT count(*)=4 FROM operational_alert_events WHERE source='cash-pot-conservation-measurement'),
+ 'candidate fresh financial inserts preserve arithmetic and append complete evidence');
+SELECT pg_temp.cash_connected_assert((SELECT count(*)=1 FROM ca_drift_incidents)
+ AND (SELECT count(*)=1 FROM ca_drift_incidents i
+   WHERE i.id::text=(SELECT incidents->0->>'id' FROM cash_original_financial)
+   AND i.severity='info' AND i.status='resolved' AND i.occurrences=2
+   AND i.metadata=(SELECT incidents->0->'metadata' FROM cash_original_financial))
+ AND (SELECT count(*)=1 FROM financial_alerts WHERE source='drift_incident:financial_alerts:fn_cash_pot_conservation_check'
+   AND severity='info' AND resolved),
+ 'actual resolved echo increments the same informational incident without a new mirror');
+SELECT pg_temp.cash_connected_assert((SELECT count(*)=2 FROM ca_incident_events)
+ AND (SELECT count(*)=1 FROM ca_incident_events WHERE kind='created')
+ AND (SELECT count(*)=1 FROM ca_incident_events e JOIN financial_alerts f
+   ON e.detail->>'note'='Byte-identical echo of this resolved incident re-reported by fn_cash_pot_conservation_check; folded without re-paging (alert '||f.id::text||').'
+   WHERE e.kind='comment' AND f.source='fn_cash_pot_conservation_check'
+     AND f.context->>'kind'='pot_not_distributed' AND NOT f.resolved),
+ 'actual fresh critical echo appends one exact new financial identity comment');
+SELECT pg_temp.cash_connected_assert(NOT EXISTS(SELECT 1 FROM ca_incident_file_failures)
+ AND (SELECT jsonb_agg(to_jsonb(n) ORDER BY id) FROM notifications n) IS NOT DISTINCT FROM (SELECT notifications FROM cash_before),
+ 'fresh cash finding preserves no-notification policy with eligible recipient present');
 ROLLBACK TO new_cash_alerts;
 -- An allowed alert on the same real graph must still reach the durable inbox.
-INSERT INTO ca_incident_recipients(user_id,scope,active,senior)
- VALUES('47965354-0e56-43ef-931c-ddaab82af765','platform',true,true);
 CREATE FUNCTION pg_temp.cash_graph_control(p_label text) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE v_alert uuid;
 BEGIN

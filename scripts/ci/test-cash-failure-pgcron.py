@@ -283,10 +283,20 @@ def main():
         psql('DROP TRIGGER fixture_outcome_failure ON public.ca_cash_failed_run_outcomes; DROP FUNCTION cash_qualification.reject_outcome();','outcome-fault-cleanup')
         # Ordinary scheduler operation still executes after observer failures.
         native_run('scheduler-after-observer-faults',malformed=False,expected='succeeded')
-        before=psql('SELECT md5(coalesce(jsonb_agg(to_jsonb(o) ORDER BY runid,snapshot_md5),\'[]\'::jsonb)::text) FROM public.ca_cash_failed_run_outcomes o;','history-before-rollback')
+        # Reproduce the real provider authority: TRIGGER permission does not
+        # confer table ownership. The original DROP TRIGGER must fail42501.
+        require(psql("SELECT NOT (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AND has_table_privilege(current_user,'cron.job_run_details','TRIGGER') AND NOT pg_has_role(current_user,(SELECT relowner FROM pg_class WHERE oid='cron.job_run_details'::regclass),'USAGE');",'rollback-authority')=='t','Rollback fixture accidentally owns extension run table')
+        psql("DO $$ DECLARE denied boolean:=false; BEGIN BEGIN DROP TRIGGER ca_cash_failed_run_intake ON cron.job_run_details; EXCEPTION WHEN insufficient_privilege THEN denied:=true; END; IF NOT denied THEN RAISE EXCEPTION 'original DROP TRIGGER unexpectedly authorized'; END IF; END $$;",'original-rollback-denied')
+        # A foreign dependent must block the actual guarded rollback. Roll back
+        # this temporary fixture setup whether the command rejects or not.
+        negative="BEGIN; CREATE TABLE cash_qualification.extra_dependency(jobid bigint,status text); CREATE TRIGGER extra_handler_dependency AFTER INSERT ON cash_qualification.extra_dependency FOR EACH ROW EXECUTE FUNCTION public.fn_ca_cash_failed_run_intake();\n\\set ON_ERROR_STOP off\n"+ROLLBACK.read_text()+"\n\\set rollback_state :SQLSTATE\n\\set ON_ERROR_STOP on\nROLLBACK;\nSELECT :'rollback_state';\n"
+        state=run([pg/'psql','-X','-w','-qAt','-v','ON_ERROR_STOP=1','-h',sock,'-p','5432','-U','postgres','-d','postgres'], 'foreign-dependency-refused',text=negative)
+        require(state.strip()=='P0001' and 'rollback dependency boundary drift' in (out/'foreign-dependency-refused.stderr').read_text(),'Actual guarded rollback failed to reject foreign dependency')
+        retained_sql="SELECT jsonb_build_object('outcomes',(SELECT jsonb_agg(to_jsonb(o) ORDER BY runid,snapshot_md5) FROM public.ca_cash_failed_run_outcomes o),'receipts',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.operational_alert_events e),'runs',(SELECT jsonb_agg(to_jsonb(r) ORDER BY runid) FROM cron.job_run_details r WHERE jobid=259),'job',(SELECT to_jsonb(j) FROM cron.job j WHERE jobid=259),'evidence',(SELECT jsonb_agg(to_jsonb(h) ORDER BY check_id) FROM public.ca_cash_pot_check_evidence h));"
+        before=psql(retained_sql,'history-before-rollback')
         component(ROLLBACK,'remove-handler')
-        require(psql('SELECT md5(coalesce(jsonb_agg(to_jsonb(o) ORDER BY runid,snapshot_md5),\'[]\'::jsonb)::text) FROM public.ca_cash_failed_run_outcomes o;','history-after-rollback')==before,'Rollback changed outcome history')
-        require(psql("SELECT NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='cron.job_run_details'::regclass AND NOT tgisinternal);",'observer-removed')=='t','Rollback left observer')
+        require(psql(retained_sql,'history-after-rollback')==before,'Rollback changed retained outcomes/receipts/runs/job/positive evidence')
+        require(psql("SELECT to_regprocedure('public.fn_ca_cash_failed_run_intake()') IS NULL AND NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='cron.job_run_details'::regclass AND NOT tgisinternal);",'observer-removed')=='t','Rollback left owned handler or observer')
         component(COMPONENT,'reinstall-retaining-history')
         receipt['native_scheduler']=True;receipt['checksPassed']=True
     except BaseException as exc:

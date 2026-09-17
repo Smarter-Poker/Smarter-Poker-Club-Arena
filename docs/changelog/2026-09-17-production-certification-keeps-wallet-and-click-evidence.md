@@ -40,3 +40,5 @@ ledger response caused by opening the tab and wait for its existing busy flag
 to clear before classifying rows, empty or retry. Every terminal-state and receipt
 assertion remains. The delayed-response regression fails before this causal
 wait and passes afterward; no application or ledger behavior changes.
+
+The existing cash native qualification manifest also records the exact classifier and its route test. Both byte counts and SHA-256 pins now match the reviewed browser-gate addition. The six existing Python preflight oracles fail before this pin correction and pass after; the fixed input list, exact content verification and native PostgreSQL requirements remain intact.

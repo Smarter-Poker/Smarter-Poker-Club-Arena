@@ -33,7 +33,8 @@ def require(condition, message):
 
 
 def validate_version(value, label):
-    matched = re.search(r'\(PostgreSQL\) ([0-9]+(?:\.[0-9]+)+)(?:\s|$)', value.strip())
+    # pg_config prints "PostgreSQL 17.11"; server/test tools wrap the product name.
+    matched = re.search(r'(?:\(PostgreSQL\)|^PostgreSQL) ([0-9]+(?:\.[0-9]+)+)(?:\s|$)', value.strip())
     require(matched is not None and matched.group(1) == VERSION,
             label + ': exactly PostgreSQL ' + VERSION + ' required')
 

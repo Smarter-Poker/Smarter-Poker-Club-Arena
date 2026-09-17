@@ -17,8 +17,8 @@
       "sha256": "83f446d55f5271998338ddc66bd85ad705bcc44ac13eb836bbf4470c9214c189"
     },
     "scripts/ci/test_alert_evidence_wrapper.py": {
-      "sha256": "bc4ccda5e06c7376063a0ebf6a072b5b3dd3d0cbc81fbde9b1ad5f63ee3244ce",
-      "bytes": 3338
+      "sha256": "e33e27c4a0d777663fb863b17a66782481011ccfa57713b0408eea22d45c6017",
+      "bytes": 3579
     },
     "scripts/qualification/duplicate-structure-record-evidence.manifest.json": {
       "sha256": "fc2095a5728c2bca0991e922b54e6dbdba6265cc898bc41811ca62fb8a07bfe3",
@@ -113,8 +113,8 @@
       "bytes": 21668
     },
     "scripts/ci/build_pg17_isolationtester.py": {
-      "sha256": "333af6ce22a541a7308dd9aed79b51af690ffcc42d8ef28d159cf6cc1f110b10",
-      "bytes": 7290
+      "sha256": "cddc77a78c529c218398af4aabd6bf5311bf840559ae6e03a3c4d63ee3a22ef4",
+      "bytes": 7390
     },
     "scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql": {
       "bytes": 64094,

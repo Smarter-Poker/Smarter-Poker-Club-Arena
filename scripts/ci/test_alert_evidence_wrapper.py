@@ -24,11 +24,15 @@ step restore_preimage: DO fixture;
 class NativeRaceAcceptance(unittest.TestCase):
     def test_exact_native_tool_and_server_release_required(self):
         for value in ('postgres (PostgreSQL) 17.11 (Ubuntu 17.11-1.pgdg24.04+2)',
+                      'PostgreSQL 17.11 (Ubuntu 17.11-1.pgdg24.04+2)',
+                      'PostgreSQL 17.11\n',
                       'isolationtester (PostgreSQL) 17.11\n'):
             driver.validate_version(value, 'test')
         for value in ('postgres (PostgreSQL) 17.10', 'isolationtester (PostgreSQL) 17.110',
                       'postgres (PostgreSQL) 18.1', 'postgres (PostgreSQL) 17',
-                      'unknown binary', 'postgres (PostgreSQL) 17.11evil'):
+                      'unknown binary', 'postgres (PostgreSQL) 17.11evil',
+                      'PostgreSQL 17.10', 'PostgreSQL 17.110',
+                      'PostgreSQL 17', 'PostgreSQL 17.11evil'):
             with self.subTest(version=value), self.assertRaises(RuntimeError):
                 driver.validate_version(value, 'test')
 

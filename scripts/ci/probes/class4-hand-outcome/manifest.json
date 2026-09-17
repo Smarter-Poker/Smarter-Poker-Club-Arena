@@ -58,8 +58,8 @@
   "checkoutInputs": {
     "isolation_builder": {
       "path": "scripts/ci/build_pg17_isolationtester.py",
-      "bytes": 7290,
-      "sha256": "333af6ce22a541a7308dd9aed79b51af690ffcc42d8ef28d159cf6cc1f110b10"
+      "bytes": 7390,
+      "sha256": "cddc77a78c529c218398af4aabd6bf5311bf840559ae6e03a3c4d63ee3a22ef4"
     },
     "core_supplement": {
       "path": "scripts/ci/probes/production-alert-core/core-catalog-supplement.sql",

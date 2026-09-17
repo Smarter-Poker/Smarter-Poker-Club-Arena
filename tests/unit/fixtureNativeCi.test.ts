@@ -22,6 +22,7 @@ describe('cash lobby verification reaches the existing browser gate', () => {
     'tests/e2e/production-live-table-realtime.spec.ts',
     'tests/e2e/support/cashLobbyOverlays.ts',
     'tests/e2e/support/observationDeadline.ts',
+    'tests/e2e/support/initialTableOwnership.ts',
   ])('runs browser regressions when the individual input changes: %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ src: true, tests: true, server: false });
   });

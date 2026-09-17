@@ -30,6 +30,9 @@ export function classifyChangedPaths(paths) {
   const bbjFixture = matches(
     /^scripts\/ci\/(?:test-bbj-bank-replay\.py$|probes\/bbj-bank-replay\/)/
   );
+  // Diamond request/receipt changes and retained real SQL probes must reach
+  // the existing required PostgreSQL accounting job.
+  const diamondGames = matches(/^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/);
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
   // Script/fixture-only edits must admit accounting and its routing tests.
@@ -41,14 +44,17 @@ export function classifyChangedPaths(paths) {
     server:
       broad ||
       bbjFixture ||
+      diamondGames ||
       phase4Changed ||
       commitmentAudit ||
       matches(
-        /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
+        /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
       ),
     tests:
       broad ||
+      diamondGames ||
       commitmentAudit ||
+      matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/),
     phase4: phase4Changed,
     fixture: matches(fixture),

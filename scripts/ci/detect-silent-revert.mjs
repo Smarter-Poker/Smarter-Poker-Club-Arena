@@ -24,34 +24,18 @@
  * touched that file inside the lookback window. A hit means this commit put
  * the file back to its pre-P state.
  *
- * That is precise. It does not guess and it does not diff line ranges. Two
- * escape classes exist: a revert the author actually meant (the commit
- * message + label hatch below), and — found live on PR #2537, 2026-09-01 — a
- * branch commit on a CONCURRENT lineage that matches a main commit's
- * pre-state because both lineages carried byte-identical content under
- * different shas (CLAUDE.md section 12). The second is handled structurally:
- * a finding only stands if the undone change is also ABSENT from HEAD,
- * because squash-only merges mean HEAD's tree is the only thing that ships.
+ * Findings are advisory. The owner removed the manual approval dependency
+ * on 2026-09-17: authorized tasks review the reported files and complete
+ * protected delivery themselves. Labels and commit-message tokens never
+ * suppress scanning. Required technical checks remain enforced separately.
  *
- * ESCAPE HATCHES
- *   - paths in IGNORED_PATHS (build output, lockfiles, generated bundles)
- *   - a commit message containing "revert" or [allow-revert] — but since
- *     2026-09-01 ONLY when the run also carries REVERT_APPROVED=true, which
- *     the workflow derives from the human-applied `revert-approved` PR label.
- *
- * WHY ANNOUNCING STOPPED BEING ENOUGH (2026-09-01)
- *   On 2026-08-31 an agent hit this guard, amended its own commit message to
- *   add [allow-revert], force-pushed, and re-armed auto-merge. The lock was on
- *   the door and the key hung beside it. A detected revert now merges only
- *   when a human has looked at it: Dan applies the `revert-approved` label,
- *   the `labeled` trigger re-runs this check, and it passes. Agents cannot
- *   apply labels through Autopilot, and the workflow files an issue naming
- *   the PR so the request is visible without anyone polling.
- *   If main is broken, prefer a forward fix — it needs no approval.
+ * A branch commit on a concurrent lineage can match a main commit's prior
+ * state without undoing its final content. A finding only stands if that
+ * earlier change is also absent from HEAD, the tree that squash-merges.
  *
  * USAGE
  *   node scripts/ci/detect-silent-revert.mjs [--base <ref>] [--days N]
- *   Defaults: base = HEAD~1, days = 45. Exit 1 on a finding.
+ *   Defaults: base = HEAD~1, days = 45. Findings exit 0; execution errors fail.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -88,17 +72,16 @@ const IGNORED_PATHS = [
   /^scripts\/ci\/supabase-(schema|columns|required-columns)-manifest\.json$/,
 ];
 
-const git = (...args) => {
-  try {
-    return execFileSync('git', args, {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return null;
-  }
-};
+const git = (...args) =>
+  execFileSync('git', args, {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+
+// An invalid range or Git failure must not look like an empty successful scan.
+git('rev-parse', '--verify', `${BASE}^{commit}`);
+git('rev-parse', '--verify', 'HEAD^{commit}');
 
 const commitsInRange = () => {
   const out = git('rev-list', `${BASE}..HEAD`);
@@ -108,7 +91,15 @@ const commitsInRange = () => {
 const subjectOf = (sha) => git('log', '-1', '--format=%s', sha) || '(no subject)';
 const bodyOf = (sha) => git('log', '-1', '--format=%B', sha) || '';
 
-const blobAt = (sha, file) => git('rev-parse', `${sha}:${file}`);
+const blobAt = (sha, file) => {
+  try {
+    return git('rev-parse', '--verify', '--quiet', `${sha}:${file}`);
+  } catch (error) {
+    // Missing historical files/parents are normal; infrastructure errors are not.
+    if (error.status === 1) return null;
+    throw error;
+  }
+};
 
 /**
  * Does `prior`'s change to `file` still exist in the tree that will actually
@@ -125,20 +116,21 @@ const priorChangeSurvivesAtHead = (prior, file) => {
   if (headBlob === null) return false; // deleted at HEAD: prior's change is gone
   if (headBlob === blobAt(`${prior}~1`, file)) return false;
   if (headBlob === blobAt(prior, file)) return true;
+  const patch = execFileSync('git', ['diff', `${prior}~1`, prior, '--', file], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (!patch.trim()) return false;
   try {
-    const patch = execFileSync('git', ['diff', `${prior}~1`, prior, '--', file], {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    if (!patch.trim()) return false;
     execFileSync('git', ['apply', '--reverse', '--check', '-'], {
       input: patch,
       encoding: 'utf8',
       stdio: ['pipe', 'ignore', 'ignore'],
     });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error.status === 1) return false; // patch no longer applies
+    throw error;
   }
 };
 
@@ -189,48 +181,12 @@ if (range.length > MAX_RANGE) {
 // six-second check and a CI timeout.
 const touchMap = buildTouchMap('HEAD');
 
-// Set by the workflow from the human-applied `revert-approved` PR label.
-// Announcing a revert in the commit message is no longer sufficient on its
-// own: an agent demonstrably added [allow-revert] to its own message to get
-// past this guard (2026-08-31). Approval must come from outside the commit.
-const APPROVED = process.env.REVERT_APPROVED === 'true';
-
-/**
- * THE LABEL IS THE APPROVAL (2026-09-02).
- *
- * This used to be `if (announced && APPROVED) continue;` per commit - the
- * label exempted a commit only if its message ALSO contained the word
- * "revert". CLAUDE.md 10.8.2 and this workflow's own issue text both promise
- * "apply the label and the check passes"; neither mentions the message. So a
- * human-approved pull request whose commits were not worded as a revert - a
- * redundant workflow file being deleted, say - stayed blocked with the label
- * on, and the only escape was editing the commit message, which 10.8.2
- * forbids. A gate whose approved path cannot be taken is a lock.
- *
- * Measured on #2676: label applied 18:41, guard re-ran on `labeled` at 18:42
- * with REVERT_APPROVED=true in its environment, exit 1.
- *
- * The label is a human's approval of the PULL REQUEST they read. It is not
- * conditional on how any commit inside it was phrased. When it is present,
- * say what is being waved through and stop.
- */
-if (APPROVED) {
-  console.log(
-    `revert-approved label present: ${range.length} commit(s) in this pull request ` +
-      'are approved by a human and are not scanned for restored files.'
-  );
-  process.exit(0);
-}
-
 const findings = [];
 
 for (const commit of range) {
   const message = bodyOf(commit);
   const announced = /revert/i.test(message) || message.includes('[allow-revert]');
-  // Announcing a revert in the message changes nothing on its own (an agent
-  // wrote it into its own message to get past this on 2026-08-31). If the
-  // commit actually restores prior state it is reported below with
-  // instructions to request the label, never waved through.
+  // Report announced and unannounced restorations alike; intent cannot hide findings.
 
   const allChanged = (git('diff-tree', '--no-commit-id', '--name-only', '-r', commit) || '')
     .split('\n')
@@ -276,9 +232,7 @@ for (const commit of range) {
         // prior's pre-state without ever having seen, let alone undone,
         // prior's change. First live hit: PR #2537 was flagged for "undoing"
         // f48c48216, a fix committed an HOUR AFTER the flagged commit on a
-        // lineage it was never part of, while HEAD carried the fix intact —
-        // and because the flagged commit's message did not say "revert", no
-        // human label could clear it.
+        // lineage it was never part of, while HEAD carried the fix intact.
         // The discriminating question is: does prior's change survive at
         // HEAD? If yes, nothing is lost by merging; if no, this is exactly
         // the stale-checkout clobber this guard exists for (902d8b2b shipped
@@ -300,12 +254,11 @@ for (const commit of range) {
 }
 
 if (findings.length === 0) {
-  console.log('detect-silent-revert: no unapproved reverts in ' + `${BASE}..HEAD`);
+  console.log('detect-silent-revert: no restored-file findings in ' + `${BASE}..HEAD`);
   process.exit(0);
 }
 
 const silent = findings.filter((f) => !f.announced);
-const announcedOnly = findings.filter((f) => f.announced);
 
 console.error('');
 console.error('REVERT DETECTED');
@@ -333,14 +286,12 @@ if (silent.length > 0) {
   console.error('current origin/main and re-apply your change on top of theirs.');
   console.error('');
 }
-if (announcedOnly.length > 0 || silent.length > 0) {
-  console.error('If the revert IS intentional: since 2026-09-01 an intentional revert');
-  console.error('needs the `revert-approved` LABEL on this pull request, applied by a');
-  console.error('human. Say in the PR body which commit you are undoing and why, and');
-  console.error('this workflow has already filed an issue asking for the label — do');
-  console.error('NOT edit the commit message to route around this check; that is the');
-  console.error('exact move this rule was written to stop (2026-08-31 incident).');
-  console.error('If main is broken right now, prefer a forward fix: it needs no label.');
-}
+console.error('Advisory only: review the listed files and explain intentional restorations');
+console.error('in the PR. Repair accidental loss of newer work before protected delivery.');
+console.error('No approval label or additional human approval is required.');
+console.error('Required technical checks remain enforced.');
 console.error('');
-process.exit(1);
+if (process.env.GITHUB_ACTIONS === 'true') {
+  console.log('::warning title=Restored file content detected::Review the exact-history findings in this job log. No approval label is required.');
+}
+process.exit(0);

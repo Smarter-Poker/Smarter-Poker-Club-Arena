@@ -1,6 +1,6 @@
 # Cash seeding joins its work after lifecycle withdrawal
 
-Tests: `server/src/services/HorseFleetReadShutdown.test.ts` and
+Tests: `server/src/services/HorseFleetReadShutdown.law.test.ts` and
 `server/src/services/supabase/paginationLifecycle.test.ts`.
 
 A paginated read must not admit another page or retry after its owner stops,

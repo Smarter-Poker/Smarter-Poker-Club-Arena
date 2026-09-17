@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { diamondGamesFixture } from '../helpers/diamond-games-fixture.mjs';
-// Each case opens real Three.js scenes. Hosted software WebGL took 24s for
-// Plinko's first paint alone in run35263085862; avoid competing shader compiles
-// and allow all three scenes to complete without relaxing any assertion.
-test.describe.configure({ mode: 'default', timeout: 90_000 });
+// Each case switches through all three real playfields. The hosted software
+// WebGL trace in run35285753046 spent 19.5s opening Plinko and 30.7s changing
+// its denomination before compiling Crossing. Keep the full transition and
+// every assertion; budget the complete cold-render sequence, not one scene.
+test.describe.configure({ mode: 'default', timeout: 180_000 });
 for (const width of [320, 390, 1280])
   test(`Diamond playfields and reveals remain reachable at ${width}px`, async ({ page }) => {
     const bundle = await diamondGamesFixture();

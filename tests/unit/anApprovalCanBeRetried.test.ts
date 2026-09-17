@@ -183,26 +183,12 @@ describe('a declared settlement freeze stops operator movement', () => {
   });
 });
 
-describe('the settlement page writes to the club it is showing', () => {
-  it('resolves the route param before it reads the setting', () => {
-    expect(SETTLEMENT).toContain(".eq('id', resolvedClubId)");
-    expect(SETTLEMENT).not.toMatch(
-      /from\('clubs'\)\s*\n\s*\.select\('auto_settlement'\)\s*\n\s*\.eq\('id', clubId\)/
-    );
-  });
-
-  it('stops reporting a write that changed nothing as success', () => {
-    const toggle = sliceMethod(SETTLEMENT, 'const handleToggleAutoSettlement = async');
-    expect(toggle).toContain('resolveClubUUIDStrict(clubId as string)');
-    expect(toggle).toContain(".select('id')");
-    expect(toggle).toContain('Only The Club Owner Can Change Auto-Settlement');
-    expect(toggle).toContain('You Do Not Have Permission To Change This Setting');
-  });
-
-  it('a switch drawn from a failed read says it does not know', () => {
-    expect(SETTLEMENT).toContain('autoSettlementKnown');
-    expect(SETTLEMENT).toContain("'Auto: Unknown'");
-    expect(SETTLEMENT).toContain("reportError(e, 'SettlementPage.auto_settlement_read')");
+describe('weekly accounting browser controls observe only', () => {
+  it('mounts an explicit route scope instead of reading or writing the auto-settlement flag', () => {
+    expect(SETTLEMENT).toContain('WeeklyAccountingWorkspace');
+    expect(SETTLEMENT).toContain('scopeRef={reference}');
+    expect(SETTLEMENT).not.toContain('auto_settlement');
+    expect(SETTLEMENT).not.toContain('handleToggleAutoSettlement');
   });
 });
 
@@ -245,32 +231,18 @@ describe('the settlement period belongs to the club whose page it heads', () => 
     expect(PERIOD_MIGRATION).not.toMatch(/INSERT INTO settlement_periods/i);
   });
 
-  it('the service returns what the row carries instead of hardcoding it', () => {
-    expect(SETTLEMENT_SERVICE).toContain('getCurrentPeriodForClub');
-    expect(SETTLEMENT_SERVICE).toContain('periodNumber: Number(row.period_number) || 0');
-    expect(SETTLEMENT_SERVICE).toContain('totalHandsDealt: Number(row.total_hands_dealt) || 0');
-    expect(SETTLEMENT_SERVICE).toContain('totalBBJContributions: Number(row.total_bbj) || 0');
+  it('retires both old getter contracts without a fallback', () => {
+    expect(SETTLEMENT_SERVICE).toContain('async getCurrentPeriodForClub');
+    expect(SETTLEMENT_SERVICE).toContain('throw new AutomaticWeeklyAccountingOnlyError()');
+    expect(SETTLEMENT_SERVICE).not.toContain("supabase.rpc('get_current_settlement_period'");
+  });
+  it('uses the scoped workspace and does not turn a period status into a payment receipt', () => {
+    expect(SETTLEMENT).toContain('scopeKind={kind}');
+    expect(SETTLEMENT).not.toContain('SettlementReceipt');
+    expect(SETTLEMENT).not.toContain('executeMondayPayouts');
+    expect(SETTLEMENT).not.toContain("status={selectedPeriod.settledAt ? 'paid' : 'pending'}");
   });
 
-  it('the page asks per club and tolerates a club that has never settled', () => {
-    expect(SETTLEMENT).toContain('getCurrentPeriodForClub(resolvedForPeriod)');
-    expect(SETTLEMENT).toContain('...(currentPeriod');
-    expect(SETTLEMENT).toContain('if (currentPeriod?.id');
-  });
-
-  it('a disputed period is a status the page knows', () => {
-    expect(SETTLEMENT).toContain(
-      "type PeriodStatus = 'open' | 'processing' | 'settled' | 'disputed'"
-    );
-    expect(SETTLEMENT).toContain("{selectedPeriod.status === 'disputed' && 'Disputed'}");
-    expect(SETTLEMENT).not.toContain("as 'open' | 'processing' | 'settled'");
-  });
-
-  it('the receipt reports what the ledger says, not "paid" by assumption', () => {
-    expect(SETTLEMENT).toContain("status={selectedPeriod.settledAt ? 'paid' : 'pending'}");
-    expect(SETTLEMENT).not.toContain('status="paid"');
-    expect(SETTLEMENT).toContain("p.status === 'settled' && p.settledAt");
-  });
 });
 
 describe('the cashier stops contradicting itself', () => {

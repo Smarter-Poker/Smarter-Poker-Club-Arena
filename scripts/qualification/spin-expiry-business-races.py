@@ -389,6 +389,30 @@ def run(args, events, sessions, deadline):
     # No full-provider, original22, committed refund or release success flag.
 
 
+def observe_backend_cleanup(verifier, ids, cleanup_deadline, events):
+    # A terminal psql client can precede PostgreSQL backend exit. Each SELECT
+    # runs in autocommit, so retain fresh observations within the original budget.
+    query = ("SELECT jsonb_build_object('backends',"
+        "(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() "
+        "AND pid<>pg_backend_pid()),"
+        f"'locks',(SELECT count(*) FROM pg_locks WHERE pid IN ({ids})));" )
+    events['backend_cleanup_observations'] = []
+    while time.monotonic() < cleanup_deadline:
+        remaining = verifier.json(query)
+        events['backend_cleanup'] = remaining
+        events['backend_cleanup_observations'].append(remaining)
+        require(isinstance(remaining, dict) and set(remaining) == {'backends', 'locks'}
+                and all(type(value) is int and value >= 0 for value in remaining.values()),
+                'invalid backend cleanup observation')
+        budget = cleanup_deadline - time.monotonic()
+        if budget <= 0:
+            break
+        if remaining == {'backends': 0, 'locks': 0}:
+            return
+        time.sleep(min(0.01, budget))
+    raise TimeoutError('original backends/locks not cleared before cleanup deadline')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--psql', type=Path, required=True)
@@ -440,12 +464,7 @@ def main():
             verifier.pid = verifier.json('SELECT to_jsonb(pg_backend_pid());')
             require(type(verifier.pid) is int and verifier.pid > 0, 'invalid cleanup backend identity')
             ids = ','.join(str(s.pid) for s in sessions if s.pid is not None) or '0'
-            remaining = verifier.json("SELECT jsonb_build_object('backends',"
-                "(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() "
-                "AND pid<>pg_backend_pid()),"
-                f"'locks',(SELECT count(*) FROM pg_locks WHERE pid IN ({ids})));" )
-            events['backend_cleanup'] = remaining
-            require(remaining == {'backends':0,'locks':0}, 'original backends/locks not cleared')
+            observe_backend_cleanup(verifier, ids, cleanup_deadline, events)
             require(events['clients_verified'],
                     'original client terminal exit was not independently observed')
             events['cleanup_verified'] = events['clients_verified']

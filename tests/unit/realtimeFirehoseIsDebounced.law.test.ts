@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceBetween } from '../helpers/sourceWindow';
 
 /**
  * LAW: a realtime subscription on a high-volume table must not call a full
@@ -22,50 +21,72 @@ import { sliceBetween } from '../helpers/sourceWindow';
  * invisible from the outside. The cost was real anyway, and a settlement dashboard
  * does not need per-hand granularity to be correct.
  *
- * This pins the shape, not the number: the handler must not be a bare call.
+ * The dashboard now delegates to scoped weekly records and a status observer.
+ * Preserve the no-per-hand-reload rule across that real read boundary without
+ * requiring the retired commission subscription or its debounce timer.
  */
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
+const code = (p: string) =>
+  read(p)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '');
+const page = code('src/pages/SettlementDashboardPage.tsx');
+const workspace = code('src/components/accounting/WeeklyAccountingWorkspace.tsx');
+const summary = code('src/components/accounting/ClubWeeklyAccountingSummary.tsx');
+const reader = code('src/services/ClubWeeklyAccountingReader.ts');
+const status = code('src/components/agent/UnionAccountingRunStatus.tsx');
+const observation = code('src/hooks/useAccountingRunObservation.ts');
+const boundary = [page, workspace, summary, reader, status, observation];
 
-describe('LAW: realtime handlers on per-hand tables are debounced', () => {
-  it('SettlementDashboardPage does not reload once per agent_commissions row', () => {
-    const src = read('src/pages/SettlementDashboardPage.tsx');
-
-    // locate the agent_commissions postgres_changes subscription
-    const idx = src.indexOf("table: 'agent_commissions'");
-    expect(idx, 'the agent_commissions realtime subscription should still exist').toBeGreaterThan(
-      -1
+describe('LAW: weekly accounting does not reload on per-hand ledger events', () => {
+  it('the dashboard reads scoped weekly summaries and status without a commission firehose', () => {
+    expect(page).toMatch(
+      /<WeeklyAccountingWorkspace\s+key=\{`\$\{scopeClubId\}:\$\{user\.id\}`\}\s+scopeKind="club"\s+scopeRef=\{scopeClubId\}/
     );
-
-    // Bound the window by the structure it is about, never by a byte count.
-    // Two structural landmarks: the subscription descriptor that opens the handler
-    // and the .subscribe( that closes the chain. The window then grows exactly as
-    // fast as the handler does and can never be outrun by it.
-    // (sliceStatement is wrong here - it stops at the first semicolon, which lands
-    // INSIDE the handler body.) See tests/helpers/sourceWindow.ts.
-    const handler = sliceBetween(src, "table: 'agent_commissions'", '.subscribe(');
-
-    // the regression this pins: `table: 'agent_commissions' },\n () => loadData()`
-    const bareReload = /table: 'agent_commissions'\s*\}\s*,\s*\(\)\s*=>\s*loadData\(\)/.test(src);
+    expect(workspace).toMatch(
+      /scopeKind\s*===\s*'club'\s*\?\s*\(\s*<ClubWeeklyAccountingSummary\s+key=\{`\$\{id\}:\$\{user\.id\}`\}\s+clubId=\{id\}/
+    );
+    expect(summary).toMatch(
+      /readClubWeeklyStatements\(\{\s*clubId,\s*userId:\s*user\.id,\s*limit:\s*CLUB_WEEKLY_STATEMENT_LIMIT,\s*isCurrent:\s*current\s*,?\s*\}\)/
+    );
+    expect(reader).toMatch(
+      /\.eq\('club_id',\s*clubId\)\s*\.eq\('invoice_type',\s*CLUB_WEEKLY_INVOICE_TYPE\)/
+    );
+    expect(workspace).toMatch(
+      /<AccountingRunStatus\s+key=\{`\$\{id\}:\$\{user\.id\}:\$\{ending\}`\}\s+scopeKind=\{scopeKind\}\s+scopeId=\{id\}/
+    );
+    expect(status).toMatch(/useAccountingRunObservation\(input\)/);
+    for (const src of boundary) {
+      expect(src).not.toMatch(
+        /agent_commissions|postgres_changes|\.channel\s*\(|getOrCreateChannel\s*\(/
+      );
+    }
+    // Auth changes invalidate the account, but hand/ledger events cannot reload
+    // this observer. Pin the complete direct bus subscription inventory.
     expect(
-      bareReload,
-      'agent_commissions is a per-hand ledger (1.5M rows, 0.40 chips each). Calling ' +
-        'loadData() once per inserted row re-arms a full dashboard reload on every ' +
-        'hand dealt. Debounce it, as the masterBus subscriptions above it already are.'
-    ).toBe(false);
-
-    // and positively: some debouncing must be present in that handler
-    expect(
-      /setTimeout|Debounced|debounce/i.test(handler),
-      'the agent_commissions realtime handler must debounce before reloading'
-    ).toBe(true);
+      boundary.flatMap((src) =>
+        [...src.matchAll(/masterBus\.subscribe(?:Debounced)?\(\s*'([^']+)'/g)].map(
+          (match) => match[1]
+        )
+      )
+    ).toEqual(['AUTH_STATE_CHANGED']);
   });
 
-  it('the debounce timer is cleared on unmount, so it cannot fire into a dead component', () => {
-    const src = read('src/pages/SettlementDashboardPage.tsx');
-    expect(
-      /return \(\) => \{[\s\S]{0,300}clearTimeout\(commissionReloadTimer\.current\)/.test(src),
-      'the commission reload timer must be cleared in the effect cleanup'
-    ).toBe(true);
+  it('refreshes explicitly and invalidates pending reads on cleanup without a reload timer', () => {
+    for (const src of boundary) {
+      expect(src).not.toMatch(/commissionReloadTimer|\bsetTimeout\s*\(|\bsetInterval\s*\(/);
+    }
+    expect(summary).toMatch(/onClick=\{\(\)\s*=>\s*void refresh\(\)\}/);
+    expect(status).toMatch(/onClick=\{refresh\}/);
+    expect(summary).toMatch(
+      /const current\s*=\s*\(\)\s*=>\s*scope\(\)\s*&&\s*sequence\.current\s*===\s*read/
+    );
+    expect(summary).toMatch(/return\s*\(\)\s*=>\s*\{\s*\+\+sequence\.current;\s*\}/);
+    expect(observation).toMatch(
+      /readAccountingRunObservation\(\{\s*\.\.\.input,\s*isCurrent:\s*\(\)\s*=>\s*active\s*&&\s*isCurrent\(\)\s*,?\s*\}\)/
+    );
+    expect(observation).toMatch(/if\s*\(active\s*&&\s*isCurrent\(\)\)\s*setState\(/);
+    expect(observation).toMatch(/return\s*\(\)\s*=>\s*\{\s*active\s*=\s*false;\s*\}/);
   });
 });

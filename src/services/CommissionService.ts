@@ -21,8 +21,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
-import { resolveClubUUID } from '../utils/clubIdResolver';
-import { uuid } from '../utils/uuid';
+import { resolveClubUUID, resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -102,7 +101,8 @@ export const CommissionService = {
     rate: number,
     setBy: string
   ): Promise<CommissionRate> {
-    // Validate cap
+    // Validate cap before resolving or mutating the selected club.
+    if (!Number.isFinite(rate)) throw new Error('Rate Must Be A Finite Number');
     const cap = RATE_CAPS[targetRole];
     if (rate > cap) {
       throw new Error(`${targetRole} rate capped at ${cap * 100}%. Requested: ${rate * 100}%`);
@@ -116,20 +116,16 @@ export const CommissionService = {
       );
     }
 
-    // P2-17/20: Read old rate for audit trail before updating
-    let oldRate = 0;
-    const resolvedClubId = await resolveClubUUID(clubId);
-    try {
-      const { data: existing } = await supabase
-        .from('agents')
-        .select('commission_rate, player_rakeback_rate')
-        .eq('id', agentId)
-        .maybeSingle();
-      oldRate =
-        (targetRole === 'AGENT' ? existing?.commission_rate : existing?.player_rakeback_rate) ?? 0;
-    } catch (err) {
-      reportError(err, 'CommissionService.setRate.readOldRate', { clubId, agentId, targetRole });
-      /* first time set — oldRate stays 0 */
+    const resolvedClubId = await resolveClubUUIDStrict(clubId);
+    const { data: existing, error: existingError } = await supabase
+      .from('agents')
+      .select('id, club_id')
+      .eq('id', agentId)
+      .eq('club_id', resolvedClubId)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing || existing.id !== agentId || existing.club_id !== resolvedClubId) {
+      throw new Error('Agent Could Not Be Confirmed In The Selected Club');
     }
 
     const { data: result, error } = await supabase.rpc('fn_admin_update_agent', {
@@ -140,27 +136,14 @@ export const CommissionService = {
     });
 
     if (error) throw error;
-    if (result && result.success === false) {
-      throw new Error(result.error || 'Commission rate update rejected');
+    if (result?.success !== true) {
+      throw new Error(result?.error || 'Commission rate update rejected');
     }
-
-    // P2-17/20: Log the rate change for audit trail (non-blocking)
-    if (oldRate !== rate) {
-      try {
-        const { FinancialCronService } = await import('./FinancialCronService');
-        await FinancialCronService.logRateChange({
-          agentId,
-          changedBy: setBy,
-          oldRate,
-          newRate: rate,
-          rateType: targetRole as 'commission' | 'sub_agent' | 'player',
-          clubId,
-        });
-      } catch (err) {
-        reportError(err, 'CommissionService.setRate.logRateChange', { agentId, oldRate, rate });
-        /* non-blocking */
-      }
+    if (result.agent_id !== agentId || result.club_id !== resolvedClubId) {
+      throw new Error('Commission Rate Update Could Not Be Confirmed For The Selected Club');
     }
+    // accounting_agreement_history is written atomically by the database.
+    // A second browser audit write cannot establish or repair that evidence.
     return {
       id: agentId,
       clubId: resolvedClubId,
@@ -278,30 +261,6 @@ export const CommissionService = {
   // must never write or recompute financial attribution (§30, server
   // authoritative).
   // ─────────────────────────────────────────────────────────────────────────────
-  // CASCADING COMMISSION CALCULATION
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Calculate cascading commissions for a hand
-   * Walks up the agent tree, calculating each level's share
-   */
-  async calculateCascadingCommission(
-    rakeAmount: number,
-    playerId: string
-  ): Promise<Array<{ agentId: string; amount: number; level: number }>> {
-    const { data, error } = await retryAsync(async () => {
-      const result = await supabase.rpc('calculate_cascading_commission', {
-        p_rake_amount: rakeAmount,
-        p_player_id: playerId,
-      });
-      return result;
-    }, 2);
-
-    if (error) throw error;
-    return data;
-  },
-
-  // ─────────────────────────────────────────────────────────────────────────────
   // SETTLEMENT INTEGRATION
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -347,83 +306,6 @@ export const CommissionService = {
   },
 
   /**
-   * CLAIM THIS AGENT'S OWN COMMISSION.
-   *
-   * Replaces executePayout, which called execute_commission_payout - a function
-   * that credited a wallet, debited nothing, and never marked the commission
-   * settled, so the same row could be paid again forever. It is dropped
-   * (migration 20260902000001) and so is this method's old body.
-   *
-   * Dan, 2026-08-31: "AGENTS HANDLE THEIR OWN PAYOUTS." The RPC pays auth.uid()
-   * and takes no payee parameter, so there is nothing to pass but the club.
-   *
-   * WHY THIS LOOPS. The claim settles a bounded batch per call, because the
-   * largest agent has 192,135 unsettled rows and settling them in one statement
-   * measured 64.6 SECONDS against an 8 second statement timeout - and would hold
-   * the club row locked for that whole minute, freezing every other chip
-   * movement in the club. Each call is its own transaction and its own money
-   * conservation, so stopping half way leaves a correct, smaller balance owing.
-   *
-   * A FRESH op_id PER BATCH, and the same one on a retry. op_id identifies one
-   * batch: reusing it after a network wobble replays that batch's answer instead
-   * of paying twice, and using a new one for the next batch is what lets the
-   * loop make progress.
-   */
-  async claimCommission(
-    clubId: string,
-    onProgress?: (claimedSoFar: number, batches: number) => void
-  ): Promise<{ claimed: number; batches: number; stoppedEarly: boolean; reason?: string }> {
-    const resolvedId = await resolveClubUUID(clubId);
-    let claimed = 0;
-    let batches = 0;
-
-    // A ceiling, not an expectation. 192,135 rows at 1,000 per batch is 193
-    // calls; this stops a runaway loop without stopping a legitimate drain.
-    const MAX_BATCHES = 400;
-
-    for (;;) {
-      const opId = uuid();
-      const { data, error } = await supabase.rpc('fn_agent_claim_commission', {
-        p_club_id: resolvedId,
-        p_op_id: opId,
-      });
-      if (error) throw error;
-
-      const result = data as {
-        success?: boolean;
-        error?: string;
-        amount?: number;
-        more?: boolean;
-        nothing_owed?: boolean;
-        bank_short?: boolean;
-      } | null;
-
-      if (!result?.success) {
-        // Nothing owed on the FIRST call is the honest answer to "claim my
-        // commission" when there is none. After a batch has already paid, it
-        // means somebody else drained the rest, and what we claimed still counts.
-        if (batches > 0) {
-          return { claimed, batches, stoppedEarly: true, reason: result?.error };
-        }
-        throw new Error(result?.error || 'The Claim Was Refused');
-      }
-
-      claimed += Number(result.amount ?? 0) || 0;
-      batches += 1;
-      onProgress?.(claimed, batches);
-
-      if (!result.more) break;
-      if (batches >= MAX_BATCHES) {
-        return { claimed, batches, stoppedEarly: true, reason: 'More Is Still Owed' };
-      }
-    }
-
-    masterBus.emit('COMMISSION_PAID', { agentId: 'self', amount: claimed });
-    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
-    return { claimed, batches, stoppedEarly: false };
-  },
-
-  /**
    * What this member has earned and not yet claimed, read from the ledger.
    *
    * NOT agents.pending_commission. That column is written by no function and no
@@ -431,13 +313,20 @@ export const CommissionService = {
    * across 5 agents while agent_commissions held 394,904.61 across 96.
    */
   async unsettledCommission(clubId: string, userId: string): Promise<number> {
-    const resolvedId = await resolveClubUUID(clubId);
+    const resolvedId = await resolveClubUUIDStrict(clubId);
     const { data, error } = await supabase.rpc('fn_agent_unsettled_commission', {
       p_club_id: resolvedId,
       p_user_id: userId,
     });
     if (error) throw error;
-    return Number(data ?? 0) || 0;
+    if (
+      (typeof data !== 'number' && typeof data !== 'string') ||
+      String(data).trim() === '' ||
+      !Number.isFinite(Number(data))
+    ) {
+      throw new Error('Unpaid Commission Is Unavailable');
+    }
+    return Number(data);
   },
 
   /**
@@ -456,15 +345,35 @@ export const CommissionService = {
   async downlineCommission(
     clubId?: string
   ): Promise<{ agentId: string; userId: string; unclaimed: number }[]> {
-    const resolvedId = clubId ? await resolveClubUUID(clubId) : null;
+    const resolvedId = clubId ? await resolveClubUUIDStrict(clubId) : null;
     const { data, error } = await supabase.rpc('fn_agent_downline_commission', {
       p_club_id: resolvedId,
     });
     if (error) throw error;
-    return (Array.isArray(data) ? data : []).map((row: any) => ({
+    if (
+      !Array.isArray(data) ||
+      data.some(
+        (row: any) =>
+          !row ||
+          typeof row.agent_id !== 'string' ||
+          !row.agent_id ||
+          typeof row.user_id !== 'string' ||
+          !row.user_id ||
+          (resolvedId !== null && row.club_id !== resolvedId) ||
+          (typeof row.unclaimed !== 'number' && typeof row.unclaimed !== 'string') ||
+          String(row.unclaimed).trim() === '' ||
+          !Number.isFinite(Number(row.unclaimed))
+      )
+    ) {
+      throw new Error('Sub-Agent Commission Is Unavailable');
+    }
+    if (new Set(data.map((row: any) => row.agent_id)).size !== data.length) {
+      throw new Error('Sub-Agent Commission Is Unavailable');
+    }
+    return data.map((row: any) => ({
       agentId: row.agent_id,
       userId: row.user_id,
-      unclaimed: Number(row.unclaimed ?? 0) || 0,
+      unclaimed: Number(row.unclaimed),
     }));
   },
 

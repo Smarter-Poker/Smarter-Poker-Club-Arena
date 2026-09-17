@@ -249,8 +249,6 @@ const CLUB_DATA_BUS_EVENTS: BusEventType[] = [
   'TABLE_CLOSED',
   'TABLE_CREATED',
   'TOURNAMENT_UPDATED',
-  'SETTLEMENT_COMPLETED',
-  'SETTLEMENT_CYCLE_COMPLETED',
   'MEMBER_ROLE_CHANGED',
 ];
 type RealtimeFeed = 'tables' | 'tournaments' | 'invoices' | 'members';

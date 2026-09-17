@@ -63,8 +63,6 @@ const RAKE_BUS_EVENTS: BusEventType[] = [
   'TABLE_CLOSED',
   'TABLE_CREATED',
   'TOURNAMENT_UPDATED',
-  'SETTLEMENT_COMPLETED',
-  'SETTLEMENT_CYCLE_COMPLETED',
   'MEMBER_ROLE_CHANGED',
 ];
 /** Deeper than any real agent chain, and a hard stop if one ever loops. */

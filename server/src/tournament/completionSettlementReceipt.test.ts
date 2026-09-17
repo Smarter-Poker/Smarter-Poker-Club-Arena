@@ -315,3 +315,49 @@ describe('version 2 separates paid prizes from deferred rake accounting', () => 
     expect(verifyTournamentCompletionReceipt(value, TOURNAMENT_ID, 'places', WINNER_ID)).toBeNull();
   });
 });
+
+import {
+  accountingTerminalReceipts,
+  fullLifecycleTerminalReceipts,
+} from './__fixtures__/accountingTerminalReceipts.js';
+describe('actual native terminal fee receipts', () => {
+  it.each(accountingTerminalReceipts)(
+    'accepts the actual $rake.accounting.status custody receipt',
+    (nativeReceipt) => {
+      const verified = verifyTournamentCompletionReceipt(
+        nativeReceipt,
+        nativeReceipt.tournament_id,
+        'places',
+        nativeReceipt.winner_id
+      );
+      expect(verified).not.toBeNull();
+      expect(verified?.rake.accountingState).toBe(nativeReceipt.rake.accounting.status);
+    }
+  );
+});
+
+describe('historical nonzero full lifecycle captures', () => {
+  // Keep the captured predecessor bytes unchanged. Their v2 private treasury
+  // destination is not the current SQL authority's chip-retirement bank proof.
+  // Fresh native output is required before adding current lifecycle captures.
+  it.each(fullLifecycleTerminalReceipts)(
+    'refuses the historical $rake.accounting.status v2 treasury receipt',
+    (receipt) => {
+      const verified = verifyTournamentCompletionReceipt(
+        receipt,
+        receipt.tournament_id,
+        'places',
+        receipt.winner_id
+      );
+      expect(verified).toBeNull();
+      expect(receipt.receipt_version).toBe(2);
+      expect(receipt.rake.destination).toBe(
+        `club_treasury:${receipt.rake.accounting.bank_club_id}`
+      );
+      expect(receipt.rake.accounting.bank_receipt_kind).toBe('chip_ledger');
+      expect(receipt.rake.accounting.bank_union_id).toBeNull();
+      expect(receipt.cash_payout_total).toBe(180);
+      expect(receipt.rake.amount).toBe(20);
+    }
+  );
+});

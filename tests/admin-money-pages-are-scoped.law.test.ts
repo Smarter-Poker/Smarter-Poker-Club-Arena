@@ -155,7 +155,7 @@ describe('LAW: an admin money page names its club before it reads a number', () 
     // The settlement dashboard mounts it with a scope, never bare.
     const dashboard = read('src/pages/SettlementDashboardPage.tsx');
     expect(dashboard).not.toMatch(/<TransactionLedgerView limit=\{\d+\} \/>/);
-    expect(dashboard).toMatch(/<TransactionLedgerView clubId=\{scopeClubId\} clubScoped/);
+    expect(dashboard).toMatch(/<TransactionLedgerView\s+clubId=\{scopeClubId\}\s+clubScoped/);
   });
 
   it('the admin routes that were AuthGuard-only carry their role guard', () => {

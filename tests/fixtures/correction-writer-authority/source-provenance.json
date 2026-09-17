@@ -1,0 +1,80 @@
+{
+  "status": "source_only_unrun",
+  "worktree": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-union-correction-writer",
+  "base": "aedb5cc9dae3120f4c08bc719c4726cf55d74db2",
+  "owner_sources": {
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration/supabase/accounting/correction-writer-successor-0129/successor-definition.sql": "6200b53066002ccf11640baf9c39e6e296a9577ad30106225c67290f8d88ed7b",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration/supabase/accounting/correction-writer-successor-0129/private-intent.sql": "69d5778c84a084062b46f28e31f84b22231a9fe7599c01dcfcaf278d7f42f693",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration/supabase/accounting/correction-writer-successor-0129/fixture.sql": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9"
+  },
+  "retained_sources": {
+    "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
+    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-seed.sql": "94e09f38a3998784faca103bdfe4728207a9b0a8ca1ff22d430a4cc8e84a3192"
+  },
+  "copy_contracts": {
+    "owner-fixture.sql": "exact owner fixture bytes",
+    "regression.sql": "separate successor expectations; historical file unchanged",
+    "captured-store-policy.sql": {
+      "source_line": 3,
+      "line_sha256": "2eb445bd0e41f32194690953db4fadc0e82ce1a535ef890c3f161a21ba986a02"
+    },
+    "lifecycle-seed-after-activation.sql": {
+      "source": "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-seed.sql",
+      "first_source_line": 4,
+      "removed_prefix_bytes": 5555,
+      "removed_prefix_sha256": "4417ab8888029873ec19fa3431521120a0f9b0137e181282a1f9ded6f6b34021",
+      "source_sha256": "94e09f38a3998784faca103bdfe4728207a9b0a8ca1ff22d430a4cc8e84a3192",
+      "suffix_sha256": "207ab33a49fbe2951553df90f0c298241181578c617f69714b6062d8d53dfdba",
+      "identity": "source bytes equal retained prefix plus exact successor suffix; policy INSERT itself preserved in captured-store-policy.sql"
+    }
+  },
+  "baseline_supplement_owner": "/root/earning_attribution",
+  "main_session_files": [
+    "legacy-before-candidate.sql",
+    "<full generated candidate.sql>",
+    "legacy-replay-and-input-assertions.sql",
+    "regression.sql",
+    "owner-seeded-regression.sql"
+  ],
+  "acceptance_capture": "accepted-authority-supplement.sql",
+  "separate_phase14": [
+    "concurrency-setup.sql",
+    "concurrency-regression.py"
+  ],
+  "execution": "Not run; no source submission or publication authorized by this manifest.",
+  "acceptance_policy_order": [
+    "captured-store-policy.sql",
+    "legacy-before-candidate.sql",
+    "<full generated candidate.sql>",
+    "legacy-replay-and-input-assertions.sql",
+    "regression.sql",
+    "owner-seeded-regression.sql",
+    "<accepted authority captures>",
+    "lifecycle-seed-after-activation.sql",
+    "<inherited lifecycle regressions>"
+  ],
+  "baseline_supplement": {
+    "path": "tests/fixtures/correction-writer-authority/catalog-bootstrap.sql",
+    "sha256": "2f1298bf724f86c8fa5a3401c1f0cb878f52e19dfdd401ceeb212cd32b600167",
+    "owner": "/root/earning_attribution",
+    "indexes": {
+      "ledger": 13,
+      "incident": 5
+    },
+    "ledger_reloptions": 7,
+    "schema_local_default_acl_rows": 6
+  },
+  "concurrency_admission": {
+    "database": "postgres",
+    "reason": "Preserved captured cron and component21 require postgres; separate fresh cluster remains mandatory.",
+    "marker": "public.correction_writer_fixture_marker",
+    "marker_contract": [
+      "owner-only privileges",
+      "fresh run UUID pinned for all driver connections",
+      "exact database OID",
+      "exact current postmaster start timestamp",
+      "fresh synthetic scope/reference/escrow and no test ledger rows"
+    ],
+    "root_phase": 14
+  }
+}

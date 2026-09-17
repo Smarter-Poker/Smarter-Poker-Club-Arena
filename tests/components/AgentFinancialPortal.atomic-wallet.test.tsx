@@ -10,7 +10,6 @@ const m = vi.hoisted(() => ({
   readMember: vi.fn(),
   readCommissions: vi.fn(),
   balanceRefresh: () => undefined as unknown,
-  commissionRefresh: () => undefined as unknown,
   owner: '10000000-0000-4000-8000-000000000001',
   memberBalance: 456,
   memberError: false,
@@ -70,17 +69,24 @@ vi.mock('../../src/components/charts/FinancialChart', () => ({
   ),
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
-vi.mock('../../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: vi.fn() }));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     subscribeDebounced: (event: string, callback: () => unknown) => {
       if (event === 'BALANCE_UPDATED') m.balanceRefresh = callback;
-      if (event === 'COMMISSION_PAID') m.commissionRefresh = callback;
       return () => undefined;
     },
   },
 }));
 import { AgentFinancialPortal } from '../../src/components/dashboard/AgentFinancialPortal';
+async function revisitStaleTab() {
+  // Exercise the retained visibility listener, after its actual 30-second
+  // freshness boundary, without inventing a commission event producer.
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31_000);
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  await act(async () => {
+    fireEvent(document, new Event('visibilitychange'));
+  });
+}
 const mount = () =>
   render(
     <MemoryRouter>
@@ -200,9 +206,7 @@ describe('embedded agent portal response ordering', () => {
     const older = deferred<ReturnType<typeof commissionResult>>();
     m.readCommissions.mockReturnValueOnce(older.promise).mockReturnValue(commissionResult(37));
     const calls = m.readCommissions.mock.calls.length;
-    act(() => {
-      m.commissionRefresh();
-    });
+    await revisitStaleTab();
     await waitFor(() => expect(m.readCommissions).toHaveBeenCalledTimes(calls + 1));
     view.rerender(
       <MemoryRouter>
@@ -226,13 +230,9 @@ describe('embedded agent portal response ordering', () => {
     const older = deferred<ReturnType<typeof commissionResult>>();
     m.readCommissions.mockReturnValueOnce(older.promise).mockReturnValueOnce(commissionResult(37));
     const calls = m.readCommissions.mock.calls.length;
-    act(() => {
-      m.commissionRefresh();
-    });
+    await revisitStaleTab();
     await waitFor(() => expect(m.readCommissions).toHaveBeenCalledTimes(calls + 1));
-    act(() => {
-      m.commissionRefresh();
-    });
+    await revisitStaleTab();
     await waitFor(() => expect(screen.getByTestId('commissions')).toHaveTextContent('37'));
     await act(async () => {
       older.resolve(commissionResult(99));

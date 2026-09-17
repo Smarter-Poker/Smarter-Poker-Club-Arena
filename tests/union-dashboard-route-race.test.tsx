@@ -43,6 +43,7 @@ vi.mock('../src/core/MasterBus', () => {
   channel.subscribe.mockReturnValue(channel);
   return {
     masterBus: {
+      subscribe: vi.fn(() => vi.fn()),
       subscribeDebounced: vi.fn(() => vi.fn()),
       getOrCreateChannel: vi.fn(() => channel),
       removeRegisteredChannel: vi.fn(),

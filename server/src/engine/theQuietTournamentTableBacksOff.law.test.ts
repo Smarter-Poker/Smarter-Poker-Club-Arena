@@ -173,6 +173,82 @@ describe('the quiet tournament table backs off', () => {
     }
   });
 
+  it.each([false, true])(
+    'a tournament move wakes the quiet loop and claims its physical gate (pending settlement: %s)',
+    async (pendingSettlement) => {
+      vi.useFakeTimers();
+      loadTable.mockResolvedValue({ ...TABLE_ROW, tournament_id: TOURNAMENT });
+      loadSeatedPlayers.mockResolvedValue([seat(1)]);
+      const engine = pacedByRealTimers();
+      const asked: number[] = [];
+      const realSleep = engine.sleep.bind(engine);
+      engine.sleep = (ms: number) => {
+        asked.push(ms);
+        return realSleep(ms);
+      };
+      const started = engine.start();
+      const owner = 'quiet-source-manager-generation';
+      let finishSettlement = () => {};
+      try {
+        // The real start loop must be asleep, not manually placed at the gate.
+        for (let i = 0; i < 100 && asked.at(-1) !== 60_000; i++) {
+          await vi.advanceTimersByTimeAsync(1_000);
+        }
+        expect(asked.at(-1)).toBe(60_000);
+        expect(engine.waitForPlayersWake).not.toBeNull();
+        expect(engine.handForHandResolve).toBeNull();
+        const rosterReads = loadSeatedPlayers.mock.calls.length;
+
+        if (pendingSettlement) {
+          const settlement = new Promise<void>((resolve) => {
+            finishSettlement = resolve;
+          });
+          engine.postHandTasksPromise = settlement;
+          engine.trackSettlementInFlight(settlement);
+        }
+        let result: boolean | undefined;
+        const parked = engine.parkForTournamentMove(owner, 1_000).then((value: boolean) => {
+          result = value;
+          return value;
+        });
+        if (pendingSettlement) {
+          await vi.advanceTimersByTimeAsync(1);
+          expect(engine.handForHandResolve).not.toBeNull();
+          expect(result).toBeUndefined();
+          expect(engine.claimedTournamentMovePauseOwners.has(owner)).toBe(false);
+          finishSettlement();
+        }
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(result).toBe(true);
+        await expect(parked).resolves.toBe(true);
+        expect(engine.handForHandResolve).not.toBeNull();
+        expect(engine.claimedTournamentMovePauseOwners.has(owner)).toBe(true);
+        expect(loadSeatedPlayers).toHaveBeenCalledTimes(rosterReads);
+        expect(engine.dealingLoop).not.toHaveBeenCalled();
+
+        // The successfully claimed owner must not expire like an unclaimed
+        // 15-second park, and an unrelated release cannot open its boundary.
+        await vi.advanceTimersByTimeAsync(15_001);
+        engine.releaseTournamentMovePause('another-manager-generation');
+        expect(engine.handForHandResolve).not.toBeNull();
+        expect(engine.claimedTournamentMovePauseOwners.has(owner)).toBe(true);
+        engine.releaseTournamentMovePause(owner);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(loadSeatedPlayers).toHaveBeenCalledTimes(rosterReads + 1);
+        expect(asked.at(-1)).toBe(5_000);
+      } finally {
+        finishSettlement();
+        engine.running = false;
+        engine.releaseTournamentMovePause(owner);
+        engine.wakeWaitingForPlayers();
+        await vi.advanceTimersByTimeAsync(1_001);
+        await started;
+        await engine.stop();
+        vi.useRealTimers();
+      }
+    }
+  );
+
   it('a stop ends the pause so teardown never waits out a minute', async () => {
     vi.useFakeTimers();
     loadTable.mockResolvedValue({ ...TABLE_ROW, tournament_id: TOURNAMENT });

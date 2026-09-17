@@ -94,21 +94,25 @@ export function jsonLdDocument(jsonLd) {
 
 
 /**
- * THE FONTS ARE KNOWN AT FIRST PAINT (2026-09-17). fonts.css is loaded async
- * (media=print swap trick), so the prerendered words painted in Georgia and
- * system-ui and then jumped when Cinzel and Inter arrived: measured CLS 0.061
- * on a phone, once for the prerender and once more for the React tree. The
- * latin @font-face rules for the two families the public pages use are
- * inlined into the prerendered head, and their two woff2 files are preloaded,
- * so the first paint already uses the right metrics whenever the files arrive
- * in time (they are small and fetched at high priority). Best effort: no
- * fonts.css, no change.
+ * THE FONTS ARE KNOWN AT FIRST PAINT, AND DECLARED ONCE (2026-09-17).
+ * fonts-<hash>.css was loaded async (media=print swap trick), so the
+ * prerendered words painted in Georgia and system-ui and then jumped when
+ * Cinzel and Inter arrived: measured CLS 0.061 on a phone. The first cut
+ * inlined only the latin faces and kept the async stylesheet; when that
+ * stylesheet landed it declared the same faces a second time, the browser
+ * took the later declarations, which were not loaded yet, and every word
+ * swapped to a fallback and back: measured CLS 0.121, two shifts, both after
+ * the app had drawn. So the whole self-hosted stylesheet is inlined into the
+ * head IN PLACE of the async link and its noscript twin, and the latin woff2
+ * files of the two families the public pages use are preloaded. One
+ * declaration per face, present before first paint, no second request.
+ * Best effort: no fonts stylesheet in dist/fonts, no change.
  */
 const PRERENDER_FONT_FAMILIES = ['Cinzel', 'Inter'];
 
-export function latinFontFaces(fontsCss) {
-  const faces = [];
-  const seen = new Set();
+/** The woff2 URLs of the latin faces of the families the public pages use. */
+export function latinFontUrls(fontsCss) {
+  const urls = new Set();
   for (const m of fontsCss.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
     const body = m[1];
     const family = /font-family:\s*'?([^;']+)'?/.exec(body)?.[1]?.trim();
@@ -116,26 +120,40 @@ export function latinFontFaces(fontsCss) {
     const url = /url\(([^)]+)\)/.exec(body)?.[1];
     if (!family || !url || !PRERENDER_FONT_FAMILIES.includes(family)) continue;
     if (!/U\+0000-00FF/i.test(range)) continue;
-    faces.push({ family, url, rule: `@font-face{${body.replace(/\s+/g, ' ').trim()}}` });
-    seen.add(url);
+    urls.add(url);
   }
-  return { rules: faces.map((f) => f.rule), urls: [...seen] };
+  return [...urls];
 }
 
-function readLatinFonts() {
+function readFonts() {
   const dir = path.join(DIST, 'fonts');
   if (!existsSync(dir)) return null;
-  const css = readdirSync(dir).find((f) => /^fonts-[a-f0-9]+\.css$/.test(f));
-  if (!css) return null;
-  return latinFontFaces(readFileSync(path.join(dir, css), 'utf8'));
+  const file = readdirSync(dir).find((f) => /^fonts-[a-f0-9]+\.css$/.test(f));
+  if (!file) return null;
+  const css = readFileSync(path.join(dir, file), 'utf8');
+  return { file, css: css.replace(/\/\*[^*]*\*\//g, '').replace(/\s+/g, ' ').trim(), urls: latinFontUrls(css) };
 }
 
 export function fontHeadMarkup(fonts) {
-  if (!fonts || fonts.urls.length === 0) return '';
+  if (!fonts || !fonts.css) return '';
   const preloads = fonts.urls
     .map((u) => `  <link rel="preload" href="${escapeAttr(u)}" as="font" type="font/woff2" crossorigin />`)
     .join('\n');
-  return `${preloads}\n  <style data-prerender="fonts">${fonts.rules.join('')}</style>\n`;
+  return `${preloads}\n  <style data-prerender="fonts">${fonts.css}</style>\n`;
+}
+
+/**
+ * Replace the async stylesheet link (and its noscript twin) for `file` with
+ * `markup`, at the same place in the head, so the cascade order is unchanged.
+ * Throws if the shell does not reference the file: the prerender must never
+ * leave the faces declared twice.
+ */
+export function replaceFontStylesheet(shell, file, markup) {
+  const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const asyncLink = new RegExp(`<link\\s+href="[^"]*${escaped}"\\s+rel="stylesheet"\\s+media="print"[^>]*>`);
+  const noscript = new RegExp(`\\s*<noscript>\\s*<link\\s+href="[^"]*${escaped}"\\s+rel="stylesheet"\\s*/?>\\s*</noscript>`);
+  if (!asyncLink.test(shell)) throw new Error(`prerender: shell index.html has no async link to ${file}`);
+  return shell.replace(asyncLink, markup.trim()).replace(noscript, '');
 }
 
 /** Build one route's HTML document from the shell and the rendered page. */
@@ -173,7 +191,7 @@ export function composeDocument({ shell, page, css, fonts = null }) {
 
   const fontMarkup = fontHeadMarkup(fonts);
   if (fontMarkup) {
-    doc = doc.replace('</head>', `${fontMarkup}</head>`);
+    doc = replaceFontStylesheet(doc, fonts.file, fontMarkup);
   }
   if (css) {
     doc = doc.replace('</head>', `  <style data-prerender="css">${css}</style>\n</head>`);
@@ -261,7 +279,7 @@ async function main() {
   const entry = await import(pathToFileURL(path.join(PRERENDER_OUT, 'entry-server.mjs')).href);
   entry.assertPrerenderCoversPublicRoutes();
   const css = readPrerenderCss();
-  const fonts = readLatinFonts();
+  const fonts = readFonts();
 
   const manifest = [];
   for (const route of entry.PRERENDER_PATHS) {

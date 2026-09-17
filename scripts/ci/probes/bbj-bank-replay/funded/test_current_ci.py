@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import current_ci as ci
-from execution import finish_owned_teardown
+from execution import finish_owned_teardown, dispose_owned_case_database
 from custody import FundedSourceCustody
 from retained import RetainedModules, INSTALLER_PREFIX, literal_installer_transport
 
@@ -557,6 +557,82 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
                     self.assertEqual(ledger['status'],'TEARDOWN_FAILED_OUTCOME_UNCERTAIN')
                     self.assertTrue(budget.execution_refused)
                     self.assertFalse(ledger['cleanup']['inactive_proven'])
+
+    def test_case_disposal_uses_one_drop_barrier_and_refuses_unproven_backends(self):
+        bound=RetainedModules(FundedSourceCustody(),None,ci.CASES[0])
+        db=ci.CASES[0].lower()
+        backend={'pid':42,'backend_start':'2026-09-17 08:32:56.72583+00',
+                 'backend_type':'client backend','database':db,'database_oid':'48580',
+                 'state':'idle','xact_start':None}
+        owner={'constructor_status':'RETURNED','exit_after_cleanup':0,'cleanup':[],
+               'physical':{k:backend[k] for k in ('pid','backend_start','database','database_oid')}}
+        def run(backends,owners=None,*,oid='48580',count=None,drop_error=None,absence=True):
+            calls=[];disposal={}
+            observation={'oid':oid,'sessions':len(backends) if count is None else count,'backends':backends}
+            def command(args,*,cleanup):
+                self.assertTrue(cleanup)
+                query=args[-1];calls.append(query)
+                if query.startswith('WITH sessions AS MATERIALIZED'):
+                    return SimpleNamespace(stdout=json.dumps(observation))
+                if query == 'DROP DATABASE '+db:
+                    if drop_error is not None:raise drop_error
+                    return SimpleNamespace(stdout='DROP DATABASE\n')
+                self.assertTrue(query.startswith('SELECT to_jsonb(NOT EXISTS'))
+                return SimpleNamespace(stdout=json.dumps(absence))
+            try:
+                dispose_owned_case_database(db,'48580',[owner] if owners is None else owners,
+                    disposal,command,['psql'],bound.identity.canonical_oid,
+                    bound.parser.decode_catalog_result,(db,))
+            except (RuntimeError,ValueError,TimeoutError) as error:
+                return calls,disposal,error
+            return calls,disposal,None
+        # Old one-shot count refused the same exiting-client observation.
+        with self.assertRaisesRegex(RuntimeError,'still has sessions'):
+            bound.identity.require_owned_database_identity('48580','48580',1)
+        for rows in ([],[backend],[{**backend,'pid':43,'backend_type':'autovacuum worker',
+                                   'state':'active','xact_start':'2026-09-17 08:33:00+00'}]):
+            with self.subTest(accepted=rows):
+                calls,disposal,error=run(rows)
+                self.assertIsNone(error)
+                self.assertEqual(len(calls),3)
+                self.assertEqual(calls[1],'DROP DATABASE '+db)
+                self.assertEqual(disposal['before_observation']['backends'],rows)
+                self.assertEqual(disposal['before']['sessions'],len(rows))
+                self.assertEqual(disposal['normalized_existing_oid'],'48580')
+                self.assertEqual(disposal['status'],'ABSENT_PROVEN')
+        for mutation in ({'pid':43},{'backend_start':'different backend start'},
+                         {'state':'active'},{'state':'idle in transaction'},
+                         {'xact_start':'2026-09-17 08:33:00+00'},
+                         {'backend_type':'parallel worker'},{'database_oid':'48581'},
+                         {'database':'other'},{'pid':True},{'backend_start':None}):
+            with self.subTest(refused=mutation):
+                calls,disposal,error=run([{**backend,**mutation}])
+                self.assertIsNotNone(error)
+                self.assertEqual(len(calls),1)
+                self.assertNotIn('status',disposal)
+        for kwargs in ({'count':True},{'count':2},{'oid':'48581'},
+                       {'owners':[{**owner,'exit_after_cleanup':None}]},
+                       {'owners':[{**owner,'exit_after_cleanup':1}]},
+                       {'owners':[{**owner,'exit_after_cleanup':False}]},
+                       {'owners':[{**owner,'cleanup':[{'status':'ERROR'}]}]},
+                       {'owners':[{**owner,'constructor_status':'FAILED'}]}):
+            with self.subTest(refused_metadata=kwargs):
+                calls,disposal,error=run([backend],**kwargs)
+                self.assertIsNotNone(error)
+                self.assertEqual(len(calls),1)
+        calls,disposal,error=run([backend,backend])
+        self.assertIsNotNone(error)
+        self.assertEqual(len(calls),1)
+        for error in (RuntimeError('database is being accessed by other users'),
+                      TimeoutError('DROP result unknown')):
+            calls,disposal,actual=run([backend],drop_error=error)
+            self.assertIs(actual,error)
+            self.assertEqual(len(calls),2)  # No retry or invented absence after an unknown DROP.
+            self.assertNotIn('status',disposal)
+        calls,disposal,error=run([],absence=False)
+        self.assertIsNotNone(error)
+        self.assertEqual(len(calls),3)
+        self.assertNotIn('status',disposal)
 
     def job_response(self):
         return {'total_count':1,'jobs':[{'id':42,'run_id':123,'name':ci.ACCOUNTING_JOB_NAME,

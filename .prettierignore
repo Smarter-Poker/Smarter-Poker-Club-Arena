@@ -80,3 +80,7 @@ scripts/qualification/fixtures/spin-history-retention/completed-start-authority.
 scripts/qualification/spin-history-retention-completed.manifest.json
 scripts/qualification/spin-history-retention-completed.md
 scripts/qualification/fixtures/spin-history-retention/social-alias-reference-authority.json
+
+# Exact captured MTT authoring catalog and permission evidence.
+scripts/ci/fixtures/mtt-break-authoring/authority-catalog-0002.json
+scripts/ci/fixtures/mtt-break-authoring/scope-authority.json

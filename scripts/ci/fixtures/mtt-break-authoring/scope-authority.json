@@ -13,7 +13,9 @@
     "owner": "postgres",
     "prosecdef": true,
     "provolatile": "s",
-    "proconfig": ["search_path=public"],
+    "proconfig": [
+      "search_path=public"
+    ],
     "grants": [
       {
         "grantee": "authenticated",

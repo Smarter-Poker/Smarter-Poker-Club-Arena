@@ -78,3 +78,5 @@ The required applied-migration gate exposed a missing schema inventory fragment.
 A fresh production catalog read confirmed all 19 new helper names, the admission
 table and both tournament columns. Their scoped declaration now makes the same
 gate pass, without replaying migrations or changing native qualification inputs.
+
+The current provider attempt exposed a stale cash-qualification binding to the shared CI workflow, classifier and classifier tests. Review confirms only the new MTT verification and routing changed; the cash job, native implementation and assertions are unchanged. Those three exact inputs are rebound, and the existing six cash preflight/oracle tests pass after reproducing the original refusal. The installed L03 authoring regression is composed into this same preparation delivery. Its exact captured JSON inputs are excluded from formatting so ordinary hooks preserve the qualified byte seals.

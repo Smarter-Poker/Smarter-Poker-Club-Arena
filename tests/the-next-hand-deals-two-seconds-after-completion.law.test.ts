@@ -98,7 +98,11 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
   });
 
   it('the roster, the leave sweep and the hand number are read together, under the rest', () => {
-    expect(DEALING).toMatch(/this\.seatedPlayers = await this\.prepareNextHand\(\);/);
+    // The read still runs under the rest, but stop may win while it is pending.
+    // Keep the returned roster local until the lifecycle gate permits adoption.
+    expect(DEALING).toMatch(
+      /const nextRoster = await this\.prepareNextHand\(\);\s*if \(!this\.lifecycleCanMutate\(\)\) return;\s*this\.seatedPlayers = nextRoster;/
+    );
     const prep = DEALING.slice(DEALING.indexOf('protected async prepareNextHand('));
     const body = prep.slice(0, prep.indexOf('return this.readNextHandInputs();'));
     // the leave sweep races the roster read only when no add-on is pending

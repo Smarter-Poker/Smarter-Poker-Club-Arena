@@ -4585,14 +4585,18 @@ export abstract class ServerTableEngineBase {
    * too rather than dealing the moment a seat fills mid-break.
    */
   pauseForMaintenance(maxWaitMs: number): void {
-    if (!this.maintenancePaused) this.parkedBankSaveComplete = false;
+    const firstMaintenanceRequest = !this.maintenancePaused;
+    if (firstMaintenanceRequest) this.parkedBankSaveComplete = false;
     this.maintenancePaused = true;
     this.holdBeforeNextHand = true;
-    // 2026-09-04 (audit item 2): the break is the restart. Persist the
-    // presence FSM now, and again when the loop actually parks (a seat can
-    // drop between the announcement and the park). Fire-and-forget: the
-    // break must not wait on a write.
-    void this.persistPresenceForRestart('announced');
+    if (firstMaintenanceRequest) {
+      // An existing pause will not re-enter the loop's checkpoint before
+      // awaiting its gate. Capture that already parked boundary here. Later
+      // maintenance fan-outs must not replace a final snapshot with an
+      // announcement; readiness still waits for this serialized write.
+      const alreadyParked = this.handForHandResolve !== null && this.isBetweenHands();
+      void this.persistPresenceForRestart(alreadyParked ? 'parked' : 'announced');
+    }
     if (maxWaitMs > 0) {
       // Take the LONGER of the two budgets. A hand-for-hand pause armed a
       // moment ago must not shorten the break's safety window.

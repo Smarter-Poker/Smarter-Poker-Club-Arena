@@ -172,11 +172,8 @@
 .links a {
   color: #9bd0ff;
   font-weight: 600;
-  text-decoration: none;
-}
-
-.links a:hover {
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .cta {

@@ -1,0 +1,24 @@
+-- Genuine captured five SQL-role attributes. No authenticator/login-service claim.
+BEGIN;
+ALTER ROLE anon NOSUPERUSER INHERIT NOLOGIN NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE anon RESET ALL;
+ALTER ROLE anon SET statement_timeout TO '3s';
+ALTER ROLE authenticated NOSUPERUSER INHERIT NOLOGIN NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE authenticated RESET ALL;
+ALTER ROLE authenticated SET statement_timeout TO '8s';
+ALTER ROLE postgres NOSUPERUSER INHERIT LOGIN CREATEDB CREATEROLE REPLICATION BYPASSRLS;
+ALTER ROLE postgres RESET ALL;
+ALTER ROLE postgres SET search_path TO "\$user", public, extensions;
+ALTER ROLE postgres SET statement_timeout TO '2min';
+ALTER ROLE service_role NOSUPERUSER INHERIT NOLOGIN NOCREATEDB NOCREATEROLE NOREPLICATION BYPASSRLS;
+ALTER ROLE service_role RESET ALL;
+ALTER ROLE service_role SET statement_timeout TO '8s';
+ALTER ROLE supabase_auth_admin NOSUPERUSER NOINHERIT LOGIN NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE supabase_auth_admin RESET ALL;
+ALTER ROLE supabase_auth_admin SET search_path TO 'auth';
+ALTER ROLE supabase_auth_admin SET idle_in_transaction_session_timeout TO '60000';
+ALTER ROLE supabase_auth_admin SET log_statement TO 'none';
+GRANT anon TO postgres WITH ADMIN TRUE, INHERIT TRUE, SET TRUE;
+GRANT authenticated TO postgres WITH ADMIN TRUE, INHERIT TRUE, SET TRUE;
+GRANT service_role TO postgres WITH ADMIN TRUE, INHERIT TRUE, SET TRUE;
+COMMIT;

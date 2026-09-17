@@ -1168,6 +1168,21 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      - name: Spin expiry lock order and committed refund contracts
+        id: spin_expiry_postgres
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-spin-expiry-postgres.py
+
+      - name: Retain Spin expiry PostgreSQL evidence
+        if: always() && steps.spin_expiry_postgres.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spin-expiry-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/spin-expiry/
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

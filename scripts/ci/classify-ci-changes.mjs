@@ -11,6 +11,10 @@ const phase4 =
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
+// Spin qualification and every reviewed input use the existing accounting job.
+const spinExpiry =
+  /^(supabase\/components\/spin-expiry-lock-order(?:\.rollback)?\.sql$|scripts\/qualification\/spin-expiry-|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
@@ -19,8 +23,8 @@ export function classifyChangedPaths(paths) {
   const broad = matches(wide);
   return {
     src: broad || matches(/^src\//),
-    server: broad || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
-    tests: broad || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
+    server: broad || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/) || matches(spinExpiry),
+    tests: broad || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/) || matches(spinExpiry),
     phase4: matches(phase4),
     fixture: matches(fixture),
   };

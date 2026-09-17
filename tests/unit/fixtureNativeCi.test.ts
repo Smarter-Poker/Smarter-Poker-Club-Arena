@@ -199,3 +199,136 @@ describe('required CI owns native fixture verification', () => {
     );
   });
 });
+
+// Keep the full current qualification closure explicit: no manifest read is
+// needed to classify its own removal, or a source renamed outside the scope.
+const spinExpiryAccountingPaths = [
+  'scripts/qualification/spin-expiry-business-races.md',
+  'scripts/qualification/spin-expiry-business-races.py',
+  'scripts/qualification/spin-expiry-business-state.sql',
+  'scripts/qualification/spin-expiry-committed-refund-oracle.py',
+  'scripts/qualification/spin-expiry-committed-refund-state.sql',
+  'scripts/qualification/spin-expiry-committed-refund.authority.json',
+  'scripts/qualification/spin-expiry-committed-refund.md',
+  'scripts/qualification/spin-expiry-committed-refund.py',
+  'scripts/qualification/spin-expiry-lock-order.authority.json',
+  'scripts/qualification/spin-expiry-lock-order.component-inputs.sql',
+  'scripts/qualification/spin-expiry-lock-order.md',
+  'scripts/qualification/spin-expiry-lock-order.sql',
+  'scripts/qualification/spin-expiry-real-funded-fixture.sql',
+  'supabase/components/spin-expiry-lock-order.rollback.sql',
+  'supabase/components/spin-expiry-lock-order.sql',
+  'scripts/ci/probes/spin-expiry/inputs/schema.sql',
+  'scripts/ci/probes/spin-expiry/inputs/access.sql',
+  'scripts/ci/probes/spin-expiry/inputs/policies.sql',
+  'scripts/ci/probes/spin-expiry/principals.sql',
+  'scripts/ci/probes/spin-expiry/provider-supplement.sql',
+  'scripts/ci/probes/spin-expiry/provider-roles.sql',
+  'scripts/ci/probes/spin-expiry/provider-roles-check.sql',
+  'scripts/ci/probes/spin-expiry/provider-check.sql',
+  'scripts/ci/probes/spin-expiry/empty-provider-check.sql',
+  'scripts/ci/probes/spin-expiry/inputs/catalog-sequence-exact.json',
+  'scripts/ci/probes/spin-expiry/inputs/spin-catalog-supplement.sql',
+  'scripts/ci/probes/spin-expiry/inputs/entry-provider-supplement.sql',
+  'scripts/ci/probes/spin-expiry/inputs/entry-sequence-authority.sql',
+  'scripts/ci/probes/spin-expiry/inputs/settle-source-authority.sql',
+  'scripts/ci/probes/spin-expiry/inputs/captured-financial-store-policy.sql',
+  'scripts/ci/probes/spin-expiry/inputs/captured-spin-catalog.json',
+  'scripts/ci/probes/spin-expiry/spin-catalog-observer.sql',
+  'scripts/ci/probes/spin-expiry/manifest.json',
+  'scripts/ci/test-spin-expiry-postgres.py',
+  'scripts/ci/test_spin_expiry_wrapper.py',
+  'tests/unit/fixtureNativeCi.test.ts',
+] as const;
+
+describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
+  it.each(spinExpiryAccountingPaths)('selects accounting and its guards for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+    expect(flags.src).toBe(false);
+  });
+
+  it.each(['modified', 'deleted', 'renamed'] as const)(
+    'keeps the full qualification selected when its actual Git paths are %s',
+    (operation) => {
+      withGitFixture(({ directory, git, write, commit }) => {
+        for (const path of spinExpiryAccountingPaths) write(path, 'original qualification input');
+        const base = commit();
+        const relocated = spinExpiryAccountingPaths.map(
+          (_, index) => `docs/relocated-spin-${index}.txt`
+        );
+        for (const [index, path] of spinExpiryAccountingPaths.entries()) {
+          if (operation === 'modified') write(path, 'changed qualification input');
+          if (operation === 'deleted') rmSync(join(directory, path));
+          if (operation === 'renamed') git('mv', '--', path, relocated[index]);
+        }
+        const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+        expect(result.complete).toBe(true);
+        for (const path of spinExpiryAccountingPaths) expect(result.paths).toContain(path);
+        expect(result.flags.server).toBe(true);
+        expect(result.flags.tests).toBe(true);
+        if (operation === 'renamed') {
+          for (const path of relocated) expect(result.paths).toContain(path);
+          // The old paths, rather than harmless destinations, select the job.
+          expect(classifyChangedPaths(relocated).server).toBe(false);
+          expect(classifyChangedPaths(relocated).tests).toBe(false);
+        }
+      });
+    }
+  );
+
+  it.each([
+    'docs/spin-expiry-plan.md',
+    'scripts/qualification/unrelated.sql',
+    'supabase/components/unrelated.sql',
+    'supabase/components/spin-expiry-lock-order.sql.bak',
+    'scripts/ci/probes/unrelated/input.sql',
+    'scripts/ci/test-spin-expiry-postgres.py.bak',
+  ])('preserves an unrelated accounting skip for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(false);
+    expect(flags.tests).toBe(false);
+  });
+
+  it('preserves a verified empty Git diff without weakening uncertain-diff behavior', () => {
+    withGitFixture(({ directory, base }) => {
+      const result = classifyGitChanges({ cwd: directory, base, head: base });
+      expect(result.complete).toBe(true);
+      expect(result.paths).toEqual([]);
+      expect(result.flags.server).toBe(false);
+      expect(result.flags.tests).toBe(false);
+    });
+  });
+
+  it('calls the finite Spin runner from the existing PostgreSQL dependency', () => {
+    const accounting = ci.jobs.accounting_postgres;
+    expect(accounting.needs).toBe('changes');
+    expect(accounting.if).toContain("needs.changes.outputs.server == 'true'");
+    expect(accounting.if).toContain("needs.changes.result != 'success'");
+    expect(accounting['runs-on']).toBe('ubuntu-latest');
+    expect(accounting['continue-on-error']).toBeUndefined();
+    const calls = accounting.steps.filter(
+      (step: { id?: string }) => step.id === 'spin_expiry_postgres'
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].run).toBe('python3 scripts/ci/test-spin-expiry-postgres.py');
+    expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(calls[0].if).toBeUndefined();
+    expect(calls[0]['continue-on-error']).toBeUndefined();
+    expect(ci.jobs.server_shards.needs).toContain('accounting_postgres');
+    const gate = ci.jobs.server_shards.steps.find(
+      (step: { name?: string }) =>
+        step.name === 'Require successful real PostgreSQL accounting tests'
+    );
+    expect(gate.if).toBe("needs.accounting_postgres.result != 'success'");
+    expect(gate.run).toContain('exit 1');
+    expect(ci.jobs.unit_shards.if).toContain("needs.changes.outputs.tests == 'true'");
+    expect(
+      ci.jobs.unit_shards.steps.some(
+        (step: { run?: string }) =>
+          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+      )
+    ).toBe(true);
+  });
+});

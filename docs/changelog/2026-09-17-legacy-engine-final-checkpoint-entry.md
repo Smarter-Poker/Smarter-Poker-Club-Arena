@@ -24,6 +24,14 @@ rows back before returning an aggregate receipt. The temporary inspector stays
 on container loopback and must close before success. Failed or disconnected
 calls remain nonretryable under their original operation identity.
 
+Linux qualification exposed a native target crash when the controller closed
+its WebSocket concurrently with inspector shutdown. Cleanup now observes the
+server-owned close event before checking port refusal. A missing close event
+remains an unknown failure under the original cleanup deadline; it never sends
+a competing close frame. The failed stdin helper exits itself after that bounded
+attempt and cannot authorize a cutover. Tests retain same-process responsiveness
+and normal-exit proof, since a closed port alone also occurs after a crash.
+
 The normal native readiness predicate and the publisher's full 285-second
 candidate/recovery reserve still apply after the helper. A late checkpoint does
 not grant cutover. No maintenance window, proof reserve, frozen protocol, request

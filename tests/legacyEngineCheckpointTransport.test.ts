@@ -16,6 +16,7 @@ describe('actual isolated legacy checkpoint transport', () => {
     ['zero', 'zero instances refuse checkpoint invocation'],
     ['two', 'multiple instances refuse checkpoint invocation'],
     ['preexisting', 'an inspector owned by another caller remains untouched'],
+    ['cleanup_close_timeout', 'missing close notification stays unknown without a competing close'],
   ])(
     '%s: %s',
     (scenario) => {

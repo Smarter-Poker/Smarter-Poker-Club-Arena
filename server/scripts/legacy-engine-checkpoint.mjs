@@ -115,6 +115,9 @@ function connectInspector(endpoint, deadline, createWebSocket) {
       socket.close();
     }
   });
+  const closed = new Promise((resolve) =>
+    socket.addEventListener('close', resolve, { once: true })
+  );
   socket.addEventListener('close', () => fail('inspector disconnected; outcome unknown'));
   socket.addEventListener('error', () => fail('inspector disconnected; outcome unknown'));
   const opened = new Promise((resolve, reject) => {
@@ -143,6 +146,7 @@ function connectInspector(endpoint, deadline, createWebSocket) {
   return {
     socket,
     opened,
+    closed,
     request(method, params, requestDeadline) {
       if (ended || socket.readyState !== WebSocket.OPEN)
         return Promise.reject(refused('inspector disconnected; outcome unknown'));
@@ -329,6 +333,7 @@ export async function runLegacyEngineCheckpoint({
   } finally {
     if (signalled) {
       const cleanupDeadline = Date.now() + cleanupBudgetMs;
+      let shutdownRequested = false;
       try {
         // One cleanup-only reconnection at most: no imports or guard calls.
         if (!connection || connection.socket.readyState !== WebSocket.OPEN) {
@@ -350,7 +355,9 @@ export async function runLegacyEngineCheckpoint({
             { objectGroup: 'legacy-checkpoint' },
             cleanupDeadline
           );
-          // close() waits for attached clients; schedule it, then detach.
+          // Native inspector shutdown owns the close handshake. A simultaneous
+          // client close can crash the pinned Linux runtime; await its close.
+          shutdownRequested = true;
           await connection.request(
             'Runtime.evaluate',
             {
@@ -364,7 +371,27 @@ export async function runLegacyEngineCheckpoint({
       } catch {
         failure = 'inspector cleanup outcome unknown';
       } finally {
-        connection?.close();
+        if (connection && shutdownRequested) {
+          let closeTimer;
+          try {
+            await Promise.race([
+              connection.closed,
+              new Promise((_, reject) => {
+                closeTimer = setTimeout(
+                  () => reject(refused('inspector cleanup outcome unknown')),
+                  remaining(cleanupDeadline, cleanupBudgetMs)
+                );
+              }),
+            ]);
+          } catch {
+            // Do not introduce a competing close frame even on a deadline.
+            // The stdin caller exits only its own helper after this bounded
+            // cleanup attempt; the original operation remains nonretryable.
+            failure = 'inspector cleanup outcome unknown';
+          } finally {
+            clearTimeout(closeTimer);
+          }
+        } else connection?.close();
       }
       while (!inspectorClosed && Date.now() < cleanupDeadline) {
         try {
@@ -407,5 +434,7 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     retryAllowed: false,
   }));
   (checkpointResult.ok ? console.log : console.error)(JSON.stringify(checkpointResult));
-  if (!checkpointResult.ok) process.exitCode = 1;
+  // A failed cleanup may retain a client socket. End this helper after its
+  // bounded attempt without sending another WebSocket close to the engine.
+  if (!checkpointResult.ok) process.exit(1);
 }

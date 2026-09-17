@@ -18,6 +18,10 @@ assert.equal(
 );
 const directory = mkdtempSync(join(tmpdir(), 'checkpoint-transport-'));
 let child, lines, exit, hardStop;
+let stdoutEnded = false,
+  targetExit,
+  stderrBytes = 0,
+  syntheticStderr = Buffer.alloc(0);
 const startedAt = Date.now(),
   lifecycle = [];
 const mark = (stage) => lifecycle.push({ stage, elapsedMs: Date.now() - startedAt });
@@ -102,13 +106,18 @@ try {
   child.on('error', () => failChannel('fixture child process error'));
   child.stdin.on('error', () => failChannel('fixture stdin error'));
   child.stdout.on('error', () => failChannel('fixture stdout error'));
-  child.stdout.on('end', () => failChannel('fixture stdout ended'));
+  child.stdout.on('end', () => {
+    stdoutEnded = true;
+    failChannel('fixture stdout ended');
+  });
   child.stderr.on('error', () => failChannel('fixture stderr error'));
   lines = createInterface({ input: child.stdout });
   lines.on('error', () => failChannel('fixture response reader error'));
-  let stderrBytes = 0;
   child.stderr.on('data', (bytes) => {
     stderrBytes += bytes.length;
+    // This child loads only the generated synthetic fixture, never application
+    // data or credentials. Preserve a bounded tail for native termination proof.
+    syntheticStderr = Buffer.concat([syntheticStderr, bytes.subarray(-8192)]).subarray(-8192);
     if (bytes.includes('Debugger attached.')) mark('debugger_attached');
     if (bytes.includes('Debugger ending')) mark('debugger_ending');
     if (bytes.includes('Waiting for the debugger to disconnect'))
@@ -132,6 +141,7 @@ try {
   });
   exit = new Promise((resolve) =>
     child.once('exit', (code, signal) => {
+      targetExit = { code, signal };
       mark('target_exit');
       failChannel('fixture target exited');
       lines.close();
@@ -181,6 +191,32 @@ try {
     guard,
     workBudgetMs: 3000,
     cleanupBudgetMs: 2000,
+  };
+  let clientCloseCalls = 0,
+    clientCloseWhileOpen = 0,
+    withheldCloseNotifications = 0;
+  const observedWebSocket = (endpoint) => {
+    const socket = new WebSocket(endpoint);
+    const close = socket.close.bind(socket);
+    socket.close = (...args) => {
+      clientCloseCalls++;
+      if (socket.readyState === WebSocket.OPEN) clientCloseWhileOpen++;
+      return close(...args);
+    };
+    if (scenario === 'cleanup_close_timeout') {
+      const addEventListener = socket.addEventListener.bind(socket);
+      socket.addEventListener = (type, listener, options) =>
+        addEventListener(
+          type,
+          type === 'close'
+            ? () => {
+                withheldCloseNotifications++;
+              }
+            : listener,
+          options
+        );
+    }
+    return socket;
   };
   let expectedCalls = 1,
     result;
@@ -249,6 +285,10 @@ try {
     result = await runLegacyEngineCheckpoint({
       ...options,
       ...(scenario === 'timeout' ? { workBudgetMs: 500 } : {}),
+      ...(['success', 'cleanup_close_timeout'].includes(scenario)
+        ? { createWebSocket: observedWebSocket }
+        : {}),
+      ...(scenario === 'cleanup_close_timeout' ? { cleanupBudgetMs: 200 } : {}),
     });
     if (scenario === 'success')
       assert.deepEqual(result, {
@@ -262,6 +302,20 @@ try {
     if (scenario === 'exception')
       assert.equal(result.reason, 'target checkpoint evaluation refused');
     if (scenario === 'timeout') assert.equal(result.reason, 'inspector operation outcome unknown');
+    if (['success', 'cleanup_close_timeout'].includes(scenario)) {
+      assert.equal(clientCloseWhileOpen, 0, 'client must not race the native inspector close');
+      assert.equal(clientCloseCalls, 0, 'scheduled native shutdown owns the close handshake');
+    }
+    if (scenario === 'cleanup_close_timeout') {
+      assert.equal(result.reason, 'inspector cleanup not verified');
+      assert.equal(result.inspectorClosed, false);
+      assert.equal(result.checkpointInvoked, true);
+      assert.equal(result.cleanupConnections, 0);
+      assert.ok(
+        withheldCloseNotifications > 0,
+        'real close notification was deliberately withheld'
+      );
+    }
     if (['zero', 'two'].includes(scenario)) {
       assert.equal(result.reason, 'target checkpoint evaluation refused');
       assert.equal(result.checkpointInvoked, false);
@@ -272,7 +326,8 @@ try {
   mark('driver_returned');
   assert.equal(result.retryAllowed, false);
   assert.ok(!JSON.stringify(result).includes('synthetic-secret'));
-  if (scenario !== 'preexisting') assert.equal(result.inspectorClosed, true);
+  if (!['preexisting', 'cleanup_close_timeout'].includes(scenario))
+    assert.equal(result.inspectorClosed, true);
   send('state');
   assert.deepEqual(await next('state'), {
     type: 'state',
@@ -310,12 +365,19 @@ try {
     })
   );
 } catch (error) {
+  // Pipe EOF can precede the exit event. Observe that original outcome before
+  // finally's forced cleanup could replace it with a fixture-originated signal.
+  if (stdoutEnded && exit && !targetExit)
+    await bounded(exit, 1500, 'failure_exit_observation').catch(() => {});
   console.error(
     JSON.stringify({
       scenario,
       lifecycle,
       childExited: child?.exitCode !== null,
       childSignalled: child?.signalCode !== null,
+      targetExit: targetExit ?? null,
+      targetStderrBytes: stderrBytes,
+      targetStderrTail: syntheticStderr.toString('utf8'),
     })
   );
   throw error;

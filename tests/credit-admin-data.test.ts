@@ -1,25 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import {
-  creditAdminMoney,
-  creditAdminRow,
-  creditAdminTotal,
-  readCreditMoney,
-} from '../src/utils/creditAdminData';
+import { creditAdminMoney, creditAdminRow, creditAdminTotal, readCreditMoney } from '../src/utils/creditAdminData';
 
-const row = (overrides: Record<string, unknown> = {}) =>
-  creditAdminRow(
-    {
-      id: 'agent-a',
-      user_id: 'player-a',
-      club_id: 'club-a',
-      status: 'active',
-      credit_limit: '100.00',
-      agent_wallet_balance: '500.00',
-      credit_used: '25.31',
-      ...overrides,
-    },
-    'Agent A'
-  );
+const row = (overrides: Record<string, unknown> = {}) => creditAdminRow({
+  id: 'agent-a', user_id: 'player-a', club_id: 'club-a', status: 'active',
+  credit_limit: '100.00', agent_wallet_balance: '500.00', credit_used: '25.31',
+  ...overrides,
+}, 'Agent A');
 
 describe('Credit admin money is recorded debt, not unused capacity', () => {
   it('keeps drawn debt independent of the credit ceiling and wallet', () => {
@@ -29,9 +15,8 @@ describe('Credit admin money is recorded debt, not unused capacity', () => {
     expect(row({ credit_used: '0.00' }).debtOwed).toBe(0);
   });
 
-  it.each([null, undefined, '', ' ', 'NaN', Infinity, NaN, true, '-1', '1.231', '1x', '1e3'])(
-    'preserves invalid or missing money as unavailable: %s',
-    (value) => {
+  it.each([null, undefined, '', ' ', 'NaN', Infinity, NaN, true, '-1', '1.231', '1x', '1e3']) (
+    'preserves invalid or missing money as unavailable: %s', (value) => {
       expect(readCreditMoney(value)).toBeNull();
       expect(row({ credit_used: value }).debtOwed).toBeNull();
       expect(creditAdminTotal([row({ credit_used: value })], 'debtOwed')).toBeNull();
@@ -39,9 +24,7 @@ describe('Credit admin money is recorded debt, not unused capacity', () => {
   );
 
   it('sums exact cents and preserves an unavailable row instead of substituting zero', () => {
-    expect(
-      creditAdminTotal([row({ credit_used: '0.10' }), row({ credit_used: '0.20' })], 'debtOwed')
-    ).toBe(0.3);
+    expect(creditAdminTotal([row({ credit_used: '0.10' }), row({ credit_used: '0.20' })], 'debtOwed')).toBe(0.3);
     expect(creditAdminTotal([row(), row({ credit_used: null })], 'debtOwed')).toBeNull();
     expect(creditAdminMoney(null)).toBe('Unavailable');
     expect(readCreditMoney('1.2300')).toBe(1.23);
@@ -52,12 +35,9 @@ describe('Credit admin money is recorded debt, not unused capacity', () => {
     expect(readCreditMoney('90071992547409.90')).toBeNull();
     expect(readCreditMoney('90071992547409.89')).toBe(90071992547409.89);
     expect(readCreditMoney('90071992547409.92')).toBeNull();
-    expect(
-      creditAdminTotal(
-        [row({ credit_used: '90071992547409.89' }), row({ credit_used: '0.01' })],
-        'debtOwed'
-      )
-    ).toBeNull();
+    expect(creditAdminTotal([
+      row({ credit_used: '90071992547409.89' }), row({ credit_used: '0.01' }),
+    ], 'debtOwed')).toBeNull();
   });
 
   it('bounds malformed decimal input before BigInt parsing and refuses missing identities', () => {

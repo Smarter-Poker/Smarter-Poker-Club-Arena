@@ -31,7 +31,7 @@
       "sha256": "7f51038bbb3d27b732a7396a67cdfa40d4ed84207213bc2cbb8331b29156bc4a"
     },
     "scripts/dev/test-accounting-delivery.sh": {
-      "sha256": "1407dfd2469f7058ce25cbb9c46a2269b1e1d953ec9e4e6558259ca6f5c6cbf7"
+      "sha256": "7d6a38db87e5ed40c85dc2ae5853a7c89e2931e39ee8be92e5f9e4d037d6daec"
     },
     "scripts/ci/schema-manifest.d/diamond-wheel-funded-awards.json": {
       "sha256": "d1ecf53a933aeb7a9ab5b9681d9e4e2c7902457751cf4620bd3430ba4c6e47ef"

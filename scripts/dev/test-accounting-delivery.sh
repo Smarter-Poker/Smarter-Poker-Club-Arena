@@ -47,8 +47,8 @@ export PGOPTIONS='-c statement_timeout=90000 -c lock_timeout=2000 -c timezone=UT
   -f "$diamond/policy.sql" -f "$diamond/seed.sql" \
   -f "$diamond/play-schema.sql" -f "$diamond/play-functions.sql" -f "$diamond/crash-functions.sql" -f "$diamond/play-seed.sql" \
   -f "$diamond/triggers.sql" -f "$diamond/play-triggers.sql" -f "$diamond/crash-triggers.sql" \
-  -f "$root/supabase/migrations/20260917184000_plinko_per_drop_choices.sql" \
-  -f "$root/supabase/migrations/20260917184500_crash_cashout_keeps_the_clicked_multiplier.sql" \
+  -f "$root/supabase/migrations/20260917181739_plinko_per_drop_choices.sql" \
+  -f "$root/supabase/migrations/20260917181743_crash_cashout_keeps_the_clicked_multiplier.sql" \
   -f "$root/supabase/migrations/20260914100738_a_funding_replay_belongs_to_the_same_request.sql" \
   -f "$root/supabase/migrations/20260914132533_a_claimed_tenth_day_bonus_carries_one_mint_funded_spin.sql"
 

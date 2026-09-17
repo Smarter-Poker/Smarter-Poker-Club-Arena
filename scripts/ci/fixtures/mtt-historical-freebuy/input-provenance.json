@@ -1,0 +1,26 @@
+{
+  "created_at": "2026-09-17T20:49:07.052469+00:00",
+  "authority": "task-local explicit historical proof, no production execution",
+  "captured_inputs": {
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/sources-unwrapped.json": "3be090ae19383d6c61852b2326e59daaea302eba64994076d033d36920bc205d",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/earning-chain-unwrapped.json": "cb962ce50af55c28b49217dfbab8158d480efb32b200cb1d2fc540abf2c5e418",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/earning-authorities.json": "6f0768619ce8be02c365811b44c10b602ee949fd49fb72743270372f0ef22166",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/capture-authorities.json": "6660dfdf257262b90bdf483dea9855f6a1c99e3e2f696a649e7495b2cf9ede3c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/charge-binding.json": "cc079ec61b37dcf01c268cec1038d8182a73747d0e727c382ad074caa394044a",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/catalog-inventory-unwrapped.json": "cda40c6265eabe053660e17b9c7992526a937899167c28f8b24db670795f2a62",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/catalog-inventory.json": "ed3aa70b1a20d094ffe0484cc8b97325ae62ab5927b34988e31f9a20d5dc2139",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/charge-binding-current.json": "3a655da26488f623c3d856e36c1edd773f9829ffe5766485f7767b5ae4cf81bf",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/charge-binding-current-unwrapped.json": "30a05419e64c7936448bb63f8f5aa36e15be2477d6770513b23aabd7f77b0cb4",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/raw-fingerprint-lexemes-2046.json": "bce718f8ce80435004cdbb9b7312b1cddc40ce8053f25c10c91d6c466f4be90b",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/earning-chain.json": "e9408479f647affab66c8f70d90896ca805648b38a6be51f4e7a2d601f6e8dd9",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/managed-contract-lexemes-2047.json": "04621046b61789a45ae7ae49c33a711f443b083303fd979d3cce11d5e923e44f",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/insert-guards-2035-unwrapped.json": "ec54b24e79bd3f264eff628dcb0ebc90a3c5fcfc709947a84256b5a46a65b0c5",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/authority-unwrapped.json": "061274990a1a92f7363f932e373e14805f4d99dafca365c84f55f139d047b4b0",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/qualification-authorities-2038.json": "e82c5960e42add06f9235b94c0191ee7592187585d972633956b72feeb23f32b",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/ledger-actor-fixture-2040.json": "914f2d03476b230b2dfb8b08dca2a22572f6d5b9ff002259f51ac01ba027a022",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/original-contracts-2036.json": "a4a82b9c20c43488b01c1046563abc3b14c66a079c8f5872b448540554f3f2c7",
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/we-x20/outputs/mtt-public-launch-readiness-20260917/legacy-freebuy-proof/insert-guards-2035.json": "d5418c80f62ea5542e822869bcde7e5e75947157e9cb69c7852a6fcf6538e6a4"
+  },
+  "source_scope": "exact3fee rows; no full historical wallet snapshot",
+  "money_writes": false
+}

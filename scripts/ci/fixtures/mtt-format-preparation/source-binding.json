@@ -6,7 +6,7 @@
       "id": "foundation",
       "migration": {
         "path": "supabase/migrations/20260917060000_mtt_persisted_format_preparation.sql",
-        "sha256": "f5b428a538cfeca4240081f4af8e4d5cc3e31583eb8e329f08ad8058e3e69b4f"
+        "sha256": "3b3c35d9afdef33465663eeafd13f85abc4557925d268b7509ab59c95d541349"
       },
       "probe": {
         "path": "scripts/ci/probes/mtt-format-preparation-native.sql",
@@ -90,7 +90,7 @@
       "id": "satellite_restart",
       "migration": {
         "path": "supabase/migrations/20260917070000_mtt_dual_satellite_restart_preparation.sql",
-        "sha256": "910839a69975afade94a20b73a68718d4369a3276d148f2f79fc9f84d9bc739b"
+        "sha256": "2882c0c4a30a85075eab7c1aab89a369420e9705d6da3e1568b83acbff601c78"
       },
       "probe": {
         "path": "scripts/ci/probes/mtt-dual-satellite-restart-preparation-native.sql",

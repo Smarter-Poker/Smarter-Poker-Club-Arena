@@ -330,4 +330,8 @@ END $function$;
 ALTER FUNCTION public.fn_ensure_scheduled_mtt_satellite(jsonb) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ensure_scheduled_mtt_satellite(jsonb) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ensure_scheduled_mtt_satellite(jsonb) TO service_role;
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note)
+VALUES ('tournaments','a2_tournaments_new_satellite_target','Serializes new satellite target validation under the admission contract; preserves booked event economics.'),
+ ('tournaments','a1_tournaments_restart_source','Binds a new restart to its immediate proven source and target; no historical event conversion.')
+ON CONFLICT(table_name,trigger_name) DO UPDATE SET note=EXCLUDED.note;
 COMMIT;

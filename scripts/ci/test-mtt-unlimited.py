@@ -22,6 +22,7 @@ import uuid
 from mtt_isolation_results import validate_case_result, validate_format_lock_result
 from mtt_unlimited_fixture import compose, preparation_supplement_sql
 from mtt_format_qualification import qualification_sql
+from mtt_historical_freebuy_proof import qualify as qualify_historical_freebuy
 
 
 PREPARATION_CATALOG = "scripts/ci/fixtures/mtt-format-preparation/source-binding.json"
@@ -478,6 +479,8 @@ def run_cases(execution):
     execution.start()
     template = execution.database()
     execution.sql(template, file=baseline_file, label="canonical-preimage", seconds=180)
+    execution.report["historical_freebuy"] = qualify_historical_freebuy(
+        execution, root, template, assert_rollback)
     # The first supplement upgrades exactly one observed installed successor.
     # Refuse wrong historical body or ACL before any replacement or commit.
     successor_stage = {"id": "current-satellite-successor",

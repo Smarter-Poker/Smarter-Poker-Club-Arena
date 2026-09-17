@@ -9,7 +9,7 @@ const wide =
 const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/classify-ci-changes\.mjs|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/20260909(165541|170039|170749|171644|172537|175000|180000)_|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31)|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
 const mttPreparation =
-  /^(scripts\/ci\/(test-mtt-unlimited\.py$|mtt_(unlimited_fixture|isolation_results|format_qualification)\.py$|fixtures\/mtt-(unlimited|format-preparation)\/|probes\/mtt-(isolation\/|.*(?:native\.sql|lock\.spec)$))|tests\/operations\/(mtt-(unlimited-runner|isolation-results)\.test\.py$|fixtures\/mtt-preparation-lock\/))/;
+  /^(scripts\/ci\/(test-mtt-unlimited\.py$|mtt_(unlimited_fixture|isolation_results|format_qualification|historical_freebuy_proof)\.py$|fixtures\/mtt-(unlimited|format-preparation|historical-freebuy)\/|probes\/mtt-(isolation\/|.*(?:native\.sql|lock\.spec)$))|tests\/operations\/(mtt-(unlimited-runner|isolation-results)\.test\.py$|fixtures\/mtt-preparation-lock\/))/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 

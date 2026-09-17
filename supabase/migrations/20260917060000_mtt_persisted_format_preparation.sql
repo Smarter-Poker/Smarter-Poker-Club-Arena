@@ -338,4 +338,7 @@ COMMENT ON COLUMN public.tournaments.format_contract IS
  'Database-owned immutable event format; NULL is unresolved historical provenance, never a capacity exemption.';
 COMMENT ON TABLE public.ca_mtt_admission_contract IS
  'Private admission ABI. Preparation leaves legacy behavior; unlimited activation is not yet prepared.';
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note)
+VALUES ('tournaments','zzzzzzz_tournaments_record_format','Records immutable proven tournament format; no financial mutation or capacity activation.')
+ON CONFLICT(table_name,trigger_name) DO UPDATE SET note=EXCLUDED.note;
 COMMIT;

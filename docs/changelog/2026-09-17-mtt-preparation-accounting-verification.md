@@ -55,3 +55,21 @@ These changes do not activate unlimited entry. Real activation concurrency,
 installation, compatible application publication and live behavior remain
 separate acceptance requirements. The historical unrestricted R46 migration
 is not run by this preparation command.
+
+The same existing native owner also executes the exact three-source historical
+Free Buy proof using a separate clone of the original captured template. It
+retains original cutoff refusal, independently expected 0.20/0.10 fee plans,
+unchanged financial evidence, exact replay, nine drift refusals, and the
+single-call self-aborting production probe. The one-time append preserves the
+original earning terms and current capture cutoff; it changes no wallet or
+ledger balance. Preparation triggers declare their purpose at creation.
+
+Production installed the eight preparation stages with legacy admission intact
+and exact function/permissions readback. A separate three-row registry migration
+completes declarations for the already installed stages without replaying DDL.
+After the rollback probe and exact historical proof installation, both affected
+Free Buy events completed through their ordinary terminal authority. Forty
+prize receipts match forty posted ledger credits totaling 692.70 chips; all64
+backing tables are closed, no live seats remain, and both escrows are zero.
+The inherited parent counter retains1 and is not used as proof of a live seat.
+Compatible engine publication and unlimited admission activation remain pending.

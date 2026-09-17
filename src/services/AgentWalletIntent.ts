@@ -1,4 +1,9 @@
-import { createGenerationCoordinator, type PreparedOperation, type CapturedOperation, type AdmittedOperation } from '../lib/DurableOperationCoordinator';
+import {
+  createGenerationCoordinator,
+  type PreparedOperation,
+  type CapturedOperation,
+  type AdmittedOperation,
+} from '../lib/DurableOperationCoordinator';
 import { uuid } from '../utils/uuid';
 
 // No payload or account data is persisted: only a SHA-256 scope and operation UUID.
@@ -21,8 +26,14 @@ export interface AgentWalletIntent {
   userId: string;
   clubId: string;
   targetId: string;
-  kind: 'self_stake' | 'agent_send' | 'club_bank_send'
-    | 'cashout_request' | 'cashout_approve' | 'cashout_decline' | 'cashout_cancel';
+  kind:
+    | 'self_stake'
+    | 'agent_send'
+    | 'club_bank_send'
+    | 'cashout_request'
+    | 'cashout_approve'
+    | 'cashout_decline'
+    | 'cashout_cancel';
   amount: number;
   destination?: 'player_wallet' | 'agent_wallet';
   note?: string;
@@ -196,34 +207,65 @@ const cashoutGenerations = createGenerationCoordinator({
   legacyPrefix: PREFIX,
   markerPrefix: 'cashout-generations:v2:',
   allowLegacyAdoption: true,
-  identityError: 'The Saved Cashout Identity Could Not Be Verified. Keep This Request And Refresh Its Outcome.',
+  identityError:
+    'The Saved Cashout Identity Could Not Be Verified. Keep This Request And Refresh Its Outcome.',
   storageError: 'This Browser Cannot Safely Save The Cashout Request',
   scopeError: 'The Account Or Cashout Changed. Refresh To Check Its Outcome.',
 });
 export async function prepareAgentCashoutOperation(
-  intent: AgentCashoutIntent, isCurrent: () => boolean
+  intent: AgentCashoutIntent,
+  isCurrent: () => boolean
 ): Promise<PreparedAgentCashoutOperation> {
-  if (!globalThis.crypto?.subtle || !globalThis.crypto?.getRandomValues || typeof window === 'undefined' ||
-      typeof navigator === 'undefined' || !navigator.locks) throw new Error('This Browser Cannot Safely Save The Cashout Request');
+  if (
+    !globalThis.crypto?.subtle ||
+    !globalThis.crypto?.getRandomValues ||
+    typeof window === 'undefined' ||
+    typeof navigator === 'undefined' ||
+    !navigator.locks
+  )
+    throw new Error('This Browser Cannot Safely Save The Cashout Request');
   void window.localStorage;
   void window.sessionStorage;
-  if (!isCurrent()) throw new Error('The Account Or Cashout Changed. Refresh To Check Its Outcome.');
+  if (!isCurrent())
+    throw new Error('The Account Or Cashout Changed. Refresh To Check Its Outcome.');
   assertChipAmount(intent.amount);
-  if (![intent.userId, intent.clubId, intent.targetId].every(id =>
-    typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) &&
-    id !== '00000000-0000-0000-0000-000000000000') ||
-    !['cashout_request', 'cashout_approve', 'cashout_decline', 'cashout_cancel'].includes(intent.kind) ||
-    (intent.note !== undefined && typeof intent.note !== 'string')) {
-    throw new Error('The Saved Cashout Identity Could Not Be Verified. Keep This Request And Refresh Its Outcome.');
+  if (
+    ![intent.userId, intent.clubId, intent.targetId].every(
+      (id) =>
+        typeof id === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) &&
+        id !== '00000000-0000-0000-0000-000000000000'
+    ) ||
+    !['cashout_request', 'cashout_approve', 'cashout_decline', 'cashout_cancel'].includes(
+      intent.kind
+    ) ||
+    (intent.note !== undefined && typeof intent.note !== 'string')
+  ) {
+    throw new Error(
+      'The Saved Cashout Identity Could Not Be Verified. Keep This Request And Refresh Its Outcome.'
+    );
   }
   const repeatable = intent.kind === 'cashout_request';
   // Exactly the old digest: playerId is intentionally not added to its schema.
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([
-    intent.userId, intent.clubId, intent.targetId, intent.kind, 'club_chips',
-    intent.amount.toFixed(2), (intent.note ?? '').trim(),
-  ])));
-  if (!isCurrent()) throw new Error('The Account Or Cashout Changed. Refresh To Check Its Outcome.');
-  const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(
+      JSON.stringify([
+        intent.userId,
+        intent.clubId,
+        intent.targetId,
+        intent.kind,
+        'club_chips',
+        intent.amount.toFixed(2),
+        (intent.note ?? '').trim(),
+      ])
+    )
+  );
+  if (!isCurrent())
+    throw new Error('The Account Or Cashout Changed. Refresh To Check Its Outcome.');
+  const hash = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0')
+  ).join('');
   return cashoutGenerations.prepare(hash, repeatable, isCurrent);
 }
 export const captureAgentCashoutStart = cashoutGenerations.capture;

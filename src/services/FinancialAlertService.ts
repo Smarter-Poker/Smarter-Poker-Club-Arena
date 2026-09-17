@@ -38,13 +38,23 @@ export interface FinancialAlert {
 
 function alertTimestamp(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > 32) return false;
-  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  const parts =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.exec(
+      value
+    );
   if (!parts || !Number.isFinite(Date.parse(value))) return false;
   const [year, month, day, hour, minute, second] = parts.slice(1).map(Number);
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  return year > 0 && month >= 1 && month <= 12 && day >= 1 &&
+  return (
+    year > 0 &&
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
     day <= [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] &&
-    hour <= 23 && minute <= 59 && second <= 59;
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59
+  );
 }
 
 function readUnresolvedAlert(value: unknown, critical: boolean): FinancialAlert {
@@ -52,16 +62,30 @@ function readUnresolvedAlert(value: unknown, critical: boolean): FinancialAlert 
     throw new Error('Financial alert record could not be verified');
   }
   const row = value as Record<string, unknown>;
-  if (typeof row.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.id) ||
-      row.id === '00000000-0000-0000-0000-000000000000' ||
-      typeof row.severity !== 'string' || !['critical', 'warning', 'info'].includes(row.severity) ||
-      (row.severity === 'critical') !== critical || row.resolved !== false ||
-      typeof row.source !== 'string' || typeof row.message !== 'string' || !alertTimestamp(row.created_at) ||
-      (row.context !== null && (typeof row.context !== 'object' || Array.isArray(row.context)))) {
+  if (
+    typeof row.id !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.id) ||
+    row.id === '00000000-0000-0000-0000-000000000000' ||
+    typeof row.severity !== 'string' ||
+    !['critical', 'warning', 'info'].includes(row.severity) ||
+    (row.severity === 'critical') !== critical ||
+    row.resolved !== false ||
+    typeof row.source !== 'string' ||
+    typeof row.message !== 'string' ||
+    !alertTimestamp(row.created_at) ||
+    (row.context !== null && (typeof row.context !== 'object' || Array.isArray(row.context)))
+  ) {
     throw new Error('Financial alert record could not be verified');
   }
-  return { id: row.id, severity: row.severity as AlertSeverity, source: row.source, message: row.message,
-    context: (row.context ?? {}) as Record<string, unknown>, resolved: false, createdAt: row.created_at };
+  return {
+    id: row.id,
+    severity: row.severity as AlertSeverity,
+    source: row.source,
+    message: row.message,
+    context: (row.context ?? {}) as Record<string, unknown>,
+    resolved: false,
+    createdAt: row.created_at,
+  };
 }
 
 export const FinancialAlertService = {
@@ -260,10 +284,13 @@ export const FinancialAlertService = {
       others = data;
     }
 
-    const rows = [...criticals.map(row => readUnresolvedAlert(row, true)),
-      ...others.map(row => readUnresolvedAlert(row, false))];
-    const ids = rows.map(row => row.id!.toLowerCase());
-    if (new Set(ids).size !== rows.length) throw new Error('Financial alert rows changed during this read');
+    const rows = [
+      ...criticals.map((row) => readUnresolvedAlert(row, true)),
+      ...others.map((row) => readUnresolvedAlert(row, false)),
+    ];
+    const ids = rows.map((row) => row.id!.toLowerCase());
+    if (new Set(ids).size !== rows.length)
+      throw new Error('Financial alert rows changed during this read');
     return rows;
   },
 

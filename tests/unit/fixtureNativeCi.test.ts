@@ -33,6 +33,33 @@ describe('cash lobby verification reaches the existing browser gate', () => {
   });
 });
 
+describe('build provenance changes reach the existing client verification', () => {
+  it('runs Production Build, CSS Beat and client tests for the exact stamper path', () => {
+    expect(classifyChangedPaths(['scripts/stamp-build-provenance.mjs'])).toEqual({
+      src: true,
+      server: false,
+      tests: true,
+      phase4: false,
+      fixture: false,
+    });
+  });
+
+  it.each([
+    'scripts/stamp-build-provenance.mjs.md',
+    'scripts/stamp-build-provenance.mjsx',
+    'scripts/ci/stamp-build-provenance.mjs',
+    'docs/scripts/stamp-build-provenance.mjs',
+  ])('does not select client checks for a lookalike path: %s', (path) => {
+    expect(classifyChangedPaths([path])).toEqual({
+      src: false,
+      server: false,
+      tests: false,
+      phase4: false,
+      fixture: false,
+    });
+  });
+});
+
 type GitFixture = {
   directory: string;
   base: string;
@@ -479,6 +506,25 @@ describe('required CI owns native fixture verification', () => {
 // Keep the full current qualification closure explicit: no manifest read is
 // needed to classify its own removal, or a source renamed outside the scope.
 const spinExpiryAccountingPaths = [
+  'scripts/qualification/spin-receipt-lane.hosted.manifest.json',
+  'supabase/components/spin-mixed-basis-receipt-lane.sql',
+  'supabase/components/spin-mixed-basis-receipt-lane.rollback.sql',
+  'scripts/qualification/spin-receipt-lane.py',
+  'scripts/qualification/spin-receipt-lane.sql',
+  'scripts/qualification/spin-receipt-lane-compactor.sql',
+  'scripts/qualification/spin-receipt-lane.md',
+  'scripts/qualification/fixtures/spin-receipt-lane/authority.json',
+  'scripts/qualification/fixtures/spin-receipt-lane/boundary.sql',
+  'scripts/qualification/fixtures/spin-receipt-lane/provider.sql',
+  'scripts/qualification/fixtures/spin-receipt-lane/state.sql',
+  'scripts/qualification/fixtures/spin-receipt-lane/snapshot.sql',
+  'scripts/qualification/fixtures/spin-receipt-lane/component-inputs.sql',
+
+  'supabase/components/spin-mixed-basis-evidence.sql',
+  'scripts/qualification/spin-mixed-basis-shape.sql',
+  'scripts/qualification/spin-mixed-basis-evidence.preimage.sql',
+  'scripts/qualification/spin-mixed-basis-pure.sql',
+  'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json',
   'scripts/qualification/fixtures/spin-history-retention/capture-closure.sql',
   'scripts/qualification/fixtures/spin-history-retention/capture-provider.sql',
   'scripts/qualification/fixtures/spin-history-retention/component-inputs.sql',
@@ -587,9 +633,17 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
 
   it.each([
     'docs/spin-expiry-plan.md',
+    'supabase/components/spin-mixed-basis-receipt-lane.sql.bak',
+    'scripts/qualification/spin-receipt-lane.py.bak',
+    'scripts/qualification/spin-receipt-lane.hosted.manifest.json.bak',
     'scripts/qualification/unrelated.sql',
     'supabase/components/unrelated.sql',
     'supabase/components/spin-expiry-lock-order.sql.bak',
+    'supabase/components/spin-mixed-basis-evidence.sql.bak',
+    'scripts/qualification/spin-mixed-basis-pure.sql.bak',
+    'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json.bak',
+    'scripts/qualification/spin-mixed-basis-shape.sql.bak',
+    'scripts/qualification/spin-mixed-basis-evidence.preimage.sql.bak',
     'supabase/components/spin-history-retention.sql.bak',
     'scripts/qualification/spin-history-retention.sql.bak',
     'scripts/qualification/spin-history-retention-completed.sql.bak',

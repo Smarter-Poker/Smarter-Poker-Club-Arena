@@ -90,7 +90,9 @@ describe('FinancialCronService', () => {
   });
 
   it('refuses the retired weekly payout without reading clubs or moving money', async () => {
-    await expect(FinancialCronService.settleAllClubRakebacks()).rejects.toThrow('Weekly Accounting Is Automatic');
+    await expect(FinancialCronService.settleAllClubRakebacks()).rejects.toThrow(
+      'Weekly Accounting Is Automatic'
+    );
     expect(mockFrom).not.toHaveBeenCalled();
     expect(supabase.rpc).not.toHaveBeenCalled();
   });

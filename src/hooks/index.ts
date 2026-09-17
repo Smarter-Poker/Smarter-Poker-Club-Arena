@@ -184,15 +184,30 @@ export function useUnion(unionId: string) {
  * Get union settlement data
  */
 export function useUnionSettlement(unionId: string) {
-  const {user}=useAuthUser();
-  const {accountingScopeId,accountingObservation,accountingUnavailable,accountingCurrent,
-    periodHistory,isLoadingSettlement,loadAccounting}=useUnionStore();
-  useEffect(()=>{if(unionId && user?.id) void loadAccounting(unionId).catch(error=>reportError(error,'useUnionSettlement'));},[unionId,user?.id,loadAccounting]);
-  const current=accountingScopeId===unionId.toLowerCase() && accountingCurrent?.()===true;
-  return {currentPeriod:null,consolidatedReport:null,
-    observation:current?accountingObservation:null,periodHistory:current?periodHistory:[],
-    unavailable:!current||accountingUnavailable,isLoading:current&&isLoadingSettlement,
-    refresh:()=>loadAccounting(unionId)};
+  const { user } = useAuthUser();
+  const {
+    accountingScopeId,
+    accountingObservation,
+    accountingUnavailable,
+    accountingCurrent,
+    periodHistory,
+    isLoadingSettlement,
+    loadAccounting,
+  } = useUnionStore();
+  useEffect(() => {
+    if (unionId && user?.id)
+      void loadAccounting(unionId).catch((error) => reportError(error, 'useUnionSettlement'));
+  }, [unionId, user?.id, loadAccounting]);
+  const current = accountingScopeId === unionId.toLowerCase() && accountingCurrent?.() === true;
+  return {
+    currentPeriod: null,
+    consolidatedReport: null,
+    observation: current ? accountingObservation : null,
+    periodHistory: current ? periodHistory : [],
+    unavailable: !current || accountingUnavailable,
+    isLoading: current && isLoadingSettlement,
+    refresh: () => loadAccounting(unionId),
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

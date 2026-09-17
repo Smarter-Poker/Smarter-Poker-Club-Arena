@@ -4,14 +4,14 @@ SOURCE CANDIDATE / UNRUN. Prepared from reviewed CA35 d6ca0b0ef92428ca537441dae4
 
 The seven existing discriminants remain. The six nonweekly modes now require an explicit representation, expected current actor and view predicate; ambiguous legacy calls refuse before queries. The weekly mode retains its existing canonical reader, 50-row view default and 1000-row export limit. Every exported page checks account generation after awaits and before download. Existing UUID aliases normalize once; returned identities and scope are checked independently. A caller cannot replace a failed agent lookup with the agent PK as a user ID.
 
-| Existing mode | Representation and scope |
-| --- | --- |
-| settlement_club | club_weekly_summaries: only canonical issued club aggregate summaries; received funding, paid by club and retained are distinct. |
-| settlement_agent | own_agent_accrual_records: exact own account and recorded club, original IDs/source types; no payment/entitlement assertion. |
-| agent_commissions | own_agent_page_subtotals: explicit opt-in to exact decimal sums of this bounded source page only, contributing IDs included; never complete day/week totals. |
-| wallet_transactions | own_wallet_records: own user only; a club filter refuses because the table has no club. |
-| rake_records | club_raw_rake_records: exact recorded host/bank club and authenticated visible raw records; not earning-club or weekly liability proof. |
-| cashout_history | own_player_cashout_requests: own player and exact club; mutable request state is not a custody/payment/refund receipt. |
+| Existing mode       | Representation and scope                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| settlement_club     | club_weekly_summaries: only canonical issued club aggregate summaries; received funding, paid by club and retained are distinct.                                  |
+| settlement_agent    | own_agent_accrual_records: exact own account and recorded club, original IDs/source types; no payment/entitlement assertion.                                      |
+| agent_commissions   | own_agent_page_subtotals: explicit opt-in to exact decimal sums of this bounded source page only, contributing IDs included; never complete day/week totals.      |
+| wallet_transactions | own_wallet_records: own user only; a club filter refuses because the table has no club.                                                                           |
+| rake_records        | club_raw_rake_records: exact recorded host/bank club and authenticated visible raw records; not earning-club or weekly liability proof.                           |
+| cashout_history     | own_player_cashout_requests: own player and exact club; mutable request state is not a custody/payment/refund receipt.                                            |
 | settlement_invoices | own_agent_credit_invoice_records: actually credit_invoices; exact own agent-profile identity. Historical club filters refuse because no invoice club is recorded. |
 
 Wallet rows retain nullable related-entity, table and hand references. Raw rake rows retain the typed tournament flag/ID, source and rake method alongside exact amounts; arbitrary metadata and participant-contribution JSON are excluded. These are explicit record projections, not full-row archives.

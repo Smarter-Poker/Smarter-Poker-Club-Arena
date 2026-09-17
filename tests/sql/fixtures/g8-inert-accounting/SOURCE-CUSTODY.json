@@ -172,14 +172,8 @@
     },
     "predecessor0141": {
       "complete_original_packet": false,
-      "retained_members": [
-        "definition.sql",
-        "SEAL.json"
-      ],
-      "missing_original_members": [
-        "HANDOFF.md",
-        "cases.sql"
-      ],
+      "retained_members": ["definition.sql", "SEAL.json"],
+      "missing_original_members": ["HANDOFF.md", "cases.sql"],
       "purpose": "Original rejected definition retained unchanged; the maintained loader applies one disclosed CASE parenthesization only for the unchanged predecessor regression."
     }
   },

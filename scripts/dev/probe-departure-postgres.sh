@@ -294,6 +294,25 @@ for departure_apply in 1 2; do
     -d postgres -f "$repo/scripts/deploy/phase-two-retire-unbound-cashout.sql" >/dev/null
 done
 
+# The fixture above owns the original enumeration. Exercise the complete
+# additive migration, including its production baseline guard and grants.
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/supabase/migrations/20260914101745_cash_pending_moves_carry_original_occupancy.sql" >/dev/null
+
+# Source plan for protected execution: exercise the complete read-only arrival
+# migration with the actual retained transfer receipts, never a mocked proof.
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260916044342_cash_move_presence_reads_confirmed_arrivals.sql" >/dev/null
+done
+
+"$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+  -d postgres -f "$repo/scripts/dev/fixtures/departure-waitlist-functions.sql" >/dev/null
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260914110751_cash_game_waitlist_cancellation_releases_its_offers.sql" >/dev/null
+done
+
 "$PGBIN/postgres" --version
 "$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -c "SELECT proname, md5(pg_get_functiondef(oid)) FROM pg_proc WHERE proname IN ('atomic_seat_cashout_locked','atomic_credit_wallet_and_log','player_leave_table') ORDER BY proname"

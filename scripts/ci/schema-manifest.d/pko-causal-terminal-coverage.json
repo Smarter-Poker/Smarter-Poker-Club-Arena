@@ -1,0 +1,11 @@
+{
+  "_owner": "codex-ca-pko-release-20260916",
+  "_comment": "Existing public functions confirmed in the live catalog on 2026-09-16 at 05:13:25 UTC; retained evidence: outputs/ca-pko-submission-20260916/LIVE-CATALOG-PROOF.json. Refreshes branch schema names only; no database changes.",
+  "functions": [
+    "fn_bounty_candidate_completion_status_v1",
+    "fn_pko_candidate_accepted_scope_v1",
+    "fn_pko_claim_predecessor_status_v1",
+    "fn_pko_hand_is_independent_of_later_settlements",
+    "fn_pko_watermark_admission_status_v1"
+  ]
+}

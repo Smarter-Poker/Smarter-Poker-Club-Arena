@@ -1,3 +1,4 @@
+import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * SCHEDULED TOURNAMENT SERVICE — data-driven recurring MTT spawner (2026-08-22)
@@ -36,6 +37,8 @@ import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
 import {
   MTT_BLIND_PRESETS,
@@ -1107,25 +1110,17 @@ export class ScheduledTournamentService {
     const buyInAmount = isSpin ? buyIn : split.prize;
     const buyInFee = isSpin ? 0 : split.fee;
 
-    // Bounty head: absolute bountyAmount wins; else the recurring service's
-    // percent-of-total convention (default 30), never exceeding the entry's
-    // contribution after the fee. Whole-chip entry pricing does not make its
-    // bounty allocation whole-chip: e.g. half of a 13.50 contribution is 6.75.
+    // All engine creators use the same cent allocation and entry-fee cap.
     let bountyAmount = 0;
     if (isBountyType) {
-      const absolute = Number(cfg.bountyAmount);
-      if (Number.isFinite(absolute) && absolute > 0) {
-        bountyAmount = Math.round((Math.min(split.prize, absolute) + Number.EPSILON) * 100) / 100;
-      } else {
-        const pct = Number(cfg.bountyPercent) || 30;
-        bountyAmount = Math.min(split.prize, Math.max(0, Math.round((split.total * pct) / 100)));
-      }
-      if (bountyAmount <= 0) {
+      try {
+        bountyAmount = mttBountyAmount(split, cfg);
+      } catch (error) {
         reportError(
           new Error(
-            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} bounty type with no bounty head - skipping`
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} invalid bounty allocation: ${String(error)}`
           ),
-          'ScheduledTournaments.bounty_missing'
+          'ScheduledTournaments.bounty_invalid'
         );
         return null;
       }
@@ -1173,6 +1168,7 @@ export class ScheduledTournamentService {
 
     const maxRebuysRaw = Number(cfg.maxRebuys);
     const maxReentriesRaw = Number(cfg.maxReentries);
+    if (!isSng && !isSpin) validateMttBlindStructure(blinds, cfg.startingStack ?? 10000);
 
     const row: Record<string, unknown> = {
       club_id: schedule.club_id,
@@ -1203,6 +1199,7 @@ export class ScheduledTournamentService {
       is_bounty: isBountyType,
       is_pko: type === 'progressive_bounty',
       is_mystery_bounty: type === 'mystery_bounty',
+      ...(type === 'mystery_bounty' ? mysteryBountyCreationColumns(cfg) : {}),
       bounty_amount: bountyAmount,
       mystery_bounty_min: mysteryMin,
       mystery_bounty_max: mysteryMax,
@@ -1389,6 +1386,12 @@ export class ScheduledTournamentService {
     'is_mystery_bounty',
     'mystery_bounty_min',
     'mystery_bounty_max',
+    'mystery_bounty_profile',
+    'mystery_bounty_activation',
+    'mystery_bounty_activation_value',
+    'mystery_bounty_pool_percent',
+    'mystery_bounty_regular_pool_percent',
+    'mystery_bounty_top_percent',
     'spin_type',
     'satellite_target_id',
     'satellite_seats',

@@ -295,6 +295,11 @@
   box-shadow: inset 2px 0 #3aa8ff;
 }
 
+/* The hidden attribute must win over any display rule on the answer (AEO phase 1). */
+.answer[hidden] {
+  display: none;
+}
+
 .answer {
   max-width: 900px;
   padding: 0 clamp(18px, 4vw, 38px) 24px calc(clamp(18px, 4vw, 38px) + 107px);

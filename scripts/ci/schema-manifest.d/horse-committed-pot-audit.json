@@ -5,10 +5,7 @@
     "horse_commitment_reviews",
     "horse_commitment_audit_gaps"
   ],
-  "functions": [
-    "fn_horse_commitment_audit_step",
-    "fn_horse_commitment_review_page"
-  ],
+  "functions": ["fn_horse_commitment_audit_step", "fn_horse_commitment_review_page"],
   "columns": {
     "horse_commitment_audit_days": [
       "day",
@@ -45,11 +42,6 @@
       "gto_verdict",
       "reasons"
     ],
-    "horse_commitment_audit_gaps": [
-      "hand_id",
-      "played_at",
-      "reasons",
-      "observed_at"
-    ]
+    "horse_commitment_audit_gaps": ["hand_id", "played_at", "reasons", "observed_at"]
   }
 }

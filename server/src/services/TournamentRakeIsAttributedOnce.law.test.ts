@@ -16,8 +16,9 @@
  * 'tournament_fee' commission in the week of 2026-08-31. The database trigger
  * had the same shape for VIP (20260907214446).
  *
- * The law: the per-row commission and player_stats paths in this service are
- * for cash rows only. A tournament row is left to settlement.
+ * The law: this service submits only cash source identities to the canonical
+ * authority and never applies a second set of stats. Tournament rows remain
+ * owned by terminal settlement.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -46,33 +47,32 @@ describe('tournament rake is attributed once, at settlement', () => {
     );
   });
 
-  it('never pays a per-row agent commission on a tournament row', () => {
-    const loop = code.indexOf('const commissionItems');
-    const push = code.indexOf('commissionItems.push(', loop);
-    const gate = code.indexOf('if (isTournamentRakeRow(row))', loop);
-    expect(loop).toBeGreaterThan(-1);
-    expect(gate, 'the commission loop has no tournament gate').toBeGreaterThan(loop);
-    expect(gate, 'the tournament gate sits after the push').toBeLessThan(push);
+  it('excludes tournament rows before submitting canonical cash source identities', () => {
+    const gate = code.indexOf('.filter((row) => !isTournamentRakeRow(row))');
+    const identities = code.indexOf('const sourceIds = cashRows.map((row) => row.id)', gate);
+    const dispatch = code.indexOf("supabase.rpc('fn_credit_agent_commissions_batch'", identities);
+    expect(gate, 'canonical source dispatch has no tournament exclusion').toBeGreaterThan(-1);
+    expect(identities).toBeGreaterThan(gate);
+    expect(dispatch).toBeGreaterThan(identities);
+    expect(code).toContain(
+      "p_items: ids.map((id) => ({ source_type: 'cash_rake_record', source_id: id }))"
+    );
     expect(code, "the 'tournament_fee' commission source is the second payment").not.toMatch(
       /tournament_fee/
     );
   });
 
   it('never applies per-row player_stats for a tournament row', () => {
-    const loop = code.indexOf('const statsItems');
-    const push = code.indexOf('statsItems.push(', loop);
-    const gate = code.indexOf('if (isTournamentRakeRow(row)) continue;', loop);
-    expect(loop).toBeGreaterThan(-1);
-    expect(gate, 'the player_stats loop has no tournament gate').toBeGreaterThan(loop);
-    expect(gate).toBeLessThan(push);
+    expect(code).not.toContain('fn_apply_rakeback_player_stats_batch');
+    expect(code).not.toContain('statsItems');
+    expect(code).not.toMatch(/from\('player_stats'\)\.(?:upsert|insert|update)/);
   });
 
-  it('leaves the rakeback basis alone - that is a policy question, not a double-pay', () => {
-    // The buckets loop feeds fn_rakeback_recompute_periods. It must not be
-    // gated here: which rake earns player rakeback is Dan's to decide.
-    const buckets = code.indexOf('const buckets = new Map');
-    const commission = code.indexOf('const commissionItems');
-    const between = code.slice(buckets, commission);
-    expect(between).not.toMatch(/isTournamentRakeRow/);
+  it('leaves the rakeback basis to canonical source accounting without a second calculation', () => {
+    // This reader carries no player/amount override and cannot re-derive a
+    // tournament or cash earning basis. A verified source receipt is required.
+    expect(code).toContain('readCashSourceBatch(data, ids)');
+    expect(code).not.toContain('fn_rakeback_recompute_periods');
+    expect(code).not.toContain('sharesForRakeRecord');
   });
 });

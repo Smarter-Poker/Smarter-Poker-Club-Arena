@@ -273,6 +273,7 @@ describe('the terminal tournament boundary owns the next deal', () => {
     engine.claimedTournamentMovePauseOwners = new Set();
     engine.tournamentMovePauseExpiryTimers = new Map();
     engine.tournamentMoveOperations = new Set();
+    engine.readContinuationTasks = new Set();
     engine.handForHandResolve = null;
     engine.heartbeatActive = true;
     engine.tableFSM = { transition: vi.fn() };

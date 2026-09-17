@@ -56,8 +56,19 @@ describe('the ante gate', () => {
   });
 
   it('still reads the ante that the level refresh writes', () => {
-    // refreshBlindsFromDb is what carries an escalating tournament ante.
-    expect(SRC).toMatch(/this\.tableInfo\.ante = data\.ante/);
+    // Refresh writes through the captured original table, so a delayed read
+    // cannot retarget a replacement. Pin that reference through to the writer;
+    // BlindRefreshContinuation exercises the real refresh and stale refusal.
+    const refresh = CODE.slice(
+      CODE.indexOf('  protected refreshBlinds()'),
+      CODE.indexOf('  protected async dealHand(')
+    );
+    expect(refresh).toContain('const originalTable = this.tableInfo;');
+    expect(refresh).toContain('this.tableInfo === originalTable');
+    expect(refresh).toContain('this.refreshBlindsOwned(current, originalTable)');
+    expect(refresh).toContain('table: NonNullable<typeof this.tableInfo>');
+    expect(refresh).toContain('table.ante = data.ante;');
+    expect(CODE).toMatch(/ante:\s*this\.tableInfo\.tournament_id\s*\?\s*this\.tableInfo\.ante/);
   });
 });
 

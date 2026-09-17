@@ -5,6 +5,10 @@ on:
       - server/Dockerfile
       - server/tsconfig.json
       - server/tsconfig.runtime.json
+      - server/tsconfig.emit.json
+      - server/package.json
+      - server/package-lock.json
+      - server/src/**
       - server/scripts/build-engine-image.sh
       - server/scripts/engine-image-archive.py
       - tests/operations/engine-image-archive.test.py

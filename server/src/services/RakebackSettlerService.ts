@@ -11,38 +11,19 @@
  *   weekly settlement flow has no rows to settle. If the engine restarts, the
  *   in-memory accumulator is lost.
  *
- * FIX:
- *   This daemon runs every 30 minutes. For each completed hand in rake_records
- *   that hasn't been settled yet, it derives the per-player rake credit under
- *   the methodology the hand was SETTLED with (rake_records.rake_method) and
- *   upserts rakeback_periods rows by (user_id, club_id, period_start_week).
- *   Idempotent: re-running over already-settled hands has no effect.
- *
- * ATTRIBUTION (Dan 2026-08-29, BINDING — supersedes DECISION D-001 / FIX 144):
- *   New cash hands use WEIGHTED CONTRIBUTED rake — a player's credit is
- *   proportional to their eligible contribution to the rakeable pot. Rows
- *   stamped DEALT_EQUAL (historical, plus any settled by a pre-deploy engine)
- *   keep reproducing their historical equal split. The single source of the
- *   share math is services/rakeAllocation.ts (SQL twin:
- *   fn_allocate_rake_credits) — never re-derive shares here.
- *
- * SAFETY:
- *   - Reads only from rake_records (durable per-hand audit log)
- *   - Writes only to rakeback_periods (no chip movement)
- *   - Idempotent via period-week bucketing + ON CONFLICT update
- *   - 30-minute interval; can be tuned per traffic
- *
- * RELATED:
- *   - Dan 2026-08-29: weighted contributed rake law (this file's split logic)
- *   - .memory/decisions/001-rake-equal-share.md (SUPERSEDED, kept as history)
- *   - .memory/problems/008-rakeback-settler-missing.md
+ * The existing batch now receives exact cash source IDs. Only its canonical
+ * v3 receipt certifies that the database atomically recorded commissions,
+ * original player stats and queued complete-period calculation. An old,
+ * unavailable or refused response retains the durable cursor. Tournament
+ * sources remain owned by terminal settlement. No second stats/period writer.
+ * The existing cadence, service lifecycle and weekly coordinator are retained.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
-import { sharesForRakeRecord, sharesForRakeRecordWithLedger } from './rakeAllocation.js';
+import { readCashSourceBatch } from './cashSourceReceipts.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 /**
@@ -73,12 +54,6 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
  * 150, so a chunk is comfortably inside even a slow window with headroom.
  */
 const CREDIT_BATCH_SIZE = 150;
-/**
- * POLISH 4 (2026-08-30): hand ids per batched rake_attributions read. The
- * ledger is loaded once per page, not once per hand — a page of 1,000 hands
- * costs a handful of round trips instead of 1,000.
- */
-const LEDGER_READ_CHUNK = 200;
 const DAEMON_KEY = 'rakeback_settler';
 
 /**
@@ -177,35 +152,6 @@ interface RakeCursor {
  */
 type CycleResult = 'idle' | 'more' | 'halted';
 
-/** Commission counts acknowledge inputs; stats counts report new inserts, so
- * a successful idempotent stats replay can acknowledge zero new rows. */
-function readAttributionBatchReceipt(
-  data: unknown,
-  submitted: number,
-  countsEveryInput: boolean
-): { ok: number; failed: number } {
-  const receipt = Array.isArray(data) && data.length === 1 ? data[0] : data;
-  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) {
-    throw new Error('Missing attribution batch receipt');
-  }
-  const { ok, failed, error, first_error } = receipt as Record<string, unknown>;
-  if (
-    typeof ok !== 'number' ||
-    !Number.isSafeInteger(ok) ||
-    ok < 0 ||
-    typeof failed !== 'number' ||
-    !Number.isSafeInteger(failed) ||
-    failed < 0 ||
-    ok + failed > submitted ||
-    (countsEveryInput && ok + failed !== submitted) ||
-    (error !== undefined && error !== null) ||
-    (failed === 0 && first_error !== undefined && first_error !== null)
-  ) {
-    throw new Error('Invalid attribution batch receipt');
-  }
-  return { ok, failed };
-}
-
 /**
  * PostgREST embeds filter values in a comma/parenthesis-delimited grammar, so a
  * value carrying a quote, comma or bracket would change the SHAPE of the
@@ -293,16 +239,10 @@ interface RakeRecordRow {
  * A rake_records row with is_tournament (or a tournament_id) is an entry fee,
  * a rebuy, a satellite seat or a spin book. fn_settle_tournament_rake ->
  * fn_attribute_tournament_rake credits its VIP, its agent commission and its
- * player_stats when the tournament settles, by metadata.user_id (or spread
- * across the field for a userless row). The per-row paths in this service -
- * agent commission and player_stats - are for CASH hands only. A tournament
- * row that happens to carry player_contributions (spin books do) must not be
- * paid a second time here.
- *
- * The player RAKEBACK basis (fn_rakeback_recompute_periods) is deliberately
- * NOT gated by this: whether tournament fees earn player rakeback is a
- * policy question for Dan (spin books do today, MTT entries do not), and this
- * function changes neither.
+ * player_stats when the tournament settles. Cash source dispatch below must
+ * exclude these rows even when they carry player_contributions (spin books
+ * do). Earning rules remain owned by canonical source/terminal accounting;
+ * this reader cannot supply a second per-player amount or period calculation.
  */
 export function isTournamentRakeRow(row: {
   is_tournament?: boolean | null;
@@ -501,9 +441,9 @@ export class RakebackSettlerService {
   }
 
   /** Persist the cursor durably (survives engine restarts). */
-  private async saveHighWaterMark(cursor: RakeCursor): Promise<void> {
+  private async saveHighWaterMark(cursor: RakeCursor): Promise<boolean> {
     try {
-      await supabase.from('daemon_state').upsert(
+      const { error } = await supabase.from('daemon_state').upsert(
         {
           daemon: DAEMON_KEY,
           high_water_mark: cursor.createdAt,
@@ -512,11 +452,15 @@ export class RakebackSettlerService {
         },
         { onConflict: 'daemon' }
       );
+      if (error) throw error;
+      this.cursor = cursor;
+      return true;
     } catch (e) {
       reportError(
         new Error((e as { message?: string })?.message || String(e)),
         'RakebackSettler.saveHighWaterMark'
       );
+      return false;
     }
   }
 
@@ -1388,14 +1332,13 @@ export class RakebackSettlerService {
   }
 
   private async _runSettlementInner(): Promise<CycleResult> {
-    // On first run after (re)start, resume from the durable cursor so we do not
-    // re-scan already-settled rake_records (which double-counts player_stats).
+    // On first run after (re)start, resume from the durable cursor. Source
+    // replay is idempotent, but a failed cursor read is never an empty cursor.
     // Only fall back to the 7-day window on a genuine first run.
     if (this.cursor === null) {
       const hwm = await this.loadHighWaterMark();
       if (!hwm.ok) {
-        // RAKE-AUDIT 2026-07-24: watermark read failed — do NOT fall back to a
-        // 7-day rescan (double-credits player_stats). Retry next interval.
+        // Preserve unknown cursor state instead of selecting a new window.
         console.warn('[RakebackSettler] high-water-mark read failed - skipping cycle');
         return 'halted';
       }
@@ -1431,13 +1374,9 @@ export class RakebackSettlerService {
       this.cursor?.id != null &&
       isFilterSafe(this.cursor.createdAt) &&
       isFilterSafe(this.cursor.id);
-    const startedAt = Date.now();
-
-    // 1. Pull rake_records STRICTLY AFTER the last processed record (exclusive
-    // cursor => exactly-once processing) that have player_contributions.
-    // RAKE-AUDIT 2026-07-24: id + is_tournament added — tournament/SNG fee rows
-    // have no hand_id (they are not hands), so agent-commission crediting keys
-    // idempotency on rake_records.id for those rows instead of skipping them.
+    // Read positive source records including missing contributor metadata;
+    // canonical authority must confirm or refuse them, never silently skip.
+    // Tournament markers preserve the terminal-settlement ownership boundary.
     const base = supabase
       .from('rake_records')
       .select(
@@ -1468,7 +1407,6 @@ export class RakebackSettlerService {
     const filtered = useKeyset ? base.gte('created_at', sinceIso) : base.gt('created_at', sinceIso);
     const { data: rows, error: fetchErr } = await filtered
       .gt('rake_amount', 0)
-      .not('player_contributions', 'is', null)
       // Both ORDER BY keys are required: the LIMIT boundary is only
       // deterministic if the sort is total, and a non-deterministic boundary
       // reintroduces the skip this fix exists to remove.
@@ -1538,445 +1476,38 @@ export class RakebackSettlerService {
     // array would end the drain one page early and leave backlog unsettled.
     const hitLimit = rawPageSize >= FETCH_LIMIT;
 
-    // ── POLISH 4 (2026-08-30): READ THE LEDGER, DO NOT RE-DERIVE IT ────────
-    //
-    // atomic_distribute_rake persisted the authoritative per-player allocation
-    // into rake_attributions at banking time. Recomputing it here was a second
-    // implementation of one money rule — the exact shape that produced the
-    // equal-dealt bug, the missing pot-overage clamp and the 49%-underfunded
-    // jackpot. ONE batched query per page (not per hand) loads what was
-    // written; hands with no ledger rows (historical, pruned horse-only,
-    // tournament fees, null-hand) fall back to the canonical allocator,
-    // mirroring fn_rake_shares_for_record on the SQL side.
-    //
-    // A failed read is NOT fatal: the fallback is the allocator, which is
-    // parity-tested against the same SQL. Worst case we compute what we would
-    // have computed before this change.
-    const ledger = new Map<string, Map<string, number>>();
-    {
-      const handIds = [
-        ...new Set(
-          (rows as RakeRecordRow[])
-            .map((r) => r.hand_id)
-            .filter((h): h is string => typeof h === 'string' && h.length > 0)
-        ),
-      ];
-      for (let i = 0; i < handIds.length; i += LEDGER_READ_CHUNK) {
-        const chunk = handIds.slice(i, i + LEDGER_READ_CHUNK);
-        try {
-          const { data, error } = await supabase
-            .from('rake_attributions')
-            .select('hand_id, player_id, weighted_rake_credit')
-            .in('hand_id', chunk);
-          if (error) {
-            reportError(
-              new Error(`rake_attributions read failed: ${error.message}`),
-              'RakebackSettler.ledger_read'
-            );
-            continue; // allocator fallback covers this chunk
-          }
-          for (const r of (data ?? []) as Array<{
-            hand_id: string;
-            player_id: string;
-            weighted_rake_credit: number | string | null;
-          }>) {
-            const credit = Number(r.weighted_rake_credit);
-            if (!Number.isFinite(credit)) continue;
-            let m = ledger.get(r.hand_id);
-            if (!m) {
-              m = new Map<string, number>();
-              ledger.set(r.hand_id, m);
-            }
-            m.set(r.player_id, credit);
-          }
-        } catch (e) {
-          reportError(
-            new Error((e as { message?: string })?.message || String(e)),
-            'RakebackSettler.ledger_read_threw'
-          );
-        }
+    // Submit the durable source identity only. The existing old batch safely
+    // returns an unversioned no-op for this input; it cannot certify source
+    // accounting, so that response holds this cursor until authority exists.
+    // Canonical v3 owns commissions, original stats and the complete-week
+    // calculation queue in one transaction. This process never repeats those
+    // writes or derives a contributor's earning club.
+    const cashRows = (rows as RakeRecordRow[]).filter((row) => !isTournamentRakeRow(row));
+    try {
+      const sourceIds = cashRows.map((row) => row.id);
+      if (sourceIds.some((id) => !id) || new Set(sourceIds).size !== sourceIds.length) {
+        throw new Error('Cash page has missing or duplicate source identities');
       }
-    }
-
-    // 2. Aggregate per (user_id, club_id, week)
-    type Bucket = {
-      user_id: string;
-      club_id: string;
-      period_start: string;
-      period_end: string;
-      rake_generated: number;
-    };
-    const buckets = new Map<string, Bucket>();
-
-    for (const row of rows as RakeRecordRow[]) {
-      if (!row.player_contributions) continue;
-      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware, canonical
-      // allocator. Weighted for new cash hands; historical DEALT_EQUAL rows
-      // reproduce their historical equal split. Shares sum exactly to rake.
-      const shares = sharesForRakeRecordWithLedger(row, ledger);
-      if (shares.size === 0) continue;
-      const created = new Date(row.created_at);
-      const ws = weekStart(created);
-      const we = weekEnd(created);
-
-      for (const [userId, credit] of shares.entries()) {
-        const key = `${userId}:${row.club_id}:${ws}`;
-        const cur = buckets.get(key);
-        if (cur) {
-          cur.rake_generated = Math.round((cur.rake_generated + credit) * 100) / 100;
-        } else {
-          buckets.set(key, {
-            user_id: userId,
-            club_id: row.club_id,
-            period_start: ws,
-            period_end: we,
-            rake_generated: credit,
-          });
-        }
-      }
-    }
-
-    if (buckets.size === 0) {
-      console.log(
-        `[RakebackSettler] Processed ${rows.length} rake_records - no eligible player-credits`
-      );
-      this.cursor = nextCursor;
-      await this.saveHighWaterMark(nextCursor);
-      return hitLimit ? 'more' : 'idle';
-    }
-
-    // 2b. BUG 009 FIX — Agent commission credit (per-rake-record, not aggregated).
-    // For each player credited above, look up their agent (if any) and credit the
-    // commission via credit_agent_commission_from_rake RPC. The RPC handles the
-    // commission_rate lookup, ROUND, audit insert, and accumulator updates atomically.
-    let agentCreditsAttempted = 0;
-    let agentCreditsFailed = 0;
-    let agentCreditsSkippedNoHand = 0;
-    let agentCreditsSkippedTournament = 0;
-    const commissionItems: Record<string, unknown>[] = [];
-    for (const row of rows as RakeRecordRow[]) {
-      if (!row.player_contributions) continue;
-      // Round 73: skip pre-R38-backfill rake_records that have no hand_id —
-      // they can't be linked back to a hand for audit, and the settler used
-      // to reprocess them on every restart (the cursor was in-memory only),
-      // emitting NULL-source-id agent_commission rows on every cycle. Skipping
-      // is correct: any commission for these legacy rows was already created
-      // before the bug surfaced; reprocessing only creates duplicates.
-      const handId = (row as { hand_id?: string | null }).hand_id;
-      // TOURNAMENT RAKE IS ATTRIBUTED ONCE, AT SETTLEMENT (Phase 6, 2026-09-07).
-      // fn_settle_tournament_rake -> fn_attribute_tournament_rake credits the
-      // agent commission for every tournament rake row (entry fees, rebuys,
-      // satellite seats, spin books) by metadata.user_id, keyed
-      // md5('trs:' || tournament || user). The RAKE-AUDIT 2026-07-24 path here
-      // predates that function and paid the same rake AGAIN for every
-      // tournament row that carries player_contributions - spin books since
-      // 2026-09-02: 6,753 spins settled on 2026-09-05 carrying 38,922.72 of
-      // rake earned agents 23,263.81 here ('tournament_fee') and 26,742.03 at
-      // settlement; 90,396.99 of 'tournament_fee' commission in the week of
-      // 2026-08-31. Settlement is the one door; this loop is cash only.
-      if (isTournamentRakeRow(row)) {
-        agentCreditsSkippedTournament++;
-        continue;
-      }
-      // Legacy NULL-hand CASH rows (pre-R38) are still skipped, as before:
-      // they cannot be linked back to a hand for audit and were already paid.
-      const sourceId = handId ?? null;
-      const sourceType = 'rake_settlement';
-      if (!sourceId) {
-        agentCreditsSkippedNoHand++;
-        continue;
-      }
-      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares — the
-      // commission basis is the player's credited rake under the hand's own
-      // methodology. Shares sum exactly to the rake collected.
-      const shares = sharesForRakeRecordWithLedger(row, ledger);
-      if (shares.size === 0) continue;
-      for (const [userId, credit] of shares.entries()) {
-        agentCreditsAttempted++;
-        commissionItems.push({
-          user_id: userId,
-          club_id: row.club_id,
-          rake_credit: credit,
-          source_type: sourceType,
-          // Round 43: link the commission audit row + club_wallet_transactions
-          // commission_out audit row back to the originating hand for
-          // ledger reconciliation. For hands, sourceId is hand_history.id
-          // (Round 38 FK); for tournament fees it is the rake_records.id.
-          source_id: sourceId,
-          notes: `RakebackSettler ${sourceType} at ${row.created_at}`,
-        });
-      }
-    }
-
-    // Ship the page's credits server-side in chunks. Identical semantics: the
-    // batch function calls the SAME idempotent per-item function, and wraps
-    // each element in its own exception block, so one bad element is isolated
-    // exactly as a failed single call used to be.
-    for (let i = 0; i < commissionItems.length; i += CREDIT_BATCH_SIZE) {
-      const chunk = commissionItems.slice(i, i + CREDIT_BATCH_SIZE);
-      try {
+      for (let offset = 0; offset < sourceIds.length; offset += CREDIT_BATCH_SIZE) {
+        const ids = sourceIds.slice(offset, offset + CREDIT_BATCH_SIZE) as string[];
         const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
-          p_items: chunk,
+          p_items: ids.map((id) => ({ source_type: 'cash_rake_record', source_id: id })),
         });
-        if (error) {
-          agentCreditsFailed += chunk.length;
-          reportError(
-            new Error(`fn_credit_agent_commissions_batch failed: ${error.message}`),
-            'RakebackSettler.commission_batch'
-          );
-        } else {
-          const r = readAttributionBatchReceipt(data, chunk.length, true);
-          agentCreditsFailed += r.failed;
+        if (error) throw new Error('Cash source batch failed', { cause: error });
+        const receipts = readCashSourceBatch(data, ids);
+        // A recorded refusal is durable evidence, not completed work. This
+        // compatible reader holds the source page; the full source daemon
+        // handles the bounded refusal queue after the database cutover.
+        if (receipts.some((receipt) => receipt.status !== 'accrued')) {
+          throw new Error('Cash source remains refused');
         }
-      } catch (e) {
-        agentCreditsFailed += chunk.length;
-        reportError(
-          new Error((e as { message?: string })?.message || String(e)),
-          'RakebackSettler.commission_batch_threw'
-        );
       }
-    }
-    if (
-      agentCreditsAttempted > 0 ||
-      agentCreditsSkippedNoHand > 0 ||
-      agentCreditsSkippedTournament > 0
-    ) {
-      console.log(
-        `[RakebackSettler] Agent-commission credits: ${agentCreditsAttempted - agentCreditsFailed}/${agentCreditsAttempted} OK` +
-          (agentCreditsSkippedNoHand > 0
-            ? `, ${agentCreditsSkippedNoHand} skipped (no hand_id - pre-R38 legacy rows)`
-            : '') +
-          (agentCreditsSkippedTournament > 0
-            ? `, ${agentCreditsSkippedTournament} tournament rows left to settlement (fn_attribute_tournament_rake)`
-            : '') +
-          ' (RPC silently skips non-agent players)'
-      );
-    }
-
-    // 2c. player_stats refresh — IDEMPOTENT per (rake_record, user).
-    // RAKE-AUDIT 2026-07-24 [money-adjacent]: the old JS read-then-update
-    // aggregate was NON-idempotent — a crash between the player_stats increment
-    // and saveHighWaterMark() re-incremented every stat on the next cycle (the
-    // watermark had not advanced). Now each (rake_record, user) is applied
-    // exactly once via apply_rakeback_player_stats, which claims on
-    // rakeback_stats_applied in the SAME transaction as the increment, so a
-    // re-scan of already-processed rows can never double-count. (rakeback_periods
-    // is recompute-from-source and agent commission dedupes, so this was the last
-    // non-idempotent accumulator; the watermark no longer needs to be atomic
-    // with the increment for correctness.)
-    let psApplied = 0;
-    let psFailures = 0;
-    const statsItems: Record<string, unknown>[] = [];
-    for (const row of rows as RakeRecordRow[]) {
-      if (!row.player_contributions) continue;
-      // Phase 6 (2026-09-07): tournament rake reaches player_stats once, at
-      // settlement (fn_attribute_tournament_rake -> apply_rakeback_player_stats).
-      if (isTournamentRakeRow(row)) continue;
-      const rrId = (row as { id?: string }).id;
-      if (!rrId) continue; // no durable id -> cannot key idempotency; skip (safe)
-      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares.
-      const psShares = sharesForRakeRecordWithLedger(row, ledger);
-      if (psShares.size === 0) continue;
-      for (const [userId, credit] of psShares.entries()) {
-        statsItems.push({
-          rake_record_id: rrId,
-          user_id: userId,
-          club_id: row.club_id,
-          hands: 1,
-          rake: credit,
-        });
-      }
-    }
-
-    for (let i = 0; i < statsItems.length; i += CREDIT_BATCH_SIZE) {
-      const chunk = statsItems.slice(i, i + CREDIT_BATCH_SIZE);
-      try {
-        const { data, error } = await supabase.rpc('fn_apply_rakeback_player_stats_batch', {
-          p_items: chunk,
-        });
-        if (error) {
-          psFailures += chunk.length;
-          reportError(
-            new Error(`fn_apply_rakeback_player_stats_batch failed: ${error.message}`),
-            'RakebackSettler.player_stats_batch'
-          );
-        } else {
-          const r = readAttributionBatchReceipt(data, chunk.length, false);
-          psApplied += r.ok;
-          psFailures += r.failed;
-        }
-      } catch (e) {
-        psFailures += chunk.length;
-        reportError(
-          new Error((e as { message?: string })?.message || String(e)),
-          'RakebackSettler.player_stats_batch_threw'
-        );
-      }
-    }
-    if (psApplied > 0 || psFailures > 0) {
-      console.log(
-        `[RakebackSettler] player_stats idempotent applies: ${psApplied} OK (failures: ${psFailures})`
-      );
-    }
-
-    // Both operations commit independently and dedupe their own retries. A
-    // failure must retain the source page: later period recomputation cannot
-    // reconstruct a missing agent commission or player_stats application.
-    if (agentCreditsFailed > 0 || psFailures > 0) {
-      reportError(
-        new Error(
-          `[RakebackSettler] ${agentCreditsFailed} commission item(s) and ${psFailures} player stats item(s) failed; ` +
-            `holding the watermark at ${this.cursor?.createdAt ?? 'start'} for an idempotent retry.`
-        ),
-        'RakebackSettler.attribution_failures_hold_cursor'
-      );
+    } catch (error) {
+      reportError(error, 'RakebackSettler.attribution_failures_hold_cursor');
       return 'halted';
     }
 
-    // 3. Upsert into rakeback_periods. Round 45 RE-RUN fix: recompute the
-    // FULL period total from the actual canonical rake_records rather than
-    // INCREMENTING the existing row's rake_generated. The old incremental
-    // logic double-counted on every engine restart because the settler's
-    // 7-day fallback window re-processed already-credited records.
-    //
-    // Verified live before fix: top user had rake_generated=$4002 vs actual
-    // share-from-rake_records of $1048 (4× over-credited from ~7 restarts).
-    //
-    // The new logic SETs rake_generated to the period total derived from
-    // rake_records, so re-running over the same window converges to the
-    // correct value rather than diverging.
-    let upserts = 0;
-    let failures = 0;
-    {
-      // ═══ AUDIT 2026-08-20 — this loop was the settler's dominant cost ═══
-      //
-      // It ran THREE round trips per (user, club, week) bucket, and the middle
-      // one re-downloaded the club's ENTIRE week of rake_records — once per
-      // user. Measured over 20 minutes of production traffic after the credit
-      // batching landed: 164 batched credit calls versus ~3,000 round trips
-      // from this block alone (1,094 rake_records GET + 1,084 rakeback_periods
-      // GET + 582 POST + 256 PATCH).
-      //
-      // Now: each (club, week) window is fetched ONCE and every bucket in it is
-      // computed from that single dataset, then all rows are persisted in one
-      // call. The share arithmetic is the canonical method-aware allocator
-      // (sharesForRakeRecord here, fn_allocate_rake_credits in SQL), so the
-      // totals agree between the two by construction; only the transport
-      // changed. (rake_generated decides the rakeback tier, so JS/SQL parity
-      // is pinned by shared test vectors, not assumed.)
-      const groups = new Map<
-        string,
-        { club_id: string; period_start: string; period_end: string }
-      >();
-      for (const b of buckets.values()) {
-        groups.set(`${b.club_id}|${b.period_start}`, {
-          club_id: b.club_id,
-          period_start: b.period_start,
-          period_end: b.period_end,
-        });
-      }
-
-      // ═══ CRITICAL FIX 2026-08-20 — periods were computed from ~1% of a week ═══
-      //
-      // This block used to FETCH the club's week of rake_records and sum the
-      // shares here. PostgREST caps a response at 1000 rows, so `.limit(50000)`
-      // returned ~1000 rows of a week that actually holds 81,000-180,000:
-      // rake_generated was derived from well under 1% of the data.
-      //
-      // Proven against live pending periods before the fix:
-      //   user 1c1c12c2…   stored 23.17   actual 377.01   (16x understated)
-      // and since rake_generated also selects the rakeback TIER (5/10/15/20/30%
-      // at 100/500/2000/10000), that player sat in the 5% band instead of 10%,
-      // compounding the shortfall on money owed to them.
-      //
-      // The row cap cannot be lifted from the client, so the computation moved
-      // into the database, which has no such ceiling.
-      // fn_rakeback_recompute_periods allocates per record with the canonical
-      // fn_allocate_rake_credits — weighted for WEIGHTED_CONTRIBUTED rows,
-      // the historical exact equal split for DEALT_EQUAL rows (jsonb sorts
-      // equal-length UUID keys lexicographically, which matches the TS
-      // tie-break) — then upserts while leaving paid weeks immutable. One call
-      // per (club, week) instead of a truncated download.
-      for (const g of groups.values()) {
-        const userIds = [...buckets.values()]
-          .filter((b) => b.club_id === g.club_id && b.period_start === g.period_start)
-          .map((b) => b.user_id);
-        if (userIds.length === 0) continue;
-        try {
-          const { data, error } = await supabase.rpc('fn_rakeback_recompute_periods', {
-            p_club_id: g.club_id,
-            p_period_start: g.period_start,
-            p_period_end: g.period_end,
-            p_user_ids: userIds,
-          });
-          if (error) {
-            failures += userIds.length;
-            reportError(
-              new Error(
-                `fn_rakeback_recompute_periods failed for ${g.club_id} ${g.period_start}: ${error.message}`
-              ),
-              'RakebackSettler.period_recompute'
-            );
-          } else {
-            const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
-            upserts += Number(r?.written ?? 0);
-          }
-        } catch (e) {
-          failures += userIds.length;
-          reportError(
-            new Error((e as { message?: string })?.message || String(e)),
-            'RakebackSettler.period_recompute_threw'
-          );
-        }
-      }
-    }
-
-    const elapsedMs = Date.now() - startedAt;
-    console.log(
-      `[RakebackSettler] Settled ${upserts}/${buckets.size} period rows from ${rows.length} hand records in ${elapsedMs}ms (failures: ${failures})`
-    );
-
-    /**
-     * ═══════════════════════════════════════════════════════════════════════
-     *  A FAILED RECOMPUTE MUST NOT ADVANCE THE WATERMARK (2026-08-29)
-     * ═══════════════════════════════════════════════════════════════════════
-     *
-     * `failures` was counted, logged, and then thrown away: the durable cursor
-     * moved past those rake_records regardless, and the cycle returned
-     * 'idle'/'more' rather than 'halted' -- even though this file defines
-     * 'halted' as "a read failed: the cursor did NOT advance" and already uses
-     * it for exactly that, twice.
-     *
-     * Why that is not self-healing. `fn_rakeback_recompute_periods` rebuilds a
-     * (club, week) period FROM SOURCE, so a failure repairs itself only if
-     * another rake record happens to land in the SAME club and the SAME ISO
-     * week before that week closes. A failure on a week's last batch is
-     * permanent, and it compounds: `rake_generated` is what selects the tier
-     * band (5/10/15/20/30%), so a period computed from partial data can pay a
-     * whole tier low. That is the failure mode the note above this method
-     * records as having understated one player 16x and dropped them a tier.
-     *
-     * Not advancing means the next cycle re-reads the same window and tries
-     * again, which is precisely what the two read-failure sites already do.
-     * The work is idempotent -- recompute rebuilds from source and
-     * player_stats applies are keyed -- so a retry costs a re-read, not a
-     * double-credit.
-     */
-    if (failures > 0) {
-      reportError(
-        new Error(
-          `[RakebackSettler] ${failures} period recompute(s) failed across ${buckets.size} bucket(s) - ` +
-            `holding the watermark at ${this.cursor?.createdAt ?? 'start'} so the next cycle retries them. ` +
-            `Advancing would leave those rake_records permanently unsettled, and rake_generated selects the ` +
-            `rakeback tier, so a partial period can pay a whole band low.`
-        ),
-        'RakebackSettler.period_recompute_failures_hold_cursor'
-      );
-      return 'halted';
-    }
-
-    this.cursor = nextCursor;
-    await this.saveHighWaterMark(nextCursor);
+    if (!(await this.saveHighWaterMark(nextCursor))) return 'halted';
     return hitLimit ? 'more' : 'idle';
   }
 }

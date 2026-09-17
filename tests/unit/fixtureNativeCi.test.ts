@@ -143,6 +143,59 @@ describe('required CI owns native fixture verification', () => {
     expect(classifyChangedPaths([path]).server).toBe(true);
   });
 
+  const externalMttInputs = [
+    'docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql',
+    'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/package.json',
+    'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/package-lock.json',
+  ];
+
+  it.each(externalMttInputs)(
+    'selects accounting and routing tests for an executable MTT input outside scripts/dev: %s',
+    (path) => {
+      expect(classifyChangedPaths([path])).toEqual({
+        src: false,
+        server: true,
+        tests: true,
+        phase4: false,
+        fixture: false,
+      });
+    }
+  );
+
+  it.each([
+    'docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.md',
+    'docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql.md',
+    'docs/changelog/unrelated.rollback.sql',
+    'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/README.md',
+    'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/package.json.example',
+    'scripts/ci/probes/chip-journal-atomicity/postgres-runtime-other/package.json',
+  ])('keeps unrelated documentation and neighboring MTT input paths skipped: %s', (path) => {
+    expect(classifyChangedPaths([path])).toEqual({
+      src: false,
+      server: false,
+      tests: false,
+      phase4: false,
+      fixture: false,
+    });
+  });
+
+  it.each(externalMttInputs)(
+    'retains MTT checks when an executable input is renamed: %s',
+    (path) => {
+      withGitFixture(({ directory, git, write, commit }) => {
+        write(path);
+        const base = commit();
+        git('mv', path, 'docs/retired-mtt-input.txt');
+        const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+        expect(result.complete).toBe(true);
+        expect(result.paths).toContain(path);
+        expect(result.paths).toContain('docs/retired-mtt-input.txt');
+        expect(result.flags.server).toBe(true);
+        expect(result.flags.tests).toBe(true);
+      });
+    }
+  );
+
   it.each([
     'operations/release/fixture/safeupdate-provider.mjs',
     'operations/release/native/component-observation-client.mjs',

@@ -32,18 +32,25 @@ export function classifyChangedPaths(paths) {
   const commitmentAudit = matches(
     /^(scripts\/ci\/test-horse-commitment-audit\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
   );
+  // The ranking inverse and reminder pg dependencies are executable accounting
+  // inputs outside scripts/dev. Their changes also need the routing laws.
+  const tournamentAccountingInput = matches(
+    /^(docs\/changelog\/2026-09-11-a-bust-is-ranked-by-when-it-happened\.rollback\.sql|scripts\/ci\/probes\/chip-journal-atomicity\/postgres-runtime\/package(-lock)?\.json)$/
+  );
   return {
     src: broad || matches(/^src\//),
     server:
       broad ||
       phase4Changed ||
       commitmentAudit ||
+      tournamentAccountingInput ||
       matches(
         /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
       ),
     tests:
       broad ||
       commitmentAudit ||
+      tournamentAccountingInput ||
       matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/),
     phase4: phase4Changed,
     fixture: matches(fixture),

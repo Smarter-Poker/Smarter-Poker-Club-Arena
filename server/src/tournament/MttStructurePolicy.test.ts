@@ -9,10 +9,97 @@ import {
   TournamentRecurringService,
 } from '../services/TournamentRecurringService.js';
 import { supabase } from '../services/supabase.js';
+import { holeCardCount, isOmahaVariant } from '../engine/VariantRules.js';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('engine MTT structure policy', () => {
+  const schedule = {
+    id: 'schedule-1',
+    club_id: 'club-1',
+    union_id: null,
+    name: 'Scheduled variant',
+  };
+  const scheduledConfig = {
+    type: 'mtt',
+    buyIn: 5.5,
+    startingStack: 12000,
+    maxPlayers: 300,
+    minPlayers: 4,
+    blindPreset: 'TURBO',
+    payoutPreset: 'FIVE',
+  };
+
+  it.each([
+    ['nlh', 'NLH', 2, false],
+    ['plo', 'PLO4', 4, true],
+    ['PLO', 'PLO4', 4, true],
+    ['plo4', 'PLO4', 4, true],
+    ['PLO5', 'PLO5', 5, true],
+    ['plo6', 'PLO6', 6, true],
+    ['PLO8', 'PLO8', 4, true],
+    ['shortdeck', 'SHORT_DECK', 2, false],
+    ['SHORT_DECK', 'SHORT_DECK', 2, false],
+    ['flh', 'FLH', 2, false],
+    ['FLO8', 'FLO8', 4, true],
+  ])(
+    'creates the scheduled %s game with its actual engine rules',
+    async (gameVariant, gameType, cards, omaha) => {
+      const service = new ScheduledTournamentService();
+      const cfg = { ...scheduledConfig, gameVariant };
+      const original = structuredClone(cfg);
+      const row = await (service as any).buildInsertRow(schedule, cfg, new Date());
+      expect(row).toMatchObject({
+        game_type: gameType,
+        variant: 'freezeout',
+        // Preserve the existing whole-chip/price-ladder policy: 5.5 -> 6 -> 5.
+        buy_in_amount: 4.5,
+        buy_in_fee: 0.5,
+      });
+      expect(holeCardCount(row.game_type.toLowerCase())).toBe(cards);
+      expect(isOmahaVariant(row.game_type.toLowerCase())).toBe(omaha);
+      expect(cfg).toEqual(original);
+    }
+  );
+
+  it.each([undefined, null])('keeps the scheduled NLH default when absent (%j)', async (value) => {
+    const cfg = { ...scheduledConfig, gameVariant: value };
+    const row = await (new ScheduledTournamentService() as any).buildInsertRow(
+      schedule,
+      cfg,
+      new Date()
+    );
+    expect(row.game_type).toBe('NLH');
+  });
+
+  it.each(
+    ['unknown-game', '', '__proto__', 'constructor', ['plo'], 123].map((gameVariant) => ({
+      gameVariant,
+    }))
+  )(
+    'refuses explicit unsupported scheduled variant $gameVariant before claiming or inserting',
+    async ({ gameVariant }) => {
+      const service = new ScheduledTournamentService();
+      const claim = vi.spyOn(service as any, 'claimSpawn').mockResolvedValue(false);
+      const from = vi.spyOn(supabase, 'from').mockImplementation(() => {
+        throw new Error('An invalid scheduled variant must not reach the database');
+      });
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await (service as any).spawnInstance(
+        schedule,
+        { ...scheduledConfig, gameVariant },
+        'scheduled-variant-refusal',
+        new Date()
+      );
+      expect(claim).not.toHaveBeenCalled();
+      expect(from).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(
+        '[ScheduledTournaments.unknown_game_variant]',
+        expect.any(Error)
+      );
+    }
+  );
+
   it.each([10, 15, 20, '15', null, '', false, 'bad', '1.5e1', 25])(
     'the scheduled row retains supported paid depth or the database default (%j)',
     async (payoutPercent) => {

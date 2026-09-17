@@ -1772,6 +1772,13 @@ jobs:
         if: success()
         run: npm run test:performance
 
+      # The public arena (every prerendered route) is audited with axe-core
+      # at a phone and a desktop viewport; a serious or critical violation
+      # fails the build (discoverability phase 6, 2026-09-17).
+      - name: Public Arena Accessibility
+        if: success()
+        run: npm run test:a11y
+
   # ───────────────────────────────────────────────────────────────────────────
   # LIVE PRODUCTION E2E (split out of `Production Build` 2026-08-22).
   #

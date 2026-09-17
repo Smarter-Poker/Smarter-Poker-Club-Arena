@@ -441,6 +441,7 @@ class RealtimeChannelService {
     onClubActivity?: (clubId: string, playersOnline: number) => void;
     onTournamentStarting?: (tournament: unknown) => void;
     onJackpotHit?: (jackpot: unknown) => void;
+    onMaintenance?: (presentation: unknown) => void;
   }): () => void {
     const channelName = 'lobby:global';
 
@@ -455,6 +456,9 @@ class RealtimeChannelService {
         }
         case 'tournament_starting':
           callbacks.onTournamentStarting?.(msg.payload);
+          break;
+        case 'maintenance':
+          callbacks.onMaintenance?.(msg.payload);
           break;
         case 'jackpot_hit':
           callbacks.onJackpotHit?.(msg.payload);

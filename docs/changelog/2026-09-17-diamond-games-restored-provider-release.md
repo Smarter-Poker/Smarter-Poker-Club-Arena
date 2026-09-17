@@ -6,4 +6,4 @@ The retained recovery corrections bind each entry quote to the player and game, 
 
 Source composition retains the accepted feature and audit changes while preserving the restored GitHub/Hetzner workflows, hooks and telemetry retirement. Previously installed migrations are source mirrors, not instructions to reinstall them. No engine runtime change is included.
 
-Validation: existing required provider checks must pass on this final integration. Earlier source, browser and fixture results remain historical evidence; they do not certify this restored build. Publication follows Production Alerts and MTT, with exact client identity verified at both public endpoints before completion.
+Validation: existing required provider checks must pass on this final integration. Earlier source, browser and fixture results remain historical evidence; they do not certify this restored build. The owner authorizes independent parallel publication through existing provider concurrency controls, with exact client identity verified at both public endpoints before completion.

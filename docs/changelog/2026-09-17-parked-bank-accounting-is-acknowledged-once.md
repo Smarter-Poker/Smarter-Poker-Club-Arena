@@ -1,0 +1,7 @@
+# Parked bank accounting is acknowledged once
+
+An active 20-second bank parked by PR4780 could be charged twice: its snapshot subtracted the activation while preserving the previous billed basis, then the old timer and a restored engine each submitted the same debit. A separate branch marked an initialized bank with missing metadata durable despite writing nothing. Both failures were reproduced on protected d394ee00e4248ccde067a61af6d596630698eb02.
+
+The park now completes the existing bank stop/accounting transition and waits for its acknowledgment before copying the balance and billed basis. Pending, refused, missing or lost acknowledgments remain unconfirmed; the non-idempotent debit is never retried. This keeps gameplay's existing error handling while preventing restart from certifying unresolved accounting. Missing occupancy or metadata refuses checkpoint completion. A maintenance generation fences late results and the existing bounded checkpoint retry after a break has ended. PR4776's existing-pause and repeated-request repairs remain intact.
+
+Regression coverage drives actual bank timers, engine accounting, park save/read and fresh-engine adoption with isolated database responses. The original double-charge and false-durability cases fail before the repair. Delayed/refused/lost receipts, repeated terminal events, stale breaks, empty checkpoints and the original bounded retry are covered. Existing installed bank schema and financial SQL are unchanged; required hosted checks and live publication remain separate evidence.

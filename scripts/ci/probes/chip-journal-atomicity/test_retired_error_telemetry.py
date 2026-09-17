@@ -5,7 +5,7 @@ from pathlib import Path
 
 here = Path(__file__).resolve().parent
 root = here.parents[3]
-migration = root / 'supabase/migrations/20260916223200_retire_external_error_telemetry.sql'
+migration = root / 'supabase/migrations/20260917000322_retire_external_error_telemetry.sql'
 fixture = r"""
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN

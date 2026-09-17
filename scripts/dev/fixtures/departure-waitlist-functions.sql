@@ -45,4 +45,3 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'cancelled', v_n);
 END;
 $function$;
-

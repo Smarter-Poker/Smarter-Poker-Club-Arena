@@ -40,7 +40,7 @@ export default function LegalDocumentLayout({
   }, [title]);
 
   return (
-    <main className={styles.page}>
+    <div className={styles.page}>
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
           <nav className={styles.breadcrumbs} aria-label="Breadcrumb">
@@ -118,6 +118,6 @@ export default function LegalDocumentLayout({
           </Link>
         ))}
       </nav>
-    </main>
+    </div>
   );
 }

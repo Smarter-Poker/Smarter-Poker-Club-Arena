@@ -16,10 +16,10 @@ The native test is implementation/transaction evidence. It does not certify prod
 
 Expected reviewed production preimages:
 
-| Function | Before MD5 | Native post-migration MD5 |
-| --- | --- | --- |
+| Function                                                           | Before MD5                         | Native post-migration MD5          |
+| ------------------------------------------------------------------ | ---------------------------------- | ---------------------------------- |
 | `fn_union_settle_player_pnl(uuid,timestamptz,timestamptz,boolean)` | `e21b68786fba4b6ef2982071b86479ee` | `a7eb35f0906ad77fd5eb0975d90023b7` |
-| `fn_process_weekly_accounting(uuid)` | `f8bd737e49e174430ba95ada5118340b` | `13d00646ebf85d989ef1465c3933973c` |
+| `fn_process_weekly_accounting(uuid)`                               | `f8bd737e49e174430ba95ada5118340b` | `13d00646ebf85d989ef1465c3933973c` |
 
 ## P&L basis remains unsuitable for a historical weekly close
 

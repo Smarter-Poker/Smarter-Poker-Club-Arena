@@ -6,12 +6,12 @@ Status: remediation in progress. This is not a production accounting certificati
 
 Read directly from production between 10:56 and 11:04 UTC. The run happened at 07:05 UTC, 02:05 Chicago time. The accounting week remains Monday midnight America/Los_Angeles, 07:00 UTC in September.
 
-| Recorded stage | Result |
-| --- | --- |
-| Union to member clubs | 602,996.48 chips, two clubs |
-| Club to agents | 404,548.28 chips, 83 recipients |
-| Agent to players | Zero recipients, zero chips |
-| Union invoices | Two generated and marked delivered |
+| Recorded stage        | Result                             |
+| --------------------- | ---------------------------------- |
+| Union to member clubs | 602,996.48 chips, two clubs        |
+| Club to agents        | 404,548.28 chips, 83 recipients    |
+| Agent to players      | Zero recipients, zero chips        |
+| Union invoices        | Two generated and marked delivered |
 
 The 83 commission settlement receipts agree exactly with the corresponding 83 named chip-ledger entries: JAQK 6,070.49; SHARK 398,477.79. This is ledger corroboration, not proof that the underlying entitlement calculation was correct.
 
@@ -64,14 +64,14 @@ The Hub feed honors the explicit /hub/messenger?conversation= URL. The Messenger
 
 This is a comparison with documented capabilities, not an assertion that a universal poker-club accounting standard exists or that competitors promise perfect automation.
 
-| Capability | Public evidence | Smarter Poker audit status |
-| --- | --- | --- |
-| Union oversight, agent permissions, allocation settings, daily/weekly win-loss controls, fee and P&L drill-down | [ClubGG union back office](https://www.clubgg.com/unions) | Present in parts; financial scope and complete execution need repair |
-| Club-wide exports, downline-only agent data, controlled credit/chip distribution | [PokerBROS FAQ](https://pokerbros.net/en/faq) | Export/report surfaces exist; exact downline and club scoping require audit |
-| Live member ledger, balances and credit options | [Poker Now Clubs](https://www.pokernow.com/clubs-landing) | Ledger exists; reconciliation must connect source, liability and receipt |
-| Summary reports, transaction logs and administrator role management | [Poker Now plans](https://www.pokernow.com/subscription/plus) | Present, but weekly immutable agent documents are missing |
-| Buy-in/cash-out reconciliation, role-based records and exports | [Poker Club Admin](https://www.pokerclubadmin.com/) | Relevant accounting baseline; full equivalence is not yet verified |
-| Weekly union/club export reports, game-type fee breakdown and full player ledger | [GGWeekly](https://ggweekly.com/) | Useful reporting benchmark; third-party report product, not ClubGG's own settlement engine |
+| Capability                                                                                                      | Public evidence                                               | Smarter Poker audit status                                                                 |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Union oversight, agent permissions, allocation settings, daily/weekly win-loss controls, fee and P&L drill-down | [ClubGG union back office](https://www.clubgg.com/unions)     | Present in parts; financial scope and complete execution need repair                       |
+| Club-wide exports, downline-only agent data, controlled credit/chip distribution                                | [PokerBROS FAQ](https://pokerbros.net/en/faq)                 | Export/report surfaces exist; exact downline and club scoping require audit                |
+| Live member ledger, balances and credit options                                                                 | [Poker Now Clubs](https://www.pokernow.com/clubs-landing)     | Ledger exists; reconciliation must connect source, liability and receipt                   |
+| Summary reports, transaction logs and administrator role management                                             | [Poker Now plans](https://www.pokernow.com/subscription/plus) | Present, but weekly immutable agent documents are missing                                  |
+| Buy-in/cash-out reconciliation, role-based records and exports                                                  | [Poker Club Admin](https://www.pokerclubadmin.com/)           | Relevant accounting baseline; full equivalence is not yet verified                         |
+| Weekly union/club export reports, game-type fee breakdown and full player ledger                                | [GGWeekly](https://ggweekly.com/)                             | Useful reporting benchmark; third-party report product, not ClubGG's own settlement engine |
 
 Official PPPoker material establishes private clubs and configurable games but did not establish detailed accounting semantics. Its unverified accounting features are not treated as requirements or proof. ClubGG's detailed FAQ pages did not expose readable article bodies to the web reader, so this report uses its official public union page instead.
 
@@ -85,19 +85,14 @@ Official PPPoker material establishes private clubs and configurable games but d
 
 No claim of full completion, industry parity, exact historical entitlement or permanent freedom from failure is supported yet.
 
-
 Agent statements: migration 20260914120403 is installed. Each requested club is authorized separately; recursive downlines cover all levels and terminate cycles without multiplying rows. Cash wallet movements and rake attribution stay in the selected club, paid rakeback comes from posted transfer evidence, and unsupported historical per-player commission/net settlement is explicitly unavailable. It is not a zero balance or a certified amount due. A read-only production probe returned the requested single-club scope for the actual agent and refused an unrelated actor. Native reader checks: 16 passed. Current shared dependency tests: 128 UI/service/permission checks passed.
 
 Source attribution reader: the engine now pages stored allocation rows and verifies each positive cash hand's full rake total before making any financial call. Read failure, missing allocation, partial totals, duplicate players and a non-advancing cursor hold the source watermark. The previous 200-hand query could exceed the 1,000-row API cap. A production sample of 100 recent cash hands had complete allocation totals; the daemon watermark at 12:02 UTC was 11:54 UTC, so this is current activity, not an old recovery backlog. Focused engine checks: 139 passed. These engine/UI changes are source-tested and await the protected publisher; they do not fix historical source-club or hierarchy agreements by themselves.
 
-
 Agreement evidence: migration 20260914120926 records an immutable observed history for agent hierarchy/rates, player memberships/deals and union game-specific allocation rates. Its 2,074 baselines are explicitly observations made at installation; they do not assert that today's terms applied last week. Subsequent relevant changes, moves and deletions record both states in the same transaction; wallet/counter traffic is excluded. Clients cannot read or forge these internal reconciliation records. Existing general audit tables contained some membership events but no complete rate history (commission_rate_audit and rake_rate_audit were empty). Native checks: 16 passed. An actual rate-update/snapshot probe was self-aborting and verified both rolled back. No production agreement was changed.
-
 
 Weekly club summaries: migrations 20260914124421 and 20260914124554 are installed. Club-side copies of 82 individual payouts now retain their immutable audit records as weekly details, and new club-to-agent/player transfers notify the payee rather than adding a club inbox item for every payout. One weekly document groups all four recipient roles, separates downstream redistribution from direct club spending, and is issued inside the validated weekly transaction. Missing historical role or earning-period evidence prevents certification. The authenticated message-page reader filters archived copies before pagination, preserves microsecond cursors, and proves invoice status through the real delivery link. Human replies remain separately discoverable invoice discussions. The first live summary read exposed a text journal settlement ID omitted by the fixture; the forward correction preserves that production type and the fixture now matches it. Twenty-six native checks passed, including injected delivery failure, replay, exact cents, authorization, archive visibility, pagination and document provenance. Another writer's concurrent game-payout issuer resolution was preserved. Live records remain 170 unique deliveries: 88 immediate and 82 weekly details. No chips were moved, no historical role was invented, and this week's failed close has not been marked complete. Messenger publication and the remaining financial waterfall audit are still outstanding.
 
-
 Single coordinator follow-up (migration 20260914130411 installed): the engine calls the shared weekly runner once and validates every scope result. The old union-only closer delegates to the same coordinator, with its optional exact-union filter preserved. The separate player drain refuses union clubs. Drawn-credit invoices now belong inside each union close; standalone club payout batches and credit invoices also share the same schedule and rollback scope. A source watermark with a later unresolved row at the same microsecond blocks the weekly close. Counter resets were removed from the engine; accurate current-week counter derivation remains part of the accrual audit. Native verification: 23 checks passed against actual coordinator, cascade and credit-writer bodies, including scoped failures, full rollback, source cursor, standalone behavior, DST and two concurrent callers. Money-moving R1/R2/R3 and the final summary publisher are controlled fixtures here; their separate financial correctness is not claimed by these checks. Focused engine checks: 141 passed.
-
 
 Installed readback and live run: the real 13:05 UTC scheduler executed migration 20260914130411. It kept Midway's close failed because 1,044 union-house player periods remain misattributed (120,636.59 across overlapping UTC buckets, not a certified Pacific-week liability). Standalone Deep Stack Society's remaining 3.99 obligation still lacks an earning-club membership; the coordinator reported it incomplete and moved no payout. Delivery counts remain 88 immediate and 82 archived details. This proves live scheduling and truthful failure handling, not financial completion. Migration 20260914130611 adds a bounded participant-scoped invoice-thread reader so archived receipts cannot leave an empty inbox entry or stale payout preview; 32 native message/summary checks passed.

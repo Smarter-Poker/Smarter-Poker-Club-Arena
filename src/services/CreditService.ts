@@ -187,7 +187,9 @@ function currentCreditRequestActor(): string | null {
 
 function assertCreditRequestActor(actor: string, generation: number): void {
   if (currentCreditRequestActor() !== actor || creditReadGeneration !== generation) {
-    throw new Error('Account Changed. This Credit Request May Have Committed. Refresh Its Status In The Original Account.');
+    throw new Error(
+      'Account Changed. This Credit Request May Have Committed. Refresh Its Status In The Original Account.'
+    );
   }
 }
 
@@ -312,33 +314,54 @@ export const CreditService = {
     if (!account.clubId || account.userId !== actor || account.agentId !== agentId) {
       throw new Error('This Credit Account Does Not Match Your User And Club');
     }
-    const { data: owners, error } = await Promise.resolve(supabase.from('clubs')
-      .select('id, owner_id').eq('id', account.clubId).limit(2)).catch((error: unknown) => {
+    const { data: owners, error } = await Promise.resolve(
+      supabase.from('clubs').select('id, owner_id').eq('id', account.clubId).limit(2)
+    ).catch((error: unknown) => {
       assertCreditRequestActor(actor, generation);
       throw error;
     });
     assertCreditRequestActor(actor, generation);
     if (error) throw error;
     const owner = owners?.length === 1 ? owners[0] : null;
-    if (!owner || owner.id !== account.clubId || typeof owner.owner_id !== 'string' ||
-        !owner.owner_id || owner.owner_id === actor) {
+    if (
+      !owner ||
+      owner.id !== account.clubId ||
+      typeof owner.owner_id !== 'string' ||
+      !owner.owner_id ||
+      owner.owner_id === actor
+    ) {
       throw new Error('A Different Current Club Owner Must Review This Credit Request');
     }
-    const receipt = await creditRequestService.submitRequest(actor, {
-      clubId: account.clubId, approverId: owner.owner_id, requestedAmount: requestedLimit, reason,
-    }).catch((error: unknown) => {
-      assertCreditRequestActor(actor, generation);
-      throw error;
-    });
+    const receipt = await creditRequestService
+      .submitRequest(actor, {
+        clubId: account.clubId,
+        approverId: owner.owner_id,
+        requestedAmount: requestedLimit,
+        reason,
+      })
+      .catch((error: unknown) => {
+        assertCreditRequestActor(actor, generation);
+        throw error;
+      });
     assertCreditRequestActor(actor, generation);
-    if (receipt.status !== 'pending' || receipt.requesterId !== actor || receipt.clubId !== account.clubId ||
-        receipt.approverId !== owner.owner_id || receipt.requestedAmount !== requestedLimit) {
+    if (
+      receipt.status !== 'pending' ||
+      receipt.requesterId !== actor ||
+      receipt.clubId !== account.clubId ||
+      receipt.approverId !== owner.owner_id ||
+      receipt.requestedAmount !== requestedLimit
+    ) {
       throw new Error('Credit Request Creation Was Not Confirmed By The Server');
     }
     return {
-      id: receipt.id, agentId: account.agentId, agentName: account.agentName,
-      currentLimit: account.creditLimit, requestedLimit: receipt.requestedAmount,
-      reason: receipt.reason, status: 'pending', createdAt: receipt.createdAt,
+      id: receipt.id,
+      agentId: account.agentId,
+      agentName: account.agentName,
+      currentLimit: account.creditLimit,
+      requestedLimit: receipt.requestedAmount,
+      reason: receipt.reason,
+      status: 'pending',
+      createdAt: receipt.createdAt,
     };
   },
 

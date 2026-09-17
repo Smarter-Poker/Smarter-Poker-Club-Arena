@@ -7,6 +7,12 @@ import { gitFixtureEnvironment } from '../helpers/gitFixtureEnvironment';
 
 const script = resolve(process.cwd(), 'scripts/stamp-build-provenance.mjs');
 const repos: string[] = [];
+const provenanceEnvironment = () =>
+  Object.fromEntries(
+    Object.entries(gitFixtureEnvironment()).filter(
+      ([key]) => !key.startsWith('GITHUB_') && key !== 'CA_BUILD_PURPOSE'
+    )
+  );
 // Git exports repository-local GIT_* variables to hooks. This law runs from
 // pre-push, so carrying those variables into a temporary fixture would point
 // its git commands back at the caller's real worktree.
@@ -48,7 +54,7 @@ describe('Club Arena build provenance', () => {
     const result = spawnSync(process.execPath, [script], {
       cwd,
       encoding: 'utf8',
-      env: { ...gitFixtureEnvironment(), STRICT_PROVENANCE: '1', CA_DIST: 'dist' },
+      env: { ...provenanceEnvironment(), STRICT_PROVENANCE: '1', CA_DIST: 'dist' },
     });
 
     expect(result.status).toBe(1);
@@ -63,7 +69,7 @@ describe('Club Arena build provenance', () => {
     const result = spawnSync(process.execPath, [script], {
       cwd,
       encoding: 'utf8',
-      env: { ...gitFixtureEnvironment(), STRICT_PROVENANCE: '1', CA_DIST: 'dist' },
+      env: { ...provenanceEnvironment(), STRICT_PROVENANCE: '1', CA_DIST: 'dist' },
     });
 
     expect(result.status).toBe(0);

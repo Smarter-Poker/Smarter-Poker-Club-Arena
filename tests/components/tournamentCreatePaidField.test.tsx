@@ -16,6 +16,7 @@ vi.mock('../../src/components/common/Toast', () => ({
   useToast: () => ({ success: mocks.success, error: mocks.error }),
 }));
 import CreateTournamentModal from '../../src/components/club/CreateTournamentModal';
+import BlindStructureBuilder from '../../src/components/tournament/BlindStructureBuilder';
 import {
   tournamentService,
   BLIND_STRUCTURES,
@@ -63,9 +64,7 @@ describe('club MTT setup presets reach the creation payload', () => {
       expect(
         levels.filter((row) => !row.isBreak).every((row) => row.durationMinutes === minutes)
       ).toBe(true);
-      expect(levels.filter((row) => row.isBreak).every((row) => row.durationMinutes === 5)).toBe(
-        true
-      );
+      expect(levels.some((row) => row.isBreak)).toBe(false);
       expect(config).toMatchObject({
         buyIn: 10,
         rake: 1,
@@ -97,7 +96,9 @@ describe('club MTT setup presets reach the creation payload', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     expect(mocks.create.mock.calls[0][1]).toMatchObject({
       startingStack: 1500,
-      blindStructure: BLIND_STRUCTURES.turbo,
+      blindStructure: BLIND_STRUCTURES.turbo
+        .filter((row) => !row.isBreak)
+        .map((row, index) => ({ ...row, level: index + 1 })),
     });
   });
 });
@@ -361,5 +362,46 @@ describe('club profile selection preserves operator terms', () => {
     expect(schedule.config.blindStructure[0]).toMatchObject({ bigBlind: 20, durationMinutes: 2 });
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('new drafts only advertise supported tournament breaks', () => {
+  it('emits only playing levels from the actual custom editor and preserves synchronized opt-out', async () => {
+    const { container } = mountDraft();
+    chooseProfile('custom');
+    expect(screen.queryByRole('checkbox', { name: /Auto-Insert Breaks/ })).toBeNull();
+    expect(screen.queryByTitle('Insert Break After')).toBeNull();
+    expect(screen.queryByText('Levels Are Sent Exactly As Shown, Breaks Included.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '+ Advanced Options' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Synchronized Breaks' }));
+    expect(screen.getByLabelText('Tournament Break Policy')).toHaveTextContent(
+      'No Scheduled Tournament Breaks'
+    );
+    expect(screen.getByLabelText('Tournament Break Policy')).toHaveTextContent(
+      'Platform Maintenance'
+    );
+    const config = await submitDraft(container);
+    expect(config.synchronizedBreaks).toBe(false);
+    expect(config.blindStructure.every((row: BlindLevel) => !row.isBreak)).toBe(true);
+    expect(tournamentService.buildRpcConfig(config).synchronizedBreaks).toBe(false);
+  });
+
+  it('keeps an imported break row visible and refuses it until explicitly removed', () => {
+    const onChange = vi.fn();
+    const first = { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 7 };
+    const last = { ...first, level: 3, smallBlind: 20, bigBlind: 40 };
+    const original = [
+      first,
+      { level: 2, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+      last,
+    ];
+    const before = JSON.stringify(original);
+    render(<BlindStructureBuilder initialStructure={original} onChange={onChange} />);
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual(original);
+    expect(screen.getByRole('alert')).toHaveTextContent('Remove Break Rows Before Creating');
+    fireEvent.click(screen.getByTitle('Remove Break'));
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual([first, { ...last, level: 2 }]);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(JSON.stringify(original)).toBe(before);
   });
 });

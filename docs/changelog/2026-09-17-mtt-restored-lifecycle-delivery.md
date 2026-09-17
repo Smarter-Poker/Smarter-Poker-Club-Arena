@@ -69,6 +69,17 @@ the corrected path still has to complete while the other connection holds the
 player lock. All 54 real PostgreSQL checks passed locally. No product timeout,
 required assertion or workflow gate is relaxed.
 
+The same hosted run's client shard found the September 14 installed PKO source
+restating a UUID version check. Its subject is the system-generated
+`app.bounty_obligation_id`, explicitly approved by the September 10 platform-ID
+rule, not a player. The installed SQL and frozen historical list remain exact.
+The existing law now recognizes only that archived expression, bound to both
+source hashes, collector body hash and its original GUC/obligation lookup.
+Changed player checks, copied files, added checks or altered approval fail.
+All 17 law cases and both existing source-window checks passed. The prior
+unchanged law passed in CI 35184697729, whose source lacked this restored SQL;
+CI 35185295828 supplies the reproduced false-positive failure.
+
 ## Work still assigned
 
 The existing deployed-page MTT checks also exposed delayed initial WebSocket

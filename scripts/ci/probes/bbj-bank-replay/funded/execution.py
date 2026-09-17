@@ -54,6 +54,79 @@ def finish_owned_teardown(ledger, budget, *, postflight, clients, helpers, physi
         ledger['status']='TEARDOWN_FAILED_OUTCOME_UNCERTAIN'
 
 
+def dispose_owned_case_database(db, expected_oid, cleanup_rows, disposal, command,
+                                psql, canonical_oid, decode_catalog_result, case_names):
+    """One ordinary DROP owns the backend-exit barrier; never FORCE or retry.
+
+    PostgreSQL 17.11 CountOtherDBBackends waits for closing backends under the
+    database lock and asks conflicting autovacuum workers to exit. A client exit
+    alone does not prove its server backend has finished. Unknown/live clients
+    still refuse here; DROP itself refuses any backend/prepared xact remaining.
+    """
+    if db not in case_names or re.fullmatch(r'[a-z0-9_]+', db) is None:
+        raise RuntimeError('Disposal requires an exact owned case database name')
+    query=("WITH sessions AS MATERIALIZED (SELECT pid,backend_start::text,backend_type,"
+           "datname AS database,datid::text AS database_oid,state,xact_start::text "
+           "FROM pg_stat_activity WHERE datname='"+db+"') "
+           "SELECT jsonb_build_object('oid',(SELECT oid FROM pg_database WHERE datname='"+db+"'),"
+           "'sessions',(SELECT count(*) FROM sessions),"
+           "'backends',COALESCE((SELECT jsonb_agg(to_jsonb(s) ORDER BY pid) FROM sessions s),'[]'::jsonb))")
+    observed=json.loads(command(psql+['-A','-t','-c',query],cleanup=True).stdout)
+    disposal['before_observation']=observed
+    if type(observed) is not dict or set(observed) != {'oid','sessions','backends'}:
+        raise RuntimeError('Complete disposal backend observation required')
+    state=decode_catalog_result(json.dumps({k:observed[k] for k in ('oid','sessions')}),
+                                'existing_database',canonical_oid,case_names)
+    disposal['before']=state
+    actual_oid=canonical_oid(state['oid']) if state['oid'] is not None else None
+    if actual_oid is not None and expected_oid is not None and canonical_oid(expected_oid) != actual_oid:
+        raise RuntimeError('Owned case database OID changed')
+    backends=observed['backends']
+    if type(backends) is not list or len(backends) != state['sessions']:
+        raise RuntimeError('Disposal session count and backend evidence differ')
+    owned=set()
+    for row in cleanup_rows:
+        if (row.get('constructor_status') != 'RETURNED' or row.get('cleanup_error') or
+                type(row.get('exit_after_cleanup')) is not int or row['exit_after_cleanup'] != 0 or
+                any(item.get('status') != 'RETURNED' for item in row.get('cleanup',[]))):
+            raise RuntimeError('Every owned case client must have exited successfully')
+        physical=row.get('physical')
+        if (type(physical) is not dict or physical.get('database') != db or
+                physical.get('database_oid') != actual_oid or
+                type(physical.get('pid')) is not int or physical['pid'] <= 0 or
+                type(physical.get('backend_start')) is not str or not physical['backend_start']):
+            raise RuntimeError('Owned client backend identity is incomplete or changed')
+        owned.add((physical['pid'],physical['backend_start']))
+    seen=set()
+    for backend in backends:
+        if (type(backend) is not dict or set(backend) !=
+                {'pid','backend_start','backend_type','database','database_oid','state','xact_start'} or
+                type(backend['pid']) is not int or backend['pid'] <= 0 or backend['pid'] in seen or
+                type(backend['backend_start']) is not str or not backend['backend_start'] or
+                backend['database'] != db or backend['database_oid'] != actual_oid or
+                type(backend['state']) not in (str,type(None)) or
+                type(backend['xact_start']) not in (str,type(None)) or actual_oid is None):
+            raise RuntimeError('Invalid residual backend identity')
+        seen.add(backend['pid'])
+        if backend['backend_type'] == 'autovacuum worker':
+            continue
+        if (backend['backend_type'] != 'client backend' or
+                (backend['pid'],backend['backend_start']) not in owned or
+                backend['state'] != 'idle' or backend['xact_start'] is not None):
+            raise RuntimeError('Unowned, active or unidentified residual case backend')
+    if actual_oid is not None:
+        disposal['normalized_existing_oid']=actual_oid
+        # Successful ordinary DROP, rather than an earlier racy count, proves
+        # that no backend/prepared transaction remained at the locked deletion.
+        command(psql+['-c',f'DROP DATABASE {db}'],cleanup=True)
+    absent=decode_catalog_result(command(psql+['-A','-t','-c',
+        "SELECT to_jsonb(NOT EXISTS(SELECT FROM pg_database WHERE datname='"+db+"'))"],
+        cleanup=True).stdout,'absence',canonical_oid,case_names)
+    if absent is not True:
+        raise RuntimeError('Case database disposal was not proven')
+    disposal.update(status='ABSENT_PROVEN',absent=True)
+
+
 def execute_retained_case(binding, review, evidence, pg_bin, temp_parent, regression_check):
     budget=binding.operation.case_deadline(binding.selected)
     with budget.bounded('case_source_binding',budget.remaining()):
@@ -451,22 +524,13 @@ def execute_retained_case(binding, review, evidence, pg_bin, temp_parent, regres
                 except Exception as exc:
                     failure=failure or exc
             # Driver closes every owned reader/writer connection even on failure.
-            # No FORCE/termination of sessions is used to make disposal succeed.
+            # No FORCE/client termination: ordinary DROP owns the backend-exit barrier.
             if create_attempted:
                 disposal={'case':case,'database':db,'observed_created_oid':owned_oid}
                 ledger['case_database_disposals'].append(disposal)
                 try:
-                    state=catalog("SELECT jsonb_build_object('oid',(SELECT oid FROM pg_database WHERE datname='"+db+"'),"
-                        "'sessions',(SELECT count(*) FROM pg_stat_activity WHERE datname='"+db+"'))",'existing_database',cleanup=True)
-                    disposal['before']=state
-                    if state['oid'] is not None:
-                        actual_oid=require_owned_database_identity(owned_oid,state['oid'],state['sessions'])
-                        disposal['normalized_existing_oid']=actual_oid
-                        command(psql+['-c',f'DROP DATABASE {db}'],cleanup=True)
-                    absent=catalog("SELECT to_jsonb(NOT EXISTS(SELECT FROM pg_database WHERE datname='"+db+"'))",'absence',cleanup=True)
-                    if absent is not True:
-                        raise RuntimeError('Case database disposal was not proven')
-                    disposal.update(status='ABSENT_PROVEN',absent=True)
+                    dispose_owned_case_database(db,owned_oid,case_cleanup,disposal,command,
+                                                psql,canonical_oid,decode_catalog_result,case_names)
                     disposal['free_after']=space_probe('after_disposal:'+db,root,evidence,0)
                 except Exception as exc:
                     disposal.update(status='DISPOSAL_UNPROVEN',error_type=type(exc).__name__,error=str(exc))

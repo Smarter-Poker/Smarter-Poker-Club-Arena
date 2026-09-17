@@ -61,7 +61,7 @@ def continuity(custody):
     transforms = json.loads((HERE/'CALLER-TRANSFORMS.json').read_text())
     require(hashlib.sha256(original.encode()).hexdigest() == transforms['original_sha256'], 'Original runner changed')
     body = original[original.index(transforms['retained_body_start']):original.index(transforms['retained_body_end'])]
-    require(len(transforms['changes']) == 13, 'Finite caller binding transform inventory changed')
+    require(len(transforms['changes']) == 15, 'Finite caller binding transform inventory changed')
     for item in transforms['changes']:
         body = changed(body, item['before'], item['after'])
     deadline_changes = json.loads((HERE/'DEADLINE-TRANSFORMS.json').read_text())['changes']
@@ -80,7 +80,8 @@ def continuity(custody):
                     require(len(call.args) == 1 and not call.keywords,
                             'Retained SQL call no longer uses the original default statement cap')
     # The deadline successor changes waits/removal bounds only. All declared
-    # changes above are exact; original inactivity/identity predicates stay intact.
+    # changes above are exact; physical inactivity and database identity remain required.
+    # The current disposal wrapper delegates closing-backend drainage to ordinary DROP.
     old = original
     rows = json.loads((HERE/'provenance/backup_adapter/RUNNER-TRANSFORMS.json').read_text())
     require(len(rows) == 26, 'Original26 transforms changed')
@@ -91,7 +92,7 @@ def continuity(custody):
         opening_seal = {row['path']: row['sha256'] for row in opening_seal}
     require(hashlib.sha256(old.encode()).hexdigest() == opening_seal['run_integration.py'],
             'Original26 inverse transforms no longer recover original0124')
-    return {'passed': True, 'original_transform_count': 26, 'portable_transform_count': 13,
+    return {'passed': True, 'original_transform_count': 26, 'portable_transform_count': 15,
             'physical_cleanup_predicates_preserved': True, 'deadline_transform_count': len(deadline_changes)}
 
 

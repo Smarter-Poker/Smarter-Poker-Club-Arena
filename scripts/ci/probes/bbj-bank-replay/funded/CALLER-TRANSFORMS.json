@@ -56,6 +56,14 @@
     {
       "before": "    except Exception as e:\n        ledger.update(status='SETUP_OR_EXECUTION_FAILURE',error_type=type(e).__name__,error=str(e))",
       "after": "    except BaseException as e:\n        ledger.update(status='SETUP_OR_EXECUTION_FAILURE',error_type=type(e).__name__,error=str(e),\n                      financial_outcome='UNQUALIFIED_OR_UNCERTAIN_NO_RETRY')"
+    },
+    {
+      "before": "                    state=catalog(\"SELECT jsonb_build_object('oid',(SELECT oid FROM pg_database WHERE datname='\"+db+\"'),\"\n                        \"'sessions',(SELECT count(*) FROM pg_stat_activity WHERE datname='\"+db+\"'))\",'existing_database',cleanup=True)\n                    disposal['before']=state\n                    if state['oid'] is not None:\n                        actual_oid=require_owned_database_identity(owned_oid,state['oid'],state['sessions'])\n                        disposal['normalized_existing_oid']=actual_oid\n                        command(psql+['-c',f'DROP DATABASE {db}'],cleanup=True)\n                    absent=catalog(\"SELECT to_jsonb(NOT EXISTS(SELECT FROM pg_database WHERE datname='\"+db+\"'))\",'absence',cleanup=True)\n                    if absent is not True:\n                        raise RuntimeError('Case database disposal was not proven')\n                    disposal.update(status='ABSENT_PROVEN',absent=True)\n",
+      "after": "                    dispose_owned_case_database(db,owned_oid,case_cleanup,disposal,command,\n                                                psql,canonical_oid,decode_catalog_result,case_names)\n"
+    },
+    {
+      "before": "# No FORCE/termination of sessions is used to make disposal succeed.",
+      "after": "# No FORCE/client termination: ordinary DROP owns the backend-exit barrier."
     }
   ],
   "physical_cleanup_tail_unchanged": true,

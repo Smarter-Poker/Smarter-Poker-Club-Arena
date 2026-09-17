@@ -72,8 +72,10 @@ function fixture() {
     eventPath,
     JSON.stringify({
       number: 42,
+      repository: { full_name: 'Smarter-Poker/Smarter-Poker-Club-Arena' },
       pull_request: {
         number: 42,
+        state: 'open',
         head: { sha: head },
         base: {
           sha: base,
@@ -134,7 +136,7 @@ test('explicit strict publication refuses a stale tree even in a valid PR contex
   const result = f.run({ STRICT_PROVENANCE: '1' });
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('1 commit(s) BEHIND origin/main');
-  expect(f.provenance()).toMatchObject({ validationOnly: true, behindMain: 1 });
+  expect(f.provenance()).toMatchObject({ validationOnly: false, pullRequest: null, behindMain: 1 });
 });
 
 test('a failed ancestry count cannot qualify a PR snapshot as readable history', () => {

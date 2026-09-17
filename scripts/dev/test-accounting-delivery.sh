@@ -50,9 +50,10 @@ export PGOPTIONS='-c statement_timeout=90000 -c lock_timeout=2000'
 # The original money path keeps its actual invoice/delivery triggers. Load only
 # the captured dependencies needed by the bank fallback regression, never stubs.
 "${diamond_psql[@]}" \
-  -f "$diamond/invoice-schema.sql" -f "$diamond/invoice-functions.sql" \
+  -f "$diamond/invoice-schema.sql" -f "$diamond/union-clubs-schema.sql" \
+  -f "$diamond/invoice-functions.sql" \
   -f "$diamond/invoice-constraints.sql" -f "$diamond/invoice-seed.sql" \
-  -f "$diamond/invoice-triggers.sql"
+  -f "$diamond/invoice-triggers.sql" -f "$diamond/union-clubs-triggers.sql"
 
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 funding_status=0

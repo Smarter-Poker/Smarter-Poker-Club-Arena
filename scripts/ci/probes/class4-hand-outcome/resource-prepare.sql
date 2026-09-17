@@ -17,6 +17,11 @@ DO $$ BEGIN
 END $$;
 \ir ../../../../supabase/components/class4-hand-outcome-evidence.sql
 SET LOCAL session_replication_role=replica;
+-- This owned empty fixture loads MD5 UUIDs across a 2.6M-row random B-tree.
+-- Build only that unique index once after loading; all row expressions, other
+-- constraints/indexes and durability settings stay unchanged. The exact unique
+-- constraint and the existing full source/schema guard must pass before use.
+ALTER TABLE public.hand_atomic_commits DROP CONSTRAINT hand_atomic_commits_hand_id_key;
 INSERT INTO public.hand_atomic_commits(table_id,hand_number,hand_id,payload_hash,stack_result,
  post_commit_payload,post_commit_request_hash,post_commit_payload_hash,post_commit_completed_at,post_commit_result)
 SELECT md5('class4-resource-table:'||(i%256))::uuid,8000000+i,md5('class4-resource-hand:'||i)::uuid,
@@ -27,6 +32,10 @@ SELECT md5('class4-resource-table:'||(i%256))::uuid,8000000+i,md5('class4-resour
  CASE WHEN i<=5001 THEN '2026-09-17T00:00:00Z'::timestamptz END,
  CASE WHEN i<=5001 THEN jsonb_build_object('ok',true,'hand_id',md5('class4-resource-hand:'||i)::uuid,'hand_number',8000000+i) END
 FROM generate_series(1,2600000) s(i);
+ALTER TABLE public.hand_atomic_commits
+ ADD CONSTRAINT hand_atomic_commits_hand_id_key UNIQUE (hand_id);
+-- Existing replay verifies every exact constraint/index and valid/ready state.
+\ir ../../../../supabase/components/class4-hand-outcome-evidence.sql
 -- Original aggregate history:42051 total -3363 unresolved =38688 resolved.
 INSERT INTO public.financial_alerts(id,severity,source,message,context,resolved,created_at)
 SELECT md5('class4-resource-history:'||i)::uuid,'warning','synthetic.resolved_history',

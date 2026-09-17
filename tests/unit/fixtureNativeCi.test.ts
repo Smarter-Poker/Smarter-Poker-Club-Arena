@@ -141,6 +141,20 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 }
 
 describe('required CI owns native fixture verification', () => {
+  it.each([
+    'scripts/dev/probe-atomic-tournament-blinds-pg17.py',
+    'scripts/dev/probe-played-mtt-launch-pg17.py',
+  ])('executes the retained MTT native authority probe in accounting: %s', (path) => {
+    const invocations = ci.jobs.accounting_postgres.steps.filter(
+      (step: { run?: string }) => step.run === `python3 ${path}`
+    );
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0].env.POKER_AUDIT_PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(invocations[0].if).toBeUndefined();
+    expect(invocations[0]['continue-on-error']).toBeUndefined();
+    expect(classifyChangedPaths([path]).server).toBe(true);
+  });
+
   it.each([false, true])(
     'isolates fixture writes from foreign Git context (extended=%s)',
     (extended) => {

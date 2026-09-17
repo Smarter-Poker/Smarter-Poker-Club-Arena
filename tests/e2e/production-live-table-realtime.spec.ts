@@ -229,6 +229,17 @@ async function selectOccupiedRunningCashTable(
   page: Page,
   request: APIRequestContext
 ): Promise<{ candidate: RunningTableCandidate; health: EngineHealth; table: EngineTableLiveness }> {
+  // The reserved account may legitimately receive this optional lobby offer.
+  // Dismiss it through its own control if it blocks a spectator action.
+  const diamondPrompt = page.getByRole('dialog', { name: 'Diamond Spins', exact: true });
+  await page.addLocatorHandler(
+    diamondPrompt,
+    async () => {
+      await diamondPrompt.getByRole('button', { name: 'Not Now', exact: true }).click();
+      await expect(diamondPrompt).toBeHidden({ timeout: 8_000 });
+    },
+    { times: 1 }
+  );
   await page.goto(CLUB_LOBBY, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (/\/auth(?:\/|\?|$)/.test(page.url())) {
     throw new Error('Production redirected to auth despite the required authenticated state');
@@ -320,35 +331,73 @@ async function proveTableProgressedBeforeNavigation(
  */
 async function selectProgressingTournamentTable(
   request: APIRequestContext,
-  gameFormat: (typeof TOURNAMENT_FORMATS)[number]
+  gameFormat: (typeof TOURNAMENT_FORMATS)[number],
+  testInfo: TestInfo
 ): Promise<{ candidate: RunningTableCandidate; evidence: PreNavigationEngineEvidence }> {
-  const before = await readEngineHealth(request, { gameFormat });
+  let before = await readEngineHealth(request, { gameFormat });
   /* The live SNG board is presently heads-up, so two seats is a real SNG,
      not an unstable fallback. Spins and MTTs retain a three-player floor to
      avoid selecting a table already on its terminal heads-up hand. */
   const minimumStableSeats = gameFormat === 'sng' ? 2 : 3;
-  const baselines = before.tableLiveness
-    .filter(
-      (table) =>
-        table.gameFormat === gameFormat &&
-        (table.clubId === CLUB_ID || table.clubId === UNION_ID) &&
-        healthyRunningTable(before, table.tableId, gameFormat) !== null &&
-        table.seated >= minimumStableSeats &&
-        table.dealable >= minimumStableSeats
-    )
-    .sort(
-      (a, b) =>
-        b.seated - a.seated ||
-        (gameFormat === 'sng' ? a.handCount - b.handCount : 0) ||
-        a.msSinceProgress - b.msSinceProgress ||
-        a.tableId.localeCompare(b.tableId)
-    );
+  const readyTables = (health: EngineHealth): EngineTableLiveness[] =>
+    health.tableLiveness
+      .filter(
+        (table) =>
+          table.gameFormat === gameFormat &&
+          (table.clubId === CLUB_ID || table.clubId === UNION_ID) &&
+          healthyRunningTable(health, table.tableId, gameFormat) !== null &&
+          table.seated >= minimumStableSeats &&
+          table.dealable >= minimumStableSeats
+      )
+      .sort(
+        (a, b) =>
+          b.seated - a.seated ||
+          (gameFormat === 'sng' ? a.handCount - b.handCount : 0) ||
+          a.msSinceProgress - b.msSinceProgress ||
+          a.tableId.localeCompare(b.tableId)
+      );
+  let baselines = readyTables(before);
 
-  if (baselines.length === 0) {
-    throw new Error(
-      `production exposed no already-running ${gameFormat.toUpperCase()} table with ` +
-        `${minimumStableSeats}+ dealable players in fixture scope ${CLUB_ID}/${UNION_ID}`
-    );
+  // A publisher can finish while natural tournament tables are still resuming.
+  // Wait only for the same live-table prerequisites, before freezing identities.
+  try {
+    if (baselines.length === 0) {
+      await expect
+        .poll(
+          async () => {
+            before = await readEngineHealth(request, { gameFormat });
+            baselines = readyTables(before);
+            return baselines.length;
+          },
+          {
+            timeout: CAUSAL_HAND_TIMEOUT_MS,
+            intervals: [2_000, 3_000, 5_000, 5_000],
+            message:
+              `production exposed no already-running ${gameFormat.toUpperCase()} table with ` +
+              `${minimumStableSeats}+ dealable players in fixture scope ${CLUB_ID}/${UNION_ID} ` +
+              `inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
+          }
+        )
+        .toBeGreaterThan(0);
+    }
+  } catch (error) {
+    await testInfo.attach(`${gameFormat}-baseline-readiness-refusal`, {
+      body: Buffer.from(
+        JSON.stringify(
+          {
+            expectedVersion: EXPECTED_ENGINE_SHA,
+            gameFormat,
+            minimumStableSeats,
+            fixtureClubIds: [CLUB_ID, UNION_ID],
+            lastScopedHealth: before,
+          },
+          null,
+          2
+        )
+      ),
+      contentType: 'application/json',
+    });
+    throw error;
   }
 
   let after = before;
@@ -482,7 +531,7 @@ async function certifyReadOnlyTournamentFormat(
   testInfo: TestInfo,
   gameFormat: (typeof TOURNAMENT_FORMATS)[number]
 ): Promise<void> {
-  const selected = await selectProgressingTournamentTable(request, gameFormat);
+  const selected = await selectProgressingTournamentTable(request, gameFormat, testInfo);
   const { candidate, evidence } = selected;
   await testInfo.attach(`${gameFormat}-engine-before-navigation`, {
     body: Buffer.from(
@@ -803,6 +852,8 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       page,
       request,
     }, testInfo) => {
+      // Baseline readiness must not consume the existing continuity proof budget.
+      testInfo.setTimeout(testInfo.timeout + CAUSAL_HAND_TIMEOUT_MS);
       await certifyReadOnlyTournamentFormat(page, request, testInfo, gameFormat);
     });
   }

@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Condensed:wght@600;700&display=swap');
+/* The fonts (Cinzel, Inter, Roboto Condensed) are declared once, in index.html,
+   and self-hosted at build. A second @import from Google Fonts here re-declared
+   the same faces later in the cascade, so every page swapped every word to a
+   fallback and back when this chunk loaded (measured CLS 0.12; 2026-09-17). */
 
 :root {
   --club-black-1000: #030405;

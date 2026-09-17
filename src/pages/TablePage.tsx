@@ -325,6 +325,7 @@ import {
   tournamentUnregisterSuccessText,
   tournamentUnregisterWasAlreadyStarted,
 } from '../services/TournamentService';
+import { TournamentPurchaseNotSubmittedError } from '../services/TournamentPurchaseIntent';
 // [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
 import { handHistoryService } from '../services/HandHistoryService';
 // Dan 2026-08-15: the real rake schedule (byte-identical mirror of the
@@ -4243,6 +4244,9 @@ function LiveTablePage({
 
   /** Release the hold and run any exit that was deferred while it was held. */
   const releaseBustHold = useCallback(() => {
+    // Both the five-second discovery hold and the modal backstop reach here.
+    // A submitted/unknown rebuy must not replay a stale elimination exit.
+    if (rebuyPurchasePendingRef.current) return;
     const hold = bustHoldRef.current;
     if (hold.deadline) {
       clearTimeout(hold.deadline);
@@ -4371,6 +4375,8 @@ function LiveTablePage({
    * ADDON_PERIOD_END closes the window. Only the newest request may paint.
    */
   const addOnPresentationEpochRef = useRef(0);
+  // A closed offer is not proof that an already submitted purchase failed.
+  const addOnPurchasePendingRef = useRef(false);
   /**
    * Replays the authoritative persisted add-on window after an engine socket
    * replacement or maintenance thaw. Realtime/engine broadcasts are not
@@ -8823,7 +8829,47 @@ function LiveTablePage({
    * not cancel a rebuy that is mid-flight — see its use below.
    */
   const rebuyProcessingRef = useRef(false);
-  rebuyProcessingRef.current = rebuyProcessing;
+  const rebuyPurchasePendingRef = useRef(false);
+  const [rebuyUnconfirmed, setRebuyUnconfirmed] = useState(false);
+  const tournamentPurchaseContext = useMemo(
+    () => ({ active: true, bound: !!tableId && !!tableState.tournamentId && !!userId }),
+    [tableId, tableState.tournamentId, userId]
+  );
+  const tournamentPurchaseContextRef = useRef(tournamentPurchaseContext);
+  tournamentPurchaseContextRef.current = tournamentPurchaseContext;
+  const previousTournamentPurchaseContextRef = useRef<typeof tournamentPurchaseContext | null>(
+    null
+  );
+  useEffect(() => {
+    tournamentPurchaseContext.active = true;
+    const previous = previousTournamentPurchaseContextRef.current;
+    previousTournamentPurchaseContextRef.current = tournamentPurchaseContext;
+    // Initial bootstrap may deliver its offer with the tournament id. Do not
+    // erase that first offer; only retire a previously bound table/session.
+    if (!previous?.bound || previous === tournamentPurchaseContext)
+      return () => {
+        tournamentPurchaseContext.active = false;
+      };
+    rebuyProcessingRef.current = false;
+    rebuyPurchasePendingRef.current = false;
+    addOnPurchasePendingRef.current = false;
+    setRebuyProcessing(false);
+    setRebuyUnconfirmed(false);
+    rebuyJustSucceededRef.current = false;
+    bustPromptFiredRef.current = false;
+    setShowRebuyModal(false);
+    setAddOnPeriod((prev) => ({ ...prev, active: false }));
+    endRebuyPrompt();
+    addOnPresentationEpochRef.current += 1;
+    const hold = bustHoldRef.current;
+    if (hold.deadline) clearTimeout(hold.deadline);
+    hold.deadline = null;
+    hold.active = false;
+    hold.pendingExit = null;
+    return () => {
+      tournamentPurchaseContext.active = false;
+    };
+  }, [tournamentPurchaseContext, endRebuyPrompt]);
 
   /**
    * "This player paid to stay in." Set the instant a rebuy is confirmed, and
@@ -8995,29 +9041,43 @@ function LiveTablePage({
              * that constant for why "no timer at all" stranded players. */
             const hold = bustHoldRef.current;
             if (hold.deadline) clearTimeout(hold.deadline);
-            hold.deadline = setTimeout(() => {
+            const purchaseContext = tournamentPurchaseContext;
+            const promptToken = rebuyPromptTokenRef.current;
+            const isCurrentPurchase = () =>
+              purchaseContext.active &&
+              tournamentPurchaseContextRef.current === purchaseContext &&
+              rebuyPromptTokenRef.current === promptToken;
+            hold.deadline = setTimeout(async () => {
+              if (!isCurrentPurchase()) return;
               bustHoldRef.current.deadline = null;
-              /* Not while a rebuy is actually in flight. `processRebuy` is a
-                 server round trip; if it outruns the backstop, cancelling here
-                 would reject a rebuy the player had already paid for. Give it
-                 another full window instead — the confirm handler releases the
-                 hold the moment it returns. */
-              if (rebuyProcessingRef.current) {
-                bustHoldRef.current.deadline = setTimeout(
-                  () => releaseBustHoldRef.current?.(),
-                  BUST_HOLD_MODAL_MS
-                );
-                return;
-              }
+              // Submitted/unknown purchases keep their exact receipt recovery.
+              // No later timeout may decline them or replay the deferred exit.
+              if (rebuyProcessingRef.current || rebuyPurchasePendingRef.current) return;
               // Unanswered for two minutes is a decline. Close the prompt and
               // tell the server, exactly as the Cancel button would.
+              if (tableId) {
+                rebuyProcessingRef.current = true;
+                setRebuyProcessing(true);
+                try {
+                  const outcome = await GameServerAPI.notifyServerRejectRebuy(tableId);
+                  if (!isCurrentPurchase()) return;
+                  if (outcome?.success !== true) {
+                    toast.error('Could Not Confirm The Rebuy Decline. Please Try Again.');
+                    return;
+                  }
+                } catch {
+                  if (!isCurrentPurchase()) return;
+                  toast.error('Could Not Confirm The Rebuy Decline. Please Try Again.');
+                  return;
+                } finally {
+                  if (isCurrentPurchase()) {
+                    rebuyProcessingRef.current = false;
+                    setRebuyProcessing(false);
+                  }
+                }
+              }
               setShowRebuyModal(false);
               endRebuyPrompt();
-              if (tableId) {
-                GameServerAPI.notifyServerRejectRebuy(tableId).catch(() => {
-                  /* best effort: the exit below must happen either way */
-                });
-              }
               releaseBustHoldRef.current?.();
             }, BUST_HOLD_MODAL_MS);
             return;
@@ -12109,6 +12169,7 @@ function LiveTablePage({
          * who refreshed during an open window previously lost the offer even
          * though the server and database still accepted it. */
         const presentAddOnOffer = async (addonData: Record<string, unknown>) => {
+          if (addOnPurchasePendingRef.current) return;
           const presentationEpoch = ++addOnPresentationEpochRef.current;
           try {
             // Tournament broadcasts are visible to rails as well as players.
@@ -12191,7 +12252,12 @@ function LiveTablePage({
               );
               return;
             }
-            if (!isMounted || presentationEpoch !== addOnPresentationEpochRef.current) return;
+            if (
+              !isMounted ||
+              presentationEpoch !== addOnPresentationEpochRef.current ||
+              addOnPurchasePendingRef.current
+            )
+              return;
             setAddOnPeriod({
               active: true,
               addOnCost: cost,
@@ -12226,7 +12292,8 @@ function LiveTablePage({
             // A stale async completion must never repaint a window the durable
             // tournament row now proves is closed.
             addOnPresentationEpochRef.current += 1;
-            if (isMounted) setAddOnPeriod((prev) => ({ ...prev, active: false }));
+            if (isMounted && !addOnPurchasePendingRef.current)
+              setAddOnPeriod((prev) => ({ ...prev, active: false }));
             return;
           }
 
@@ -13223,7 +13290,8 @@ function LiveTablePage({
                 void presentAddOnOffer((data.payload || {}) as Record<string, unknown>);
               } else if (data?.type === 'ADDON_PERIOD_END') {
                 addOnPresentationEpochRef.current += 1;
-                setAddOnPeriod((prev) => ({ ...prev, active: false }));
+                if (!addOnPurchasePendingRef.current)
+                  setAddOnPeriod((prev) => ({ ...prev, active: false }));
               } else if (data?.type === 'hand_for_hand') {
                 // Bubble mode — hand-for-hand play activated
                 setTableState((prev) => ({
@@ -21638,6 +21706,7 @@ function LiveTablePage({
     isSizingOpen: raiseIntent.open,
     isSpectator: !tableState.players.some((p) => p?.isHero),
     isModalOpen:
+      showMustMoveLobby ||
       showSettings ||
       showInsurance ||
       showRIT ||
@@ -21686,6 +21755,7 @@ function LiveTablePage({
     },
     onClosePanel: () => {
       // Escape key → close ALL open modals/overlays
+      setShowMustMoveLobby(false);
       setIsChatCollapsed(true);
       setShowSettings(false);
       setIsReactionPickerOpen(false);
@@ -26465,40 +26535,81 @@ function LiveTablePage({
         // so AddOnModal printed "Add-On Accepted -- +N chips added" over a
         // purchase the server had just refused.
         onAddOnAccept={async () => {
-          if (!tableState.tournamentId || !userId || rebuyProcessing) return false;
+          if (!tableState.tournamentId || !userId || rebuyProcessingRef.current) return false;
+          const purchaseContext = tournamentPurchaseContext;
+          const isCurrentPurchase = () =>
+            purchaseContext.active && tournamentPurchaseContextRef.current === purchaseContext;
+          if (!isCurrentPurchase()) return false;
+          rebuyProcessingRef.current = true;
+          addOnPurchasePendingRef.current = true;
+          addOnPresentationEpochRef.current += 1;
           setRebuyProcessing(true);
           try {
-            await tournamentService.processAddOn(tableState.tournamentId, userId);
+            const purchase = await tournamentService.processAddOn(tableState.tournamentId, userId);
+            if (!isCurrentPurchase()) return false;
+            if (purchase?.success !== true) return false;
+            addOnPurchasePendingRef.current = false;
             toast?.success('Add-on accepted - chips added to your stack');
             addOnPresentationEpochRef.current += 1;
             setAddOnPeriod((prev) => ({ ...prev, active: false }));
             return true;
-          } catch (err: any) {
-            toast?.error(err.message || 'Add-on failed');
+          } catch (error) {
+            if (!isCurrentPurchase()) return false;
+            if (error instanceof TournamentPurchaseNotSubmittedError) {
+              addOnPurchasePendingRef.current = false;
+              throw error;
+            }
+            toast?.error('Add-On Not Confirmed. Retry To Check The Same Purchase.');
             return false;
           } finally {
-            setRebuyProcessing(false);
+            if (isCurrentPurchase()) {
+              rebuyProcessingRef.current = false;
+              setRebuyProcessing(false);
+            }
           }
         }}
         onAddOnDecline={() => {
+          if (rebuyProcessingRef.current) return;
+          // Dismissal after an unknown reply closes only this presentation.
+          // TournamentPurchaseIntent retains the original request unchanged.
+          addOnPurchasePendingRef.current = false;
           addOnPresentationEpochRef.current += 1;
           setAddOnPeriod((prev) => ({ ...prev, active: false }));
         }}
         // Rebuy
         showRebuyModal={showRebuyModal}
         rebuyData={rebuyData}
+        rebuyUnconfirmed={rebuyUnconfirmed}
         onConfirmRebuy={async () => {
-          if (!tableState.tournamentId || !userId) return;
+          if (!tableState.tournamentId || !userId || rebuyProcessingRef.current) return;
+          const purchaseContext = tournamentPurchaseContext;
+          const token = rebuyPromptTokenRef.current ?? beginRebuyPrompt();
+          const isCurrentPurchase = () =>
+            purchaseContext.active &&
+            tournamentPurchaseContextRef.current === purchaseContext &&
+            rebuyPromptTokenRef.current === token;
+          if (!isCurrentPurchase()) return;
+          rebuyProcessingRef.current = true;
+          rebuyPurchasePendingRef.current = true;
           setRebuyProcessing(true);
           try {
-            const token = rebuyPromptTokenRef.current ?? beginRebuyPrompt();
-            await tournamentService.processRebuy(tableState.tournamentId, userId, token);
+            const purchase = await tournamentService.processRebuy(
+              tableState.tournamentId,
+              userId,
+              token
+            );
+            if (!isCurrentPurchase()) return;
+            if (purchase?.success !== true) throw new Error('Rebuy Receipt Not Confirmed');
+            rebuyPurchasePendingRef.current = false;
+            setRebuyUnconfirmed(false);
             /* Set BEFORE anything else can run. The stack that proves this
                purchase arrives over the engine feed a moment from now, and
                `exitIfBusted` must not be allowed to look at the stale zero in
                between — see rebuyJustSucceededRef. */
             rebuyJustSucceededRef.current = true;
             toast?.success('Rebuy successful - chips added to your stack');
+            rebuyProcessingRef.current = false;
+            setRebuyProcessing(false);
             setShowRebuyModal(false);
             endRebuyPrompt();
             /* Dan 2026-08-25: the player REBOUGHT, so any exit the elimination
@@ -26507,13 +26618,52 @@ function LiveTablePage({
                stack out of the tournament they just paid to stay in. */
             bustHoldRef.current.pendingExit = null;
             releaseBustHold();
-          } catch (err: any) {
-            toast?.error(err.message || 'Rebuy failed');
+          } catch (error) {
+            if (!isCurrentPurchase()) return;
+            if (error instanceof TournamentPurchaseNotSubmittedError) {
+              rebuyPurchasePendingRef.current = false;
+              setRebuyUnconfirmed(false);
+              toast?.error('The Purchase Was Not Submitted. Please Try Again.');
+              return;
+            }
+            setRebuyUnconfirmed(true);
+            toast?.error('Rebuy Not Confirmed. Retry To Check The Same Purchase.');
           } finally {
-            setRebuyProcessing(false);
+            if (isCurrentPurchase()) {
+              rebuyProcessingRef.current = false;
+              setRebuyProcessing(false);
+            }
           }
         }}
-        onCloseRebuyModal={() => {
+        onCloseRebuyModal={async () => {
+          if (rebuyProcessingRef.current || rebuyPurchasePendingRef.current) return;
+          if (!tableId || !userId) return;
+          const purchaseContext = tournamentPurchaseContext;
+          const promptToken = rebuyPromptTokenRef.current;
+          const isCurrentPurchase = () =>
+            purchaseContext.active &&
+            tournamentPurchaseContextRef.current === purchaseContext &&
+            rebuyPromptTokenRef.current === promptToken;
+          if (!isCurrentPurchase()) return;
+          rebuyProcessingRef.current = true;
+          setRebuyProcessing(true);
+          try {
+            const outcome = await GameServerAPI.notifyServerRejectRebuy(tableId);
+            if (!isCurrentPurchase()) return;
+            if (outcome?.success !== true) {
+              toast.error('Could Not Confirm The Rebuy Decline. Please Try Again.');
+              return;
+            }
+          } catch {
+            if (!isCurrentPurchase()) return;
+            toast.error('Could Not Confirm The Rebuy Decline. Please Try Again.');
+            return;
+          } finally {
+            if (isCurrentPurchase()) {
+              rebuyProcessingRef.current = false;
+              setRebuyProcessing(false);
+            }
+          }
           setShowRebuyModal(false);
           endRebuyPrompt();
           /* Declined: "unless the user declines the rebuy, then it starts the
@@ -26523,7 +26673,6 @@ function LiveTablePage({
              prize) wins over the 0/0 fallback. */
           releaseBustHold();
           if (tableId && userId) {
-            GameServerAPI.notifyServerRejectRebuy(tableId).catch(console.error);
             if (
               tableState.isTournament &&
               (tableState.players[tableState.heroSeat - 1]?.stack ?? 0) <= 0

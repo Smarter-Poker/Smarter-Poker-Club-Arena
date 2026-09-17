@@ -1,0 +1,15 @@
+{
+  "schema": "source-custody-check/v1",
+  "vectors": 49,
+  "embedded_vectors_equal": true,
+  "expected_refusal_literals_present": true,
+  "reference_pins_verified": 8,
+  "sql_parsed": false,
+  "sql_executed": false,
+  "regression_enforced": false,
+  "production_changed": false,
+  "positive_exact_projection_oracles": 9,
+  "original_q_null_safe_comparison": true,
+  "explicit_gap_names_required": 8,
+  "definition_unchanged_from0144": true
+}

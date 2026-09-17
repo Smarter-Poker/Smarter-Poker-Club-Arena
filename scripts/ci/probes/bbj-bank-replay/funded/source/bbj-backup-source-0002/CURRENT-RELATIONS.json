@@ -320,7 +320,9 @@
           "conindid": "0",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [5],
+          "conkey": [
+            5
+          ],
           "conname": "ca_bbj_bucket_moves_amount_check",
           "connamespace": "2200",
           "connoinherit": false,
@@ -350,7 +352,10 @@
           "conindid": "0",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [3, 4],
+          "conkey": [
+            3,
+            4
+          ],
           "conname": "ca_bbj_bucket_moves_check",
           "connamespace": "2200",
           "connoinherit": false,
@@ -380,7 +385,9 @@
           "conindid": "0",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [3],
+          "conkey": [
+            3
+          ],
           "conname": "ca_bbj_bucket_moves_from_bank_check",
           "connamespace": "2200",
           "connoinherit": false,
@@ -410,7 +417,9 @@
           "conindid": "20969161",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [7],
+          "conkey": [
+            7
+          ],
           "conname": "ca_bbj_bucket_moves_op_id_key",
           "connamespace": "2200",
           "connoinherit": true,
@@ -440,7 +449,9 @@
           "conindid": "20969159",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [1],
+          "conkey": [
+            1
+          ],
           "conname": "ca_bbj_bucket_moves_pkey",
           "connamespace": "2200",
           "connoinherit": true,
@@ -470,7 +481,9 @@
           "conindid": "0",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [6],
+          "conkey": [
+            6
+          ],
           "conname": "ca_bbj_bucket_moves_reason_check",
           "connamespace": "2200",
           "connoinherit": false,
@@ -500,7 +513,9 @@
           "conindid": "0",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [4],
+          "conkey": [
+            4
+          ],
           "conname": "ca_bbj_bucket_moves_to_bank_check",
           "connamespace": "2200",
           "connoinherit": false,
@@ -530,7 +545,9 @@
           "conindid": "0",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [5],
+          "conkey": [
+            5
+          ],
           "conname": "chk_amount_is_two_decimal_places",
           "connamespace": "2200",
           "connoinherit": false,
@@ -551,8 +568,12 @@
           "definition": "CREATE UNIQUE INDEX ca_bbj_bucket_moves_pkey ON public.ca_bbj_bucket_moves USING btree (id)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["3124"],
-          "indcollation": ["0"],
+          "indclass": [
+            "3124"
+          ],
+          "indcollation": [
+            "0"
+          ],
           "indexprs": null,
           "indexrelid": "20969159",
           "indimmediate": true,
@@ -564,11 +585,15 @@
           "indisreplident": false,
           "indisunique": true,
           "indisvalid": true,
-          "indkey": [1],
+          "indkey": [
+            1
+          ],
           "indnatts": 1,
           "indnkeyatts": 1,
           "indnullsnotdistinct": false,
-          "indoption": [0],
+          "indoption": [
+            0
+          ],
           "indpred": null,
           "indrelid": "20969146",
           "predicate": null
@@ -577,8 +602,12 @@
           "definition": "CREATE UNIQUE INDEX ca_bbj_bucket_moves_op_id_key ON public.ca_bbj_bucket_moves USING btree (op_id)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["3126"],
-          "indcollation": ["100"],
+          "indclass": [
+            "3126"
+          ],
+          "indcollation": [
+            "100"
+          ],
           "indexprs": null,
           "indexrelid": "20969161",
           "indimmediate": true,
@@ -590,11 +619,15 @@
           "indisreplident": false,
           "indisunique": true,
           "indisvalid": true,
-          "indkey": [7],
+          "indkey": [
+            7
+          ],
           "indnatts": 1,
           "indnkeyatts": 1,
           "indnullsnotdistinct": false,
-          "indoption": [0],
+          "indoption": [
+            0
+          ],
           "indpred": null,
           "indrelid": "20969146",
           "predicate": null
@@ -602,7 +635,10 @@
       ],
       "raw_pg_class": {
         "oid": "20969146",
-        "relacl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+        "relacl": [
+          "postgres=arwdDxtm/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
         "relallvisible": 0,
         "relam": "2",
         "relchecks": 6,
@@ -1446,7 +1482,9 @@
           "attisdropped": false,
           "attislocal": true,
           "attlen": -1,
-          "attmissingval": ["main"],
+          "attmissingval": [
+            "main"
+          ],
           "attname": "kind",
           "attndims": 0,
           "attnotnull": true,
@@ -1477,7 +1515,9 @@
           "conindid": "0",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [15],
+          "conkey": [
+            15
+          ],
           "conname": "bbj_payouts_kind_check",
           "connamespace": "2200",
           "connoinherit": false,
@@ -1507,7 +1547,9 @@
           "conindid": "4465330",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [1],
+          "conkey": [
+            1
+          ],
           "conname": "bbj_payouts_pkey",
           "connamespace": "2200",
           "connoinherit": true,
@@ -1529,21 +1571,31 @@
           "conexclop": null,
           "confdelsetcols": null,
           "confdeltype": "r",
-          "conffeqop": ["2972"],
-          "confkey": [1],
+          "conffeqop": [
+            "2972"
+          ],
+          "confkey": [
+            1
+          ],
           "confmatchtype": "s",
           "confrelid": "1708481",
           "confupdtype": "a",
           "conindid": "1708490",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [2],
+          "conkey": [
+            2
+          ],
           "conname": "bbj_payouts_pool_id_fkey",
           "connamespace": "2200",
           "connoinherit": true,
           "conparentid": "0",
-          "conpfeqop": ["2972"],
-          "conppeqop": ["2972"],
+          "conpfeqop": [
+            "2972"
+          ],
+          "conppeqop": [
+            "2972"
+          ],
           "conrelid": "4465323",
           "contype": "f",
           "contypid": "0",
@@ -1558,8 +1610,12 @@
           "definition": "CREATE UNIQUE INDEX bbj_payouts_pkey ON public.bbj_payouts USING btree (id)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["10065"],
-          "indcollation": ["0"],
+          "indclass": [
+            "10065"
+          ],
+          "indcollation": [
+            "0"
+          ],
           "indexprs": null,
           "indexrelid": "4465330",
           "indimmediate": true,
@@ -1571,11 +1627,15 @@
           "indisreplident": false,
           "indisunique": true,
           "indisvalid": true,
-          "indkey": [1],
+          "indkey": [
+            1
+          ],
           "indnatts": 1,
           "indnkeyatts": 1,
           "indnullsnotdistinct": false,
-          "indoption": [0],
+          "indoption": [
+            0
+          ],
           "indpred": null,
           "indrelid": "4465323",
           "predicate": null
@@ -1584,8 +1644,16 @@
           "definition": "CREATE UNIQUE INDEX bbj_payouts_pool_table_hand_uidx ON public.bbj_payouts USING btree (pool_id, table_id, hand_number)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["10065", "10065", "3124"],
-          "indcollation": ["0", "0", "0"],
+          "indclass": [
+            "10065",
+            "10065",
+            "3124"
+          ],
+          "indcollation": [
+            "0",
+            "0",
+            "0"
+          ],
           "indexprs": null,
           "indexrelid": "8786857",
           "indimmediate": true,
@@ -1597,11 +1665,19 @@
           "indisreplident": false,
           "indisunique": true,
           "indisvalid": true,
-          "indkey": [2, 4, 5],
+          "indkey": [
+            2,
+            4,
+            5
+          ],
           "indnatts": 3,
           "indnkeyatts": 3,
           "indnullsnotdistinct": false,
-          "indoption": [0, 0, 0],
+          "indoption": [
+            0,
+            0,
+            0
+          ],
           "indpred": null,
           "indrelid": "4465323",
           "predicate": null
@@ -1610,8 +1686,14 @@
           "definition": "CREATE INDEX idx_bbj_payouts_table_hand ON public.bbj_payouts USING btree (table_id, hand_number)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["10065", "3124"],
-          "indcollation": ["0", "0"],
+          "indclass": [
+            "10065",
+            "3124"
+          ],
+          "indcollation": [
+            "0",
+            "0"
+          ],
           "indexprs": null,
           "indexrelid": "16484670",
           "indimmediate": true,
@@ -1623,11 +1705,17 @@
           "indisreplident": false,
           "indisunique": false,
           "indisvalid": true,
-          "indkey": [4, 5],
+          "indkey": [
+            4,
+            5
+          ],
           "indnatts": 2,
           "indnkeyatts": 2,
           "indnullsnotdistinct": false,
-          "indoption": [0, 0],
+          "indoption": [
+            0,
+            0
+          ],
           "indpred": null,
           "indrelid": "4465323",
           "predicate": null
@@ -1867,7 +1955,9 @@
           "command": "r",
           "name": "bbj_payouts_admin_only",
           "permissive": true,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "fn_is_platform_admin()"
         }
       ],
@@ -2258,7 +2348,9 @@
           "conindid": "0",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [6],
+          "conkey": [
+            6
+          ],
           "conname": "bbj_unclaimed_shares_amount_check",
           "connamespace": "2200",
           "connoinherit": false,
@@ -2280,21 +2372,31 @@
           "conexclop": null,
           "confdelsetcols": null,
           "confdeltype": "c",
-          "conffeqop": ["2972"],
-          "confkey": [1],
+          "conffeqop": [
+            "2972"
+          ],
+          "confkey": [
+            1
+          ],
           "confmatchtype": "s",
           "confrelid": "4465323",
           "confupdtype": "a",
           "conindid": "4465330",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [2],
+          "conkey": [
+            2
+          ],
           "conname": "bbj_unclaimed_shares_payout_id_fkey",
           "connamespace": "2200",
           "connoinherit": true,
           "conparentid": "0",
-          "conpfeqop": ["2972"],
-          "conppeqop": ["2972"],
+          "conpfeqop": [
+            "2972"
+          ],
+          "conppeqop": [
+            "2972"
+          ],
           "conrelid": "22451542",
           "contype": "f",
           "contypid": "0",
@@ -2318,7 +2420,9 @@
           "conindid": "22451550",
           "coninhcount": 0,
           "conislocal": true,
-          "conkey": [1],
+          "conkey": [
+            1
+          ],
           "conname": "bbj_unclaimed_shares_pkey",
           "connamespace": "2200",
           "connoinherit": true,
@@ -2339,8 +2443,12 @@
           "definition": "CREATE UNIQUE INDEX bbj_unclaimed_shares_pkey ON public.bbj_unclaimed_shares USING btree (id)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["10065"],
-          "indcollation": ["0"],
+          "indclass": [
+            "10065"
+          ],
+          "indcollation": [
+            "0"
+          ],
           "indexprs": null,
           "indexrelid": "22451550",
           "indimmediate": true,
@@ -2352,11 +2460,15 @@
           "indisreplident": false,
           "indisunique": true,
           "indisvalid": true,
-          "indkey": [1],
+          "indkey": [
+            1
+          ],
           "indnatts": 1,
           "indnkeyatts": 1,
           "indnullsnotdistinct": false,
-          "indoption": [0],
+          "indoption": [
+            0
+          ],
           "indpred": null,
           "indrelid": "22451542",
           "predicate": null
@@ -2365,8 +2477,14 @@
           "definition": "CREATE UNIQUE INDEX uq_bbj_unclaimed_open ON public.bbj_unclaimed_shares USING btree (payout_id, user_id) WHERE (paid_at IS NULL)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["10065", "10065"],
-          "indcollation": ["0", "0"],
+          "indclass": [
+            "10065",
+            "10065"
+          ],
+          "indcollation": [
+            "0",
+            "0"
+          ],
           "indexprs": null,
           "indexrelid": "22451558",
           "indimmediate": true,
@@ -2378,11 +2496,17 @@
           "indisreplident": false,
           "indisunique": true,
           "indisvalid": true,
-          "indkey": [2, 5],
+          "indkey": [
+            2,
+            5
+          ],
           "indnatts": 2,
           "indnkeyatts": 2,
           "indnullsnotdistinct": false,
-          "indoption": [0, 0],
+          "indoption": [
+            0,
+            0
+          ],
           "indpred": "{NULLTEST :arg {VAR :varno 1 :varattno 9 :vartype 1184 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 9 :location -1} :nulltesttype 0 :argisrow false :location -1}",
           "indrelid": "22451542",
           "predicate": "(paid_at IS NULL)"
@@ -2391,8 +2515,12 @@
           "definition": "CREATE INDEX idx_bbj_unclaimed_user ON public.bbj_unclaimed_shares USING btree (user_id) WHERE (paid_at IS NULL)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["10065"],
-          "indcollation": ["0"],
+          "indclass": [
+            "10065"
+          ],
+          "indcollation": [
+            "0"
+          ],
           "indexprs": null,
           "indexrelid": "22451559",
           "indimmediate": true,
@@ -2404,11 +2532,15 @@
           "indisreplident": false,
           "indisunique": false,
           "indisvalid": true,
-          "indkey": [5],
+          "indkey": [
+            5
+          ],
           "indnatts": 1,
           "indnkeyatts": 1,
           "indnullsnotdistinct": false,
-          "indoption": [0],
+          "indoption": [
+            0
+          ],
           "indpred": "{NULLTEST :arg {VAR :varno 1 :varattno 9 :vartype 1184 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 9 :location -1} :nulltesttype 0 :argisrow false :location -1}",
           "indrelid": "22451542",
           "predicate": "(paid_at IS NULL)"
@@ -2417,8 +2549,12 @@
           "definition": "CREATE INDEX idx_bbj_unclaimed_shares_payout_id_fk ON public.bbj_unclaimed_shares USING btree (payout_id)",
           "expressions": null,
           "indcheckxmin": false,
-          "indclass": ["10065"],
-          "indcollation": ["0"],
+          "indclass": [
+            "10065"
+          ],
+          "indcollation": [
+            "0"
+          ],
           "indexprs": null,
           "indexrelid": "23236014",
           "indimmediate": true,
@@ -2430,11 +2566,15 @@
           "indisreplident": false,
           "indisunique": false,
           "indisvalid": true,
-          "indkey": [2],
+          "indkey": [
+            2
+          ],
           "indnatts": 1,
           "indnkeyatts": 1,
           "indnullsnotdistinct": false,
-          "indoption": [0],
+          "indoption": [
+            0
+          ],
           "indpred": null,
           "indrelid": "22451542",
           "predicate": null
@@ -2635,7 +2775,9 @@
           "command": "r",
           "name": "bbj_unclaimed_self_select",
           "permissive": true,
-          "roles": ["authenticated"],
+          "roles": [
+            "authenticated"
+          ],
           "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())"
         }
       ],

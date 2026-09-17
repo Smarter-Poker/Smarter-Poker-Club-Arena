@@ -6,7 +6,9 @@
       "source": "\nbegin\n    if not exists (\n        select 1\n        from pg_catalog.pg_event_trigger_ddl_commands() ev\n        join pg_catalog.pg_extension e on ev.objid = e.oid\n        where e.extname = 'pg_graphql'\n    ) then\n        return;\n    end if;\n\n    drop function if exists graphql_public.graphql;\n    create or replace function graphql_public.graphql(\n        \"operationName\" text default null,\n        query text default null,\n        variables jsonb default null,\n        extensions jsonb default null\n    )\n        returns jsonb\n        language sql\n    as $$\n        select graphql.resolve(\n            query := query,\n            variables := coalesce(variables, '{}'),\n            \"operationName\" := \"operationName\",\n            extensions := extensions\n        );\n    $$;\n\n    -- Attach the wrapper to the extension so DROP EXTENSION cascades to it,\n    -- which in turn triggers set_graphql_placeholder to reinstall the \"not enabled\" stub.\n    alter extension pg_graphql add function graphql_public.graphql(text, text, jsonb, jsonb);\n\n    grant usage on schema graphql to postgres, anon, authenticated, service_role;\n    grant execute on function graphql.resolve to postgres, anon, authenticated, service_role;\n    grant usage on schema graphql to postgres with grant option;\n    grant usage on schema graphql_public to postgres with grant option;\nend;\n",
       "owner": "postgres",
       "language": "plpgsql",
-      "settings": ["search_path=\"\""],
+      "settings": [
+        "search_path=\"\""
+      ],
       "security_definer": false,
       "result": "event_trigger",
       "nargs": 0,
@@ -21,7 +23,9 @@
       "source": "\nDECLARE\n  cmd record;\nBEGIN\n  FOR cmd IN SELECT * FROM pg_event_trigger_ddl_commands()\n  LOOP\n    IF cmd.command_tag IN (\n      'CREATE SCHEMA', 'ALTER SCHEMA'\n    , 'CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO', 'ALTER TABLE'\n    , 'CREATE FOREIGN TABLE', 'ALTER FOREIGN TABLE'\n    , 'CREATE VIEW', 'ALTER VIEW'\n    , 'CREATE MATERIALIZED VIEW', 'ALTER MATERIALIZED VIEW'\n    , 'CREATE FUNCTION', 'ALTER FUNCTION'\n    , 'CREATE TRIGGER'\n    , 'CREATE TYPE', 'ALTER TYPE'\n    , 'CREATE RULE'\n    , 'COMMENT'\n    )\n    -- don't notify in case of CREATE TEMP table or other objects created on pg_temp\n    AND cmd.schema_name is distinct from 'pg_temp'\n    THEN\n      NOTIFY pgrst, 'reload schema';\n    END IF;\n  END LOOP;\nEND; ",
       "owner": "postgres",
       "language": "plpgsql",
-      "settings": ["search_path=\"\""],
+      "settings": [
+        "search_path=\"\""
+      ],
       "security_definer": false,
       "result": "event_trigger",
       "nargs": 0,
@@ -36,7 +40,9 @@
       "source": "\nDECLARE cmd record;\nBEGIN\n  FOR cmd IN SELECT * FROM pg_event_trigger_ddl_commands()\n  LOOP\n    IF cmd.schema_name = 'pg_temp' OR cmd.object_identity LIKE 'pg_temp.%' THEN\n      CONTINUE;\n    END IF;\n    INSERT INTO public.ca_ddl_events\n      (command_tag, object_type, object_identity, schema_name,\n       triggers_pgrst_reload, application_name, query_snippet)\n    VALUES\n      (cmd.command_tag, cmd.object_type, cmd.object_identity, cmd.schema_name,\n       cmd.command_tag IN (\n         'CREATE SCHEMA','ALTER SCHEMA','CREATE TABLE','CREATE TABLE AS',\n         'SELECT INTO','ALTER TABLE','CREATE FOREIGN TABLE',\n         'ALTER FOREIGN TABLE','CREATE VIEW','ALTER VIEW',\n         'CREATE MATERIALIZED VIEW','ALTER MATERIALIZED VIEW',\n         'CREATE FUNCTION','ALTER FUNCTION','CREATE TRIGGER','CREATE TYPE',\n         'ALTER TYPE','CREATE RULE','COMMENT'\n       ) AND cmd.schema_name IS DISTINCT FROM 'pg_temp',\n       current_setting('application_name', true),\n       left(current_query(), 300));\n  END LOOP;\nEXCEPTION WHEN OTHERS THEN\n  NULL;\nEND;\n",
       "owner": "postgres",
       "language": "plpgsql",
-      "settings": ["search_path=public, pg_catalog"],
+      "settings": [
+        "search_path=public, pg_catalog"
+      ],
       "security_definer": true,
       "result": "event_trigger",
       "nargs": 0,
@@ -51,7 +57,9 @@
       "source": "\nDECLARE\n  obj          record;\n  lk           record;\n  v_name       text;\n  v_sig        text;\n  v_secdef     boolean;\n  v_src        text;\n  v_behaves    boolean;\n  v_named      boolean;\n  v_saw_grant  boolean := false;\nBEGIN\n  IF COALESCE(current_setting('app.allow_privileged_anon_grant', true), 'off') = 'on' THEN\n    RETURN;\n  END IF;\n\n  FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands() LOOP\n\n    -- GRANT rows carry no objid/object_identity at all (probe-verified):\n    --   [tag=GRANT | object_type=FUNCTION | objid=NULL | ident=NULL]\n    -- so the granted function cannot be identified here. Flag a lock sweep.\n    IF obj.command_tag = 'GRANT' THEN\n      IF upper(COALESCE(obj.object_type, '')) = 'FUNCTION' THEN\n        v_saw_grant := true;\n      END IF;\n      CONTINUE;\n    END IF;\n\n    IF lower(COALESCE(obj.object_type, '')) <> 'function' THEN\n      CONTINUE;\n    END IF;\n\n    SELECT p.proname,\n           format('public.%I(%s)', p.proname,\n                  COALESCE((SELECT string_agg(format_type(t.typ, NULL), ', ' ORDER BY t.ord)\n                              FROM unnest(p.proargtypes) WITH ORDINALITY AS t(typ, ord)), '')),\n           p.prosecdef,\n           p.prosrc\n      INTO v_name, v_sig, v_secdef, v_src\n      FROM pg_proc p\n      JOIN pg_namespace n ON n.oid = p.pronamespace\n     WHERE p.oid = obj.objid\n       AND n.nspname = 'public';\n\n    IF v_name IS NULL\n       OR v_name IN ('fn_autorevoke_privileged_anon', 'fn_audit_privileged_grants') THEN\n      CONTINUE;\n    END IF;\n\n    -- ARM 1 - NAME. Unchanged except the prefix arm now tolerates an `fn_`\n    -- prefix: `fn_credit_stalled_seat_first_stacks` defeated the anchored\n    -- version on 2026-08-23 despite crediting stacks.\n    v_named := v_name !~ '^st_' AND (\n         v_name ~* '(mint_|_mint|chip|wallet|promo|cashout|diamond|rake|bounty|settle|payout|clawback|purchase|treasury|jackpot|bbj)'\n      OR v_name ~* '^(fn_)?(credit|debit|transfer|distribute|deduct|atomic|admin)_'\n      OR v_name ~* '(promote_member|transfer_club_ownership|remove_player)'\n    );\n\n    -- ARM 2 - BEHAVIOUR. The rule economy_invariants() actually asserts:\n    -- SECURITY DEFINER (so RLS does not apply) + writes + never consults\n    -- auth.uid() (so it cannot tell who is asking). Such a function must not\n    -- be reachable without a session, whatever it is called. This is the arm\n    -- that would have caught all six of today's.\n    v_behaves := COALESCE(v_secdef, false)\n             AND v_src ~* '\\m(insert|update|delete)\\M'\n             AND v_src !~* 'auth\\.uid\\(\\)';\n\n    IF v_named OR v_behaves THEN\n      BEGIN\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj.object_identity);\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon',   obj.object_identity);\n\n        INSERT INTO public.privileged_function_lock (function_signature, security_definer, reason)\n        VALUES (v_sig,\n                COALESCE(v_secdef, false),\n                'Auto-locked by trg_autorevoke_privileged_anon on ' || obj.command_tag\n                 || CASE WHEN v_behaves AND NOT v_named\n                         THEN ' (behavioural: definer + writes + no auth.uid())'\n                         WHEN v_behaves THEN ' (name + behavioural)'\n                         ELSE ' (name)' END || '.')\n        ON CONFLICT (function_signature) DO NOTHING;\n\n        RAISE NOTICE '[autorevoke] stripped PUBLIC/anon EXECUTE from % (tag %, named=%, behaviour=%)',\n          obj.object_identity, obj.command_tag, v_named, v_behaves;\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING '[autorevoke] could not revoke on %: %', obj.object_identity, SQLERRM;\n      END;\n    END IF;\n  END LOOP;\n\n  IF v_saw_grant THEN\n    FOR lk IN\n      SELECT l.function_signature, to_regprocedure(l.function_signature) AS rp\n        FROM public.privileged_function_lock l\n       WHERE to_regprocedure(l.function_signature) IS NOT NULL\n         AND ( has_function_privilege('anon',   to_regprocedure(l.function_signature)::oid, 'EXECUTE')\n            OR has_function_privilege('public', to_regprocedure(l.function_signature)::oid, 'EXECUTE') )\n    LOOP\n      BEGIN\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', lk.function_signature);\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon',   lk.function_signature);\n        RAISE NOTICE '[autorevoke] GRANT sweep re-revoked anon/PUBLIC on %', lk.function_signature;\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING '[autorevoke] GRANT sweep could not revoke on %: %', lk.function_signature, SQLERRM;\n      END;\n    END LOOP;\n  END IF;\nEND;\n",
       "owner": "postgres",
       "language": "plpgsql",
-      "settings": ["search_path=public, pg_catalog"],
+      "settings": [
+        "search_path=public, pg_catalog"
+      ],
       "security_definer": true,
       "result": "event_trigger",
       "nargs": 0,
@@ -66,7 +74,9 @@
       "source": "\nDECLARE\n    v_command record;\n    v_schema text;\n    v_name text;\nBEGIN\n    FOR v_command IN SELECT * FROM pg_event_trigger_ddl_commands()\n    LOOP\n        IF lower(coalesce(v_command.object_type, '')) <> 'function' THEN\n            CONTINUE;\n        END IF;\n\n        v_schema := NULL;\n        v_name := NULL;\n        SELECT n.nspname, p.proname\n        INTO v_schema, v_name\n        FROM pg_proc p\n        JOIN pg_namespace n ON n.oid = p.pronamespace\n        WHERE p.oid = v_command.objid;\n\n        IF v_schema = 'public'\n           AND v_name IN (\n               'fn_pio_options_from_solver',\n               'fn_chart_options_from_memory'\n           ) THEN\n            RAISE EXCEPTION USING\n                ERRCODE = '55000',\n                MESSAGE = format(\n                    'retired solver option RPC recreation blocked: public.%I',\n                    v_name\n                ),\n                HINT = 'A reviewed forward migration must remove the tombstone guard before intentionally reusing this name.';\n        END IF;\n    END LOOP;\nEND;\n",
       "owner": "postgres",
       "language": "plpgsql",
-      "settings": ["search_path=pg_catalog, public"],
+      "settings": [
+        "search_path=pg_catalog, public"
+      ],
       "security_definer": true,
       "result": "event_trigger",
       "nargs": 0,
@@ -81,7 +91,9 @@
       "source": "\nDECLARE\n  r      record;\n  v_schema text;\n  v_table  text;\n  v_col    text;\n  v_col_pat  text := '(^xp$|_xp$|^xp_|_xp_|^reputation_xp$|^total_xp$|^xp_total$|^xp_earned$|^xp_reward$|^bonus_xp_|^social_xp$)';\n  v_fn_pat   text := '(award_xp|add_xp|gain_xp|xp_award|xp_grant|grant_xp|social_xp|reputation_xp|xp_total|xp_log)';\nBEGIN\n  FOR r IN\n    SELECT object_type, object_identity, schema_name\n      FROM pg_event_trigger_ddl_commands()\n     WHERE schema_name = 'public'\n  LOOP\n    -- Block tables whose NAME itself is XP-shaped\n    IF r.object_type = 'table'\n       AND split_part(r.object_identity, '.', 2) ~* v_col_pat THEN\n      RAISE EXCEPTION 'XP_BAN: table \"%\" violates zero-XP policy.', r.object_identity\n        USING HINT = 'DROP EVENT TRIGGER xp_ban_guard if policy changed.';\n    END IF;\n\n    -- For any CREATE/ALTER TABLE, scan columns for XP names\n    IF r.object_type = 'table' THEN\n      v_schema := split_part(r.object_identity, '.', 1);\n      v_table  := split_part(r.object_identity, '.', 2);\n      FOR v_col IN\n        SELECT column_name FROM information_schema.columns\n         WHERE table_schema = v_schema AND table_name = v_table\n      LOOP\n        IF v_col ~* v_col_pat THEN\n          RAISE EXCEPTION 'XP_BAN: column \"%.%\" violates zero-XP policy.',\n                          r.object_identity, v_col\n            USING HINT = 'DROP EVENT TRIGGER xp_ban_guard if policy changed.';\n        END IF;\n      END LOOP;\n    END IF;\n\n    -- Block function signatures containing XP-shaped substrings\n    -- (regex is substring-match now, not word-bounded - catches\n    --  disguise patterns like \"fake_award_xp_handler\")\n    IF r.object_type = 'function'\n       AND split_part(r.object_identity, '(', 1) ~* v_fn_pat THEN\n      RAISE EXCEPTION 'XP_BAN: function \"%\" violates zero-XP policy.', r.object_identity\n        USING HINT = 'DROP EVENT TRIGGER xp_ban_guard if policy changed.';\n    END IF;\n  END LOOP;\nEND;\n",
       "owner": "postgres",
       "language": "plpgsql",
-      "settings": ["search_path=public"],
+      "settings": [
+        "search_path=public"
+      ],
       "security_definer": false,
       "result": "event_trigger",
       "nargs": 0,
@@ -535,7 +547,9 @@
           "object_identity": null,
           "schema_name": null,
           "triggers_pgrst_reload": false,
-          "query_snippets": ["GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO anon;"]
+          "query_snippets": [
+            "GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO anon;"
+          ]
         }
       ]
     },
@@ -549,7 +563,9 @@
           "object_identity": null,
           "schema_name": null,
           "triggers_pgrst_reload": false,
-          "query_snippets": ["GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO authenticated;"]
+          "query_snippets": [
+            "GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO authenticated;"
+          ]
         }
       ]
     },
@@ -595,7 +611,9 @@
           "object_identity": null,
           "schema_name": null,
           "triggers_pgrst_reload": false,
-          "query_snippets": ["GRANT SELECT, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO anon;"]
+          "query_snippets": [
+            "GRANT SELECT, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO anon;"
+          ]
         }
       ]
     },

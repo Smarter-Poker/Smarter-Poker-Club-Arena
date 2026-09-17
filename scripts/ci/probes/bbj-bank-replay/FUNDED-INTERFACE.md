@@ -18,15 +18,15 @@ The funded composition belongs behind this same maintained entry point, in a sep
 
 These immutable packets remain the source; their independent reviews are reused. They are not installed dependencies of this repository.
 
-| Packet                                           | INTEGRITY.json SHA256                                              | Required role                                                                  |
-| ------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| G8 `bbj-backup-source-0002`                      | `81d1be4c513e2e8c3764a1f70ed13b9fcaf0ef71ed33145dce4cf7ba16a23dac` | Original main100 to backup25 case and independent financial assertions         |
-| G8 `bbj-backup-supplemental-0003`                | `33cfa2dda4240297c77b97b38cffdec28064022cee848970d2dc3428cca5943d` | Exact fixture support and corrected audit/sequence contract                    |
-| G8 `bbj-backup-root-adapter-0002`                | `9d559186b41451eaef2abafac31196bfa2b0feba4638669426845a6750c35476` | Original source normalization, connections, five combined requests and cleanup |
-| G8 `bbj-promo-root-adapter-0001`                 | `91016ba6729d7ceba4ee5aa4d19f588f780ad54ff3e4e171acc39b42cb021516` | Same composition with Backlog0086 pool-promo25 case                            |
-| Accounting `bbj-supplemental-sql-successor-0123` | `741c5f4ff9b8f50a52703079ee02d52f76c1d9a9300d748b7bfa97fbd642698f` | Genuine original opening producer and its assertions                           |
-| Accounting `bbj-root-adapter-successor-0124`     | `388c24a7c4e836b3b043aef94d7e5a946004ade5c5a8eab550033a4d443ba808` | Original accepted connection/normalization/cleanup source                      |
-| Backlog `bbj-promo-case-source-0086`             | `c624393210a3f723bc4f607f9a7552ffff2a6bfc84a592be697060c9e79429a8` | Original pool-promo25 case                                                     |
+| Packet | INTEGRITY.json SHA256 | Required role |
+| --- | --- | --- |
+| G8 `bbj-backup-source-0002` | `81d1be4c513e2e8c3764a1f70ed13b9fcaf0ef71ed33145dce4cf7ba16a23dac` | Original main100 to backup25 case and independent financial assertions |
+| G8 `bbj-backup-supplemental-0003` | `33cfa2dda4240297c77b97b38cffdec28064022cee848970d2dc3428cca5943d` | Exact fixture support and corrected audit/sequence contract |
+| G8 `bbj-backup-root-adapter-0002` | `9d559186b41451eaef2abafac31196bfa2b0feba4638669426845a6750c35476` | Original source normalization, connections, five combined requests and cleanup |
+| G8 `bbj-promo-root-adapter-0001` | `91016ba6729d7ceba4ee5aa4d19f588f780ad54ff3e4e171acc39b42cb021516` | Same composition with Backlog0086 pool-promo25 case |
+| Accounting `bbj-supplemental-sql-successor-0123` | `741c5f4ff9b8f50a52703079ee02d52f76c1d9a9300d748b7bfa97fbd642698f` | Genuine original opening producer and its assertions |
+| Accounting `bbj-root-adapter-successor-0124` | `388c24a7c4e836b3b043aef94d7e5a946004ade5c5a8eab550033a4d443ba808` | Original accepted connection/normalization/cleanup source |
+| Backlog `bbj-promo-case-source-0086` | `c624393210a3f723bc4f607f9a7552ffff2a6bfc84a592be697060c9e79429a8` | Original pool-promo25 case |
 
 The original schema0006 build order is `00-roles.sql`, `10-historical-schema.sql`, `15-current-prerequisites.sql`, `30-current-functions.sql`, `20-current-schema.sql`, `40-replay-candidate.sql`, `50-current-attachments-acl.sql`, registry0010 `registry-overlay.sql`, and `90-historical-event-triggers.sql`. The original0124 normalizer and shared supplemental0003 follow. Resource seed0007, physical identity0008, catalog parser0009 and registry0010 remain required. The full schema's 327 original identities and 2957 expression edges cannot be replaced by the two-table replay schema. The supplemental opening adds 12 exact functions/six relation comparisons; backup support adds its original dependency set.
 
@@ -43,18 +43,18 @@ All retained source packages were accessible during recovery. The concrete custo
 
 The accepted adapters expose `execute_prepared_case(case, connect, seed, base_driver, authorization, combined=None, metadata_check=None, database=None, database_oid=None)`. Preserve the original assertions and implementations while changing only the reviewed path/runtime/admission binding:
 
-| Input or stage               | Required behavior                                                                                                                                                                                                                                                                                          |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connect(label, events)`     | Original persistent Psql driver; register ownership before construction; validate database/OID, system identifier, data/socket directory, role, session role, origin replication, backend PID/start and server identity before use.                                                                        |
-| `seed()`                     | Exact seed0007, once in a fresh clone. Never manually seed the target BBJ balances or journal.                                                                                                                                                                                                             |
-| Opening producer             | Invoke real `fn_complete_club_opening_setup` with a fresh opening UUID. The selected case needs its genuine opening100 as setup; this is not a replay or reacceptance of the previously completed standalone opening proof.                                                                                |
-| Selected transfer            | Original `SEQ08_BBJ_BACKUP_POSITIVE_MAIN_TRANSFER_25` or `SEQ08_BBJ_PROMO_POSITIVE_MAIN_TRANSFER_25`, each in its own pristine clone with its own operation identity; main75/backup25/promo0 or main75/backup0/promo25 respectively. Pool promo is distinct from clubs promo.                              |
-| `combined(phase)`            | Exact original combined SQL in one real request per phase. Three opening plus two selected-transfer calls, total five; retain actual exit/stdout/stderr/command index and failed requests.                                                                                                                 |
-| `metadata_check(connection)` | Complete original identities/edges/registry and supplemental metadata before/after, full raw57 noninterference, 53 fingerprints, physical xmin and original counteraccount/alias qualifications.                                                                                                           |
-| Shared supplement            | Preserve `install(conn, log)`, `collect(conn, stage)`, `capture_audit(conn, report)` and their original error reports. Root owns connections and transaction lifecycle.                                                                                                                                    |
-| Audit install                | Original audit/autorevoke enabled; exact source-derived 23 DDL dispatches/25 audit records. Exact sequence configuration, bounded contiguous audit IDs, and unchanged unrelated financial sequence state/raw57. No blanket audit-sequence exclusion, reset, logger disable, drift-derived oracle or retry. |
-| Failure                      | Preserve unknown commit outcomes; fresh independently validated connection attempts metadata, raw57 and bounded audit capture independently. Sequence increments can survive SQL rollback; neither rollback nor a missing response proves unchanged sequence or cancelled financial effects.               |
-| Cleanup                      | Every owned partial/complete connection receives independent rollback/reset/unlock/close attempts; prove clone identity before disposal. Preserve original physical shutdown/removal and emergency evidence behavior. Uncertain cleanup must fail and retain evidence.                                     |
+| Input or stage | Required behavior |
+| --- | --- |
+| `connect(label, events)` | Original persistent Psql driver; register ownership before construction; validate database/OID, system identifier, data/socket directory, role, session role, origin replication, backend PID/start and server identity before use. |
+| `seed()` | Exact seed0007, once in a fresh clone. Never manually seed the target BBJ balances or journal. |
+| Opening producer | Invoke real `fn_complete_club_opening_setup` with a fresh opening UUID. The selected case needs its genuine opening100 as setup; this is not a replay or reacceptance of the previously completed standalone opening proof. |
+| Selected transfer | Original `SEQ08_BBJ_BACKUP_POSITIVE_MAIN_TRANSFER_25` or `SEQ08_BBJ_PROMO_POSITIVE_MAIN_TRANSFER_25`, each in its own pristine clone with its own operation identity; main75/backup25/promo0 or main75/backup0/promo25 respectively. Pool promo is distinct from clubs promo. |
+| `combined(phase)` | Exact original combined SQL in one real request per phase. Three opening plus two selected-transfer calls, total five; retain actual exit/stdout/stderr/command index and failed requests. |
+| `metadata_check(connection)` | Complete original identities/edges/registry and supplemental metadata before/after, full raw57 noninterference, 53 fingerprints, physical xmin and original counteraccount/alias qualifications. |
+| Shared supplement | Preserve `install(conn, log)`, `collect(conn, stage)`, `capture_audit(conn, report)` and their original error reports. Root owns connections and transaction lifecycle. |
+| Audit install | Original audit/autorevoke enabled; exact source-derived 23 DDL dispatches/25 audit records. Exact sequence configuration, bounded contiguous audit IDs, and unchanged unrelated financial sequence state/raw57. No blanket audit-sequence exclusion, reset, logger disable, drift-derived oracle or retry. |
+| Failure | Preserve unknown commit outcomes; fresh independently validated connection attempts metadata, raw57 and bounded audit capture independently. Sequence increments can survive SQL rollback; neither rollback nor a missing response proves unchanged sequence or cancelled financial effects. |
+| Cleanup | Every owned partial/complete connection receives independent rollback/reset/unlock/close attempts; prove clone identity before disposal. Preserve original physical shutdown/removal and emergency evidence behavior. Uncertain cleanup must fail and retain evidence. |
 
 ## Finite acceptance checklist
 

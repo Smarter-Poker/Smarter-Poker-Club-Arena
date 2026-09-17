@@ -1083,7 +1083,10 @@
       "body_byte_equal": true,
       "definition_byte_equal": true,
       "captured_owner": "postgres",
-      "captured_acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "captured_acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "existing_fixture_execute_grants_equal": true,
       "owner_rule": "Existing fixture creates captured function under postgres, matching its source owner; no override emitted."
     }

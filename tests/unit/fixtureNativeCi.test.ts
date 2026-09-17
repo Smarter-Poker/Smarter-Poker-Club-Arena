@@ -83,9 +83,7 @@ describe('BBJ source changes reach their existing accounting verification', () =
     const steps = ci.jobs.accounting_postgres.steps;
     const invoke = steps.find((step: { id?: string }) => step.id === 'bbj');
     const receipt = steps.find((step: { id?: string }) => step.id === 'bbj_evidence');
-    const upload = steps.find(
-      (step: { name?: string }) => step.name === 'Retain BBJ accounting receipts'
-    );
+    const upload = steps.find((step: { name?: string }) => step.name === 'Retain BBJ accounting receipts');
     expect(invoke.run).toContain('test_retain_evidence.py');
     expect(invoke.run).toContain('python3 scripts/ci/test-bbj-bank-replay.py');
     expect(invoke['continue-on-error']).toBeUndefined();
@@ -94,13 +92,9 @@ describe('BBJ source changes reach their existing accounting verification', () =
     expect(timing.env.GH_TOKEN).toBe('${{ github.token }}');
     expect(invoke.env.GH_TOKEN).toBeUndefined();
     expect(invoke.env.GITHUB_TOKEN).toBeUndefined();
-    expect(invoke.env.BBJ_JOB_TIMING_FILE).toBe(
-      '${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json'
-    );
+    expect(invoke.env.BBJ_JOB_TIMING_FILE).toBe('${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json');
 
-    expect(receipt.if).toBe(
-      "always() && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')"
-    );
+    expect(receipt.if).toBe("always() && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')");
     expect(receipt.env.BBJ_STEP_OUTCOME).toBe('${{ steps.bbj.outcome }}');
     expect(upload.if).toBe("always() && steps.bbj_evidence.outputs.ready == 'true'");
     expect(upload.uses).toBe('actions/upload-artifact@v4');
@@ -109,6 +103,7 @@ describe('BBJ source changes reach their existing accounting verification', () =
     expect(upload.with['retention-days']).toBe(3);
     expect(upload['continue-on-error']).toBeUndefined();
   });
+
 });
 
 function withForeignGitContext(directory: string, extended: boolean, check: () => void) {

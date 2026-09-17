@@ -1,6 +1,10 @@
 {
   "search_path": "pg_catalog,public,extensions",
-  "effective_path": ["pg_catalog", "public", "extensions"],
+  "effective_path": [
+    "pg_catalog",
+    "public",
+    "extensions"
+  ],
   "original_object_render_count": 1449,
   "observed_render_count": 1450,
   "original_expression_bytes_changed": 0,

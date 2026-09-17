@@ -5,7 +5,9 @@
     "accounting_invoice_deliveries"
   ],
   "columns": {
-    "settlement_invoices": ["source_ledger_id"],
+    "settlement_invoices": [
+      "source_ledger_id"
+    ],
     "accounting_conversations": [
       "scope_id",
       "issuer_type",
@@ -15,7 +17,10 @@
       "conversation_id",
       "last_discussion_at"
     ],
-    "accounting_invoice_counters": ["year", "next_number"],
+    "accounting_invoice_counters": [
+      "year",
+      "next_number"
+    ],
     "accounting_invoice_deliveries": [
       "invoice_id",
       "recipient_id",

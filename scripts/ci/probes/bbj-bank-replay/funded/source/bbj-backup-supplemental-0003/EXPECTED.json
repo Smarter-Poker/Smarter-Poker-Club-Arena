@@ -19,7 +19,9 @@
         "returns_set": false,
         "rows": 0,
         "security_definer": true,
-        "settings": ["search_path=public"],
+        "settings": [
+          "search_path=public"
+        ],
         "strict": false,
         "volatility": "v"
       },
@@ -40,7 +42,9 @@
         "returns_set": false,
         "rows": 0,
         "security_definer": true,
-        "settings": ["search_path=public"],
+        "settings": [
+          "search_path=public"
+        ],
         "strict": false,
         "volatility": "v"
       },
@@ -52,9 +56,18 @@
       "raw_fixed": {
         "proargdefaults": null,
         "proargmodes": null,
-        "proargnames": ["p_pool_id", "p_from_bank", "p_to_bank", "p_amount", "p_reason", "p_op_id"],
+        "proargnames": [
+          "p_pool_id",
+          "p_from_bank",
+          "p_to_bank",
+          "p_amount",
+          "p_reason",
+          "p_op_id"
+        ],
         "probin": null,
-        "proconfig": ["search_path=public"],
+        "proconfig": [
+          "search_path=public"
+        ],
         "procost": 100,
         "proisstrict": false,
         "prokind": "f",
@@ -92,7 +105,9 @@
         "returns_set": false,
         "rows": 0,
         "security_definer": false,
-        "settings": ["search_path=public"],
+        "settings": [
+          "search_path=public"
+        ],
         "strict": false,
         "volatility": "v"
       },
@@ -113,7 +128,9 @@
         "returns_set": false,
         "rows": 0,
         "security_definer": false,
-        "settings": ["search_path=public"],
+        "settings": [
+          "search_path=public"
+        ],
         "strict": false,
         "volatility": "v"
       },
@@ -124,9 +141,14 @@
       "raw_fixed": {
         "proargdefaults": null,
         "proargmodes": null,
-        "proargnames": ["p_pool_id", "p_bank"],
+        "proargnames": [
+          "p_pool_id",
+          "p_bank"
+        ],
         "probin": null,
-        "proconfig": ["search_path=public"],
+        "proconfig": [
+          "search_path=public"
+        ],
         "procost": 100,
         "proisstrict": false,
         "prokind": "f",
@@ -161,7 +183,9 @@
         "returns_set": false,
         "rows": 0,
         "security_definer": true,
-        "settings": ["search_path=public"],
+        "settings": [
+          "search_path=public"
+        ],
         "strict": false,
         "volatility": "v",
         "arguments": "",
@@ -182,7 +206,9 @@
         "returns_set": false,
         "rows": 0,
         "security_definer": true,
-        "settings": ["search_path=public"],
+        "settings": [
+          "search_path=public"
+        ],
         "strict": false,
         "volatility": "v",
         "arguments": "",
@@ -198,7 +224,9 @@
         "proargmodes": null,
         "proargnames": null,
         "probin": null,
-        "proconfig": ["search_path=public"],
+        "proconfig": [
+          "search_path=public"
+        ],
         "procost": 100,
         "proisstrict": false,
         "prokind": "f",
@@ -233,7 +261,9 @@
         "returns_set": false,
         "rows": 0,
         "security_definer": true,
-        "settings": ["search_path=public"],
+        "settings": [
+          "search_path=public"
+        ],
         "strict": false,
         "volatility": "v",
         "arguments": "",
@@ -254,7 +284,9 @@
         "returns_set": false,
         "rows": 0,
         "security_definer": true,
-        "settings": ["search_path=public"],
+        "settings": [
+          "search_path=public"
+        ],
         "strict": false,
         "volatility": "v",
         "arguments": "",
@@ -270,7 +302,9 @@
         "proargmodes": null,
         "proargnames": null,
         "probin": null,
-        "proconfig": ["search_path=public"],
+        "proconfig": [
+          "search_path=public"
+        ],
         "procost": 100,
         "proisstrict": false,
         "prokind": "f",
@@ -1207,7 +1241,9 @@
             "command": "r",
             "name": "bbj_payouts_admin_only",
             "permissive": true,
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "using": "fn_is_platform_admin()"
           }
         ],
@@ -1421,7 +1457,9 @@
             "command": "r",
             "name": "bbj_payouts_admin_only",
             "permissive": true,
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "using": "fn_is_platform_admin()"
           }
         ],
@@ -1606,7 +1644,9 @@
             "command": "r",
             "name": "bbj_unclaimed_self_select",
             "permissive": true,
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())"
           }
         ],
@@ -1770,7 +1810,9 @@
             "command": "r",
             "name": "bbj_unclaimed_self_select",
             "permissive": true,
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())"
           }
         ],
@@ -2323,7 +2365,9 @@
             "name": "bbj_payout_recipients_self_select",
             "command": "r",
             "permissive": true,
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())",
             "check": null
           }
@@ -2440,7 +2484,9 @@
             "name": "bbj_payout_recipients_self_select",
             "command": "r",
             "permissive": true,
-            "roles": ["authenticated"],
+            "roles": [
+              "authenticated"
+            ],
             "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())",
             "check": null
           }
@@ -2562,8 +2608,12 @@
       "name": "bbj_payouts_pool_id_fkey",
       "child": "public.bbj_payouts",
       "parent": "public.bbj_pools",
-      "columns": ["pool_id"],
-      "references": ["id"],
+      "columns": [
+        "pool_id"
+      ],
+      "references": [
+        "id"
+      ],
       "match": "s",
       "update": "a",
       "delete": "r",
@@ -2574,14 +2624,20 @@
       "inheritance_count": 0,
       "noinherit": true,
       "parent_constraint": "0",
-      "equality_operators": ["pg_catalog.=(uuid,uuid)"]
+      "equality_operators": [
+        "pg_catalog.=(uuid,uuid)"
+      ]
     },
     {
       "name": "bbj_unclaimed_shares_payout_id_fkey",
       "child": "public.bbj_unclaimed_shares",
       "parent": "public.bbj_payouts",
-      "columns": ["payout_id"],
-      "references": ["id"],
+      "columns": [
+        "payout_id"
+      ],
+      "references": [
+        "id"
+      ],
       "match": "s",
       "update": "a",
       "delete": "c",
@@ -2592,14 +2648,20 @@
       "inheritance_count": 0,
       "noinherit": true,
       "parent_constraint": "0",
-      "equality_operators": ["pg_catalog.=(uuid,uuid)"]
+      "equality_operators": [
+        "pg_catalog.=(uuid,uuid)"
+      ]
     },
     {
       "name": "bbj_payout_recipients_payout_id_fkey",
       "child": "public.bbj_payout_recipients",
       "parent": "public.bbj_payouts",
-      "columns": ["payout_id"],
-      "references": ["id"],
+      "columns": [
+        "payout_id"
+      ],
+      "references": [
+        "id"
+      ],
       "match": "s",
       "update": "a",
       "delete": "c",
@@ -2610,7 +2672,9 @@
       "inheritance_count": 0,
       "noinherit": true,
       "parent_constraint": "0",
-      "equality_operators": ["pg_catalog.=(uuid,uuid)"]
+      "equality_operators": [
+        "pg_catalog.=(uuid,uuid)"
+      ]
     }
   ],
   "ri_triggers": [

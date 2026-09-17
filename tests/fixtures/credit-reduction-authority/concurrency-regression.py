@@ -206,7 +206,7 @@ def main(password_file):
             raise AssertionError(f"entrypoint did not wait on shared authority: {observation}")
         send(a, "RESET ROLE;SET LOCAL lock_timeout='2s';\n")
         rows = result(a,"WITH c AS(SELECT id FROM clubs WHERE id=pg_temp.cr_id(101) FOR UPDATE),"
-            "m AS(SELECT id FROM club_members WHERE club_id=pg_temp.cr_id(101) ORDER BY id FOR UPDATE),"
+            "m AS(SELECT club_id,user_id FROM club_members WHERE club_id=pg_temp.cr_id(101) ORDER BY club_id,user_id FOR UPDATE),"
             "g AS(SELECT id FROM agents WHERE club_id=pg_temp.cr_id(101) ORDER BY id FOR UPDATE) "
             "SELECT jsonb_build_object('club',(SELECT count(*) FROM c),'members',(SELECT count(*) FROM m),'agents',(SELECT count(*) FROM g))",
             "holder_rows_available")

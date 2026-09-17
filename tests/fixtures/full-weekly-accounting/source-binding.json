@@ -252,7 +252,7 @@
     "tests/fixtures/credit-reduction-authority/captured-payment-closure.json": "81f522c14e5435021ed4a7fc71c2030543669d7d90e755bf4d37aefc7bd77e49",
     "tests/fixtures/credit-reduction-authority/captured-payment-closure.query.sql": "252de5030cb7bf859835e85e399d05cb98bc4e5a6821cdb4dd911e6c471a9e4c",
     "tests/fixtures/credit-reduction-authority/catalog-bootstrap.sql": "ad42ea06ed5e5f766b77bf3463807f053130de27333d0a75f76706f4854e5b8e",
-    "tests/fixtures/credit-reduction-authority/concurrency-regression.py": "108d2f451919a113f5e3f98cfb8d15ec3a575928c4a39d2d146bb913c2e48290",
+    "tests/fixtures/credit-reduction-authority/concurrency-regression.py": "26639b68235ff1306888fcffba45a887116fe6abc3c5e0d68b2f26852ae1c96b",
     "tests/fixtures/credit-reduction-authority/concurrency-session.sql": "9f6ba47f612e29ef8b91989b9dda513239627b98fa500332d1b93d44ca98a9b1",
     "tests/fixtures/credit-reduction-authority/concurrency-setup.sql": "0e0e922f5788e44c2336226f95b888c9c8582b8309ed86bb2d899f2b0f7e50a5",
     "tests/fixtures/credit-reduction-authority/delivery-failure-regression.sql": "6e5a1564c89fb6ff71c57768a133bea95144d0fd057a84e7b633ffd795962b74",

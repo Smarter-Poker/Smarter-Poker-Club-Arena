@@ -1,0 +1,11 @@
+# Make the original MTT roster foundation independently buildable
+
+The accepted roster integration at `5a734c31ca86b75888746c0d1569126b070b2516` depends on F06 source that is absent from published main. Importing its three complete engine classes would also import unrelated lifecycle and F12 changes. This first source phase adds only the eight required roster, intent, permit, writer-observation and retirement-evidence modules, with their standalone regression suites.
+
+Seven product files and seven dependency test files are byte-identical to that accepted source revision. One negative test constructs its deliberately unsafe numeric input with `Number('9007199254740993')`, preserving the original runtime value while satisfying the precision lint rule. The roster admission adapter replaces its type-only reference to `ServerTableEngineBase.installF06HandAdmission` with the same explicit factory and boundary signature. Its emitted JavaScript is identical to the accepted implementation. All 43 direct relative imports in the source and dependency suites resolve; full server TypeScript passes against current main's types, variant rules and lifecycle diagnostics.
+
+The roster contract suite retains the accepted standalone scenarios. Three tests requiring the not-yet-integrated Base/Dealing methods and the separate full engine writer adapter suite remain assigned to the next core integration phase. They are preserved in the source revision and integration evidence; they are not skipped tests or credited as passes here. The newly included session-origin, completion-identity and original-session-writer suites exercise the real standalone custody classes.
+
+Validation: 338 normal tests in nine files pass without skips; full server TypeScript, focused lint and formatting pass. The three current engine classes and all runtime activation flags are unchanged. No SQL, producer, runtime caller or deployment is activated by these new modules.
+
+Next: compose the original engine admission and retirement adapters against measured current core preimages, then integrate the reviewed Base/Dealing/Manager roster delta and restore its complete engine tests. Canonical SQL/profile/host-provider qualification and the complete live MTT lifecycle remain separate requirements. This foundation does not establish those later phases.

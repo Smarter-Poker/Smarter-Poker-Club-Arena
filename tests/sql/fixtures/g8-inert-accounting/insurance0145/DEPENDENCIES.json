@@ -1,0 +1,14 @@
+{
+  "kind": "source-reference-pins-only",
+  "canonical_producer_binding": false,
+  "files": {
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-lease-maintenance-repairs/work/insurance-postadmission-association-0133/postimage/server/src/engine/InsuranceApplicationCapture.ts": "8bd5a4bf81680dabf8c68a7658bf1cea9a3157699aee9aad4df6006171c09c3c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/engine-lease-maintenance-repairs/work/insurance-postadmission-association-0133/postimage/server/src/engine/ServerTableEngineSettlement.ts": "78cafa1f4994a5eaf678ebadc221d05496f7826df6e81fd3af497708cf8c0588",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/lease-insurance-cash-association-0133/server/src/services/supabase/handHistory.ts": "d8631c39d86009f22920973ecca55efd19f441998c3bf5c6b59ddd5125b195c3",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/lease-insurance-cash-association-0133/server/src/services/f12/F12CashProvider.ts": "db6b6219cfd1e0fb3c795ae2577b0330dcf1b5eab185a2060885c85b88a05c82",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/lease-insurance-cash-association-0133/server/src/services/f12/internal/F12AuthorityDecoder.ts": "80dd8fc0d36680b8900987b7c73a8881bf5ccecbfa6be0909ad9f3d20309f219",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/runtime/record_insurance_transaction.sql": "eada692664d32409e07aeec65ca0fbef8ec324b8216d8a143d5ecfb95765dc00",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/core-audit/runtime-captures/fn_ca_process_hand_post_commit_obligations.sql": "e4a9785be91a7cf1aa1b7c3baf8585f5ad3869bff19526b7cb558608db437263",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/lease-insurance-cash-association-0133/server/src/services/f12/F12SeatTimestamp.ts": "703c1ae416a6af00ff546dd0593fe39e9b3364bbe9375ffeeaff9a1fa9130040"
+  }
+}

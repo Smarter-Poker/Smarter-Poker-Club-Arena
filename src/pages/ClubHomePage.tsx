@@ -116,6 +116,8 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
+import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
@@ -5308,6 +5310,32 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           slot="lobby_strip"
           clubId={resolvedClubId || club.id}
           onNavigate={(path) => {
+            haptic.selection();
+            navigate(path);
+          }}
+        />
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          THE DIAMOND GAMES, WHERE A PLAYER ACTUALLY IS (Dan 2026-09-09).
+          The wheel, the board and the curve had exactly one door: a banner on
+          the Promotions page. Three finished games behind a link most players
+          never open. This is the second door, in the lobby, on the painted
+          action shell rather than drawn in CSS. The games page itself still
+          decides what is open here; this only gets the player to it.
+      ═══════════════════════════════════════════════════════════════════ */}
+        {/* Dan 2026-09-10: "there also needs to be a button for this inside
+          the club lobby." It was a plain link to the games; it is now the door
+          itself, printing what the player actually holds and what those
+          diamonds are worth in chips, and saying so when today's free spin is
+          still there. `alwaysShow` keeps the club's own door in its place
+          while the read lands and even when the player has nothing yet. */}
+        <DiamondBustPrompt clubId={resolvedClubId || club.id} />
+        <DiamondsToChipsButton
+          clubId={clubId ?? null}
+          alwaysShow
+          size="large"
+          className="lobby-diamond-games"
+          onGo={(path) => {
             haptic.selection();
             navigate(path);
           }}

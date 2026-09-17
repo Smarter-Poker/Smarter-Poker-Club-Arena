@@ -1177,6 +1177,12 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      - name: Diamond entries, claimed daily spins and Promo to Main Bank payouts
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: /tmp
+        run: bash scripts/dev/test-accounting-delivery.sh
+
       - name: PKO heads follow exact accepted knockout dependencies
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin

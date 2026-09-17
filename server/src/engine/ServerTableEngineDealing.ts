@@ -225,7 +225,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        this.seatedPlayers = await this.prepareNextHand();
+        const nextRoster = await this.prepareNextHand();
+        if (!this.lifecycleCanMutate()) return;
+        this.seatedPlayers = nextRoster;
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player

@@ -48,6 +48,43 @@ class OwnerNotificationPostgresGuards(unittest.TestCase):
             with self.subTest(removed=removed),self.assertRaisesRegex(RuntimeError,'checkout binding set drift'):
                 runner.pinned_sources(Path('/unused'),manifest)
 
+    def test_direct_source_chain_cannot_omit_an_executed_input(self):
+        direct = [key for key in runner.CHECKOUT_INPUTS if key.startswith('direct_')]
+        self.assertEqual(len(direct), 15)
+        for removed in direct:
+            manifest = {
+                'schemaVersion': 1,
+                'fixtureFiles': {str(runner.FIXTURE / p): {} for p in runner.LEAVES},
+                'checkoutInputs': {k: {'path': v} for k, v in runner.CHECKOUT_INPUTS.items() if k != removed},
+            }
+            with self.subTest(removed=removed), self.assertRaisesRegex(RuntimeError, 'checkout binding set drift'):
+                runner.pinned_sources(Path('/unused'), manifest)
+
+    def test_race_requires_exact_distinct_live_backend_blocker(self):
+        observed = {'holder': 41, 'waiter': 42, 'blockers': [41],
+                    'holder_state': 'idle in transaction', 'waiter_state': 'active', 'wait_type': 'Lock'}
+        self.assertTrue(runner.exact_blocker(observed, 41, 42))
+        for delta in ({'blockers': []}, {'blockers': [99]}, {'blockers': [41, 99]},
+                      {'holder': 99}, {'waiter': 99}, {'holder_state': 'idle'},
+                      {'waiter_state': 'idle'}, {'wait_type': 'Client'}):
+            with self.subTest(delta=delta):
+                self.assertFalse(runner.exact_blocker(dict(observed, **delta), 41, 42))
+        self.assertFalse(runner.exact_blocker(observed, 41, 41))
+        self.assertFalse(runner.exact_blocker({}, 41, 42))
+
+    def test_legacy_race_requires_specific_refusal_not_arbitrary_failure(self):
+        expected = 'psql:race.sql:90: ERROR:  P0001: operational source exact receipt collision\nCONTEXT:  actual function\n'
+        runner.race_exit('finite_first', 0, 3, expected)
+        for holder, waiter, stderr in ((1, 3, expected), (0, 0, expected),
+                                        (0, 3, expected.replace('P0001', '55P03')),
+                                        (0, 3, expected.replace('exact receipt collision', 'different failure'))):
+            with self.subTest(holder=holder, waiter=waiter, stderr=stderr), self.assertRaises(RuntimeError):
+                runner.race_exit('finite_first', holder, waiter, stderr)
+        for case in ('capture_first', 'reversed_batch', 'financial_first'):
+            runner.race_exit(case, 0, 0, '')
+            with self.subTest(case=case), self.assertRaises(RuntimeError):
+                runner.race_exit(case, 0, 3, expected)
+
     def test_bigint_sequence_rounding_regression(self):
         exact = {'type': 'bigint', 'start': '1', 'increment': '1', 'minimum': '1',
                  'maximum': '9223372036854775807', 'cache': '1', 'cycle': False}

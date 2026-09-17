@@ -112,12 +112,16 @@ describe('restored horse presence is observed before the first deal', () => {
 
   it('does not refresh an unaccepted roster after the engine loses authority', async () => {
     const engine = restoredEngine(true, 'DISCONNECTED');
+    const originalRoster = engine.seatedPlayers;
     engine.prepareNextHand = vi.fn(async () => {
       engine.running = false;
-      return engine.seatedPlayers;
+      return engine.seatedPlayers.map((seat: object) => ({ ...seat }));
     });
     const before = engine.disconnectEngine.getFsmState(TABLE, PLAYER);
     await engine.dealingLoop();
+    expect(engine.seatedPlayers).toBe(originalRoster);
+    expect(engine.adoptMovedPresence).not.toHaveBeenCalled();
+    expect(engine.restoreSitOutsFromSeats).not.toHaveBeenCalled();
     expect(engine.disconnectEngine.getFsmState(TABLE, PLAYER)).toEqual(before);
   });
 });

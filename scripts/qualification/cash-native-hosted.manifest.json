@@ -25,24 +25,24 @@
       "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
-      "bytes": 6270,
-      "sha256": "9329120862da8c38e3be0ac1053fd93c07877a5d4bc76bc19d0e5291c29e476c"
+      "bytes": 9681,
+      "sha256": "767ce4802840500f39cafa55979db12ca0e2422b35ec42014199e9a8b7382cb4"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 30583,
       "sha256": "8ff722bd3390bc24ad1d273a8cb70647bd960df8fca6dfc48f45d89318c0d94d"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
-      "bytes": 17990,
-      "sha256": "f08ada516371fff17aed91e63a07ea6fc644b3ae741f0603c10e961602e131e6"
+      "bytes": 29501,
+      "sha256": "8d235728e58de82f52d8b7bd62180bfa52fee997be8909f573934af378675a29"
     },
     "scripts/ci/test_cash_native_pgcron.py": {
       "bytes": 3114,
       "sha256": "f56a9027668706d793225166057d369c61ab30e5ab9d6061746456cf7b8d288d"
     },
     "scripts/ci/test_production_alert_core_postgres.py": {
-      "bytes": 5426,
-      "sha256": "4c7cab76529b12ac4a3127cc6431b5cc102b9847ba90935b3e45eee04d47c38c"
+      "bytes": 7881,
+      "sha256": "c32c60215e1df5d667d0ef3fda6732f158cbe7d16d8bcda130117df14b5b8393"
     },
     "scripts/operational-alerts/cash-pot-failed-run-intake.md": {
       "bytes": 1677,

@@ -3,7 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// Actual controller and target execute in ordinary Node processes.
+// Hosted client checks use Node 20; production preflight remains pinned to Node 22.
+// Both execute the real controller and target with native inspector APIs.
 
 describe('actual isolated legacy checkpoint transport', () => {
   it.each([
@@ -21,6 +22,7 @@ describe('actual isolated legacy checkpoint transport', () => {
       const result = spawnSync(
         process.execPath,
         [
+          ...(process.versions.node.startsWith('20.') ? ['--experimental-websocket'] : []),
           '--max-old-space-size=96',
           resolve('tests/operations/legacy-checkpoint-transport.mjs'),
           scenario,

@@ -9,7 +9,13 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 const { runLegacyEngineCheckpoint } = await import(process.argv[3]);
 const scenario = process.argv[2];
-assert.match(process.version, /^v22\./);
+assert.match(process.version, /^v(?:20|22)\./);
+assert.equal(typeof WebSocket, 'function');
+assert.equal(typeof process.getBuiltinModule, 'function');
+assert.equal(
+  typeof process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+  'symbol'
+);
 const directory = mkdtempSync(join(tmpdir(), 'checkpoint-transport-'));
 let child, lines, exit, hardStop;
 const bounded = (promise, ms = 2500) => {

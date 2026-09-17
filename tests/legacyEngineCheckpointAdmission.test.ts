@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { sliceBetween } from './helpers/sourceWindow';
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
@@ -117,9 +118,9 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
     );
     expect(reclassification).toContain('LEGACY_CHECKPOINT_REQUIRED=0');
     expect(transaction.slice(lock, invoke)).not.toContain('MUTATION_STARTED=1');
-    expect(transaction.slice(invoke, invoke + 150)).toContain(
-      "die 'legacy checkpoint or cleanup refused; release cannot continue'"
-    );
+    expect(
+      sliceBetween(transaction, '"$LEGACY_CHECKPOINT" "$RUN_ID"', '\n    BREAK_END_EPOCH=0')
+    ).toContain("die 'legacy checkpoint or cleanup refused; release cannot continue'");
   });
 
   it('requires the unchanged strict certificate and full reserve after cleanup before prepare', () => {

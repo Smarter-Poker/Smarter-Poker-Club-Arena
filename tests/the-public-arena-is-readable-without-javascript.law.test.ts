@@ -17,15 +17,25 @@
  *      and JSON-LD into the shell, puts the markup in #root, and wraps the
  *      landing in the block the session script removes for a signed-in player;
  *   4. the Help Center keeps every answer in the DOM (hidden, not absent) and
- *      the prerender renders the same questions from the same source.
+ *      the prerender renders the same questions from the same source;
+ *   5. the web fonts are declared once: the self-hosted stylesheet is inlined
+ *      in place of its async link, and no stylesheet under src re-imports the
+ *      same faces from Google Fonts (a later declaration wins the cascade and
+ *      every word swaps to a fallback and back while it loads).
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PUBLIC_PATHS } from '../src/lib/seo';
 import { FAQ_ITEMS } from '../src/pages/helpContent';
 // @ts-expect-error - a plain .mjs script with named exports
-import { composeDocument, verifyDocument } from '../scripts/prerender-public-routes.mjs';
+import {
+  composeDocument,
+  fontHeadMarkup,
+  latinFontUrls,
+  replaceFontStylesheet,
+  verifyDocument,
+} from '../scripts/prerender-public-routes.mjs';
 
 const ROOT = join(__dirname, '..');
 const read = (file: string) => readFileSync(join(ROOT, file), 'utf8');
@@ -154,5 +164,79 @@ describe('the public arena is readable without JavaScript', () => {
     expect(read('src/pages/HelpPage.module.css')).toMatch(
       /\.answer\[hidden\]\s*\{\s*display: none;/
     );
+  });
+
+  it('the fonts are declared once: the stylesheet is inlined in place of its async link', () => {
+    const fontsCss = [
+      '/* latin-ext */',
+      "@font-face { font-family: 'Cinzel'; font-style: normal; font-weight: 400; font-display: swap; src: url(/hub/club-arena/fonts/cinzel-ext.woff2) format('woff2'); unicode-range: U+0100-02BA; }",
+      '/* latin */',
+      "@font-face { font-family: 'Cinzel'; font-style: normal; font-weight: 400; font-display: swap; src: url(/hub/club-arena/fonts/cinzel.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131; }",
+      "@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url(/hub/club-arena/fonts/inter.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131; }",
+      "@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url(/hub/club-arena/fonts/inter.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131; }",
+      "@font-face { font-family: 'Rajdhani'; font-style: normal; font-weight: 400; font-display: swap; src: url(/hub/club-arena/fonts/rajdhani.woff2) format('woff2'); unicode-range: U+0000-00FF; }",
+    ].join('\n');
+    expect(latinFontUrls(fontsCss)).toEqual([
+      '/hub/club-arena/fonts/cinzel.woff2',
+      '/hub/club-arena/fonts/inter.woff2',
+    ]);
+    const fonts = {
+      file: 'fonts-abc123.css',
+      css: fontsCss
+        .replace(/\/\*[^*]*\*\//g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+      urls: latinFontUrls(fontsCss),
+    };
+    const markup = fontHeadMarkup(fonts);
+    expect(markup).toContain(
+      '<link rel="preload" href="/hub/club-arena/fonts/cinzel.woff2" as="font" type="font/woff2" crossorigin />'
+    );
+    expect(markup).toContain('<style data-prerender="fonts">@font-face');
+    expect(markup).not.toContain('/* latin */');
+    expect((markup.match(/@font-face/g) || []).length).toBe(5);
+
+    const shell = [
+      '<head>',
+      '    <link',
+      '      href="/hub/club-arena/fonts/fonts-abc123.css"',
+      '      rel="stylesheet"',
+      '      media="print"',
+      '      onload="this.media = \'all\'"',
+      '    />',
+      '    <noscript>',
+      '      <link',
+      '        href="/hub/club-arena/fonts/fonts-abc123.css"',
+      '        rel="stylesheet"',
+      '      />',
+      '    </noscript>',
+      '    <link rel="stylesheet" crossorigin href="/hub/club-arena/assets/index-x.css">',
+      '</head>',
+    ].join('\n');
+    const out = replaceFontStylesheet(shell, 'fonts-abc123.css', markup);
+    expect(out).not.toContain('fonts-abc123.css');
+    expect(out).not.toContain('<noscript>');
+    expect(out.indexOf('data-prerender="fonts"')).toBeLessThan(out.indexOf('index-x.css'));
+    expect(() => replaceFontStylesheet(out, 'fonts-abc123.css', markup)).toThrow(/no async link/);
+    expect(fontHeadMarkup(null)).toBe('');
+  });
+
+  it('no stylesheet under src imports Google Fonts: the faces are declared once, in index.html', () => {
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (
+          /\.css$/.test(entry.name) &&
+          /@import\s+url\(['"]?https:\/\/fonts\.googleapis\.com/.test(readFileSync(full, 'utf8'))
+        )
+          offenders.push(full.slice(ROOT.length + 1));
+      }
+    };
+    walk(join(ROOT, 'src'));
+    expect(offenders).toEqual([]);
+    const shell = read('index.html');
+    expect(shell).toMatch(/family=Cinzel:wght@400;500;600;700&/);
   });
 });

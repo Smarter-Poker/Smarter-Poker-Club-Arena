@@ -35,13 +35,19 @@
  * unused, which is the safe order: the rewrite must never point at a file
  * that a release does not contain.
  *
- * THE LANDING PAGE AND THE SIGNED-IN PLAYER. dist/index.html is the shell for
- * EVERY route, so the landing markup would flash on every cold load of the
- * app for a signed-in player before React mounts. The prerendered landing is
- * therefore wrapped in a block that one inline script removes before first
- * paint when the shared Supabase session (localStorage smarter-poker-auth) is
- * present. A signed-out visitor, and every crawler, keeps it; the bundle
- * then replaces it with the real React tree (main.tsx uses createRoot).
+ * THE LANDING PAGE, THE SIGNED-IN PLAYER AND THE DEEP LINK. dist/index.html
+ * is the shell for EVERY route, so the landing markup would flash on every
+ * cold load of the app before React mounts: for a signed-in player at the
+ * root, and for anyone opening a deep route (/health, a shared hand, a
+ * table). The prerendered landing is therefore wrapped in a block that one
+ * inline script removes before first paint unless the path IS the arena
+ * root and no shared Supabase session (localStorage smarter-poker-auth) is
+ * present. A signed-out visitor at the root, and every crawler, keeps it;
+ * the bundle then replaces it with the real React tree (main.tsx uses
+ * createRoot), the same component in the same stylesheet, so nothing moves.
+ * Measured: without the path test the /health route scored CLS 0.234 on
+ * mobile in scripts/ci/route-performance.mjs; with it, the block is gone
+ * before layout.
  *
  * At runtime nothing changes for the app: the prerender is what a reader
  * gets before, or without, JavaScript.
@@ -128,7 +134,7 @@ export function composeDocument({ shell, page, css }) {
   const content =
     route === '/'
       ? `<div id="prerender-landing" data-prerender="landing">${body}</div>` +
-        `<script>try{if(window.localStorage.getItem(${JSON.stringify(SESSION_STORAGE_KEY)})){var p=document.getElementById("prerender-landing");if(p)p.remove()}}catch(e){}</script>`
+        `<script>try{var l=location.pathname.replace(/\\/+$/,"");var s=window.localStorage.getItem(${JSON.stringify(SESSION_STORAGE_KEY)});if(s||(l!==${JSON.stringify(WEB_BASE)}&&l!=="")){var p=document.getElementById("prerender-landing");if(p)p.remove()}}catch(e){}</script>`
       : `<div data-prerender="${escapeAttr(route)}">${body}</div>`;
   doc = doc.replace(rootPattern, `<div id="root">${content}</div>`);
   return doc;

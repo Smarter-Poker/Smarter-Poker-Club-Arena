@@ -100,7 +100,9 @@
               "exclusion": false,
               "immediate": true,
               "definition": "CREATE UNIQUE INDEX ca_guard_def_history_pkey ON public.ca_guard_def_history USING btree (id)",
-              "constraint_names": ["ca_guard_def_history_pkey"],
+              "constraint_names": [
+                "ca_guard_def_history_pkey"
+              ],
               "replica_identity": false,
               "nulls_not_distinct": false
             },
@@ -217,7 +219,9 @@
               "exclusion": false,
               "immediate": true,
               "definition": "CREATE UNIQUE INDEX ca_guard_defs_pkey ON public.ca_guard_defs USING btree (proname)",
-              "constraint_names": ["ca_guard_defs_pkey"],
+              "constraint_names": [
+                "ca_guard_defs_pkey"
+              ],
               "replica_identity": false,
               "nulls_not_distinct": false
             }
@@ -289,7 +293,9 @@
           "language": "sql",
           "pronargs": 0,
           "arguments": "",
-          "proconfig": ["search_path=public"],
+          "proconfig": [
+            "search_path=public"
+          ],
           "proretset": false,
           "prosecdef": false,
           "signature": "fn_ca_guard_watchlist()",
@@ -311,7 +317,9 @@
           "language": "plpgsql",
           "pronargs": 1,
           "arguments": "p_limit integer DEFAULT 50",
-          "proconfig": ["search_path=public, pg_temp"],
+          "proconfig": [
+            "search_path=public, pg_temp"
+          ],
           "proretset": false,
           "prosecdef": true,
           "signature": "fn_spin_expire_unfilled(integer)",

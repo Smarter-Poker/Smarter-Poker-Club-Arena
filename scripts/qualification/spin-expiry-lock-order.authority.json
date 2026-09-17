@@ -22,7 +22,10 @@
       "proparallel": "u",
       "pronargs": 2,
       "pronargdefaults": 0,
-      "proconfig": ["search_path=public, extensions, pg_temp", "statement_timeout=120s"],
+      "proconfig": [
+        "search_path=public, extensions, pg_temp",
+        "statement_timeout=120s"
+      ],
       "proacl": "{postgres=X/postgres,service_role=X/postgres}"
     },
     {
@@ -42,7 +45,9 @@
       "proparallel": "u",
       "pronargs": 0,
       "pronargdefaults": 0,
-      "proconfig": ["search_path=public, pg_temp"],
+      "proconfig": [
+        "search_path=public, pg_temp"
+      ],
       "proacl": "{postgres=X/postgres,service_role=X/postgres}"
     },
     {
@@ -62,7 +67,9 @@
       "proparallel": "u",
       "pronargs": 1,
       "pronargdefaults": 1,
-      "proconfig": ["search_path=public, pg_temp"],
+      "proconfig": [
+        "search_path=public, pg_temp"
+      ],
       "proacl": "{postgres=X/postgres,service_role=X/postgres}"
     },
     {
@@ -82,7 +89,9 @@
       "proparallel": "u",
       "pronargs": 1,
       "pronargdefaults": 0,
-      "proconfig": ["search_path=public, pg_temp"],
+      "proconfig": [
+        "search_path=public, pg_temp"
+      ],
       "proacl": "{postgres=X/postgres}"
     }
   ],
@@ -109,7 +118,9 @@
           "proisstrict": false,
           "provolatile": "s",
           "proparallel": "u",
-          "proconfig": ["search_path=public"],
+          "proconfig": [
+            "search_path=public"
+          ],
           "proacl": "{postgres=X/postgres,service_role=X/postgres}"
         }
       ]
@@ -135,7 +146,9 @@
               "md5": "3a3746dc6e0a5b7a1db97805588c0eb8",
               "owner": "postgres",
               "proacl": "{postgres=X/postgres,service_role=X/postgres}",
-              "proconfig": ["search_path=public"],
+              "proconfig": [
+                "search_path=public"
+              ],
               "prosecdef": true,
               "signature": "fn_ca_declare_guard_redefinition(text,text)",
               "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_declare_guard_redefinition(p_proname text, p_ref text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_hash text;\n  v_def text;\nBEGIN\n  /* A DECLARED GUARD CHANGE IS RECORDED, NOT RAISED (2026-09-10).\n     Call this from a migration that deliberately redefines a watched guard,\n     in the SAME transaction as the redefinition, passing the migration name.\n     It moves the baseline to the definition this transaction just produced,\n     so fn_ca_guard_defs_watch has nothing to report. A change nobody declares\n     still moves the hash away from the baseline and still raises. */\n  IF COALESCE(btrim(p_ref), '') = '' THEN\n    RAISE EXCEPTION 'a guard redefinition must name the migration that made it';\n  END IF;\n  IF NOT (p_proname = ANY (public.fn_ca_guard_watchlist())) THEN\n    RAISE EXCEPTION 'fn_ca_declare_guard_redefinition called for %, which is not on the guard watchlist', p_proname;\n  END IF;\n\n  SELECT md5(string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)),\n         string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)\n    INTO v_hash, v_def\n    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace\n   WHERE n.nspname = 'public' AND p.proname = p_proname;\n\n  IF v_hash IS NULL THEN\n    RAISE EXCEPTION 'guard function % does not exist; a declaration cannot baseline an absent guard', p_proname;\n  END IF;\n\n  -- keep the text so any later notice still has something to diff against\n  INSERT INTO public.ca_guard_def_history (proname, def_hash, def_text)\n  VALUES (p_proname, v_hash, v_def)\n  ON CONFLICT (proname, def_hash) DO NOTHING;\n\n  INSERT INTO public.ca_guard_defs (proname, def_hash, declared_ref, declared_at)\n  VALUES (p_proname, v_hash, p_ref, now())\n  ON CONFLICT (proname) DO UPDATE\n    SET def_hash = EXCLUDED.def_hash,\n        declared_ref = EXCLUDED.declared_ref,\n        declared_at = EXCLUDED.declared_at,\n        updated_at = now();\n\n  RETURN v_hash;\nEND;\n$function$\n"

@@ -10,7 +10,10 @@
           "signature": "fn_ca_tournament_cancellation_receipt(uuid,uuid)",
           "owner": "postgres",
           "proacl": "{postgres=X/postgres}",
-          "proconfig": ["search_path=public", "statement_timeout=30s"],
+          "proconfig": [
+            "search_path=public",
+            "statement_timeout=30s"
+          ],
           "prosecdef": true,
           "provolatile": "s",
           "proparallel": "u",
@@ -22,7 +25,9 @@
           "signature": "fn_ca_tournament_refund_plan(uuid,uuid)",
           "owner": "postgres",
           "proacl": "{postgres=X/postgres}",
-          "proconfig": ["search_path=public, pg_temp"],
+          "proconfig": [
+            "search_path=public, pg_temp"
+          ],
           "prosecdef": true,
           "provolatile": "v",
           "proparallel": "u",
@@ -34,7 +39,9 @@
           "signature": "fn_settle_tournament_refund_exact(uuid,uuid,uuid,numeric,numeric,numeric,numeric,text,text)",
           "owner": "postgres",
           "proacl": "{postgres=X/postgres}",
-          "proconfig": ["search_path=public"],
+          "proconfig": [
+            "search_path=public"
+          ],
           "prosecdef": true,
           "provolatile": "v",
           "proparallel": "u",
@@ -1423,7 +1430,9 @@
           "signature": "fn_ca_declare_ledger(text,text,uuid,uuid,text,text[])",
           "owner": "postgres",
           "proacl": "{postgres=X/postgres,service_role=X/postgres}",
-          "proconfig": ["search_path=public"],
+          "proconfig": [
+            "search_path=public"
+          ],
           "prosecdef": false,
           "provolatile": "v",
           "proparallel": "u",
@@ -1435,7 +1444,9 @@
           "signature": "fn_ca_escrow_apply_exact_refund(uuid,text,numeric,numeric,numeric)",
           "owner": "postgres",
           "proacl": "{postgres=X/postgres}",
-          "proconfig": ["search_path=public"],
+          "proconfig": [
+            "search_path=public"
+          ],
           "prosecdef": true,
           "provolatile": "v",
           "proparallel": "u",
@@ -1447,7 +1458,9 @@
           "signature": "fn_ca_escrow_apply(uuid,text,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric)",
           "owner": "postgres",
           "proacl": "{postgres=X/postgres,service_role=X/postgres}",
-          "proconfig": ["search_path=public"],
+          "proconfig": [
+            "search_path=public"
+          ],
           "prosecdef": true,
           "provolatile": "v",
           "proparallel": "u",
@@ -1459,7 +1472,9 @@
           "signature": "fn_ca_escrow_on_wallet_tx()",
           "owner": "postgres",
           "proacl": "{postgres=X/postgres,service_role=X/postgres}",
-          "proconfig": ["search_path=public"],
+          "proconfig": [
+            "search_path=public"
+          ],
           "prosecdef": true,
           "provolatile": "v",
           "proparallel": "u",
@@ -4064,7 +4079,9 @@
           "signature": "fn_poker_diamond_tournament(uuid)",
           "owner": "postgres",
           "proacl": "{postgres=X/postgres,service_role=X/postgres}",
-          "proconfig": ["search_path=public, pg_temp"],
+          "proconfig": [
+            "search_path=public, pg_temp"
+          ],
           "prosecdef": true,
           "provolatile": "s",
           "proparallel": "u",

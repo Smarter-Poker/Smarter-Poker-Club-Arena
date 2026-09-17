@@ -35,3 +35,9 @@ server/src/gto/contracts/solver-policy.v1.schema.json
 server/src/gto/contracts/fixtures/chart-policy.v1.json
 server/src/gto/contracts/fixtures/exact-policy.v1.json
 server/src/gto/contracts/fixtures/chart-policy-artifact.v1.json
+
+# Captured financial authorities are checked byte-for-byte by the required
+# Spin expiry qualification. Preserve their original reviewed serialization.
+scripts/ci/probes/spin-expiry/inputs/captured-spin-catalog.json
+scripts/qualification/spin-expiry-committed-refund.authority.json
+scripts/qualification/spin-expiry-lock-order.authority.json

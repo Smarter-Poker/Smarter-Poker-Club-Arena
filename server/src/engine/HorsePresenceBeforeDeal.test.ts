@@ -21,7 +21,7 @@ function restoredEngine(horse: boolean, state: 'CONNECTED' | 'DISCONNECTED' | 'S
   engine.knownPlayerIds.add(PLAYER);
   engine.dealingLoopFirstIteration = false;
   engine.prepareNextHand = vi.fn(async () => [{ ...seat }]);
-  engine.adoptMovedPresence = vi.fn();
+  engine.adoptMovedPresence = vi.fn().mockResolvedValue(true);
   engine.restoreSitOutsFromSeats = vi.fn();
   engine.evictExpiredSitOuts = vi.fn(async () => {});
   // Stop after the real roster/presence boundary, before dealing or database

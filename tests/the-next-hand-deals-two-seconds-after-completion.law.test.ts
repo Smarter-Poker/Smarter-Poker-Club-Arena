@@ -37,6 +37,7 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const DEALING = strip(read('server/src/engine/ServerTableEngineDealing.ts'));
+const BASE = strip(read('server/src/engine/ServerTableEngineBase.ts'));
 const SETTLEMENT = strip(read('server/src/engine/ServerTableEngineSettlement.ts'));
 const TABLES = strip(read('server/src/services/supabase/tables.ts'));
 const GAME_SERVER = strip(read('server/src/GameServer.ts'));
@@ -98,13 +99,30 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
   });
 
   it('the roster, the leave sweep and the hand number are read together, under the rest', () => {
-    // The read still runs under the rest, but stop may win while it is pending.
-    // Keep the returned roster local until the lifecycle gate permits adoption.
+    // The roster is prepared once under the rest, then adopted only while
+    // this engine still owns its table. The synchronous adoption helper also
+    // retires replaced occupancies' old mirrors without another roster read.
     expect(DEALING).toMatch(
-      /const nextRoster = await this\.prepareNextHand\(\);\s*if \(!this\.lifecycleCanMutate\(\)\) return;\s*this\.seatedPlayers = nextRoster;/
+      /const (\w+) = await this\.prepareNextHand\(\);\s*if \(!this\.lifecycleCanMutate\(\)\) return;\s*this\.adoptSeatRoster\(\1\);/
     );
-    const prep = DEALING.slice(DEALING.indexOf('protected async prepareNextHand('));
-    const body = prep.slice(0, prep.indexOf('return this.readNextHandInputs();'));
+    expect(BASE).toMatch(
+      /protected adoptSeatRoster\((\w+): SeatedPlayer\[\]\): string\[\] \{\s*if \(!this\.lifecycleCanMutate\(\)\) return \[\];\s*const previous = new Map\(this\.seatedPlayers\.map\(\(p\) => \[p\.user_id, p\.occupancy_id\]\)\);\s*this\.seatedPlayers = \1;/
+    );
+    expect(DEALING.match(/await this\.prepareNextHand\(\)/g)).toHaveLength(1);
+    const start = DEALING.indexOf('protected async prepareNextHand(');
+    const end = DEALING.indexOf('private preparedLeavePending:', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = DEALING.slice(start, end);
+    // The seat-boundary owner joins the one roster read and both sweep
+    // outcomes before returning the prepared roster, even after a failure.
+    expect(body.match(/this\.readNextHandInputs\(\)/g)).toHaveLength(1);
+    expect(body).toMatch(
+      /const \[roster, departure, budget\] = await Promise\.allSettled\(\[\s*this\.readNextHandInputs\(\),\s*rawSweep \?\? Promise\.resolve\(\[\]\),\s*budgetedSweep \?\? Promise\.resolve\(\[\]\),?\s*\]\);/
+    );
+    expect(body).toMatch(
+      /if \(roster\.status === 'rejected'\) throw roster\.reason;\s*if \(departure\.status === 'rejected'\) throw departure\.reason;\s*if \(budget\.status === 'rejected'\) throw budget\.reason;\s*return roster\.value;\s*\} finally \{\s*releaseSeatBoundary\(\);/
+    );
     // the leave sweep races the roster read only when no add-on is pending
     expect(body).toMatch(/!this\.pendingAddOnSweepNeeded/);
     expect(body).toMatch(/this\.pendingAddOns\.size === 0/);

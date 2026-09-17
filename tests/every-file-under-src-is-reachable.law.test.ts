@@ -40,6 +40,10 @@ const SRC = join(ROOT, 'src');
 
 /** Unreachable today, each with the reader that still names it by path. */
 const RETAINED: Record<string, string> = {
+  'src/prerender/HelpPrerender.tsx':
+    'imported only by another retained file (src/prerender/entry-server.tsx)',
+  'src/prerender/entry-server.tsx':
+    'built by path: vite.prerender.config.ts, run by scripts/prerender-public-routes.mjs at the end of build:ci (the public arena, readable without JavaScript)',
   'src/assets/customization-thumbs/sources.json':
     'read by path: scripts/lib/customization-thumbnail-policy.mjs',
   'src/components/ClubLogoSelector.css': 'imported only by another retained file',

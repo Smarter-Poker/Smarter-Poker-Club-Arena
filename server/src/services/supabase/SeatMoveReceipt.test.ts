@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mock = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('./client.js', () => ({ supabase: mock }));
 vi.mock('../errorReporter.js', () => ({ reportError: vi.fn() }));
-import { executePendingSeatMoves, pendingSeatMoves, type PendingSeatMove } from './seatMoves.js';
+import {
+  executePendingSeatMoves,
+  pendingSeatMoves,
+  SeatMoveBatchError,
+  type PendingSeatMove,
+} from './seatMoves.js';
 import { LeavePendingOperation } from '../../observability/LeavePendingDiagnostic.js';
 import { reportError } from '../errorReporter.js';
 const table = '11111111-1111-4111-8111-111111111111';
@@ -126,6 +131,23 @@ describe('verified original seat move outcomes', () => {
     });
     await expect(run()).rejects.toThrow();
   });
+  it.each([undefined, null, 'false', 0])(
+    'rejects a swap hold with unconfirmed status %#',
+    async (ok) => {
+      mock.rpc.mockResolvedValue({
+        data: {
+          ...receipt,
+          ok,
+          reason: 'waiting_partner',
+          held: true,
+          partner_id: destinationOccupancy,
+        },
+        error: null,
+      });
+      await expect(run()).rejects.toThrow('Seat swap hold does not prove the original occupancy');
+      expect(mock.rpc).toHaveBeenCalledTimes(1);
+    }
+  );
   it('does not convert unavailable or malformed enumeration to an empty table', async () => {
     mock.rpc.mockResolvedValue({ data: null, error: { message: 'read failed' } });
     await expect(pendingSeatMoves(table)).rejects.toThrow('read failed');
@@ -169,14 +191,32 @@ describe('move operation evidence preserves RPC and receipt behavior', () => {
       .mockResolvedValueOnce({ data: receipt, error: null })
       .mockRejectedValueOnce(finalError)
       .mockRejectedValueOnce(finalError);
-    await expect(
-      executePendingSeatMoves(
-        table,
-        { announcedOnly: false },
-        [candidate, { ...candidate, move_id: finalId }],
-        diagnostic
-      )
-    ).rejects.toBe(finalError);
+    const failure = await executePendingSeatMoves(
+      table,
+      { announcedOnly: false },
+      [candidate, { ...candidate, move_id: finalId }],
+      diagnostic
+    ).catch((error) => error);
+    expect(failure).toBeInstanceOf(SeatMoveBatchError);
+    expect(failure.cause).toBe(finalError);
+    expect(failure.outcome).toEqual({
+      done: [
+        {
+          source_occupancy_id: sourceOccupancy,
+          destination_occupancy_id: destinationOccupancy,
+          source_seat_number: 2,
+          move_id: id,
+          player_id: player,
+          to_table_id: destination,
+          to_seat_number: 4,
+          stack: 25,
+          reason: 'must_move',
+          partner: null,
+        },
+      ],
+      held: [],
+      refused: [],
+    });
     expect(mock.rpc.mock.calls).toEqual(
       [id, id, finalId, finalId].map((moveId) => [
         'fn_cash_seat_move_execute',

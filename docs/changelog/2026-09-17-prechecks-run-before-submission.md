@@ -36,3 +36,16 @@ matches the event shape. The cash manifest's only stale input was ci.yml; its
 full byte/hash pin is refreshed and all six input/outcome tests pass. The native
 cash financial/scheduler implementation and required hosted execution are
 unchanged. These local results do not certify protected merge or live delivery.
+
+Protected-main integration also exposed a formatter scope defect: lint-staged
+selected every incoming file, including immutable retained accounting evidence
+and unrelated upstream fixtures. The pre-commit selector now uses the incoming
+protected-main revision as its lint base for a clean, fully staged merge. It
+checks every candidate difference and conflict resolution; ordinary commits and
+unprotected merges keep staged selection, and partial staging refuses. Five
+isolated Git fixtures exercise the real selection and hook wiring. All prior
+identity, ownership and deletion guards remain.
+
+The final integration reuses main's explicit CA_BUILD_PURPOSE provenance route,
+including its valid regenerated-merge ancestry handling, while retaining exact
+open-PR/repository checks, strict-release override and diagnostic evidence.

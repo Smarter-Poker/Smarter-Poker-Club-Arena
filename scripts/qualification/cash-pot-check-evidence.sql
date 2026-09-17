@@ -358,16 +358,18 @@ ROLLBACK TO case_no_receipt;
 
 -- Exact-key changed payload: receipt id may be positive, but the row still
 -- contains the first payload. Exercise the existing writer's real conflict path.
+-- Seed from the completed evidence insert, before the writer's INSERT starts;
+-- recursively inserting from that INSERT's own BEFORE trigger cannot model an
+-- already-existing receipt under PostgreSQL's ON CONFLICT command semantics.
 SAVEPOINT case_collision;
 CREATE FUNCTION cash_qualification.seed_collision() RETURNS trigger LANGUAGE plpgsql AS $f$
 BEGIN
- IF NEW.source='cash-pot-conservation-measurement' AND pg_trigger_depth()=1 THEN
-   INSERT INTO public.operational_alert_events(source,event_key,alertname,status,severity,payload)
-    VALUES(NEW.source,NEW.event_key,NEW.alertname,NEW.status,NEW.severity,NEW.payload||'{"prior":true}');
- END IF;
+ INSERT INTO public.operational_alert_events(source,event_key,alertname,status,severity,payload)
+ VALUES('cash-pot-conservation-measurement',NEW.check_id::text||':no_winner_recorded',
+   'CashPotConservation:no_winner_recorded','firing','warning','{"prior":true}'::jsonb);
  RETURN NEW;
 END $f$;
-CREATE TRIGGER qualification_collision BEFORE INSERT ON public.operational_alert_events
+CREATE TRIGGER qualification_collision AFTER INSERT ON public.ca_cash_pot_check_evidence
  FOR EACH ROW EXECUTE FUNCTION cash_qualification.seed_collision();
 SELECT cash_qualification.expect_error('SELECT public.fn_cash_pot_conservation_check()',
  'cash_pot_check_evidence_receipt_mismatch');

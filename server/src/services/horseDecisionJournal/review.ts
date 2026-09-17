@@ -32,6 +32,7 @@ import {
   type HorseJournalRecord,
 } from './record.js';
 import { HorseDecisionJournalStore } from './store.js';
+import { readonlyHorseJournalStoreOptions } from './config.js';
 import {
   horseLifecycleKeys,
   horseLifecycleRequestDigest,
@@ -356,6 +357,22 @@ export function reconcileHorseJournalHand(
     }
     const expected = new Set<number>();
     hand.actions!.forEach((action, i) => {
+      if (action.historyEvent !== undefined || action.action === 'return') {
+        // A positive return is already reflected in the controller's balances.
+        // Admit only its explicit producer shape, never an inferred legacy
+        // origin or a marker attached to a voluntary/forced poker choice.
+        if (
+          typeof action.historyEvent !== 'string' ||
+          action.historyEvent !== 'uncalled_bet_returned' ||
+          action.action !== 'return' ||
+          typeof action.amount !== 'number' ||
+          !Number.isFinite(action.amount) ||
+          action.amount <= 0 ||
+          action.origin !== undefined
+        )
+          gap('action_origin_unavailable');
+        return;
+      }
       if (action.action === 'discard') out.acceptedDiscardActions++;
       else if (action.origin === 'horse_policy') expected.add(i);
       else if (action.origin === 'horse_fallback') gap('fallback_lineage_unavailable');
@@ -559,7 +576,7 @@ export function reconcileHorseJournalHand(
 export function readHorseJournalHand(directory: string, handKey: string): HorseJournalHandReview {
   let store: HorseDecisionJournalStore | undefined;
   try {
-    store = new HorseDecisionJournalStore(directory, { readOnly: true });
+    store = new HorseDecisionJournalStore(directory, readonlyHorseJournalStoreOptions(directory));
     return reconcileHorseJournalHand(store.readHand(handKey), handKey);
   } catch {
     return { ...empty(), gaps: ['storage_unavailable'] };

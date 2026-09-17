@@ -4,6 +4,8 @@ import {
   horsePlanBatchBindingIsValid,
   horsePlanBatchBindingKey,
   type HorsePlanBatchBinding,
+  type HorsePlanIssueDisposition,
+  type HorsePlanRefusal,
 } from '../HorsePlanHandIdentity.js';
 import { performance } from 'node:perf_hooks';
 import {
@@ -102,6 +104,7 @@ import type {
   HorseDecisionWorkerResponse,
   ObserveCompletedHandRequest,
   CommitDecisionEffectsRequest,
+  RetireDecisionEffectsRequest,
   HorseDecisionStatusRequest,
 } from './protocol.js';
 import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
@@ -299,8 +302,9 @@ export class HorseDecisionWorkerRuntime {
   private static readonly MAX_SECOND_LOOK_READS = 128;
   private static readonly SECOND_LOOK_READ_TTL_MS = 60_000;
 
-  /** Volatile local issue ownership only, not proof of table acceptance. Expiry
-   * and capacity eviction may lose plan application after an accepted wager. */
+  /** Pending ownership cannot be displaced by later traffic or elapsed compute
+   * time. Only explicit retirement/application makes an entry reclaimable.
+   * Still volatile: worker loss is not durable application/replay proof. */
   private readonly issuedPlanBatches = new Map<
     string,
     {
@@ -309,7 +313,7 @@ export class HorseDecisionWorkerRuntime {
       bindingKey: string;
       effects: HorseMindDecisionEffect[];
       effectsKey: string;
-      state: 'issued' | 'ambiguous' | 'applied' | 'failed';
+      state: 'issued' | 'ambiguous' | 'applied' | 'failed' | 'retired' | 'no_effects';
     }
   >();
   private static readonly MAX_ISSUED_PLAN_BATCHES = 128;
@@ -319,10 +323,15 @@ export class HorseDecisionWorkerRuntime {
     binding: HorsePlanBatchBinding,
     effects: HorseMindDecisionEffect[],
     at: number
-  ): void {
+  ): HorsePlanIssueDisposition {
     for (const [key, entry] of this.issuedPlanBatches) {
-      if (at - entry.at > HorseDecisionWorkerRuntime.ISSUED_PLAN_BATCH_TTL_MS)
+      if (
+        entry.state !== 'issued' &&
+        at - entry.at > HorseDecisionWorkerRuntime.ISSUED_PLAN_BATCH_TTL_MS
+      ) {
         this.issuedPlanBatches.delete(key);
+        this.deps.noteFeature('phase15_plan_terminal_expired');
+      }
     }
     const key = JSON.stringify([binding.generation, binding.fence]);
     const old = this.issuedPlanBatches.get(key);
@@ -330,18 +339,23 @@ export class HorseDecisionWorkerRuntime {
       // Neither identical nor conflicting FAST reissue can replace its original
       // local occurrence. An already applied original may still ACK idempotently.
       if (old.state === 'issued') old.state = 'ambiguous';
-      return;
+      return 'reissue_unavailable';
     }
-    while (this.issuedPlanBatches.size >= HorseDecisionWorkerRuntime.MAX_ISSUED_PLAN_BATCHES)
-      this.issuedPlanBatches.delete(this.issuedPlanBatches.keys().next().value!);
+    if (this.issuedPlanBatches.size >= HorseDecisionWorkerRuntime.MAX_ISSUED_PLAN_BATCHES) {
+      const terminal = [...this.issuedPlanBatches].find(([, entry]) => entry.state !== 'issued');
+      if (!terminal) return effects.length ? 'capacity_unavailable' : 'no_effects';
+      this.issuedPlanBatches.delete(terminal[0]);
+      this.deps.noteFeature('phase15_plan_terminal_evicted');
+    }
     this.issuedPlanBatches.set(key, {
       at,
       binding,
       bindingKey: horsePlanBatchBindingKey(binding)!,
       effects: deepFreeze(structuredClone(effects)),
       effectsKey: horseDecisionEffectsKey(effects)!,
-      state: 'issued',
+      state: effects.length ? 'issued' : 'no_effects',
     });
+    return effects.length ? 'issued' : 'no_effects';
   }
 
   private readViewKey(
@@ -517,6 +531,7 @@ export class HorseDecisionWorkerRuntime {
         });
       } else if (request.type === 'OBSERVE_COMPLETED_HAND') this.executeObservation(request);
       else if (request.type === 'COMMIT_DECISION_EFFECTS') this.executeEffectCommit(request);
+      else if (request.type === 'RETIRE_DECISION_EFFECTS') this.executeEffectRetirement(request);
       else if (request.type === 'OBSERVE_EXECUTION') {
         try {
           this.deps.journalExecution?.(request.witness);
@@ -673,6 +688,15 @@ export class HorseDecisionWorkerRuntime {
         throw new Error('invalid decision effects: expected at most 16 bounded plan records');
       }
     }
+    if (
+      request.type === 'RETIRE_DECISION_EFFECTS' &&
+      (!horsePlanBatchBindingIsValid(request.planBinding) ||
+        request.planBinding.fastRequestId >= request.requestId ||
+        request.planBinding.generation !== request.generation ||
+        request.planBinding.fence !== request.fence ||
+        !['decision_finalized', 'caller_settled', 'commit_unconfirmed'].includes(request.reason))
+    )
+      throw Error('invalid Horse plan retirement');
     if (request.type === 'OBSERVE_EXECUTION') {
       const witness = request.witness;
       if (
@@ -1407,24 +1431,37 @@ export class HorseDecisionWorkerRuntime {
     } catch {
       this.deps.noteFeature('phase15_journal_capture_unavailable');
     }
-    this.send({
-      type: 'FAST_RESULT',
-      requestId: request.requestId,
-      planBinding,
-      generation: request.generation,
-      fence: request.fence,
-      decision: captured.value,
-      rngBefore,
-      rngAfter,
-      computeMs,
-      governorScale,
-      // Retain intent only when the reference wager survived every later
-      // policy owner. The client separately binds its hand, horse and street.
-      effects,
-    });
-    // Only a successful local send creates an applicable issued record. This
-    // does not prove receipt by the client, acceptance, or durable application.
-    this.issuePlanBatch(planBinding, effects, startedAt);
+    // Reserve before promising issuance. The synchronous lane cannot run a
+    // commit until send returns; a failed send relinquishes only this reservation.
+    const planIssueDisposition = this.issuePlanBatch(planBinding, effects, startedAt);
+    try {
+      this.send({
+        type: 'FAST_RESULT',
+        requestId: request.requestId,
+        planBinding,
+        planIssueDisposition,
+        generation: request.generation,
+        fence: request.fence,
+        decision: captured.value,
+        rngBefore,
+        rngAfter,
+        computeMs,
+        governorScale,
+        // Retain intent only when the reference wager survived every later
+        // policy owner. The client separately binds its hand, horse and street.
+        effects,
+      });
+    } catch (error) {
+      const key = JSON.stringify([planBinding.generation, planBinding.fence]);
+      const entry = this.issuedPlanBatches.get(key);
+      if (
+        planIssueDisposition !== 'reissue_unavailable' &&
+        entry?.bindingKey === horsePlanBatchBindingKey(planBinding)
+      )
+        this.issuedPlanBatches.delete(key);
+      throw error;
+    }
+    this.deps.noteFeature(`phase15_plan_issue_${planIssueDisposition}`);
     return captured.value.policyFallback === 'brain_exception' ? 'exception' : 'success';
   }
 
@@ -1555,36 +1592,38 @@ export class HorseDecisionWorkerRuntime {
   private executeEffectCommit(request: CommitDecisionEffectsRequest): void {
     const key = JSON.stringify([request.generation, request.fence]);
     const issued = this.issuedPlanBatches.get(key);
-    const expired =
-      issued && this.deps.now() - issued.at > HorseDecisionWorkerRuntime.ISSUED_PLAN_BATCH_TTL_MS;
-    if (expired) this.issuedPlanBatches.delete(key);
-    if (
-      !issued ||
-      expired ||
-      issued.state === 'ambiguous' ||
-      issued.state === 'failed' ||
-      horsePlanBatchBindingKey(request.planBinding) !== issued.bindingKey ||
-      horseDecisionEffectsKey(request.effects) !== issued.effectsKey
-    ) {
-      this.send({
-        type: 'ERROR',
-        requestId: request.requestId,
-        generation: request.generation,
-        fence: request.fence,
-        message: 'Horse plan batch was not uniquely issued or is unavailable',
-        recoverable: true,
-      });
+    const refusal: HorsePlanRefusal | null = !issued
+      ? 'issue_absent'
+      : horsePlanBatchBindingKey(request.planBinding) !== issued.bindingKey
+        ? 'binding_mismatch'
+        : horseDecisionEffectsKey(request.effects) !== issued.effectsKey
+          ? 'effects_mismatch'
+          : issued.state === 'ambiguous'
+            ? 'issue_ambiguous'
+            : issued.state === 'failed'
+              ? 'issue_failed'
+              : issued.state === 'retired'
+                ? 'issue_retired'
+                : issued.state === 'no_effects'
+                  ? 'no_effects'
+                  : null;
+    if (refusal || !issued) {
+      this.refusePlan(request, refusal ?? 'issue_absent');
       return;
     }
+    const alreadyApplied = issued.state === 'applied';
     if (issued.state !== 'applied') {
       try {
         // Apply the detached issued records, not the later caller's object.
         this.deps.applyDecisionEffects(issued.effects);
         issued.state = 'applied';
+        issued.at = this.deps.now();
       } catch (error) {
         // An unexpected throw can leave partial volatile writes. Never ACK or
         // retry this batch as applied; existing worker failure handling remains.
         issued.state = 'failed';
+        issued.at = this.deps.now();
+        this.deps.noteFeature('phase15_plan_apply_failed');
         throw error;
       }
     }
@@ -1594,6 +1633,56 @@ export class HorseDecisionWorkerRuntime {
       generation: request.generation,
       fence: request.fence,
       operation: 'COMMIT_DECISION_EFFECTS',
+      planDisposition: alreadyApplied ? 'already_applied_volatile' : 'applied_volatile',
+    });
+    this.deps.noteFeature(
+      alreadyApplied ? 'phase15_plan_already_applied_volatile' : 'phase15_plan_applied_volatile'
+    );
+  }
+
+  private refusePlan(
+    request: CommitDecisionEffectsRequest | RetireDecisionEffectsRequest,
+    reason: HorsePlanRefusal
+  ): void {
+    this.deps.noteFeature(`phase15_plan_refused_${reason}`);
+    this.send({
+      type: 'ERROR',
+      requestId: request.requestId,
+      generation: request.generation,
+      fence: request.fence,
+      message: `Horse plan batch refused: ${reason}`,
+      recoverable: true,
+      planRefusal: reason,
+    });
+  }
+
+  private executeEffectRetirement(request: RetireDecisionEffectsRequest): void {
+    const entry = this.issuedPlanBatches.get(JSON.stringify([request.generation, request.fence]));
+    if (entry && horsePlanBatchBindingKey(request.planBinding) !== entry.bindingKey) {
+      this.refusePlan(request, 'binding_mismatch');
+      return;
+    }
+    const disposition = !entry
+      ? 'issue_absent'
+      : entry.state === 'applied'
+        ? 'already_applied_volatile'
+        : entry.state === 'failed'
+          ? 'issue_failed'
+          : entry.state === 'retired'
+            ? 'already_retired'
+            : 'retired';
+    if (entry && disposition === 'retired') {
+      entry.state = 'retired';
+      entry.at = this.deps.now();
+    }
+    this.deps.noteFeature(`phase15_plan_retirement_${disposition}`);
+    this.send({
+      type: 'ACK',
+      requestId: request.requestId,
+      generation: request.generation,
+      fence: request.fence,
+      operation: 'RETIRE_DECISION_EFFECTS',
+      planDisposition: disposition,
     });
   }
 

@@ -21,6 +21,7 @@ describe('accepted list to controller-compatible opponent action stream', () => 
         amount: 1,
         timestamp: 1700000000000,
         stage: 'preflop',
+        origin: 'forced',
       },
       { ...controller(), observationIdentity: { version: 1, actionOrdinal: 1 } },
       {
@@ -39,6 +40,7 @@ describe('accepted list to controller-compatible opponent action stream', () => 
         amount: 2,
         timestamp: 1700000000500,
         stage: 'river',
+        historyEvent: 'uncalled_bet_returned',
       },
       { seat: 0, userId: 'system', action: 'rit_board_2:As,Ks,Qs,Js,Ts', stage: 'river' },
     ];

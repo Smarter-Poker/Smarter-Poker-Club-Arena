@@ -288,6 +288,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               amount: p.amount,
               timestamp: Date.now(),
               stage: 'preflop',
+              origin: 'forced',
               // DEAD money is in the pot but not in the live bet level. A
               // reader that differences a raise-TO level against everything a
               // seat has committed will understate every raise made by anyone
@@ -320,6 +321,9 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             seat: e.seat ?? 0,
             userId: e.userId ?? '',
             action: 'return',
+            // The controller has already refunded this amount. This is a
+            // history event, not another accepted poker choice or chip move.
+            historyEvent: 'uncalled_bet_returned',
             amount: e.amount,
             timestamp: Date.now(),
             stage: this.handController?.getState()?.stage || 'river',

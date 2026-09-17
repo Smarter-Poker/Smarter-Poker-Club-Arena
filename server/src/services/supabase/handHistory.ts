@@ -326,6 +326,7 @@ export async function logHandHistory(params: {
     stage: string;
     publicNode?: import('../../engine/HorsePublicActionNode.js').HorsePublicActionNode;
     origin?: import('../../types.js').AcceptedActionOrigin;
+    historyEvent?: 'uncalled_bet_returned';
     observationIdentity?: import('../../engine/HorseObservationIdentity.js').HorseObservationIdentity;
   }[];
   showdownResults?: {

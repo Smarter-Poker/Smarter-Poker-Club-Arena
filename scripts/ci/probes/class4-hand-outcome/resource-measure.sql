@@ -59,6 +59,9 @@ SELECT 'CLASS4_RESOURCE_RESULT='||jsonb_build_object('passed',true,'p_limit',500
  'plans',(SELECT jsonb_object_agg(stage,plan) FROM class4_resource_plans),
  'results',(SELECT jsonb_object_agg(stage,result) FROM class4_resource_results),
  'work_mem',current_setting('work_mem'),'shared_buffers',current_setting('shared_buffers'),
+ 'max_wal_size',current_setting('max_wal_size'),'fsync',current_setting('fsync'),
+ 'full_page_writes',current_setting('full_page_writes'),'wal_level',current_setting('wal_level'),
+ 'maintenance_work_mem',current_setting('maintenance_work_mem'),
  'peak_rss_measured',false,'money_writer_qualified',false,'typed_rollback_qualified',false,
  'cold_cache_or_production_payload_equivalence',false)::text;
 ROLLBACK;

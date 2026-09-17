@@ -133,13 +133,13 @@
     },
     "resource_prepare": {
       "path": "scripts/ci/probes/class4-hand-outcome/resource-prepare.sql",
-      "bytes": 6067,
-      "sha256": "7c89be3c70efe39ff8fa7deb9dfe52ba239949d6bdecac555defcc4ac90c82c5"
+      "bytes": 6312,
+      "sha256": "2ac9e5b0e7f1289c2fc4bc2229f98ba4cd2feb52cf4b40c2b65196c5e932f5fe"
     },
     "resource_measure": {
       "path": "scripts/ci/probes/class4-hand-outcome/resource-measure.sql",
-      "bytes": 5965,
-      "sha256": "0074dac5a7424cccc86d3fed9f943c8a158516e7e1c5ad102fa94842037462e9"
+      "bytes": 6210,
+      "sha256": "28a5f84ba9c84fdd5623478ef211bfc720f94c55c16d274d342ef85f2718d99a"
     },
     "resource_population_basis": {
       "path": "scripts/ci/probes/class4-hand-outcome/resource-population-basis.json",

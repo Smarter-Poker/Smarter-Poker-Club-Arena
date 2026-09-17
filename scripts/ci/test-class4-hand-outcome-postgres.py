@@ -311,6 +311,7 @@ def main():
                          + "'\nunix_socket_permissions=0700\nshared_buffers='32MB'\nwork_mem='4MB'"
                          + "\nmaintenance_work_mem='64MB'\nmax_connections=8\nmax_worker_processes=0"
                          + "\nmax_parallel_workers=0\nmax_wal_senders=0\nwal_level=logical"
+                         + "\nmax_wal_size='4GB'"
                          + "\nstatement_timeout='20s'\nlock_timeout='3s'\nidle_in_transaction_session_timeout='20s'\n")
         pg_attempted = True
         command('pg_start', [pg / 'pg_ctl', '-D', data, '-l', out / 'postgres.log', '-w', '-t', '12', 'start'], timeout=15)
@@ -363,12 +364,27 @@ def main():
         require(final == before, 'final guarded rollback did not restore exact original source/state')
         # Extra bounded resource slice follows all unchanged original states/races
         # and their independent empty-state/source rollback checks.
+        # Bulk loading keeps durability enabled; preparation and its explicit
+        # checkpoint share the original 60-second setup budget.
+        setup_deadline = time.monotonic() + 60
         setup_output = sql('class4_resource_prepare', ROOT / CHECKOUT_INPUTS['resource_prepare'],
                            user='postgres', timeout=60)
+        remaining_setup = setup_deadline - time.monotonic()
+        require(remaining_setup > 0, 'resource setup exhausted its original 60-second budget')
+        command('class4_resource_checkpoint', bootstrap + ['-c', 'CHECKPOINT'],
+                timeout=remaining_setup)
+        require(time.monotonic() <= setup_deadline,
+                'resource setup/checkpoint exceeded its original 60-second budget')
         setup = resource_marker(setup_output, 'CLASS4_RESOURCE_SETUP=')
         require(setup.get('canonical_rows') == 2600000 and setup.get('alerts') == 47052
                 and setup.get('unresolved') == 8364 and setup.get('eligible_frontier') == 5001,
                 'resource setup receipt/cardinality mismatch')
+        resource_configuration = {'max_wal_size': '4GB', 'fsync': 'on',
+                                  'full_page_writes': 'on', 'wal_level': 'logical',
+                                  'shared_buffers': '32MB', 'work_mem': '4MB',
+                                  'maintenance_work_mem': '64MB'}
+        require(all(setup.get(key) == value for key, value in resource_configuration.items()),
+                'resource setup durability or memory configuration mismatch')
         receipt['backlog_resource_setup'] = setup
         resource_output = sql('class4_resource_measure', ROOT / CHECKOUT_INPUTS['resource_measure'],
                               user='postgres', timeout=70)
@@ -377,6 +393,8 @@ def main():
                 and resource.get('eligible_resolved_in_two_calls') == 5001
                 and resource.get('remaining_negative_alerts') == 3363,
                 'resource qualification receipt mismatch')
+        require(all(resource.get(key) == value for key, value in resource_configuration.items()),
+                'resource measurement durability or memory configuration mismatch')
         receipt['backlog_resource_result'] = resource
         receipt['bounded_backlog_qualified'] = True
         validate_tool_receipt(tool_receipt, pg)

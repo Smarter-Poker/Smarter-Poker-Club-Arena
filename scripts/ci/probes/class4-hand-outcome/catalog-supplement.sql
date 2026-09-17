@@ -36,6 +36,18 @@ GRANT SELECT,REFERENCES,TRIGGER ON public.table_pending_addons TO anon,authentic
 GRANT ALL ON public.table_pending_addons TO service_role;
 -- Captured catalog has no policies and no non-internal triggers.
 
+-- Restore every omitted non-unique index consumed by the unchanged Class4
+-- schema guard. All nine definitions match the live catalog read on 2026-09-17.
+CREATE INDEX financial_alerts_incident_id_idx ON public.financial_alerts USING btree (((context ->> 'incident_id'::text))) WHERE (context ? 'incident_id'::text);
+CREATE INDEX financial_alerts_incident_uuid_idx ON public.financial_alerts USING btree ((((context ->> 'incident_id'::text))::uuid)) WHERE ((context ->> 'incident_id'::text) ~ '^[0-9a-fA-F-]{36}$'::text);
+CREATE INDEX financial_alerts_unresolved_source_idx ON public.financial_alerts USING btree (source) WHERE (NOT resolved);
+CREATE INDEX idx_financial_alerts_reported_by_created ON public.financial_alerts USING btree (((context ->> 'reported_by'::text)), created_at DESC);
+CREATE INDEX idx_financial_alerts_resolved ON public.financial_alerts USING btree (resolved) WHERE (resolved = false);
+CREATE INDEX idx_financial_alerts_resolved_by ON public.financial_alerts USING btree (resolved_by);
+CREATE INDEX idx_financial_alerts_severity ON public.financial_alerts USING btree (severity);
+CREATE INDEX idx_financial_alerts_source_created ON public.financial_alerts USING btree (source, created_at DESC);
+CREATE INDEX idx_hand_atomic_commits_post_commit_pending ON public.hand_atomic_commits USING btree (table_id, hand_number) WHERE ((post_commit_payload IS NOT NULL) AND (post_commit_completed_at IS NULL));
+
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligations(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb, p_instance_id text, p_lease_generation uuid)
  RETURNS jsonb
  LANGUAGE plpgsql

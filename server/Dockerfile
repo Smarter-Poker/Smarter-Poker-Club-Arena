@@ -11,15 +11,19 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev --no-audit --no-fund
 
 # Copy source
-COPY tsconfig.json tsconfig.runtime.json ./
+COPY tsconfig.json tsconfig.runtime.json tsconfig.emit.json ./
 COPY src/ ./src/
 
 # Exact-source release preflight performs the full typecheck and tests in CI.
-# Emit runtime files here without repeating that memory-heavy check on the
-# game host. Resource CI compares every emitted runtime file to the full build.
+# Emit every runtime root here without loading dependency type declarations or
+# repeating that memory-heavy check on the game host. The emit project inherits
+# the complete runtime roots; it does not select or omit application modules.
+# Resource CI compares every emitted runtime file to the full checked build.
 # The runtime project omits unit-test entrypoints and unused declarations.
 # Full test compilation and execution remain in the exact-source CI preflight.
-RUN ulimit -c 0 && node --max-old-space-size=768 ./node_modules/typescript/bin/tsc --project tsconfig.runtime.json --noCheck
+# The 512 MiB V8 heap leaves native/compiler and BuildKit room inside the
+# canonical 640 MiB no-swap builder. Resource CI proves exact runtime output.
+RUN ulimit -c 0 && node --max-old-space-size=512 ./node_modules/typescript/bin/tsc --project tsconfig.emit.json
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

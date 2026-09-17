@@ -1,0 +1,19 @@
+{
+  "passed": [
+    "unchanged captured current atomic creator compiles and exact body matches",
+    "twelve actual caller payloads each create one committed pair and replay its exact identity",
+    "eight original heads-up and satellite payloads reproduce the unknown-key refusal without writes",
+    "same event identity cannot be replayed against another satellite target",
+    "purchase freeze refuses before creating either row",
+    "browser roles cannot execute the creator",
+    "late table insertion failure rolls back the tournament row too",
+    "qualification did not replace the production creator body"
+  ],
+  "source_md5": "b40dd95b7a87019070a8abf0fcc4fff3",
+  "sampled_at": "2026-09-14 01:19:43.003881+00",
+  "payload_sha256": "01c339aff9b2e13f45336db5f5565d113e31519ae9b9c02edbfbde15e904b1d1",
+  "limits": "selected captured column types, synthetic defaults and empty-purchase-freeze stand-in; no production trigger graph, target admission, funding, JWT/HTTP or gameplay",
+  "ok": true,
+  "cluster_stopped": true,
+  "cluster_removed": true
+}

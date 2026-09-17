@@ -1,3 +1,4 @@
+import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * TOURNAMENT RECURRING SERVICE — 24/7 Automated Tournament Schedule
@@ -37,6 +38,11 @@ import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
+import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import {
+  mysteryBountyCreationColumns,
+  type MysteryBountyCreationInput,
+} from '../domain/mysteryBountyCreation.js';
 import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
@@ -99,7 +105,7 @@ function buyInColumns(
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-interface TournamentConfig {
+interface TournamentConfig extends MysteryBountyCreationInput {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
   gameVariant: string;
@@ -114,6 +120,7 @@ interface TournamentConfig {
   payoutStructure: any[];
   payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
+  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -169,7 +176,7 @@ interface AtomicSeatFirstCreation {
   tableId: string;
 }
 
-interface XMTTConfig {
+interface XMTTConfig extends MysteryBountyCreationInput {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
   gameVariant: string;
@@ -184,6 +191,7 @@ interface XMTTConfig {
   payoutStructure: any[];
   payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
+  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -3375,7 +3383,8 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure,
-        payout_percent: mttPayoutPercent(config.payoutPercent),
+        // Satellite qualification uses its seat contract, not MTT paid depth.
+        // The atomic seat-first creator deliberately rejects unknown fields.
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -3780,22 +3789,16 @@ export class TournamentRecurringService {
       // entrants) and this event needs 56 to cover its guarantee.
       const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
 
       const isBountyType =
         config.type === 'bounty' ||
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
-      const bountyPercent = config.bountyPercent || 30;
-      // WHOLE CHIPS (Dan 2026-08-20): "Sit and Go and any tournament buy-ins
-      // must never be decimal buy-ins, whole numbers only." `split` is the
-      // authoritative whole-dollar price this row is created at - a rebuy or an
-      // add-on costs the SAME snapped total, not the raw (possibly off-ladder)
-      // config value. The bounty is a whole cut of that total; it used to be
-      // round(buyIn * pct) / 100, which produced 4.5 on a 15 buy-in.
+      // Whole-chip entry prices can fund fractional bounties. Use the same
+      // cent allocation as scheduled MTTs without changing a booked head.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType
-        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
-        : 0;
+      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
       // range the draw could not produce.
@@ -3875,6 +3878,7 @@ export class TournamentRecurringService {
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
+            ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,
@@ -4023,24 +4027,16 @@ export class TournamentRecurringService {
       // registration under-funded and paying overlay. See MTT_PUBLISH_LEAD_MS.
       const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
 
       const isBountyType =
         config.type === 'bounty' ||
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
 
-      // Calculate bounty amount using configurable bountyPercent
-      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
-      // mirrors the same fix applied to the other bounty-config branch in this file.
-      const bountyPercent = config.bountyPercent || 30;
-      // WHOLE CHIPS (Dan 2026-08-20) - mirrors the XMTT branch above. `split`
-      // is the snapped whole-dollar price the row is actually created at, so
-      // the bounty, the rebuy and the add-on all key off it rather than off the
-      // raw config value.
+      // Share scheduled/XMTT bounty arithmetic; entry pricing remains unchanged.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType
-        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
-        : 0;
+      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
       // Mystery bounty range: min = base bounty, max = 10x base
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
@@ -4120,6 +4116,7 @@ export class TournamentRecurringService {
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
+            ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,
@@ -4274,7 +4271,8 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure || [],
-        payout_percent: mttPayoutPercent(config.payoutPercent),
+        // Heads-up has a fixed payout contract; paid depth belongs to fields.
+        ...(!seatFirstSng ? { payout_percent: mttPayoutPercent(config.payoutPercent) } : {}),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -5387,9 +5385,10 @@ export class TournamentRecurringService {
   async topUpWithHorses(
     tournamentId: string,
     targetPlayers: number,
-    opts: { allLanes?: boolean; pass?: HorseTopUpPass } = {}
+    opts: { allLanes?: boolean; pass?: HorseTopUpPass; redeemTickets?: boolean } = {}
   ): Promise<number> {
     const pass = opts.pass;
+    const generation = this.lifecycleGeneration;
     // This entry point is also used by GameServer discovery and by the
     // scheduled/overlay services. Register its whole continuation so stop()
     // cannot release leadership while a paid registration is still in flight.
@@ -5397,6 +5396,7 @@ export class TournamentRecurringService {
     try {
       // THE FREEZE IS TOTAL (Dan 2026-09-03): every horse this seats is a buy-in.
       if (isMaintenanceFrozen()) return 0;
+      if (this.stopOperation) return 0;
       try {
         /**
          * A seat-first game needs BODIES IN SEATS, not names on a list.
@@ -5628,8 +5628,10 @@ export class TournamentRecurringService {
           return 0;
         }
 
-        const shortfall = targetPlayers - liveCount;
-        if (shortfall <= 0) {
+        if (this.lifecycleGeneration !== generation || this.stopOperation || isMaintenanceFrozen())
+          return 0;
+        const shortfall = Math.max(0, targetPlayers - liveCount);
+        if (shortfall === 0 && (seatFirst || opts.redeemTickets !== true)) {
           // No seat changed. Canonical seat transactions already commit the
           // exact count, so an idle sweep has no write authority here.
           return 0;
@@ -5822,7 +5824,13 @@ export class TournamentRecurringService {
             );
           }
         } else {
-          added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true, pass);
+          added = await this.registerHorses(
+            tournamentId,
+            shortfall,
+            opts.allLanes === true,
+            pass,
+            opts.redeemTickets === true
+          );
         }
 
         // Somebody was seated or registered: what this pass read is stale now.
@@ -5895,9 +5903,13 @@ export class TournamentRecurringService {
     tournamentId: string,
     count: number,
     allLanes = false,
-    pass?: HorseTopUpPass
+    pass?: HorseTopUpPass,
+    redeemTickets = false
   ): Promise<number> {
+    const generation = this.lifecycleGeneration;
     try {
+      if (isMaintenanceFrozen()) return 0;
+      if (this.stopOperation) return 0;
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
       // another active tournament. The old query only checked horse_status
       // (never flipped by tournament play), so the overlapping MTT/SNG/Spin
@@ -6064,13 +6076,19 @@ export class TournamentRecurringService {
         );
         return 0;
       }
-      const ticketHintIds = new Set(
-        Array.isArray(ticketHintPayload.holder_ids)
-          ? ticketHintPayload.holder_ids.filter(
-              (id): id is string => typeof id === 'string' && id.length > 0
-            )
-          : []
-      );
+      if (
+        !Array.isArray(ticketHintPayload.holder_ids) ||
+        ticketHintPayload.holder_ids.some((id) => typeof id !== 'string' || !id.trim())
+      ) {
+        reportError(
+          new Error('Malformed tournament ticket holder hints'),
+          'TournamentRecurring.horse_ticket_hint_failed'
+        );
+        return 0;
+      }
+      const ticketHintIds = new Set<string>(ticketHintPayload.holder_ids);
+      if (this.lifecycleGeneration !== generation || this.stopOperation || isMaintenanceFrozen())
+        return 0;
 
       /**
        * A CLUB'S TOURNAMENTS DRAW FROM THAT CLUB'S MEMBERS (Dan 2026-09-01:
@@ -6277,7 +6295,14 @@ export class TournamentRecurringService {
       const walletRot = rampQueueRotation(tournamentId, hour, walletPool.length);
       const orderedTickets = ticketPool.slice(ticketRot).concat(ticketPool.slice(0, ticketRot));
       const orderedWallets = walletPool.slice(walletRot).concat(walletPool.slice(0, walletRot));
-      const horses = orderedTickets.concat(orderedWallets).slice(0, count);
+      // Already-paid awards are not constrained by the ordinary funding quota.
+      // Bound extra ticket offers, and never increase the ordinary wallet count.
+      const recoveryTickets = orderedTickets.slice(0, Math.max(count, 25));
+      const horses = redeemTickets
+        ? recoveryTickets.concat(
+            orderedWallets.slice(0, Math.max(0, count - recoveryTickets.length))
+          )
+        : orderedTickets.concat(orderedWallets).slice(0, count);
 
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is
@@ -6318,6 +6343,7 @@ export class TournamentRecurringService {
         // THE FREEZE IS TOTAL (Dan 2026-09-03): a registration is a buy-in. A ramp
         // that crosses :53 stops here and the next tick finishes it.
         if (isMaintenanceFrozen()) break;
+        if (this.lifecycleGeneration !== generation || this.stopOperation) break;
         const { data: res, error: regError } = await supabase.rpc(
           'fn_register_horse_for_tournament',
           {

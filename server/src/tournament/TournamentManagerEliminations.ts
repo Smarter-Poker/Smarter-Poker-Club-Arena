@@ -4047,6 +4047,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async cleanupCommittedTournament(
     receipt: VerifiedTournamentCompletionReceipt
   ): Promise<boolean> {
+    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.committedFinishReceipt = receipt;
 
@@ -4069,6 +4070,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async cleanupCommittedSatellite(
     receipt: VerifiedSatelliteSettlementReceipt
   ): Promise<boolean> {
+    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.committedSatelliteReceipt = receipt;
     await this.broadcastCommittedOutcome('tournament_winner', {
@@ -4833,6 +4835,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async settleFinalTableDeal(
     receipt: VerifiedTournamentCompletionReceipt
   ): Promise<boolean> {
+    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.finalTableDealHandled = true;
     this.committedFinalTableDealReceipt = receipt;

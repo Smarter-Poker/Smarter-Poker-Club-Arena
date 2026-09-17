@@ -1,3 +1,4 @@
+import type { TournamentEntryWindowRow } from '../../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY PAGE — Browse & Register for Tournaments
@@ -16,6 +17,10 @@ import {
   tournamentUnregisterSuccessText,
 } from '../../services/TournamentService';
 import TournamentLobbyCard from '../../components/tournament/TournamentLobbyCard';
+import {
+  describeStoredMttStructure,
+  type MttStructureDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
 import { useToast } from '../../components/common/Toast';
 
@@ -33,7 +38,7 @@ import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
 
-interface Tournament {
+interface Tournament extends TournamentEntryWindowRow {
   id: string;
   name: string;
   clubId: string;
@@ -51,7 +56,7 @@ interface Tournament {
   currentPlayers: number;
   maxPlayers: number;
   startingChips: number;
-  blindsUp: number;
+  structureFacts: MttStructureDescription;
   isRegistered: boolean;
   gameType: string;
   lateRegMins: number;
@@ -320,6 +325,9 @@ export default function TournamentLobbyPage() {
                     tournament_type,
                     late_reg_mins,
                     late_reg_levels,
+                    rebuy_levels,
+                    prize_pool_finalized,
+                    started_at,
                     current_level,
                     is_rebuy,
                     is_reentry,
@@ -506,33 +514,15 @@ export default function TournamentLobbyPage() {
           currentPlayers: t.current_players || 0,
           maxPlayers: t.max_players || 0, // 0 = unlimited (only SNG/Spin have caps)
           startingChips: t.starting_chips || 0,
-          blindsUp: (() => {
-            // Extract blind level duration from structure
-            let blinds: any[] = [];
-            if (Array.isArray(t.blind_structure)) blinds = t.blind_structure;
-            else if (typeof t.blind_structure === 'string') {
-              try {
-                const parsed = JSON.parse(t.blind_structure);
-                if (Array.isArray(parsed)) blinds = parsed;
-              } catch {
-                /* noop — fall through to named structure check */
-              }
-              if (blinds.length === 0) {
-                // Named structure — estimate duration
-                const key = (t.blind_structure || '').toLowerCase();
-                if (key.includes('turbo')) return 3;
-                if (key.includes('deep')) return 15;
-                return 8; // regular
-              }
-            }
-            return blinds.length > 0 && blinds[0]
-              ? blinds[0].durationMinutes || blinds[0].duration || 8
-              : 8;
-          })(),
+          structureFacts: describeStoredMttStructure(t.blind_structure, t.starting_chips),
           isRegistered: registrations.includes(t.id),
           gameType: t.game_type || 'NLH',
           lateRegMins: t.late_reg_mins || 0,
-          late_reg_levels: t.late_reg_levels || t.late_reg_mins || 0,
+          late_reg_levels: t.late_reg_levels,
+          late_reg_mins: t.late_reg_mins,
+          rebuy_levels: t.rebuy_levels,
+          prize_pool_finalized: t.prize_pool_finalized,
+          started_at: t.started_at,
           current_level: t.current_level || 0,
           is_reentry: t.is_reentry || false,
           addon_levels: t.addon_levels || 1,
@@ -880,10 +870,17 @@ export default function TournamentLobbyPage() {
                               : tournament.status === 'RUNNING'
                                 ? 'running'
                                 : 'cancelled',
-                      blindStructure: `${tournament.blindsUp}m`,
+                      blindStructure: tournament.structureFacts.speedLabel ?? 'Unconfirmed',
+                      structureFacts: tournament.structureFacts,
                       gameType: tournament.gameType,
                       startingChips: tournament.startingChips,
                       lateRegMins: tournament.lateRegMins,
+                      late_reg_levels: tournament.late_reg_levels,
+                      late_reg_mins: tournament.late_reg_mins,
+                      rebuy_levels: tournament.rebuy_levels,
+                      prize_pool_finalized: tournament.prize_pool_finalized,
+                      current_level: tournament.current_level,
+                      started_at: tournament.started_at,
                       isRebuy: tournament.isRebuy,
                       guaranteedPrize: tournament.guaranteedPrize,
                       isBounty: tournament.isBounty,

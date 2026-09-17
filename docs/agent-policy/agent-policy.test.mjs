@@ -306,3 +306,16 @@ test('invoking the actual checker through a symlink cannot silently skip validat
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Policy drift/);
 });
+
+test('isolated release fixtures and engine simulations are verification inputs, not activation', () => {
+  for (const path of [
+    'operations/release/fixture/actors.mjs',
+    'operations/release/native/schema.sql',
+    'operations/release/ci/fixture-smoke.py',
+    'server/sim/scenario.ts',
+  ]) {
+    const result = classifyDelivery([path]);
+    assert.equal(result.engineActivationRequired, false, path);
+    assert.deepEqual(result.components, ['verification']);
+  }
+});

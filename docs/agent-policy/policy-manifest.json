@@ -6,8 +6,8 @@
     "OPERATING-LAW.md": "a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5",
     "HARDENING.md": "d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e",
     "REFERENCE-INDEX.md": "adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555",
-    "agent-policy.mjs": "ed79266d7e9d3cac0dddccaa335aff65da86ef3207522f09eb77f0ae1aecf6dc",
-    "agent-policy.test.mjs": "8907e19a2530b6b9f14ad60b5c60821d3831ca935efafd86f18f855a7deb9eda"
+    "agent-policy.mjs": "d5e6189878846064ac60269a41dfc4e6d9a7bda54610110ddc5813230198f36e",
+    "agent-policy.test.mjs": "6fa4010b3e02e35fca064cb6fb945861a69869a25fad32e4e773951431fc05ef"
   },
   "references": {
     "active": ["OWNER-POLICY.md", "OPERATING-LAW.md", "HARDENING.md", "REFERENCE-INDEX.md"],

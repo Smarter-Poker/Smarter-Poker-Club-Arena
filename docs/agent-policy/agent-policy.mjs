@@ -121,7 +121,11 @@ export function classifyDelivery(paths, contract = null) {
     reasons = [],
     unknown = [];
   for (const path of paths) {
-    if (/(?:^tests\/|^__tests__\/|\.(?:test|spec)\.[cm]?[jt]sx?$)/.test(path)) {
+    if (
+      /(?:^tests\/|^__tests__\/|^server\/sim\/|^operations\/release\/(?:fixture|native|ci)\/|\.(?:test|spec)\.[cm]?[jt]sx?$)/.test(
+        path
+      )
+    ) {
       components.add('verification');
       continue;
     }
@@ -389,6 +393,8 @@ function hookReport(cwd, start, exitCode) {
       },
     ],
   });
+  report.scope =
+    'Local prechecks only. Remaining publication/live proof is component-specific; instruction-only work needs protected source and applicable executed checks, never an engine cutover.';
   report.tree = git(cwd, 'rev-parse', 'HEAD^{tree}');
   try {
     report.candidate = inspectCandidate(cwd, 'origin/main');

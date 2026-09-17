@@ -58,6 +58,17 @@ admits its second pure display helper and rejects runtime dependencies in that
 helper. Neither correction bypasses the normal hooks or weakens the application
 assertions.
 
+Hosted CI 35185295828 then exposed a reminder-probe timing failure: its
+150 ms whole-statement deadline included planning and execution as well as
+the player lock it was intended to test. The same unchanged probe passed all
+54 checks in accounting job 105084370944 / CI 35184697729 immediately before
+this run; the precise runner delay was not measured. The probe now uses
+PostgreSQL's 150 ms lock deadline and its separate 5 s statement bound.
+Its negative control requires the actual lock-timeout code;
+the corrected path still has to complete while the other connection holds the
+player lock. All 54 real PostgreSQL checks passed locally. No product timeout,
+required assertion or workflow gate is relaxed.
+
 ## Work still assigned
 
 R46 unlimited MTT/satellite entry is preserved at original PR4701 donor

@@ -48,9 +48,11 @@ try {
   const legacy = await seed(10, { legacy: true });
   const locked = await seed();
   await b.query('BEGIN'); await b.query('SELECT * FROM tournament_players WHERE tournament_id=$1 FOR UPDATE', [locked.t]);
-  await q("SET statement_timeout='150ms'");
-  await assert.rejects(q('SELECT check_upcoming_tournament_pushes()'), e => e.code === '57014'); checks++;
-  await b.query('ROLLBACK'); await q("SET statement_timeout='5s'");
+  // Measure actual lock dependence, not cold planning/CPU time on the runner.
+  // Keep the whole statement bounded independently of the held-row lock.
+  await q("SET statement_timeout='5s'; SET lock_timeout='150ms'");
+  await assert.rejects(q('SELECT check_upcoming_tournament_pushes()'), e => e.code === '55P03'); checks++;
+  await b.query('ROLLBACK'); await q("SET lock_timeout='0'");
   check(await count('push_outbox') === 0, 'Failed legacy bookkeeping must roll back its outbox');
   const migration = readFileSync(new URL('../../supabase/migrations/20260909195446_tournament_reminders_own_durable_receipts_without_player_writes.sql', import.meta.url), 'utf8');
   await q(migration);
@@ -61,9 +63,9 @@ try {
   await q(readFileSync(new URL('../../supabase/migrations/20260912050723_a_tournament_reminder_needs_a_device_to_reach.sql', import.meta.url), 'utf8'));
   check(Number((await q("SELECT count(*) n FROM pg_indexes WHERE indexname='push_subscriptions_user_active_idx'"))[0].n) === 1, 'The migration declares the partial index its predicate rides on');
   await b.query('BEGIN'); await b.query('SELECT * FROM tournament_players WHERE tournament_id=$1 FOR UPDATE', [locked.t]);
-  await q("SET statement_timeout='150ms'");
+  await q("SET lock_timeout='150ms'");
   check((await prepare()).queued === 1, 'Reminder generation must not wait for a locked player');
-  await q("SET statement_timeout='5s'"); await b.query('ROLLBACK');
+  await q("SET lock_timeout='0'"); await b.query('ROLLBACK');
   check(await count('push_outbox') === 1, 'Only the unsent player is queued');
   check((await prepare()).queued === 0, 'Repeated calls must deduplicate');
   check((await q('SELECT push_15m_sent FROM tournament_players WHERE tournament_id=$1', [locked.t]))[0].push_15m_sent === false, 'New path does not update player flags');

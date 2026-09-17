@@ -14,7 +14,15 @@
  * Hub is outside this task's write scope.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import {
+  readFileSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  readdirSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,6 +34,8 @@ const code = script.replace(/^\s*#.*$/gm, '');
 describe('Mac workspaces never recreate the purged dependencies', () => {
   for (const scenario of [
     'workspace',
+    'policy-drift',
+    'policy-missing',
     'older-main',
     'missing-shared',
     'gutted-shared',
@@ -53,6 +63,14 @@ describe('Mac workspaces never recreate the purged dependencies', () => {
           mkdirSync(join(clone, 'node_modules/typescript'), { recursive: true });
           writeFileSync(join(clone, 'node_modules/typescript/KEEP'), 'existing package bytes');
         }
+        const policyDir = join(tree, 'docs/agent-policy');
+        mkdirSync(policyDir, { recursive: true });
+        for (const name of readdirSync(join(ROOT, 'docs/agent-policy'))) {
+          writeFileSync(join(policyDir, name), readFileSync(join(ROOT, 'docs/agent-policy', name)));
+        }
+        if (scenario === 'policy-drift')
+          writeFileSync(join(policyDir, 'OPERATING-LAW.md'), 'stale instruction');
+        if (scenario === 'policy-missing') rmSync(join(policyDir, 'HARDENING.md'));
         const executable = (name: string, text: string) =>
           writeFileSync(join(bin, name), '#!/bin/bash\n' + text, { mode: 0o755 });
         executable('uname', "printf 'Darwin\\n'\n");
@@ -86,7 +104,9 @@ describe('Mac workspaces never recreate the purged dependencies', () => {
           MAC_TEST_SOURCE: join(ROOT, 'scripts/agent-workspace.sh'),
           MAC_TEST_OLD_MAIN: scenario === 'older-main' ? '1' : '0',
         };
-        const workspace = ['workspace', 'older-main'].includes(scenario);
+        const workspace = ['workspace', 'older-main', 'policy-drift', 'policy-missing'].includes(
+          scenario
+        );
         const args = workspace
           ? [join(ROOT, 'scripts/agent-workspace.sh'), 'probe', 'fix-disk', '--print-path']
           : [

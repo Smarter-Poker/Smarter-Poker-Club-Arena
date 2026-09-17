@@ -1,0 +1,57 @@
+{
+  "status": "EXACT_INSTALLED_OWNER_SQL_COPIED_UNION_COMPOSITION_UNRUN",
+  "signature": "operational_source_intake.receipt_row(public.operational_alert_events,text)",
+  "owner_qualified_run": 35194100572,
+  "installed_readback_at": "2026-09-17T07:29:59.347153+00:00",
+  "owner_source": {
+    "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-provider-baseline-20260916/supabase/components/direct-operational-source-legacy-envelope.sql",
+    "sha256": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
+    "bytes": 4295
+  },
+  "owner_readback": {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-legacy-readback-35194100572.json",
+    "sha256": "5084d6c88510f348a0aee404b9cb84d83b28b72466ac183a4bd19433b25cfc87",
+    "bytes": 48590
+  },
+  "readback_scope": "Function definition/body hashes and complete pg_proc metadata only; business payloads in the external owner readback are not copied into this repository.",
+  "original_fixture": {
+    "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-union-provider-delivery-20260917/tests/fixtures/union-provider-preimages-20260917/direct-intake-installed.sql",
+    "sha256": "7f7020ee71fe1bd6475dff8de572cd96e7cac888c3923245f7fbc54e8ff161dd",
+    "bytes": 54826
+  },
+  "successor_fixture": {
+    "path": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-union-provider-delivery-20260917/tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql",
+    "sha256": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
+    "bytes": 4295
+  },
+  "old_full_definition_md5": "7c12c50493f80f42f99654dab55ca475",
+  "new_full_definition_md5": "f632abdd64e5ba45a3d74298ef1e10a3",
+  "old_body_md5": "844a92c85435dbef6120882773a2fd6e",
+  "new_body_md5": "851d3ea26b4a48123986c7853a92ef2b",
+  "authority": {
+    "owner": "postgres",
+    "acl": ["postgres=X/postgres"],
+    "config": ["search_path=pg_catalog"],
+    "security_definer": false,
+    "volatility": "s",
+    "owner_readback_full_pg_proc_except_prosrc_unchanged": true,
+    "observed_production_oid": "33305527",
+    "oid_scope": "Receipt fact only; no production OID requirement in the isolated fixture."
+  },
+  "transformations": [
+    "Successor SQL is byte-identical to the owner-maintained guarded installation SQL; no wrapper, guard removal, alternate authority or synthetic business function.",
+    "Original direct-intake-installed.sql and original installation/capture/provenance artifacts are unchanged.",
+    "Fixture load adds the exact successor immediately after the original intake install. Owner SQL admits only old/new exact definitions, verifies complete authority before/after and preserves function identity.",
+    "Only receipt_row full-definition pin changes in direct-intake-current-function-guards and component36 maintained/literal function guards. All other 12 intake function identities and all grants remain unchanged."
+  ],
+  "load_order": [
+    "direct-intake-prerequisites.sql",
+    "direct-intake-installed.sql",
+    "direct-intake-receipt-row-successor.sql"
+  ],
+  "candidate_component_sha256": "8d1ed19a21a723012d0b0f339a088209233c74faa175404e4b97ce0a114ff866",
+  "limitations": [
+    "Owner qualification and installed readback do not qualify the newly composed Union candidate. No SQL/tests run by this helper.",
+    "Parent owns final shared source-binding refresh, candidate assembly, native qualification and all release actions."
+  ]
+}

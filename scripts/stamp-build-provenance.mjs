@@ -39,7 +39,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync, lstatSync } from 'node:fs';
 import path from 'node:path';
 
 // CA_DIST: the native build (npm run build:native) writes dist-native/ so the
@@ -82,59 +82,71 @@ const historyComplete =
 const behindMain = hasOriginMain && historyComplete ? gitCount('HEAD..origin/main') : null;
 const aheadMain = hasOriginMain && historyComplete ? gitCount('origin/main..HEAD') : null;
 
-// PR builds are disposable validation of an immutable event-bound merge, not
-// publishable artifacts. Main can advance while that run waits for a runner.
-// Prove both parents before allowing that validation to finish; never pretend
-// the artifact is current main. The publisher rebuilds and checks current main.
 let pullRequest = null;
 let pullRequestIdentityError = null;
-if (
-  process.env.GITHUB_ACTIONS === 'true' &&
-  process.env.GITHUB_EVENT_NAME === 'pull_request' &&
-  process.env.STRICT_PROVENANCE !== '1'
-) {
-  try {
-    const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-    const pr = event.pull_request;
-    const fullSha = (sha) => typeof sha === 'string' && /^[0-9a-f]{40}$/.test(sha);
-    const number = event.number;
-    const repository = process.env.GITHUB_REPOSITORY;
-    if (
-      !Number.isSafeInteger(number) ||
-      number <= 0 ||
-      pr?.number !== number ||
-      pr?.state !== 'open' ||
-      pr?.base?.ref !== 'main' ||
-      !repository ||
-      event.repository?.full_name !== repository ||
-      pr?.base?.repo?.full_name !== repository ||
-      process.env.GITHUB_REF !== `refs/pull/${number}/merge` ||
-      process.env.GITHUB_SHA !== commit ||
-      !fullSha(commit) ||
-      !fullSha(pr?.base?.sha) ||
-      !fullSha(pr?.head?.sha) ||
-      historyComplete !== true ||
-      !hasOriginMain
-    )
-      throw new Error('event, checkout or complete ancestry does not match');
-    const parents = git('rev-list --parents -n 1 HEAD', '').split(/\s+/);
-    if (
-      parents.length !== 3 ||
-      parents[0] !== commit ||
-      parents[1] !== pr.base.sha ||
-      parents[2] !== pr.head.sha ||
-      git(`merge-base ${pr.base.sha} origin/main`, '') !== pr.base.sha
-    )
-      throw new Error('merge parents do not prove the declared main base and PR head');
-    pullRequest = { number, base: pr.base.sha, head: pr.head.sha, merge: commit };
-  } catch (error) {
-    pullRequestIdentityError = `PR validation identity is invalid: ${error.message}`;
-  }
+function isPullRequestValidation() {
+  if (process.env.CA_BUILD_PURPOSE !== 'ci-validation') return false;
+  if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== 'pull_request')
+    throw new Error('Invalid PR build validation identity');
+  const repository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+  const ref = process.env.GITHUB_REF || '';
+  const match = /^refs\/pull\/([1-9][0-9]*)\/merge$/.exec(ref);
+  const eventPath = process.env.GITHUB_EVENT_PATH || '';
+  const fail = () => {
+    throw new Error('Invalid PR build validation identity');
+  };
+  if (
+    !match ||
+    process.env.GITHUB_REPOSITORY !== repository ||
+    process.env.GITHUB_WORKFLOW_REF !== `${repository}/.github/workflows/ci.yml@${ref}` ||
+    !/^[0-9a-f]{40}$/.test(commit) ||
+    process.env.GITHUB_SHA !== commit ||
+    !path.isAbsolute(eventPath) ||
+    historyComplete !== true
+  )
+    fail();
+  const stat = lstatSync(eventPath);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > 4 * 1024 * 1024) fail();
+  const event = JSON.parse(readFileSync(eventPath, 'utf8'));
+  const pr = event.pull_request;
+  if (
+    !pr ||
+    pr.state !== 'open' ||
+    event.repository?.full_name !== repository ||
+    event.number !== Number(match[1]) ||
+    pr.number !== event.number ||
+    pr.base?.ref !== 'main' ||
+    pr.base?.repo?.full_name !== repository ||
+    !/^[0-9a-f]{40}$/.test(pr.base?.sha || '') ||
+    !/^[0-9a-f]{40}$/.test(pr.head?.sha || '')
+  )
+    fail();
+  const parents = git('rev-list --parents -n 1 HEAD', '').split(/\s+/);
+  if (
+    parents.length !== 3 ||
+    parents[0] !== commit ||
+    parents[2] !== pr.head.sha ||
+    !/^[0-9a-f]{40}$/.test(parents[1]) ||
+    git(`merge-base --is-ancestor ${pr.base.sha} ${parents[1]}`, null) !== '' ||
+    git(`merge-base --is-ancestor ${parents[1]} origin/main`, null) !== ''
+  )
+    fail();
+  pullRequest = { number: event.number, base: parents[1], head: pr.head.sha, merge: commit };
+  return true;
+}
+
+// CI validates the captured merge even if main advances; publishers refuse
+// this explicit marker and retain all existing protected-main ancestry gates.
+let validationOnly = false;
+try {
+  validationOnly = process.env.STRICT_PROVENANCE === '1' ? false : isPullRequestValidation();
+} catch (error) {
+  pullRequestIdentityError = `Invalid PR build validation identity: ${error.message}`;
 }
 
 const info = {
   schema: 1,
-  validationOnly: pullRequest !== null,
+  validationOnly,
   pullRequest,
   commit,
   commitTime,
@@ -190,14 +202,13 @@ if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
     `  Shipping it would erase whatever landed in those commits — that is\n` +
     `  precisely the 2026-08-21 throwables regression.\n\n` +
     `  FIX: merge current origin/main into this feature branch, then rebuild.\n`;
-  if (pullRequest) {
-    console.log(
-      `PR #${pullRequest.number} validation only: immutable merge checked; artifact cannot publish.`
-    );
-  } else if (strictProvenance) {
+  if (strictProvenance && !validationOnly) {
     console.error(msg);
     process.exit(1);
-  } else {
-    console.warn(msg);
   }
+  console.warn(
+    validationOnly
+      ? `CI validation captured ${behindMain} later main commit(s); this bundle cannot be published.`
+      : msg
+  );
 }

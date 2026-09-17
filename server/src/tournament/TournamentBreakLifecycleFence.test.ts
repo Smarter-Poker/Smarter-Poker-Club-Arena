@@ -284,3 +284,155 @@ describe('tournament break resume waits for the maintenance thaw', () => {
     expect(manager.broadcastCall).not.toHaveBeenCalled();
   });
 });
+
+describe('a break release publishes its active clock in the same durable row', () => {
+  const now = Date.parse('2026-09-17T13:00:00.000Z');
+  function activeClock() {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const manager = new BreakHarness();
+    manager.activate();
+    manager.forceBreakState();
+    const state = manager as any;
+    const row: any = {
+      id: TOURNAMENT_ID,
+      status: 'RUNNING',
+      current_level: 2,
+      started_at: '2026-09-17T10:00:00.000Z',
+      level_started_at: '2026-09-17T12:50:00.000Z',
+      on_break: true,
+      break_ends_at: '2026-09-17T13:00:00.000Z',
+      blind_structure: Array.from({ length: 3 }, () => ({
+        smallBlind: 25,
+        bigBlind: 50,
+        durationMinutes: 10,
+      })),
+    };
+    state.tournamentCache = { ...row };
+    state.currentLevel = 2;
+    state.savedBlindTimerRemaining = 300000;
+    state.startBlindTimer = (TournamentManagerBase.prototype as any).startBlindTimer;
+    const writes: Record<string, unknown>[] = [];
+    const acknowledge = vi.fn(async () => ({ data: { ...row }, error: null as any }));
+    vi.spyOn(supabase, 'from').mockImplementation(() => {
+      let patch: Record<string, unknown>;
+      const commit = () => {
+        writes.push(patch);
+        Object.assign(row, patch);
+        return acknowledge();
+      };
+      const query: any = {
+        update: (value: Record<string, unknown>) => {
+          patch = value;
+          return query;
+        },
+        eq: () => query,
+        select: () => query,
+        maybeSingle: commit,
+        then: (resolve: any, reject: any) => commit().then(resolve, reject),
+      };
+      return query;
+    });
+    const engine = { resumeDealing: vi.fn() };
+    manager.addTableEngine(engine);
+    const wake = vi.spyOn(state, 'scheduleBlindLevelWake');
+    return { manager, state, row, writes, acknowledge, engine, wake };
+  }
+
+  it('commits the break clear and credited anchor together before releasing any observer or dealer', async () => {
+    const f = activeClock();
+    const ack = deferred<any>();
+    f.acknowledge.mockReturnValueOnce(ack.promise);
+    const resuming = f.manager.resumeFromBreak();
+    await Promise.resolve();
+    expect(f.writes).toEqual([
+      { on_break: false, break_ends_at: null, level_started_at: '2026-09-17T12:55:00.000Z' },
+    ]);
+    expect(f.engine.resumeDealing).not.toHaveBeenCalled();
+    expect(f.manager.broadcastCall).not.toHaveBeenCalled();
+    expect(f.wake).not.toHaveBeenCalled();
+    vi.setSystemTime(now + 2000);
+    ack.resolve({ data: { ...f.row }, error: null });
+    await resuming;
+    expect(f.manager.breakIsActive()).toBe(false);
+    expect(f.engine.resumeDealing).toHaveBeenCalledOnce();
+    expect(f.state.blindTimerStartedAt).toBe(Date.parse('2026-09-17T12:55:00.000Z'));
+    expect(f.wake).toHaveBeenCalledWith(f.row.blind_structure, 298000);
+    expect(f.writes).toHaveLength(1); // no detached second anchor write
+    f.manager.fence();
+  });
+
+  it.each(['missing', 'wrong-anchor', 'wrong-level'])(
+    'does not release an unproven %s update result',
+    async (kind) => {
+      const f = activeClock();
+      f.acknowledge.mockImplementationOnce(async () => ({
+        data:
+          kind === 'missing'
+            ? null
+            : {
+                ...f.row,
+                ...(kind === 'wrong-anchor'
+                  ? { level_started_at: '2026-09-17T12:50:00.000Z' }
+                  : { current_level: 3 }),
+              },
+        error: null,
+      }));
+      await f.manager.resumeFromBreak();
+      expect(f.manager.breakIsActive()).toBe(true);
+      expect(f.engine.resumeDealing).not.toHaveBeenCalled();
+      expect(f.wake).not.toHaveBeenCalled();
+      f.manager.fence();
+    }
+  );
+
+  it('keeps the exact anchor across a lost acknowledgement and the existing retry', async () => {
+    const f = activeClock();
+    f.acknowledge.mockResolvedValueOnce({ data: null, error: null });
+    await f.manager.resumeFromBreak();
+    expect(f.manager.breakIsActive()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.writes).toHaveLength(2);
+    expect(f.writes[1]).toEqual(f.writes[0]);
+    expect(f.row.level_started_at).toBe('2026-09-17T12:55:00.000Z');
+    expect(f.wake).toHaveBeenCalledWith(f.row.blind_structure, 299000);
+    expect(f.engine.resumeDealing).toHaveBeenCalledOnce();
+    f.manager.fence();
+  });
+
+  it('does not arm or release from an acknowledged clock after its lifecycle is fenced', async () => {
+    const f = activeClock();
+    const ack = deferred<any>();
+    f.acknowledge.mockReturnValueOnce(ack.promise);
+    const resuming = f.manager.resumeFromBreak();
+    await Promise.resolve();
+    f.manager.fence();
+    ack.resolve({ data: { ...f.row }, error: null });
+    await resuming;
+    expect(f.writes).toHaveLength(1);
+    expect(f.wake).not.toHaveBeenCalled();
+    expect(f.engine.resumeDealing).not.toHaveBeenCalled();
+    expect(f.manager.broadcastCall).not.toHaveBeenCalled();
+  });
+
+  it.each(['addon', 'pending', 'terminal', 'stopped', 'future'])(
+    'does not manufacture an active clock for %s ownership',
+    async (kind) => {
+      const f = activeClock();
+      if (kind === 'addon') f.state.addOnBreakActive = true;
+      if (kind === 'pending')
+        f.state.pendingBlindTransition = { previousLevel: 2, nextLevel: 3, level: {} };
+      if (kind === 'terminal') f.state.blindClockTerminalCommitted = true;
+      if (kind === 'stopped') f.state.running = false;
+      if (kind === 'future') f.state.tournamentCache.started_at = '2026-09-17T14:00:00.000Z';
+      await f.manager.resumeFromBreak();
+      expect(f.writes).toEqual([{ on_break: false, break_ends_at: null }]);
+      expect(f.row.level_started_at).toBe('2026-09-17T12:50:00.000Z');
+      if (kind === 'pending') expect(f.wake).toHaveBeenCalledWith(f.row.blind_structure, 1000);
+      else expect(f.wake).not.toHaveBeenCalled();
+      if (kind === 'addon' || kind === 'stopped')
+        expect(f.engine.resumeDealing).not.toHaveBeenCalled();
+      f.manager.fence();
+    }
+  );
+});

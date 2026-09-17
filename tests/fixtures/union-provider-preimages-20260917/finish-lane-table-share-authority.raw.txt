@@ -1,0 +1,15 @@
+{
+  "owner": "postgres",
+  "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+  "body_md5": "7a4d464261d6cc5cb185ad6c8b846440",
+  "identity": "fn_ca_share_settlement_lane_for_table(uuid)",
+  "proconfig": [
+    "search_path=public, pg_temp"
+  ],
+  "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_share_settlement_lane_for_table(p_table_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\nBEGIN\n  -- Acquire G before B and T; source custody guards also need G.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1',0));\n  -- B shared: yields to terminal authorities, concurrent with every other\n  -- hand and with rolling authorities of OTHER tournaments.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:hand-settlement-barrier:v1', 0));\n\n  IF p_table_id IS NULL THEN\n    RETURN;\n  END IF;\n\n  SELECT tb.tournament_id INTO v_tournament_id\n  FROM public.tables tb\n  WHERE tb.id = p_table_id;\n\n  IF v_tournament_id IS NOT NULL THEN\n    -- T(id) shared: yields to this tournament's own rolling authorities.\n    PERFORM pg_advisory_xact_lock_shared(\n      hashtextextended('ca:tournament-terminal-settlement:v1:' || v_tournament_id::text, 0));\n  END IF;\nEND;\n$function$\n",
+  "anon_execute": false,
+  "definition_md5": "409b14ee72ce888d3b26524c52d49a68",
+  "security_definer": false,
+  "service_role_execute": true,
+  "authenticated_execute": false
+}

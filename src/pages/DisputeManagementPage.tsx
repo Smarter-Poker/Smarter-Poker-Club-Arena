@@ -145,17 +145,11 @@ export default function DisputeManagementPage() {
     };
   }, [clubId, loadDisputes]);
 
-  // Bus listeners: refresh when balance changes or settlements complete (may resolve disputes)
+  // Balance changes may resolve disputes; the database subscription also refreshes.
   useEffect(() => {
     const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadDisputes(), 500);
-    const unsubSettlement = masterBus.subscribeDebounced(
-      'SETTLEMENT_COMPLETED',
-      () => loadDisputes(),
-      1000
-    );
     return () => {
       unsubBalance();
-      unsubSettlement();
     };
   }, [loadDisputes]);
 

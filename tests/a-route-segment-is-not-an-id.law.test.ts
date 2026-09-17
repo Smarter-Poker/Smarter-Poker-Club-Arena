@@ -182,7 +182,6 @@ describe('a route segment is not an id', () => {
 const USEPARAMS_BASELINE: Record<string, number> = {
   'src/hooks/useFinancialAdminScope.ts': 1,
   'src/pages/AntiCheatPage.tsx': 1,
-  'src/pages/SettlementPage.tsx': 1,
   'src/pages/TablePage.tsx': 7,
   'src/pages/club/TableBombSettingsPage.tsx': 1,
 };

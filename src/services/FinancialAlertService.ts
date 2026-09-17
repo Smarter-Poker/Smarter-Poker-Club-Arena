@@ -36,6 +36,34 @@ export interface FinancialAlert {
   createdAt: string;
 }
 
+function alertTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 32) return false;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts || !Number.isFinite(Date.parse(value))) return false;
+  const [year, month, day, hour, minute, second] = parts.slice(1).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  return year > 0 && month >= 1 && month <= 12 && day >= 1 &&
+    day <= [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] &&
+    hour <= 23 && minute <= 59 && second <= 59;
+}
+
+function readUnresolvedAlert(value: unknown, critical: boolean): FinancialAlert {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Financial alert record could not be verified');
+  }
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.id) ||
+      row.id === '00000000-0000-0000-0000-000000000000' ||
+      typeof row.severity !== 'string' || !['critical', 'warning', 'info'].includes(row.severity) ||
+      (row.severity === 'critical') !== critical || row.resolved !== false ||
+      typeof row.source !== 'string' || typeof row.message !== 'string' || !alertTimestamp(row.created_at) ||
+      (row.context !== null && (typeof row.context !== 'object' || Array.isArray(row.context)))) {
+    throw new Error('Financial alert record could not be verified');
+  }
+  return { id: row.id, severity: row.severity as AlertSeverity, source: row.source, message: row.message,
+    context: (row.context ?? {}) as Record<string, unknown>, resolved: false, createdAt: row.created_at };
+}
+
 export const FinancialAlertService = {
   /**
    * Log a critical financial error — persists to DB and emits bus event.
@@ -185,25 +213,18 @@ export const FinancialAlertService = {
    * was the number that happened to survive the cut. A money alarm that can be
    * pushed off the screen by unrelated chatter is not an alarm.
    *
-   * So criticals are fetched on their own and never compete for the budget.
-   * They are few by construction (nine, against 472 rows), and if there are
-   * ever more than `limit` of them the caller gets all of them anyway — going
-   * over budget is the correct failure for this one severity.
+   * Criticals are fetched separately, up to CRITICAL_CEILING and the provider's
+   * own row cap. Every returned critical is retained even above `limit`;
+   * lower-severity rows use only its remaining budget. This bounded observation
+   * must not be labeled as every critical alert or as complete history.
    */
   async getUnresolved(limit = 100): Promise<FinancialAlert[]> {
-    const map = (a: any): FinancialAlert => ({
-      id: a.id,
-      severity: a.severity,
-      source: a.source,
-      message: a.message,
-      context: a.context || {},
-      resolved: a.resolved,
-      createdAt: a.created_at,
-    });
-
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+      throw new Error('Financial alert page limit is invalid');
+    }
     const COLUMNS = 'id, severity, source, message, context, resolved, created_at';
 
-    const { data: criticals } = await retryAsync(() =>
+    const { data: criticals, error: criticalError } = await retryAsync(() =>
       supabase
         .from('financial_alerts')
         .select(COLUMNS)
@@ -213,10 +234,17 @@ export const FinancialAlertService = {
         .limit(CRITICAL_CEILING)
     );
 
-    const rest = Math.max(limit - (criticals || []).length, 0);
-    let others: any[] = [];
+    // retryAsync observes thrown errors only. A fulfilled PostgREST error is
+    // unavailable evidence, never an empty critical queue or an all-clear.
+    if (criticalError) throw criticalError;
+    if (!Array.isArray(criticals) || criticals.length > CRITICAL_CEILING) {
+      throw new Error('Critical financial alerts could not be verified');
+    }
+
+    const rest = Math.max(limit - criticals.length, 0);
+    let others: unknown[] = [];
     if (rest > 0) {
-      const { data } = await retryAsync(() =>
+      const { data, error } = await retryAsync(() =>
         supabase
           .from('financial_alerts')
           .select(COLUMNS)
@@ -225,19 +253,27 @@ export const FinancialAlertService = {
           .order('created_at', { ascending: false })
           .limit(rest)
       );
-      others = data || [];
+      if (error) throw error;
+      if (!Array.isArray(data) || data.length > rest) {
+        throw new Error('Financial alert rows could not be verified');
+      }
+      others = data;
     }
 
-    return [...(criticals || []), ...others].map(map);
+    const rows = [...criticals.map(row => readUnresolvedAlert(row, true)),
+      ...others.map(row => readUnresolvedAlert(row, false))];
+    const ids = rows.map(row => row.id!.toLowerCase());
+    if (new Set(ids).size !== rows.length) throw new Error('Financial alert rows changed during this read');
+    return rows;
   },
 
   /**
-   * The TRUE unresolved counts, straight from the database.
+   * Independently observed counts visible to the current authenticated query.
    *
    * The page used to derive its tab counts from the rows it had loaded, so it
    * reported "All (100)" while 472 were open. These are exact head counts: the
-   * operator is told how many there actually are, and how many they are
-   * looking at.
+   * operator can distinguish loaded rows from each server count. These four
+   * reads are not one immutable snapshot or a proof of global permission.
    */
   async getUnresolvedCounts(): Promise<{
     total: number;
@@ -246,14 +282,18 @@ export const FinancialAlertService = {
     info: number;
   }> {
     const countOf = async (severity?: string): Promise<number> => {
-      const { count } = await retryAsync(() => {
+      const { count, error } = await retryAsync(() => {
         const q = supabase
           .from('financial_alerts')
           .select('id', { count: 'exact', head: true })
           .eq('resolved', false);
         return severity ? q.eq('severity', severity) : q;
       });
-      return count || 0;
+      if (error) throw error;
+      if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
+        throw new Error('Financial alert count could not be verified');
+      }
+      return count;
     };
 
     const [total, critical, warning, info] = await Promise.all([

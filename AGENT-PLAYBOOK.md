@@ -14,7 +14,7 @@ Use configured Git/GitHub tools; verify availability in the current environment.
 
 `scripts/agent-workspace.sh <agent-name> <branch-slug> --print-path` is the maintained workspace-preparation helper. Inspect its current checkout and preserve existing ownership before using it; an existing owned SSD worktree does not need to be recreated. Keep the `reference-transaction` Git hook that protects retained commits from destructive ref changes. The `estate-integrity` workflow audits repository guards read-only; it does not publish or repair releases.
 
-Use configured authenticated GitHub tools. Repository Actions may use the configured GitHub App identifier `AUTOPILOT_APP_ID`; that secret name is a location reference, not permission to extract values, mint replacement credentials or reactivate retired autopilot. Read `PUBLISHING.md` for the actual route. Verify Club Arena client provenance with `build-info.json` at both required public endpoints, and engine identity separately.
+Use configured authenticated GitHub tools. Repository Actions may use the configured GitHub App identifier `AUTOPILOT_APP_ID`; that secret name is a location reference, not permission to extract secret values or reactivate retired autopilot. Necessary assigned credential repairs follow the current owner policy. Read `PUBLISHING.md` for the actual route. Verify Club Arena client provenance with `build-info.json` at both required public endpoints, and engine identity separately.
 
 ## Read the actual check result
 

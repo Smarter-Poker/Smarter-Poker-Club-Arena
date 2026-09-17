@@ -20,6 +20,7 @@ const cleanEnv = Object.fromEntries(
         'GITHUB_RUN_ID',
         'GITHUB_REPOSITORY',
         'STRICT_PROVENANCE',
+        'CA_BUILD_PURPOSE',
         'CA_DIST',
       ].includes(key)
   )
@@ -153,6 +154,8 @@ function pullRequestBuild() {
   };
   writeFileSync(eventPath, JSON.stringify(event));
   const env = {
+    CA_BUILD_PURPOSE: 'ci-validation',
+    GITHUB_WORKFLOW_REF: `${repositoryName}/.github/workflows/ci.yml@refs/pull/4788/merge`,
     GITHUB_ACTIONS: 'true',
     GITHUB_EVENT_NAME: 'pull_request',
     GITHUB_EVENT_PATH: eventPath,
@@ -182,7 +185,11 @@ describe('actual build provenance subprocess', () => {
     'still refuses the identical stale tree for the %s release context',
     (eventName) => {
       const { dir, env } = pullRequestBuild();
-      const result = stamp(dir, { ...env, GITHUB_EVENT_NAME: eventName });
+      const result = stamp(dir, {
+        ...env,
+        GITHUB_EVENT_NAME: eventName,
+        CA_BUILD_PURPOSE: 'release-build',
+      });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('BEHIND origin/main');
       expect(result.info.validationOnly).toBe(false);
@@ -215,7 +222,7 @@ describe('actual build provenance subprocess', () => {
     writeFileSync(eventPath, problem === 'unreadable' ? 'not JSON' : JSON.stringify(event));
     const result = stamp(dir, env);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('PR validation identity');
+    expect(result.stderr).toContain('Invalid PR build validation identity');
     expect(result.info.validationOnly).toBe(false);
   });
 

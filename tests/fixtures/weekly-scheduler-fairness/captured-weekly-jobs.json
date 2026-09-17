@@ -1,0 +1,18 @@
+{
+  "evidence": "Historical read-only initial audit capture on 2026-09-14; not a current production readback",
+  "source": "work/initial-live-catalog.json",
+  "jobs": [
+    {
+      "jobname": "union-weekly-rakeback-close",
+      "active": true,
+      "schedule": "5,35 * * * *",
+      "command": "\n  SET statement_timeout = '2400s';\n  select case\n           when pg_try_advisory_lock(hashtext('union-weekly-rakeback-close'))\n             then (select set_config('statement_timeout','2400s',true) is not null\n                      and public.fn_union_settlement_cascade_due() IS NOT NULL)::text\n           else 'skipped: previous run still in progress'\n         end;\n  "
+    },
+    {
+      "jobname": "union-weekly-rakeback-recompute",
+      "active": true,
+      "schedule": "45 6,7 * * 1",
+      "command": "\n  SET statement_timeout = '600s';\n  select case\n           when pg_try_advisory_lock(hashtext('union-weekly-rakeback-recompute'))\n             then (select set_config('statement_timeout','600s',true) is not null\n                      and public.fn_rakeback_recompute_all_clubs() IS NOT NULL)::text\n           else 'skipped: previous run still in progress'\n         end;\n  "
+    }
+  ]
+}

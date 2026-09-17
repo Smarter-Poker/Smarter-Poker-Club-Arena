@@ -287,12 +287,11 @@ describe('the docs describe THIS environment', () => {
   });
 });
 
-
-const POLICY_FILES = [
-  'OWNER-POLICY.md', 'OPERATING-LAW.md', 'HARDENING.md', 'REFERENCE-INDEX.md',
-];
+const POLICY_FILES = ['OWNER-POLICY.md', 'OPERATING-LAW.md', 'HARDENING.md', 'REFERENCE-INDEX.md'];
 const FIRST_OPEN_DOCS = [
-  'AGENT-PLAYBOOK.md', 'AGENTS-PUSH-GUIDE.md', 'CLAUDE.md',
+  'AGENT-PLAYBOOK.md',
+  'AGENTS-PUSH-GUIDE.md',
+  'CLAUDE.md',
   '.agents/rules/00-agent-playbook.md',
 ];
 const RETIRED_ACTIVE_DIRECTIONS = [

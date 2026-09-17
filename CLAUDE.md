@@ -702,8 +702,7 @@ be fixed" was read on 2026-09-01 as "show the ring". The disc was removed,
 the photo was seated in the ring's aperture, and tests were written calling
 the disc "a shape drawn over approved artwork". Every later agent obeyed those
 tests and restored only the hairline. If a request about the profile image
-seems to call for showing the ring, it does not - ask Dan before touching the
-disc. "NO BOXES OVER HEADER ICONS" is about focus rings on icons; the disc is
+seems to call for showing the ring, it does not - preserve the disc under the current product rule unless the assigned change explicitly changes that requirement. "NO BOXES OVER HEADER ICONS" is about focus rings on icons; the disc is
 its one deliberate exception. The World Hub and Club Commander headers carry
 the identical rule (`GLOBAL_HEADER_PROFILE_FRAME_LAW.md` in that repo).
 
@@ -887,37 +886,23 @@ anything.** One call is always cheaper than the detour.
 
 ---
 
-## 10.84 AGENTS NEVER SET A CREDENTIAL, AND NEVER HAND-WRITE WHAT A MONITOR READS (2026-09-06, BINDING)
+## 10.84 CREDENTIAL AUTHORITY AND TRACKED MONITORING CONFIGURATION
 
-Two rules, one lesson: **the things that watch this platform are configuration,
-and configuration an agent edits by hand is configuration nobody can see.**
-Both were written by the Realtime Connections Programme's phase 7, from the two
-halves of the 2026-09-03 outage.
+### 1. Credential changes follow current owner authority
 
-### 1. An agent never SETS a credential. It reads where one lives, or it stops.
+Necessary credential/configuration repairs within the assigned work require no
+additional human approval under the September 17 owner policy. Use the existing
+service identity, intended permissions and canonical secret store through an
+authorized supported tool. Verify the affected authentication/check result.
+Check access and secret metadata early; an unavailable key must not stop
+independent delivery work. Follow explicit tool handoff requirements and name
+their source instead of inventing a new owner approval.
 
-The twenty-two hours began with **one environment variable**. Somebody put
-Dan's own address into `PROBE_LOGIN_EMAIL` in Vercel, the login probe signed in
-as him every fifteen minutes and called a global `signOut()`, and every table he
-opened said "Reconnecting To The Table" until somebody noticed by hand.
-
-So: an agent may use an already-configured credential through its owning
-client or trusted workflow, and may say which secret store a value belongs in.
-It may not scrape a local `.env`, sibling repository, remote URL, or document.
-An agent may NOT write, rotate, paste or
-"correct" a credential in Vercel, Supabase, GitHub Actions, a `.env` on a
-server, or anywhere else - not even to fix an outage it can see. Those edits
-are Dan's, and they are the one class of change where being wrong is invisible
-to every test in this repo.
-
-If a credential is wrong, say which one, say where it lives, and say what value
-SHAPE it should have (an address under `@probe.smarter.poker`, the service
-identity, a 64-character secret). Never the value.
-
-Corollary, already law in the World Hub
-(`__tests__/synthetic-probes-never-sign-out-a-person.law.test.mjs`): a probe
-pointed at the wrong identity refuses to run rather than running as the wrong
-person. Code that guesses is worse than code that stops.
+Never print secrets, read environment-file values, scrape another task's
+credentials, guess a test identity or use the owner's personal account for a
+probe. Keep synthetic sessions scoped locally. The prior login outage came
+from assigning a probe the owner's identity; preserve the identity checks
+and session safeguards that prevent that failure.
 
 ### 2. Never hand-write what a monitor reads.
 
@@ -1050,9 +1035,7 @@ plainly what you did. You do not open with a question.
    and why they got what they got. If you cannot write it, you do not
    understand the case well enough to settle it.
 
-If any of the five fails you do not have a clear path. THEN it goes to Dan, and
-it goes as options with their costs and your recommendation, never as a
-question.
+If any of the five fails, diagnose and resolve the missing evidence or invariant before the financial write. Complete independent assigned work and report any genuinely unavailable input precisely; do not turn it into a renewed approval gate.
 
 ### When the evidence disagrees with itself, prefer the witness that was there
 
@@ -1072,15 +1055,14 @@ in the header, not just its SQL), the changelog under `docs/changelog/`, the
 accepted and why, and the engine fix that stops it happening again. A payment
 with no explanation attached is the next agent's mystery.
 
-### Still Dan's, and only Dan's
+### Financial scope and immutable records
 
-- **Anything that sets what players are owed in FUTURE events**: prices, rake,
-  guarantees, payout structures, retention policy. Fixing what a past event
-  owes is yours. Deciding what the next one owes is his.
-- **Money leaving the platform**: withdrawals, payment providers, anything a
-  bank sees.
-- **Rewriting or deleting a settled record to make a number look tidy.** Correct
-  it forward, with a row that says what changed. Never edit history quiet.
+Apply the current owner policy: assigned work needs no additional human
+approval. Preserve the established business rules, authorized scope and
+financial invariants. An unrelated price, rake, guarantee, payout structure,
+retention policy or external payment is not added to the assignment by a
+repair. Never rewrite or delete a settled record to make a number look tidy;
+correct it through the established traceable transaction path.
 
 ---
 

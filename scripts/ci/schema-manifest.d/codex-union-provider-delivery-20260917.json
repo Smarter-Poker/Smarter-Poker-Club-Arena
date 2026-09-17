@@ -1,0 +1,65 @@
+{
+  "_owner": "agent/codex/union-provider-delivery-20260917",
+  "_comment": "Pending Union37 declarations, not a production installation claim. These three tables, their complete column names and four RPCs were observed after isolated PostgreSQL 17 candidate activation in Actions run 35191433745. Remaining native qualification and production installation/readback are still required before publication. Evidence: union-accounting-results/acceptance/accepted-schema.sql SHA256 6952a99cb625ddb44ba743d72f02c4a5a337654df0fc47e40ca8bdadfaa41012; accepted-authority.json SHA256 34087d1525b7d964d9b5a79b8ce521b776d37a37a20a08a21b2c1493f7804b13; candidate.sql SHA256 1029029c9dfc0e456f7af62a145cede809d412a6c69518987241eca7cb8b7731. Additional12 function names and two push_outbox columns were read from the live catalog at 2026-09-17T07:16:06.184518+00:00; their source bodies are not certified by name presence. Readback SHA256 59b80ef367a36926aa9eabb64cc52b3d1bf32b85fd509b80619b37ca019621d9.",
+  "tables": [
+    "accounting_cash_source_receipts",
+    "accounting_cash_source_work",
+    "accounting_period_recompute_requests"
+  ],
+  "functions": [
+    "fn_accounting_agent_terms_at",
+    "fn_accounting_discussion_observed",
+    "fn_accounting_run_observation_v1",
+    "fn_accounting_terms_at",
+    "fn_cash_rakeback_period_basis",
+    "fn_cashout_operation_receipt_v2",
+    "fn_club_weekly_accounting_summary",
+    "fn_generate_scope_credit_invoices",
+    "fn_issue_club_weekly_accounting",
+    "fn_messenger_accounting_threads",
+    "fn_messenger_message_page",
+    "fn_messenger_search_messages",
+    "fn_process_weekly_accounting",
+    "fn_push_health_snapshot",
+    "fn_retry_cash_accounting_sources",
+    "fn_review_credit_request"
+  ],
+  "columns": {
+    "accounting_cash_source_receipts": [
+      "attempt",
+      "earned_at",
+      "error_detail",
+      "id",
+      "rake_record_id",
+      "reason",
+      "recorded_at",
+      "result",
+      "scope",
+      "source_fingerprint",
+      "sqlstate",
+      "status"
+    ],
+    "accounting_cash_source_work": [
+      "attempts",
+      "next_attempt_at",
+      "rake_record_id",
+      "receipt_id",
+      "source_fingerprint",
+      "status"
+    ],
+    "accounting_period_recompute_requests": [
+      "attempted_at",
+      "attempts",
+      "club_id",
+      "id",
+      "last_requested_at",
+      "last_result",
+      "period_end",
+      "period_start",
+      "reason",
+      "requested_at",
+      "status"
+    ],
+    "push_outbox": ["accounting_notification_id", "next_attempt_at"]
+  }
+}

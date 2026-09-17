@@ -1,0 +1,109 @@
+{
+  "status": "SOURCE_COMPOSED_NATIVE_COMPOSITION_UNRUN",
+  "owner_head": "4008d2020f95d411953f77f1fe07bdc2fed6d94c",
+  "installed_migration": "20260917062322",
+  "installed_readback_at": "2026-09-17T06:23:35.198329+00:00",
+  "owner_qualified_run": 35189029570,
+  "owner_qualified_job": 105097355508,
+  "origins": {
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-provider-baseline-20260916/scripts/qualification/fixtures/direct-operational-source-intake/engine-catalog.sql": {
+      "sha256": "5ea76b07d85b1baf0c0dc1e873bd1917e38d110ff61e6148dd11b1e4fc4a3705",
+      "bytes": 19930
+    },
+    "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-provider-baseline-20260916/scripts/qualification/fixtures/direct-operational-source-intake/authority.json": {
+      "sha256": "03765137a209e8ef548213cc96455a657339abca67e6b118af532722f85d6964",
+      "bytes": 73861
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-install-preparation-20260917-v2/install.sql": {
+      "sha256": "7f7020ee71fe1bd6475dff8de572cd96e7cac888c3923245f7fbc54e8ff161dd",
+      "bytes": 54826
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-install-preparation-20260917-v2/manifest.json": {
+      "sha256": "459c0cea8a9682f33e4679eb1c00d07d8144cd80dfd767e866e577a424edd823",
+      "bytes": 2622
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/direct-intake-install-preparation-20260917-v2/source-origins.json": {
+      "sha256": "359d36d103548aeb51812b6c3c7ffb5cc63142d511cc2f271cd7a578dd37dbcd",
+      "bytes": 3808
+    },
+    "/Users/smarter.poker/Documents/Codex/2026-09-16/i-x20/outputs/production-alerts-direct-intake-installation.json": {
+      "sha256": "8b20b76b0bb09cee7003f1bae3b8488eb0a371b8820bd5e02736d08f3ecfe8de",
+      "bytes": 2919
+    }
+  },
+  "transformations": [
+    "direct-intake-installed.sql is byte-identical to the installed, separately qualified packet. Its historical SOURCE ONLY comment is preserved; the later installation receipt supplies current status.",
+    "Prerequisites preserve the exact qualified engine-catalog DDL, original recorder body, index assertions and grants. Only its fixture_bootstrap/named-database admission is replaced by exact existing full37 postgres/socket/PG17/origin/missing-object/orphan-sequence admission; bounded local timeouts and original-engine/access readbacks are added.",
+    "Raw authority and installation receipt are byte-preserved .raw.txt to avoid JSON formatter changes. Original full-weekly captures and owner-notification core remain unchanged."
+  ],
+  "load_order": [
+    "alerts-and-ledger.sql",
+    "owner-notification-coexistence.sql",
+    "direct-intake-prerequisites.sql",
+    "direct-intake-installed.sql"
+  ],
+  "candidate_guard_dependencies": [
+    "component34 exact ca_drift_incidents trigger array",
+    "component36 incident relation source and embedded trigger array"
+  ],
+  "limitations": [
+    "No Union37 native composition execution yet. Original Alerts qualification is not full37 qualification.",
+    "No production changes, business events, historical source adoption or automatic task activation."
+  ],
+  "files": {
+    "direct-intake-prerequisites.sql": {
+      "sha256": "c018943a1a03d04f163cef8935ff0952dd512d91c795a0931d029763d3fa694e",
+      "bytes": 23546
+    },
+    "direct-intake-installed.sql": {
+      "sha256": "7f7020ee71fe1bd6475dff8de572cd96e7cac888c3923245f7fbc54e8ff161dd",
+      "bytes": 54826
+    },
+    "direct-intake-authority.raw.txt": {
+      "sha256": "03765137a209e8ef548213cc96455a657339abca67e6b118af532722f85d6964",
+      "bytes": 73861
+    },
+    "direct-intake-installation-receipt.raw.txt": {
+      "sha256": "8b20b76b0bb09cee7003f1bae3b8488eb0a371b8820bd5e02736d08f3ecfe8de",
+      "bytes": 2919
+    }
+  },
+  "capture_successors": {
+    "tests/fixtures/full-weekly-accounting/capture-rollback-state.sql": {
+      "previous_head_sha256": "4dbd2ea034ef34fee6accbd18e0205b072110b71d5e554530f361c0ddbcaf349",
+      "successor_sha256": "26ad0aba3d16bc257a61934c82cba11b2c953fb5979a24806469dbff154d9e71",
+      "delta": "Retain all prior state/authority fields; additionally observe the installed direct-intake schema and required source/inbox records."
+    },
+    "tests/fixtures/full-weekly-accounting/capture-accepted-authority.sql": {
+      "previous_head_sha256": "7a6128e0de75febd48815b8e816eab2d89a06fc245a3fdc5ae280f7a61136562",
+      "successor_sha256": "6f65090e14cc6d0cf0d325acf772c053daee2e2ed43666531a1464a8044b2d64",
+      "delta": "Retain all prior state/authority fields; additionally observe the installed direct-intake schema and required source/inbox records."
+    },
+    "tests/fixtures/correction-writer-authority/concurrency-session.sql": {
+      "previous_head_sha256": "5431d4ffc45054b2f2f417c5c199d5aac1d0e64f56d042a7641cef69b2ce6d2b",
+      "successor_sha256": "4a78119ade0f7720a9e573b8007018e2d16aca2eb7bd9b7c865d6b18d179425a",
+      "delta": "Retain all prior state/authority fields; additionally observe the installed direct-intake schema and required source/inbox records."
+    },
+    "tests/fixtures/correction-writer-authority/legacy-before-candidate.sql": {
+      "previous_head_sha256": "5ebc7aae24dd0e6e6f1c346a0dade149796453caa220b57c0d0d8c90cb0a1e6e",
+      "successor_sha256": "7f76162008e52c31bd3f94a198dbe07fd7f28feb0f9ea80a3ae764663bca817c",
+      "delta": "Retain all prior state/authority fields; additionally observe the installed direct-intake schema and required source/inbox records."
+    },
+    "tests/fixtures/correction-writer-authority/regression.sql": {
+      "previous_head_sha256": "2764f44b5eff43472d87c481cdebe0bdf5babbb4d75023dfee52a0ec8aeddf11",
+      "successor_sha256": "ef66b164083ff08a02d9c932d20f1aced66bc154caaa22d3f0bd4c0bef7ccba2",
+      "delta": "Retain all prior state/authority fields; additionally observe the installed direct-intake schema and required source/inbox records."
+    },
+    "tests/fixtures/credit-reduction-authority/concurrency-session.sql": {
+      "previous_head_sha256": "cc58c015ee169b63a00250a29da7773f512242e4ea5cdddf232d423943e638bb",
+      "successor_sha256": "9f6ba47f612e29ef8b91989b9dda513239627b98fa500332d1b93d44ca98a9b1",
+      "delta": "Retain all prior state/authority fields; additionally observe the installed direct-intake schema and required source/inbox records."
+    },
+    "tests/fixtures/credit-reduction-authority/helpers.sql": {
+      "previous_head_sha256": "1c16f5dcd8529346f7005a3372fd854fe3464f4d47e55f5713a5983a076c3cc4",
+      "successor_sha256": "6ce12b7131a4e833c92f2834d64c500a6155a859fc21d11e5dd0e832d6791463",
+      "delta": "Retain all prior state/authority fields; additionally observe the installed direct-intake schema and required source/inbox records."
+    }
+  },
+  "source_base_head": "904b2c1418d43977d8038b52439c02a1defae3a1"
+}

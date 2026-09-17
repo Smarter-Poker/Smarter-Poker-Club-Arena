@@ -1,8 +1,8 @@
 # Smarter Poker Agent Operating Law
 
-Version 2.7 — adopted operating instruction, September 17, 2026.
+Version 2.8 — adopted operating instruction, September 17, 2026.
 
-Revision 2.7 adds mandatory applicable prechecks before submission. Version 2.6 established independent non-engine completion, direct ownership, queue recovery and preparation throughout the hour.
+Revision 2.8 removes remaining owner-imposed human approval requirements, requires early access checks and keeps independent delivery active while a missing input is resolved. Version 2.7 added mandatory applicable prechecks before submission. Version 2.6 established independent non-engine completion, direct ownership, queue recovery and preparation throughout the hour.
 
 Owner authorized installation and instruction alignment on September 17, 2026. This consolidates the four rules described in the supplied conversation; the earlier full 2.2 document was not supplied.
 
@@ -28,7 +28,7 @@ Keep a finite assignment, expected behavior, acceptance criteria, and explicit e
 
 Scope includes behavior, operational actions, schemas, configuration, dependencies, and affected user flows—not just filenames. Necessary supporting changes may proceed under existing authorization when they directly repair the assigned behavior or a demonstrated delivery blocker. Record why they are necessary. An unrelated discovery, possible optimization, shared directory, or spare time is not authorization for another project. Record unrelated findings for follow-up.
 
-Do not repeat a permission request for work already authorized. Do not use this law to infer permission for destructive actions, new product phases, a different publication route, or changes owned by another task.
+No additional human approval is required for actions necessary to an authorized assignment, anywhere. Follow the current owner policy, including assigned credential/configuration repairs. Do not invent a human-only exception or replacement approval gate. Keep the actual scope and required safeguards: this does not assign new product phases, a different publication route or another task's changes. Higher-priority tool constraints and actual missing access must be identified accurately, not presented as a request for renewed owner permission.
 
 ## 2. Re-read the required references whenever work resumes
 
@@ -73,7 +73,9 @@ If a helper is unavailable, stopped or finished only part of an assignment, reco
 
 A completed review, pushed correction, merged fix, successful build or recovery of the previous runtime does not complete a delivery that still needs publication or behavioral proof. Keep each unresolved item explicit in the same checklist: the exact failing check or behavior, missing authorized access, installation, selected live revision, and final acceptance result. During a provider wait, resolve eligible items yourself instead of closing the task at an intermediate milestone or advancing to an unqualified next phase.
 
-For an access blocker, first inspect configured tools, documented credential locations and authorized metadata without printing secrets, reading environment-file values, inventing credentials or bypassing access controls. Reuse an already configured supported route. If required access is genuinely unavailable, finish all independent assigned work and state the exact missing capability and prepared next action; do not disguise that dependency as waiting for another chat.
+Check required access and provider/reporter prerequisites before dependent submission where supported metadata can establish them. For an access blocker, first inspect configured tools, documented credential locations and authorized metadata without printing secrets, reading environment-file values or bypassing access controls. Reuse an already configured supported route and perform necessary authorized credential repairs within the intended identity and permissions. Do not reuse an unrelated credential or replace a check's trusted reporter to manufacture success.
+
+If required access is genuinely unavailable, state the exact missing capability, evidence and prepared next action. Ask only for the unavailable input or a handoff explicitly required by the selected tool; name that constraint's source. A saved key-file path may be needed, but secret contents must never be requested in chat. Do not send a generic approval question or stop all work while waiting for an answer. Follow running checks directly, repair conflicts and failures, complete independent publication and retain ownership of the remaining verification. A pending question or intermediate status update is not a completion milestone. End blocked only when no further authorized useful action can be taken and identify precisely what would unblock it.
 
 For queued checks, distinguish a missing worker from a failing test, blocked dependency, wrong runner label, exhausted provider concurrency or superseded run still using capacity. Inspect the actual workflow and current comparable successful run. Correct demonstrated configuration defects and retire only verified obsolete attempts of the same assigned PR through the approved event/operation. Confirm cancellation actually reached a terminal state; an accepted request is not proof that `always()` jobs stopped. Never cancel another task's current checks or a production transaction to free workers. Preserve required failure-reporting and validation; do not manufacture green checks by skipping work.
 

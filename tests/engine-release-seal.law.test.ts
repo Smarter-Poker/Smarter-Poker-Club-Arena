@@ -317,38 +317,66 @@ esac
     expect(runSeal(['get', 'desired-legacy-unlabelled']).stdout).toBe('true');
   });
 
-  // Thirteen subprocess operations share this fixture; use the same aggregate
-  // allowance as the other multi-process cases below. Production deadlines stay intact.
-  it('executes candidates with restart=no and desired recovery with restart=always', () => {
-    expect(
-      runSeal([
-        'bootstrap-running',
-        '--container',
-        'club-arena-engine',
-        ...auditArgs('140', 'bootstrap existing production'),
-      ]).status
-    ).toBe(0);
-    const prepared = runSeal([
-      'prepare',
-      '--sha',
-      B_SHA,
-      '--image',
-      'candidate-ref',
-      '--mode',
-      'deploy',
-      '--repo',
-      sandbox,
-      ...auditArgs('141', 'normal deployment from origin main'),
-    ]);
-    expect(prepared.status).toBe(0);
+  // This integration case executes two seal commands, two successful launches
+  // and nine rejected launches. Budget each synchronous child independently;
+  // one default five-second test budget cannot cover their aggregate runtime.
+  const restartPolicyCommandCount = 2 + 2 + 9;
+  const restartPolicyCommandTimeoutMs = 5_000;
+  const restartPolicyTestTimeoutMs =
+    (restartPolicyCommandCount + 1) * restartPolicyCommandTimeoutMs;
 
-    const runLog = join(sandbox, 'docker-runs.log');
-    const mutationLog = join(sandbox, 'docker-mutations.log');
-    writeFileSync(runLog, '');
-    writeFileSync(mutationLog, '');
-    writeFileSync(
-      join(bin, 'docker'),
-      `#!/usr/bin/env bash
+  it(
+    'executes candidates with restart=no and desired recovery with restart=always',
+    () => {
+      let commandCount = 0;
+      const runHost = (command: string, args: string[], env: NodeJS.ProcessEnv = baseEnv) => {
+        expect(++commandCount).toBeLessThanOrEqual(restartPolicyCommandCount);
+        const result = spawnSync(command, args, {
+          encoding: 'utf8',
+          env,
+          timeout: restartPolicyCommandTimeoutMs,
+          killSignal: 'SIGKILL',
+        });
+        // A timeout/spawn error must never pass a negative case merely because
+        // status is null rather than zero. Retain the child's diagnostics.
+        expect(result.error, `${command}: ${result.stdout}\n${result.stderr}`).toBeUndefined();
+        expect(result.signal, `${command}: ${result.stdout}\n${result.stderr}`).toBeNull();
+        return {
+          status: result.status,
+          stdout: result.stdout.trim(),
+          stderr: result.stderr.trim(),
+        };
+      };
+      const runBoundedSeal = (args: string[]) => runHost('python3', [sealScript, ...args]);
+      expect(
+        runBoundedSeal([
+          'bootstrap-running',
+          '--container',
+          'club-arena-engine',
+          ...auditArgs('140', 'bootstrap existing production'),
+        ]).status
+      ).toBe(0);
+      const prepared = runBoundedSeal([
+        'prepare',
+        '--sha',
+        B_SHA,
+        '--image',
+        'candidate-ref',
+        '--mode',
+        'deploy',
+        '--repo',
+        sandbox,
+        ...auditArgs('141', 'normal deployment from origin main'),
+      ]);
+      expect(prepared.status).toBe(0);
+
+      const runLog = join(sandbox, 'docker-runs.log');
+      const mutationLog = join(sandbox, 'docker-mutations.log');
+      writeFileSync(runLog, '');
+      writeFileSync(mutationLog, '');
+      writeFileSync(
+        join(bin, 'docker'),
+        `#!/usr/bin/env bash
 set -euo pipefail
 if [ "$1" = image ] && [ "$2" = inspect ]; then
   shift 2
@@ -382,123 +410,122 @@ fi
 if [ "$1" = inspect ]; then printf '%s\\n' '${'1'.repeat(64)}'; exit 0; fi
 exit 1
 `
-    );
-    chmodSync(join(bin, 'docker'), 0o755);
-    writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
-    chmodSync(join(bin, 'flock'), 0o755);
-    const envFile = join(sandbox, 'engine.env');
-    writeFileSync(envFile, 'DATABASE_URL=postgres://example.invalid/db\n');
-    const engineUp = resolve(ROOT, 'server/scripts/engine-up.sh');
-    const common = {
-      ...baseEnv,
-      CONTAINER: 'club-arena-engine',
-      ENGINE_RELEASE_SEAL: sealScript,
-      ENV_FILE: envFile,
-      FAKE_DOCKER_RUN_LOG: runLog,
-      FAKE_DOCKER_MUTATION_LOG: mutationLog,
-      LOCK_FILE: join(sandbox, 'engine-up.lock'),
-      LOG_DIR: join(sandbox, 'logs'),
-      ENGINE_ALERT_JOURNAL_HOST_DIR: join(sandbox, 'engine-alerts'),
-      ENGINE_HORSE_JOURNAL_HOST_DIR: join(sandbox, 'horse-decisions'),
-    };
-    const horseDirectory = common.ENGINE_HORSE_JOURNAL_HOST_DIR;
-    const horseMount = `--mount type=bind,source=${horseDirectory},target=/var/lib/club-arena/horse-decisions`;
-    const horseEnvironment = '--env HORSE_DECISION_JOURNAL_DIR=/var/lib/club-arena/horse-decisions';
+      );
+      chmodSync(join(bin, 'docker'), 0o755);
+      writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
+      chmodSync(join(bin, 'flock'), 0o755);
+      const envFile = join(sandbox, 'engine.env');
+      writeFileSync(envFile, 'DATABASE_URL=postgres://example.invalid/db\n');
+      const engineUp = resolve(ROOT, 'server/scripts/engine-up.sh');
+      const common = {
+        ...baseEnv,
+        CONTAINER: 'club-arena-engine',
+        ENGINE_RELEASE_SEAL: sealScript,
+        ENV_FILE: envFile,
+        FAKE_DOCKER_RUN_LOG: runLog,
+        FAKE_DOCKER_MUTATION_LOG: mutationLog,
+        LOCK_FILE: join(sandbox, 'engine-up.lock'),
+        LOG_DIR: join(sandbox, 'logs'),
+        ENGINE_ALERT_JOURNAL_HOST_DIR: join(sandbox, 'engine-alerts'),
+        ENGINE_HORSE_JOURNAL_HOST_DIR: join(sandbox, 'horse-decisions'),
+      };
+      const horseDirectory = common.ENGINE_HORSE_JOURNAL_HOST_DIR;
+      const horseMount = `--mount type=bind,source=${horseDirectory},target=/var/lib/club-arena/horse-decisions`;
+      const horseEnvironment =
+        '--env HORSE_DECISION_JOURNAL_DIR=/var/lib/club-arena/horse-decisions';
 
-    const candidate = spawnSync(
-      'bash',
-      ['-c', 'exec 3<<<"$TEST_RELEASE_TOKEN"; exec "$TEST_ENGINE_UP"'],
-      {
-        encoding: 'utf8',
-        env: {
+      const candidate = runHost(
+        'bash',
+        ['-c', 'exec 3<<<"$TEST_RELEASE_TOKEN"; exec "$TEST_ENGINE_UP"'],
+        {
           ...common,
           ENGINE_RELEASE_TOKEN_FD: '3',
           IMAGE: 'candidate-ref',
           TEST_ENGINE_UP: engineUp,
           TEST_RELEASE_TOKEN: prepared.stdout,
-        },
-      }
-    );
-    expect(candidate.status, candidate.stderr).toBe(0);
-    expect(readFileSync(runLog, 'utf8')).toContain('--restart no');
-    expect(readFileSync(runLog, 'utf8')).toContain(
-      `--mount type=bind,source=${join(sandbox, 'engine-alerts')},target=/var/lib/club-arena/engine-alerts`
-    );
-    expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
-    expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
-    expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
-    expect(statSync(horseDirectory).mode & 0o777).toBe(0o700);
-    expect(readdirSync(horseDirectory)).toEqual([]);
+        }
+      );
+      expect(candidate.status, candidate.stderr).toBe(0);
+      expect(readFileSync(runLog, 'utf8')).toContain('--restart no');
+      expect(readFileSync(runLog, 'utf8')).toContain(
+        `--mount type=bind,source=${join(sandbox, 'engine-alerts')},target=/var/lib/club-arena/engine-alerts`
+      );
+      expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
+      expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
+      expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
+      expect(statSync(horseDirectory).mode & 0o777).toBe(0o700);
+      expect(readdirSync(horseDirectory)).toEqual([]);
 
-    // This opaque sentinel checks run-spec preservation only. Actual SQLite
-    // reopen/replay is covered by HorseDecisionJournal.test.ts.
-    const retainedPath = join(horseDirectory, 'horse-decisions.sqlite');
-    const retainedBytes = Buffer.from('retained private decision evidence\n');
-    writeFileSync(retainedPath, retainedBytes, { mode: 0o600 });
+      // This opaque sentinel checks run-spec preservation only. Actual SQLite
+      // reopen/replay is covered by HorseDecisionJournal.test.ts.
+      const retainedPath = join(horseDirectory, 'horse-decisions.sqlite');
+      const retainedBytes = Buffer.from('retained private decision evidence\n');
+      writeFileSync(retainedPath, retainedBytes, { mode: 0o600 });
 
-    writeFileSync(runLog, '');
-    writeFileSync(mutationLog, '');
-    const desired = spawnSync('bash', [engineUp], {
-      encoding: 'utf8',
-      env: { ...common, IMAGE: 'desired-ref' },
-    });
-    expect(desired.status, desired.stderr).toBe(0);
-    expect(readFileSync(runLog, 'utf8')).toContain('--restart always');
-    expect(readFileSync(runLog, 'utf8')).toContain(
-      'ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts'
-    );
-    expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
-    expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
-    expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
-    expect(readFileSync(retainedPath)).toEqual(retainedBytes);
-    expect(readdirSync(horseDirectory)).toEqual(['horse-decisions.sqlite']);
-
-    const linkedDirectory = join(sandbox, 'linked-horse-directory');
-    symlinkSync(horseDirectory, linkedDirectory);
-    const sharedDirectory = join(sandbox, 'shared-horse-directory');
-    mkdirSync(sharedDirectory, { mode: 0o755 });
-    chmodSync(sharedDirectory, 0o755);
-    const unsafeDirectories = [
-      'linked-file',
-      'hard-linked-file',
-      'shared-file',
-      'directory-file',
-    ].map((name) => {
-      const directory = join(sandbox, name);
-      mkdirSync(directory, { mode: 0o700 });
-      const file = join(directory, 'horse-decisions.sqlite');
-      if (name === 'linked-file') symlinkSync(retainedPath, file);
-      else if (name === 'hard-linked-file') {
-        const external = join(sandbox, 'hard-linked-sentinel');
-        writeFileSync(external, retainedBytes, { mode: 0o600 });
-        linkSync(external, file);
-      } else if (name === 'shared-file') {
-        writeFileSync(file, retainedBytes, { mode: 0o644 });
-        chmodSync(file, 0o644);
-      } else mkdirSync(file, { mode: 0o700 });
-      return directory;
-    });
-    for (const directory of [
-      'relative-horse-directory',
-      join(sandbox, 'comma,horse-directory'),
-      linkedDirectory,
-      `${linkedDirectory}/`,
-      sharedDirectory,
-      ...unsafeDirectories,
-    ]) {
       writeFileSync(runLog, '');
       writeFileSync(mutationLog, '');
-      const refused = spawnSync('bash', [engineUp], {
-        encoding: 'utf8',
-        env: { ...common, IMAGE: 'desired-ref', ENGINE_HORSE_JOURNAL_HOST_DIR: directory },
-      });
-      expect(refused.status, `${directory}: ${refused.stderr}`).not.toBe(0);
-      expect(refused.stderr).toContain('Horse journal');
-      expect(readFileSync(mutationLog, 'utf8')).toBe('');
-      expect(readFileSync(runLog, 'utf8')).toBe('');
+      const desired = runHost('bash', [engineUp], { ...common, IMAGE: 'desired-ref' });
+      expect(desired.status, desired.stderr).toBe(0);
+      expect(readFileSync(runLog, 'utf8')).toContain('--restart always');
+      expect(readFileSync(runLog, 'utf8')).toContain(
+        'ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts'
+      );
+      expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
+      expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
+      expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
       expect(readFileSync(retainedPath)).toEqual(retainedBytes);
-    }
-  }, 15_000);
+      expect(readdirSync(horseDirectory)).toEqual(['horse-decisions.sqlite']);
+
+      const linkedDirectory = join(sandbox, 'linked-horse-directory');
+      symlinkSync(horseDirectory, linkedDirectory);
+      const sharedDirectory = join(sandbox, 'shared-horse-directory');
+      mkdirSync(sharedDirectory, { mode: 0o755 });
+      chmodSync(sharedDirectory, 0o755);
+      const unsafeDirectories = [
+        'linked-file',
+        'hard-linked-file',
+        'shared-file',
+        'directory-file',
+      ].map((name) => {
+        const directory = join(sandbox, name);
+        mkdirSync(directory, { mode: 0o700 });
+        const file = join(directory, 'horse-decisions.sqlite');
+        if (name === 'linked-file') symlinkSync(retainedPath, file);
+        else if (name === 'hard-linked-file') {
+          const external = join(sandbox, 'hard-linked-sentinel');
+          writeFileSync(external, retainedBytes, { mode: 0o600 });
+          linkSync(external, file);
+        } else if (name === 'shared-file') {
+          writeFileSync(file, retainedBytes, { mode: 0o644 });
+          chmodSync(file, 0o644);
+        } else mkdirSync(file, { mode: 0o700 });
+        return directory;
+      });
+      for (const directory of [
+        'relative-horse-directory',
+        join(sandbox, 'comma,horse-directory'),
+        linkedDirectory,
+        `${linkedDirectory}/`,
+        sharedDirectory,
+        ...unsafeDirectories,
+      ]) {
+        writeFileSync(runLog, '');
+        writeFileSync(mutationLog, '');
+        const refused = runHost('bash', [engineUp], {
+          ...common,
+          IMAGE: 'desired-ref',
+          ENGINE_HORSE_JOURNAL_HOST_DIR: directory,
+        });
+        expect(refused.status, `${directory}: ${refused.stderr}`).not.toBe(0);
+        expect(refused.stderr).toContain('Horse journal');
+        expect(readFileSync(mutationLog, 'utf8')).toBe('');
+        expect(readFileSync(runLog, 'utf8')).toBe('');
+        expect(readFileSync(retainedPath)).toEqual(retainedBytes);
+      }
+      expect(commandCount).toBe(restartPolicyCommandCount);
+    },
+    restartPolicyTestTimeoutMs
+  );
 
   it('requires journal-capable images to use durable storage without breaking legacy recovery', () => {
     const proof = spawnSync(

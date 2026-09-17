@@ -201,16 +201,8 @@ export default function RakebackPage() {
       },
       500
     );
-    const unsubSettlement = masterBus.subscribeDebounced(
-      'SETTLEMENT_COMPLETED',
-      () => {
-        loadRakebackDataRef.current();
-      },
-      1000
-    );
     return () => {
       unsubBalance();
-      unsubSettlement();
     };
   }, [user?.id]);
 

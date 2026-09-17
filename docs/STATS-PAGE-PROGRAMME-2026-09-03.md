@@ -1,3 +1,5 @@
+> Current execution authority: root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. This dated plan supplies scope/dependency context only; it does not assign new work or override current delivery policy.
+
 # Stats Page Programme (2026-09-03)
 
 Target surface: `https://smarter.poker/hub/club-arena/stats`

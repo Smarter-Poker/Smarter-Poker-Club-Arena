@@ -246,6 +246,8 @@ export interface MaintenanceBreakDeps {
   /** Presentation only, emitted at the owning transition to existing lobby subscribers. */
   emitPresentation?: (presentation: Record<string, unknown>) => void;
   store: MaintenanceBreakStore;
+  /** Fail closed until the database protects event-owned recovery windows from DDL. */
+  assertRecoveryWindowContract?: () => Promise<void>;
   /**
    * "Is somebody ELSE still holding this table paused?"
    *
@@ -1029,13 +1031,96 @@ export class MaintenanceBreak {
    * the loop cannot come back around until dealHand() resolves.
    */
   async announceLastHand(): Promise<void> {
+    return this.announceBreak(this.now(), 'Scheduled Engine Maintenance');
+  }
+
+  /**
+   * One explicit release request, using the ordinary durable maintenance flow.
+   * The caller persists announcedAt before dispatch. Replaying that timestamp
+   * can observe the same active break, but can never start a later one or move
+   * its deadline. This method does not schedule another recovery request.
+   */
+  async requestRecoveryWindow(announcedAt: number): Promise<{
+    status: 'accepted' | 'active' | 'pending' | 'busy' | 'expired' | 'use_hourly' | 'unavailable';
+    announcedAt?: number;
+    endsAt?: number;
+  }> {
+    if (!this.startOperation || !this.deps.assertRecoveryWindowContract) {
+      return { status: 'unavailable' };
+    }
+    await this.startOperation;
+    const evaluate = () => {
+      if (!this.lifecycleIsCurrent(this.lifecycleGeneration) || !this.deps.isRunning()) {
+        return 'unavailable' as const;
+      }
+      if (!Number.isSafeInteger(announcedAt) || announcedAt <= 0 || announcedAt > this.now()) {
+        return 'expired' as const;
+      }
+      if (this.isActive()) {
+        if (this.announcedAt === announcedAt && this.reason === 'Deployment Recovery') {
+          return this.durableConfirmed ? ('active' as const) : ('pending' as const);
+        }
+        return 'busy' as const;
+      }
+      if (this.recoveryWindowIsBusy()) return 'busy' as const;
+      if (
+        this.completedAnnouncementAt === announcedAt ||
+        this.now() >= announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS
+      )
+        return 'expired' as const;
+      const end =
+        announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS;
+      if (
+        this.scheduledBreakWindowAt(this.now()) ||
+        end + MaintenanceBreak.RESUME_SPREAD_MS >= this.now() + this.msUntilNextAnnouncement()
+      )
+        return 'use_hourly' as const;
+      return null;
+    };
+    const observed = evaluate();
+    if (observed)
+      return {
+        status: observed,
+        announcedAt: this.announcedAt || undefined,
+        endsAt: this.endsAt() || undefined,
+      };
+    await this.deps.assertRecoveryWindowContract();
+    // The database check can overlap the hourly announcement or a competing
+    // request. Re-evaluate before the first in-memory/persistent mutation.
+    const raced = evaluate();
+    if (raced)
+      return {
+        status: raced,
+        announcedAt: this.announcedAt || undefined,
+        endsAt: this.endsAt() || undefined,
+      };
+    await this.announceBreak(announcedAt, 'Deployment Recovery');
+    if (!this.durableConfirmed || this.announcedAt !== announcedAt)
+      return { status: 'unavailable' };
+    return { status: 'accepted', announcedAt, endsAt: this.endsAt() };
+  }
+
+  /** Readiness to reserve an announcement; database authority is checked on request. */
+  private recoveryWindowIsBusy(): boolean {
+    return Boolean(
+      this.ending ||
+      this.recoveryReadPending ||
+      this.releaseBoundaryOnly ||
+      this.thawRequest ||
+      this.pendingResumeTables.size > 0 ||
+      this.certifiedResumeAt > this.now()
+    );
+  }
+
+  private async announceBreak(announcedAt: number, reason: string): Promise<void> {
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || !this.deps.isRunning()) return;
     if (this.isActive()) return; // already in one
 
     this.durableConfirmed = false;
     this.phase = 'last_hand';
-    this.announcedAt = this.now();
+    this.announcedAt = announcedAt;
+    this.reason = reason;
     this.breakEndsAt = 0;
     /* Keep this process generation's token across locally-created breaks.
        If the prior hour's exact clear committed but its response was lost, or
@@ -1153,7 +1238,7 @@ export class MaintenanceBreak {
     console.log(
       `[MaintenanceBreak] ═══ BREAK STARTED ═══ ${
         MaintenanceBreak.BREAK_DURATION_MS / 60000
-      } minutes. Play resumes on the hour.`
+      } minutes. Play resumes at ${new Date(this.endsAt()).toISOString()}.`
     );
 
     /* THE BREAK NO LONGER DEPENDS ON THIS WRITE (2026-09-10).
@@ -2141,6 +2226,20 @@ export class MaintenanceBreak {
     const unparked = this.isActive() ? this.unparkedTables() : [];
     return {
       active: this.isActive(),
+      recoveryWindowProtocol: this.deps.assertRecoveryWindowContract
+        ? 'engine-recovery-window-v1'
+        : null,
+      // The release owner must not spend its one immutable announcement while
+      // the previous break is still thawing or resuming tables. The endpoint
+      // rechecks this after its database contract read to close races.
+      recoveryWindowReady: Boolean(
+        this.startOperation &&
+        this.deps.assertRecoveryWindowContract &&
+        this.lifecycleIsCurrent(this.lifecycleGeneration) &&
+        this.deps.isRunning() &&
+        !this.isActive() &&
+        !this.recoveryWindowIsBusy()
+      ),
       phase: this.phase,
       durableConfirmed: this.isActive() && this.durableConfirmed,
       breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,

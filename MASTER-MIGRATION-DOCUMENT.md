@@ -1,3 +1,5 @@
+> Historical completed migration reference. Use current AGENTS.md, the operating law and PUBLISHING.md for execution. This document does not assign a new phase or impose another approval gate.
+
 # MASTER MIGRATION DOCUMENT
 
 ## Club Arena Engine Migration: Client → Server
@@ -2900,7 +2902,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 ### PHASE 2: Port Core Engine Extensions (5 days)
 
 **Duration:** 5-6 days
-**Approval:** Required before start
+**Execution:** Proceed only within the assigned phase, without another approval gate.
 **Files Modified:**
 
 - server/src/engine/PreciseActionTimer.ts (NEW — 233 lines)
@@ -2946,7 +2948,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 ### PHASE 3: Port Supporting Systems (6 days)
 
 **Duration:** 6-7 days
-**Approval:** Required before start
+**Execution:** Proceed only within the assigned phase, without another approval gate.
 **Files Modified:**
 
 - server/src/engine/TimeBankEngine.ts (NEW)
@@ -2995,7 +2997,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 ### PHASE 4: Port Advanced Features (8 days)
 
 **Duration:** 8-9 days
-**Approval:** Required before start
+**Execution:** Proceed only within the assigned phase, without another approval gate.
 **Files Modified:**
 
 - server/src/engine/StraddleEngine.ts (NEW)
@@ -3109,7 +3111,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 ### PHASE 6: Tournament & Extras (4-5 days) — OPTIONAL
 
 **Duration:** 4-5 days
-**Approval:** Required only if tournament feature needed
+**Execution:** Include only when tournament work is part of the assignment; no additional approval gate.
 **Files Modified:**
 
 - server/src/engine/ChipRaceEngine.ts

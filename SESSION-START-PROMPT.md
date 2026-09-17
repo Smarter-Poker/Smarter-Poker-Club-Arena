@@ -1,3 +1,5 @@
+> Current execution authority: root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. This dated plan supplies scope/dependency context only; it does not assign new work or override current delivery policy.
+
 # SESSION START PROMPT
 
 ## Paste this EXACTLY at the start of every new Claude session for the migration

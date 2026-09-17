@@ -20,6 +20,10 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
     'src/pages/DiamondCrashPage.tsx',
     'src/pages/DiamondPlinkoPage.tsx',
     'tests/sql/diamond-wheel-funded-awards.sql',
+    'tests/sql/diamond-wheel-upgrade-eight.sql',
+    'tests/fixtures/diamond-spins/wheel-v3-postgres-receipts.json',
+    'tests/unit/wheelUpgradePostgresContract.test.ts',
+    'tests/unit/wheelUpgradeReceipts.test.ts',
     'tests/fixtures/diamond-wheel-v2-receipts.json',
     'tests/fixtures/diamond-spins/wheel-earned-postgres-receipts.json',
     'tests/unit/wheelServerReceipts.test.ts',
@@ -42,6 +46,8 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
   it.each([
     'tests/e2e/css/diamond-games-playfield.spec.ts',
     'tests/e2e/helpers/diamond-games-fixture.mjs',
+    'tests/e2e/css/diamond-wheel-reveal.spec.ts',
+    'tests/e2e/helpers/diamond-wheel-fixture.mjs',
   ])('runs the actual browser fixture when %s changes', (path) => {
     expect(classifyChangedPaths([path]).src).toBe(true);
   });

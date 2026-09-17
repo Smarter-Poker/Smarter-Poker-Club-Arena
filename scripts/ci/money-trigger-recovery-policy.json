@@ -1,7 +1,7 @@
 [
   {
     "path": "supabase/migrations/20260912100322_tournament_break_original_custody_and_hand_authority.sql",
-    "review": "G8-independent-review-0093-baseline-binding",
+    "review": "G8-f06-recovery-policy-binding-review-20260917",
     "originalVersion": "20260912100322",
     "originalName": "tournament_break_original_custody_and_hand_authority",
     "originalSha256": "02be881411324ba69ddb284c2080bcfae86fbaddc42bb03db482d4f44fb70296",
@@ -13,15 +13,15 @@
         "table": "table_seats",
         "trigger": "a00_f06_source_seat",
         "definitionSha256": "443267db4aba7be275177af7c69aae3cc6630d5a89dc18a409561e3b78a2cd28",
-        "functionSha256": "1693f68c007aa8c4f339ac12943265d92dca020dbc8db52c60cd9b46f2c996e2",
-        "note": "In service on 2026-09-12, declared as the baseline for check-money-trigger-declared. Records that it was live and known at that date, not that it was re-reviewed then. Anything created after this date declares itself in its own migration."
+        "functionSha256": "3d6d2608bc0f90ba8742d99d3931f70dc9601c961639d278c183f11840645251",
+        "note": "Reviewed September 14: exact already-zero seat closing shares G/T with accepted hands while excluding canonical begin/move/terminal authorities. Original park-hand and begun-move receipts remain mandatory; positive stacks and changed identities/generations retain exclusive custody. Native financial, rollback and concurrency proofs recorded."
       },
       {
         "table": "tournament_players",
         "trigger": "a00_f06_source_roster",
         "definitionSha256": "63587d8464ba505b8724e9be66e693fd82d97c60f9c8d685476a896c069093d6",
-        "functionSha256": "1693f68c007aa8c4f339ac12943265d92dca020dbc8db52c60cd9b46f2c996e2",
-        "note": "In service on 2026-09-12, declared as the baseline for check-money-trigger-declared. Records that it was live and known at that date, not that it was re-reviewed then. Anything created after this date declares itself in its own migration."
+        "functionSha256": "3d6d2608bc0f90ba8742d99d3931f70dc9601c961639d278c183f11840645251",
+        "note": "Reviewed September 13: unchanged table and seat mirrors in an accepted hand keep the shared tournament lane. Identity, status and custody changes retain exclusive lane and receipt checks. Native concurrency, rollback and full financial-path probes passed."
       }
     ]
   }

@@ -41,17 +41,18 @@ CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS
 $$SELECT nullif(current_setting('test.auth_uid',true),'')::uuid$$;
 CREATE TABLE cash_games(id uuid PRIMARY KEY,enabled boolean DEFAULT true,opening_hold_since timestamptz);
-CREATE TABLE tables(id uuid PRIMARY KEY,cluster_id uuid,name text,role text,main_index integer,
+CREATE TABLE tables(id uuid PRIMARY KEY,cluster_id uuid REFERENCES cash_games(id),name text,role text,main_index integer,
  lifecycle text DEFAULT 'live',status text DEFAULT 'running',max_players integer DEFAULT 2,
  is_deleted boolean DEFAULT false,created_at timestamptz DEFAULT now());
 CREATE TABLE table_seats(table_id uuid,user_id uuid,seat_number integer,left_at timestamptz);
 CREATE TABLE table_waitlist(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),table_id uuid,user_id uuid,
  position integer,status text,notified_at timestamptz,hold_expires_at timestamptz);
 CREATE UNIQUE INDEX one_table_admission ON table_waitlist(table_id,user_id) WHERE status IN ('waiting','notified');
-CREATE TABLE cash_game_waitlist(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),game_id uuid,user_id uuid,
+CREATE TABLE cash_game_waitlist(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),game_id uuid REFERENCES cash_games(id),user_id uuid,
  status text,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
 CREATE UNIQUE INDEX one_game_admission ON cash_game_waitlist(game_id,user_id) WHERE status IN ('waiting','notified');
 CREATE TABLE cash_seat_moves(to_table_id uuid,state text,swap_move_id uuid);
+CREATE TABLE cash_game_roster(game_id uuid REFERENCES cash_games(id),user_id uuid);
 CREATE FUNCTION fn_cash_game_barred_seconds(uuid,uuid) RETURNS integer LANGUAGE sql AS $$SELECT NULL::integer$$;
 -- Exact installed open-seat body, read back 2026-09-17. Holds and planned
 -- transfers consume chairs; this probe does not invent an always-open door.
@@ -92,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix="ca-admission-pg17-") as directory:
         return json.loads(sql(query).stdout.strip())
 
     def seed():
-        sql(f"""TRUNCATE cash_games,tables,table_waitlist,cash_game_waitlist,table_seats;
+        sql(f"""TRUNCATE cash_games,tables,table_waitlist,cash_game_waitlist,table_seats,cash_game_roster;
         INSERT INTO cash_games(id) VALUES('{GAME}');
         INSERT INTO tables(id,cluster_id,name,role,main_index) VALUES('{TABLE}','{GAME}','Main 2','main',2);
         INSERT INTO cash_game_waitlist(game_id,user_id,status) VALUES('{GAME}','{USER}','notified');
@@ -136,6 +137,44 @@ with tempfile.TemporaryDirectory(prefix="ca-admission-pg17-") as directory:
                     child.kill()
                     child.wait(timeout=5)
 
+    def roster_foreign_key_race():
+        seed()
+        sql("DELETE FROM table_waitlist; DELETE FROM cash_game_waitlist;")
+        holder = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        contender = None
+        try:
+            # Actual buy-in ordering: table capacity advisory lock, then the
+            # roster trigger inserts a child referencing the cash game.
+            holder.stdin.write("BEGIN; SET LOCAL statement_timeout='4s';\n"
+                f"SELECT pg_advisory_xact_lock(hashtextextended('table_seat:' || '{TABLE}',0));\n\\echo CAPACITY_READY\n")
+            holder.stdin.flush()
+            while True:
+                line = holder.stdout.readline()
+                assert line, "Capacity holder exited before acquiring its lock"
+                if "CAPACITY_READY" in line:
+                    break
+            contender = subprocess.Popen(cmd + ["-c", f"SET application_name='mustmove_roster_race'; "
+                f"BEGIN; SET LOCAL statement_timeout='6s'; SET LOCAL ROLE authenticated; "
+                f"SET LOCAL test.auth_uid='{USER}'; SELECT fn_cash_game_join('{GAME}'); COMMIT;"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            deadline = time.monotonic() + 3
+            while value("SELECT count(*) FROM pg_stat_activity WHERE application_name='mustmove_roster_race' AND wait_event='advisory'") != 1:
+                assert contender.poll() is None, "Join failed before reaching the capacity lock"
+                assert time.monotonic() < deadline, "Join never reached the capacity lock"
+                time.sleep(0.02)
+            holder.stdin.write(f"INSERT INTO cash_game_roster VALUES('{GAME}','{USER}'); COMMIT;\n\\q\n")
+            holder.stdin.flush()
+            assert holder.wait(timeout=6) == 0, holder.stderr.read()
+            output, error = contender.communicate(timeout=7)
+            assert contender.returncode == 0, error
+            assert json.loads(output.strip())["action"] == "seat"
+            assert value("SELECT count(*) FROM cash_game_roster") == 1
+        finally:
+            for child in (contender, holder):
+                if child is not None and child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=5)
+
     started = False
     try:
         subprocess.run([str(pg / "initdb"), "-L", str(share), "-D", str(cluster), "-U", "postgres", "--auth=trust", "--no-locale"], check=True, capture_output=True, timeout=30)
@@ -158,6 +197,8 @@ with tempfile.TemporaryDirectory(prefix="ca-admission-pg17-") as directory:
         bad = sql("SET ROLE authenticated; SET test.auth_uid=''; SELECT fn_cash_game_join('" + GAME + "');", check=False)
         assert bad.returncode != 0 and "NOT_AUTHENTICATED" in bad.stderr
         print("PASS: authentication, grants and idempotent migration preserved", flush=True)
+        roster_foreign_key_race()
+        print("PASS: join serialization permits concurrent roster foreign-key insertion without a lock cycle", flush=True)
         definition = sql("SELECT pg_get_functiondef('fn_cash_game_join(uuid)'::regprocedure)").stdout
         sql(definition.replace("sign in to join a game", "changed unreviewed definition"))
         drift = sql(repair, check=False)

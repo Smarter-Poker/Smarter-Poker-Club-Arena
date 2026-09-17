@@ -6,12 +6,16 @@ cancelled while another tab was joining, join could read the old offer, wait
 for cancellation, update its expiry after it became `left`, and return `seat`.
 The response then named an offer that was no longer active.
 
-The migration adds `FOR UPDATE` to the join function's first game read. Join,
+The migration adds `FOR NO KEY UPDATE` to the join function's first game read. Join,
 cancellation and the planner now serialize before reading admission state.
 An overlapping join ordered after cancellation can create a new valid offer;
 an admission ordered before cancellation is retired by that cancellation.
 The existing table-capacity lock, caller identity, eligibility checks, grants,
 and seated-player behavior are preserved. No wallet or seat data is rewritten.
+The selected lock mode permits the roster foreign-key read made by a buy-in
+that already holds its table-capacity lock. A stronger game lock would create
+a lock-order cycle; the additional two-connection regression preserves this
+actual parent/child constraint and table advisory-lock ordering.
 
 Production readback on September 17 matched reviewed join definition MD5
 `1b9173dde43a3e6d4e887843deeaa9e7`. Its September 10 source is the comparison

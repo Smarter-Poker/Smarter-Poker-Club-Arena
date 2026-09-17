@@ -1,0 +1,379 @@
+{
+  "metadata": {
+    "schema": "public",
+    "name": "ca_chip_store_coverage",
+    "relkind": "r",
+    "owner": "postgres",
+    "rls": true,
+    "force_rls": false,
+    "reloptions": null,
+    "columns": [
+      {
+        "acl": null,
+        "name": "store",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "acl": null,
+        "name": "treatment",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "acl": null,
+        "name": "counted_by",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "acl": null,
+        "name": "notes",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "acl": null,
+        "name": "added_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_chip_store_coverage_pkey",
+        "type": "p",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (store)"
+      },
+      {
+        "name": "ca_chip_store_coverage_treatment_check",
+        "type": "c",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK ((treatment = ANY (ARRAY['counted'::text, 'noncirculating'::text, 'uncounted'::text])))"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ca_chip_store_coverage_pkey",
+        "ready": true,
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX ca_chip_store_coverage_pkey ON public.ca_chip_store_coverage USING btree (store)"
+      }
+    ],
+    "triggers": null,
+    "policies": null,
+    "acl_is_null": false,
+    "acl_entries": [
+      [
+        "postgres",
+        "anon",
+        "r",
+        false
+      ],
+      [
+        "postgres",
+        "anon",
+        "t",
+        false
+      ],
+      [
+        "postgres",
+        "anon",
+        "x",
+        false
+      ],
+      [
+        "postgres",
+        "authenticated",
+        "r",
+        false
+      ],
+      [
+        "postgres",
+        "authenticated",
+        "t",
+        false
+      ],
+      [
+        "postgres",
+        "authenticated",
+        "x",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "D",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "a",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "d",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "m",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "r",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "t",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "w",
+        false
+      ],
+      [
+        "postgres",
+        "postgres",
+        "x",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "D",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "a",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "d",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "m",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "r",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "t",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "w",
+        false
+      ],
+      [
+        "postgres",
+        "service_role",
+        "x",
+        false
+      ]
+    ]
+  },
+  "declarations": [
+    {
+      "store": "agent_wallet",
+      "treatment": "counted",
+      "counted_by": "agent_wallets",
+      "notes": "agents agent_wallet_balance and promo_wallet_balance"
+    },
+    {
+      "store": "bbj_pool",
+      "treatment": "counted",
+      "counted_by": "bbj_pools",
+      "notes": "main, backup and promo"
+    },
+    {
+      "store": "bounty_liability",
+      "treatment": "counted",
+      "counted_by": "tournament_liability",
+      "notes": "tournament_escrow bounty_balance"
+    },
+    {
+      "store": "chip_retirement",
+      "treatment": "noncirculating",
+      "counted_by": null,
+      "notes": "retirement holding"
+    },
+    {
+      "store": "club_treasury",
+      "treatment": "counted",
+      "counted_by": "treasuries",
+      "notes": "clubs chip_treasury"
+    },
+    {
+      "store": "club_wallet",
+      "treatment": "counted",
+      "counted_by": "club_wallets",
+      "notes": "club_wallets chip_balance"
+    },
+    {
+      "store": "credit_facility",
+      "treatment": "uncounted",
+      "counted_by": null,
+      "notes": "never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money"
+    },
+    {
+      "store": "credit_receivable",
+      "treatment": "uncounted",
+      "counted_by": null,
+      "notes": "never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money"
+    },
+    {
+      "store": "escrow",
+      "treatment": "counted",
+      "counted_by": "ticket_escrow",
+      "notes": "Outstanding tournament tickets. ADDED 2026-09-11: it was in no list at all, which is the whole of the five supply incidents of that morning"
+    },
+    {
+      "store": "insurance_bank",
+      "treatment": "counted",
+      "counted_by": "club_insurance + union insurance_wallet",
+      "notes": "clubs insurance_balance"
+    },
+    {
+      "store": "issuance_reserve",
+      "treatment": "noncirculating",
+      "counted_by": null,
+      "notes": "issuance held before it enters circulation"
+    },
+    {
+      "store": "leaderboard_round",
+      "treatment": "counted",
+      "counted_by": "leaderboard_liability",
+      "notes": "the same seed, while a round is being settled"
+    },
+    {
+      "store": "opening_setup",
+      "treatment": "counted",
+      "counted_by": "leaderboard_liability",
+      "notes": "club_opening_setups leaderboard_seed_remaining"
+    },
+    {
+      "store": "player_wallet",
+      "treatment": "counted",
+      "counted_by": "member_wallets + member_promo",
+      "notes": "club_members chip_balance and promo_balance"
+    },
+    {
+      "store": "prize_liability",
+      "treatment": "counted",
+      "counted_by": "tournament_liability",
+      "notes": "tournament_escrow prize_balance, or the counters where an event has no escrow row yet"
+    },
+    {
+      "store": "promo_wallet",
+      "treatment": "counted",
+      "counted_by": "club_promo + agent_promo + union promo_wallet",
+      "notes": "the promo floats, brought inside the total on 2026-09-03"
+    },
+    {
+      "store": "rakeback_payable",
+      "treatment": "uncounted",
+      "counted_by": null,
+      "notes": "never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money"
+    },
+    {
+      "store": "refund_payable",
+      "treatment": "uncounted",
+      "counted_by": null,
+      "notes": "never used in the journal to date. Movement raises a finding so its treatment is decided before it carries money"
+    },
+    {
+      "store": "settlement_suspense",
+      "treatment": "uncounted",
+      "counted_by": null,
+      "notes": "NOT in the basis and NOT verified as a routing label. It holds a large historical net and has not moved in the sixty hours to 2026-09-11 15:00, so it is not implicated in the incidents this migration fixes. Declared uncounted deliberately rather than guessed into the total, where a wrong guess would double count. Any movement now raises a finding, which is the point"
+    },
+    {
+      "store": "spin_reserve",
+      "treatment": "counted",
+      "counted_by": "spin_pools + union spin_reserve_wallet",
+      "notes": "spin_bonus_pools balance"
+    },
+    {
+      "store": "system_burn",
+      "treatment": "noncirculating",
+      "counted_by": null,
+      "notes": "retirement. A move into it is a burn"
+    },
+    {
+      "store": "system_mint",
+      "treatment": "noncirculating",
+      "counted_by": null,
+      "notes": "issuance. A move out of it is a mint"
+    },
+    {
+      "store": "table_stack",
+      "treatment": "counted",
+      "counted_by": "felt",
+      "notes": "table_seats stack on cash tables. Tournament felt is deliberately excluded and carried by tournament_liability instead"
+    },
+    {
+      "store": "union_bank",
+      "treatment": "counted",
+      "counted_by": "union_wallets",
+      "notes": "union_wallets chip_balance"
+    },
+    {
+      "store": "union_wallet",
+      "treatment": "counted",
+      "counted_by": "union_wallets",
+      "notes": "the union rake, bbj, promo, insurance and spin reserve wallets"
+    }
+  ],
+  "rows_epoch": "Exact25 initial migration declarations; not a current production row capture.",
+  "required_selected_stores": [
+    "issuance_reserve",
+    "club_treasury",
+    "player_wallet"
+  ]
+}

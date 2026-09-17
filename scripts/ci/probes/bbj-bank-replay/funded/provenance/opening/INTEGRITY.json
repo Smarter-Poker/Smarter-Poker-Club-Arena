@@ -1,0 +1,160 @@
+{
+  "files": [
+    {
+      "path": "CASE-RECIPE.json",
+      "sha256": "17c7513a6c2514ea829325a421391f5c00bfc4306b358c03bb1571434d5171a8"
+    },
+    {
+      "path": "CURRENT-RELATIONS.json",
+      "sha256": "ee8be1b8fe0feebb9000e1519a08eee8225d1ed924047cea135b2334b9f5a735"
+    },
+    {
+      "path": "DELTA-FROM-0117.patch",
+      "sha256": "58c774feda2f22b8577a19fbb89c4793ae3503e98b8fff68653cbb9db3bcbd81"
+    },
+    {
+      "path": "DELTA-FROM-0118.patch",
+      "sha256": "4ab65c7aaa84f9b4a2ebd758b5759c78da77ca86178d9c8828fe0608460f76ac"
+    },
+    {
+      "path": "DEPENDENCY-DELTA.json",
+      "sha256": "e50453957474f2bdb8c53e4f72b4a40f15ae3fe64dfef23e3ccc9160ed233ee7"
+    },
+    {
+      "path": "DETECTOR-HISTORY-RESULTS.json",
+      "sha256": "9e632c4aa798335f35aa88fc59a4bd709ec27cab58b816d61ff25f243a57e6a1"
+    },
+    {
+      "path": "EXPRESSION-AUDIT.json",
+      "sha256": "fa35317c6da0db2d9baa2802542612e3e52d53523dbd0ce2afed928b1d697fd0"
+    },
+    {
+      "path": "FINGERPRINT-CONTRACT.json",
+      "sha256": "a4bc93ffc2a2119ba03a407ea619c04a7683a311456e8aa56b7f6bf1c0944fb1"
+    },
+    {
+      "path": "FULLCASE-RESULTS.json",
+      "sha256": "293b5324d4f160914238425dda4759642567341d46b5fa1b08fb3e7b37dd70a5"
+    },
+    {
+      "path": "GENERATED-SUPPLEMENTAL-SQL.json",
+      "sha256": "28b15c427c1174c28d05a2822f984dc4f6738b9d38a74d6c43e20a4cf599da52"
+    },
+    {
+      "path": "HANDOFF.md",
+      "sha256": "9be32574641dbe57d45841143c44ba3b5fb0e75b1846f0de7d2375c94110fe0c"
+    },
+    {
+      "path": "HISTORICAL-PREIMAGES.json",
+      "sha256": "a8a6510eb17f1558e60a8543a0c99e77ab366ba27dc1edaf3bf0105636a0d1f9"
+    },
+    {
+      "path": "NONINTERFERENCE-RESULTS.json",
+      "sha256": "487a0ed14bce522ccd6307fc8a16fedfa8830608119e1fecf813e9e2c4415b17"
+    },
+    {
+      "path": "ORACLE-SOURCE.json",
+      "sha256": "576a9d192c56d9495d4cf5c37b9a2b0c514b9a39880495b402c3cd778f5f7534"
+    },
+    {
+      "path": "PREDECESSOR-PRESERVATION.json",
+      "sha256": "3d6c6f86bdfba488835db2f003c7700a91e21f3e5da111ed67eb3cbc5ea62396"
+    },
+    {
+      "path": "RAW-SCOPE-RESULTS.json",
+      "sha256": "8faf0d8755020dc88853ac8a340c014bedeb73dd1057b515f222d6e5bc393cf3"
+    },
+    {
+      "path": "REGRESSION-RUNS.json",
+      "sha256": "7d975c303d4ab5f78d7708913a9443786003c26965c152b6c45cd0325ac37f6e"
+    },
+    {
+      "path": "RESIDUAL-DEDUPLICATION.json",
+      "sha256": "1e2c60bb24cdfd50d2e2d837f70c888603a3f815582801cd76e9835512e32a4a"
+    },
+    {
+      "path": "SOURCE-CHECKS.json",
+      "sha256": "a4f63900daa2b896bfb53a37fc29c11f8674c8b096728ee04f595ca0c1edf589"
+    },
+    {
+      "path": "SOURCE-DELTA.patch",
+      "sha256": "93f6f48d196b043053c1dbc970dc23aa66ae36909b3927c549d03cd21b68d6ea"
+    },
+    {
+      "path": "SOURCE-PINS.json",
+      "sha256": "f37a9bcbd958c56dcbd4be41d8cc50d82106168fde8ce50058abe41491872ecf"
+    },
+    {
+      "path": "SQL-CONSTRUCTION-RESULTS.json",
+      "sha256": "80d0f75e65dd855818d283633e2dc8e6ec51764e6f7ec7954356fa7d8ef6aff0"
+    },
+    {
+      "path": "STATUS.json",
+      "sha256": "8ab53c37917c26f67cd4eec5cb5477078c0f4cdefe847775f8368d4d4d579e6b"
+    },
+    {
+      "path": "SUPPLEMENTAL-FUNCTIONS.json",
+      "sha256": "5f4d195349bc4f872c8f17d16971187b549f149221904b802b4d7b9d828f658a"
+    },
+    {
+      "path": "VALID-PRIZE.json",
+      "sha256": "19e47f2ee5c3edf59e76c782ff1ac4ac0cbf69151d029045dac3c5a8379331ae"
+    },
+    {
+      "path": "VERIFICATION.json",
+      "sha256": "df0e1d8cfb8ad17c61a2bc8fc4e698ca7bd730a59a104d9f8f8be9985ce2b2db"
+    },
+    {
+      "path": "case_module.py",
+      "sha256": "e041c4b649303dcb93e900d9458b32514cf1a25c13309d7436c061d9bab83d0d"
+    },
+    {
+      "path": "noninterference.py",
+      "sha256": "8866372c0a9ee7f19196b71f01b216ddb02d31af5c2a05f8ae6245999f4bed84"
+    },
+    {
+      "path": "oracle_fixtures.py",
+      "sha256": "e6d627de1194f7e8ec5eb37b90c2ef53cd7fdc17dd5a8c8c514b42184b2ceaf2"
+    },
+    {
+      "path": "packet_contract.py",
+      "sha256": "80d1b2cb30b1fa8a0ace1977f5abe7f6493592e3c00a98f95ef40abc76568f18"
+    },
+    {
+      "path": "pair_support.py",
+      "sha256": "886140539cd3fda9d5899b207df764ab858995ed4a9676055c9a9ad854d53d5a"
+    },
+    {
+      "path": "supplemental.py",
+      "sha256": "cf38ee75bc16416ff00fc55078651189558563fd1ccf4140a1af86e034ab2704"
+    },
+    {
+      "path": "test_detector_history.py",
+      "sha256": "2c825fd5a40bc2ce29d92062b233cbd71bbbb89f404b8868ee4ca0ad51ac667d"
+    },
+    {
+      "path": "test_fullcase.py",
+      "sha256": "08a88cc4158fe91cb0f3818e2ccb4d5e59504264bf78ebcc78e1830d4c4fad23"
+    },
+    {
+      "path": "test_noninterference.py",
+      "sha256": "db6d130d25872a10349c020035f90cb981e22707d3ef55d916fa9b0c9a773ddf"
+    },
+    {
+      "path": "test_raw_scope.py",
+      "sha256": "658f3112c50f46c7b3fd0344bb5863c63739469b4009937cc03935d7ae860167"
+    },
+    {
+      "path": "test_supplemental_sql.py",
+      "sha256": "439d0d5b5883138635ab5ba8fb5e3435a66a0b1ec5ac09f94cd1bfe007e3734f"
+    },
+    {
+      "path": "verify_case.py",
+      "sha256": "725d981bdcdc4f3889e7aefaece18f0ab15500a7014ccf35c2e449e3e5eb87f5"
+    },
+    {
+      "path": "verify_source.py",
+      "sha256": "a68783da4f8cf44166dcf5d9bc46c1cbb19ed99e819c7697cfbf9741e1ecd755"
+    }
+  ]
+}

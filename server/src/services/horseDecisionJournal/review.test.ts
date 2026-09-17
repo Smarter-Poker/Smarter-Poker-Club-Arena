@@ -198,7 +198,10 @@ describe('private retained-hand journal consumer', () => {
     ...['unknown', 'forced', 'pre_action', 'player', 'horse_policy', 'horse_fallback', null].map(
       (origin) => ({ name: `supplied origin ${origin}`, patch: { origin } })
     ),
-    { name: 'legacy return with forced origin', patch: { historyEvent: undefined, origin: 'forced' } },
+    {
+      name: 'legacy return with forced origin',
+      patch: { historyEvent: undefined, origin: 'forced' },
+    },
   ])('keeps $name unqualified instead of inventing event provenance', ({ patch }) => {
     const f = fixture();
     f.a.actions.push({ ...returned(), ...patch });

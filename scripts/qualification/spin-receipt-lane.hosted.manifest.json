@@ -47,8 +47,8 @@
       "bytes": 1983
     },
     "scripts/qualification/spin-expiry-business-races.py": {
-      "sha256": "33040b22707d84990cc87489d97b412ca1a5163906646769a9961842a1f3eae8",
-      "bytes": 25461
+      "sha256": "24d45e4bb26b062fd2abbc86f1019cd05f0f79fc2557e82993a19770a8982f2d",
+      "bytes": 26347
     },
     "scripts/qualification/spin-receipt-lane-compactor.sql": {
       "sha256": "fc0709bbfd4325a47a96b3246617351a512ca4eba4672afa3b6ef7724a554c60",
@@ -59,7 +59,7 @@
       "bytes": 5738
     },
     "scripts/qualification/spin-receipt-lane.py": {
-      "sha256": "ff54acd76a3223c43bb522c196bfd74158e6e5eab3ca02ae16388d9c3b99f83b",
+      "sha256": "50d2d98514eb353e1726af1d0b7035a64b4b7bcec75127ef1117827b63001ff8",
       "bytes": 18128
     },
     "scripts/qualification/spin-receipt-lane.sql": {

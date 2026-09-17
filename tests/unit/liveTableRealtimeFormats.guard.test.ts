@@ -30,12 +30,15 @@ describe('the production realtime certificate covers every live-game lane', () =
 
   it('rejects missing acquisition, competing transports and acquisition during gameplay', () => {
     expect(() => assertInitialTableOwnership([], 1, 100)).toThrow('no subscription request');
-    expect(() =>
-      assertInitialTableOwnership([{ at: 10, socketId: 2 }], 1, 100)
-    ).toThrow('crossed physical transports');
+    expect(() => assertInitialTableOwnership([{ at: 10, socketId: 2 }], 1, 100)).toThrow(
+      'crossed physical transports'
+    );
     expect(() =>
       assertInitialTableOwnership(
-        [{ at: 10, socketId: 1 }, { at: 20, socketId: 2 }],
+        [
+          { at: 10, socketId: 1 },
+          { at: 20, socketId: 2 },
+        ],
         1,
         100
       )
@@ -43,18 +46,21 @@ describe('the production realtime certificate covers every live-game lane', () =
     for (const at of [100, 101]) {
       expect(() =>
         assertInitialTableOwnership(
-          [{ at: 10, socketId: 1 }, { at, socketId: 1 }],
+          [
+            { at: 10, socketId: 1 },
+            { at, socketId: 1 },
+          ],
           1,
           100
         )
       ).toThrow('during the observed hand cycle');
     }
-    expect(() =>
-      assertInitialTableOwnership([{ at: Number.NaN, socketId: 1 }], 1, 100)
-    ).toThrow('invalid subscription timestamp');
-    expect(() =>
-      assertInitialTableOwnership([{ at: 10, socketId: 1 }], 1, Number.NaN)
-    ).toThrow('exact observation and transport');
+    expect(() => assertInitialTableOwnership([{ at: Number.NaN, socketId: 1 }], 1, 100)).toThrow(
+      'invalid subscription timestamp'
+    );
+    expect(() => assertInitialTableOwnership([{ at: 10, socketId: 1 }], 1, Number.NaN)).toThrow(
+      'exact observation and transport'
+    );
   });
 
   it('keeps one finite case deadline across long hands and reconnect proof', () => {

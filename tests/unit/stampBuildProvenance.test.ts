@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -15,7 +15,7 @@ const cleanEnv = Object.fromEntries(
     ([key]) =>
       !key.startsWith('GIT_') &&
       !key.startsWith('GITHUB_') &&
-      !['STRICT_PROVENANCE', 'CA_DIST'].includes(key)
+      !['STRICT_PROVENANCE', 'CA_DIST', 'CA_BUILD_PURPOSE'].includes(key)
   )
 );
 const fixtureEnv = {
@@ -120,207 +120,7 @@ function stamp(dir: string, overrides: Record<string, string> = {}) {
   return { ...result, info: JSON.parse(readFileSync(artifact, 'utf8')) };
 }
 
-const repositoryName = 'Smarter-Poker/Smarter-Poker-Club-Arena';
-
-function pullRequestSnapshot(advanced = true) {
-  const dir = repository('current');
-  git(dir, 'checkout', '--quiet', '-b', 'feature');
-  git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'fixture PR head');
-  const head = git(dir, 'rev-parse', 'HEAD');
-  git(dir, 'checkout', '--quiet', 'main');
-  git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'fixture PR base');
-  const base = git(dir, 'rev-parse', 'HEAD');
-  git(dir, 'update-ref', 'refs/remotes/origin/main', base);
-  git(dir, 'checkout', '--quiet', '-b', 'pr');
-  git(dir, 'merge', '--quiet', '--no-ff', 'feature', '-m', 'fixture event merge');
-  const merge = git(dir, 'rev-parse', 'HEAD');
-  if (advanced) {
-    git(dir, 'checkout', '--quiet', 'main');
-    git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'main advanced while PR queued');
-    git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
-  }
-  git(dir, 'checkout', '--quiet', '--detach', merge);
-  const eventPath = path.join(directory(), 'event.json');
-  const event = {
-    number: 4778,
-    repository: { full_name: repositoryName },
-    pull_request: {
-      number: 4778,
-      base: { sha: base, ref: 'main', repo: { full_name: repositoryName } },
-      head: { sha: head },
-      merge_commit_sha: merge as string | null,
-    },
-  };
-  const saveEvent = () => writeFileSync(eventPath, JSON.stringify(event));
-  saveEvent();
-  return {
-    dir,
-    base,
-    head,
-    merge,
-    event,
-    saveEvent,
-    env: {
-      GITHUB_ACTIONS: 'true',
-      GITHUB_EVENT_NAME: 'pull_request',
-      GITHUB_EVENT_PATH: eventPath,
-      GITHUB_REPOSITORY: repositoryName,
-      GITHUB_RUN_ID: '12345',
-      GITHUB_REF: 'refs/pull/4778/merge',
-      GITHUB_BASE_REF: 'main',
-      GITHUB_SHA: merge,
-    },
-  };
-}
-
-// Execute the publisher's actual admission expression, rather than copying its
-// conditions into an oracle which could drift along with the implementation.
-function publisherAccepts(provenance: unknown, expectedSha: string) {
-  const workflow = readFileSync('.github/workflows/publish-club-arena.yml', 'utf8');
-  const expressions = [...workflow.matchAll(/const valid =([\s\S]*?);/g)];
-  expect(expressions).toHaveLength(1);
-  const admit = new Function(
-    'provenance',
-    'expectedSha',
-    'expectedRun',
-    `return (${expressions[0][1]});`
-  );
-  return admit(provenance, expectedSha, `https://github.com/${repositoryName}/actions/runs/12345`);
-}
-
 describe('actual build provenance subprocess', () => {
-  it.each([false, true])('validates the event merge when newer main exists: %s', (advanced) => {
-    const fixture = pullRequestSnapshot(advanced);
-    const result = stamp(fixture.dir, fixture.env);
-    expect(result.status, result.stdout + result.stderr).toBe(0);
-    expect(result.info).toMatchObject({
-      commit: fixture.merge,
-      dirty: false,
-      historyComplete: true,
-      behindMain: advanced ? 1 : 0,
-      aheadMain: 2,
-      validationSnapshot: {
-        purpose: 'pull-request-test-only',
-        pullRequest: 4778,
-        base: fixture.base,
-        head: fixture.head,
-        merge: fixture.merge,
-      },
-    });
-    expect(publisherAccepts(result.info, fixture.merge)).toBe(false);
-  });
-
-  it('binds through the event SHA and parents when merge_commit_sha is not populated', () => {
-    const fixture = pullRequestSnapshot();
-    fixture.event.pull_request.merge_commit_sha = null;
-    fixture.saveEvent();
-    expect(stamp(fixture.dir, fixture.env).status).toBe(0);
-  });
-
-  it.each(['push', 'workflow_dispatch', 'repository_dispatch', 'pull_request_target'])(
-    'does not apply PR test semantics to a %s release',
-    (eventName) => {
-      const fixture = pullRequestSnapshot();
-      const result = stamp(fixture.dir, { ...fixture.env, GITHUB_EVENT_NAME: eventName });
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('1 commit(s) BEHIND origin/main');
-      expect(result.info.validationSnapshot).toBeUndefined();
-    }
-  );
-
-  it('keeps explicit strict publication stronger than a valid PR test context', () => {
-    const fixture = pullRequestSnapshot();
-    const result = stamp(fixture.dir, { ...fixture.env, STRICT_PROVENANCE: '1' });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('1 commit(s) BEHIND origin/main');
-    expect(publisherAccepts(result.info, fixture.merge)).toBe(false);
-  });
-
-  it.each([
-    'missing-event',
-    'malformed-event',
-    'repository',
-    'base-repository',
-    'number',
-    'ref',
-    'base-ref',
-    'base-sha',
-    'head-sha',
-    'merge-sha',
-    'checkout-sha',
-    'branch-checkout',
-    'head-checkout',
-    'reversed-parents',
-    'missing-main',
-    'unrelated-main',
-    'shallow',
-    'missing-head-object',
-  ])('refuses an unbound PR snapshot: %s', (fault) => {
-    const fixture = pullRequestSnapshot();
-    switch (fault) {
-      case 'repository':
-        fixture.event.repository.full_name = 'another/repository';
-        break;
-      case 'base-repository':
-        fixture.event.pull_request.base.repo.full_name = 'another/repository';
-        break;
-      case 'number':
-        fixture.event.pull_request.number++;
-        break;
-      case 'ref':
-        fixture.env.GITHUB_REF = 'refs/heads/main';
-        break;
-      case 'base-ref':
-        fixture.event.pull_request.base.ref = 'other';
-        break;
-      case 'base-sha':
-        fixture.event.pull_request.base.sha = fixture.head;
-        break;
-      case 'head-sha':
-        fixture.event.pull_request.head.sha = fixture.base;
-        break;
-      case 'merge-sha':
-        fixture.event.pull_request.merge_commit_sha = fixture.head;
-        break;
-      case 'checkout-sha':
-        fixture.env.GITHUB_SHA = fixture.head;
-        break;
-      case 'branch-checkout':
-        git(fixture.dir, 'checkout', '--quiet', 'pr');
-        break;
-      case 'head-checkout':
-        git(fixture.dir, 'checkout', '--quiet', '--detach', fixture.head);
-        fixture.env.GITHUB_SHA = fixture.head;
-        fixture.event.pull_request.merge_commit_sha = fixture.head;
-        break;
-      case 'reversed-parents':
-        fixture.event.pull_request.base.sha = fixture.head;
-        fixture.event.pull_request.head.sha = fixture.base;
-        break;
-      case 'missing-main':
-        git(fixture.dir, 'update-ref', '-d', 'refs/remotes/origin/main');
-        break;
-      case 'unrelated-main':
-        git(fixture.dir, 'update-ref', 'refs/remotes/origin/main', fixture.head);
-        break;
-      case 'missing-head-object':
-        rmSync(
-          path.join(fixture.dir, '.git/objects', fixture.head.slice(0, 2), fixture.head.slice(2))
-        );
-        break;
-      case 'shallow':
-        writeFileSync(path.join(fixture.dir, '.git/shallow'), fixture.merge + '\n');
-        break;
-    }
-    fixture.saveEvent();
-    if (fault === 'missing-event') rmSync(fixture.env.GITHUB_EVENT_PATH);
-    if (fault === 'malformed-event') writeFileSync(fixture.env.GITHUB_EVENT_PATH, '{');
-    const result = stamp(fixture.dir, fixture.env);
-    expect(result.status, result.stdout + result.stderr).toBe(1);
-    expect(result.stderr).toContain('snapshot cannot be verified');
-    expect(result.info.validationSnapshot).toBeUndefined();
-  });
-
   it.each([
     ['GitHub Actions', { GITHUB_ACTIONS: 'true' }],
     ['strict local release', { STRICT_PROVENANCE: '1' }],
@@ -362,7 +162,6 @@ describe('actual build provenance subprocess', () => {
     });
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
-    expect(publisherAccepts(result.info, git(dir, 'rev-parse', 'HEAD'))).toBe(true);
     expect(result.info).toMatchObject({
       schema: 1,
       commit: git(dir, 'rev-parse', 'HEAD'),

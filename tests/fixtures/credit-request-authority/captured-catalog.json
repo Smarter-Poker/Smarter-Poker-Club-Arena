@@ -1,0 +1,180 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "read_only": true,
+  "catalog": {
+    "scope": "Credit request source catalog only",
+    "table": {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdxtm/postgres",
+        "authenticated=arwdxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "credit_requests",
+      "owner": "postgres",
+      "force_rls": false
+    },
+    "columns": [
+      {
+        "acl": null,
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "acl": null,
+        "name": "requester_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "acl": null,
+        "name": "approver_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "acl": null,
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "acl": null,
+        "name": "requested_amount",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "acl": null,
+        "name": "approved_amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "acl": null,
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "acl": null,
+        "name": "status",
+        "type": "text",
+        "default": "'pending'::text",
+        "not_null": true
+      },
+      {
+        "acl": null,
+        "name": "reviewer_notes",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "acl": null,
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "acl": null,
+        "name": "reviewed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "acl": null,
+        "name": "reviewed_by",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "policies": [
+      {
+        "cmd": "INSERT",
+        "qual": null,
+        "roles": ["authenticated"],
+        "tablename": "credit_requests",
+        "permissive": "PERMISSIVE",
+        "policyname": "credit_requests_insert_own",
+        "schemaname": "public",
+        "with_check": "(requester_id = ( SELECT auth.uid() AS uid))"
+      },
+      {
+        "cmd": "SELECT",
+        "qual": "((requester_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = credit_requests.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = credit_requests.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)) AND (cm.role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text]))))))",
+        "roles": ["authenticated"],
+        "tablename": "credit_requests",
+        "permissive": "PERMISSIVE",
+        "policyname": "credit_requests_select",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "UPDATE",
+        "qual": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = credit_requests.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = credit_requests.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)) AND (cm.role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text]))))))",
+        "roles": ["authenticated"],
+        "tablename": "credit_requests",
+        "permissive": "PERMISSIVE",
+        "policyname": "credit_requests_update_manager",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "SELECT",
+        "qual": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
+        "roles": ["authenticated"],
+        "tablename": "credit_requests",
+        "permissive": "PERMISSIVE",
+        "policyname": "union_overseer_read",
+        "schemaname": "public",
+        "with_check": null
+      }
+    ],
+    "triggers": [
+      {
+        "name": "trg_notify_credit_request",
+        "enabled": "O",
+        "function": "fn_notify_credit_request()",
+        "definition": "CREATE TRIGGER trg_notify_credit_request AFTER INSERT OR UPDATE OF status ON public.credit_requests FOR EACH ROW EXECUTE FUNCTION fn_notify_credit_request()"
+      }
+    ],
+    "functions": [
+      {
+        "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+        "md5": "d1ce4c9a2245cc60f6d02481ee73db52",
+        "owner": "postgres",
+        "config": ["search_path=public, extensions"],
+        "signature": "fn_admin_update_agent(uuid,text,text,numeric,numeric,numeric,uuid,text,boolean)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_admin_update_agent(p_agent_id uuid, p_status text DEFAULT NULL::text, p_role text DEFAULT NULL::text, p_credit_limit numeric DEFAULT NULL::numeric, p_commission_rate numeric DEFAULT NULL::numeric, p_player_rakeback_rate numeric DEFAULT NULL::numeric, p_assigned_by uuid DEFAULT NULL::uuid, p_credit_reason text DEFAULT NULL::text, p_is_prepaid boolean DEFAULT NULL::boolean)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_caller uuid := (SELECT auth.uid());\n  v_club_id uuid; v_user_id uuid; v_parent uuid; v_old_limit numeric; v_parent_limit numeric;\n  v_member_role text; v_role_res jsonb;\n  v_prepaid_now boolean; v_limit_now numeric; v_used_now numeric;\n  v_prepaid_after boolean; v_limit_after numeric;\n  v_touches_funding boolean;\nBEGIN\n  IF p_agent_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'agent id required'); END IF;\n  IF v_caller IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'authentication required'); END IF;\n  SELECT club_id, user_id, parent_agent_id, credit_limit INTO v_club_id, v_user_id, v_parent, v_old_limit\n  FROM agents WHERE id = p_agent_id;\n  IF v_club_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'agent not found'); END IF;\n  IF NOT EXISTS (\n    SELECT 1 FROM clubs c WHERE c.id = v_club_id AND (\n      c.owner_id = v_caller\n      OR EXISTS (SELECT 1 FROM club_members cm WHERE cm.club_id = v_club_id AND cm.user_id = v_caller\n                 AND cm.role IN ('owner','co_owner','admin')))\n  ) THEN\n    RETURN jsonb_build_object('success', false, 'error', 'not authorized to manage this club''s agents');\n  END IF;\n  IF p_status IS NOT NULL AND p_status NOT IN ('active','suspended','frozen') THEN\n    RETURN jsonb_build_object('success', false, 'error', 'invalid status'); END IF;\n  IF p_role IS NOT NULL AND p_role NOT IN ('super_agent','agent','sub_agent') THEN\n    RETURN jsonb_build_object('success', false, 'error', 'invalid role'); END IF;\n  IF p_credit_limit IS NOT NULL AND p_credit_limit < 0 THEN\n    RETURN jsonb_build_object('success', false, 'error', 'credit_limit must be >= 0'); END IF;\n  -- The table CHECK is 0..0.70 and 0..0.50. Validating against 0..100 let a\n  -- caller who meant \"25%\" past this line and into a raw 23514 from Postgres.\n  IF p_commission_rate IS NOT NULL AND (p_commission_rate < 0 OR p_commission_rate > 0.70) THEN\n    RETURN jsonb_build_object('success', false, 'error', 'commission_rate must be between 0 and 0.70'); END IF;\n  IF p_player_rakeback_rate IS NOT NULL AND (p_player_rakeback_rate < 0 OR p_player_rakeback_rate > 0.50) THEN\n    RETURN jsonb_build_object('success', false, 'error', 'player_rakeback_rate must be between 0 and 0.50'); END IF;\n\n  -- ---------------------------------------------------------------------------\n  -- THE FUNDING PAIR\n  -- ---------------------------------------------------------------------------\n  SELECT COALESCE(is_prepaid, false), COALESCE(credit_limit, 0), COALESCE(credit_used, 0)\n    INTO v_prepaid_now, v_limit_now, v_used_now\n    FROM agents WHERE id = p_agent_id;\n\n  v_touches_funding := (p_is_prepaid IS NOT NULL OR p_credit_limit IS NOT NULL);\n  v_prepaid_after   := COALESCE(p_is_prepaid, v_prepaid_now);\n  v_limit_after     := COALESCE(p_credit_limit, v_limit_now);\n\n  IF v_touches_funding THEN\n    -- Granting a line IS the choice of credit. Refusing here instead would\n    -- dead-end every \"raise this agent's limit\" call against a prepaid agent,\n    -- and no screen moves them to credit first.\n    IF p_is_prepaid IS NULL AND COALESCE(p_credit_limit, 0) > 0 THEN\n      v_prepaid_after := false;\n    END IF;\n\n    -- And moving somebody TO prepaid closes the line, for the same reason in\n    -- reverse: prepaid and a line cannot both be true.\n    IF COALESCE(p_is_prepaid, false) AND p_credit_limit IS NULL THEN\n      v_limit_after := 0;\n    END IF;\n\n    -- Saying both, and contradicting yourself, is still a mistake worth naming.\n    IF v_prepaid_after AND COALESCE(v_limit_after, 0) <> 0 THEN\n      RETURN jsonb_build_object('success', false,\n        'error', 'a prepaid agent carries no credit line. Send prepaid on its own, or a credit limit on its own.');\n    END IF;\n\n    -- The pair that can send nothing at all.\n    IF NOT v_prepaid_after AND COALESCE(v_limit_after, 0) <= 0 THEN\n      RETURN jsonb_build_object('success', false, 'needs_funding', true,\n        'error', 'an agent on credit needs a limit greater than 0. Set them prepaid instead, or give a limit.');\n    END IF;\n\n    -- A debt outlives the line it was drawn against, so the line cannot simply\n    -- be taken away while it is still owed.\n    IF v_prepaid_after AND v_used_now > 0 THEN\n      RETURN jsonb_build_object('success', false,\n        'error', 'this agent still owes ' || trim(to_char(v_used_now, 'FM999,999,999,990.00'))\n                 || ' chips on their credit line. Settle the invoice before moving them to prepaid.',\n        'credit_used', v_used_now);\n    END IF;\n\n    -- Lowering a limit below what has already been drawn violates check_credit\n    -- and used to reach the client as a raw 23514 with no explanation.\n    IF NOT v_prepaid_after AND v_limit_after < v_used_now THEN\n      RETURN jsonb_build_object('success', false,\n        'error', 'that limit is below the ' || trim(to_char(v_used_now, 'FM999,999,999,990.00'))\n                 || ' chips already drawn. Take a payment first, or set a limit of at least that much.',\n        'credit_used', v_used_now, 'requested_limit', v_limit_after);\n    END IF;\n  END IF;\n\n  IF v_touches_funding AND v_parent IS NOT NULL THEN\n    SELECT credit_limit INTO v_parent_limit FROM agents WHERE id = v_parent;\n    IF v_parent_limit IS NOT NULL AND v_limit_after > v_parent_limit THEN\n      RETURN jsonb_build_object('success', false, 'error', 'credit limit cannot exceed parent agent limit');\n    END IF;\n  END IF;\n\n  SELECT role INTO v_member_role FROM club_members\n   WHERE club_id = v_club_id AND user_id = v_user_id;\n\n  -- Dan, B-02, 2026-08-31: OWNERS KEEP EARNING. This list used to include\n  -- 'owner', which no rule anywhere else does: trg_agents_staff_earn_no_rakeback\n  -- covers co_owner and admin only, and one live owner already holds an active\n  -- agents row at 0.30 / 0.20 that this branch would have refused to edit.\n  IF v_member_role IN ('co_owner','admin')\n     AND (COALESCE(p_commission_rate, 0) <> 0 OR COALESCE(p_player_rakeback_rate, 0) <> 0)\n     AND p_role IS NULL THEN\n    RETURN jsonb_build_object('success', false,\n      'error', 'this member is club staff and earns no rakeback. Change their role first.');\n  END IF;\n\n  -- The role change goes through the one door, so the grant matrix, the\n  -- downline guard, the funding choice and the audit row apply here too. The\n  -- RESOLVED funding pair is forwarded, not the raw arguments: the callee\n  -- applies the same prepaid-or-a-line rule, and sending it a bare NULL where\n  -- this call has already decided would make the two disagree.\n  IF p_role IS NOT NULL AND v_member_role IS NOT NULL AND v_member_role <> p_role THEN\n    v_role_res := public.fn_club_set_member_role(\n      v_club_id, v_user_id, p_role, v_caller,\n      p_commission_rate, p_player_rakeback_rate,\n      CASE WHEN v_touches_funding THEN v_prepaid_after ELSE NULL END,\n      CASE WHEN v_touches_funding THEN v_limit_after   ELSE NULL END);\n    IF NOT COALESCE((v_role_res ->> 'success')::boolean, false) THEN\n      RETURN v_role_res;\n    END IF;\n  END IF;\n\n  UPDATE agents SET\n    status = COALESCE(p_status, status),\n    role = COALESCE(p_role, role),\n    credit_limit = CASE WHEN v_touches_funding THEN v_limit_after ELSE credit_limit END,\n    commission_rate = COALESCE(p_commission_rate, commission_rate),\n    player_rakeback_rate = COALESCE(p_player_rakeback_rate, player_rakeback_rate),\n    is_prepaid = CASE WHEN v_touches_funding THEN v_prepaid_after ELSE is_prepaid END,\n    updated_at = now()\n  WHERE id = p_agent_id;\n\n  IF v_touches_funding AND v_limit_after <> COALESCE(v_old_limit, -1) THEN\n    INSERT INTO credit_assignments (agent_id, assigned_by, old_limit, new_limit, reason)\n    VALUES (p_agent_id, v_caller, v_old_limit, v_limit_after, p_credit_reason);\n  END IF;\n\n  RETURN jsonb_build_object('success', true, 'agent_id', p_agent_id, 'club_id', v_club_id,\n    'is_prepaid', CASE WHEN v_touches_funding THEN v_prepaid_after ELSE v_prepaid_now END,\n    'credit_limit', CASE WHEN v_touches_funding THEN v_limit_after ELSE v_limit_now END);\nEND;\n$function$\n"
+      },
+      {
+        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "md5": "bce8aaeffc421ff88abdd31f428a5aaa",
+        "owner": "postgres",
+        "config": ["search_path=public"],
+        "signature": "fn_notify_credit_request()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_notify_credit_request()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  BEGIN\n    IF TG_OP = 'INSERT' THEN\n      PERFORM public.fn_raise_notification(\n        NEW.approver_id, 'credit_request', 'Credit Request',\n        public.fn_notify_display_name(NEW.requester_id)\n          || ' requested ' || to_char(COALESCE(NEW.requested_amount, 0), 'FM999,999,999,990') || ' chips credit',\n        '/agent/credit-requests',\n        jsonb_build_object('creditRequestId', NEW.id, 'clubId', NEW.club_id));\n    ELSIF TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status THEN\n      IF NEW.status = 'approved' THEN\n        PERFORM public.fn_raise_notification(\n          NEW.requester_id, 'credit_approved', 'Credit Line Increased',\n          'Your credit line was raised to '\n            || to_char(COALESCE(NEW.approved_amount, NEW.requested_amount, 0), 'FM999,999,999,990') || ' chips',\n          '/wallet', jsonb_build_object('creditRequestId', NEW.id));\n      ELSIF NEW.status = 'denied' THEN\n        PERFORM public.fn_raise_notification(\n          NEW.requester_id, 'credit_denied', 'Credit Request Denied',\n          COALESCE(NULLIF(btrim(NEW.reviewer_notes), ''), 'Your credit request was not approved'),\n          '/wallet', jsonb_build_object('creditRequestId', NEW.id));\n      END IF;\n    END IF;\n  EXCEPTION WHEN OTHERS THEN\n    RAISE WARNING 'fn_notify_credit_request failed for request %: %', NEW.id, SQLERRM;\n  END;\n  RETURN NEW;\nEND; $function$\n"
+      }
+    ],
+    "captured_at": "2026-09-15T03:51:33.571069+00:00",
+    "constraints": [
+      {
+        "name": "credit_requests_pkey",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ]
+  }
+}

@@ -39,7 +39,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync, lstatSync } from 'node:fs';
 import path from 'node:path';
 
 // CA_DIST: the native build (npm run build:native) writes dist-native/ so the
@@ -82,67 +82,65 @@ const historyComplete =
 const behindMain = hasOriginMain && historyComplete ? gitCount('HEAD..origin/main') : null;
 const aheadMain = hasOriginMain && historyComplete ? gitCount('origin/main..HEAD') : null;
 
-// A pull_request job tests the immutable merge selected by its event. Main can
-// advance before a queued job fetches it. Bind that test to BOTH event parents;
-// never change the actual main-distance fields consumed by the publisher.
-// Explicit strict release builds retain the current-main refusal in every event.
-const pullRequestTest =
-  process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_EVENT_NAME === 'pull_request';
-let validationSnapshot = null;
-let snapshotError = null;
-if (pullRequestTest) {
-  try {
-    const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-    const pr = event.pull_request;
-    const repository = process.env.GITHUB_REPOSITORY;
-    const base = pr?.base?.sha;
-    const head = pr?.head?.sha;
-    const fullSha = /^[0-9a-f]{40}$/;
-    const parents = git('show -s --format=%P HEAD', '').split(' ');
-    if (
-      !repository ||
-      event.repository?.full_name !== repository ||
-      pr?.base?.repo?.full_name !== repository ||
-      !Number.isSafeInteger(event.number) ||
-      event.number < 1 ||
-      pr?.number !== event.number ||
-      process.env.GITHUB_REF !== `refs/pull/${event.number}/merge` ||
-      process.env.GITHUB_BASE_REF !== 'main' ||
-      pr?.base?.ref !== 'main' ||
-      !fullSha.test(base || '') ||
-      !fullSha.test(head || '') ||
-      !fullSha.test(commit) ||
-      process.env.GITHUB_SHA !== commit ||
-      (pr.merge_commit_sha != null && pr.merge_commit_sha !== commit) ||
-      branch !== 'HEAD' ||
-      historyComplete !== true ||
-      !Number.isSafeInteger(behindMain) ||
-      behindMain < 0 ||
-      !Number.isSafeInteger(aheadMain) ||
-      aheadMain < 0 ||
-      !hasOriginMain ||
-      parents.length !== 2 ||
-      parents[0] !== base ||
-      parents[1] !== head ||
-      git(`merge-base --is-ancestor ${base} origin/main`, null) !== ''
-    ) {
-      throw new Error('event, checkout and complete merge ancestry do not agree');
-    }
-    validationSnapshot = {
-      purpose: 'pull-request-test-only',
-      pullRequest: event.number,
-      base,
-      head,
-      merge: commit,
-    };
-  } catch {
-    snapshotError =
-      'Pull-request build snapshot cannot be verified from its event and exact Git parents.';
-  }
+function isPullRequestValidation() {
+  if (process.env.CA_BUILD_PURPOSE !== 'ci-validation') return false;
+  if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== 'pull_request')
+    throw new Error('Invalid PR build validation identity');
+  const repository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+  const ref = process.env.GITHUB_REF || '';
+  const match = /^refs\/pull\/([1-9][0-9]*)\/merge$/.exec(ref);
+  const eventPath = process.env.GITHUB_EVENT_PATH || '';
+  const fail = () => {
+    throw new Error('Invalid PR build validation identity');
+  };
+  if (
+    !match ||
+    process.env.GITHUB_REPOSITORY !== repository ||
+    process.env.GITHUB_WORKFLOW_REF !== `${repository}/.github/workflows/ci.yml@${ref}` ||
+    !/^[0-9a-f]{40}$/.test(commit) ||
+    process.env.GITHUB_SHA !== commit ||
+    !path.isAbsolute(eventPath) ||
+    historyComplete !== true ||
+    !Number.isSafeInteger(behindMain) ||
+    behindMain < 0 ||
+    !Number.isSafeInteger(aheadMain) ||
+    aheadMain < 0
+  )
+    fail();
+  const stat = lstatSync(eventPath);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > 4 * 1024 * 1024) fail();
+  const event = JSON.parse(readFileSync(eventPath, 'utf8'));
+  const pr = event.pull_request;
+  if (
+    !pr ||
+    event.number !== Number(match[1]) ||
+    pr.number !== event.number ||
+    pr.base?.ref !== 'main' ||
+    pr.base?.repo?.full_name !== repository ||
+    !/^[0-9a-f]{40}$/.test(pr.base?.sha || '') ||
+    !/^[0-9a-f]{40}$/.test(pr.head?.sha || '')
+  )
+    fail();
+  const parents = git('rev-list --parents -n 1 HEAD', '').split(/\s+/);
+  if (
+    parents.length !== 3 ||
+    parents[0] !== commit ||
+    parents[2] !== pr.head.sha ||
+    !/^[0-9a-f]{40}$/.test(parents[1]) ||
+    git(`merge-base --is-ancestor ${pr.base.sha} ${parents[1]}`, null) !== '' ||
+    git(`merge-base --is-ancestor ${parents[1]} origin/main`, null) !== ''
+  )
+    fail();
+  return true;
 }
+
+// CI validates the captured merge even if main advances; publishers refuse
+// this explicit marker and retain all existing protected-main ancestry gates.
+const validationOnly = isPullRequestValidation();
 
 const info = {
   schema: 1,
+  validationOnly,
   commit,
   commitTime,
   buildTime: new Date().toISOString(),
@@ -151,7 +149,6 @@ const info = {
   historyComplete,
   behindMain,
   aheadMain,
-  ...(validationSnapshot ? { validationSnapshot } : {}),
   ciRun:
     process.env.GITHUB_RUN_ID && process.env.GITHUB_REPOSITORY
       ? `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
@@ -177,10 +174,6 @@ console.log(
 // test may use its event snapshot, but retains its real non-publishable distance.
 // Local diagnostic builds warn; the publisher independently enforces provenance.
 const strictProvenance = process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1';
-if (snapshotError) {
-  console.error(snapshotError);
-  process.exit(1);
-}
 if (commit !== 'unknown' && historyComplete !== true) {
   const msg =
     '\n✗ Build ancestry cannot be verified: incomplete Git history.\n' +
@@ -198,14 +191,13 @@ if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
     `  Shipping it would erase whatever landed in those commits — that is\n` +
     `  precisely the 2026-08-21 throwables regression.\n\n` +
     `  FIX: merge current origin/main into this feature branch, then rebuild.\n`;
-  if (validationSnapshot && process.env.STRICT_PROVENANCE !== '1') {
-    console.log(
-      'Validated the exact pull-request test snapshot; this artifact is not a production release.'
-    );
-  } else if (strictProvenance) {
+  if (strictProvenance && (!validationOnly || process.env.STRICT_PROVENANCE === '1')) {
     console.error(msg);
     process.exit(1);
-  } else {
-    console.warn(msg);
   }
+  console.warn(
+    validationOnly
+      ? `CI validation captured ${behindMain} later main commit(s); this bundle cannot be published.`
+      : msg
+  );
 }

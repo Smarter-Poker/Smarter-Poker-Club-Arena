@@ -1,0 +1,276 @@
+[
+  {
+    "jsonb_build_object": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "push_enabled",
+          "type": "boolean",
+          "default": "true",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "email_enabled",
+          "type": "boolean",
+          "default": "true",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "sms_enabled",
+          "type": "boolean",
+          "default": "false",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "marketing_enabled",
+          "type": "boolean",
+          "default": "false",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "tournament_alerts",
+          "type": "boolean",
+          "default": "true",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "social_alerts",
+          "type": "boolean",
+          "default": "true",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "training_alerts",
+          "type": "boolean",
+          "default": "true",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "preferences",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "mute_all",
+          "type": "boolean",
+          "default": "false",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "browser_push",
+          "type": "boolean",
+          "default": "false",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "push_type_prefs",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "quiet_hours_start",
+          "type": "smallint",
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "quiet_hours_end",
+          "type": "smallint",
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "quiet_hours_tz",
+          "type": "text",
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "daily_push_cap",
+          "type": "integer",
+          "default": "0",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "notification_preferences_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX notification_preferences_pkey ON public.notification_preferences USING btree (id)"
+        },
+        {
+          "name": "notification_preferences_user_id_key",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX notification_preferences_user_id_key ON public.notification_preferences USING btree (user_id)"
+        }
+      ],
+      "policies": [
+        {
+          "name": "notification_preferences_self_select",
+          "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())",
+          "check": null,
+          "roles": ["authenticated"],
+          "command": "r",
+          "permissive": true
+        },
+        {
+          "name": "np_ins",
+          "qual": null,
+          "check": "(( SELECT auth.uid() AS uid) = user_id)",
+          "roles": ["PUBLIC"],
+          "command": "a",
+          "permissive": true
+        },
+        {
+          "name": "np_upd",
+          "qual": "(( SELECT auth.uid() AS uid) = user_id)",
+          "check": null,
+          "roles": ["PUBLIC"],
+          "command": "w",
+          "permissive": true
+        }
+      ],
+      "triggers": null,
+      "functions": [
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "body_md5": "ae752a70fdd81c0f9d8c45c6d3955bfc",
+          "signature": "fn_messenger_message_page(uuid,uuid,timestamp with time zone,uuid,integer)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_messenger_message_page(p_user_id uuid, p_conversation_id uuid, p_before timestamp with time zone DEFAULT NULL::timestamp with time zone, p_before_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 50)\n RETURNS TABLE(id uuid, conversation_id uuid, sender_id uuid, content text, message_type text, media_metadata jsonb, created_at timestamp with time zone, updated_at timestamp with time zone, is_deleted boolean, is_edited boolean, profiles jsonb)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n IF p_limit IS NULL OR p_limit<1 OR p_limit>200 OR (p_before_id IS NOT NULL AND p_before IS NULL) THEN\n   RAISE EXCEPTION 'invalid_message_page' USING ERRCODE='22023'; END IF;\n IF (NOT public.fn_caller_is_engine() AND (auth.uid() IS NULL OR auth.uid()<>p_user_id))\n OR NOT EXISTS(SELECT 1 FROM public.social_conversation_participants p WHERE p.user_id=p_user_id AND p.conversation_id=p_conversation_id) THEN\n   RAISE EXCEPTION 'message_page_not_authorised' USING ERRCODE='42501'; END IF;\n RETURN QUERY SELECT m.id,m.conversation_id,m.sender_id,m.content,\n   CASE WHEN m.message_type='invoice' AND i.id IS NULL THEN 'text' ELSE m.message_type END,\n   COALESCE(m.media_metadata,'{}')||CASE WHEN i.id IS NULL THEN jsonb_build_object('accounting_verified',false)\n     ELSE jsonb_build_object('accounting_verified',true,'invoice_id',i.id,'issued_status',m.media_metadata->'status',\n       'status',i.status,'chips_transferred',i.chips_transferred) END,\n   m.created_at,m.updated_at,m.is_deleted,m.is_edited,\n   jsonb_build_object('id',pr.id,'username',pr.username,'avatar_url',pr.avatar_url,'is_vip',pr.is_vip)\n FROM public.social_messages m\n LEFT JOIN public.accounting_invoice_deliveries d ON d.message_id=m.id\n LEFT JOIN public.settlement_invoices i ON i.id=d.invoice_id\n LEFT JOIN public.profiles pr ON pr.id=m.sender_id\n WHERE m.conversation_id=p_conversation_id AND COALESCE(m.is_deleted,false)=false\n   AND COALESCE(d.delivery_mode,'immediate')<>'weekly_detail'\n   AND (p_before IS NULL OR m.created_at<p_before OR (p_before_id IS NOT NULL AND m.created_at=p_before AND m.id<p_before_id))\n ORDER BY m.created_at DESC,m.id DESC LIMIT p_limit;\nEND $function$\n",
+          "volatility": "s",
+          "definition_md5": "50f7d04e5714aca5db85e37f9c5b7527",
+          "security_definer": true
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "body_md5": "c334d1027a8857d2ffa39761b003fda4",
+          "signature": "fn_messenger_accounting_threads(uuid,uuid[])",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_messenger_accounting_threads(p_user_id uuid, p_conversation_ids uuid[])\n RETURNS TABLE(conversation_id uuid, recipient_visible boolean, last_message_preview text, last_message_at timestamp with time zone)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n IF p_user_id IS NULL OR p_conversation_ids IS NULL OR cardinality(p_conversation_ids)>200 THEN\n  RAISE EXCEPTION 'invalid_accounting_thread_request' USING ERRCODE='22023'; END IF;\n IF NOT public.fn_caller_is_engine() AND (auth.uid() IS NULL OR auth.uid()<>p_user_id) THEN\n  RAISE EXCEPTION 'accounting_threads_not_authorised' USING ERRCODE='42501'; END IF;\n RETURN QUERY SELECT c.conversation_id,\n  EXISTS(SELECT 1 FROM public.accounting_invoice_deliveries d JOIN public.social_messages m ON m.id=d.message_id\n    WHERE m.conversation_id=c.conversation_id AND d.recipient_id=p_user_id AND d.delivery_mode='immediate' AND COALESCE(m.is_deleted,false)=false),\n  visible.content,visible.created_at\n FROM public.accounting_conversations c\n JOIN public.social_conversation_participants p ON p.conversation_id=c.conversation_id AND p.user_id=p_user_id\n LEFT JOIN LATERAL(SELECT m.content,m.created_at FROM public.social_messages m\n   LEFT JOIN public.accounting_invoice_deliveries d ON d.message_id=m.id\n   WHERE m.conversation_id=c.conversation_id AND COALESCE(m.is_deleted,false)=false\n     AND COALESCE(d.delivery_mode,'immediate')<>'weekly_detail'\n   ORDER BY m.created_at DESC,m.id DESC LIMIT 1) visible ON true\n WHERE c.conversation_id=ANY(p_conversation_ids) AND (c.sender_id=p_user_id OR c.recipient_id=p_user_id);\nEND $function$\n",
+          "volatility": "s",
+          "definition_md5": "17d04846d71f752ee13cfa2e8714e628",
+          "security_definer": true
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+          "owner": "postgres",
+          "config": ["search_path=public"],
+          "body_md5": "37d6a68678cd19a44ce00696f4c42a16",
+          "signature": "fn_messenger_search_messages(uuid,uuid[],text,integer)",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_messenger_search_messages(p_user_id uuid, p_conversation_ids uuid[], p_query text, p_limit integer DEFAULT 50)\n RETURNS TABLE(id uuid, conversation_id uuid, sender_id uuid, content text, created_at timestamp with time zone, message_type text, media_metadata jsonb)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n IF p_limit IS NULL OR p_limit<1 OR p_limit>100 OR p_conversation_ids IS NULL OR\n    cardinality(p_conversation_ids)>500 OR cardinality(p_conversation_ids)<1 OR\n    p_query IS NULL OR length(btrim(p_query))<2 OR length(p_query)>500 THEN\n   RAISE EXCEPTION 'invalid_message_search' USING ERRCODE='22023'; END IF;\n IF (NOT public.fn_caller_is_engine() AND (auth.uid() IS NULL OR auth.uid()<>p_user_id)) OR\n    EXISTS(SELECT 1 FROM unnest(p_conversation_ids) AS requested(conversation_id)\n      WHERE NOT EXISTS(SELECT 1 FROM public.social_conversation_participants p\n        WHERE p.user_id=p_user_id AND p.conversation_id=requested.conversation_id)) THEN\n   RAISE EXCEPTION 'message_search_not_authorised' USING ERRCODE='42501'; END IF;\n RETURN QUERY SELECT m.id,m.conversation_id,m.sender_id,m.content,m.created_at,\n   CASE WHEN m.message_type='invoice' AND i.id IS NULL THEN 'text' ELSE m.message_type END,\n   COALESCE(m.media_metadata,'{}')||CASE WHEN i.id IS NULL THEN jsonb_build_object('accounting_verified',false)\n     ELSE jsonb_build_object('accounting_verified',true,'invoice_id',i.id,'issued_status',m.media_metadata->'status',\n       'status',i.status,'chips_transferred',i.chips_transferred) END\n FROM public.social_messages m\n LEFT JOIN public.accounting_invoice_deliveries d ON d.message_id=m.id\n LEFT JOIN public.settlement_invoices i ON i.id=d.invoice_id\n WHERE m.conversation_id=ANY(p_conversation_ids) AND COALESCE(m.is_deleted,false)=false\n   AND COALESCE(d.delivery_mode,'immediate')<>'weekly_detail'\n   AND strpos(lower(m.content),lower(btrim(p_query)))>0\n ORDER BY m.created_at DESC,m.id DESC LIMIT p_limit;\nEND $function$\n",
+          "volatility": "s",
+          "definition_md5": "8a435bb2242375fd1e00055cba8f50e0",
+          "security_definer": true
+        }
+      ],
+      "captured_at": "2026-09-15T02:37:55.2878+00:00",
+      "constraints": [
+        {
+          "name": "notification_preferences_daily_push_cap_check",
+          "validated": true,
+          "definition": "CHECK ((daily_push_cap >= 0))"
+        },
+        {
+          "name": "notification_preferences_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "notification_preferences_quiet_hours_end_check",
+          "validated": true,
+          "definition": "CHECK (((quiet_hours_end IS NULL) OR ((quiet_hours_end >= 0) AND (quiet_hours_end <= 23))))"
+        },
+        {
+          "name": "notification_preferences_quiet_hours_start_check",
+          "validated": true,
+          "definition": "CHECK (((quiet_hours_start IS NULL) OR ((quiet_hours_start >= 0) AND (quiet_hours_start <= 23))))"
+        },
+        {
+          "name": "notification_preferences_user_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "notification_preferences_user_id_key",
+          "validated": true,
+          "definition": "UNIQUE (user_id)"
+        }
+      ],
+      "preference_table": {
+        "acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+        "rls": true,
+        "kind": "r",
+        "owner": "postgres",
+        "force_rls": false
+      }
+    }
+  }
+]

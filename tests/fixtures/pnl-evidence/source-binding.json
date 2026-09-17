@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "state": "source_only_unrun",
+  "hash_algorithm": "sha256",
+  "capture": "September 14 read-only settlement integrity metadata; portable unchanged source copy",
+  "wrapper_owner_acl": "Original wrapper SQL initially withholds client grants; full activation runner then reproduces actual 2026-09-15 supplemental owner/ACL capture from full-weekly-accounting/supplemental-function-access.{json,sql}.",
+  "limitations": "Source custody only. The verifier, wrapper load and hook regression are UNRUN. Supplemental owner/ACL is a timestamped observation; final protected execution, fresh installation preimages and live authorization remain pending.",
+  "files": {
+    "captured-pnl-metadata.json": "149ebe07f1c16e8bf46c39aa9bb4befa6890b52c7acebaed54fad36b3483e20f",
+    "legacy-pnl-wrapper-preimages.sql": "2cf370e0a34dc62a7f853c7c50aa9f1530793bffa92e8145a4b4912002059ad0",
+    "hooks-seed.sql": "e455f05f581a19f0eba11eaf93fdcc08db0230ce462d63338186bf31a7c00895",
+    "hooks-regression.sql": "95cda9baf678eed3b273bcd7b117393b90b48eed3b15544023d13e5030669223",
+    "verify-wrapper-source-binding.py": "a5990f3c35e6cafb1b802720cc7936a291676f87ac19741052b3245a9548b76f"
+  }
+}

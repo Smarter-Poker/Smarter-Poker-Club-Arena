@@ -26,10 +26,27 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 // The native share sheet is recorded, not run - there is no phone under vitest.
-const shareBlob = vi.fn(async () => true);
+const shareBlob = vi.fn<
+  (blob: Blob, filename: string, title?: string, isCurrent?: () => boolean) => Promise<boolean>
+>(async () => true);
 vi.mock('../src/lib/native/share', () => ({
-  nativeShareBlob: (...a: unknown[]) => shareBlob(...a),
+  nativeShareBlob: (blob: Blob, filename: string, title?: string, isCurrent?: () => boolean) =>
+    shareBlob(blob, filename, title, isCurrent),
 }));
+const native = vi.hoisted(() => ({ writeFile: vi.fn(), share: vi.fn() }));
+vi.mock('@capacitor/filesystem', () => ({
+  Filesystem: { writeFile: native.writeFile },
+  Directory: { Cache: 'CACHE' },
+}));
+vi.mock('@capacitor/share', () => ({ Share: { share: native.share } }));
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function pretendNative(on: boolean) {
   const w = window as unknown as { Capacitor?: unknown };
@@ -53,8 +70,15 @@ function walk(dir: string, out: string[] = []): string[] {
 const THE_DOOR = 'src/utils/downloadCsv.ts';
 
 describe('every file handed to the user goes through one door', () => {
-  beforeEach(() => shareBlob.mockClear());
-  afterEach(() => pretendNative(false));
+  beforeEach(() => {
+    shareBlob.mockReset().mockResolvedValue(true);
+    native.writeFile.mockReset().mockResolvedValue({ uri: 'file:///cache/share/ledger.csv' });
+    native.share.mockReset().mockResolvedValue({});
+  });
+  afterEach(() => {
+    pretendNative(false);
+    vi.restoreAllMocks();
+  });
 
   it('a file that sets a download attribute has handled the app first', () => {
     // The attribute itself is fine as the WEB path. What is not fine is a
@@ -131,6 +155,127 @@ describe('every file handed to the user goes through one door', () => {
     expect(await csvBlob.text()).toBe('\ufeffa,b');
     pretendNative(false);
   });
+
+  it('a guarded native download waits for the share result and propagates refusal', async () => {
+    const { downloadBlob } = await import('../src/utils/downloadCsv');
+    pretendNative(true);
+    const gate = deferred<boolean>();
+    shareBlob.mockReturnValueOnce(gate.promise);
+    const current = () => true;
+    let completed = false;
+    const pending = Promise.resolve(downloadBlob('ledger.csv', new Blob(['a,b']), current)).then(
+      (result) => {
+        completed = true;
+        return result;
+      }
+    );
+    await vi.waitFor(() => expect(shareBlob).toHaveBeenCalledOnce());
+    expect(shareBlob.mock.calls[0][3]).toBe(current);
+    expect(completed).toBe(false);
+    gate.resolve(true);
+    await expect(pending).resolves.toBe(true);
+
+    shareBlob.mockRejectedValueOnce(new Error('Native Share Refused'));
+    await expect(downloadBlob('ledger.csv', new Blob(['a,b']), current)).rejects.toThrow(
+      'Native Share Refused'
+    );
+    expect(document.querySelector('a[download]')).toBeNull();
+  });
+
+  it('retires the account during the native helper import before handing it bytes', async () => {
+    const { downloadBlob } = await import('../src/utils/downloadCsv');
+    pretendNative(true);
+    let current = true;
+    const pending = downloadBlob('ledger.csv', new Blob(['a,b']), () => current);
+    current = false;
+    await expect(pending).rejects.toThrow('export_account_or_view_changed');
+    expect(shareBlob).not.toHaveBeenCalled();
+  });
+
+  it.each(['before imports', 'during imports', 'during blob read', 'during cache write'])(
+    'the real native helper refuses account retirement %s before OS sharing',
+    async (phase) => {
+      const { nativeShareBlob } =
+        await vi.importActual<typeof import('../src/lib/native/share')>('../src/lib/native/share');
+      let current = phase !== 'before imports';
+      const readers: FileReader[] = [];
+      vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function () {
+        readers.push(this);
+      });
+      const write = deferred<{ uri: string }>();
+      native.writeFile.mockReturnValueOnce(write.promise);
+      const pending = nativeShareBlob(new Blob(['a,b']), 'ledger.csv', undefined, () => current);
+      const refused = expect(pending).rejects.toThrow('export_account_or_view_changed');
+      if (phase === 'during imports') current = false;
+      if (phase === 'during blob read' || phase === 'during cache write') {
+        await vi.waitFor(() => expect(readers).toHaveLength(1));
+        const reader = readers[0];
+        if (phase === 'during blob read') current = false;
+        Object.defineProperty(reader, 'result', {
+          configurable: true,
+          value: 'data:text/csv;base64,YSxi',
+        });
+        reader.dispatchEvent(new ProgressEvent('load'));
+        if (phase === 'during cache write') {
+          await vi.waitFor(() => expect(native.writeFile).toHaveBeenCalledOnce());
+          current = false;
+          write.resolve({ uri: 'file:///cache/share/ledger.csv' });
+        }
+      }
+      await refused;
+      expect(native.share).not.toHaveBeenCalled();
+      if (phase !== 'during cache write') expect(native.writeFile).not.toHaveBeenCalled();
+    }
+  );
+
+  it('awaits the actual OS share and does not call a completed handoff cancelled after an account switch', async () => {
+    const { nativeShareBlob } =
+      await vi.importActual<typeof import('../src/lib/native/share')>('../src/lib/native/share');
+    const { downloadBlob } = await import('../src/utils/downloadCsv');
+    shareBlob.mockImplementation(nativeShareBlob);
+    pretendNative(true);
+    let current = true;
+    let completed = false;
+    const share = deferred<object>();
+    native.share.mockReturnValueOnce(share.promise);
+    const pending = Promise.resolve(
+      downloadBlob('ledger.csv', new Blob(['a,b']), () => current)
+    ).then((result) => {
+      completed = true;
+      return result;
+    });
+    await vi.waitFor(() =>
+      expect(native.share).toHaveBeenCalledWith({
+        title: 'ledger.csv',
+        files: ['file:///cache/share/ledger.csv'],
+      })
+    );
+    expect(native.writeFile).toHaveBeenCalledWith({
+      path: 'share/ledger.csv',
+      data: 'YSxi',
+      directory: 'CACHE',
+      recursive: true,
+    });
+    expect(completed).toBe(false);
+    current = false;
+    share.resolve({});
+    await expect(pending).resolves.toBe(true);
+    expect(native.share).toHaveBeenCalledOnce();
+  });
+
+  it.each(['writeFile', 'share'] as const)(
+    'propagates the actual native %s refusal',
+    async (stage) => {
+      const { nativeShareBlob } =
+        await vi.importActual<typeof import('../src/lib/native/share')>('../src/lib/native/share');
+      native[stage].mockRejectedValueOnce(new Error('Native Permission Refused'));
+      await expect(
+        nativeShareBlob(new Blob(['a,b']), 'ledger.csv', undefined, () => true)
+      ).rejects.toThrow('Native Permission Refused');
+      if (stage === 'writeFile') expect(native.share).not.toHaveBeenCalled();
+      else expect(native.share).toHaveBeenCalledOnce();
+    }
+  );
 });
 
 describe('no asset address hardcodes the web base', () => {

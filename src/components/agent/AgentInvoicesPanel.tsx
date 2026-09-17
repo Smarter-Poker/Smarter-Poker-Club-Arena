@@ -3,9 +3,8 @@
  *  AGENT INVOICES PANEL — view + pay weekly credit invoices
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Lists the agent's credit_invoices (CreditService.getAgentInvoices) and lets them
- *  pay an outstanding balance from their agent wallet (CreditService.processPayment).
- *  Invoices are generated weekly by fn_generate_all_credit_invoices (triggered on the
- *  FinancialCronService suspension cadence). Mobile-first, no emoji.
+ *  pay an outstanding balance from their player wallet in that club (CreditService.processPayment).
+ *  Invoices are generated weekly by fn_generate_all_credit_invoices on the server weekly close. Mobile-first, no emoji.
  */
 
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
@@ -17,6 +16,7 @@ import {
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { reportError } from '../../utils/errorReporter';
+import { uuid } from '../../utils/uuid';
 
 interface Props {
   /** agents.id PK (NOT auth.uid) */
@@ -39,7 +39,7 @@ const STATUS_COLORS: Record<string, string> = {
 // cancelled invoice ends up suspending an agent.
 
 function fmt(n: number): string {
-  return Math.round(n).toLocaleString();
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtDate(iso: string): string {
@@ -62,6 +62,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
   const scope = useRef(0);
   const request = useRef(0);
   const payment = useRef<string | null>(null);
+  const paymentOperations = useRef(new Map<string, { amount: number; operationId: string }>());
 
   const load = useCallback(async () => {
     const generation = scope.current;
@@ -82,6 +83,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
   useLayoutEffect(() => {
     scope.current++;
     payment.current = null;
+    paymentOperations.current.clear();
     setPayingId(null);
     void load();
     return () => {
@@ -103,23 +105,32 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
       payment.current ||
       !invoices.includes(inv) ||
       !OWED_INVOICE_STATUSES.has(inv.status) ||
+      inv.status === 'disputed' ||
       inv.amountRemaining <= 0
     )
       return;
     payment.current = inv.id;
     setPayingId(inv.id);
     try {
-      await CreditService.processPayment(inv.id, inv.amountRemaining, 'wallet');
+      let attempt = paymentOperations.current.get(inv.id);
+      if (!attempt || attempt.amount !== inv.amountRemaining) {
+        attempt = { amount: inv.amountRemaining, operationId: uuid() };
+        paymentOperations.current.set(inv.id, attempt);
+      }
+      const receipt = await CreditService.processPayment(inv.id, inv.amountRemaining, 'wallet', {
+        operationId: attempt.operationId,
+      });
       // A sent payment may commit; only consume its result in the original selection.
       if (!current()) return;
-      toast.success(`Paid ${fmt(inv.amountRemaining)} chips toward invoice`);
+      paymentOperations.current.delete(inv.id);
+      toast.success(`Paid ${fmt(receipt.amount)} chips toward invoice`);
       masterBus.emit('BALANCE_UPDATED', { source: 'credit_invoice_payment' });
       await load();
     } catch (e) {
       if (!current()) return;
       const msg = e instanceof Error ? e.message : 'Payment failed';
       reportError(e, 'AgentInvoicesPanel.handlePay', { invoiceId: inv.id });
-      toast.error(msg.includes('insufficient') ? 'Insufficient wallet balance' : 'Payment failed');
+      toast.error(msg);
     } finally {
       if (actionScope === scope.current) {
         payment.current = null;
@@ -176,7 +187,10 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
             // A number alone was not enough. Ask the STATUS as well, so a
             // cancelled or settled invoice can never offer a button the server
             // is going to refuse.
-            const canPay = OWED_INVOICE_STATUSES.has(inv.status) && inv.amountRemaining > 0;
+            const canPay =
+              OWED_INVOICE_STATUSES.has(inv.status) &&
+              inv.status !== 'disputed' &&
+              inv.amountRemaining > 0;
             return (
               <div
                 key={inv.id}
@@ -216,6 +230,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
                 {canPay && (
                   <button
                     type="button"
+                    title="Pay From Your Player Wallet In This Club"
                     onClick={() => handlePay(inv)}
                     disabled={payingId === inv.id}
                     style={{

@@ -244,6 +244,7 @@ def receipt(image='candidate', source=SOURCE):
         stages[3:3]=lane_stages
     endpoint = {'user': 'fixture_bootstrap', 'session_user': 'fixture_bootstrap',
                 'port': '5432', 'address': None, 'listen_addresses': '',
+                'autovacuum': 'off',
                 'unix_socket_directories': str(source.parent / 'work/socket')}
     stages.insert(0, {'stage': 'server_endpoint_readback', 'returncode': 0,
                       'argv': W.server_endpoint_command(PG, source.parent / 'work/socket')})
@@ -397,6 +398,61 @@ class SessionEnvironmentTests(unittest.TestCase):
         with patch.object(session, 'command', return_value='ERROR: preserved diagnostic\n{"ok":true}'), \
                 self.assertRaisesRegex(RuntimeError, 'unexpected SQL failure'):
             session.json('SELECT original_observation;')
+
+    def test_cleanup_observes_server_exit_after_terminal_clients_without_extending_deadline(self):
+        session = object.__new__(self.lib.Session)
+        clock = [10.0]
+        events = {}
+        samples = [{'backends': 1, 'locks': 5}, {'backends': 0, 'locks': 0}]
+        def observe(_sql):
+            clock[0] += 0.005
+            return samples.pop(0)
+        def wait(seconds):
+            clock[0] += seconds
+        with patch.object(session, 'json', side_effect=observe) as query, \
+                patch.object(self.lib.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(self.lib.time, 'sleep', side_effect=wait) as pause:
+            self.lib.observe_backend_cleanup(session, '20445,20443,20441', 10.03, events)
+        self.assertEqual(query.call_count, 2)
+        self.assertEqual(query.call_args_list[0], query.call_args_list[1])
+        sql = query.call_args.args[0]
+        self.assertIn('WHERE datname=current_database() AND pid<>pg_backend_pid()', sql)
+        self.assertIn('FROM pg_locks WHERE pid IN (20445,20443,20441)', sql)
+        self.assertNotIn('pg_terminate_backend', sql)
+        self.assertEqual(events['backend_cleanup_observations'],
+                         [{'backends': 1, 'locks': 5}, {'backends': 0, 'locks': 0}])
+        self.assertEqual(events['backend_cleanup'], {'backends': 0, 'locks': 0})
+        pause.assert_called_once_with(0.01)
+        self.assertLess(clock[0], 10.03)
+
+    def test_cleanup_deadline_fails_with_remaining_backends_or_late_zero(self):
+        for late_zero in (False, True):
+            with self.subTest(late_zero=late_zero):
+                session = object.__new__(self.lib.Session)
+                clock = [10.0]
+                events = {}
+                def observe(_sql):
+                    if late_zero:
+                        clock[0] = 10.02
+                        return {'backends': 0, 'locks': 0}
+                    return {'backends': 1, 'locks': 5}
+                def wait(seconds):
+                    clock[0] += seconds
+                with patch.object(session, 'json', side_effect=observe) as query, \
+                        patch.object(self.lib.time, 'monotonic', side_effect=lambda: clock[0]), \
+                        patch.object(self.lib.time, 'sleep', side_effect=wait) as pause, \
+                        self.assertRaisesRegex(TimeoutError, 'before cleanup deadline'):
+                    self.lib.observe_backend_cleanup(session, '20445,20443,20441', 10.015, events)
+                self.assertEqual(query.call_count, 1 if late_zero else 2)
+                self.assertEqual(events['backend_cleanup_observations'],
+                                 [{'backends': 0, 'locks': 0}] if late_zero else
+                                 [{'backends': 1, 'locks': 5}] * 2)
+                self.assertEqual(events['backend_cleanup'], events['backend_cleanup_observations'][-1])
+                self.assertNotIn('cleanup_verified', events)
+                if late_zero:
+                    pause.assert_not_called()
+                else:
+                    self.assertAlmostEqual(sum(call.args[0] for call in pause.call_args_list), 0.015)
 
     def test_begin_requires_observed_service_role_without_a_user_identity(self):
         session = object.__new__(self.lib.Session)
@@ -920,10 +976,22 @@ class ReceiptTests(unittest.TestCase):
 
 
 class HostedLifecycleTests(unittest.TestCase):
+    def test_private_fixture_requires_observed_background_maintenance_off(self):
+        socket_path = SOURCE.parent / 'work/socket'
+        for setting in (None, 'on'):
+            value = dict(receipt('preimage')['server_endpoint'])
+            value.pop('autovacuum', None)
+            if setting is not None:
+                value['autovacuum'] = setting
+            with self.subTest(autovacuum=setting), self.assertRaises(RuntimeError):
+                W.validate_server_endpoint(value, socket_path)
+        self.assertIn("'autovacuum',current_setting('autovacuum')", W.SERVER_ENDPOINT_QUERY)
+
     def test_bootstrap_endpoint_preserves_listener_socket_and_diagnostic_identity_controls(self):
         socket_path = SOURCE.parent / 'work/socket'
         value = dict(user='fixture_bootstrap', session_user='fixture_bootstrap',
                      port='5432', address=None, listen_addresses='',
+                     autovacuum='off',
                      unix_socket_directories=str(socket_path))
         W.validate_server_endpoint(value, socket_path)
         for key, changed in [('listen_addresses','127.0.0.1'), ('unix_socket_directories','/tmp'),
@@ -1305,6 +1373,10 @@ class ReceiptLaneTests(unittest.TestCase):
 
     def test_sealed_authentic_inputs_include_graph_and_embedded_components(self):
         files=lane_source_files(); W.validate_lane_sources(files)
+        spec=importlib.util.spec_from_file_location('lane_session_custody',W.ROOT/W.LANE_PROGRAM)
+        lane=importlib.util.module_from_spec(spec);spec.loader.exec_module(lane)
+        self.assertEqual(lane.SESSION_PATH,W.LANE_SESSION)
+        self.assertEqual(lane.SESSION_SHA,W.digest(files[W.LANE_SESSION]))
         self.assertEqual(W.IMAGES,('preimage','candidate','retention-completed'))
         self.assertEqual(W.CASES,{'preimage':('order',),'candidate':('order','timeout','committed-refund'),
                                  'retention-completed':()})

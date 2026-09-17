@@ -1,0 +1,78 @@
+BEGIN;
+UPDATE accounting_tournament_fee_cutover SET starts_at=transaction_timestamp()-interval '1 hour';
+SELECT fixture_fee(100);
+SELECT assert_true((fn_capture_accounting_tournament_fee(u(101))->>'status')='captured','new exact fee captures');
+SELECT assert_true(count(*)=1 AND min(club_id::text)=u(21)::text AND sum(rake_credit)=1,'earning club follows exact wallet rather than host') FROM accounting_tournament_fee_sources WHERE rake_record_id=u(101);
+SELECT assert_true(bool_and((contract->>'terms_at')::timestamptz=charged_at),'shared contract receives exact original charge time') FROM accounting_tournament_fee_sources;
+SELECT assert_true((fn_capture_accounting_tournament_fee(u(101))->>'replayed')::boolean AND (SELECT count(*)=1 FROM accounting_tournament_fee_sources),'retry returns same source once');
+UPDATE rake_records SET rake_amount=2 WHERE id=u(101);
+SELECT assert_refuses(u(101),'captured_tournament_fee_source_changed','source drift refuses replay');
+UPDATE rake_records SET rake_amount=1 WHERE id=u(101);
+UPDATE rake_records SET terminal_closed_at=now() WHERE id=u(101);
+SELECT assert_true((fn_capture_accounting_tournament_fee(u(101))->>'replayed')::boolean,'terminal evidence stamp does not change economic receipt');
+
+SELECT fixture_fee(200,true,0.01);
+SELECT fn_capture_accounting_tournament_fee(u(201));
+SELECT assert_true(count(*)=3 AND sum(rake_credit)=0.01 AND max(rake_credit)=0.01 AND min(rake_credit)=0,'one-cent Spin is conserved including zero-share contributors') FROM accounting_tournament_fee_sources WHERE rake_record_id=u(201);
+SELECT assert_true(rake_credit=0.01,'UUID order assigns tied remainder deterministically') FROM accounting_tournament_fee_sources WHERE rake_record_id=u(201) AND player_id=u(211);
+SELECT fixture_fee(300,true,1);
+SELECT fn_capture_accounting_tournament_fee(u(301));
+SELECT assert_true(sum(rake_credit)=1 AND min(rake_credit)=0.33 AND max(rake_credit)=0.34,'three-way odd cent split conserves every cent') FROM accounting_tournament_fee_sources WHERE rake_record_id=u(301);
+
+SELECT fixture_fee(400);
+UPDATE rake_records SET metadata=metadata-'accounting_fee_source' WHERE id=u(401);
+SELECT assert_refuses(u(401),'tournament_fee_producer_manifest_required','current roster cannot replace missing source manifest');
+SELECT fixture_fee(500);
+UPDATE tournament_players SET club_id=u(99) WHERE tournament_id=u(500);
+SELECT assert_refuses(u(501),'tournament_fee_charge_evidence_mismatch','contradictory roster club cannot replace wallet club');
+SELECT fixture_fee(600);
+UPDATE rake_records SET created_at=created_at-interval '1 day' WHERE id=u(601);
+SELECT assert_refuses(u(601),'tournament_fee_not_captured_by_original_producer','old source cannot be retroactively certified');
+SELECT fixture_fee(700,true);
+UPDATE rake_records SET metadata=jsonb_set(metadata,'{accounting_fee_source,contributors}',jsonb_build_array(metadata#>'{accounting_fee_source,contributors,0}',metadata#>'{accounting_fee_source,contributors,0}',metadata#>'{accounting_fee_source,contributors,2}')) WHERE id=u(701);
+SELECT assert_refuses(u(701),'tournament_fee_contributor_invalid','duplicate Spin contributor fails');
+SELECT fixture_fee(800,true);
+UPDATE spin_reserve_ledger SET house_rake=0.99 WHERE tournament_id=u(800);
+SELECT assert_refuses(u(801),'spin_fee_reserve_evidence_mismatch','Spin reserve must prove the fee amount');
+SELECT fixture_fee(900,true);
+SELECT set_config('fixture.missing_player',u(913)::text,true);
+SELECT assert_refuses(u(901),'accounting_terms_not_observed','missing third contributor historical terms fails');
+SELECT assert_true(NOT EXISTS(SELECT 1 FROM accounting_tournament_fee_batches WHERE rake_record_id=u(901)) AND NOT EXISTS(SELECT 1 FROM accounting_tournament_fee_sources WHERE rake_record_id=u(901)),'late failure rolls back every earlier contributor and batch');
+SELECT set_config('fixture.missing_player','',true);
+SELECT fixture_fee(1000);
+UPDATE tournaments SET is_private=true WHERE id=u(1000);
+UPDATE rake_records SET metadata=jsonb_set(metadata,'{accounting_fee_source,union_id}','null') WHERE id=u(1001);
+SELECT fn_capture_accounting_tournament_fee(u(1001));
+SELECT assert_true(union_id IS NULL AND coordinator_union_id=u(90),'private event retains separate coordinator without union rake funding') FROM accounting_tournament_fee_sources WHERE rake_record_id=u(1001);
+SELECT fixture_fee(1100);
+SELECT set_config('fixture.diamond','true',true);
+SELECT assert_refuses(u(1101),'chip_tournament_fee_required','Diamond custody never becomes a chip fee');
+SELECT set_config('fixture.diamond','false',true);
+SELECT fixture_fee(1200);
+UPDATE rake_records SET rake_amount=-1 WHERE id=u(1201);
+SELECT assert_refuses(u(1201),'positive_chip_tournament_fee_required','refund cannot become positive earning credit');
+SELECT fixture_fee(1300);
+UPDATE rake_records SET source='unknown_producer' WHERE id=u(1301);
+SELECT assert_refuses(u(1301),'tournament_fee_source_unsupported','unknown producer fails closed');
+SELECT fixture_fee(1400);
+UPDATE tournament_refund_entitlements SET created_at=created_at-interval '2 hours' WHERE tournament_id=u(1400);
+UPDATE rake_records SET metadata=jsonb_set(metadata,'{accounting_fee_source,contributors,0,charged_at}',to_jsonb(transaction_timestamp()-interval '2 hours')) WHERE id=u(1401);
+SELECT assert_refuses(u(1401),'tournament_fee_contributor_invalid','new booking cannot certify a pre-cutover charge');
+SELECT fixture_fee(1500);
+UPDATE rake_records SET rake_amount=1.001 WHERE id=u(1501);
+SELECT assert_refuses(u(1501),'positive_chip_tournament_fee_required','fractional-cent source is refused');
+SELECT fixture_fee(1600);
+SELECT set_config('fixture.engine','false',true);
+SELECT assert_true((fn_capture_accounting_tournament_fee(u(1601))->>'status')='captured','private owner helper supports original human registration claims');
+SELECT set_config('fixture.engine','true',true);
+SELECT assert_true(NOT has_function_privilege('service_role','fn_capture_accounting_tournament_fee(uuid,jsonb)','execute'),'source capture is private to original producer owners');
+SELECT assert_true(NOT has_table_privilege('service_role','accounting_tournament_fee_sources','insert'),'service caller cannot forge source receipts');
+-- Historical exact-zero source gap used by the later settlement regression.
+-- Install these old raw rows before the producer adapter is installed next;
+-- inserting them afterward would falsely model a new original fee producer.
+INSERT INTO tournaments(id,club_id,union_id,is_private,tournament_type) VALUES(u(4180),u(99),u(90),false,'MTT');
+INSERT INTO rake_records(id,tournament_id,is_tournament,club_id,rake_amount,source,metadata,created_at)
+ VALUES(u(4181),u(4180),true,u(99),1,'legacy','{}',transaction_timestamp()-interval '2 hours'),
+ (u(4182),u(4180),true,u(99),-1,'legacy','{}',transaction_timestamp()-interval '2 hours');
+SELECT count(*) AS native_assertions FROM assertions;
+COMMIT;

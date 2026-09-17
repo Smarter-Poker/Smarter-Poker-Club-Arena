@@ -1,0 +1,86 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index c09f5b0019..7a7223f0d0 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1162,6 +1162,26 @@ jobs:
+         env:
+           PG_BIN: /usr/lib/postgresql/17/bin
+         run: bash scripts/dev/test-accounting-agreement-history.sh
++      - name: Cash earning clubs and historical agreements preserve Pacific accounting scope
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-cash-rake-earning-evidence.sh
++      - name: Cash commissions retain every contributor source and hierarchy tier
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-cash-commission-sources.sh
++      - name: Union PnL requires full funding and one delivered receipt
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-settlement-integrity.sh
++      - name: Cash rakeback periods require certified weekly sources and historical payers
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-cash-rake-period-writer.sh
++      - name: Recorded hierarchy routes funded payouts with atomic invoice delivery
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-routed-accounting.sh
+       - name: Clubs receive one exact weekly statement and private invoice discussions
+         env:
+           PG_BIN: /usr/lib/postgresql/17/bin
+@@ -1170,6 +1190,54 @@ jobs:
+         env:
+           PG_BIN: /usr/lib/postgresql/17/bin
+         run: bash scripts/dev/test-weekly-accounting-coordinator.sh
++      - name: Weekly preparation requires complete durable source calculations
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-weekly-source-preparation.sh
++      - name: Union close matches every bank credit to recorded earnings and delivered invoices
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-union-earned-close.sh
++      - name: Mixed cash and tournament periods require one certified earning book
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-mixed-rake-period-writer.sh
++      - name: Recorded union and standalone scopes issue exact weekly statements
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-scope-weekly-accounting.sh
++      - name: One run journal serializes union and standalone weekly accounting
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-unified-weekly-accounting.sh
++      - name: Cash source refusals preserve durable retry and acknowledgement evidence
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-cash-source-refusals.sh
++      - name: Unresolved cash sources prevent weekly close before payer work
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-cash-refusal-close-gate.sh
++      - name: Cash compatibility callers enter the same acknowledged source processor
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-cash-source-compatibility.sh
++      - name: Legacy payout doors enter only the automatic weekly coordinator
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-automatic-accounting-doors.sh
++      - name: Agent agreements preserve club identity and atomic role changes
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-agent-agreement-integrity.sh
++      - name: Accounting notifications require one durable push receipt
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-accounting-push-bridge.sh
++      - name: Push health reports exact delivery and device receipt counts
++        env:
++          PG_BIN: /usr/lib/postgresql/17/bin
++        run: bash scripts/dev/test-push-health-reader.sh
+       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
+         env:
+           PG_BIN: /usr/lib/postgresql/17/bin

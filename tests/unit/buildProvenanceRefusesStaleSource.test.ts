@@ -9,7 +9,9 @@ const script = resolve(process.cwd(), 'scripts/stamp-build-provenance.mjs');
 const repos: string[] = [];
 const provenanceEnvironment = () =>
   Object.fromEntries(
-    Object.entries(gitFixtureEnvironment()).filter(([key]) => !key.startsWith('GITHUB_'))
+    Object.entries(gitFixtureEnvironment()).filter(
+      ([key]) => !key.startsWith('GITHUB_') && key !== 'CA_BUILD_PURPOSE'
+    )
   );
 // Git exports repository-local GIT_* variables to hooks. This law runs from
 // pre-push, so carrying those variables into a temporary fixture would point

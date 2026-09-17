@@ -1,0 +1,134 @@
+[
+  {
+    "oid": 17044,
+    "schema_name": "auth",
+    "name": "factor_type",
+    "typtype": "e",
+    "labels": ["totp", "webauthn", "phone"]
+  },
+  {
+    "oid": 17050,
+    "schema_name": "auth",
+    "name": "factor_status",
+    "typtype": "e",
+    "labels": ["unverified", "verified"]
+  },
+  {
+    "oid": 17056,
+    "schema_name": "auth",
+    "name": "aal_level",
+    "typtype": "e",
+    "labels": ["aal1", "aal2", "aal3"]
+  },
+  {
+    "oid": 17197,
+    "schema_name": "auth",
+    "name": "code_challenge_method",
+    "typtype": "e",
+    "labels": ["s256", "plain"]
+  },
+  {
+    "oid": 17239,
+    "schema_name": "auth",
+    "name": "one_time_token_type",
+    "typtype": "e",
+    "labels": [
+      "confirmation_token",
+      "reauthentication_token",
+      "recovery_token",
+      "email_change_token_new",
+      "email_change_token_current",
+      "phone_change_token"
+    ]
+  },
+  {
+    "oid": 17278,
+    "schema_name": "auth",
+    "name": "oauth_registration_type",
+    "typtype": "e",
+    "labels": ["dynamic", "manual"]
+  },
+  {
+    "oid": 17300,
+    "schema_name": "auth",
+    "name": "oauth_authorization_status",
+    "typtype": "e",
+    "labels": ["pending", "approved", "denied", "expired"]
+  },
+  {
+    "oid": 17310,
+    "schema_name": "auth",
+    "name": "oauth_response_type",
+    "typtype": "e",
+    "labels": ["code"]
+  },
+  {
+    "oid": 17373,
+    "schema_name": "auth",
+    "name": "oauth_client_type",
+    "typtype": "e",
+    "labels": ["public", "confidential"]
+  },
+  {
+    "oid": 17532,
+    "schema_name": "public",
+    "name": "member_role",
+    "typtype": "e",
+    "labels": ["owner", "admin", "agent", "member", "super_agent", "player"]
+  },
+  {
+    "oid": 17564,
+    "schema_name": "public",
+    "name": "game_type",
+    "typtype": "e",
+    "labels": ["NLHE", "PLO", "PLO5", "cash", "tournament", "sit_n_go"]
+  },
+  {
+    "oid": 27885,
+    "schema_name": "public",
+    "name": "member_status",
+    "typtype": "e",
+    "labels": ["active", "pending", "suspended", "banned"]
+  },
+  {
+    "oid": 27894,
+    "schema_name": "public",
+    "name": "game_variant",
+    "typtype": "e",
+    "labels": [
+      "nlh",
+      "flh",
+      "plo4",
+      "plo5",
+      "plo6",
+      "plo_hilo",
+      "plo8",
+      "short_deck",
+      "ofc",
+      "ofc_pineapple"
+    ]
+  },
+  {
+    "oid": 27916,
+    "schema_name": "public",
+    "name": "table_status",
+    "typtype": "e",
+    "labels": ["waiting", "running", "paused", "closed"]
+  },
+  {
+    "oid": 27926,
+    "schema_name": "public",
+    "name": "transaction_type",
+    "typtype": "e",
+    "labels": [
+      "deposit",
+      "withdrawal",
+      "buy_in",
+      "cash_out",
+      "agent_transfer",
+      "rake",
+      "bonus",
+      "refund"
+    ]
+  }
+]

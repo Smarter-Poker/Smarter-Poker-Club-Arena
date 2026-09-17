@@ -39,6 +39,7 @@ CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.jso
 SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
   'user',current_user,'session_user',session_user,'port',current_setting('port'),
   'address',inet_server_addr(),'listen_addresses',current_setting('listen_addresses'),
+  'autovacuum',current_setting('autovacuum'),
   'unix_socket_directories',current_setting('unix_socket_directories'));"""
 CLEAN_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
              'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
@@ -99,7 +100,7 @@ PURE_INPUTS = (PURE_COMPONENT, PURE_SHAPE, PURE_PREIMAGE, PURE_QUALIFIER, PURE_O
 PURE_STAGE = 'mixed_pure_evidence_rollback'
 REPLACEMENTS.update({name: name for name in PURE_INPUTS})
 LANE_MANIFEST = 'scripts/qualification/spin-receipt-lane.hosted.manifest.json'
-LANE_MANIFEST_SHA256 = 'ac9e16b51da2ad249cfef245d27e495200ada7d5f133d31c380cccbf81728366'
+LANE_MANIFEST_SHA256 = '2232d6461bc9de25b7d0a5652feb0ac8923553ecdbe3d2eb05d25c5807ae6366'
 LANE_BASE = 'scripts/qualification/fixtures/spin-receipt-lane/'
 LANE_COMPONENT = 'supabase/components/spin-mixed-basis-receipt-lane.sql'
 LANE_ROLLBACK = 'supabase/components/spin-mixed-basis-receipt-lane.rollback.sql'
@@ -154,7 +155,7 @@ def validate_lane_sources(files):
         require(pin(files[name]) == expected, 'receipt lane source pin mismatch: ' + name)
     require(digest(files[LANE_BASE+'authority.json']) == 'a4aadc81c0b50396dbed0c3d9b8bf7c72887ecb897ffd2e0b05e96534d78c39c',
             'authentic lane capture differs')
-    require(digest(files[LANE_SESSION]) == '33040b22707d84990cc87489d97b412ca1a5163906646769a9961842a1f3eae8',
+    require(digest(files[LANE_SESSION]) == '24d45e4bb26b062fd2abbc86f1019cd05f0f79fc2557e82993a19770a8982f2d',
             'existing Session implementation differs')
     cohort_preimage = {'commit':'79d045d4fb522fdc5382b4e2b1735c17ce214279',
         'forward_sha256':'e65954462b3cc9b90b304e5bf62ae87e48555f2c0e2ad88051668c9dcc5e52ee',
@@ -328,6 +329,7 @@ def validate_server_endpoint(value, socket_path):
     # sessions retain their captured nonsuperuser roles and owned socket checks.
     require(value == {'user': 'fixture_bootstrap', 'session_user': 'fixture_bootstrap',
                       'port': '5432', 'address': None, 'listen_addresses': '',
+                      'autovacuum': 'off',
                       'unix_socket_directories': str(socket_path)},
             'private server endpoint configuration differs')
 
@@ -1010,10 +1012,13 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
             raise ValueError('PG17 required')
         command('initdb', [str(PG / 'initdb'), '-D', str(data), '-U', 'fixture_bootstrap',
                           '--auth-local=trust', '--auth-host=reject', '--no-locale', '--encoding=UTF8'], timeout=30)
+        # This disposable cluster admits only the explicitly owned race sessions.
+        # max_worker_processes does not disable autovacuum. Prevent its unsolicited
+        # maintenance during natural aging; retain the strict extra-backend refusal.
         with (data / 'postgresql.conf').open('a') as handle:
             handle.write("\nlisten_addresses=''\nport=5432\nunix_socket_directories='" + str(work / 'socket')
                          + "'\nunix_socket_permissions=0700\nshared_buffers='32MB'\nwork_mem='4MB'\nmaintenance_work_mem='64MB'\nmax_connections=8"
-                         + "\nmax_worker_processes=0\nmax_parallel_workers=0\nmax_wal_senders=0\nwal_level=logical"
+                         + "\nautovacuum=off\nmax_worker_processes=0\nmax_parallel_workers=0\nmax_wal_senders=0\nwal_level=logical"
                          + "\nstatement_timeout='20s'\nlock_timeout='3s'\nidle_in_transaction_session_timeout='20s'\n")
         pg_attempted = True
         command('pg_start', [str(PG / 'pg_ctl'), '-D', str(data), '-l', str(work / 'postgres.log'), '-w', '-t', '12', 'start'], timeout=15)

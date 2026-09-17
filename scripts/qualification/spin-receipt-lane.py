@@ -17,7 +17,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[2]
 BASE = 'scripts/qualification/fixtures/spin-receipt-lane/'
 SESSION_PATH = 'scripts/qualification/spin-expiry-business-races.py'
-SESSION_SHA = '33040b22707d84990cc87489d97b412ca1a5163906646769a9961842a1f3eae8'
+SESSION_SHA = '24d45e4bb26b062fd2abbc86f1019cd05f0f79fc2557e82993a19770a8982f2d'
 MANIFEST = 'scripts/qualification/spin-receipt-lane.hosted.manifest.json'
 ORACLE = 'scripts/qualification/fixtures/spin-history-retention/database-state.sql'
 CASES = ('receipt_insert', 'receipt_update', 'receipt_delete', 'history_insert',

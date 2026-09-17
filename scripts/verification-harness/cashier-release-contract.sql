@@ -42,7 +42,11 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_agent_wallet_send(uuid,uuid,numeric,text,text,uuid)',
-      'hash', '0214036f29a6d121842496c91c7912af'
+      -- Protected weekly accounting activation adds the existing agreement
+      -- mutex before delegate/row locks. Authentication, retry-key validation
+      -- and the money delegate are unchanged. Exact source:
+      -- supabase/accounting/credit-reduction-v1/lock-order-successor.sql.
+      'hash', 'f94e896a5864cbde9e5aa4fb2f20bcc4'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_batch_transfer(uuid,text,jsonb,uuid)',

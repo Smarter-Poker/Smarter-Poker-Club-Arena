@@ -97,7 +97,7 @@ function assertWelcomeKeyStillCurrent() {
  * checking its RPC response prevents a visually closed-but-not-persisted
  * message from intercepting every later lobby click in a fresh context.
  */
-async function dismissClubEntryMessage(page: Page): Promise<boolean> {
+export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
   const dialog = page.getByRole('dialog', { name: /^Club Message From /i });
   const dismiss = page.getByRole('button', {
     name: 'Do Not Show Me This Message Again',
@@ -109,14 +109,18 @@ async function dismissClubEntryMessage(page: Page): Promise<boolean> {
     .catch(() => false);
   if (!appeared) return false;
 
-  const rpcResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' &&
-      response.url().includes('/rest/v1/rpc/fn_dismiss_club_message'),
-    { timeout: 15_000 }
-  );
-  await dismiss.click({ timeout: 10_000 });
-  const response = await rpcResponse;
+  // Observe both promises immediately. If the click fails, the finally block
+  // closes the browser and rejects the response waiter too; an unobserved
+  // rejection there terminates the reporter and hides the actual click error.
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (candidate) =>
+        candidate.request().method() === 'POST' &&
+        candidate.url().includes('/rest/v1/rpc/fn_dismiss_club_message'),
+      { timeout: 15_000 }
+    ),
+    dismiss.click({ timeout: 10_000 }),
+  ]);
   const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
   if (!response.ok() || result?.ok !== true) {
     throw new Error(

@@ -173,8 +173,8 @@
     },
     "direct_source_capture": {
       "path": "scripts/qualification/fixtures/direct-operational-source-intake/authority.json",
-      "sha256": "754841446b92dc41853aabae2d39a8fa476c8aa2d19ebf6a39ac90fc9a36b6bf",
-      "bytes": 74133
+      "sha256": "03765137a209e8ef548213cc96455a657339abca67e6b118af532722f85d6964",
+      "bytes": 73861
     },
     "direct_engine_preimage": {
       "path": "scripts/qualification/fixtures/direct-operational-source-intake/engine-preimage.sql",

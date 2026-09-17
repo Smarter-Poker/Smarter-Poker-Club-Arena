@@ -1,7 +1,7 @@
 # Direct operational source intake — source candidate
 
-Status: UNRUN. This patch is separate from PR4722. No SQL, parser, application,
-provider, test, commit, push, installation or publication was performed here.
+Status: native qualification pending. This source is composed into PR4722;
+production installation and publication remain separate, uncompleted steps.
 The current required `test-production-alert-core-postgres.py` job is extended;
 there is no new job, watcher, cron, sender, financial decision or release route.
 

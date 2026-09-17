@@ -39,12 +39,20 @@ describe('the canonical allocator exists and is the single JS source of shares',
     expect(allocationCode).toMatch(/WEIGHTED_CONTRIBUTED/);
   });
 
-  it('the settler consumes the canonical allocator and no longer owns a private equal split', () => {
-    // POLISH 4 (2026-08-30): it now imports the ledger-first helper too, and
-    // prefers stored rake_attributions over recomputation. Either import
-    // satisfies the law; owning its own split never does.
-    expect(settler).toMatch(/from '\.\/rakeAllocation\.js'/);
-    expect(settler).toMatch(/sharesForRakeRecordWithLedger/);
+  it('the settler submits source identities and requires canonical receipts without deriving shares', () => {
+    // The database owns source accounting. The reader sends no replacement
+    // player/credit calculation and accepts only an exact canonical v3 receipt.
+    expect(settler).toMatch(/from '\.\/cashSourceReceipts\.js'/);
+    expect(settler).toContain(
+      "p_items: ids.map((id) => ({ source_type: 'cash_rake_record', source_id: id }))"
+    );
+    expect(settler).toContain('readCashSourceBatch(data, ids)');
+    expect(stripComments(read('server/src/services/cashSourceReceipts.ts'))).toContain(
+      'r.receipt_version !== 3'
+    );
+    expect(settler).not.toContain('sharesForRakeRecord');
+    expect(settler).not.toContain('fn_apply_rakeback_player_stats_batch');
+    expect(settler).not.toContain('fn_rakeback_recompute_periods');
     expect(settler).not.toMatch(/function equalShareCents/);
     // The retired formula shape must not reappear in any form:
     expect(settler).not.toMatch(/rake_amount\s*\/\s*dealt/i);

@@ -75,6 +75,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Tournament } from '../../../types/database.types';
+import { readCommittedTournamentBlinds } from '../../../utils/committedTournamentBlinds';
 import { useMasterBusSubscription } from '../../../hooks/useMasterBusSubscription';
 import { chips, clockText, type NormalisedBlindLevel, type TournamentTabProps } from './types';
 import '../../../styles/tournament-lobby-3d.css';
@@ -306,23 +307,21 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
     : // Already a 0-based index on the row.
       Math.max(0, Number(row.current_level) || 0);
   const index = Math.min(levelIndex, Math.max(0, levelCount - 1));
-  /**
-   * The engine did not stop at the end of the structure.
-   *
-   * `TournamentService` keeps incrementing `current_level` past the last
-   * published level (3,079 production rows are in that state), so this clamp
-   * is load-bearing — without it `blindLevels[index]` is undefined and the tab
-   * renders dashes. But clamping ALONE is a quieter kind of wrong: the tab then
-   * prints the last published blinds and the words "Final Level" as if that
-   * were what is being dealt, when the engine has escalated beyond anything
-   * this structure describes. A player reading those numbers is reading a
-   * guess. Say so instead.
-   */
+  // The last scheduled row still supplies duration and break metadata. Its
+  // amounts do not describe levels beyond the schedule; use the shared reader.
   const beyondStructure = levelCount > 0 && levelIndex > levelCount - 1;
   const current: NormalisedBlindLevel | undefined = blindLevels[index];
   const next: NormalisedBlindLevel | null = blindLevels[index + 1] ?? null;
-  /** Display number for the fallback when the structure has no `level` field. */
-  const levelNumber = index + 1;
+  const levelNumber = levelIndex + 1;
+  // Amounts are status-neutral: paused and completed events still retain
+  // their recorded level. Clock/purchase service guards do not apply here.
+  // A bus event can precede the row; matching by index rejects an old receipt.
+  const committed = readCommittedTournamentBlinds(levelIndex, row.blind_level_state);
+  const currentBlinds: NormalisedBlindLevel | null = committed
+    ? { ...committed, duration: current?.duration ?? 0 }
+    : row.blind_level_state == null && Number.isInteger(levelIndex)
+      ? (blindLevels[levelIndex] ?? null)
+      : null;
 
   /** Where this level's clock started. Null means genuinely unknown. */
   const levelAnchorMs: number | null = (() => {
@@ -538,11 +537,17 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
           </div>
 
           <div className="blinds-tab__level">
-            <span className="blinds-tab__level-num">Level {current?.level ?? levelNumber}</span>
-            <span className="blinds-tab__level-of">Of {levelCount}</span>
+            <span className="blinds-tab__level-num">Level {levelNumber}</span>
+            <span className="blinds-tab__level-of">
+              {beyondStructure ? `${levelCount} Published Levels` : `Of ${levelCount}`}
+            </span>
           </div>
 
-          {current ? renderBlinds(current) : null}
+          {currentBlinds ? (
+            renderBlinds(currentBlinds)
+          ) : (
+            <div className="tl-empty">Current Blinds Unavailable</div>
+          )}
 
           <div className="blinds-tab__clockwrap">
             <span className={clockClass}>{mainClock}</span>
@@ -575,7 +580,7 @@ export default function BlindsTab({ tournament, blindLevels }: TournamentTabProp
           <div className="tl-empty">
             Past The Published Structure
             <span className="tl-empty__hint">
-              The Clock Has Gone Beyond Level {levelCount}. Ask The Floor For The Current Blinds
+              The Published Structure Ends At Level {levelCount}.
             </span>
           </div>
         ) : !next ? (

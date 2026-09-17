@@ -58,3 +58,10 @@ is identical to the protected pre-format baseline; updating that single digest
 passes all 71 existing wrapper controls. Embedded SQL, file inventories, roles,
 case counts, budgets and negative controls remain unchanged. The historical
 retention manifest's recorded predecessor bindings are not rewritten.
+
+The final integration retained the parallel accounting checks and split client
+verification from protected main. The Spin path-rename fixture repeatedly exceeded
+its five-second budget by launching one Git process per file. Move the same real
+files directly, then use the unchanged real Git add/commit/diff path. All 298
+classification cases pass; every path, classification assertion and timeout
+remains unchanged. The cash-native fixture pin follows these exact test bytes.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -562,7 +562,8 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
         for (const [index, path] of spinExpiryAccountingPaths.entries()) {
           if (operation === 'modified') write(path, 'changed qualification input');
           if (operation === 'deleted') rmSync(join(directory, path));
-          if (operation === 'renamed') git('mv', '--', path, relocated[index]);
+          if (operation === 'renamed')
+            renameSync(join(directory, path), join(directory, relocated[index]));
         }
         const result = classifyGitChanges({ cwd: directory, base, head: commit() });
         expect(result.complete).toBe(true);
@@ -628,14 +629,13 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(calls[0].if).toBeUndefined();
     expect(calls[0]['continue-on-error']).toBeUndefined();
-    expect(ci.jobs.server_shards.needs).toContain('accounting_postgres');
-    const gate = ci.jobs.server_shards.steps.find(
-      (step: { name?: string }) =>
-        step.name === 'Require successful real PostgreSQL accounting tests'
+    expect(ci.jobs.server.needs).toContain('accounting_postgres');
+    const gate = ci.jobs.server.steps.find(
+      (step: { name?: string }) => step.name === 'Every shard and real PostgreSQL accounting passed'
     );
-    expect(gate.if).toBe("needs.accounting_postgres.result != 'success'");
-    // This refusal runs before checkout, so the job's server/ default is absent.
-    expect(gate['working-directory']).toBe('${{ github.workspace }}');
+    expect(ci.jobs.server.if).toBe('always()');
+    expect(gate.env.ACCOUNTING_RESULT).toBe('${{ needs.accounting_postgres.result }}');
+    expect(gate.run).toContain('"accounting:$ACCOUNTING_RESULT"');
     expect(gate.run).toContain('exit 1');
     expect(ci.jobs.unit_shards.if).toContain("needs.changes.outputs.tests == 'true'");
     expect(
@@ -704,7 +704,7 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
       expect(current).toBeGreaterThan(previous);
       previous = current;
     }
-    expect(ci.jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(ci.jobs.server.needs).toContain('accounting_postgres');
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
@@ -1022,7 +1022,7 @@ describe('restored provider accounting qualification', () => {
     }>;
     expect(job['runs-on']).toBe('ubuntu-latest');
     expect(job.if).toBe(ci.jobs.server_shards.if);
-    expect(ci.jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(ci.jobs.server.needs).toContain('accounting_postgres');
     expect(job['continue-on-error']).not.toBe(true);
     const requiredRunners = [
       'union-weekly-accounting',

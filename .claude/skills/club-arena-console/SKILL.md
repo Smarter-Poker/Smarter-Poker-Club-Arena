@@ -426,12 +426,11 @@ npx vitest run tests/unit/classNamesResolve.test.ts \
   <every test that names your files>
 ```
 
-Run these **in the Mac worktree**, not in a sandbox clone (§7.7).
+Run these in the owned checkout against the actual final candidate and verified private dependencies (§7.7).
 
 ### Step 8 — Present, then ship
 
-Present before/after and **do not push until Dan approves** unless he has
-already given a green light. Then §8.
+Present the verified before/after evidence, then complete the assigned protected delivery under §8. No additional human approval is required within the authorized scope.
 
 ---
 
@@ -567,13 +566,14 @@ Image.alpha_composite(bg, im).convert('RGB').resize((w*3, h*3), Image.NEAREST).s
 Renders the real component with the real fonts and the real global CSS,
 headless at 393 px. It is the only honest way to judge a redesign and the only
 way to produce the before/after Dan reviews. **The templates ship with this
-skill** - do not rebuild them from memory:
+skill**. Use a clean, isolated task-owned fixture checkout without credential files; verify all destination filenames are absent before copying. Never overwrite or delete an existing environment file. The legacy runner below requires its documented Linux browser dependencies; use the actual supported browser route when that environment is unavailable:
 
 ```bash
 cp .claude/skills/club-arena-console/harness/card-harness.html .
 cp .claude/skills/club-arena-console/harness/card-harness.tsx .
 cp .claude/skills/club-arena-console/harness/shot.mjs .shot.mjs
-printf 'VITE_SUPABASE_URL=https://dummy.supabase.co\nVITE_SUPABASE_ANON_KEY=dummy\n' > .env.local
+export VITE_SUPABASE_URL=https://dummy.supabase.co
+export VITE_SUPABASE_ANON_KEY=dummy
 
 # add your surface to the switch in card-harness.tsx, then:
 bash .claude/skills/club-arena-console/harness/run-shots.sh /tmp/before "?surface=<key>"
@@ -582,7 +582,7 @@ bash .claude/skills/club-arena-console/harness/run-shots.sh /tmp/after  "?surfac
 python3 .claude/skills/club-arena-console/harness/sheet.py /tmp/sheet.jpg 760 \
   "Rebuy Popup:/tmp/before/rebuy.png:/tmp/after/rebuy.png"
 
-rm -f card-harness.html card-harness.tsx .shot.mjs .env.local   # never commit these
+rm -f card-harness.html card-harness.tsx .shot.mjs   # only these task-created files
 ```
 
 `harness/README.md` carries the one-time sandbox provisioning (chromium plus the
@@ -618,10 +618,7 @@ every hand beats an admin page nobody opens twice a week:
 4. tournament and lobby,
 5. operator and admin.
 
-**Batch six to ten surfaces per pull request**, one theme per batch. Smaller and
-the review is all overhead; larger and Dan cannot hold it in his head, the
-render sheet stops being legible, and one rejected surface blocks nine good
-ones.
+Keep each pull request within its assigned scope and a reviewable theme. The surface inventory does not authorize unrelated redesigns or hold a completed surface for a larger batch.
 
 ### Delegating to subagents
 
@@ -659,38 +656,22 @@ too.
 
 **7.4 Random synthesis on a smooth rail speckles it.** Use the median (§5.2).
 
-**7.5 `s.replace('', new)` with an empty needle** inserts between every character
-and turns a 500-line file into 232,000 lines. Always
-`assert s.count(old) == 1` before every replace, and `git checkout` the file the
-moment output looks wrong.
+**7.5 An empty replacement needle corrupts the file.** Check the expected match count before replacement and inspect the resulting diff. If an edit is wrong, restore only this task's known preimage; never discard another task's uncommitted work.
 
 **7.6 A computed `aria-label` breaks a pinned test.** Tests read the source text.
 Two literal branches beat one clever ternary.
 
-**7.7 A sandbox clone lies.** It sits on another agent's branch with other
-agents' uncommitted files; `tsc` fails on modules that do not exist there and
-test baselines are stale. **Typecheck and test in the Mac worktree.** Also never
-run git _write_ commands against a mounted worktree from a sandbox — the mount
-cannot unlink, and the `.git/index.lock` it strands then blocks git on the host.
+**7.7 Verify the checkout and execution environment.** Use an owned checkout with the expected revision and dependencies. Do not assume another agent's checkout, a shared cache or a mounted copy is isolated or writable. Inspect the actual failing input before attributing a compiler failure to the environment.
 
-**7.8 Syncing main into the clone silently reverts your edits** for any file
-where main and the clone's base are identical. Re-apply from your own notes and
-diff before committing.
+**7.8 Integrate protected main without losing work.** Preserve the owned state, merge through normal Git operations, review conflicts individually and verify the resulting candidate. Never use a blanket file replacement or reset to hide an integration problem.
 
-**7.9 The pre-push hook diffed 2,558 files** because the push named the raw SSH
-URL, so the hook fell back to the stale local `main`. **Push via `origin`** (set
-its push URL to SSH) and it diffs against `origin/main` — your files only.
+**7.9 Push through the configured origin.** Read the hook's actual protected-base selection and current PR state. Do not change transports or use a stale base to evade checks.
 
-**7.10 A worktree with no `server/node_modules`** fails the hook with
-`Failed to resolve import "uuid"`. Symlink it from the main clone; same for the
-root `node_modules` (the sandbox's Linux rollup binary is useless on the Mac).
+**7.10 Missing dependencies are a precheck failure.** Follow the current owner policy for private locked dependencies in the owned SSD checkout. Inspect existing links and package locks; never install through or mutate a shared dependency symlink. Keep root and server dependency contracts distinct.
 
-**7.11 `host_terminal` kills the process group when a call times out.** Long jobs
-(worktree creation, pushes) go in `tmux new-session -d -s job "script"`, then
-poll the log in later calls. `nohup … & disown` is not enough. `setsid` does not
-exist on macOS, and a `launchctl submit` job cannot read the working directory.
+**7.11 Follow the current tool's execution contract.** Keep the returned operation/session identity for long commands and read its terminal result. Do not assume an obsolete host tool timeout behavior or launch detached repair services to finish a push.
 
-**7.12 Merged is not landed.** Autopilot can squash-merge in under two minutes.
+**7.12 Merged is not landed.** Check the current PR state before every follow-up push.
 A follow-up push to a merged branch exits 0 and reaches nobody. If the PR has
 merged, start a **new branch off current `main`**; the `guard-merged-branch.sh`
 hook refuses that push and prints the recovery.
@@ -699,33 +680,11 @@ hook refuses that push and prints the recovery.
 
 ## 8. Shipping
 
-```bash
-# on the Mac (you have host_terminal), node is not on the default PATH:
-export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"
+Read root `AGENTS.md`, `AGENT-PLAYBOOK.md`, `docs/agent-policy/OPERATING-LAW.md` and `PUBLISHING.md`. Use the owned worktree and ordinary hooks. Inspect the actual environment and dependency contract; do not replace another task's directories or assume an old host tool or mismatched dependency symlink works.
 
-git fetch git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git main
-nohup git worktree add -b feat/<slug> ~/Documents/.agent-trees/club-arena/<name> FETCH_HEAD &
-cd ~/Documents/.agent-trees/club-arena/<name>
-ln -sfn ~/Documents/club-arena/node_modules node_modules
-ln -sfn ~/Documents/club-arena/server/node_modules server/node_modules
+The authorized agent owns the PR, required checks, protected merge, provider publication and actual behavior proof. Record the pending run and continue eligible authorized work during provider waits. Do not stop at the PR number or add a release watcher. Failed deployments enter immediate recovery under the operating law, with existing maintenance safeguards intact.
 
-git -c user.name="Smarter-Poker" \
-    -c user.email="254329056+Smarter-Poker@users.noreply.github.com" commit -m "…"
-
-# the hook runs guards + tsc + every test covering your diff, ~3 minutes:
-tmux new-session -d -s push "git push origin HEAD:refs/heads/feat/<slug> > /tmp/push.log 2>&1"
-```
-
-Never `--no-verify`. `agent-open-pr.yml` opens the PR, `agent-autopilot.yml`
-arms squash auto-merge, `publish-club-arena.yml` ships it. **Report the PR
-number and stop** — never sit in a loop watching CI. Verify later, once:
-
-```bash
-curl -s https://smarter.poker/hub/club-arena/build-info.json    # ca_sha == the squash commit
-```
-
-Write your own changelog at `docs/changelog/YYYY-MM-DD-<slug>.md` — never append
-to a shared file, that is the repo's biggest source of merge conflicts.
+Write scoped evidence to the existing task checkpoint and a separate changelog when required. Preserve other tasks' records.
 
 ---
 
@@ -733,9 +692,8 @@ to a shared file, that is the repo's biggest source of merge conflicts.
 
 - **Show, don't describe.** Every round is a rendered picture at 393 px, before
   beside after, plus the secondary states (empty, error, insufficient, confirm).
-- **Do not push until he approves**, unless he has already said go.
-- Expect **three to five rounds**. Each one is specific and each one generalises:
-  apply it to the master and the kit so every surface inherits it.
+- Complete the authorized design and delivery without another approval checkpoint; preserve explicit scope boundaries and required verification.
+- Apply received design corrections to the connected master and kit within scope. Finish when the assigned requirements and verification are satisfied; do not invent a fixed number of review or approval rounds.
 - When he says something "feels cheap", the answer is almost never a CSS tweak —
   it is that the surface was assembled from parts instead of drawn from one
   master.

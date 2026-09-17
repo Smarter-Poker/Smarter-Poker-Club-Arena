@@ -1,0 +1,428 @@
+"""Finite current-route identity/attempt regressions; no SQL or application execution."""
+import copy
+import json
+from pathlib import Path
+import tempfile
+import unittest
+import subprocess
+import queue
+
+import deadline
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import current_ci as ci
+from execution import finish_owned_teardown
+
+
+class CurrentAccountingIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.workspace = Path('/owned/checkout')
+        self.commit = 'a' * 40
+        self.source = 'b' * 40
+        self.env = dict(GITHUB_ACTIONS='true', CI='true', GITHUB_REPOSITORY=ci.REPOSITORY,
+                        GITHUB_JOB='accounting_postgres', GITHUB_SERVER_URL='https://github.com',
+                        GITHUB_WORKFLOW_REF=ci.WORKFLOW+'refs/pull/42/merge', GITHUB_SHA=self.commit,
+                        GITHUB_WORKSPACE=str(self.workspace), GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='1',
+                        RUNNER_ENVIRONMENT='github-hosted', RUNNER_OS='Linux', RUNNER_ARCH='X64',
+                        RUNNER_NAME='GitHub Actions original hosted runner', GITHUB_EVENT_NAME='pull_request',
+                        GITHUB_REF='refs/pull/42/merge')
+        self.event = {'number':42, 'pull_request': {'head': {'sha':self.source, 'repo':{'full_name':ci.REPOSITORY}},
+                      'base': {'ref':'main', 'repo':{'full_name':ci.REPOSITORY}}}}
+
+    def identity(self, environment=None, event=None, parents=None):
+        return ci.identity(environment or self.env, event or self.event, self.commit,
+                           [self.source, 'c'*40] if parents is None else parents, self.workspace)
+
+    def test_real_checkout_and_current_pr_identity_are_both_recorded(self):
+        result = self.identity()
+        self.assertEqual((result['commit'], result['source_commit']), (self.commit, self.source))
+        self.assertEqual((result['run_id'], result['run_attempt'], result['job']), ('123','1','accounting_postgres'))
+
+    def test_wrong_route_and_missing_current_identity_are_refused(self):
+        for field in self.env:
+            changed = dict(self.env)
+            changed.pop(field)
+            with self.subTest(field=field), self.assertRaises(RuntimeError):
+                self.identity(changed)
+        for field, value in [('GITHUB_JOB','other'), ('GITHUB_REPOSITORY','other/repo'),
+                             ('RUNNER_ENVIRONMENT','self-hosted'), ('RUNNER_OS','macOS'),
+                             ('RUNNER_ARCH','ARM64'), ('GITHUB_SHA','d'*40),
+                             ('GITHUB_EVENT_NAME','workflow_dispatch'), ('GITHUB_RUN_ATTEMPT','01'),
+                             ('GITHUB_WORKFLOW_REF',ci.WORKFLOW+'refs/heads/unrelated')]:
+            changed = {**self.env, field:value}
+            with self.subTest(field=field,value=value), self.assertRaises(RuntimeError):
+                self.identity(changed)
+
+    def test_fork_and_unrelated_parent_cannot_authorize_checkout(self):
+        changed = copy.deepcopy(self.event)
+        changed['pull_request']['head']['repo']['full_name'] = 'external/fork'
+        with self.assertRaises(RuntimeError):
+            self.identity(event=changed)
+        with self.assertRaises(RuntimeError):
+            self.identity(parents=['d'*40])
+
+    def test_existing_scheduled_main_path_remains_exact(self):
+        environment = {**self.env, 'GITHUB_EVENT_NAME':'schedule', 'GITHUB_REF':'refs/heads/main',
+                       'GITHUB_WORKFLOW_REF':ci.WORKFLOW+'refs/heads/main'}
+        self.assertEqual(self.identity(environment)['source_commit'], self.commit)
+        environment['GITHUB_REF'] = 'refs/heads/other'
+        with self.assertRaises(RuntimeError):
+            self.identity(environment)
+
+    def test_exclusive_attempt_preserves_uncertain_original(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'ATTEMPT.json'
+            original = {'status':'ATTEMPTED_OUTCOME_UNCERTAIN','uuid':'original'}
+            ci.write_exclusive(path, original)
+            with self.assertRaises(FileExistsError):
+                ci.write_exclusive(path, {'status':'PASSED'})
+            self.assertEqual(json.loads(path.read_text()), original)
+
+    def test_case_identity_is_fresh_and_cannot_be_reused_or_mutated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = ci.CurrentAccountingRun.__new__(ci.CurrentAccountingRun)
+            run.output=Path(directory);run.token='current-invocation';run.identity={'commit':self.commit}
+            run.runtime={'runtime_verified':True};run._cases={};run.assert_pristine=lambda:None
+            run.verify_provider_bytes=lambda:None
+            run.require_case_time=lambda:None
+            run.timing={'job_deadline_unix':ci.time.time()+899,'case_execution_seconds':5,'cleanup_reserve_seconds':5}
+            run.job_deadline_monotonic=ci.time.monotonic()+899
+            first, _ = run.new_case(ci.CASES[0])
+            second, _ = run.new_case(ci.CASES[1])
+            self.assertNotEqual(first['opening_operation_id'], second['opening_operation_id'])
+            self.assertNotEqual(first['move_operation'], second['move_operation'])
+            self.assertNotEqual(first['case_attempt_id'], second['case_attempt_id'])
+            with self.assertRaises(RuntimeError):
+                run.new_case(ci.CASES[0])
+            first['move_operation']='changed'
+            with self.assertRaises(RuntimeError):
+                run.require_case(first)
+
+    def test_seed_is_claimed_before_callback_and_never_repeated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = ci.CurrentAccountingRun.__new__(ci.CurrentAccountingRun)
+            state={'directory':Path(directory),'physical':{'database':'owned'},'opening_claimed':True,'seed_claimed':False}
+            run._cases={ci.CASES[0]:state}
+            run.claim_seed(ci.CASES[0])
+            self.assertTrue(state['seed_claimed'])
+            with self.assertRaises(RuntimeError):
+                run.claim_seed(ci.CASES[0])
+            self.assertEqual(json.loads((Path(directory)/'SEED-ATTEMPT.json').read_text())['status'],
+                             'ATTEMPTED_OUTCOME_UNCERTAIN')
+
+    def test_seed_without_physical_clone_or_opening_is_refused(self):
+        run = ci.CurrentAccountingRun.__new__(ci.CurrentAccountingRun)
+        for physical, opening in [(None,True), ({'database':'owned'},False)]:
+            run._cases={ci.CASES[0]:{'physical':physical,'opening_claimed':opening,'seed_claimed':False}}
+            with self.subTest(physical=physical, opening=opening), self.assertRaises(RuntimeError):
+                run.claim_seed(ci.CASES[0])
+
+    def test_runtime_mismatch_refuses_before_binary_execution(self):
+        run = ci.CurrentAccountingRun.__new__(ci.CurrentAccountingRun)
+        run.runtime=None
+        with patch.object(ci.subprocess,'run') as process, self.assertRaises(RuntimeError):
+            run.verify_provider_bytes()
+        process.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            run.pg_bin=Path(directory)
+            run.runtime={'runtime_verified':True,'actual_binaries':{}}
+            for name in ci.PROVIDER_BINARIES:
+                path=run.pg_bin/name;path.write_text('observed hosted bytes')
+                run.runtime['actual_binaries'][name]={'sha256':ci.sha(path)}
+            run.verify_provider_bytes()
+            (run.pg_bin/'psql').write_text('changed after observation')
+            with self.assertRaises(RuntimeError):run.verify_provider_bytes()
+
+    def test_historical_review_cannot_supply_current_case(self):
+        run = ci.CurrentAccountingRun.__new__(ci.CurrentAccountingRun)
+        run._cases={}
+        with self.assertRaises(RuntimeError):
+            run.require_case({'native_execution_authorized':True,'accepted_for_isolated_native_execution':True})
+
+    def test_missing_or_wrong_job_deadline_refuses_before_case(self):
+        run=ci.CurrentAccountingRun.__new__(ci.CurrentAccountingRun)
+        run.identity={'repository':ci.REPOSITORY,'commit':self.commit,'run_id':'123','run_attempt':'1','job':'accounting_postgres'}
+        with self.assertRaises(RuntimeError):
+            run.bind_job_timing(None)
+        with tempfile.TemporaryDirectory() as directory, patch.object(ci.time,'time',return_value=1000):
+            run.output=Path(directory)
+            timing={**run.identity,'job_started_at_unix':990,'job_deadline_unix':1890,
+                    'case_execution_seconds':600,'cleanup_reserve_seconds':120}
+            for mutation in ({'run_id':'other'}, {'job_deadline_unix':2000}, {'cleanup_reserve_seconds':400},
+                             {'job_started_at_unix':1001,'job_deadline_unix':1901}):
+                with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
+                    run.bind_job_timing({**timing,**mutation})
+            run.bind_job_timing(timing)
+            with patch.object(ci.time,'time',return_value=1200), self.assertRaises(RuntimeError):
+                run.require_case_time()
+
+    def budget(self, execution=20, cleanup=10):
+        clock=SimpleNamespace(wall=1000.0, monotonic_now=0.0)
+        clock.time=lambda:clock.wall
+        clock.monotonic=lambda:clock.monotonic_now
+        def advance(seconds):
+            clock.wall+=seconds;clock.monotonic_now+=seconds
+        clock.advance=advance
+        return deadline.CaseDeadline(1900,execution,cleanup,clock),clock
+
+    def alarms(self):
+        # Modeled timers only. These tests neither wait nor start a process.
+        from contextlib import ExitStack
+        stack=ExitStack()
+        stack.enter_context(patch.object(deadline.signal,'getsignal',return_value=deadline.signal.SIG_DFL))
+        stack.enter_context(patch.object(deadline.signal,'getitimer',return_value=(0.0,0.0)))
+        stack.enter_context(patch.object(deadline.signal,'signal'))
+        stack.enter_context(patch.object(deadline.signal,'setitimer'))
+        return stack
+
+    def test_original_caps_and_remaining_case_time_are_both_enforced(self):
+        budget,clock=self.budget()
+        for cap in (0,-1,float('inf'),float('nan'),None,True):
+            with self.subTest(invalid_cap=cap),self.assertRaises(ValueError):budget.limit(cap)
+        self.assertEqual(budget.limit(650),20)
+        self.assertEqual(budget.limit(5),5)
+        clock.advance(9)
+        self.assertEqual(budget.limit(650),11)
+        clock.advance(11)
+        with self.assertRaises(deadline.DeadlineExpired):budget.limit(650)
+        self.assertEqual(budget.limit(60,True),10)
+        for cleanup in (False,True):
+            for overrun in (0,1):
+                with self.subTest(cleanup=cleanup,overrun=overrun):
+                    exhausted,elapsed=self.budget()
+                    elapsed.advance((30 if cleanup else 20)+overrun)
+                    cap=exhausted.remaining(cleanup)
+                    self.assertLessEqual(cap,0)
+                    called=[]
+                    with self.alarms(),self.assertRaises(deadline.DeadlineExpired):
+                        with exhausted.bounded('remaining_cap',cap,cleanup):called.append('must not execute')
+                    self.assertEqual(called,[])
+                    self.assertEqual(exhausted.events[-1]['error_type'],'DeadlineExpired')
+                    self.assertEqual(exhausted.events[-1]['status'],'FAILED_OR_UNCERTAIN')
+                    if not cleanup:self.assertTrue(exhausted.execution_refused)
+
+    def test_cleanup_budget_is_aggregate_and_independent_refusals_remain_visible(self):
+        budget,clock=self.budget()
+        with self.alarms():
+            with budget.bounded('rollback',60,True):clock.advance(8)
+            with self.assertRaises(deadline.DeadlineExpired):
+                with budget.bounded('unlock',60,True) as cap:
+                    self.assertEqual(cap,2);clock.advance(2)
+            called=[]
+            with self.assertRaises(deadline.DeadlineExpired):
+                with budget.bounded('close',5,True):called.append('must not wait')
+        self.assertEqual(called,[])
+        self.assertEqual([r['operation'] for r in budget.events],['rollback','unlock','close'])
+        self.assertGreaterEqual(budget.cleanup_used,10)
+
+    def test_late_persistent_result_is_uncertain_and_cannot_continue(self):
+        budget,clock=self.budget()
+        stream=SimpleNamespace(write=lambda value:clock.advance(21),flush=lambda:None)
+        process=SimpleNamespace(stdin=stream,stdout=None,stderr=None,pid=42)
+        driver=SimpleNamespace(queue=queue,subprocess=SimpleNamespace(Popen=lambda *a,**k:process,PIPE=-1))
+        class Original:
+            def __init__(self):self.q=driver.queue.Queue();self.p=driver.subprocess.Popen(['owned'])
+            def sql(self,sql,timeout=60):return self.p.stdin.write(sql)
+            def one(self,sql):return self.sql(sql)
+            def close(self):pass
+        driver.Psql=Original
+        original_methods=(Original.sql,Original.one,Original.close)
+        with self.alarms():
+            selected=deadline.install_driver_deadline(driver,budget)
+            self.assertIs(selected,Original)
+            self.assertEqual((selected.sql,selected.one,selected.close),original_methods)
+            connection=selected()
+            with self.assertRaises(deadline.DeadlineExpired):connection.sql('COMMIT')
+            with self.assertRaises(deadline.DeadlineExpired):connection.sql('SELECT 1')
+        self.assertTrue(budget.execution_refused)
+        self.assertTrue(any(row.get('status')=='FAILED_OR_UNCERTAIN' for row in budget.events))
+
+    def test_original_expected_negative_error_does_not_become_deadline_failure(self):
+        budget,_=self.budget()
+        with self.alarms():
+            with self.assertRaises(ValueError):
+                with budget.bounded('original_negative',60):
+                    raise ValueError('original expected negative control')
+        self.assertFalse(budget.execution_refused)
+        self.assertEqual(budget.limit(60),20)
+
+    def test_interruption_closes_execution_but_preserves_independent_cleanup(self):
+        budget,_=self.budget()
+        with self.alarms():
+            with self.assertRaises(KeyboardInterrupt):
+                with budget.bounded('selected_case',20):raise KeyboardInterrupt()
+            with self.assertRaises(deadline.DeadlineExpired):budget.limit(60)
+            with budget.bounded('rollback',60,True):pass
+        self.assertFalse(budget.report()['timeout_is_cancellation'])
+        self.assertFalse(budget.report()['automatic_retry'])
+
+    def test_command_timeout_retains_partial_output_and_never_redispatches(self):
+        budget,_=self.budget()
+        process=SimpleNamespace(pid=42,returncode=None)
+        process.poll=lambda:process.returncode
+        def kill():process.returncode=-9
+        process.kill=kill
+        process.wait=lambda timeout:process.returncode
+        def communicate(**kwargs):raise subprocess.TimeoutExpired(['owned'],kwargs['timeout'],output='partial',stderr='partial error')
+        process.communicate=communicate
+        with self.alarms(),patch.object(deadline.subprocess,'Popen',return_value=process) as spawn:
+            with self.assertRaises(subprocess.TimeoutExpired):budget.run(['owned'],env={},timeout=650)
+        self.assertEqual(spawn.call_count,1)
+        self.assertEqual(budget.processes[0]['stdout'],'partial')
+        self.assertEqual(budget.processes[0]['stderr'],'partial error')
+        self.assertEqual(budget.processes[0]['exit_after_reap'],-9)
+        self.assertTrue(budget.execution_refused)
+
+    def test_backward_wall_clock_cannot_extend_case_deadline(self):
+        budget,clock=self.budget()
+        clock.advance(20);clock.wall-=100
+        with self.assertRaises(deadline.DeadlineExpired):budget.limit(60)
+
+    def test_cleanup_does_not_rearm_an_expired_enclosing_execution_timer(self):
+        budget,clock=self.budget()
+        with self.alarms(),patch.object(deadline.signal,'getitimer',return_value=(0.5,0.0)),patch.object(deadline.signal,'setitimer') as timer:
+            with budget.bounded('cleanup',2,True):clock.advance(1)
+        self.assertEqual([call.args[1] for call in timer.call_args_list],[2,0])
+
+    def test_buffered_rows_cannot_renew_original_statement_deadline(self):
+        budget,clock=self.budget(300,90)
+        buffered=SimpleNamespace(rows=['row1','row2','barrier'],gets=0)
+        class BufferedQueue:
+            def get(self,timeout):buffered.gets+=1;return buffered.rows.pop(0)
+            def put(self,value):buffered.rows.append(value)
+        def write(payload):
+            if payload=='ROLLBACK':buffered.rows[:]=['barrier']
+        process=SimpleNamespace(stdin=SimpleNamespace(write=write,flush=lambda:None),stdout=None,stderr=None,pid=42)
+        driver=SimpleNamespace(queue=SimpleNamespace(Queue=BufferedQueue,Empty=queue.Empty),
+                               subprocess=SimpleNamespace(Popen=lambda *a,**k:process,PIPE=-1))
+        class Original:
+            def __init__(self):self.q=driver.queue.Queue();self.p=driver.subprocess.Popen(['owned'])
+            def sql(self,sql,timeout=60):
+                started=clock.monotonic();self.p.stdin.write(sql);self.p.stdin.flush()
+                while True:
+                    line=self.q.get(timeout=max(.001,timeout-(clock.monotonic()-started)))
+                    if line=='barrier':return 'late success'
+                    clock.advance(30.1)  # Buffered reads are immediate; elapsed processing is not.
+            def one(self,sql):return self.sql(sql)
+            def close(self):pass
+        driver.Psql=Original
+        methods=(Original.sql,Original.one,Original.close)
+        with self.alarms():
+            connection=deadline.install_driver_deadline(driver,budget)()
+            with self.assertRaises(deadline.DeadlineExpired):connection.sql('COMMIT')
+            self.assertEqual(buffered.gets,2)  # The late barrier was never accepted.
+            self.assertTrue(budget.execution_refused)
+            connection.sql('ROLLBACK')  # Independently bounded cleanup remains possible.
+        self.assertEqual((Original.sql,Original.one,Original.close),methods)
+
+    def test_late_command_preserves_observed_streams_and_exit_without_retry(self):
+        budget,clock=self.budget(300,90)
+        process=SimpleNamespace(pid=42,returncode=0)
+        process.poll=lambda:process.returncode
+        process.kill=lambda:None
+        process.wait=lambda timeout:process.returncode
+        def communicate(**kwargs):clock.advance(301);return 'observed output','observed error'
+        process.communicate=communicate
+        with self.alarms(),patch.object(deadline.subprocess,'Popen',return_value=process) as spawn:
+            with self.assertRaises(deadline.DeadlineExpired):budget.run(['owned'],env={},timeout=650)
+            with self.assertRaises(deadline.DeadlineExpired):budget.run(['must not start'],env={})
+        self.assertEqual(spawn.call_count,1)
+        self.assertEqual(budget.processes[0]['stdout'],'observed output')
+        self.assertEqual(budget.processes[0]['stderr'],'observed error')
+        self.assertEqual(budget.processes[0]['exit'],0)
+        self.assertEqual(budget.processes[0]['status'],'FAILED_OR_UNCERTAIN')
+
+    def test_final_teardown_interrupts_cannot_skip_later_owned_stages(self):
+        names=('postflight','clients','helpers','physical','release','evidence')
+        for interrupted in ('postflight','clients','physical'):
+            for error_type in (KeyboardInterrupt,SystemExit):
+                with self.subTest(stage=interrupted,error=error_type.__name__):
+                    budget,_=self.budget(300,90)
+                    ledger={'status':'PASS_IMPLEMENTED_SUBSETS_ONLY'}
+                    called=[]
+                    def action(name):
+                        def run():
+                            called.append(name)
+                            if name==interrupted:raise error_type('original interrupt')
+                        return run
+                    finish_owned_teardown(ledger,budget,**{name:action(name) for name in names})
+                    self.assertEqual(called,list(names))
+                    self.assertEqual(ledger['teardown_failures'][0]['errors'][0]['error_type'],error_type.__name__)
+                    self.assertEqual(ledger['status'],'TEARDOWN_FAILED_OUTCOME_UNCERTAIN')
+                    self.assertTrue(budget.execution_refused)
+                    self.assertFalse(ledger['cleanup']['inactive_proven'])
+
+    def job_response(self):
+        return {'total_count':1,'jobs':[{'id':42,'run_id':123,'name':ci.ACCOUNTING_JOB_NAME,
+                'runner_name':self.env['RUNNER_NAME'],'head_sha':self.source,'status':'in_progress',
+                'conclusion':None,'completed_at':None,'labels':['ubuntu-latest'],
+                'started_at':'1970-01-01T00:16:30Z'}]}
+
+    def test_actual_job_start_supplies_finite_caps_without_invocation_time(self):
+        selected,timing=ci.timing_observation(self.identity(),self.job_response(),1000)
+        self.assertEqual(selected['id'],42)
+        self.assertEqual(timing['job_started_at_unix'],990)
+        self.assertEqual(timing['job_deadline_unix'],1890)
+        self.assertEqual((timing['case_execution_seconds'],timing['cleanup_reserve_seconds']),(300,90))
+        with self.assertRaises(RuntimeError):ci.timing_observation(self.identity(),self.job_response(),1501)
+
+    def test_timing_refuses_ambiguous_or_wrong_current_job(self):
+        mutations=({'run_id':124},{'head_sha':'d'*40},{'runner_name':'different'},
+                   {'status':'completed'},{'labels':['self-hosted']},{'started_at':None},
+                   {'started_at':'1970-01-01T00:17:00Z'})
+        for mutation in mutations:
+            response=self.job_response();response['jobs'][0].update(mutation)
+            with self.subTest(mutation=mutation),self.assertRaises(RuntimeError):
+                ci.timing_observation(self.identity(),response,1000)
+        for response in ({'total_count':0,'jobs':[]},
+                         {'total_count':2,'jobs':self.job_response()['jobs']*2},
+                         {'total_count':101,'jobs':self.job_response()['jobs']}):
+            with self.subTest(response=response),self.assertRaises(RuntimeError):
+                ci.timing_observation(self.identity(),response,1000)
+
+    def timing_producer_context(self,directory):
+        from contextlib import ExitStack
+        stack=ExitStack()
+        directory=str(Path(directory).resolve())
+        environment={**self.env,'GITHUB_WORKSPACE':directory,'RUNNER_TEMP':directory,
+                     'GITHUB_EVENT_PATH':str(Path(directory)/'event.json'),'GH_TOKEN':'modeled-token-only'}
+        Path(environment['GITHUB_EVENT_PATH']).write_text(json.dumps(self.event))
+        def git(arguments,**kwargs):
+            return {('rev-parse','--show-toplevel'):directory,('status','--porcelain','--untracked-files=no'):'',
+                    ('rev-parse','HEAD'):self.commit,('show','-s','--format=%P','HEAD'):self.source}[tuple(arguments[3:])]
+        stack.enter_context(patch.dict(ci.os.environ,environment,clear=True))
+        stack.enter_context(patch.object(ci.subprocess,'check_output',side_effect=git))
+        stack.enter_context(patch.object(ci.time,'time',return_value=1000))
+        return stack
+
+    def test_timing_producer_is_single_read_exclusive_and_receipt_is_bound(self):
+        from unittest.mock import MagicMock
+        raw=json.dumps(self.job_response()).encode()
+        response=MagicMock(status=200);response.read.return_value=raw
+        response.__enter__.return_value=response
+        opener=MagicMock();opener.open.return_value=response
+        with tempfile.TemporaryDirectory() as directory,self.timing_producer_context(directory),patch.object(ci.urllib.request,'build_opener',return_value=opener):
+            path=Path(directory).resolve()/'bbj-job-timing-123-1.json'
+            ci.produce_job_timing(directory,path)
+            self.assertNotIn('modeled-token-only',path.read_text())
+            self.assertEqual(opener.open.call_count,1)
+            with self.assertRaises(RuntimeError):ci.produce_job_timing(directory,path)
+            self.assertEqual(opener.open.call_count,1)
+            run=ci.CurrentAccountingRun.__new__(ci.CurrentAccountingRun)
+            run.identity=json.loads(path.read_text())['identity'];run.output=Path(directory)/'receipt';run.output.mkdir()
+            timing=run.read_job_timing(str(path));self.assertEqual(timing['job_started_at_unix'],990)
+            packet=json.loads(path.read_text());packet['timing']['job_started_at_unix']=1000;path.write_text(json.dumps(packet))
+            with self.assertRaises(RuntimeError):run.read_job_timing(str(path))
+            self.assertEqual(json.loads((run.output/'JOB-TIMING-SOURCE.json').read_text())['timing'],timing)
+
+    def test_timing_api_failure_is_redacted_without_retry(self):
+        from unittest.mock import MagicMock
+        opener=MagicMock();opener.open.side_effect=OSError('modeled-token-only private response')
+        with tempfile.TemporaryDirectory() as directory,self.timing_producer_context(directory),patch.object(ci.urllib.request,'build_opener',return_value=opener):
+            path=Path(directory).resolve()/'bbj-job-timing-123-1.json'
+            with self.assertRaises(RuntimeError) as observed:ci.produce_job_timing(directory,path)
+            self.assertNotIn('modeled-token-only',str(observed.exception))
+            self.assertNotIn('private response',str(observed.exception))
+            self.assertEqual(opener.open.call_count,1)
+            self.assertFalse(path.exists())

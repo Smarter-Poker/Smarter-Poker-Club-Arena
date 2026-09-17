@@ -1,0 +1,3858 @@
+[
+  {
+    "relation": "public.bbj_pools",
+    "before": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.bbj_pools",
+      "oid": 1708481,
+      "schema": "public",
+      "name": "bbj_pools",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "f3b72bb359a50b640590970a2ab8e514",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "pool_amount",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "hands_contributed",
+          "type": "bigint",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_hit_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_hit_amount",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_winner_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "main_balance",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "backup_balance",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "promo_balance",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "status",
+          "type": "text",
+          "default": "'active'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfaf8d9e8ae4be644c6e743d4de4ac24",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "total_contributed",
+          "type": "numeric",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "total_paid_out",
+          "type": "numeric(15,2)",
+          "default": "0.00",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "f7ddd489ab0a82567b241b05971cbdb3",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "hit_count",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_loser_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "merged_into_pool_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "alloc_cum_amount",
+          "type": "numeric(14,4)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "mini_reserve_floor",
+          "type": "numeric(14,2)",
+          "default": "fn_bbj_default_mini_floor()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "81b8c29984aaf402f94f1f18b3faeea8",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "mini_enabled",
+          "type": "boolean",
+          "default": "true",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "b326b5062b2f0e69046810717534cb09",
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "bbj_pools_backup_balance_nonneg",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((backup_balance >= (0)::numeric))"
+        },
+        {
+          "name": "bbj_pools_club_id_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (club_id)"
+        },
+        {
+          "name": "bbj_pools_main_balance_nonneg",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((main_balance >= (0)::numeric))"
+        },
+        {
+          "name": "bbj_pools_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "bbj_pools_promo_balance_nonneg",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((promo_balance >= (0)::numeric))"
+        },
+        {
+          "name": "chk_alloc_cum_amount_is_two_decimal_places",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((alloc_cum_amount IS NULL) OR (alloc_cum_amount = round(alloc_cum_amount, 2))))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "bbj_pools_club_id_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX bbj_pools_club_id_key ON public.bbj_pools USING btree (club_id)"
+        },
+        {
+          "name": "bbj_pools_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX bbj_pools_pkey ON public.bbj_pools USING btree (id)"
+        },
+        {
+          "name": "idx_bbj_pools_union",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_bbj_pools_union ON public.bbj_pools USING btree (union_id) WHERE (union_id IS NOT NULL)"
+        },
+        {
+          "name": "uq_bbj_pools_club_active",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX uq_bbj_pools_club_active ON public.bbj_pools USING btree (club_id) WHERE ((club_id IS NOT NULL) AND (status = 'active'::text))"
+        },
+        {
+          "name": "uq_bbj_pools_union_active",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX uq_bbj_pools_union_active ON public.bbj_pools USING btree (union_id) WHERE ((club_id IS NULL) AND (union_id IS NOT NULL) AND (status = 'active'::text))"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "trg_ca_autoledger",
+          "enabled": "O",
+          "function": "fn_ca_autoledger()",
+          "definition": "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF main_balance, backup_balance, promo_balance ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('main_balance=bbj_pool', 'backup_balance=bbj_pool', 'promo_balance=bbj_pool')"
+        },
+        {
+          "name": "trg_ca_autoledger_delete",
+          "enabled": "O",
+          "function": "fn_ca_autoledger_delete()",
+          "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('main_balance=bbj_pool', 'backup_balance=bbj_pool', 'promo_balance=bbj_pool')"
+        },
+        {
+          "name": "trg_ca_block_browser",
+          "enabled": "O",
+          "function": "fn_ca_block_browser_money_table()",
+          "definition": "CREATE TRIGGER trg_ca_block_browser BEFORE INSERT OR DELETE OR UPDATE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_block_browser_money_table()"
+        },
+        {
+          "name": "trg_guard_retired_club_mutation",
+          "enabled": "O",
+          "function": "fn_guard_retired_club_mutation()",
+          "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+        }
+      ],
+      "policies": [
+        {
+          "name": "bbj_pools_select",
+          "check": null,
+          "roles": [
+            "public"
+          ],
+          "using": "true",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "after": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.bbj_pools",
+      "oid": 1708481,
+      "schema": "public",
+      "name": "bbj_pools",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "f3b72bb359a50b640590970a2ab8e514",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "pool_amount",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "hands_contributed",
+          "type": "bigint",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_hit_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_hit_amount",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_winner_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "main_balance",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "backup_balance",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "promo_balance",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "status",
+          "type": "text",
+          "default": "'active'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfaf8d9e8ae4be644c6e743d4de4ac24",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "total_contributed",
+          "type": "numeric",
+          "default": "0",
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "total_paid_out",
+          "type": "numeric(15,2)",
+          "default": "0.00",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "f7ddd489ab0a82567b241b05971cbdb3",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "hit_count",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_loser_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "merged_into_pool_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "alloc_cum_amount",
+          "type": "numeric(14,4)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "mini_reserve_floor",
+          "type": "numeric(14,2)",
+          "default": "fn_bbj_default_mini_floor()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "81b8c29984aaf402f94f1f18b3faeea8",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "mini_enabled",
+          "type": "boolean",
+          "default": "true",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "b326b5062b2f0e69046810717534cb09",
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "bbj_pools_backup_balance_nonneg",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((backup_balance >= (0)::numeric))"
+        },
+        {
+          "name": "bbj_pools_club_id_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (club_id)"
+        },
+        {
+          "name": "bbj_pools_main_balance_nonneg",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((main_balance >= (0)::numeric))"
+        },
+        {
+          "name": "bbj_pools_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "bbj_pools_promo_balance_nonneg",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((promo_balance >= (0)::numeric))"
+        },
+        {
+          "name": "chk_alloc_cum_amount_is_two_decimal_places",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((alloc_cum_amount IS NULL) OR (alloc_cum_amount = round(alloc_cum_amount, 2))))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "bbj_pools_club_id_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX bbj_pools_club_id_key ON public.bbj_pools USING btree (club_id)"
+        },
+        {
+          "name": "bbj_pools_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX bbj_pools_pkey ON public.bbj_pools USING btree (id)"
+        },
+        {
+          "name": "idx_bbj_pools_union",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_bbj_pools_union ON public.bbj_pools USING btree (union_id) WHERE (union_id IS NOT NULL)"
+        },
+        {
+          "name": "uq_bbj_pools_club_active",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX uq_bbj_pools_club_active ON public.bbj_pools USING btree (club_id) WHERE ((club_id IS NOT NULL) AND (status = 'active'::text))"
+        },
+        {
+          "name": "uq_bbj_pools_union_active",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX uq_bbj_pools_union_active ON public.bbj_pools USING btree (union_id) WHERE ((club_id IS NULL) AND (union_id IS NOT NULL) AND (status = 'active'::text))"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "trg_ca_autoledger",
+          "enabled": "O",
+          "function": "fn_ca_autoledger()",
+          "definition": "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF main_balance, backup_balance, promo_balance ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('main_balance=bbj_pool', 'backup_balance=bbj_pool', 'promo_balance=bbj_pool')"
+        },
+        {
+          "name": "trg_ca_autoledger_delete",
+          "enabled": "O",
+          "function": "fn_ca_autoledger_delete()",
+          "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('main_balance=bbj_pool', 'backup_balance=bbj_pool', 'promo_balance=bbj_pool')"
+        },
+        {
+          "name": "trg_ca_block_browser",
+          "enabled": "O",
+          "function": "fn_ca_block_browser_money_table()",
+          "definition": "CREATE TRIGGER trg_ca_block_browser BEFORE INSERT OR DELETE OR UPDATE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_ca_block_browser_money_table()"
+        },
+        {
+          "name": "trg_guard_retired_club_mutation",
+          "enabled": "O",
+          "function": "fn_guard_retired_club_mutation()",
+          "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.bbj_pools FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+        }
+      ],
+      "policies": [
+        {
+          "name": "bbj_pools_select",
+          "check": null,
+          "roles": [
+            "public"
+          ],
+          "using": "true",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "statements": [],
+    "derivation": "Fixed complete current relation capture unchanged except historical ACL=None for five non-overlaid tables; original bbj_pools current overlay is exact no-op. Independent diagnostic reports exactly this finite delta."
+  },
+  {
+    "relation": "public.club_leaderboard_settings",
+    "before": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.club_leaderboard_settings",
+      "oid": 14849870,
+      "schema": "public",
+      "name": "club_leaderboard_settings",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": null,
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "payout_currency",
+          "type": "text",
+          "default": "'diamonds'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "318e87ca0ed929b9c0f71d48e6c853df",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "weekly_prizes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "8b4b2df56ad0773943ef9179742da01b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "monthly_prizes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "8b4b2df56ad0773943ef9179742da01b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rewards_enabled",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "68934a3e9455fa72420237eb05902327",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "payout_metric",
+          "type": "text",
+          "default": "'profit'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "b95241cae941080098e1cbdbd62b1539",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "funding_owner_type",
+          "type": "text",
+          "default": "'club'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "4fbe75920457f7ec514fb4063ac0a432",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "funding_union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "suggestion_key",
+          "type": "text",
+          "default": "'balanced'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "2bb398fc19abf8962644e4ec62fa106b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "setup_completed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "setup_completed_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "club_leaderboard_settings_club_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "clubs",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "club_leaderboard_settings_funding_owner_type_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((funding_owner_type = ANY (ARRAY['union'::text, 'club'::text])))"
+        },
+        {
+          "name": "club_leaderboard_settings_funding_scope_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((((funding_owner_type = 'union'::text) AND (funding_union_id IS NOT NULL)) OR ((funding_owner_type = 'club'::text) AND (funding_union_id IS NULL))))"
+        },
+        {
+          "name": "club_leaderboard_settings_funding_union_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "unions",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (funding_union_id) REFERENCES unions(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "club_leaderboard_settings_monthly_ok",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_valid_prize_table(monthly_prizes))"
+        },
+        {
+          "name": "club_leaderboard_settings_monthly_prizes_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_leaderboard_prizes_are_valid(monthly_prizes))"
+        },
+        {
+          "name": "club_leaderboard_settings_payout_currency_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((payout_currency = ANY (ARRAY['diamonds'::text, 'chips'::text])))"
+        },
+        {
+          "name": "club_leaderboard_settings_payout_metric_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((payout_metric = ANY (ARRAY['profit'::text, 'hands_played'::text, 'tournaments_won'::text, 'roi'::text])))"
+        },
+        {
+          "name": "club_leaderboard_settings_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (club_id)"
+        },
+        {
+          "name": "club_leaderboard_settings_setup_completed_by_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "profiles",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (setup_completed_by) REFERENCES profiles(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "club_leaderboard_settings_suggestion_key_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((suggestion_key = ANY (ARRAY['balanced'::text, 'top_heavy'::text, 'even'::text, 'custom'::text])))"
+        },
+        {
+          "name": "club_leaderboard_settings_updated_by_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "profiles",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (updated_by) REFERENCES profiles(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "club_leaderboard_settings_weekly_ok",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_valid_prize_table(weekly_prizes))"
+        },
+        {
+          "name": "club_leaderboard_settings_weekly_prizes_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_leaderboard_prizes_are_valid(weekly_prizes))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "club_leaderboard_settings_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_leaderboard_settings_pkey ON public.club_leaderboard_settings USING btree (club_id)"
+        },
+        {
+          "name": "idx_club_lb_settings_setup_completed_by",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_club_lb_settings_setup_completed_by ON public.club_leaderboard_settings USING btree (setup_completed_by) WHERE (setup_completed_by IS NOT NULL)"
+        },
+        {
+          "name": "idx_club_lb_settings_updated_by",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_club_lb_settings_updated_by ON public.club_leaderboard_settings USING btree (updated_by) WHERE (updated_by IS NOT NULL)"
+        },
+        {
+          "name": "idx_club_leaderboard_settings_funding_union",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_club_leaderboard_settings_funding_union ON public.club_leaderboard_settings USING btree (funding_union_id) WHERE (funding_union_id IS NOT NULL)"
+        }
+      ],
+      "triggers": null,
+      "policies": [
+        {
+          "name": "club_lb_settings_read",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "is_club_member(club_id, ( SELECT auth.uid() AS uid))",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "after": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.club_leaderboard_settings",
+      "oid": 14849870,
+      "schema": "public",
+      "name": "club_leaderboard_settings",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "payout_currency",
+          "type": "text",
+          "default": "'diamonds'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "318e87ca0ed929b9c0f71d48e6c853df",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "weekly_prizes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "8b4b2df56ad0773943ef9179742da01b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "monthly_prizes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "8b4b2df56ad0773943ef9179742da01b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rewards_enabled",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "68934a3e9455fa72420237eb05902327",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "payout_metric",
+          "type": "text",
+          "default": "'profit'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "b95241cae941080098e1cbdbd62b1539",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "funding_owner_type",
+          "type": "text",
+          "default": "'club'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "4fbe75920457f7ec514fb4063ac0a432",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "funding_union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "suggestion_key",
+          "type": "text",
+          "default": "'balanced'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "2bb398fc19abf8962644e4ec62fa106b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "setup_completed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "setup_completed_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "club_leaderboard_settings_club_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "clubs",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "club_leaderboard_settings_funding_owner_type_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((funding_owner_type = ANY (ARRAY['union'::text, 'club'::text])))"
+        },
+        {
+          "name": "club_leaderboard_settings_funding_scope_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((((funding_owner_type = 'union'::text) AND (funding_union_id IS NOT NULL)) OR ((funding_owner_type = 'club'::text) AND (funding_union_id IS NULL))))"
+        },
+        {
+          "name": "club_leaderboard_settings_funding_union_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "unions",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (funding_union_id) REFERENCES unions(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "club_leaderboard_settings_monthly_ok",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_valid_prize_table(monthly_prizes))"
+        },
+        {
+          "name": "club_leaderboard_settings_monthly_prizes_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_leaderboard_prizes_are_valid(monthly_prizes))"
+        },
+        {
+          "name": "club_leaderboard_settings_payout_currency_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((payout_currency = ANY (ARRAY['diamonds'::text, 'chips'::text])))"
+        },
+        {
+          "name": "club_leaderboard_settings_payout_metric_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((payout_metric = ANY (ARRAY['profit'::text, 'hands_played'::text, 'tournaments_won'::text, 'roi'::text])))"
+        },
+        {
+          "name": "club_leaderboard_settings_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (club_id)"
+        },
+        {
+          "name": "club_leaderboard_settings_setup_completed_by_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "profiles",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (setup_completed_by) REFERENCES profiles(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "club_leaderboard_settings_suggestion_key_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((suggestion_key = ANY (ARRAY['balanced'::text, 'top_heavy'::text, 'even'::text, 'custom'::text])))"
+        },
+        {
+          "name": "club_leaderboard_settings_updated_by_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "profiles",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (updated_by) REFERENCES profiles(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "club_leaderboard_settings_weekly_ok",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_valid_prize_table(weekly_prizes))"
+        },
+        {
+          "name": "club_leaderboard_settings_weekly_prizes_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_leaderboard_prizes_are_valid(weekly_prizes))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "club_leaderboard_settings_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_leaderboard_settings_pkey ON public.club_leaderboard_settings USING btree (club_id)"
+        },
+        {
+          "name": "idx_club_lb_settings_setup_completed_by",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_club_lb_settings_setup_completed_by ON public.club_leaderboard_settings USING btree (setup_completed_by) WHERE (setup_completed_by IS NOT NULL)"
+        },
+        {
+          "name": "idx_club_lb_settings_updated_by",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_club_lb_settings_updated_by ON public.club_leaderboard_settings USING btree (updated_by) WHERE (updated_by IS NOT NULL)"
+        },
+        {
+          "name": "idx_club_leaderboard_settings_funding_union",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_club_leaderboard_settings_funding_union ON public.club_leaderboard_settings USING btree (funding_union_id) WHERE (funding_union_id IS NOT NULL)"
+        }
+      ],
+      "triggers": null,
+      "policies": [
+        {
+          "name": "club_lb_settings_read",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "is_club_member(club_id, ( SELECT auth.uid() AS uid))",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "statements": [
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_leaderboard_settings TO \"postgres\";",
+      "GRANT SELECT, MAINTAIN ON TABLE public.club_leaderboard_settings TO \"anon\";",
+      "GRANT SELECT, MAINTAIN ON TABLE public.club_leaderboard_settings TO \"authenticated\";",
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_leaderboard_settings TO \"service_role\";"
+    ],
+    "derivation": "Fixed complete current relation capture unchanged except historical ACL=None for five non-overlaid tables; original bbj_pools current overlay is exact no-op. Independent diagnostic reports exactly this finite delta."
+  },
+  {
+    "relation": "public.club_opening_setup_funding",
+    "before": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.club_opening_setup_funding",
+      "oid": 18223618,
+      "schema": "public",
+      "name": "club_opening_setup_funding",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": null,
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "f3b72bb359a50b640590970a2ab8e514",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "destination",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "amount",
+          "type": "numeric(18,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "balance_after",
+          "type": "numeric(18,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "club_opening_setup_funding_amount_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((amount >= (100)::numeric))"
+        },
+        {
+          "name": "club_opening_setup_funding_balance_after_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((balance_after >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setup_funding_club_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "clubs",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "club_opening_setup_funding_destination_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((destination = ANY (ARRAY['bbj_main'::text, 'spin_reserve'::text, 'promo_wallet'::text, 'leaderboard_prizes'::text])))"
+        },
+        {
+          "name": "club_opening_setup_funding_operation_id_destination_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (operation_id, destination)"
+        },
+        {
+          "name": "club_opening_setup_funding_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "club_opening_setup_funding_operation_id_destination_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_opening_setup_funding_operation_id_destination_key ON public.club_opening_setup_funding USING btree (operation_id, destination)"
+        },
+        {
+          "name": "club_opening_setup_funding_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_opening_setup_funding_pkey ON public.club_opening_setup_funding USING btree (id)"
+        },
+        {
+          "name": "idx_club_opening_setup_funding_club_id_fk",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_club_opening_setup_funding_club_id_fk ON public.club_opening_setup_funding USING btree (club_id)"
+        }
+      ],
+      "triggers": null,
+      "policies": [
+        {
+          "name": "club_opening_funding_owner_read",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_opening_setup_funding.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'superadmin'::text, 'god'::text]))))))",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "after": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.club_opening_setup_funding",
+      "oid": 18223618,
+      "schema": "public",
+      "name": "club_opening_setup_funding",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,anon=rxtm/postgres,authenticated=rxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "f3b72bb359a50b640590970a2ab8e514",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "destination",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "amount",
+          "type": "numeric(18,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "balance_after",
+          "type": "numeric(18,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "club_opening_setup_funding_amount_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((amount >= (100)::numeric))"
+        },
+        {
+          "name": "club_opening_setup_funding_balance_after_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((balance_after >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setup_funding_club_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "clubs",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "club_opening_setup_funding_destination_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((destination = ANY (ARRAY['bbj_main'::text, 'spin_reserve'::text, 'promo_wallet'::text, 'leaderboard_prizes'::text])))"
+        },
+        {
+          "name": "club_opening_setup_funding_operation_id_destination_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (operation_id, destination)"
+        },
+        {
+          "name": "club_opening_setup_funding_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "club_opening_setup_funding_operation_id_destination_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_opening_setup_funding_operation_id_destination_key ON public.club_opening_setup_funding USING btree (operation_id, destination)"
+        },
+        {
+          "name": "club_opening_setup_funding_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_opening_setup_funding_pkey ON public.club_opening_setup_funding USING btree (id)"
+        },
+        {
+          "name": "idx_club_opening_setup_funding_club_id_fk",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_club_opening_setup_funding_club_id_fk ON public.club_opening_setup_funding USING btree (club_id)"
+        }
+      ],
+      "triggers": null,
+      "policies": [
+        {
+          "name": "club_opening_funding_owner_read",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_opening_setup_funding.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'superadmin'::text, 'god'::text]))))))",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "statements": [
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_opening_setup_funding TO \"postgres\";",
+      "GRANT SELECT, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_opening_setup_funding TO \"anon\";",
+      "GRANT SELECT, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_opening_setup_funding TO \"authenticated\";",
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_opening_setup_funding TO \"service_role\";"
+    ],
+    "derivation": "Fixed complete current relation capture unchanged except historical ACL=None for five non-overlaid tables; original bbj_pools current overlay is exact no-op. Independent diagnostic reports exactly this finite delta."
+  },
+  {
+    "relation": "public.club_opening_setups",
+    "before": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.club_opening_setups",
+      "oid": 18223580,
+      "schema": "public",
+      "name": "club_opening_setups",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": null,
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "owner_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rake_mode",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rake_percent",
+          "type": "numeric(5,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rake_cap_bb",
+          "type": "numeric(8,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "bbj_enabled",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "bbj_seeded_amount",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "spins_enabled",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "spin_seeded_amount",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "spin_max_stake",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "promo_enabled",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "promo_budget",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "promotion_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "leaderboard_rewards_enabled",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "68934a3e9455fa72420237eb05902327",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "leaderboard_metric",
+          "type": "text",
+          "default": "'profit'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "b95241cae941080098e1cbdbd62b1539",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "leaderboard_prize_budget",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "leaderboard_seed_remaining",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "club_opening_setups_bbj_seeded_amount_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((bbj_seeded_amount >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_club_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "clubs",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "club_opening_setups_last_operation_id_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (last_operation_id)"
+        },
+        {
+          "name": "club_opening_setups_leaderboard_metric_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((leaderboard_metric = ANY (ARRAY['profit'::text, 'hands_played'::text, 'tournaments_won'::text, 'roi'::text])))"
+        },
+        {
+          "name": "club_opening_setups_leaderboard_prize_budget_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((leaderboard_prize_budget >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_leaderboard_seed_remaining_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((leaderboard_seed_remaining >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (club_id)"
+        },
+        {
+          "name": "club_opening_setups_promo_budget_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((promo_budget >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_promotion_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "promotions",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "club_opening_setups_rake_mode_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((rake_mode = ANY (ARRAY['house_schedule'::text, 'custom'::text])))"
+        },
+        {
+          "name": "club_opening_setups_spin_max_stake_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((spin_max_stake >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_spin_seeded_amount_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((spin_seeded_amount >= (0)::numeric))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "club_opening_setups_last_operation_id_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_opening_setups_last_operation_id_key ON public.club_opening_setups USING btree (last_operation_id)"
+        },
+        {
+          "name": "club_opening_setups_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_opening_setups_pkey ON public.club_opening_setups USING btree (club_id)"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "trg_guard_retired_club_mutation",
+          "enabled": "O",
+          "function": "fn_guard_retired_club_mutation()",
+          "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.club_opening_setups FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+        }
+      ],
+      "policies": [
+        {
+          "name": "club_opening_setups_owner_read",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_opening_setups.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'superadmin'::text, 'god'::text]))))))",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "after": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.club_opening_setups",
+      "oid": 18223580,
+      "schema": "public",
+      "name": "club_opening_setups",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,anon=rxtm/postgres,authenticated=rxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "owner_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rake_mode",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rake_percent",
+          "type": "numeric(5,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rake_cap_bb",
+          "type": "numeric(8,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "bbj_enabled",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "bbj_seeded_amount",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "spins_enabled",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "spin_seeded_amount",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "spin_max_stake",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "promo_enabled",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "promo_budget",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "promotion_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "leaderboard_rewards_enabled",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "68934a3e9455fa72420237eb05902327",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "leaderboard_metric",
+          "type": "text",
+          "default": "'profit'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "b95241cae941080098e1cbdbd62b1539",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "leaderboard_prize_budget",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "leaderboard_seed_remaining",
+          "type": "numeric(18,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "cfcd208495d565ef66e7dff9f98764da",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "last_operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "club_opening_setups_bbj_seeded_amount_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((bbj_seeded_amount >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_club_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "clubs",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "club_opening_setups_last_operation_id_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (last_operation_id)"
+        },
+        {
+          "name": "club_opening_setups_leaderboard_metric_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((leaderboard_metric = ANY (ARRAY['profit'::text, 'hands_played'::text, 'tournaments_won'::text, 'roi'::text])))"
+        },
+        {
+          "name": "club_opening_setups_leaderboard_prize_budget_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((leaderboard_prize_budget >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_leaderboard_seed_remaining_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((leaderboard_seed_remaining >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (club_id)"
+        },
+        {
+          "name": "club_opening_setups_promo_budget_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((promo_budget >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_promotion_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "promotions",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "club_opening_setups_rake_mode_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((rake_mode = ANY (ARRAY['house_schedule'::text, 'custom'::text])))"
+        },
+        {
+          "name": "club_opening_setups_spin_max_stake_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((spin_max_stake >= (0)::numeric))"
+        },
+        {
+          "name": "club_opening_setups_spin_seeded_amount_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((spin_seeded_amount >= (0)::numeric))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "club_opening_setups_last_operation_id_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_opening_setups_last_operation_id_key ON public.club_opening_setups USING btree (last_operation_id)"
+        },
+        {
+          "name": "club_opening_setups_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX club_opening_setups_pkey ON public.club_opening_setups USING btree (club_id)"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "trg_guard_retired_club_mutation",
+          "enabled": "O",
+          "function": "fn_guard_retired_club_mutation()",
+          "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.club_opening_setups FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+        }
+      ],
+      "policies": [
+        {
+          "name": "club_opening_setups_owner_read",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_opening_setups.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM profiles p\n  WHERE ((p.id = ( SELECT auth.uid() AS uid)) AND (p.role = ANY (ARRAY['admin'::text, 'superadmin'::text, 'god'::text]))))))",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "statements": [
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_opening_setups TO \"postgres\";",
+      "GRANT SELECT, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_opening_setups TO \"anon\";",
+      "GRANT SELECT, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_opening_setups TO \"authenticated\";",
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.club_opening_setups TO \"service_role\";"
+    ],
+    "derivation": "Fixed complete current relation capture unchanged except historical ACL=None for five non-overlaid tables; original bbj_pools current overlay is exact no-op. Independent diagnostic reports exactly this finite delta."
+  },
+  {
+    "relation": "public.leaderboard_reward_program_versions",
+    "before": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.leaderboard_reward_program_versions",
+      "oid": 18028321,
+      "schema": "public",
+      "name": "leaderboard_reward_program_versions",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": null,
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "f3b72bb359a50b640590970a2ab8e514",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "version",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "status",
+          "type": "text",
+          "default": "'published'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "eb64c8032927e9d602a8014b09f87367",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rewards_enabled",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "payout_currency",
+          "type": "text",
+          "default": "'chips'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "c8c75179cadc935fdf49f31f6db67260",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "payout_metric",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "weekly_prizes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "8b4b2df56ad0773943ef9179742da01b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "monthly_prizes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "8b4b2df56ad0773943ef9179742da01b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "suggestion_key",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "funding_owner_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "funding_union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "weekly_effective_from",
+          "type": "date",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "monthly_effective_from",
+          "type": "date",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "published_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "supersedes_program_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "program_hash",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "leaderboard_reward_program_enabled_prizes",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((NOT rewards_enabled) OR (jsonb_array_length(weekly_prizes) > 0) OR (jsonb_array_length(monthly_prizes) > 0)))"
+        },
+        {
+          "name": "leaderboard_reward_program_funding_scope",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((((funding_owner_type = 'union'::text) AND (funding_union_id IS NOT NULL)) OR ((funding_owner_type = 'club'::text) AND (funding_union_id IS NULL))))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_club_id_operation_id_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (club_id, operation_id)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_club_id_version_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (club_id, version)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_funding_owner_type_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((funding_owner_type = ANY (ARRAY['union'::text, 'club'::text])))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_monthly_prizes_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_leaderboard_prizes_are_valid(monthly_prizes))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_payout_currency_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((payout_currency = 'chips'::text))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_payout_metric_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((payout_metric = ANY (ARRAY['profit'::text, 'hands_played'::text, 'tournaments_won'::text, 'roi'::text])))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_program_hash_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((program_hash ~ '^[0-9a-f]{32}$'::text))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_status_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((status = 'published'::text))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_suggestion_key_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((suggestion_key = ANY (ARRAY['balanced'::text, 'top_heavy'::text, 'even'::text, 'custom'::text])))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_supersedes_program_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "leaderboard_reward_program_versions",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (supersedes_program_id) REFERENCES leaderboard_reward_program_versions(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_version_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((version > 0))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_weekly_prizes_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_leaderboard_prizes_are_valid(weekly_prizes))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_leaderboard_reward_programs_supersedes",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_leaderboard_reward_programs_supersedes ON public.leaderboard_reward_program_versions USING btree (supersedes_program_id) WHERE (supersedes_program_id IS NOT NULL)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_club_id_operation_id_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX leaderboard_reward_program_versions_club_id_operation_id_key ON public.leaderboard_reward_program_versions USING btree (club_id, operation_id)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_club_id_version_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX leaderboard_reward_program_versions_club_id_version_key ON public.leaderboard_reward_program_versions USING btree (club_id, version)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX leaderboard_reward_program_versions_pkey ON public.leaderboard_reward_program_versions USING btree (id)"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "leaderboard_program_funding_gate",
+          "enabled": "O",
+          "function": "fn_enforce_leaderboard_program_funding()",
+          "definition": "CREATE TRIGGER leaderboard_program_funding_gate BEFORE INSERT ON public.leaderboard_reward_program_versions FOR EACH ROW EXECUTE FUNCTION fn_enforce_leaderboard_program_funding()"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_are_immutable",
+          "enabled": "O",
+          "function": "leaderboard_reward_program_versions_are_immutable()",
+          "definition": "CREATE TRIGGER leaderboard_reward_program_versions_are_immutable BEFORE DELETE OR UPDATE ON public.leaderboard_reward_program_versions FOR EACH ROW EXECUTE FUNCTION leaderboard_reward_program_versions_are_immutable()"
+        }
+      ],
+      "policies": [
+        {
+          "name": "Leaderboard Reward Programs Are Public After Publication",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "(status = 'published'::text)",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "after": {
+      "observed_at": "2026-09-14 11:24:28.957089+00",
+      "server_version": "17.6",
+      "requested_relation": "public.leaderboard_reward_program_versions",
+      "oid": 18028321,
+      "schema": "public",
+      "name": "leaderboard_reward_program_versions",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "f3b72bb359a50b640590970a2ab8e514",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "version",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "status",
+          "type": "text",
+          "default": "'published'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "eb64c8032927e9d602a8014b09f87367",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "rewards_enabled",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "payout_currency",
+          "type": "text",
+          "default": "'chips'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "c8c75179cadc935fdf49f31f6db67260",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "payout_metric",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "weekly_prizes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "8b4b2df56ad0773943ef9179742da01b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "monthly_prizes",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "8b4b2df56ad0773943ef9179742da01b",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "suggestion_key",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "funding_owner_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "funding_union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "weekly_effective_from",
+          "type": "date",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "monthly_effective_from",
+          "type": "date",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "published_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "supersedes_program_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "program_hash",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "leaderboard_reward_program_enabled_prizes",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((NOT rewards_enabled) OR (jsonb_array_length(weekly_prizes) > 0) OR (jsonb_array_length(monthly_prizes) > 0)))"
+        },
+        {
+          "name": "leaderboard_reward_program_funding_scope",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((((funding_owner_type = 'union'::text) AND (funding_union_id IS NOT NULL)) OR ((funding_owner_type = 'club'::text) AND (funding_union_id IS NULL))))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_club_id_operation_id_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (club_id, operation_id)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_club_id_version_key",
+          "type": "u",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (club_id, version)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_funding_owner_type_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((funding_owner_type = ANY (ARRAY['union'::text, 'club'::text])))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_monthly_prizes_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_leaderboard_prizes_are_valid(monthly_prizes))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_payout_currency_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((payout_currency = 'chips'::text))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_payout_metric_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((payout_metric = ANY (ARRAY['profit'::text, 'hands_played'::text, 'tournaments_won'::text, 'roi'::text])))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_program_hash_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((program_hash ~ '^[0-9a-f]{32}$'::text))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_status_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((status = 'published'::text))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_suggestion_key_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((suggestion_key = ANY (ARRAY['balanced'::text, 'top_heavy'::text, 'even'::text, 'custom'::text])))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_supersedes_program_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "leaderboard_reward_program_versions",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (supersedes_program_id) REFERENCES leaderboard_reward_program_versions(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_version_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((version > 0))"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_weekly_prizes_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (fn_leaderboard_prizes_are_valid(weekly_prizes))"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_leaderboard_reward_programs_supersedes",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "definition": "CREATE INDEX idx_leaderboard_reward_programs_supersedes ON public.leaderboard_reward_program_versions USING btree (supersedes_program_id) WHERE (supersedes_program_id IS NOT NULL)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_club_id_operation_id_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX leaderboard_reward_program_versions_club_id_operation_id_key ON public.leaderboard_reward_program_versions USING btree (club_id, operation_id)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_club_id_version_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX leaderboard_reward_program_versions_club_id_version_key ON public.leaderboard_reward_program_versions USING btree (club_id, version)"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX leaderboard_reward_program_versions_pkey ON public.leaderboard_reward_program_versions USING btree (id)"
+        }
+      ],
+      "triggers": [
+        {
+          "name": "leaderboard_program_funding_gate",
+          "enabled": "O",
+          "function": "fn_enforce_leaderboard_program_funding()",
+          "definition": "CREATE TRIGGER leaderboard_program_funding_gate BEFORE INSERT ON public.leaderboard_reward_program_versions FOR EACH ROW EXECUTE FUNCTION fn_enforce_leaderboard_program_funding()"
+        },
+        {
+          "name": "leaderboard_reward_program_versions_are_immutable",
+          "enabled": "O",
+          "function": "leaderboard_reward_program_versions_are_immutable()",
+          "definition": "CREATE TRIGGER leaderboard_reward_program_versions_are_immutable BEFORE DELETE OR UPDATE ON public.leaderboard_reward_program_versions FOR EACH ROW EXECUTE FUNCTION leaderboard_reward_program_versions_are_immutable()"
+        }
+      ],
+      "policies": [
+        {
+          "name": "Leaderboard Reward Programs Are Public After Publication",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "(status = 'published'::text)",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "statements": [
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.leaderboard_reward_program_versions TO \"postgres\";",
+      "GRANT SELECT, MAINTAIN ON TABLE public.leaderboard_reward_program_versions TO \"authenticated\";",
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.leaderboard_reward_program_versions TO \"service_role\";"
+    ],
+    "derivation": "Fixed complete current relation capture unchanged except historical ACL=None for five non-overlaid tables; original bbj_pools current overlay is exact no-op. Independent diagnostic reports exactly this finite delta."
+  },
+  {
+    "relation": "public.bbj_mini_tiers",
+    "before": {
+      "observed_at": "2026-09-14 11:30:25.870655+00",
+      "server_version": "17.6",
+      "requested_relation": "public.bbj_mini_tiers",
+      "oid": 23749365,
+      "schema": "public",
+      "name": "bbj_mini_tiers",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": null,
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "tier_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "amount",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "enabled",
+          "type": "boolean",
+          "default": "true",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "b326b5062b2f0e69046810717534cb09",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "note",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "bbj_mini_tiers_amount_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((amount > (0)::numeric))"
+        },
+        {
+          "name": "bbj_mini_tiers_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (tier_id)"
+        },
+        {
+          "name": "bbj_mini_tiers_tier_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "bbj_stakes_tiers",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (tier_id) REFERENCES bbj_stakes_tiers(id) ON DELETE RESTRICT"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "bbj_mini_tiers_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX bbj_mini_tiers_pkey ON public.bbj_mini_tiers USING btree (tier_id)"
+        }
+      ],
+      "triggers": null,
+      "policies": [
+        {
+          "name": "mini_tiers_are_public_reading",
+          "check": null,
+          "roles": [
+            "public"
+          ],
+          "using": "true",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "after": {
+      "observed_at": "2026-09-14 11:30:25.870655+00",
+      "server_version": "17.6",
+      "requested_relation": "public.bbj_mini_tiers",
+      "oid": 23749365,
+      "schema": "public",
+      "name": "bbj_mini_tiers",
+      "relkind": "r",
+      "relpersistence": "p",
+      "relreplident": "d",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres,anon=r/postgres,authenticated=r/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "reloptions": null,
+      "columns": [
+        {
+          "acl": null,
+          "name": "tier_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "amount",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "enabled",
+          "type": "boolean",
+          "default": "true",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "b326b5062b2f0e69046810717534cb09",
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "note",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": "",
+          "default_md5": null,
+          "acl_captured": true
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": "",
+          "default_md5": "75230039beb12ce952f24927f2bfa2f2",
+          "acl_captured": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "bbj_mini_tiers_amount_check",
+          "type": "c",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((amount > (0)::numeric))"
+        },
+        {
+          "name": "bbj_mini_tiers_pkey",
+          "type": "p",
+          "deferred": false,
+          "reference": null,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (tier_id)"
+        },
+        {
+          "name": "bbj_mini_tiers_tier_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "reference": "bbj_stakes_tiers",
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (tier_id) REFERENCES bbj_stakes_tiers(id) ON DELETE RESTRICT"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "bbj_mini_tiers_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX bbj_mini_tiers_pkey ON public.bbj_mini_tiers USING btree (tier_id)"
+        }
+      ],
+      "triggers": null,
+      "policies": [
+        {
+          "name": "mini_tiers_are_public_reading",
+          "check": null,
+          "roles": [
+            "public"
+          ],
+          "using": "true",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "columns_complete": true,
+      "constraints_complete": true,
+      "indexes_complete": true,
+      "attachments_complete": true,
+      "policies_complete": true
+    },
+    "statements": [
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_mini_tiers TO \"postgres\";",
+      "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_mini_tiers TO \"service_role\";",
+      "GRANT SELECT ON TABLE public.bbj_mini_tiers TO \"anon\";",
+      "GRANT SELECT ON TABLE public.bbj_mini_tiers TO \"authenticated\";"
+    ],
+    "derivation": "Fixed complete current relation capture unchanged except historical ACL=None for five non-overlaid tables; original bbj_pools current overlay is exact no-op. Independent diagnostic reports exactly this finite delta."
+  }
+]

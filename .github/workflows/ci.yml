@@ -1091,6 +1091,9 @@ jobs:
     name: Accounting transactions (PostgreSQL 17)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1128,10 +1131,35 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Bind BBJ qualification to the actual accounting job deadline
+        id: bbj_timing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/probes/bbj-bank-replay/funded/current_ci.py --write-job-timing "$RUNNER_TEMP/bbj-job-timing-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
       - name: BBJ bank replay identity and drift-safe installation
+        id: bbj
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-bbj-bank-replay.py
+          BBJ_JOB_TIMING_FILE: ${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: |
+          python3 -B -m unittest discover -s scripts/ci/probes/bbj-bank-replay -p test_retain_evidence.py
+          python3 scripts/ci/test-bbj-bank-replay.py
+      - name: Bind available BBJ receipts to this attempted invocation
+        id: bbj_evidence
+        if: always() && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')
+        env:
+          BBJ_STEP_OUTCOME: ${{ steps.bbj.outcome }}
+          BBJ_TIMING_OUTCOME: ${{ steps.bbj_timing.outcome }}
+          BBJ_JOB_TIMING_FILE: ${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: python3 scripts/ci/probes/bbj-bank-replay/retain_evidence.py
+      - name: Retain BBJ accounting receipts
+        if: always() && steps.bbj_evidence.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bbj-${{ github.run_id }}-${{ github.run_attempt }}-accounting_postgres-${{ github.sha }}
+          path: artifacts/bbj-bank-replay/
+          retention-days: 3
+          if-no-files-found: error
       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

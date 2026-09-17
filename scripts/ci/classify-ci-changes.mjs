@@ -17,9 +17,13 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  // The existing accounting job owns the BBJ runner and its nested fixture inputs.
+  const bbjFixture = matches(
+    /^scripts\/ci\/(?:test-bbj-bank-replay\.py$|probes\/bbj-bank-replay\/)/
+  );
   return {
     src: broad || matches(/^src\//),
-    server: broad || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
+    server: broad || bbjFixture || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
     tests: broad || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
     phase4: matches(phase4),
     fixture: matches(fixture),

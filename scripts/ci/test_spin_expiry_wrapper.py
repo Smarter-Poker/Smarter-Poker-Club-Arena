@@ -668,6 +668,17 @@ class RetentionSourceTests(unittest.TestCase):
         marker = W.RETENTION_CATALOG_MARKER.encode() + b'\n'
         raw = json.dumps(retention_behavior()).encode() + b'\n'
         self.assertEqual(W.retention_output(b'BEGIN\nROLLBACK\n' + marker, b'SET\n' + raw), retention_behavior())
+        # Native psql setup emits multiple columns, not another JSON result.
+        # Keep every diagnostic value while explicitly tagging those rows.
+        claims = ((b'retention_setup_claims',
+                   b'{"sub": "47965354-0e56-43ef-931c-ddaab82af765", "role": "service_role"}'
+                   b'|47965354-0e56-43ef-931c-ddaab82af765|service_role\n'),
+                  (b'retention_cancel_claims', b'{"role":"service_role"}|service_role|\n'))
+        tagged = b''.join(label + b'|' + row for label, row in claims)
+        self.assertEqual(W.retention_output(marker, tagged + raw), retention_behavior())
+        for _, row in claims:
+            with self.subTest(claims=row), self.assertRaises(ValueError):
+                W.retention_output(marker, row + raw)
         for catalog, behavior in ((b'', raw), (marker * 2, raw), (marker, b'SET\n'),
                                   (marker, raw * 2), (marker, b'{bad JSON}'),
                                   (marker, b'{"qualification":1,"qualification":2}')):

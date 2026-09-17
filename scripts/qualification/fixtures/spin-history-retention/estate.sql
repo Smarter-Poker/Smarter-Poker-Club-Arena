@@ -42,7 +42,7 @@ BEGIN
    IF occupied THEN RAISE EXCEPTION 'retention estate: nonempty initial relation %',n; END IF;
  END LOOP;
 END $estate_admission$;
-SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','service_role')::text,true),
+SELECT 'retention_setup_claims',set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','service_role')::text,true),
   set_config('request.jwt.claim.sub',owner_user::text,true),set_config('request.jwt.claim.role','service_role',true)
 FROM retention_inputs;
 -- Same zero-opening-grant Union-host construction as the retained genuine
@@ -151,7 +151,7 @@ UPDATE retention_cases SET table_id=(SELECT extensions.uuid_generate_v5(executio
 WHERE tournament_id IS NULL;
 -- Canonical cancellation is called BEFORE any history exists; its real guard
 -- forbids cancelling a played board. Later rows are delayed projections only.
-SELECT set_config('request.jwt.claims','{"role":"service_role"}',true),
+SELECT 'retention_cancel_claims',set_config('request.jwt.claims','{"role":"service_role"}',true),
  set_config('request.jwt.claim.role','service_role',true),set_config('request.jwt.claim.sub','',true);
 SET LOCAL ROLE service_role;
 DO $cancel_boards$

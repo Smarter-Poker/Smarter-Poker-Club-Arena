@@ -106,7 +106,7 @@
   },
   "consumed_retention_manifest": {
     "path": "scripts/qualification/spin-history-retention.manifest.json",
-    "sha256": "600600b523795616433169d3d6bd2b75ae7bebeec8c48bc093fa87d8ec53384c",
+    "sha256": "00e114895b4eab4a4af80056649345a77acd85c1667dfa6ac57c35c579ab5429",
     "all_existing_leaf_pins_match": true
   },
   "integration": {

@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='u-fund-',dir=parent) as temp:
   run(retention)
   run((ROOT/'supabase/migrations/20260917233517_horse_hand_history_retains_eight_days.sql').read_text())
   run((ROOT/'supabase/migrations/20260917234032_accounting_evidence_reader_private_execute_contract.sql').read_text())
-  run("SELECT pg_temp.assert(NOT has_function_privilege('anon','public.fn_pnl_cash_hand_evidence(uuid,bigint)','EXECUTE') AND NOT has_function_privilege('authenticated','public.fn_hand_history_prune_backlog()','EXECUTE') AND has_function_privilege('service_role','public.fn_pnl_cash_hand_evidence(uuid,bigint)','EXECUTE'), 'Both accounting readers retain their private service ACL');")
+  run("DO $$ BEGIN IF has_function_privilege('anon','public.fn_pnl_cash_hand_evidence(uuid,bigint)','EXECUTE') OR has_function_privilege('authenticated','public.fn_hand_history_prune_backlog()','EXECUTE') OR NOT has_function_privilege('service_role','public.fn_pnl_cash_hand_evidence(uuid,bigint)','EXECUTE') THEN RAISE EXCEPTION 'Both accounting readers must retain their private service ACL'; END IF; END $$;")
   run((FIX/'retention-regression.sql').read_text())
   print('PASS original funding, accepted-owner and PNL transactions, exact signed oracle, retained accounting proof, and eight-day history pruning')
  finally:

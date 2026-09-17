@@ -27,6 +27,11 @@ describe('Diamond Games retain their financial PostgreSQL qualification', () => 
   it.each([
     'tests/e2e/css/diamond-games-playfield.spec.ts',
     'tests/e2e/helpers/diamond-games-fixture.mjs',
+    'src/components/games/gpuFrameRenderer.ts',
+    'src/components/games/sceneKit.ts',
+    'src/components/games/ChoiceScene.tsx',
+    'src/components/plinko/PlinkoBoard.tsx',
+    'src/components/crash/CrashCurve.tsx',
   ])('runs the actual browser fixture when %s changes', (path) => {
     expect(classifyChangedPaths([path]).src).toBe(true);
   });

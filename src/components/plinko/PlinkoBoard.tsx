@@ -121,6 +121,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       start = 0,
       duration = 0,
       landed = true,
+      pendingLanding = false,
+      pendingProgress: number | null = null,
       labelKey = '';
     const reduced = prefersReducedMotion();
     const draw = (now: number) => {
@@ -146,6 +148,8 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         start = now;
         duration = 16 * 118 * getAnimationSpeed();
         landed = false;
+        pendingLanding = false;
+        pendingProgress = null;
         reported = -1;
         pegs.reveal([], -1);
       }
@@ -181,11 +185,11 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         }
         if (reported !== finished) {
           reported = finished;
-          p.onProgress?.(finished);
+          pendingProgress = finished;
         }
         if (finished === p.batchPathBits.length) {
           landed = true;
-          p.onLanded?.();
+          pendingLanding = true;
         }
       } else if (p.path && !landed) {
         const progress = reduced ? 16 : Math.min(16, ((now - start) / duration) * 16);
@@ -200,8 +204,11 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
           landed = true;
           const slot = p.path.reduce((a, b) => a + b, 0);
           ball.position.set((slot - 8) * 0.65, -4.01, 0.4);
-          latest.current.onLanded?.();
+          pendingLanding = true;
         }
+      } else if (pendingLanding && p.path) {
+        const slot = p.path.reduce((a, b) => a + b, 0);
+        ball.position.set((slot - 8) * 0.65, -4.01, 0.4);
       } else if (p.restingSlot !== null) {
         ball.position.set((p.restingSlot - 8) * 0.65, -4.01, 0.4);
       } else {
@@ -213,7 +220,16 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         m.emissiveIntensity = i === p.restingSlot ? 1.1 : 0;
       });
       halo.position.copy(ball.position);
-      renderer.render(scene, camera);
+      if (kit.render()) {
+        if (pendingProgress !== null) {
+          p.onProgress?.(pendingProgress);
+          pendingProgress = null;
+        }
+        if (pendingLanding) {
+          pendingLanding = false;
+          p.onLanded?.();
+        }
+      }
     };
     raf = requestAnimationFrame(draw);
     return () => {

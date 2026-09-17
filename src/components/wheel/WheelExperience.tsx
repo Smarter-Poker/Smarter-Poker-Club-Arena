@@ -75,24 +75,28 @@ export function WheelExperience({
   };
   return (
     <>
-      <div className={styles.stack}>
+      <div
+        className={styles.stack}
+        role="group"
+        data-wheel-assembly="concentric"
+        aria-label="Diamond Spins Prize Wheel"
+      >
         {upperSegments.length > 0 && (
           <div
             className={styles.upgradeStage}
             ref={upgradeStage}
             data-active={secondary || undefined}
           >
-            <h2>Upgrade Wheel</h2>
-            <p>Super Games And Instant Chip Wins</p>
             <DiamondWheel
               segments={upperSegments}
               landingOrd={receipt?.secondary?.outcome.ord ?? null}
               spinKey={spinKey}
               spinning={spinning && phase === 'secondary'}
               upgraded
+              showSelector={phase !== 'primary' && receipt?.outcome.kind === 'upgrade'}
               idleDirection={-1}
               size={size}
-              presentation="cabinet"
+              presentation="assembly"
               onLanded={() => setPhase('bonus')}
             />
           </div>
@@ -100,6 +104,7 @@ export function WheelExperience({
         <div className={styles.mainStage} ref={mainStage}>
           <DiamondWheel
             segments={segments}
+            presentation="assembly"
             landingOrd={receipt?.outcome.ord ?? null}
             spinKey={spinKey}
             spinning={spinning && phase === 'primary'}

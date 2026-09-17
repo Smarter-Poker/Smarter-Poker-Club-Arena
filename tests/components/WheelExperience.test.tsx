@@ -48,7 +48,10 @@ describe('wheel to prize to earned game', () => {
         size={500}
       />
     );
-    expect(screen.getByRole('heading', { name: 'Upgrade Wheel' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Diamond Spins Prize Wheel' })).toHaveAttribute(
+      'data-wheel-assembly',
+      'concentric'
+    );
     expect(screen.getByRole('button', { name: 'Land Bonus Wheel' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Land Main Wheel' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

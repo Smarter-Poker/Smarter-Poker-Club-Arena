@@ -140,3 +140,14 @@
     opacity: 1;
   }
 }
+
+.frame[data-presentation='assembly'] {
+  aspect-ratio: 360 / 415;
+  overflow: hidden;
+}
+.frame[data-presentation='assembly'] .svg {
+  overflow: hidden;
+}
+.frame[data-presentation='assembly'] .aura {
+  display: none;
+}

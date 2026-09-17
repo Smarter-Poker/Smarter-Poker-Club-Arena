@@ -9,3 +9,7 @@ The inactive migration was qualified through the maintained isolated PostgreSQL 
 The reveal exposed a shared text-fitting defect: a scaled opening animation was mistaken for a smaller text zone. Fitting now measures the untransformed content box, with before/after regression coverage. No shared frame artwork changed.
 
 The additive version 3 migration preserves version 2 receipts and pending-request recovery. Actual PostgreSQL receipts cover paid, welcome and claimed Daily Bonus entries, historical replay and mixed history. Component tests verify opposite idle rotation and instant-prize acknowledgement; twelve browser cases exercise prize, game and both Upgrade paths at 320, 390 and 1280 pixels.
+
+The owner’s reference uses a single connected wheel assembly. The Upgrade rotor now occupies an outer concentric ring above the main prizes, sharing its center and housing without separate panel headings or a horizontal divider. The outer selector stays hidden until the main wheel lands on Upgrade. Opposite rotation, double-width main prizes and all result/recovery controls remain intact.
+
+Combined CI run35276340849 completed its preceding accounting cases but hit the30-minute job ceiling during V31. The same V31 step passed in4m31s in run35276304884. The accounting job now permits40minutes; no case, assertion, statement deadline or cleanup cap changed.

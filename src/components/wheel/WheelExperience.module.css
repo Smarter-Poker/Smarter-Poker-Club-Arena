@@ -1,38 +1,16 @@
 .stack {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
+  position: relative;
   width: 100%;
+  isolation: isolate;
 }
 .upgradeStage {
-  width: 100%;
+  position: absolute;
+  inset: 0;
   min-width: 0;
-  text-align: center;
-  position: relative;
-}
-.upgradeStage h2 {
-  margin: 0;
-  font:
-    900 clamp(18px, 3cqw, 30px) 'Roboto Condensed',
-    sans-serif;
-  color: #ffd700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  text-shadow:
-    0 2px 0 #000,
-    0 0 14px #1877f2;
-}
-.upgradeStage p {
-  margin: 5px 0 0;
-  font:
-    700 clamp(10px, 1.8cqw, 15px) 'Roboto Condensed',
-    sans-serif;
-  color: #45adff;
 }
 .mainStage {
+  position: relative;
   width: 100%;
   min-width: 0;
-}
-.upgradeStage[data-active] h2 {
-  color: #f4f7fb;
+  pointer-events: none;
 }

@@ -33,9 +33,15 @@ for (const width of [320, 390, 1280]) {
       const secondary = page.getByRole('img', { name: 'Upgrade Wheel', exact: true });
       await expect(secondary.locator('[data-slot]')).toHaveCount(8);
       await expect(secondary).toBeVisible();
+      await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(0);
+      await expect(wheel.locator('[data-wheel-selector]')).toHaveCount(1);
       const upperBox = await secondary.boundingBox();
       const lowerBox = await wheel.boundingBox();
-      expect(upperBox!.y + upperBox!.height).toBeLessThanOrEqual(lowerBox!.y);
+      // Both independent rotors share one centre and one uninterrupted aperture.
+      expect(upperBox).toEqual(lowerBox);
+      await expect(page.locator('[data-wheel-assembly="concentric"]')).toHaveCount(1);
+      await expect(secondary).toHaveAttribute('viewBox', '320 0 360 415');
+      await expect(wheel).toHaveAttribute('viewBox', '320 0 360 415');
       await expect(secondary.locator('..')).toHaveAttribute('data-idle-direction', '-1');
       await expect(wheel.locator('..')).toHaveAttribute('data-idle-direction', '1');
       await expect(wheel.locator('[data-slot]')).toHaveCount(12);
@@ -63,6 +69,7 @@ for (const width of [320, 390, 1280]) {
 
       if (kind.startsWith('upgrade')) {
         await expect(secondary.locator('..')).toHaveAttribute('data-phase', 'spinning');
+        await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(1);
       }
       if (kind === 'prize' || kind === 'upgradechips') {
         const dialog = page.getByRole('dialog');

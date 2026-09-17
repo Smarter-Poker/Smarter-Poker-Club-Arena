@@ -210,3 +210,15 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(start).not.toMatch(/\.update\(\{\s*status:\s*'RUNNING'/);
   });
 });
+
+it('every resumed or recovered dealer receives the immutable booked start before admission', () => {
+  const startDealer = sliceMethod(source, 'protected startManagedTableEngine(');
+  const prepare = sliceMethod(source, 'private prepareManagedTableEngineForPlay(');
+  const hold = sliceMethod(source, 'private holdManagedTableUntilBookedStart(');
+  expect(startDealer.indexOf('this.holdManagedTableUntilBookedStart(engine)')).toBeLessThan(
+    startDealer.indexOf('engine.start()')
+  );
+  expect(prepare).toContain('this.holdManagedTableUntilBookedStart(engine)');
+  expect(hold).toContain('this.tournamentCache?.started_at');
+  expect(hold).not.toContain('start_time');
+});

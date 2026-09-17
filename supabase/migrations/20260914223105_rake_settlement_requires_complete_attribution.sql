@@ -214,4 +214,8 @@ $definition$;
   END IF;
 END;
 $migration$;
+-- Reassert the exact preflight-verified ACL explicitly. CREATE OR REPLACE
+-- preserves it, and the maintained source must carry the same service boundary.
+REVOKE ALL ON FUNCTION public.fn_settle_tournament_rake(uuid,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_rake(uuid,text) TO service_role;
 COMMIT;

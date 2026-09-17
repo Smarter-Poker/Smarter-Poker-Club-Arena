@@ -1136,6 +1136,23 @@ describe('the resume arrives in installments (2026-09-05)', () => {
     expect(list.filter((e) => !bad.includes(e)).every((e) => e.paused === false)).toBe(true);
   });
 
+  it('ends each table presentation only after that table resumes and retains failed resumes', async () => {
+    const f = buildFleet(360, 0);
+    const failed = [...f.engines.entries()][0];
+    failed[1].resumeFromMaintenance = () => {
+      throw new Error('still parked');
+    };
+    const timers = await runBreak(f);
+    expect(f.mb.presentation().phase).toBe('resuming');
+    for (const [id, engine] of f.engines) {
+      expect(f.mb.presentation(id).active).toBe(engine.resumeCount === 0);
+    }
+    for (const timer of timers) timer.fn();
+    expect(f.mb.presentation(failed[0])).toMatchObject({ active: true, phase: 'resuming' });
+    expect(f.mb.presentation().active).toBe(true);
+    for (const [id] of [...f.engines].slice(1)) expect(f.mb.presentation(id).active).toBe(false);
+  });
+
   it('publishes resumeWaves {total, done, startedAt} on /health while the waves run', async () => {
     const f = buildFleet(318, 402);
     expect(f.mb.snapshot().resumeWaves).toBeNull();

@@ -2143,7 +2143,7 @@ function LiveTablePage({
     maintenanceBreak,
     ingestMaintenanceEvent,
     refreshFromDb: refreshMaintenanceBreak,
-  } = useMaintenanceBreak();
+  } = useMaintenanceBreak(tableId);
 
   const {
     snapshot: rawEngineSnapshot,

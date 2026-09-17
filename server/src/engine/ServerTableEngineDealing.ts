@@ -2589,8 +2589,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               percent: fullRakeConfig.rakePercent,
               cap: fullRakeConfig.rakeCap,
               noFlopNoDrop: true,
-              // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
-              playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
+              // FIX 166: Bible V8 §7.19 — player-count-based rake caps
+              // (heads-up = 50% everywhere; 3-handed = 75% on a nine-max table
+              // and the full cap on a 6/7/8-max one, Dan 2026-09-14).
+              playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap, this.tableSeatCount()),
             },
         bbjConfig: {
           // FIX-A2 2026-07-19 gated the BBJ fee-drop on bbj_percent > 0.

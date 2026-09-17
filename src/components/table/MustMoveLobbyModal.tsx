@@ -36,6 +36,7 @@
  */
 
 import { useEffect } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import {
   cancelSeatChange,
   isMainOne,
@@ -91,6 +92,7 @@ export function MustMoveLobbyModal({
   onClose,
   onGoToTable,
 }: MustMoveLobbyModalProps) {
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen, '.tlm-close');
   const toast = useToast();
   const {
     lobby,
@@ -236,6 +238,7 @@ export function MustMoveLobbyModal({
   return (
     <div className="tlm-overlay mml-overlay" onClick={onClose} role="presentation">
       <div
+        ref={dialogRef}
         className="tlm-panel mml-panel"
         role="dialog"
         aria-modal="true"

@@ -237,7 +237,7 @@ describe('LAW 5 - server-stamped deadlines use serverNow()', () => {
     ['src/components/table/TournamentBreakScreen.tsx', 'breakEndsAtMs - serverNow()'],
     ['src/components/tournament/TournamentClock.tsx', 'endsAtMs - serverNow()'],
     ['src/lib/sitOutDeadline.ts', 'params.now ?? serverNow()'],
-    ['src/hooks/useMaintenanceBreak.ts', 'serverNow() >= s.breakEndsAtMs'],
+    ['src/hooks/useMaintenanceBreak.ts', 'state.breakEndsAtMs - serverNow()'],
     ['src/services/EngineStateClient.ts', 'serverNow() < this.restartWindowUntil'],
   ])('%s reads the engine clock', (rel, expr) => {
     expect(readFileSync(join(ROOT, rel), 'utf8')).toContain(expr);

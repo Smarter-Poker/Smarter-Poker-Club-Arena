@@ -20,10 +20,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { serverNow } from '../../utils/serverClock';
 import './MaintenanceBreakScreen.css';
+import type { MaintenanceBreakState } from '../../hooks/useMaintenanceBreak';
 
 export interface MaintenanceBreakScreenProps {
   isVisible: boolean;
-  phase: 'last_hand' | 'counting_down';
+  phase: MaintenanceBreakState['phase'];
   /** Absolute instant, epoch ms. Null while the last hand is still in play. */
   breakEndsAtMs: number | null;
   reason?: string;
@@ -43,6 +44,12 @@ export function MaintenanceBreakScreen({
 }: MaintenanceBreakScreenProps) {
   const [minimized, setMinimized] = useState(false);
   const countingDown = phase === 'counting_down' && !!breakEndsAtMs;
+  const waitingLabel =
+    phase === 'resuming'
+      ? 'Resuming Tables'
+      : phase === 'finalizing'
+        ? 'Finalizing Maintenance'
+        : 'Last Hand In Play';
 
   const read = useMemo(
     () => () => (breakEndsAtMs ? Math.max(0, Math.round((breakEndsAtMs - serverNow()) / 1000)) : 0),
@@ -93,7 +100,7 @@ export function MaintenanceBreakScreen({
         <span className="maintenance-break__mini-badge">
           {countingDown
             ? `Maintenance Break: ${formatTime(remaining)}`
-            : 'Maintenance Break: Last Hand In Play'}
+            : `Maintenance Break: ${waitingLabel}`}
         </span>
       </div>
     );
@@ -119,7 +126,7 @@ export function MaintenanceBreakScreen({
         <div className="maintenance-break__header">
           <span className="maintenance-break__badge">Scheduled Maintenance</span>
           <h1 id="maintenance-break-title" className="maintenance-break__title">
-            {countingDown ? 'All Tables On Break' : 'Finishing The Current Hand'}
+            {countingDown ? 'All Tables On Break' : waitingLabel}
           </h1>
         </div>
 
@@ -137,10 +144,18 @@ export function MaintenanceBreakScreen({
             </svg>
             <div className="maintenance-break__timer-text">
               <span className="maintenance-break__time">
-                {countingDown ? formatTime(remaining) : 'Last Hand'}
+                {countingDown
+                  ? formatTime(remaining)
+                  : phase === 'last_hand'
+                    ? 'Last Hand'
+                    : 'Please Wait'}
               </span>
               <span className="maintenance-break__time-label">
-                {countingDown ? 'Until Play Resumes' : 'The Break Starts When Every Table Finishes'}
+                {countingDown
+                  ? 'Expected Resume Time'
+                  : phase === 'last_hand'
+                    ? 'The Break Starts When Every Table Finishes'
+                    : 'Play Resumes When Your Table Is Ready'}
               </span>
             </div>
           </div>
@@ -171,7 +186,7 @@ export function MaintenanceBreakScreen({
           <li>
             <span className="maintenance-break__fact-title">The Table May Briefly Go Quiet</span>
             <span className="maintenance-break__fact-body">
-              You Do Not Need To Reload. Play Resumes Automatically When The Countdown Ends.
+              You Do Not Need To Reload. Play Resumes Automatically When Maintenance Is Complete.
             </span>
           </li>
         </ul>

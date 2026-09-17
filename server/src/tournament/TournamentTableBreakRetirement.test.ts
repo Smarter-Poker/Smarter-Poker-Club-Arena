@@ -5,6 +5,7 @@ import type { MoveInstruction } from '../engine/TableBalancer.js';
 import { supabase } from '../services/supabase.js';
 import * as errorReporter from '../services/errorReporter.js';
 import { TournamentManager } from './TournamentManager.js';
+import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { unregisterOwnedTournamentTableEngine } from './TournamentManagerOwnership.js';
 
 const TOURNAMENT_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -18,15 +19,15 @@ class TableBreakHarness extends TournamentManager {
     this.isFinalTable = true;
   }
 
-  addEngine(engine: ServerTableEngine): void {
-    this.tableEngines.set(TABLE_ID, engine);
+  addEngine(engine: ServerTableEngine, tableId = TABLE_ID): void {
+    this.tableEngines.set(tableId, engine);
   }
 
   close(engine: ServerTableEngine, movedPlayers = 0): Promise<boolean> {
     return this.closeBrokenTableAndReleaseEngine(TABLE_ID, engine, movedPlayers);
   }
 
-  balance(): Promise<void> {
+  balance() {
     return this.checkTableBalance();
   }
 
@@ -106,9 +107,162 @@ function fixture() {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('tournament table-break retirement is one durable ownership chain', () => {
+  it.each(['clear', 'roster-blocked', 'lost-close'])(
+    'continues fresh retirement inside one admission and stops on %s state',
+    async (state) => {
+      vi.useFakeTimers();
+      const f = fixture();
+      const tableIds = [
+        TABLE_ID,
+        'dddddddd-0000-4000-8000-000000000001',
+        'eeeeeeee-0000-4000-8000-000000000001',
+      ];
+      const tables = tableIds.map((id) => ({ id, max_players: 9, status: 'running' }));
+      const seats = tableIds.map((table_id, index) => ({
+        table_id,
+        user_id: `player-${index}`,
+        seat_number: 1,
+        stack: 100,
+        left_at: null,
+      }));
+      const reserved: Record<string, unknown>[] = [];
+      for (const tableId of tableIds.slice(1)) {
+        const engine = {
+          stop: vi.fn(async () => {}),
+          hasReleasedProcessOwnership: vi.fn(() => true),
+          getCurrentButtonSeat: vi.fn(() => 1),
+        } as unknown as ServerTableEngine;
+        f.manager.addEngine(engine, tableId);
+        f.globalEngines.set(tableId, engine);
+        f.tournamentOwnedTables.add(tableId);
+      }
+      const rosterSnapshots: string[][] = [];
+      vi.spyOn(supabase, 'from').mockImplementation(((relation: string) => {
+        let rows: Record<string, unknown>[];
+        if (relation === 'tables') rows = tables;
+        else if (relation === 'table_seats') rows = seats;
+        else if (relation === 'tournament_players') {
+          rows = [...seats.map((seat) => ({ ...seat, status: 'playing' })), ...reserved];
+          rosterSnapshots.push(
+            seats.map((seat) => `${seat.user_id}:${seat.table_id}:${seat.seat_number}`)
+          );
+        } else throw new Error(`Unexpected relation: ${relation}`);
+        const query = {
+          select: () => query,
+          eq: (key: string, value: unknown) => {
+            if (key !== 'tournament_id') rows = rows.filter((row) => row[key] === value);
+            return query;
+          },
+          in: (key: string, values: unknown[]) => {
+            rows = rows.filter((row) => values.includes(row[key]));
+            return query;
+          },
+          is: (key: string, value: unknown) => {
+            rows = rows.filter((row) => row[key] === value);
+            return query;
+          },
+          then: (resolve: (value: unknown) => unknown) =>
+            Promise.resolve({ data: rows, error: null }).then(resolve),
+        };
+        return query;
+      }) as never);
+      const movedRosters: string[][] = [];
+      vi.spyOn(f.manager, 'executePlayerMoves').mockImplementation(async (plan) => {
+        movedRosters.push(plan.map((move) => move.playerId));
+        for (const move of plan) {
+          const seat = seats.find((row) => row.user_id === move.playerId)!;
+          expect(seat.table_id).toBe(move.fromTableId);
+          expect(tables.find((row) => row.id === move.toTableId)?.status).toBe('running');
+          expect(
+            seats.some((row) => row.table_id === move.toTableId && row.seat_number === move.toSeat)
+          ).toBe(false);
+          seat.table_id = move.toTableId;
+          seat.seat_number = move.toSeat;
+        }
+        return plan.length;
+      });
+      const closed: string[] = [];
+      const closeAttempts: string[] = [];
+      vi.spyOn(supabase, 'rpc').mockImplementation(((
+        name: string,
+        args: Record<string, unknown>
+      ) => {
+        expect(name).toBe('fn_close_empty_tournament_table');
+        expect(args.p_tournament_id).toBe(TOURNAMENT_ID);
+        expect(args.p_lease_generation).toBe(LEASE_GENERATION);
+        const tableId = args.p_table_id as string;
+        closeAttempts.push(tableId);
+        expect(seats.filter((seat) => seat.table_id === tableId)).toHaveLength(0);
+        if (!closed.includes(tableId)) closed.push(tableId);
+        tables.find((table) => table.id === tableId)!.status = 'closed';
+        vi.setSystemTime(Date.now() + 100);
+        if (state === 'roster-blocked') {
+          // A new bust can leave a chair in the authoritative roster without a
+          // live seat. No further break is admissible until bust processing.
+          for (const table of tables.filter((row) => row.status === 'running')) {
+            for (let chair = 1; chair <= table.max_players; chair++) {
+              if (!seats.some((seat) => seat.table_id === table.id && seat.seat_number === chair)) {
+                reserved.push({ table_id: table.id, seat_number: chair, status: 'playing' });
+              }
+            }
+          }
+        }
+        if (state === 'lost-close' && closeAttempts.length === 2) {
+          return Promise.resolve({ data: null, error: { message: 'committed reply lost' } });
+        }
+        return Promise.resolve({
+          ...closeReceipt(),
+          data: { ...closeReceipt().data, table_id: tableId },
+        });
+      }) as never);
+      const manager = f.manager as any;
+      vi.spyOn(manager, 'resumeCommittedTerminalCleanup').mockResolvedValue(false);
+      const requeue = vi.spyOn(manager, 'requestEliminationSweep').mockImplementation(() => {});
+      const expansion = vi.spyOn(manager, 'checkDynamicTableExpansion');
+      manager.eliminationSweepCursor.advanceTo(5);
+      const started = Date.now();
+
+      // Real sweep -> real balancing/planning -> exact close receipt -> real
+      // registry release. Only the database transport and committed seat moves
+      // are simulated; the result must not require another scheduler admission.
+      await manager.runEliminationSweep(new AbortController().signal);
+
+      expect(closed).toHaveLength(state === 'roster-blocked' ? 1 : 2);
+      expect(movedRosters.map((players) => [...players].sort())).toEqual(
+        state === 'roster-blocked' ? [['player-0']] : [['player-0'], ['player-0', 'player-1']]
+      );
+      expect(rosterSnapshots[1]).not.toEqual(rosterSnapshots[0]);
+      expect(new Set(seats.map((seat) => seat.table_id)).size).toBe(
+        state === 'roster-blocked' ? 2 : 1
+      );
+      expect(new Set(seats.map((seat) => `${seat.table_id}:${seat.seat_number}`)).size).toBe(3);
+      expect(seats.reduce((sum, seat) => sum + seat.stack, 0)).toBe(300);
+      expect(f.globalEngines.size).toBe(state === 'clear' ? 1 : 2);
+      expect(f.unregister).toHaveBeenCalledTimes(state === 'clear' ? 2 : 1);
+      expect(expansion).toHaveBeenCalledOnce();
+      expect(manager.breakOccurredThisCycle).toBe(false);
+      expect(manager.eliminationSweepCursor.nextStage).toBe(0);
+      expect(requeue).not.toHaveBeenCalled();
+      expect(Date.now() - started).toBeLessThan(TournamentManagerBase.SWEEP_WORK_BUDGET_MS);
+      if (state === 'lost-close') {
+        // The unknown close does not itself authorize another same-admission
+        // attempt or move. A later admission replays that exact retained table.
+        expect(closeAttempts).toHaveLength(2);
+        expect(manager.pendingTableBreakRetirement.tableId).toBe(closeAttempts[1]);
+        manager.eliminationSweepCursor.advanceTo(5);
+        await manager.runEliminationSweep(new AbortController().signal);
+        expect(closeAttempts).toEqual([tableIds[0], tableIds[1], tableIds[1]]);
+        expect(movedRosters).toHaveLength(2);
+        expect(f.globalEngines.size).toBe(1);
+        expect(manager.pendingTableBreakRetirement).toBeNull();
+      }
+    }
+  );
+
   it.each([
     { sourceStatus: 'running', occupiedTables: 0 },
     { sourceStatus: 'running', occupiedTables: 1 },

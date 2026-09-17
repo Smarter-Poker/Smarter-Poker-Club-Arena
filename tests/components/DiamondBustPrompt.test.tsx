@@ -6,20 +6,68 @@ const state = vi.hoisted(() => ({
   user: { id: 'player-a' },
   entry: null as null | { bust_prompt: boolean; member_chips: number | null; diamonds: number },
   navigate: vi.fn(),
+  retainExit: false,
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: state.user }) }));
 vi.mock('../../src/hooks/useDiamondGamesEntry', () => ({
   useDiamondGamesEntry: () => ({ entry: state.entry }),
 }));
 vi.mock('react-router-dom', () => ({ useNavigate: () => state.navigate }));
+vi.mock('framer-motion', async () => {
+  const actual = await vi.importActual<typeof import('framer-motion')>('framer-motion');
+  const { useRef } = await vi.importActual<typeof import('react')>('react');
+  return {
+    ...actual,
+    // Model an exit that never completes: dismissal must remove the owning
+    // Modal subtree even while its presence boundary retains animated children.
+    AnimatePresence: ({ children }: { children: import('react').ReactNode }) => {
+      const retained = useRef(children);
+      if (children) retained.current = children;
+      return state.retainExit ? retained.current : children;
+    },
+  };
+});
 beforeEach(() => {
   sessionStorage.clear();
   state.user = { id: 'player-a' };
   state.entry = null;
   state.navigate.mockClear();
+  state.retainExit = false;
 });
 
 describe('Diamond Spins bust invitation', () => {
+  it('removes a dismissed offer even when its exit animation cannot complete', () => {
+    state.retainExit = true;
+    state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
+    const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
+    expect(screen.queryByRole('dialog', { name: 'Diamond Spins' })).not.toBeInTheDocument();
+    expect(document.querySelector('.ca-modal-portal')).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('');
+    rerender(<DiamondBustPrompt clubId="club-a" />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    rerender(<DiamondBustPrompt clubId="club-b" />);
+    expect(screen.getByRole('dialog', { name: 'Diamond Spins' })).toBeInTheDocument();
+  });
+
+  it('removes a dismissed offer when session storage is unavailable', () => {
+    state.retainExit = true;
+    state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
+    const write = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
+      throw new Error('Storage unavailable');
+    });
+    try {
+      const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
+      expect(write).toHaveBeenCalledWith('diamond-spins-bust:player-a:club-a', 'dismissed');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      rerender(<DiamondBustPrompt clubId="club-a" />);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    } finally {
+      write.mockRestore();
+    }
+  });
+
   it('requires confirmed zero chips, at least 25 diamonds, and server eligibility', () => {
     const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

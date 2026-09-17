@@ -111,11 +111,21 @@ export const RAKE_SCHEDULE: readonly RakeScheduleEntry[] = RAKE_SPEC.schedule;
 // Standard poker rule: heads-up and short-handed games get lower rake caps.
 // Each entry defines a player threshold and its corresponding cap MULTIPLIER.
 // The engine finds the highest tier where playerCount >= players, then applies: cap × multiplier.
-// Factors (0.5 heads-up, 0.67 three-handed, full at 4+) are RAKE_SPEC.rules;
+// Factors (0.5 heads-up, 0.75 three-handed, full at 4+) are RAKE_SPEC.rules;
 // the derivation is capsByPlayersDealt so `ca_rake_schedule_caps` and this
 // list are one computation.
-export function getPlayerCountCaps(fullCap: number): { players: number; cap: number }[] {
-  return capsByPlayersDealt(fullCap);
+//
+// `seats` is the table's `max_players`. Dan 2026-09-14: the three-handed
+// discount is NINE-MAX ONLY - "once any 6-8 handed game reaches 3+ players
+// full rake + BBJ is applied" - so a 6/7/8-max table's three-handed rung is
+// the full cap. Heads-up is not gated: 50% at every table size. A caller with
+// no table in hand (the published ladder, a pricing preview) omits it and
+// gets the nine-max ladder, which is what the database publishes.
+export function getPlayerCountCaps(
+  fullCap: number,
+  seats?: number | null
+): { players: number; cap: number }[] {
+  return capsByPlayersDealt(fullCap, seats);
 }
 
 // BBJ POOL ALLOCATION (Dan, 2026-08-18 — authoritative)
@@ -534,8 +544,8 @@ export function getFullRakeConfig(
     ? clamp(Number(override!.rakePercent), 0, MAX_RAKE_PERCENT)
     : null;
   // BIG BLINDS -> DOLLARS happens here and nowhere else. Everything downstream
-  // (calculateRake's Math.min, getPlayerCountCaps' 0.5x / 0.67x short-handed
-  // multipliers) assumes an absolute cash cap.
+  // (calculateRake's Math.min, getPlayerCountCaps' 0.5x heads-up and 0.75x
+  // nine-max three-handed multipliers) assumes an absolute cash cap.
   const overrideCap = isRakeSet(override?.rakeCapBB)
     ? round2(clamp(Number(override!.rakeCapBB), 0, MAX_RAKE_CAP_BB) * bigBlind)
     : null;

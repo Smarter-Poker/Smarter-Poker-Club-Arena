@@ -91,7 +91,7 @@ export default function PokerArenaLandingPage() {
   }, []);
 
   return (
-    <main className={styles.page}>
+    <main className={styles.page} id="main-content" tabIndex={-1}>
       <section className={styles.hero}>
         <p className={styles.eyebrow}>Smarter.Poker</p>
         <h1>Poker Arena: Private Online Poker Clubs</h1>

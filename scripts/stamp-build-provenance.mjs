@@ -100,7 +100,11 @@ function isPullRequestValidation() {
     !/^[0-9a-f]{40}$/.test(commit) ||
     process.env.GITHUB_SHA !== commit ||
     !path.isAbsolute(eventPath) ||
-    historyComplete !== true
+    historyComplete !== true ||
+    !Number.isSafeInteger(behindMain) ||
+    behindMain < 0 ||
+    !Number.isSafeInteger(aheadMain) ||
+    aheadMain < 0
   )
     fail();
   const stat = lstatSync(eventPath);
@@ -166,9 +170,9 @@ console.log(
 );
 
 // A build from a checkout that is behind canonical main is exactly the
-// regression that happened. Refuse it outright in CI, and warn loudly
-// locally (where a developer may legitimately be testing an older tree but
-// must never ship it — the Club Arena publisher is the backstop either way).
+// regression that happened. Release builds refuse it. A verified temporary PR
+// test may use its event snapshot, but retains its real non-publishable distance.
+// Local diagnostic builds warn; the publisher independently enforces provenance.
 const strictProvenance = process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1';
 if (commit !== 'unknown' && historyComplete !== true) {
   const msg =
@@ -187,7 +191,7 @@ if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
     `  Shipping it would erase whatever landed in those commits — that is\n` +
     `  precisely the 2026-08-21 throwables regression.\n\n` +
     `  FIX: merge current origin/main into this feature branch, then rebuild.\n`;
-  if (strictProvenance && !validationOnly) {
+  if (strictProvenance && (!validationOnly || process.env.STRICT_PROVENANCE === '1')) {
     console.error(msg);
     process.exit(1);
   }

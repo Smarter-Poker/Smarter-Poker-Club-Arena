@@ -26,9 +26,14 @@ export function useCashoutScope(accountId: string | undefined, view: string): ()
   const token = scope.current;
   useEffect(() => {
     live.current = true;
-    return () => { live.current = false; };
+    return () => {
+      live.current = false;
+    };
   }, []);
-  return useCallback(() => live.current && scope.current === token && token.accountCurrent(), [token]);
+  return useCallback(
+    () => live.current && scope.current === token && token.accountCurrent(),
+    [token]
+  );
 }
 
 /**
@@ -46,10 +51,12 @@ export function useCashoutScopeKey(accountId: string | undefined, view: string):
     key.current = { isCurrent, available, generation: key.current.generation + 1 };
   }
   useEffect(() => {
-    const unsubscribe = masterBus.subscribe('AUTH_STATE_CHANGED', () => refresh(value => value + 1));
+    const unsubscribe = masterBus.subscribe('AUTH_STATE_CHANGED', () =>
+      refresh((value) => value + 1)
+    );
     // Observe a change between the initial render and installing the listener.
     // Unavailable identity keeps the same false token/key on this extra render.
-    refresh(value => value + 1);
+    refresh((value) => value + 1);
     return unsubscribe;
   }, []);
   return JSON.stringify([accountId ?? null, view, key.current.generation]);

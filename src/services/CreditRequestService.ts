@@ -47,8 +47,9 @@ export interface CreditRequestCreate {
 
 let reviewIdentity: string | null | undefined;
 let reviewGeneration = 0;
-const REQUEST_FIELDS = 'id, requester_id, approver_id, club_id, requested_amount::text, approved_amount::text, reason, status, created_at, reviewed_at, reviewed_by, reviewer_notes, decision_authority_version';
-masterBus.subscribe('AUTH_STATE_CHANGED', event => {
+const REQUEST_FIELDS =
+  'id, requester_id, approver_id, club_id, requested_amount::text, approved_amount::text, reason, status, created_at, reviewed_at, reviewed_by, reviewer_notes, decision_authority_version';
+masterBus.subscribe('AUTH_STATE_CHANGED', (event) => {
   const next = event.payload.isAuthenticated ? event.payload.userId : null;
   if (next === reviewIdentity) return;
   reviewIdentity = next;
@@ -67,7 +68,9 @@ function currentReviewAccount(): string | null {
 
 function assertReviewAccount(expectedActorId: string, generation: number): void {
   if (currentReviewAccount() !== expectedActorId || generation !== reviewGeneration) {
-    throw new Error('Account Changed. This Credit Request Action May Have Committed. Refresh Its Status In The Original Account.');
+    throw new Error(
+      'Account Changed. This Credit Request Action May Have Committed. Refresh Its Status In The Original Account.'
+    );
   }
 }
 
@@ -77,46 +80,66 @@ class CreditRequestServiceClass {
    */
   async submitRequest(requesterId: string, request: CreditRequestCreate): Promise<CreditRequest> {
     request = { ...request };
-    if (!request.clubId || !request.approverId || !requesterId || request.approverId === requesterId ||
-        !this.validCreditAmount(request.requestedAmount) || typeof request.reason !== 'string') {
+    if (
+      !request.clubId ||
+      !request.approverId ||
+      !requesterId ||
+      request.approverId === requesterId ||
+      !this.validCreditAmount(request.requestedAmount) ||
+      typeof request.reason !== 'string'
+    ) {
       throw new Error('Choose The Club And Approver And Enter A Positive Credit Limit');
     }
     if (currentReviewAccount() !== requesterId) {
       throw new Error('Sign In To The Account That Started This Credit Request');
     }
     const generation = reviewGeneration;
-    const { data, error } = await Promise.resolve(supabase
-      .from('credit_requests')
-      .insert({
-        requester_id: requesterId,
-        approver_id: request.approverId,
-        club_id: request.clubId,
-        requested_amount: request.requestedAmount.toFixed(2),
-        reason: request.reason,
-        status: 'pending',
-      })
-      .select(REQUEST_FIELDS)
-      .maybeSingle()).catch((error: unknown) => {
-        assertReviewAccount(requesterId, generation);
-        throw error;
-      });
-    assertReviewAccount(requesterId, generation);
-    if (error) throw error;
-    if (!data || typeof data.id !== 'string' || !data.id ||
-        data.requester_id !== requesterId || data.approver_id !== request.approverId ||
-        data.club_id !== request.clubId || data.status !== 'pending' ||
-        this.exactCreditAmount(data.requested_amount) !== request.requestedAmount ||
-        data.approved_amount != null || data.reviewed_at != null || data.reviewed_by != null ||
-        data.reviewer_notes != null || data.decision_authority_version != null ||
-        data.reason !== request.reason || typeof data.created_at !== 'string' ||
-        !Number.isFinite(Date.parse(data.created_at))) {
-      throw new Error('Credit Request Creation Was Not Confirmed By The Server');
-    }
-    // The existing INSERT trigger owns the request notification.
-    const names = await this.nameMap([data.requester_id, data.approver_id]).catch((error: unknown) => {
+    const { data, error } = await Promise.resolve(
+      supabase
+        .from('credit_requests')
+        .insert({
+          requester_id: requesterId,
+          approver_id: request.approverId,
+          club_id: request.clubId,
+          requested_amount: request.requestedAmount.toFixed(2),
+          reason: request.reason,
+          status: 'pending',
+        })
+        .select(REQUEST_FIELDS)
+        .maybeSingle()
+    ).catch((error: unknown) => {
       assertReviewAccount(requesterId, generation);
       throw error;
     });
+    assertReviewAccount(requesterId, generation);
+    if (error) throw error;
+    if (
+      !data ||
+      typeof data.id !== 'string' ||
+      !data.id ||
+      data.requester_id !== requesterId ||
+      data.approver_id !== request.approverId ||
+      data.club_id !== request.clubId ||
+      data.status !== 'pending' ||
+      this.exactCreditAmount(data.requested_amount) !== request.requestedAmount ||
+      data.approved_amount != null ||
+      data.reviewed_at != null ||
+      data.reviewed_by != null ||
+      data.reviewer_notes != null ||
+      data.decision_authority_version != null ||
+      data.reason !== request.reason ||
+      typeof data.created_at !== 'string' ||
+      !Number.isFinite(Date.parse(data.created_at))
+    ) {
+      throw new Error('Credit Request Creation Was Not Confirmed By The Server');
+    }
+    // The existing INSERT trigger owns the request notification.
+    const names = await this.nameMap([data.requester_id, data.approver_id]).catch(
+      (error: unknown) => {
+        assertReviewAccount(requesterId, generation);
+        throw error;
+      }
+    );
     assertReviewAccount(requesterId, generation);
     return this.mapRequest(data, names);
   }
@@ -148,24 +171,47 @@ class CreditRequestServiceClass {
       throw new Error('Sign In To The Account Viewing This Club');
     }
     const generation = reviewGeneration;
-    const { data, error } = await Promise.resolve(supabase.from('credit_requests')
-      .select(REQUEST_FIELDS).eq('club_id', clubId).eq('status', 'pending')
-      .order('created_at', { ascending: false }).limit(QUERY_LIMITS.LIST))
-      .catch((error: unknown) => { assertReviewAccount(expectedActorId, generation);throw error; });
+    const { data, error } = await Promise.resolve(
+      supabase
+        .from('credit_requests')
+        .select(REQUEST_FIELDS)
+        .eq('club_id', clubId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(QUERY_LIMITS.LIST)
+    ).catch((error: unknown) => {
+      assertReviewAccount(expectedActorId, generation);
+      throw error;
+    });
     assertReviewAccount(expectedActorId, generation);
     if (error) throw error;
     const rows = data ?? [];
-    if (rows.some((row: any) => row.club_id !== clubId || row.status !== 'pending' ||
-        typeof row.id !== 'string' || !row.id || typeof row.requester_id !== 'string' || !row.requester_id)) {
+    if (
+      rows.some(
+        (row: any) =>
+          row.club_id !== clubId ||
+          row.status !== 'pending' ||
+          typeof row.id !== 'string' ||
+          !row.id ||
+          typeof row.requester_id !== 'string' ||
+          !row.requester_id
+      )
+    ) {
       throw new Error('Pending Credit Requests Were Not Confirmed For This Club');
     }
     const requests = rows.map((row: any) => this.mapRequest(row));
-    const names = await this.nameMap(rows.flatMap((row: any) => [row.requester_id, row.approver_id]))
-      .catch((error: unknown) => { assertReviewAccount(expectedActorId, generation);throw error; });
+    const names = await this.nameMap(
+      rows.flatMap((row: any) => [row.requester_id, row.approver_id])
+    ).catch((error: unknown) => {
+      assertReviewAccount(expectedActorId, generation);
+      throw error;
+    });
     assertReviewAccount(expectedActorId, generation);
-    return requests.map((request: CreditRequest) => ({ ...request,
+    return requests.map((request: CreditRequest) => ({
+      ...request,
       requesterName: names[request.requesterId] || 'Unknown',
-      approverName: names[request.approverId] || 'Unknown' }));
+      approverName: names[request.approverId] || 'Unknown',
+    }));
   }
 
   /**
@@ -242,13 +288,15 @@ class CreditRequestServiceClass {
     // The request ID plus decision is the server's durable retry identity.
     // The expected actor is only an account-change fence; the server still
     // derives and authorizes auth.uid(). No direct writes follow a receipt.
-    const { data, error } = await Promise.resolve(supabase.rpc('fn_review_credit_request', {
-      p_request_id: requestId,
-      p_expected_actor_id: expectedActorId,
-      p_decision: decision,
-      ...(approvedAmount === undefined ? {} : { p_approved_amount: approvedAmount.toFixed(2) }),
-      p_notes: notes ?? null,
-    })).catch((error: unknown) => {
+    const { data, error } = await Promise.resolve(
+      supabase.rpc('fn_review_credit_request', {
+        p_request_id: requestId,
+        p_expected_actor_id: expectedActorId,
+        p_decision: decision,
+        ...(approvedAmount === undefined ? {} : { p_approved_amount: approvedAmount.toFixed(2) }),
+        p_notes: notes ?? null,
+      })
+    ).catch((error: unknown) => {
       assertReviewAccount(expectedActorId, generation);
       throw error;
     });
@@ -260,22 +308,30 @@ class CreditRequestServiceClass {
     const expected = approvedAmount ?? requested;
     if (
       data?.success !== true ||
-      !row || row.id !== requestId || row.status !== decision ||
-      typeof row.club_id !== 'string' || !row.club_id ||
-      typeof row.requester_id !== 'string' || !row.requester_id ||
+      !row ||
+      row.id !== requestId ||
+      row.status !== decision ||
+      typeof row.club_id !== 'string' ||
+      !row.club_id ||
+      typeof row.requester_id !== 'string' ||
+      !row.requester_id ||
       !Number.isFinite(requested) ||
-      row.reviewed_by !== expectedActorId || row.decision_authority_version !== 1 ||
+      row.reviewed_by !== expectedActorId ||
+      row.decision_authority_version !== 1 ||
       (row.reviewer_notes?.trim() || null) !== (notes?.trim() || null) ||
-      typeof row.reviewed_at !== 'string' || !Number.isFinite(Date.parse(row.reviewed_at)) ||
+      typeof row.reviewed_at !== 'string' ||
+      !Number.isFinite(Date.parse(row.reviewed_at)) ||
       (decision === 'approved' && (!this.validCreditAmount(amount) || amount !== expected)) ||
       (decision !== 'approved' && row.approved_amount != null)
     ) {
       throw new Error('Credit Request Decision Was Not Confirmed By The Server');
     }
-    const names = await this.nameMap([row.requester_id, row.approver_id]).catch((error: unknown) => {
-      assertReviewAccount(expectedActorId, generation);
-      throw error;
-    });
+    const names = await this.nameMap([row.requester_id, row.approver_id]).catch(
+      (error: unknown) => {
+        assertReviewAccount(expectedActorId, generation);
+        throw error;
+      }
+    );
     assertReviewAccount(expectedActorId, generation);
     if (decision === 'approved') {
       masterBus.emit('CREDIT_UPDATED', {
@@ -297,9 +353,20 @@ class CreditRequestServiceClass {
       return BigInt(match[1]) * 100n + BigInt((match[2] ?? '').slice(0, 2).padEnd(2, '0'));
     };
     const cents = centsOf(value);
-    if (cents === null || cents < 0n || (!allowZero && cents === 0n) || cents > BigInt(Number.MAX_SAFE_INTEGER)) return NaN;
+    if (
+      cents === null ||
+      cents < 0n ||
+      (!allowZero && cents === 0n) ||
+      cents > BigInt(Number.MAX_SAFE_INTEGER)
+    )
+      return NaN;
     const amount = Number(value);
-    if (!Number.isFinite(amount) || centsOf(String(amount)) !== cents || centsOf(amount.toFixed(2)) !== cents) return NaN;
+    if (
+      !Number.isFinite(amount) ||
+      centsOf(String(amount)) !== cents ||
+      centsOf(amount.toFixed(2)) !== cents
+    )
+      return NaN;
     return amount;
   }
 
@@ -321,8 +388,12 @@ class CreditRequestServiceClass {
 
   private mapRequest(row: any, names: Record<string, string> = {}): CreditRequest {
     const requestedAmount = this.exactCreditAmount(row.requested_amount, true);
-    const approvedAmount = row.approved_amount == null ? undefined : this.exactCreditAmount(row.approved_amount);
-    if (!Number.isFinite(requestedAmount) || (approvedAmount !== undefined && !Number.isFinite(approvedAmount))) {
+    const approvedAmount =
+      row.approved_amount == null ? undefined : this.exactCreditAmount(row.approved_amount);
+    if (
+      !Number.isFinite(requestedAmount) ||
+      (approvedAmount !== undefined && !Number.isFinite(approvedAmount))
+    ) {
       throw new Error('Credit Request Amount Was Not Confirmed By The Server');
     }
     return {

@@ -27,7 +27,12 @@ import { ServerTableEngine } from './ServerTableEngine.js';
 
 const engines: any[] = [];
 afterEach(() => {
-  for (const engine of engines.splice(0)) engine.preciseTimer.dispose();
+  for (const engine of engines.splice(0)) {
+    engine.running = false;
+    (ServerTableEngine as any).releaseCurrentEngine(engine.tableId, engine);
+    engine.preciseTimer.dispose();
+    engine.engineTelemetry.dispose();
+  }
   loadTable.mockReset();
   loadSeatedPlayers.mockReset();
   vi.restoreAllMocks();
@@ -39,6 +44,8 @@ const levelTwo = { small_blind: 20, big_blind: 40, ante: 4 };
 function fixture(count = 3) {
   const engine = new ServerTableEngine('tournament-level-snapshot') as any;
   engines.push(engine);
+  expect(engine.claimProcessOwnership()).toBe(true);
+  engine.running = true;
   engine.tableInfo = {
     id: engine.tableId,
     game_variant: 'nlh',

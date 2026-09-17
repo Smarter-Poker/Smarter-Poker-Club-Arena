@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/testing/horseRegression/**/*.test.mjs'],
     // ONE definition, imported. It used to be a literal 10_000 here, and two
     // tests independently chose 10_000 as their own wall-clock wait budget -
     // the same number as the ceiling, so the wait could never finish before

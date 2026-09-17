@@ -86,7 +86,7 @@ async function main() {
       for (const seed of OMAHA_VARIANT_LEAGUE_SEEDS) {
         if (!running) break;
         const result = await runOmahaVariantLeague(
-          { profileId: profile.id, pairs, seed, samples },
+          { profileId: profile.id, pairs, seed },
           () => running
         );
         leagues.push(result);

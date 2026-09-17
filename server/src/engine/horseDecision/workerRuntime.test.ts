@@ -1,22 +1,28 @@
+import { horsePlanBatchBindingFromRequest } from '../HorsePlanHandIdentity.js';
 import { HorseLogic } from '../HorseLogic.js';
+import { HorseMind } from '../HorseMind.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import { describe, expect, it, vi } from 'vitest';
 import { performance } from 'node:perf_hooks';
 
 import type { HorseDecideOpts } from '../HorseLogic.js';
 import type { HorseMindDecisionEffect } from '../HorseMind.js';
+import type { Card } from '../../types.js';
 import type {
   FastHorseDecisionRequest,
   HorseDecisionWorkerReady,
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
-import { buildHorseDecisionKey } from './protocol.js';
+import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
+import { HORSE_REVIEW_SIGNAL_KEYS } from '../HorseReviewSignals.js';
 import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
 } from './workerRuntime.js';
 import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
+import { captureHorseHandJournalContext } from '../HorseDecisionHandBinding.js';
+import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
@@ -137,6 +143,7 @@ function harness(realDecision = false) {
   let rng = 101;
   let started = 0;
   let stopped = 0;
+  let stopFailure: Error | null = null;
   let now = 10;
   let throwDecision = false;
   const deps: HorseDecisionWorkerDependencies = {
@@ -157,6 +164,7 @@ function harness(realDecision = false) {
     },
     async stopServices() {
       stopped++;
+      if (stopFailure) throw stopFailure;
     },
     decide(_player, _gameState, _style, _mods, opts) {
       decisionOpts.push(opts ?? {});
@@ -219,6 +227,7 @@ function harness(realDecision = false) {
   const runtime = new HorseDecisionWorkerRuntime((message) => messages.push(message), deps);
   return {
     runtime,
+    deps,
     messages,
     restored,
     decisionOpts,
@@ -230,6 +239,9 @@ function harness(realDecision = false) {
     frozenSnapshots,
     started: () => started,
     stopped: () => stopped,
+    setStopFailure: (error: Error) => {
+      stopFailure = error;
+    },
     rng: () => rng,
     setRng: (value: number) => {
       rng = value;
@@ -239,6 +251,9 @@ function harness(realDecision = false) {
     },
     setCapturedEffects: (effects: HorseMindDecisionEffect[]) => {
       capturedEffects = effects;
+    },
+    advanceClock: (ms: number) => {
+      now += ms;
     },
   };
 }
@@ -318,6 +333,18 @@ describe('Phase 13 cross-board worker boundary', () => {
     request.gameState.communityCards3 = ['8', '9', 'T'].map((r) => card(r, 'hearts')) as any;
     return request;
   };
+  it.each(['PLO4', 'Plo4'])(
+    'rejects noncanonical policy name %s before invoking the brain',
+    async (variant) => {
+      const h = harness();
+      const request = structuredClone(fastRequest());
+      request.gameState.gameVariant = variant as any;
+      h.runtime.receive(rekey(request));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)?.type).toBe('ERROR');
+      expect(h.decisionsAtRng).toHaveLength(0);
+    }
+  );
   it('accepts a complete physical triple-board betting snapshot', async () => {
     const h = harness();
     h.runtime.receive(rekey(multiboard()));
@@ -1162,6 +1189,191 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
   });
 
+  it('retains the valid fast decision when read-frame capture fails and refuses its second look', async () => {
+    const h = harness();
+    const spy = vi.spyOn(HorseMind, 'snapshotDecisionReads').mockImplementationOnce(() => {
+      throw Error('capture refused');
+    });
+    try {
+      const request = fastRequest(1);
+      h.runtime.receive(request);
+      await h.runtime.drain();
+      const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+      expect(fast?.type).toBe('FAST_RESULT');
+      if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
+      h.runtime.receive({
+        ...request,
+        type: 'DECIDE_DEEP',
+        requestId: 2,
+        rngBefore: fast.rngBefore,
+        deepEquity: 2,
+      });
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'ERROR',
+        recoverable: true,
+        message: 'second look original opponent reads unavailable',
+      });
+      expect(h.decisionsAtRng).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('refuses a corrupted private frame before changing the canonical RNG or invoking a second decision', async () => {
+    const h = harness(),
+      request = fastRequest(1);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (fast?.type !== 'FAST_RESULT') throw Error('missing fast');
+    const entry = [...(h.runtime as any).secondLookReads.values()][0] as any;
+    expect(entry.frame.version).toBe('horse-decision-reads-v2');
+    expect(JSON.stringify(fast)).not.toContain('horse-decision-reads-v2');
+    entry.frame = { ...entry.frame, sha256: '0'.repeat(64) };
+    const restores = h.restored.length;
+    h.runtime.receive({
+      ...request,
+      type: 'DECIDE_DEEP',
+      requestId: 2,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      recoverable: true,
+      message: 'Horse decision read frame is invalid',
+    });
+    expect(h.decisionsAtRng).toHaveLength(1);
+    expect(h.restored).toHaveLength(restores);
+  });
+
+  it('keeps the actual second-look opponent reads pinned after other table observations', async () => {
+    const { hero, state } = jointPolicyFixture('nlh', 1, 'cash', 'flop');
+    const h = harness(true);
+    HorseMind.reset();
+    HorseMind.importStats([{ user_id: 'p1', hands: 80, folds: 70, facedAggr: 80 }]);
+    const reads: number[] = [];
+    const real = HorseMind.exploit.bind(HorseMind);
+    const spy = vi.spyOn(HorseMind, 'exploit').mockImplementation((id, recency) => {
+      const value = real(id, recency);
+      if (id === 'p1') reads.push(value.bluffMod);
+      return value;
+    });
+    try {
+      const request = rekey({
+        ...fastRequest(1),
+        player: hero,
+        gameState: state,
+        opts: { phase13Joint: 'off' },
+      });
+      h.runtime.receive(request);
+      await h.runtime.drain();
+      const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+      if (fast?.type !== 'FAST_RESULT') throw Error(JSON.stringify(h.messages));
+      expect(reads.length).toBeGreaterThan(0);
+      const original = reads[0];
+      HorseMind.importStats([{ user_id: 'p1', hands: 800, folds: 70, facedAggr: 800 }]);
+      expect(real('p1', false).bluffMod).not.toBe(original);
+      reads.length = 0;
+      h.runtime.receive({
+        ...request,
+        type: 'DECIDE_DEEP',
+        requestId: 2,
+        rngBefore: fast.rngBefore,
+        deepEquity: 2,
+      });
+      await h.runtime.drain();
+      expect(h.messages.at(-1)?.type).toBe('DEEP_RESULT');
+      expect(reads.length).toBeGreaterThan(0);
+      expect(reads.every((v) => v === original)).toBe(true);
+      expect(HorseMind.getStats('p1')?.hands).toBe(800);
+    } finally {
+      spy.mockRestore();
+      HorseMind.reset();
+    }
+  });
+
+  it.each([
+    'missing',
+    'expired',
+    'generation',
+    'fence',
+    'clock',
+    'rng',
+    'snapshot',
+    'ambiguous',
+    'consumed',
+  ] as const)('keeps the fast action available when second-look reads are %s', async (mode) => {
+    const h = harness();
+    const request = fastRequest(1);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (fast?.type !== 'FAST_RESULT') throw Error('fast result missing');
+    const deep = {
+      ...request,
+      type: 'DECIDE_DEEP' as const,
+      requestId: 3,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    };
+    if (mode === 'missing') {
+      deep.player = { ...deep.player, username: 'different' };
+    }
+    if (mode === 'generation') deep.generation++;
+    if (mode === 'fence') deep.fence += 'changed';
+    if (mode === 'clock') deep.decisionTimeMs++;
+    if (mode === 'rng') deep.rngBefore++;
+    if (mode === 'snapshot') deep.style = 'lag';
+    if (mode === 'expired') h.advanceClock(60_001);
+    if (mode === 'ambiguous') {
+      h.runtime.receive({ ...request, requestId: 2 });
+      await h.runtime.drain();
+    }
+    if (mode === 'consumed') {
+      h.runtime.receive({ ...deep, requestId: 2 });
+      await h.runtime.drain();
+    }
+    deep.decisionKey = buildHorseDecisionKey(deep);
+    const before = h.decisionsAtRng.length;
+    h.runtime.receive(deep);
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      recoverable: true,
+      message: 'second look original opponent reads unavailable',
+    });
+    expect(h.decisionsAtRng).toHaveLength(before);
+    expect(h.rng()).toBe(101);
+    h.runtime.receive(rekey({ ...request, requestId: 4, fence: 'next-turn' }));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)?.type).toBe('FAST_RESULT');
+  });
+
+  it('bounds retained reads and clears them on shutdown', async () => {
+    const h = harness();
+    for (let i = 1; i <= 140; i++)
+      h.runtime.receive(rekey({ ...fastRequest(i), fence: `turn-${i}` }));
+    await h.runtime.drain();
+    expect((h.runtime as any).secondLookReads.size).toBe(128);
+    const first = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (first?.type !== 'FAST_RESULT') throw Error('fast result missing');
+    const request = rekey({ ...fastRequest(141), fence: 'turn-1' });
+    h.runtime.receive({
+      ...request,
+      type: 'DECIDE_DEEP',
+      rngBefore: first.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({ type: 'ERROR', recoverable: true });
+    h.runtime.receive({ type: 'SHUTDOWN' });
+    await h.runtime.drain();
+    expect((h.runtime as any).secondLookReads.size).toBe(0);
+  });
+
   it('replays deep work from rngBefore and always restores canonical worker RNG', async () => {
     const h = harness();
     h.setCapturedEffects([
@@ -1169,17 +1381,26 @@ describe('HorseDecisionWorkerRuntime', () => {
     ]);
     await h.runtime.start();
     h.setRng(900);
+    h.runtime.receive(fastRequest(1));
+    await h.runtime.drain();
+    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (fast?.type !== 'FAST_RESULT') throw Error('fast decision missing');
+    h.decisionsAtRng.length = 0;
+    h.restored.length = 0;
+    h.decisionOpts.length = 0;
+    h.features.length = 0;
+    h.latency.length = 0;
     h.runtime.receive({
       ...snapshot,
       type: 'DECIDE_DEEP',
       requestId: 2,
-      rngBefore: 77,
+      rngBefore: fast.rngBefore,
       deepEquity: 6,
     });
     await h.runtime.drain();
 
-    expect(h.decisionsAtRng).toEqual([77]);
-    expect(h.restored).toEqual([77, 900]);
+    expect(h.decisionsAtRng).toEqual([fast.rngBefore]);
+    expect(h.restored).toEqual([fast.rngBefore, 900]);
     expect(h.rng()).toBe(900);
     expect(h.decisionOpts[0]).toMatchObject({
       telemetry: false,
@@ -1197,18 +1418,23 @@ describe('HorseDecisionWorkerRuntime', () => {
     const h = harness();
     await h.runtime.start();
     h.setRng(444);
+    h.runtime.receive(fastRequest(1));
+    await h.runtime.drain();
+    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (fast?.type !== 'FAST_RESULT') throw Error('fast decision missing');
+    h.restored.length = 0;
     h.setThrowDecision(true);
     h.runtime.receive({
       ...snapshot,
       type: 'DECIDE_DEEP',
       requestId: 3,
-      rngBefore: 55,
+      rngBefore: fast.rngBefore,
       deepEquity: 6,
     });
     await h.runtime.drain();
 
     expect(h.rng()).toBe(444);
-    expect(h.restored).toEqual([55, 444]);
+    expect(h.restored).toEqual([fast.rngBefore, 444]);
     expect(h.messages.at(-1)).toMatchObject({
       type: 'ERROR',
       requestId: 3,
@@ -1244,7 +1470,49 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.stopped()).toBe(1);
   });
 
-  it('applies fast decision effects only through an explicit FIFO commit', async () => {
+  it('does not acknowledge shutdown if a final owned telemetry batch is unconfirmed', async () => {
+    const h = harness();
+    h.setStopFailure(new Error('Horse telemetry batch write unconfirmed'));
+    h.runtime.receive(fastRequest(1));
+    h.runtime.receive({ type: 'SHUTDOWN' });
+    await h.runtime.drain();
+    expect(h.messages.map((message) => message.type)).toEqual(['READY', 'FAST_RESULT', 'ERROR']);
+    expect(h.messages.at(-1)).toMatchObject({
+      requestId: null,
+      message: 'Horse telemetry batch write unconfirmed',
+    });
+    expect(h.stopped()).toBe(1);
+  });
+
+  it('drops partial decision effects when the real brain catches an evaluation failure', async () => {
+    const h = harness(true);
+    h.setCapturedEffects([
+      {
+        type: 'raise_plan',
+        handKey: 'table:hand',
+        userId: 'horse-2',
+        street: 'flop',
+        plan: 'foldToRaise',
+      },
+    ]);
+    const failed = vi.spyOn(HorseLogic as any, 'decideInternal').mockImplementation(() => {
+      throw Error('failed policy evaluation');
+    });
+    try {
+      h.runtime.receive(fastRequest(1));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'FAST_RESULT',
+        decision: { action: 'fold', policyFallback: 'brain_exception' },
+        effects: [],
+      });
+      expect(h.appliedEffects).toEqual([]);
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
+  it('refuses a caller batch that the FAST policy retired instead of treating explicit FIFO submission as issue proof', async () => {
     const h = harness();
     const effects: HorseMindDecisionEffect[] = [
       {
@@ -1260,18 +1528,59 @@ describe('HorseDecisionWorkerRuntime', () => {
     h.runtime.receive({
       type: 'COMMIT_DECISION_EFFECTS',
       requestId: 2,
+      planBinding: horsePlanBatchBindingFromRequest(fastRequest(1)),
       generation: 4,
       fence: 'table:hand:turn',
       effects,
     });
     await h.runtime.drain();
 
-    expect(h.messages[1]).toMatchObject({ type: 'FAST_RESULT', effects });
-    expect(h.appliedEffects).toEqual([effects]);
-    expect(h.messages[2]).toMatchObject({
-      type: 'ACK',
-      operation: 'COMMIT_DECISION_EFFECTS',
+    // The call's emitted batch is empty. A caller cannot revive its retired
+    // speculative wager plans by submitting a separately assembled commit.
+    expect(h.messages[1]).toMatchObject({ type: 'FAST_RESULT', effects: [] });
+    expect(h.appliedEffects).toEqual([]);
+    expect(h.messages[2]).toMatchObject({ type: 'ERROR', recoverable: true });
+  });
+
+  it('retires captured wager plans when the final policy returned a call', async () => {
+    const h = harness();
+    h.setCapturedEffects([
+      { type: 'plan', handKey: 'table:hand', userId: 'horse-2', barrelIntent: true },
+    ]);
+    h.runtime.receive(fastRequest(1));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'FAST_RESULT',
+      decision: { action: 'call' },
+      effects: [],
     });
+  });
+
+  it('refuses a malformed commit before applying any effect and keeps the next request usable', async () => {
+    const h = harness();
+    h.runtime.receive({
+      type: 'COMMIT_DECISION_EFFECTS',
+      requestId: 2,
+      planBinding: horsePlanBatchBindingFromRequest(fastRequest(1)),
+      generation: 4,
+      fence: 'table:hand:turn',
+      effects: [
+        { type: 'plan', handKey: 'table:hand', userId: 'horse-2', barrelIntent: true },
+        {
+          type: 'outlook',
+          handKey: 'table:hand',
+          userId: 'horse-2',
+          street: 'flop',
+          good: null,
+          scare: [],
+        } as any,
+      ],
+    });
+    h.runtime.receive(fastRequest(3));
+    await h.runtime.drain();
+    expect(h.appliedEffects).toEqual([]);
+    expect(h.messages[1]).toMatchObject({ type: 'ERROR', requestId: 2, recoverable: true });
+    expect(h.messages[2]).toMatchObject({ type: 'FAST_RESULT', requestId: 3 });
   });
 
   it('returns dynamic worker-owned solver and governor status through the FIFO', async () => {
@@ -1320,6 +1629,213 @@ describe('HorseDecisionWorkerRuntime', () => {
       governorScale: 0.2,
     });
     expect(h.rng()).toBe(101);
+  });
+
+  it('privately captures discard input, output and seeded RNG without changing the public result', async () => {
+    const h = harness();
+    const captures: unknown[] = [];
+    h.deps.journalEnabled = () => true;
+    (
+      h.deps as HorseDecisionWorkerDependencies & { journalDiscard?: (value: unknown) => void }
+    ).journalDiscard = (value) => captures.push(structuredClone(value));
+    const request = {
+      type: 'DECIDE_DISCARD' as const,
+      requestId: 77,
+      generation: 4,
+      fence: 'table:hand:discard:2',
+      cards: structuredClone(pineappleCards),
+      communityCards: [
+        { rank: '7', suit: 'hearts' },
+        { rank: '8', suit: 'hearts' },
+        { rank: '3', suit: 'clubs' },
+      ] as typeof snapshot.player.cards,
+      gameVariant: 'pineapple',
+    };
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    expect(captures).toEqual([
+      expect.objectContaining({
+        version: 1,
+        snapshot: request,
+        cardIndex: 1,
+        rngBefore: h.decisionsAtRng[0],
+        rngAfter: 303,
+        runtimePins: 'incomplete',
+        computeMs: 6,
+        governorScale: 0.2,
+      }),
+    ]);
+    expect(h.messages.at(-1)).toEqual({
+      type: 'DISCARD_RESULT',
+      requestId: 77,
+      generation: 4,
+      fence: request.fence,
+      cardIndex: 1,
+      computeMs: 6,
+      governorScale: 0.2,
+    });
+    expect(h.rng()).toBe(101);
+  });
+
+  it('keeps discard play and canonical RNG intact when private capture fails', async () => {
+    const h = harness();
+    h.deps.journalEnabled = () => true;
+    (h.deps as HorseDecisionWorkerDependencies & { journalDiscard?: () => void }).journalDiscard =
+      () => {
+        throw Error('private journal unavailable');
+      };
+    h.runtime.receive({
+      type: 'DECIDE_DISCARD',
+      requestId: 78,
+      generation: 4,
+      fence: 'table:hand:discard:2',
+      cards: structuredClone(pineappleCards),
+      communityCards: [
+        { rank: '7', suit: 'hearts' },
+        { rank: '8', suit: 'hearts' },
+        { rank: '3', suit: 'clubs' },
+      ],
+      gameVariant: 'pineapple',
+    });
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({ type: 'DISCARD_RESULT', cardIndex: 1 });
+    expect(h.features).toContain('phase15_journal_discard_capture_unavailable');
+    expect(h.rng()).toBe(101);
+  });
+
+  it.each(['accepted', 'missing_private_card', 'wrong_envelope', 'publisher_failed'])(
+    'validates and transports private controller discard evidence: %s',
+    async (mode) => {
+      const h = harness();
+      const table = '10000000-0000-4000-8000-000000000001';
+      const actor = '20000000-0000-4000-8000-000000000001';
+      const cards: Card[] = structuredClone(pineappleCards);
+      const communityCards: Card[] = [
+        { rank: '7', suit: 'hearts' },
+        { rank: '8', suit: 'hearts' },
+        { rank: '3', suit: 'clubs' },
+      ];
+      const fence = [
+        table,
+        12,
+        'pineapple-discard',
+        2,
+        '9',
+        4,
+        cards.map((c) => `${c.rank}:${c.suit}`).join('|'),
+        communityCards.map((c) => `${c.rank}:${c.suit}`).join('|'),
+      ].join(':');
+      const priorActions = captureHorseHandJournalContext([])!;
+      const execution: HorseDiscardExecutionObservation = {
+        version: 1,
+        request: {
+          type: 'DECIDE_DISCARD',
+          requestId: 3,
+          generation: 4,
+          fence,
+          cards,
+          communityCards,
+          gameVariant: 'pineapple',
+          journalContext: {
+            version: 1,
+            tableId: table,
+            handNumber: 12,
+            leaseGeneration: '9',
+            actorId: actor,
+            seat: 2,
+            requestedAtMs: 1000,
+            lane: 'choice',
+            priorActions,
+          },
+        },
+        selectedIndex: 1,
+        acceptedActionOrdinal: 0,
+        priorActions,
+        controller: {
+          seat: 2,
+          actorId: actor,
+          chosenIndex: 1,
+          originalCards: structuredClone(cards),
+          discardedCard: cards[1]!,
+          retainedCards: cards.filter((_, i) => i !== 1),
+          communityCards: structuredClone(communityCards),
+          acceptedRecord: {
+            seat: 2,
+            userId: actor,
+            action: 'discard',
+            amount: 0,
+            timestamp: 1001,
+            stage: 'pineapple_discard',
+          },
+        },
+      };
+      const captures: unknown[] = [];
+      h.deps.journalDiscardExecution = (value) => {
+        if (mode === 'publisher_failed') throw Error('private store unavailable');
+        captures.push(structuredClone(value));
+      };
+      if (mode === 'missing_private_card') (execution.controller as any).discardedCard = null;
+      h.runtime.receive({
+        type: 'OBSERVE_DISCARD_EXECUTION',
+        requestId: 10,
+        generation: 4,
+        fence: mode === 'wrong_envelope' ? 'another-fence' : fence,
+        execution,
+      });
+      await h.runtime.drain();
+      if (mode === 'accepted' || mode === 'publisher_failed') {
+        expect(h.messages.at(-1)).toMatchObject({
+          type: 'ACK',
+          operation: 'OBSERVE_DISCARD_EXECUTION',
+        });
+        expect(captures).toHaveLength(mode === 'accepted' ? 1 : 0);
+      } else {
+        expect(h.messages.at(-1)).toMatchObject({ type: 'ERROR', recoverable: true });
+        expect(captures).toEqual([]);
+      }
+      if (mode === 'publisher_failed')
+        expect(h.features).toContain('phase15_journal_discard_capture_unavailable');
+      expect(JSON.stringify(h.messages)).not.toContain('discardedCard');
+      expect(h.rng()).toBe(101);
+      expect(h.decisionsAtRng).toEqual([]);
+    }
+  );
+
+  it('detaches private discard input before computation and respects a disabled journal', async () => {
+    const request = {
+      type: 'DECIDE_DISCARD' as const,
+      requestId: 91,
+      generation: 4,
+      fence: 'table:hand:discard:2',
+      cards: structuredClone(pineappleCards),
+      communityCards: [
+        { rank: '7', suit: 'hearts' },
+        { rank: '8', suit: 'hearts' },
+        { rank: '3', suit: 'clubs' },
+      ] as Card[],
+      gameVariant: 'pineapple',
+    };
+    const original = structuredClone(request);
+    const h = harness();
+    const captures: unknown[] = [];
+    h.deps.journalEnabled = () => true;
+    h.deps.journalDiscard = (value) => captures.push(value);
+    h.deps.decideDiscard = (cards) => {
+      cards[0]!.rank = '2';
+      return 1;
+    };
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    expect(captures[0]).toMatchObject({ snapshot: original });
+    const disabled = harness();
+    disabled.deps.journalEnabled = () => false;
+    disabled.deps.journalDiscard = () => {
+      throw Error('should not capture');
+    };
+    disabled.runtime.receive(original);
+    await disabled.runtime.drain();
+    expect(disabled.messages.at(-1)).toMatchObject({ type: 'DISCARD_RESULT', cardIndex: 1 });
+    expect(disabled.features).not.toContain('phase15_journal_discard_capture_unavailable');
   });
 
   it.each([
@@ -1400,6 +1916,41 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(balanced.decisionsAtRng[0]).not.toBe(aggressive.decisionsAtRng[0]);
   });
 
+  it('binds historical review evidence without letting it choose the policy RNG stream', async () => {
+    const clean = rekey({ ...fastRequest(), mods: { aggression: 1.1 } });
+    const observed = rekey({
+      ...clean,
+      mods: {
+        ...clean.mods,
+        leaks: { coldcall_stackoff: 50 },
+        leaksHands: 100,
+        leaksHoldem: { river_raise_war: 20 },
+        leaksHandsHoldem: 100,
+        leaksOmaha: { plo_naked_trips_stackoff: 30 },
+        leaksHandsOmaha: 100,
+        leaksTournament: { preflop_stackoff: 40 },
+        leaksHandsTournament: 100,
+      },
+    });
+    expect(observed.decisionKey).not.toBe(clean.decisionKey);
+    const a = harness();
+    const b = harness();
+    a.runtime.receive(clean);
+    b.runtime.receive(observed);
+    await Promise.all([a.runtime.drain(), b.runtime.drain()]);
+    expect(a.decisionsAtRng).toHaveLength(1);
+    expect(b.decisionsAtRng).toEqual(a.decisionsAtRng);
+
+    const tampered = harness();
+    tampered.runtime.receive({ ...observed, decisionKey: clean.decisionKey });
+    await tampered.runtime.drain();
+    expect(tampered.decisionsAtRng).toEqual([]);
+    expect(tampered.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'decisionKey does not bind the canonical decision snapshot',
+    });
+  });
+
   it('binds profile modifiers, live options and the decision-hour input', () => {
     const base = fastRequest(1);
     const baseKey = buildHorseDecisionKey(base);
@@ -1412,6 +1963,131 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(buildHorseDecisionKey({ ...base, decisionTimeMs: base.decisionTimeMs + 1 })).not.toBe(
       baseKey
     );
+  });
+
+  it('captures actual fast/deep journal inputs privately and retains decisions when capture fails', async () => {
+    const h = harness(),
+      records: any[] = [];
+    h.deps.journalDecision = (request, payload) => records.push({ request, payload });
+    const fast = fastRequest();
+    h.runtime.receive(fast);
+    await h.runtime.drain();
+    const first = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (first?.type !== 'FAST_RESULT') throw Error('missing fast result');
+    expect(records[0].payload).toMatchObject({
+      snapshot: { requestId: 1 },
+      readFrame: { version: 'horse-decision-reads-v2' },
+      rngBefore: first.rngBefore,
+      rngAfter: first.rngAfter,
+      runtimePins: 'incomplete',
+    });
+    expect(JSON.stringify(first)).not.toContain('horse-decision-reads-v2');
+    h.runtime.receive({
+      ...fast,
+      type: 'DECIDE_DEEP',
+      requestId: 2,
+      rngBefore: first.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    expect(records[1].payload).toMatchObject({
+      snapshot: { requestId: 2 },
+      readFrame: records[0].payload.readFrame,
+      rngBefore: first.rngBefore,
+      rngAfter: 202,
+    });
+    h.deps.journalDecision = () => {
+      throw Error('disk unavailable');
+    };
+    h.runtime.receive(fastRequest(3));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 3 });
+    expect(h.features).toContain('phase15_journal_capture_unavailable');
+  });
+
+  it('validates accepted-history diagnostics without changing the actual worker RNG stream', async () => {
+    const clean = fastRequest();
+    const captured = rekey({
+      ...clean,
+      handJournalContext: { version: 1, actionCount: 4, actionsDigest: 'a'.repeat(64) },
+    });
+    const a = harness(),
+      b = harness(),
+      tampered = harness();
+    a.runtime.receive(clean);
+    b.runtime.receive(captured);
+    tampered.runtime.receive({ ...captured, decisionKey: clean.decisionKey });
+    await Promise.all([a.runtime.drain(), b.runtime.drain(), tampered.runtime.drain()]);
+    expect(b.decisionsAtRng).toEqual(a.decisionsAtRng);
+    expect(b.decisionsAtRng).toHaveLength(1);
+    expect(tampered.decisionsAtRng).toEqual([]);
+    expect(tampered.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      recoverable: true,
+      message: 'decisionKey does not bind the canonical decision snapshot',
+    });
+  });
+
+  it.each(HORSE_REVIEW_SIGNAL_KEYS)(
+    'excludes only diagnostic %s from sampling, retaining full validation',
+    (key) => {
+      const clean = rekey({ ...fastRequest(), mods: { aggression: 1.1 } });
+      const observed = rekey({
+        ...clean,
+        mods: { ...clean.mods, [key]: key.includes('Hands') ? 100 : { coldcall_stackoff: 40 } },
+      });
+      expect(observed.decisionKey).not.toBe(clean.decisionKey);
+      expect(validatedHorsePolicySamplingKey(observed)).toBe(
+        validatedHorsePolicySamplingKey(clean)
+      );
+    }
+  );
+
+  it('normalizes empty bags and diagnostic options while preserving authored inputs', () => {
+    const clean = rekey({ ...fastRequest(), mods: undefined, opts: undefined });
+    const key = validatedHorsePolicySamplingKey(clean);
+    for (const mods of [undefined, {}, { leaks: {} }, { leaksHands: 0 }, { leaks: undefined }]) {
+      for (const opts of [undefined, {}, { v41Leaks: true }, { v41Leaks: false }]) {
+        expect(validatedHorsePolicySamplingKey(rekey({ ...clean, mods, opts }))).toBe(key);
+      }
+    }
+    for (const mods of [
+      { aggression: 1.2 },
+      { tightness: 1.1 },
+      { sizingMultiplier: 0.9 },
+      { bluffFreq: 1.1 },
+    ]) {
+      expect(validatedHorsePolicySamplingKey(rekey({ ...clean, mods }))).not.toBe(key);
+    }
+    expect(
+      validatedHorsePolicySamplingKey(rekey({ ...clean, opts: { v40Omaha: false } }))
+    ).not.toBe(key);
+    // Invalid diagnostics are still rejected by the full canonicalizer.
+    expect(() => rekey({ ...clean, mods: { leaksHands: Number.NaN } })).toThrow('non-finite');
+  });
+
+  it('replays the projected seed for a deep decision and restores the canonical stream', async () => {
+    const h = harness();
+    const request = rekey({
+      ...fastRequest(),
+      mods: { leaksHands: 100 },
+      opts: { v41Leaks: false },
+    });
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (fast?.type !== 'FAST_RESULT') throw new Error('fast decision missing');
+    h.runtime.receive({
+      ...request,
+      type: 'DECIDE_DEEP',
+      requestId: 2,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({ type: 'DEEP_RESULT' });
+    expect(h.decisionsAtRng).toEqual([fast.rngBefore, fast.rngBefore]);
+    expect(h.rng()).toBe(101);
   });
 
   it('rejects a changed snapshot carrying its old decision key', async () => {
@@ -1490,8 +2166,16 @@ it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundar
   };
   request.gameState.dealerSeat = 2;
   request.decisionKey = buildHorseDecisionKey(request);
-  h.runtime.receive(request);
-  await h.runtime.drain();
+  // This proves execution/wiring, not latency. A shared runner pause cannot
+  // be required to fit the production 4 ms window. Budget refusal is tested
+  // independently by Plo4LivePolicy; no live request clock control is enabled.
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    h.runtime.receive(request);
+    await h.runtime.drain();
+  } finally {
+    clock.mockRestore();
+  }
   const result = h.messages.find((m) => m.type === 'FAST_RESULT');
   if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
   expect(result.decision.plo4Policy?.mode).toBe('shadow');
@@ -1541,30 +2225,49 @@ it.each(['plo5', 'plo6', 'plo8'] as const)(
 it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
   'Phase 12 %s receipt survives the live worker boundary',
   async (variant) => {
-    const { remainingVariantSpot } =
-      await import('../../benchmark/RemainingVariantPolicyEvidence.js');
-    const h = harness(true);
-    const input = remainingVariantSpot(variant, 'preflop');
-    const request = {
-      type: 'DECIDE_FAST' as const,
-      requestId: 512,
-      ...structuredClone(snapshot),
-      style: 'balanced' as const,
-      mods: {},
-      opts: { mind: false, telemetry: false },
-      player: input.hero,
-      gameState: input.state,
-    };
-    request.decisionKey = buildHorseDecisionKey(request);
-    h.runtime.receive(request);
-    await h.runtime.drain();
-    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
-    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
-    expect(result.decision.remainingVariantPolicy?.mode).toBe('shadow');
-    expect(result.decision.remainingVariantPolicy?.eligible).toBe(true);
-    expect(result.decision.remainingVariantPolicy?.fired).toBe(true);
-    expect(structuredClone(result).decision.remainingVariantPolicy?.finalAction).toBe(
-      result.decision.action
-    );
+    // Same clock discipline as the Phase 11 sibling above, and for the same
+    // reason. This fixture proves the receipt reaches the worker result; it is
+    // not a budget test. evaluateRemainingVariantPolicy reads `now()` and marks
+    // the receipt `fired: false, reason: 'work_budget'` once the elapsed live
+    // budget is exceeded (RemainingVariantLivePolicy.ts), so on a contended box
+    // this asserted a timing race rather than the receipt boundary.
+    //
+    // 2026-09-14: observed failing exactly that way on the estate runners,
+    // which pack 12-18 runners per host and are therefore far more contended
+    // than a dedicated hosted VM. short_deck returned fired=false while the
+    // three other variants passed, and it passed on rerun. Phase 11 was already
+    // guarded; this one was written without the guard. The budget itself stays
+    // covered by the dedicated policy-budget tests and the actual-controller
+    // benchmark, which keep their time limits.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      const { remainingVariantSpot } =
+        await import('../../benchmark/RemainingVariantPolicyEvidence.js');
+      const h = harness(true);
+      const input = remainingVariantSpot(variant, 'preflop');
+      const request = {
+        type: 'DECIDE_FAST' as const,
+        requestId: 512,
+        ...structuredClone(snapshot),
+        style: 'balanced' as const,
+        mods: {},
+        opts: { mind: false, telemetry: false },
+        player: input.hero,
+        gameState: input.state,
+      };
+      request.decisionKey = buildHorseDecisionKey(request);
+      h.runtime.receive(request);
+      await h.runtime.drain();
+      const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+      if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+      expect(result.decision.remainingVariantPolicy?.mode).toBe('shadow');
+      expect(result.decision.remainingVariantPolicy?.eligible).toBe(true);
+      expect(result.decision.remainingVariantPolicy?.fired).toBe(true);
+      expect(structuredClone(result).decision.remainingVariantPolicy?.finalAction).toBe(
+        result.decision.action
+      );
+    } finally {
+      clock.mockRestore();
+    }
   }
 );

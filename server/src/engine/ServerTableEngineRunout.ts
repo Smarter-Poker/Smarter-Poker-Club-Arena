@@ -28,6 +28,14 @@ import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 import type { EngineRecoveryEventClass } from './ServerTableEngineBase.js';
 import { getLiveHorseDecisionWorker, HorseDecisionAbortedError } from './horseDecision/index.js';
+import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
+import { horseDiscardJournalContextValid } from '../services/horseDecisionJournal/discard.js';
+import type {
+  DecidePineappleDiscardRequest,
+  PineappleDiscardJournalContext,
+  PineappleDiscardResult,
+  PineappleDiscardSnapshot,
+} from './horseDecision/protocol.js';
 
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   /**
@@ -95,6 +103,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   private readonly pineappleDecisionDelayTimers = new Map<number, ReturnType<typeof setTimeout>>();
   /** Submitted jobs, keyed by seat so a human action can cancel its exact job. */
   private readonly pineappleDecisionAbortControllers = new Map<number, AbortController>();
+  /** Private one-use controller receipts. Preparation alone is never acceptance. */
+  private readonly pineappleDiscardReceiptObservers = new Map<number, () => void>();
   /** Deadline aborts for normal discard rounds; all-in jobs use the hand fence. */
   private readonly pineappleDecisionDeadlineTimers = new Map<
     number,
@@ -497,6 +507,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   }
 
   private cancelPineappleSeatDecision(seat: number): void {
+    this.pineappleDiscardReceiptObservers.get(seat)?.();
+    this.pineappleDiscardReceiptObservers.delete(seat);
     const delayed = this.pineappleDecisionDelayTimers.get(seat);
     if (delayed) clearTimeout(delayed);
     this.pineappleDecisionDelayTimers.delete(seat);
@@ -515,6 +527,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       ...this.pineappleDecisionDelayTimers.keys(),
       ...this.pineappleDecisionDeadlineTimers.keys(),
       ...this.pineappleDecisionAbortControllers.keys(),
+      ...this.pineappleDiscardReceiptObservers.keys(),
     ]);
     for (const seat of seats) this.cancelPineappleSeatDecision(seat);
   }
@@ -544,6 +557,75 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     return currentLease?.verified === true && currentLease.generation === leaseGeneration;
   }
 
+  private pineappleDiscardJournalContext(
+    controller: HandController,
+    handNumber: number,
+    leaseGeneration: string | null,
+    seat: number,
+    lane: PineappleDiscardJournalContext['lane']
+  ): PineappleDiscardJournalContext | null {
+    const actor = controller.getState().players.find((player) => player.seat === seat);
+    const seated = this.seatedPlayers.find((player) => player.seat_number === seat);
+    if (!actor || !seated?.is_horse || seated.user_id !== actor.user_id || leaseGeneration === null)
+      return null;
+    const priorActions = captureHorseHandJournalContext(this.currentHandActions);
+    if (!priorActions) return null;
+    const context: PineappleDiscardJournalContext = {
+      version: 1,
+      tableId: this.tableId,
+      handNumber,
+      leaseGeneration,
+      actorId: actor.user_id,
+      seat,
+      requestedAtMs: Date.now(),
+      lane,
+      priorActions,
+    };
+    return horseDiscardJournalContextValid(context) ? context : null;
+  }
+
+  private observePineappleDiscardAcceptance(
+    controller: HandController,
+    request: DecidePineappleDiscardRequest,
+    selectedIndex: number
+  ): () => void {
+    const context = request.journalContext;
+    // Legacy isolated fixtures and forced human runouts still play, but do
+    // not become attributed Horse evidence. Public amount-zero is insufficient.
+    if (!context || typeof controller.observeNextPineappleDiscard !== 'function') return () => {};
+    this.pineappleDiscardReceiptObservers.get(context.seat)?.();
+    const unsubscribe = controller.observeNextPineappleDiscard(context.seat, (receipt) => {
+      this.pineappleDiscardReceiptObservers.delete(context.seat);
+      if (
+        !this.pineappleDecisionFenceIsCurrent(
+          controller,
+          context.handNumber,
+          request.generation,
+          context.leaseGeneration
+        )
+      )
+        return;
+      const priorActions = captureHorseHandJournalContext(this.currentHandActions);
+      if (!priorActions) return;
+      getLiveHorseDecisionWorker().observeDiscardExecution({
+        version: 1,
+        request,
+        selectedIndex,
+        controller: receipt,
+        acceptedActionOrdinal: priorActions.actionCount,
+        priorActions,
+      });
+    });
+    const cancel = () => {
+      unsubscribe();
+      if (this.pineappleDiscardReceiptObservers.get(context.seat) === cancel) {
+        this.pineappleDiscardReceiptObservers.delete(context.seat);
+      }
+    };
+    this.pineappleDiscardReceiptObservers.set(context.seat, cancel);
+    return cancel;
+  }
+
   private async requestPineappleDiscard(
     controller: HandController,
     handNumber: number,
@@ -553,8 +635,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     cards: readonly Card[],
     communityCards: readonly Card[],
     gameVariant: string,
+    lane: PineappleDiscardJournalContext['lane'],
     deadlineMs?: number
-  ): Promise<number> {
+  ): Promise<{ request: DecidePineappleDiscardRequest; result: PineappleDiscardResult }> {
     if (
       !this.pineappleDecisionFenceIsCurrent(controller, handNumber, generation, leaseGeneration)
     ) {
@@ -586,15 +669,24 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       boardKey,
     ].join(':');
 
+    const snapshot: PineappleDiscardSnapshot = {
+      generation,
+      fence,
+      cards: cards.map((card) => ({ ...card })),
+      communityCards: communityCards.map((card) => ({ ...card })),
+      gameVariant,
+      journalContext: this.pineappleDiscardJournalContext(
+        controller,
+        handNumber,
+        leaseGeneration,
+        seat,
+        lane
+      ),
+    };
+
     try {
       const result = await getLiveHorseDecisionWorker().decideDiscard(
-        {
-          generation,
-          fence,
-          cards: [...cards],
-          communityCards: [...communityCards],
-          gameVariant,
-        },
+        snapshot,
         abortController.signal
       );
       if (
@@ -612,7 +704,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       ) {
         throw new HorseDecisionAbortedError('pineapple discard result crossed its fence');
       }
-      return result.cardIndex;
+      return {
+        request: { ...snapshot, type: 'DECIDE_DISCARD', requestId: result.requestId },
+        result,
+      };
     } finally {
       if (this.pineappleDecisionAbortControllers.get(seat) === abortController) {
         this.pineappleDecisionAbortControllers.delete(seat);
@@ -640,9 +735,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     if (lease !== null && lease.verified !== true) return false;
     const gameVariant = (this.activeHandVariant() || 'pineapple') as string;
     const decisions = new Map<number, number>();
+    const requests: Array<{ request: DecidePineappleDiscardRequest; cardIndex: number }> = [];
 
     for (const player of snapshot.players) {
-      const cardIndex = await this.requestPineappleDiscard(
+      const { request, result } = await this.requestPineappleDiscard(
         controller,
         handNumber,
         generation,
@@ -650,9 +746,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         player.seat,
         player.cards,
         snapshot.flop,
-        gameVariant
+        gameVariant,
+        'forced_runout'
       );
-      decisions.set(player.seat, cardIndex);
+      decisions.set(player.seat, result.cardIndex);
+      requests.push({ request, cardIndex: result.cardIndex });
     }
 
     if (
@@ -676,7 +774,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     ) {
       return false;
     }
-    return controller.preparePineappleRunoutDiscards(snapshot.flop, decisions);
+    const observers = requests.map(({ request, cardIndex }) =>
+      this.observePineappleDiscardAcceptance(controller, request, cardIndex)
+    );
+    let prepared = false;
+    try {
+      prepared = controller.preparePineappleRunoutDiscards(snapshot.flop, decisions);
+      return prepared;
+    } finally {
+      if (!prepared) for (const cancel of observers) cancel();
+    }
   }
 
   private refreshAllInPlayersFromController(
@@ -759,9 +866,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           cards,
           communityCards,
           gameVariant,
+          'choice',
           deadline
         )
-          .then((cardIndex) => {
+          .then(({ request, result }) => {
             if (
               !this.pineappleDecisionFenceIsCurrent(
                 handControllerRef,
@@ -784,7 +892,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             ) {
               return;
             }
-            handControllerRef.performDiscard(seat, cardIndex);
+            const cancelReceipt = this.observePineappleDiscardAcceptance(
+              handControllerRef,
+              request,
+              result.cardIndex
+            );
+            try {
+              handControllerRef.performDiscard(seat, result.cardIndex);
+            } finally {
+              cancelReceipt();
+            }
             if (handControllerRef.allPineappleDiscardsIn()) {
               this.cancelPineappleDecisionWork();
             }

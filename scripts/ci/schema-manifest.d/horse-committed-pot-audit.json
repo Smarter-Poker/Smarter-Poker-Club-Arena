@@ -1,0 +1,47 @@
+{
+  "_owner": "Horse Brain Phase14 committed-over10BB eligibility and evidence triage",
+  "tables": [
+    "horse_commitment_audit_days",
+    "horse_commitment_reviews",
+    "horse_commitment_audit_gaps"
+  ],
+  "functions": ["fn_horse_commitment_audit_step", "fn_horse_commitment_review_page"],
+  "columns": {
+    "horse_commitment_audit_days": [
+      "day",
+      "pass",
+      "after_created_at",
+      "after_hand_id",
+      "started_at",
+      "last_batch_at",
+      "finished_at",
+      "scanned_hands",
+      "horse_hands",
+      "flagged_horse_hands",
+      "unknown_horse_hands",
+      "hand_gaps",
+      "source_coverage",
+      "identity_basis"
+    ],
+    "horse_commitment_reviews": [
+      "hand_id",
+      "horse_user_id",
+      "table_id",
+      "played_at",
+      "captured_at",
+      "source_payload_hash",
+      "game_variant",
+      "format",
+      "seats",
+      "big_blind",
+      "net_contribution",
+      "returned_uncalled",
+      "committed_amount",
+      "committed_bb",
+      "eligibility",
+      "gto_verdict",
+      "reasons"
+    ],
+    "horse_commitment_audit_gaps": ["hand_id", "played_at", "reasons", "observed_at"]
+  }
+}

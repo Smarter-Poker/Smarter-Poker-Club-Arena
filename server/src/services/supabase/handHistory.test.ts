@@ -1,6 +1,8 @@
 /** The accepted-hand transaction is the sole hand-history persistence owner. */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ServerTableEngineBase } from '../../engine/ServerTableEngineBase.js';
+import type { CompletedHandObservation } from '../../engine/horseDecision/protocol.js';
 
 // ── A minimal chainable PostgREST double ────────────────────────────────────
 interface Call {
@@ -53,7 +55,7 @@ interface CompletedHandObservationPayload {
   fence: string;
   handKey: string;
   committedHandId?: string;
-  actions: unknown;
+  actions: CompletedHandObservation['actions'];
   bigBlind: number;
   showdown: unknown;
   scope: string | null | undefined;
@@ -77,6 +79,7 @@ import { logHandHistory, buildHandHistoryTiers } from './handHistory.js';
 import { persistedKnockoutEvidence } from '../../tournament/bountyAttributionGate.js';
 import type { HorsePublicActionNode } from '../../engine/HorsePublicActionNode.js';
 import { captureHandSeatGenerations } from '../../engine/handSeatGeneration.js';
+import { horseCompletedHandKey } from '../../engine/HorseDecisionHandBinding.js';
 
 const GLOBAL_HAND = 1_400_001;
 const historyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -518,6 +521,17 @@ describe('logHandHistory - accepted-hand transaction', () => {
       showdown: null,
       scope: 'holdem:hu',
     });
+    const emitted = mockObserveCompletedHand.mock.calls[0]![0];
+    expect(
+      horseCompletedHandKey({
+        generation: emitted.generation,
+        fence: emitted.fence,
+        handKey: emitted.handKey,
+        committedHandId: emitted.committedHandId,
+        bigBlind: emitted.bigBlind,
+        actions: emitted.actions,
+      })
+    ).toBe(`${input.tableId}:${input.handNumber}:${leaseGeneration}`);
     expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
   });
 
@@ -916,5 +930,192 @@ describe('tournament bounty history keeps each winning pot', () => {
       ready: true,
       attribution: { potIndex: 1, claimants: [{ userId: 'u1', weight: 1 }] },
     });
+  });
+});
+
+/** PREPARED / UNEXECUTED diagnostic prerequisite laws. Synthetic receipt
+ * extensions below are NOT a new producer return contract. Existing scalar
+ * reason/error/transport text remains outside this narrow redaction scope. */
+abstract class PrivateReceiptRetryProbe extends ServerTableEngineBase {
+  static rolledBackRetryable(error: unknown): boolean {
+    return this.isRolledBackSerializationRefusal(error);
+  }
+}
+async function rejectedPrivateReceipt(data: Record<string, unknown>): Promise<Error> {
+  atomicRpcResults = [{ data, error: null }];
+  return logHandHistory(atomicParams(GLOBAL_HAND + 900)).then(
+    () => {
+      throw new Error('fixture unexpectedly accepted');
+    },
+    (error) => {
+      expect(error).toBeInstanceOf(Error);
+      return error as Error;
+    }
+  );
+}
+const privateReceiptExtensions = [
+  {
+    name: 'hypothetical-roster',
+    value: {
+      acceptedActorRoster: {
+        version: 1,
+        roster: {
+          actors: [
+            {
+              userId: 'SYNTHETIC_PRIVATE_ACTOR',
+              classification: 'SYNTHETIC_PRIVATE_CLASSIFICATION',
+            },
+          ],
+        },
+      },
+    },
+  },
+  {
+    name: 'financial-request',
+    value: {
+      request: {
+        stacks: [
+          {
+            user_id: 'SYNTHETIC_PRIVATE_PLAYER',
+            stack: 123456.78,
+            seat_joined_at: 'SYNTHETIC_PRIVATE_GENERATION',
+          },
+        ],
+      },
+      written: { SYNTHETIC_PRIVATE_PLAYER: 123456.78 },
+    },
+  },
+  {
+    name: 'arbitrary-nested-extension',
+    value: {
+      future: {
+        nested: [
+          {
+            payloadText: 'SYNTHETIC_PRIVATE_PAYLOAD',
+            profile: { secret: 'SYNTHETIC_PRIVATE_PROFILE' },
+          },
+        ],
+      },
+    },
+  },
+];
+describe('prepared whole-receipt diagnostic redaction', () => {
+  for (const extension of privateReceiptExtensions) {
+    it(`invalid success never serializes nested ${extension.name}`, async () => {
+      const error = await rejectedPrivateReceipt({
+        success: true,
+        atomic_hand_commit: true,
+        history_id: 'invalid-history-id',
+        ...extension.value,
+      });
+      expect(error.message).toBe('atomic hand commit refused (invalid_receipt)');
+      expect(error.message).not.toContain('SYNTHETIC_PRIVATE');
+      expect(rpcCalls).toHaveLength(1);
+      expect(calls).toEqual([]);
+      expect(mockWakeHandProjection).not.toHaveBeenCalled();
+      expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+      expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(false);
+    });
+    it(`refusal without scalar error never serializes nested ${extension.name}`, async () => {
+      const error = await rejectedPrivateReceipt({
+        success: false,
+        reason: 'payload_mismatch',
+        ...extension.value,
+      });
+      expect(error.message).toBe(
+        'atomic hand commit refused (payload_mismatch): receipt_detail_redacted'
+      );
+      expect(error.message).not.toContain('SYNTHETIC_PRIVATE');
+      expect(rpcCalls).toHaveLength(1);
+      expect(calls).toEqual([]);
+      expect(mockWakeHandProjection).not.toHaveBeenCalled();
+      expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+      expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(false);
+    });
+  }
+  it('keeps the existing scalar SQL error text while omitting unrelated nested receipt details', async () => {
+    const error = await rejectedPrivateReceipt({
+      success: false,
+      reason: 'payload_mismatch',
+      error: 'the accepted payload is immutable',
+      ...privateReceiptExtensions[0]!.value,
+    });
+    expect(error.message).toBe(
+      'atomic hand commit refused (payload_mismatch): the accepted payload is immutable'
+    );
+    expect(error.message).not.toContain('SYNTHETIC_PRIVATE');
+    expect(rpcCalls).toHaveLength(1);
+  });
+  for (const reason of ['rolled_back', 'atomic_hand_rolled_back']) {
+    for (const cause of [
+      'F06_RETRY_CANONICAL_LANE',
+      'could not serialize access due to concurrent update',
+      'deadlock detected',
+    ]) {
+      it(`preserves outer rollback retry classification for ${reason}/${cause}`, async () => {
+        const error = await rejectedPrivateReceipt({
+          success: false,
+          reason,
+          error: cause,
+          ...privateReceiptExtensions[1]!.value,
+        });
+        expect(error.message).toBe(`atomic hand commit refused (${reason}): ${cause}`);
+        expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(true);
+        // The inner writer still throws the same semantic category immediately;
+        // only the existing outer settlement lane owns retrying this rollback.
+        expect(rpcCalls).toHaveLength(1);
+        expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+      });
+    }
+  }
+  it('does not turn a deterministic rollback into an outer retry', async () => {
+    const error = await rejectedPrivateReceipt({
+      success: false,
+      reason: 'rolled_back',
+      error: 'conservation violation',
+    });
+    expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(false);
+    expect(rpcCalls).toHaveLength(1);
+  });
+  it('does not turn a nonrollback refusal with transient text into a rollback', async () => {
+    const error = await rejectedPrivateReceipt({
+      success: false,
+      reason: 'payload_mismatch',
+      error: 'deadlock detected',
+    });
+    expect(PrivateReceiptRetryProbe.rolledBackRetryable(error)).toBe(false);
+    expect(rpcCalls).toHaveLength(1);
+  });
+  it('keeps the unknown refusal category when reason and scalar error are absent', async () => {
+    const error = await rejectedPrivateReceipt({
+      success: false,
+      ...privateReceiptExtensions[2]!.value,
+    });
+    expect(error.message).toBe('atomic hand commit refused (unknown): receipt_detail_redacted');
+    expect(rpcCalls).toHaveLength(1);
+    expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+  });
+  it('preserves accepted receipt data and the existing private observation shape', async () => {
+    const receipt = {
+      success: true,
+      atomic_hand_commit: true,
+      history_id: historyId,
+      replay: true,
+      ...privateReceiptExtensions[0]!.value,
+      ...privateReceiptExtensions[1]!.value,
+    };
+    atomicRpcResults = [{ data: receipt, error: null }];
+    const response = await logHandHistory(atomicParams(GLOBAL_HAND + 901));
+    expect(response).toEqual({
+      handId: historyId,
+      settlementCommitted: true,
+      stackResult: receipt,
+    });
+    expect(rpcCalls).toHaveLength(1);
+    expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+    // Adding a diagnostic repair must not accidentally activate the hypothetical
+    // private roster transport used as an extension in this synthetic fixture.
+    expect(mockObserveCompletedHand.mock.calls[0]![0]).not.toHaveProperty('acceptedActorRoster');
   });
 });

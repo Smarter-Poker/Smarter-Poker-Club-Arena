@@ -62,6 +62,61 @@ function foldHand(n: number): ActionRecord[] {
 }
 
 describe('V45 scope', () => {
+  it.each(['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'flo8', 'flh', 'pineapple', 'short_deck'])(
+    'keeps a dealt away seat in the actual %s observation scope',
+    (variant) => {
+      const hero = {
+        seat: 2,
+        user_id: 'p-2',
+        username: 'p-2',
+        stack: 200,
+        bet: 2,
+        totalInvested: 2,
+        cards: [
+          { rank: 'A', suit: 'hearts' },
+          { rank: 'K', suit: 'hearts' },
+        ],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      } as SeatPlayer;
+      const villain = { ...hero, seat: 3, user_id: 'p-3', cards: [], bet: 6, totalInvested: 6 };
+      const away = {
+        ...hero,
+        seat: 1,
+        user_id: 'p-1',
+        cards: [],
+        bet: 0,
+        totalInvested: 0,
+        is_folded: true,
+        is_sitting_out: true,
+      };
+      const gs = {
+        players: [away, { ...hero, cards: [] }, villain],
+        dealtSeatIds: [1, 2, 3],
+        communityCards: [],
+        pot: 8,
+        currentBet: 6,
+        minRaise: 4,
+        stage: 'preflop',
+        gameVariant: variant,
+        bigBlind: 2,
+        dealerSeat: 1,
+        gameMode: 'cash',
+        format: 'cash',
+        actionHistory: [rec(3, 'raise', 6, 'preflop', 1_700_900_000_000, { isFullRaise: true })],
+      } as HorseGameStateV2;
+      HorseLogic.decide(hero, gs, 'balanced', {}, {});
+      expect(HorseMind.getScopedStats('p-3', readScopeOf(variant, 3))?.pfr).toBe(1);
+      expect(HorseMind.getScopedStats('p-3', readScopeOf(variant, 2))).toBeUndefined();
+      expect(HorseMind.currentScope()).toBeNull();
+      // A subsequent hand where the away seat was NOT dealt belongs to HU.
+      gs.dealtSeatIds = [2, 3];
+      gs.actionHistory![0].timestamp += 100_000;
+      HorseLogic.decide(hero, gs, 'balanced', {}, {});
+      expect(HorseMind.getScopedStats('p-3', readScopeOf(variant, 2))?.pfr).toBe(1);
+    }
+  );
   it('names the card family and the table size', () => {
     expect(readScopeOf('nlh', 6)).toBe('holdem:full');
     expect(readScopeOf('plo6', 2)).toBe('omaha:hu');

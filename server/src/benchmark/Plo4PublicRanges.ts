@@ -4,8 +4,9 @@ import { plo4HandShape } from '../engine/plo4/Plo4PolicyPack.js';
 import { omahaNutStatus } from '../engine/HorseEval.js';
 import { referenceDeck, cardKey } from './OmahaReference.js';
 import type { OmahaRange } from './OmahaEquityOracle.js';
+import { horsePolicyDealtPlayers } from '../engine/multiway/DealtSeatCensus.js';
 
-/** Fixed-size heuristic priors conditioned on each player's own public line.
+/** Bounded heuristic priors from 64 fixed draws, conditioned on each public line.
  * These are neither known hole cards nor calibrated solver ranges. Folded seats
  * remain sampled for dead-card removal. One joint deck is enforced by the oracle.
  */
@@ -17,7 +18,9 @@ export function plo4PublicRanges(
   const seen = new Set([...hero.cards, ...state.communityCards].map(cardKey));
   const available = referenceDeck().filter((c) => !seen.has(cardKey(c)));
   const ranges: Record<string, OmahaRange> = {};
-  for (const p of state.players.filter((p) => p.user_id !== hero.user_id && !p.is_sitting_out)) {
+  for (const p of horsePolicyDealtPlayers(state.players, hero.seat, state.dealtSeatIds).filter(
+    (p) => p.user_id !== hero.user_id
+  )) {
     let rng = seed >>> 0;
     for (const c of p.user_id) rng = Math.imul(rng ^ c.charCodeAt(0), 16777619) >>> 0;
     if (!rng) rng = 1;
@@ -28,8 +31,15 @@ export function plo4PublicRanges(
       return rng >>> 0;
     };
     const line = (state.actionHistory ?? []).filter((a) => a.userId === p.user_id);
-    const raises = line.filter((a) => ['raise', 'bet', 'all_in'].includes(a.action)).length;
-    const calls = line.filter((a) => a.action === 'call').length;
+    const raises = line.filter(
+      (a) =>
+        a.action === 'raise' ||
+        a.action === 'bet' ||
+        (a.action === 'all_in' && a.isFullRaise !== undefined)
+    ).length;
+    const calls = line.filter(
+      (a) => a.action === 'call' || (a.action === 'all_in' && a.isFullRaise === undefined)
+    ).length;
     const combos = Array.from({ length: 64 }, () => {
       const deck = available.slice();
       const cards = Array.from({ length: 4 }, () => deck.splice(next() % deck.length, 1)[0]);
@@ -46,7 +56,16 @@ export function plo4PublicRanges(
         ),
       };
     });
-    ranges[p.user_id] = { combos };
+    // The oracle admits each physical holding once. Coalescing repeated draws
+    // preserves their entire prior mass without extra draws or a changed budget.
+    const unique = new Map<string, (typeof combos)[number]>();
+    for (const combo of combos) {
+      const key = combo.cards.map(cardKey).sort().join('|');
+      const previous = unique.get(key);
+      if (previous) previous.weight += combo.weight;
+      else unique.set(key, combo);
+    }
+    ranges[p.user_id] = { combos: [...unique.values()] };
   }
   return ranges;
 }

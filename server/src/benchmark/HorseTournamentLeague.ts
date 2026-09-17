@@ -11,6 +11,7 @@ import {
   deepOnePairCommitment,
   PHASE8_POLICY,
   type Phase8Mode,
+  type HorseTournamentPostflopLedger,
 } from '../engine/HorseTournamentPostflop.js';
 import type { Card, HandEvent, SeatPlayer, Winner, PerPotAward } from '../types.js';
 
@@ -53,7 +54,57 @@ export interface TournamentLeagueRequest {
   candidateMode?: Phase8Mode;
   evidenceMode?: 'fixture' | 'promotion';
 }
-export interface TournamentLeagueResult {
+export const MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS = 256;
+export interface TournamentCompletionDiagnostic {
+  street: string;
+  localPlayers: number;
+  fieldPlayers: number;
+  completed: boolean;
+  reason: string;
+  latencyMs: number;
+  work: HorseTournamentPostflopLedger['work'];
+}
+export interface TournamentCompletionCounts {
+  completionSchemaVersion: 1;
+  completed: number;
+  completionRefusals: Record<string, number>;
+  completionDiagnostics: TournamentCompletionDiagnostic[];
+  completionDiagnosticsDropped: number;
+}
+export function emptyTournamentCompletionCounts(): TournamentCompletionCounts {
+  return {
+    completionSchemaVersion: 1,
+    completed: 0,
+    completionRefusals: {},
+    completionDiagnostics: [],
+    completionDiagnosticsDropped: 0,
+  };
+}
+/** Called only after HorseLogic has returned its final, legalized ledger. */
+export function recordTournamentCompletion(
+  target: TournamentCompletionCounts,
+  layer: HorseTournamentPostflopLedger,
+  state: Pick<HorseGameStateV2, 'stage' | 'players' | 'tournament'>
+): void {
+  if (!layer.eligible) return;
+  if (layer.completed) target.completed++;
+  else target.completionRefusals[layer.reason] = (target.completionRefusals[layer.reason] ?? 0) + 1;
+  if (target.completionDiagnostics.length >= MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS) {
+    target.completionDiagnosticsDropped++;
+    return;
+  }
+  target.completionDiagnostics.push({
+    street: state.stage,
+    localPlayers: state.players.length,
+    fieldPlayers: state.tournament?.playersLeft ?? 0,
+    completed: layer.completed,
+    reason: layer.reason,
+    latencyMs: layer.latencyMs,
+    work: { ...layer.work },
+  });
+}
+
+export interface TournamentLeagueResult extends TournamentCompletionCounts {
   version: typeof PHASE8_POLICY.version;
   candidateMode: Phase8Mode;
   evidenceMode: 'fixture' | 'promotion';
@@ -125,7 +176,7 @@ function seat(index: number, stack: number): SeatPlayer {
     is_sitting_out: false,
   };
 }
-interface Receipt {
+interface Receipt extends TournamentCompletionCounts {
   returned: number;
   chips: number;
   bounty: number;
@@ -169,6 +220,7 @@ async function playTournament(
   const prizePool = (objective === 'pko' || objective === 'mystery' ? 1000 : 2000) * count;
   const bountyPool = objective === 'pko' || objective === 'mystery' ? count * 1000 : 0;
   const receipt: Receipt = {
+    ...emptyTournamentCompletionCounts(),
     returned: 0,
     chips: 0,
     bounty: 0,
@@ -391,6 +443,7 @@ async function playTournament(
       receipt.decisions++;
       const layer = decision.tournamentPostflop;
       if (layer) {
+        recordTournamentCompletion(receipt, layer, gs);
         receipt.eligible += Number(layer.eligible);
         receipt.fired += Number(layer.fired);
         receipt.changed += Number(layer.applied);
@@ -525,6 +578,7 @@ export async function runTournamentLeague(
   const started = performance.now();
   const saved = saveFastRandom();
   const result: TournamentLeagueResult = {
+    ...emptyTournamentCompletionCounts(),
     version: PHASE8_POLICY.version,
     candidateMode: request.candidateMode ?? 'candidate',
     evidenceMode: request.evidenceMode ?? 'fixture',
@@ -595,6 +649,15 @@ export async function runTournamentLeague(
       result.decisions += a.decisions + b.decisions;
       result.eligible += a.eligible;
       result.fired += a.fired;
+      result.completed += a.completed;
+      for (const [reason, count] of Object.entries(a.completionRefusals))
+        result.completionRefusals[reason] = (result.completionRefusals[reason] ?? 0) + count;
+      const availableRows =
+        MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS - result.completionDiagnostics.length;
+      result.completionDiagnostics.push(...a.completionDiagnostics.slice(0, availableRows));
+      result.completionDiagnosticsDropped +=
+        a.completionDiagnosticsDropped +
+        Math.max(0, a.completionDiagnostics.length - availableRows);
       result.changed += a.changed;
       result.candidateDeepOnePairCommitments += a.deep;
       result.baselineDeepOnePairCommitments += b.deep;
@@ -668,7 +731,11 @@ export function tournamentRunCanPromote(r: TournamentLeagueResult): boolean {
         Math.abs(v - pairedConfidence99(r.meanDifference, r.standardError, r.pairs)[i]) < 1e-8
     ) &&
     r.eligible >= r.fired &&
-    r.fired >= r.changed &&
+    r.completionSchemaVersion === 1 &&
+    r.fired >= r.completed &&
+    r.completed >= r.changed &&
+    r.completed + Object.values(r.completionRefusals).reduce((sum, count) => sum + count, 0) ===
+      r.eligible &&
     r.decisions >= r.eligible &&
     Math.abs(r.meanDifference - r.candidateReturn + r.baselineReturn) < 1e-8 &&
     r.candidateFinish.reduce((s, v) => s + v, 0) === r.pairs &&
@@ -726,6 +793,11 @@ export function tournamentBaselineRunVerified(run: TournamentLeagueResult): bool
     run.pairs === run.requestedPairs &&
     run.eligible > 0 &&
     run.fired > 0 &&
+    run.completionSchemaVersion === 1 &&
+    run.completed > 0 &&
+    run.completed <= run.fired &&
+    run.completed + Object.values(run.completionRefusals).reduce((sum, count) => sum + count, 0) ===
+      run.eligible &&
     run.illegalActions === 0 &&
     run.conservationErrors === 0 &&
     run.truncatedHands === 0 &&

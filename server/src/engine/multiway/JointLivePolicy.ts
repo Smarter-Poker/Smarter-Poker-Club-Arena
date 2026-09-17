@@ -4,16 +4,20 @@ import { maxSeatsForVariant } from '../../config/tableSeating.js';
 import { horseVariantRulesFor, isKnownVariant, maxSeatsFor } from '../VariantRules.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
+import { REMAINING_VARIANT_DOMAIN } from '../remainingVariants/RemainingVariantPolicyPack.js';
 import { validateDealtSeatCensus } from './DealtSeatCensus.js';
 import { sampleJointRanges, type JointRangeSamples } from './JointRangeSampler.js';
 import { evaluateJointActions } from './JointActionModel.js';
 import { prepareJointPots, jointPotDistribution } from './JointPotDistribution.js';
 
 export const JOINT_LIVE_DOMAIN = Object.freeze({
-  version: 'joint-multiway-round1-v1',
+  version: 'joint-multiway-round1-v3',
   defaultMode: 'shadow',
   calibratedConfidence: null,
   maxStackBB: 250,
+  // Match the Phase 12 fixed-limit domain. Fixed wager bounds control each
+  // candidate's exposure even when the table permits a 1000 BB starting stack.
+  fixedLimitMaxStackBB: REMAINING_VARIANT_DOMAIN.fixedLimitMaxStackBB,
   maxActions: 256,
   defaultSamples: 16,
   fullSampleMaxDealtPlayers: 4,
@@ -223,11 +227,13 @@ export function evaluateJointLivePolicy(
     return finish('invalid_chip_geometry');
   if (
     Math.min(
-      hero.stack,
+      hero.stack + hero.bet,
       Math.max(...contenders.filter((p) => p.user_id !== hero.user_id).map((p) => p.stack + p.bet))
     ) /
       s.bigBlind >
-    JOINT_LIVE_DOMAIN.maxStackBB
+    (s.bettingStructure === 'fixed_limit'
+      ? JOINT_LIVE_DOMAIN.fixedLimitMaxStackBB
+      : JOINT_LIVE_DOMAIN.maxStackBB)
   )
     return finish('depth_outside_domain');
   if ((s.actionHistory?.length ?? 0) > JOINT_LIVE_DOMAIN.maxActions)

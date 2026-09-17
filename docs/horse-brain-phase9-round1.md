@@ -30,9 +30,13 @@ Reference and equity calls are local analysis, outside the live decision clock.
 This round also repairs a reproduced controller defect: tournament pots must
 split across boards in whole chips before their high/low and tied winner
 allocations. Cash keeps cent units. The split respects the configured indivisible
-asset, but the existing Diamond cash restriction to plain NLH remains enforced;
-this work does not enable Diamond Omaha. This changes settlement arithmetic,
-not strategy, and has no database or release-infrastructure changes.
+asset. Current source admission includes all five Omaha variants in Diamond
+cash and compatible tournament tables. The table loader separately requires
+the corresponding arena cash/tournament switch to be enabled; this phase's
+local tests do not establish an installed switch, a live table or publication.
+The original September 11 plain-NLH-only note described an earlier boundary
+and no longer describes current source. This phase changes settlement
+arithmetic, not strategy, and has no database or release-infrastructure changes.
 
 ## Functional gate
 
@@ -56,6 +60,25 @@ and the server TypeScript build passed. The new 47 assertions/tests include
 independent scoring and settlement comparisons, weighted joint ranges, CLI
 batch behavior, tournament/cash allocation and the Diamond capability boundary.
 This establishes local basic functionality. Publication is a separate status.
+
+The September 14 source backfill extends the independent multi-board controller
+matrix to PLO5/PLO6 with their actual five/six-card deals, including the full
+cash seat ceilings, folded money, short all-ins, side pots, refunds and both
+cent/whole units. Direct maximum-seat PLO4/FLO8 oracle fixtures use literal
+economic expectations for a unique royal and a separately constructed high/low
+split. These are bounded local fixtures; the injected settled-state comparisons
+do not prove the prior betting trajectory or natural live Horse usage. Actual
+The regular `Phase9OmahaRitIndependent.test.ts` suite now compares the actual
+RIT consent, deck/runout, refunds, pots, high/low awards and completion with the
+independent reference in 60 cases: all five variants × standing board prefixes
+0/3/4 × two/three runs × cent/whole-Diamond cash. Another 20 cases verify the
+actual configuration refuses tournament and two-seat RIT. The related 127-test
+batch and TypeScript check pass. The balanced all-in contribution state remains
+injected after legally reaching the standing street; this is not proof of the
+prior betting trajectory. Full-seat, nonzero rake/BBJ, event-to-offer dispatch,
+UI transport, persisted history, worker usage and installed switch/natural-use
+proof remain open. The oracle's one-billion-unit per-player contribution ceiling
+also remains explicit; these bounded cases do not expand that domain.
 
 ## Running the basic evaluator
 

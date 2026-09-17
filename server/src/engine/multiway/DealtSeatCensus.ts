@@ -1,5 +1,23 @@
 import type { SeatPlayer } from '../../types.js';
 
+/** Shared variant-policy roster. Live callers provide the canonical census;
+ * older offline fixtures may supply only their complete dealt player list.
+ * A seat sitting out after the deal remains in the ring, while an explicitly
+ * undealt spectator must not affect positions, rake or unknown-card counts.
+ */
+export function horsePolicyDealtPlayers(
+  players: readonly SeatPlayer[],
+  heroSeat: number,
+  ids?: unknown
+): SeatPlayer[] {
+  const dealt = validateDealtSeatCensus(
+    players,
+    heroSeat,
+    ids === undefined ? players.map((p) => p.seat) : ids
+  );
+  return players.filter((p) => dealt.includes(p.seat));
+}
+
 /** Dealt identities are public; their card faces never enter this boundary.
  * Refuse incomplete or contradictory canonical censuses. */
 export function validateDealtSeatCensus(

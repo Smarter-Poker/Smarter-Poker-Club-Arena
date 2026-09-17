@@ -8,6 +8,7 @@ import {
   gtoPostflopV31Count,
   gtoPostflopV31Dataset,
   gtoPostflopV31EvaluationCount,
+  gtoV31CellMatrix,
   gtoStreetAdviceV31,
   replaceGtoPostflopV31,
   replaceGtoPostflopV31Evaluation,
@@ -138,6 +139,46 @@ describe('V31 board-relative suit identity', () => {
 });
 
 describe('V31 certification and lookup', () => {
+  it('keeps sealed policy bytes immutable through live, derived and candidate consumers', () => {
+    for (const candidate of [false, true]) {
+      const row = structuredClone(CELL);
+      if (candidate) {
+        row.dataset_state = 'evaluating';
+        replaceGtoPostflopV31Evaluation([row]);
+      } else replaceGtoPostflopV31([row]);
+      const selector = candidate ? { datasetChecksum: row.dataset_checksum } : {};
+      const result = lookup(selector);
+      expect(result.hit).toBe(true);
+      if (!result.hit) throw new Error('expected sealed fixture');
+      const before = structuredClone(result);
+      Reflect.set(result.mix, 'c', 99);
+      Reflect.set(result.actions.b262, 'size_value', 99);
+      Reflect.set(result.actionEvsBb!, 'c', 99);
+      Reflect.set(result.sourceSeal, 'dataset_checksum', 'f'.repeat(64));
+      expect(lookup(selector)).toEqual(before);
+      if (!candidate) {
+        const matrix = gtoV31CellMatrix({
+          street: 'turn',
+          family: 'cash',
+          objective: 'cash_ev',
+          utilityContext: 'cash_ev',
+          tableSize: 2,
+          potType: 'limped',
+          heroPosition: 'SB',
+          opponentPosition: 'BB',
+          stackBB: 80,
+          texture: 'Brud',
+          nodeRole: 'barrel',
+        });
+        expect(matrix).not.toBeNull();
+        Reflect.set(matrix!['AKs:00'], 'c', 99);
+        expect(lookup()).toEqual(before);
+      }
+      // Caller-owned input must remain mutable without modifying either store.
+      row.hand_matrix['AKs:00'].c = 42;
+      expect(lookup(selector)).toEqual(before);
+    }
+  });
   it('loads one sealed active dataset and surfaces EV lineage', () => {
     expect(replaceGtoPostflopV31([CELL])).toBe(1);
     expect(gtoPostflopV31Count()).toBe(1);

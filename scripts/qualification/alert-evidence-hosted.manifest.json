@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "status": "PROPOSAL_UNRUN_UNINSTALLED",
+  "sourceRef": "cce31a586e6bed94fb7e0c58352ab5fca0a2feb6",
+  "scope": [
+    "duplicate structure record evidence",
+    "rake repair record wording",
+    "Spin repair provenance"
+  ],
+  "composedBridge": {
+    "md5": "00a43ae03ab12cec9505e2bfed71d937",
+    "sha256": "fab59ed398da15963ed5a1b2924adfdee34f87b3cd547893205a7f6d5725ce54"
+  },
+  "files": {
+    "scripts/ci/test-alert-evidence-postgres.py": {
+      "sha256": "9b4ee222d0e8667d1667a0cbf0438da5aeb3fc575d64dd3cd528c0e827690b16",
+      "bytes": 15634
+    },
+    "scripts/ci/test_alert_evidence_wrapper.py": {
+      "sha256": "bc4ccda5e06c7376063a0ebf6a072b5b3dd3d0cbc81fbde9b1ad5f63ee3244ce",
+      "bytes": 3338
+    },
+    "scripts/qualification/duplicate-structure-record-evidence.manifest.json": {
+      "sha256": "fc2095a5728c2bca0991e922b54e6dbdba6265cc898bc41811ca62fb8a07bfe3",
+      "bytes": 5048
+    },
+    "scripts/qualification/duplicate-structure-record-evidence.md": {
+      "sha256": "abf561e9533ec363b8711e3d6717e72b378a670a641d3d517c2846b7a023c806",
+      "bytes": 13621
+    },
+    "scripts/qualification/duplicate-structure-record-evidence.sql": {
+      "sha256": "82067498b0d8e766c7e8cf9529227c80f7820248aaba294c78ddc96199c5bca9",
+      "bytes": 23122
+    },
+    "scripts/qualification/fixtures/duplicate-structure-record-evidence/original-40430.sql": {
+      "sha256": "66436a3d84ed73e48b540b4cb14d4ad8a3599e75bf1a9387d00ab0bfde2dfa08",
+      "bytes": 33530
+    },
+    "scripts/qualification/fixtures/duplicate-structure-record-evidence/preimage.sql": {
+      "sha256": "a51dc7ca8816bb0c1190b761746300454fe0db8b684bb45cc12c8131140bf4a8",
+      "bytes": 2814
+    },
+    "scripts/qualification/fixtures/rake-repair-record-evidence/images.json": {
+      "sha256": "f7d9753d7ef124e98e567e62976e6f2550270e1f91c4c62c6e2bece6011481cd",
+      "bytes": 21222
+    },
+    "scripts/qualification/fixtures/rake-repair-record-evidence/setup.sql": {
+      "sha256": "3d683404be95334a8c7aa97087c236bee6a642e06bff350eaf0d4bc3ac59ebd4",
+      "bytes": 71252
+    },
+    "scripts/qualification/fixtures/spin-repair-evidence/original-40497-40499.sql": {
+      "sha256": "04fd0a12802df3979a7d931cde15027b5a2a0f335a86690243659492dd84cd7f",
+      "bytes": 29749
+    },
+    "scripts/qualification/fixtures/spin-repair-evidence/original-bridge.sql": {
+      "sha256": "ff502ee4e70051c012f7eb1d5051db670a0dd8512748db0822c43e6db4657593",
+      "bytes": 6474
+    },
+    "scripts/qualification/fixtures/spin-repair-evidence/preimage.sql": {
+      "sha256": "a881f4d209efa9eb4b4ce82b81c2e1e5b348db18243ed97dc11d872dd49436ae",
+      "bytes": 18490
+    },
+    "scripts/qualification/rake-repair-record-evidence.manifest.json": {
+      "sha256": "d1819ef80b6022b4dc85b4797bc7b69aa7aa86425f05e159ca1f17d245a8ffc6",
+      "bytes": 5971
+    },
+    "scripts/qualification/rake-repair-record-evidence.md": {
+      "sha256": "14abb88f163bf8850fdb15791ab4dbfe563e6939a67875a2c656fbb5fce5e73f",
+      "bytes": 7751
+    },
+    "scripts/qualification/rake-repair-record-evidence.sql": {
+      "sha256": "f39ee7cfcb61d3c10f2b0c23ac43e9307e185c9ad882f4ae9d42600220b7bb89",
+      "bytes": 19942
+    },
+    "scripts/qualification/spin-repair-evidence-race.spec": {
+      "sha256": "2940c9940bd04b5baee07cf8fa7523bf7d21e8694afd353398d8f8e776b74dab",
+      "bytes": 66434
+    },
+    "scripts/qualification/spin-repair-evidence.manifest.json": {
+      "sha256": "c521a2d97c5a83be3425c0bde95e959d9e80f9ab43e94432f6068415a73b9718",
+      "bytes": 10737
+    },
+    "scripts/qualification/spin-repair-evidence.md": {
+      "sha256": "d78eb2da3781e26d69f460fdf44f7693c5d417a8cfb6a8e2f47e569c82d6c136",
+      "bytes": 12762
+    },
+    "scripts/qualification/spin-repair-evidence.sql": {
+      "sha256": "3d5e09cedf03ae34788c4082bc88faf1ec620206e837386cf39bc358a5e31293",
+      "bytes": 23605
+    },
+    "supabase/components/duplicate-structure-record-evidence.rollback.sql": {
+      "sha256": "f308689bd62f98b9aa4aba7bd5a79cd6527a890458cabdff4e49232b6a61213f",
+      "bytes": 6298
+    },
+    "supabase/components/duplicate-structure-record-evidence.sql": {
+      "sha256": "fcb25b510a1540b499a576c0261d4c95b0ff11a44f23e434b4e9694e088a3d70",
+      "bytes": 11636
+    },
+    "supabase/components/rake-repair-record-evidence-rollback.sql": {
+      "sha256": "5c20d247c575f413c52c86cf787d17392210c252e828a935abe0e38d3bcde300",
+      "bytes": 6385
+    },
+    "supabase/components/rake-repair-record-evidence.sql": {
+      "sha256": "f1c07e2c36526bef4456047f1922ca49b7802ceb02d7322782c995238cc16c0b",
+      "bytes": 6385
+    },
+    "supabase/components/spin-repair-evidence.rollback.sql": {
+      "sha256": "79bccf86792b09ee4ee3e3cf4bfe4348650db59c783fdb322d13b493b964796b",
+      "bytes": 21663
+    },
+    "supabase/components/spin-repair-evidence.sql": {
+      "sha256": "11ccdb651a8dd91ac641a65904bcc0b6d8beb35584a592bd8ebec3ea0f365a8f",
+      "bytes": 21668
+    },
+    "scripts/ci/build_pg17_isolationtester.py": {
+      "sha256": "df9e8db08e7fcbd4e18f3c878a0f5fd05efb160777a70ff48e2348efee484317",
+      "bytes": 7129
+    }
+  },
+  "limitations": [
+    "Model fixture only: not real banking or full financial trigger chain",
+    "Spin race must use native isolationtester, never serial psql",
+    "Aggregate core installation and real routing qualifier belong to separately reviewed core packet",
+    "No production execution or native qualification claimed"
+  ],
+  "nativeIsolationTool": {
+    "version": "17.11",
+    "serverVersionNum": 170011,
+    "sourceUrl": "https://ftp.postgresql.org/pub/source/v17.11/postgresql-17.11.tar.bz2",
+    "sourceSha256": "dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979",
+    "path": "artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester",
+    "provisioning": "scripts/ci/build_pg17_isolationtester.py",
+    "execution": "unrun proposal; existing accounting_postgres only"
+  }
+}

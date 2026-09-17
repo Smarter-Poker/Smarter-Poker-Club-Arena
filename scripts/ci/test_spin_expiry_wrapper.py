@@ -58,7 +58,7 @@ def receipt(image='candidate'):
             argv = [sys.executable, str(source / 'scripts/qualification/spin-expiry-business-races.py')]
             argv += common + ['--image', image, '--case', case,
                               '--output', str(source.parent / 'work' / W.CASE_RESULTS[case])]
-        stages.append({'stage': 'actual_business_' + case, 'returncode': 0, 'argv': argv})
+        stages.append({'stage': W.business_stage_name(case), 'returncode': 0, 'argv': argv})
         records.append({'case': case, 'execution': EXECUTION,
                         'case_identity': EXECUTION + ':' + str(ordinal) + ':' + case,
                         'state': 'passed', 'result_path': W.CASE_RESULTS[case],
@@ -725,6 +725,23 @@ class HostedLifecycleTests(unittest.TestCase):
             damaged=copy.deepcopy(records);damaged[-1][key]=value
             with self.subTest(key=key),self.assertRaises(RuntimeError):
                 W.validate_case_result('committed-refund',raw(damaged),EXECUTION,TOURNAMENT,'candidate')
+
+    def test_every_candidate_case_retains_its_exact_stage_logs(self):
+        value = receipt()
+        with tempfile.TemporaryDirectory() as folder:
+            work = Path(folder).resolve() / 'work'; work.mkdir(mode=0o700)
+            out = work.parent / 'out'; out.mkdir(mode=0o700)
+            (work / 'receipt.json').write_text(json.dumps(value))
+            for stage in value['stages']:
+                for suffix in ('.stdout', '.stderr'):
+                    (work / (stage['stage'] + suffix)).write_bytes(b'bounded case evidence')
+            for case in value['business_cases']:
+                (work / case['result_path']).write_bytes(b'original case result')
+            kept = W.retained_evidence(work, out, value, b'{}')
+            for stage in value['stages']:
+                for suffix in ('.stdout', '.stderr'):
+                    self.assertIn(stage['stage'] + suffix, kept)
+            self.assertIn('committed-refund.jsonl', kept)
 
     def test_evidence_never_exports_pgdata_private_home_or_unrelated_file(self):
         with tempfile.TemporaryDirectory() as folder:

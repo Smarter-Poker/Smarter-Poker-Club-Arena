@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "scope": "Class4 exact completed-hand resolver source, authentic authority, original states and actual isolation concurrency; no atomic writer or production/backlog qualification",
+  "fixtureFiles": {
+    "scripts/ci/probes/production-alert-core/notification/inputs/schema.sql": {
+      "sha256": "5a5966afca3b2c9699aba326baf5f32d6c0e1baa2ad09340feaa3b23f4d9dc0a",
+      "bytes": 2709616
+    },
+    "scripts/ci/probes/production-alert-core/notification/principals.sql": {
+      "sha256": "db3ea6ce908e1540b281b0e5ad4fbde30440c5d09557b3542029681d7445cabf",
+      "bytes": 1554
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/access.sql": {
+      "sha256": "ad2cb0ddc955bd97c9ef719e9106aad9f55be5cf034e014d04c90b3a1667c541",
+      "bytes": 786489
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/policies.sql": {
+      "sha256": "075254070c905c0bac70a9bc5a0b3e938b5262f0e1a186ee2a56127da0f77698",
+      "bytes": 46690
+    },
+    "scripts/ci/probes/production-alert-core/notification/provider-supplement.sql": {
+      "sha256": "f314167de1ba693305f878fa6d308ce119f3e28aaf51fbf94d71fac8fce4975c",
+      "bytes": 47886
+    },
+    "scripts/ci/probes/production-alert-core/notification/provider-roles.sql": {
+      "sha256": "632811a7dd5283283a9637fab4fdb1338c946017ddde2b2aa06cb6653ebca349",
+      "bytes": 1457
+    },
+    "scripts/ci/probes/production-alert-core/notification/provider-roles-check.sql": {
+      "sha256": "92db03bb138724e37c32293bea5cbf32fdadffcd2d9f512dac3b6f55c6f4e2f1",
+      "bytes": 2562
+    },
+    "scripts/ci/probes/production-alert-core/notification/provider-check.sql": {
+      "sha256": "e3ce21fc27a18a01c0d6fc1af08f0330d46309f2acb00cc47fa3df567ff6bf3e",
+      "bytes": 287784
+    },
+    "scripts/ci/probes/production-alert-core/notification/empty-provider-check.sql": {
+      "sha256": "f2dc7997a2b89194e0e837950f69fc6b269f30934896d658305cc21da14345c0",
+      "bytes": 1332
+    },
+    "scripts/ci/probes/production-alert-core/notification/readback.sql": {
+      "sha256": "be11b5f51e911be5a0cd6b8d885153a36d643ef3d2ab2cec6a4fbbf2fdbd50b6",
+      "bytes": 1833
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/owner-notification-catalog-postimage.sql": {
+      "sha256": "f9f350377e5778e9ff50fe0d5b55278ba9178bc2bea3dd06eb33929293bda1d8",
+      "bytes": 4355
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/linked-invoice-positive.sql": {
+      "sha256": "c5a91baed4f83550c4db4b982f41c619054ae80d793332191c4d033065a2fa22",
+      "bytes": 16559
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/captured-financial-store-policy.sql": {
+      "sha256": "0dca50689e9a86efa5c61aafeb134dc721ef1690d4ff6828481e2fa1de79238c",
+      "bytes": 835
+    }
+  },
+  "checkoutInputs": {
+    "isolation_builder": {
+      "path": "scripts/ci/build_pg17_isolationtester.py",
+      "bytes": 7129,
+      "sha256": "df9e8db08e7fcbd4e18f3c878a0f5fd05efb160777a70ff48e2348efee484317"
+    },
+    "core_supplement": {
+      "path": "scripts/ci/probes/production-alert-core/core-catalog-supplement.sql",
+      "bytes": 16994,
+      "sha256": "cdb4cabb5d1aac6c94daac577650f99e203ff956bfe685b3ed6db26846d9e594"
+    },
+    "core_component": {
+      "path": "supabase/components/production-alert-identity-and-rake-wording.sql",
+      "bytes": 54390,
+      "sha256": "6622531f15dc53dc532dcba4d7441f5907be06be62decca528baf8d94a235710"
+    },
+    "core_rollback": {
+      "path": "supabase/components/production-alert-identity-and-rake-wording.rollback.sql",
+      "bytes": 54389,
+      "sha256": "5eede0ab3f1214294735dbbd2a97ddedb102c2c3a45c88b4adfd4de016d4612a"
+    },
+    "catalog_supplement": {
+      "path": "scripts/ci/probes/class4-hand-outcome/catalog-supplement.sql",
+      "bytes": 77653,
+      "sha256": "8779594ecd8e3730592da0edf459b5b50ffae133ce58980fed1277ef2524ea3f"
+    },
+    "captured_functions": {
+      "path": "scripts/ci/probes/class4-hand-outcome/captured-functions.json",
+      "bytes": 72893,
+      "sha256": "ee322296a08d61796b2792bbf754d2e1a9681741c11bb5d785701cf6d8394ac7"
+    },
+    "readback": {
+      "path": "scripts/ci/probes/class4-hand-outcome/readback.sql",
+      "bytes": 2042,
+      "sha256": "6fb08324937b9f24d5b324934a04ed76abdb0c1820212d9fad0273dede6df7b6"
+    },
+    "class4_component": {
+      "path": "supabase/components/class4-hand-outcome-evidence.sql",
+      "bytes": 35166,
+      "sha256": "16159e2f2d246a035c830302c95cdd520c91365eab6e7fe5ed925dd355235256"
+    },
+    "class4_rollback": {
+      "path": "supabase/components/class4-hand-outcome-evidence.rollback.sql",
+      "bytes": 35165,
+      "sha256": "1e3db5177c1fdb3872248150769a6576bcff6cc68f4983fde0c126ea00dae8a8"
+    },
+    "class4_primary": {
+      "path": "scripts/qualification/class4-hand-outcome-evidence.sql",
+      "bytes": 14262,
+      "sha256": "7193b2cc5a30ca8c8db548228343f136fada754d9c614cd3f9518153f1c8ea46"
+    },
+    "class4_drift": {
+      "path": "scripts/qualification/class4-hand-outcome-evidence.drift.sql",
+      "bytes": 2458,
+      "sha256": "c449f0143c47471b65241dc81e2d74d57095f003b1ce6ebefda080d84e261a84"
+    },
+    "class4_concurrency": {
+      "path": "scripts/qualification/class4-hand-outcome-evidence.concurrency.spec",
+      "bytes": 4788,
+      "sha256": "50658f4bbaf3400cf174def1983b73062cd009512ad8ce1ff83385424c6bc4e2"
+    },
+    "class4_preimage": {
+      "path": "scripts/qualification/fixtures/class4-hand-outcome-evidence.preimage.sql",
+      "bytes": 6664,
+      "sha256": "34eaef788bbaa4182b41b36a95e62c6acde727d9d5b045203b0a3a66eac7289a"
+    },
+    "class4_candidate": {
+      "path": "scripts/qualification/fixtures/class4-hand-outcome-evidence.candidate.sql",
+      "bytes": 12579,
+      "sha256": "2a9e08ee16ec1bf87bd3719b0205055ff1b5455bc5ee918b61dc36563d626ead"
+    },
+    "class4_originals": {
+      "path": "scripts/qualification/fixtures/class4-hand-outcome-evidence.originals.sql",
+      "bytes": 2279,
+      "sha256": "16e940682626c3259da3c05ae7360feb09067549def40dda52a86730ec5c1d37"
+    }
+  },
+  "sequenceContract": {
+    "type": "bigint",
+    "start": "1",
+    "increment": "1",
+    "minimum": "1",
+    "maximum": "9223372036854775807",
+    "cache": "1",
+    "cycle": false
+  },
+  "tool": {
+    "sourceVersion": "17.11",
+    "sourceSha256": "dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979",
+    "path": "artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester"
+  },
+  "fixtureAuthorityDelta": "postgres may SET session_replication_role for original declared synthetic seed; no grant to service_role/authenticated/anon",
+  "provenance": {
+    "coreManifestSha256": "81f4b63287361d12e59a71adccbf2765a3dbdf8784116d19e019a6f797f9ebf3",
+    "liveFunctionsSha256": "46229e0ae65fb6e32f996e33ea2e3e71dc98eaa2fcfad83cab91c2efc86ca57e",
+    "liveRelationsSha256": "4dd182e02d3bd1c4bc062002f3a7c49b0d80429a9f7307f1131eeb3b121b4842"
+  }
+}

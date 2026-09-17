@@ -353,6 +353,11 @@ def validate_case_result(case, raw, execution, tournament, image):
                 'original order/timeout result lacks exact required evidence')
 
 
+def business_stage_name(case):
+    require(case in CASE_RESULTS, 'unknown business case')
+    return 'actual_business_' + case.replace('-', '_')
+
+
 def retained_evidence(work, output, receipt, source_manifest):
     # Exact allowlist: no PGDATA, homes, passwords, arbitrary worktrees or env.
     names = {'receipt.json', 'postgres.log'} | set(CASE_RESULTS.values())
@@ -566,7 +571,7 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                 command_args += [str(ROOT / 'scripts/qualification/spin-expiry-business-races.py')]
                 command_args += common + ['--image', args.image, '--case', case,
                                           '--output', str(result_path)]
-            command('actual_business_' + case, command_args, timeout=30)
+            command(business_stage_name(case), command_args, timeout=30)
             validate_case_result(case, result_path.read_bytes(), args.execution, args.tournament, args.image)
             case_record.update(state='passed', result_sha256=hashlib.sha256(result_path.read_bytes()).hexdigest(),
                                result_path=str(result_path.relative_to(work)))
@@ -648,7 +653,7 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
             'server endpoint readback identity or outcome differs')
     catalog = ['spin_catalog_before', 'spin_catalog_rollback_qualification', 'spin_catalog_after']
     expected = (catalog + ['install_candidate'] if image == 'candidate' else []) + ['real_funded_paid_seat_fixture']
-    expected += ['actual_business_' + case for case in CASES[image]]
+    expected += [business_stage_name(case) for case in CASES[image]]
     require(all(names.count(name) == 1 for name in expected)
             and [names.index(name) for name in expected] == sorted(names.index(name) for name in expected),
             'original phase sequence absent or repeated')
@@ -663,7 +668,7 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
         require(isinstance(before, str) and re.fullmatch(r'[0-9a-f]{64}', before) and before == after,
                 'original catalog observer bytes changed or missing')
     require([name for name in names if isinstance(name, str) and name.startswith('actual_business_')]
-            == ['actual_business_' + case for case in CASES[image]], 'unexpected or reordered business invocation')
+            == [business_stage_name(case) for case in CASES[image]], 'unexpected or reordered business invocation')
     sql_inputs = {
         'spin_catalog_before': 'spin-catalog-observer.sql',
         'spin_catalog_rollback_qualification': 'scripts/qualification/spin-expiry-lock-order.sql',
@@ -697,7 +702,7 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
         else:
             argv = [sys.executable, str(source / 'scripts/qualification/spin-expiry-business-races.py')]
             argv += common + ['--image', image, '--case', case, '--output', str(work / CASE_RESULTS[case])]
-        require(stages[names.index('actual_business_' + case)]['argv'] == argv,
+        require(stages[names.index(business_stage_name(case))]['argv'] == argv,
                 'original business case invocation differs')
     return cases
 

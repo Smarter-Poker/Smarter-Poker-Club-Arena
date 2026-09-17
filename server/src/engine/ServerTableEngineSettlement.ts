@@ -1829,6 +1829,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 error: describeError(err),
                 attempts,
                 retry_budget: budget,
+                ...(stepName === 'hand_history'
+                  ? { hand_request_identity_v1: handRequestIdentity }
+                  : {}),
                 ...(failureEvidence ? { leave_pending_diagnostic_v1: failureEvidence } : {}),
               }
             );
@@ -1993,6 +1996,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     let authoritativeCommitSucceeded = false;
     const settlementLeaseAuthority = this.getEngineLeaseAuthority();
     const durablePostCommitObligations = settlementLeaseAuthority?.verified === true;
+    // Identity of this request, not a claim that it committed or rolled back.
+    // Preserve the same UUID in both failure reports so later table progress
+    // cannot stand in for this hand's canonical completion receipt.
+    const handRequestIdentity = Object.freeze({
+      version: 1,
+      table_id: this.tableId,
+      hand_number: snap.handNumber,
+      hand_id: v_handId,
+      post_commit_required: durablePostCommitObligations,
+    });
     const isDiamondCash = this.tableInfo?.arena?.asset === 'diamonds';
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
@@ -2470,7 +2483,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               semantic
                 ? `Table ${this.tableId} hand #${snap.handNumber} was refused by the atomic settlement contract; this engine generation was terminated before every downstream money step`
                 : `Table ${this.tableId} hand #${snap.handNumber} exhausted the bounded identical settlement replay; this engine generation was terminated with the same hand behind its causal barrier`,
-              { table_id: this.tableId, hand_number: snap.handNumber, error: message }
+              {
+                table_id: this.tableId,
+                hand_number: snap.handNumber,
+                error: message,
+                ...(semantic ? { hand_request_identity_v1: handRequestIdentity } : {}),
+              }
             );
           } catch (alertError) {
             reportError(alertError, `${alertCode}.alert_failed`, {

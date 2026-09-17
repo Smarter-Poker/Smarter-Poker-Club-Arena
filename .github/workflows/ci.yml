@@ -1107,7 +1107,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -x /usr/lib/postgresql/17/bin/initdb ]]; then exit 0; fi
+          pg_ci_build_tools_ready=true
+          for pg_ci_tool in cc make bison flex perl tar bzip2; do
+            if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
+          done
+          if [[ -x /usr/lib/postgresql/17/bin/initdb && "$pg_ci_build_tools_ready" == true ]]; then exit 0; fi
           # The hosted image also configures Chrome and Microsoft repositories.
           # An unrelated Chrome index hash mismatch blocked this accounting job.
           # Limit this installation to signed Ubuntu and PostgreSQL sources.
@@ -1127,7 +1131,23 @@ jobs:
             "$pg_ci_codename" > "$pg_ci_sources/pgdg.sources"
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 build-essential bison flex perl bzip2
+      - name: Build the matching native PostgreSQL isolation test tool
+        id: pg17_isolation_tool
+        timeout-minutes: 6
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/build_pg17_isolationtester.py
+      - name: Retain PostgreSQL isolation tool build evidence
+        if: always() && steps.pg17_isolation_tool.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg17-isolation-tool-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/postgresql-17-isolationtester/*.log
+            artifacts/postgresql-17-isolationtester/receipt.json
+          retention-days: 7
+          if-no-files-found: error
       - name: BBJ bank replay identity and drift-safe installation
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1185,6 +1205,33 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution
+
+      - name: Check composed alert fixture admission and cleanup guards
+        run: python3 scripts/ci/test_production_alert_core_postgres.py
+
+      - name: Qualify composed alert identity and wording through the real inbox
+        id: production_alert_core
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-production-alert-core-postgres.py --output artifacts/production-alerts-sql/core
+
+      - name: Check native evidence race transcript controls
+        run: python3 -m unittest discover -s scripts/ci -p test_alert_evidence_wrapper.py
+
+      - name: Duplicate, rake and Spin evidence retain original financial outcomes
+        id: alert_evidence_postgres
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: python3 scripts/ci/test-alert-evidence-postgres.py --output artifacts/production-alerts-sql/evidence
+
+      - name: Class4 wrapper and actual PostgreSQL hand outcome evidence
+        id: class4_hand_outcome
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -m unittest discover -s scripts/ci -p test_class4_hand_outcome_postgres.py
+          python3 scripts/ci/test-class4-hand-outcome-postgres.py --output artifacts/production-alerts-sql/class4
 
       - name: Retain production alert SQL qualification evidence
         if: always() && steps.hand_index_writer_order.outcome != 'skipped'

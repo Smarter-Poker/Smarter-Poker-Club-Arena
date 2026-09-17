@@ -1,0 +1,153 @@
+{
+  "status": "SOURCE_REVIEWED_LOCAL_COMMIT_NATIVE_UNRUN_UNINSTALLED",
+  "implementation_base": "b5ff6bd3ad8ead65f8bd621382ed712aec1ace8f",
+  "observed_aggregate_head_at_handoff": "f5bf98733289a9b11697557b61ea3cf764073ea6",
+  "branch": "fix/rake-alert-evidence-wording",
+  "mode": "EXACT_CURRENT_TARGET_AND_DEPENDENCY_ONLY_COMPOSITION_UNQUALIFIED",
+  "runtime_changes": 1,
+  "source_files": [
+    {
+      "path": "supabase/components/rake-repair-record-evidence.sql",
+      "sha256": "f1c07e2c36526bef4456047f1922ca49b7802ceb02d7322782c995238cc16c0b",
+      "bytes": 6385
+    },
+    {
+      "path": "supabase/components/rake-repair-record-evidence-rollback.sql",
+      "sha256": "5c20d247c575f413c52c86cf787d17392210c252e828a935abe0e38d3bcde300",
+      "bytes": 6385
+    },
+    {
+      "path": "scripts/qualification/rake-repair-record-evidence.sql",
+      "sha256": "f39ee7cfcb61d3c10f2b0c23ac43e9307e185c9ad882f4ae9d42600220b7bb89",
+      "bytes": 19942
+    },
+    {
+      "path": "scripts/qualification/rake-repair-record-evidence.md",
+      "sha256": "14abb88f163bf8850fdb15791ab4dbfe563e6939a67875a2c656fbb5fce5e73f",
+      "bytes": 7751
+    },
+    {
+      "path": "scripts/qualification/fixtures/rake-repair-record-evidence/setup.sql",
+      "sha256": "3d683404be95334a8c7aa97087c236bee6a642e06bff350eaf0d4bc3ac59ebd4",
+      "bytes": 71252
+    },
+    {
+      "path": "scripts/qualification/fixtures/rake-repair-record-evidence/images.json",
+      "sha256": "f7d9753d7ef124e98e567e62976e6f2550270e1f91c4c62c6e2bece6011481cd",
+      "bytes": 21222
+    }
+  ],
+  "evidence_directory": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence",
+  "input_files": [
+    {
+      "path": "rake-repair-record-authority-0240.json",
+      "sha256": "1303355ac32ba921f3e39cf70b0f33c3ca13db2838dde7ee5714b272588807b4"
+    },
+    {
+      "path": "rake-repair-record-consumer-review.json",
+      "sha256": "dbf240f8d35350b8823f7f5a245b4656dd2dcf29bc2d20936295453efee3b5f1"
+    },
+    {
+      "path": "reconcile-financial-alert-history.sql",
+      "sha256": "32de22187f4d308ff47eab9c7b3a6d5e78040c6c5de66f0044df3e24d5848641"
+    },
+    {
+      "path": "helper-alert-sources-unbanked-40508-40527-manifest.json",
+      "sha256": "39534fb3b974749c036b28069fadea2c2f2de67fb16302361c60c36c11a3afd9"
+    },
+    {
+      "path": "helper-alert-sources-unbanked-40508-40527-source-proposal.md",
+      "sha256": "3b81c289191bc1353ee81d681d11042a9b42638818763eb74b7afe718ba58f9a"
+    },
+    {
+      "path": "helper-alert-sources-unbanked-40508-40527-canonical-hand-links.json",
+      "sha256": "a4b9faa922f9bf34ff22318a4cb30723a51e71432c750ca6168e0e86c36fc436"
+    },
+    {
+      "path": "helper-alert-sources-unbanked-40508-40527-originals.json",
+      "sha256": "09ca40730e79b9630c335147885cd7cce0481baa318236827eb1da99d4b81305"
+    }
+  ],
+  "installed_authority_observed_at": "2026-09-15T02:27:32.666724Z",
+  "source_md5s": {
+    "target_preimage": "3d2ae7b1afa7510d91057d9ceca9c9b6",
+    "target_postimage": "825c2564f326b54eb16e7f90303aa453",
+    "atomic_dependency": "1b9bc9a006f45908bf65eb70a12e5f00",
+    "watchlist_dependency": "92ee208d0887728444bda396d0b4d442"
+  },
+  "original_identity_contract": {
+    "source": "financial-alerts-backfill",
+    "event_key": "original financial_alerts.id",
+    "status": "original resolved boolean",
+    "preserves_existing_originals": true,
+    "legacy_context_keys": [
+      "repaired",
+      "chips"
+    ],
+    "changed_future_field": "message only"
+  },
+  "native_qualification": {
+    "status": "UNRUN",
+    "actual_atomic_banking_executed": false,
+    "functional_model": "Actual installed repair caller before/after, private same-signature atomic spy; exact atomic restored for guards",
+    "cases": [
+      "received40522 prior 124 claims across 62 hands",
+      "fresh 50",
+      "fresh 50.01",
+      "already_processed nonthrowing receipt",
+      "throwing receipt",
+      "existing record and pending fee exclusions"
+    ],
+    "guard_refusal_cases": 11,
+    "additional_coverage": [
+      "exact canonical postimage and authority",
+      "exact replay",
+      "anon/authenticated denial and empty service-role execution",
+      "rollback refusal on authority drift",
+      "exact rollback/replay/reinstall",
+      "fatal private-schema cleanup check"
+    ],
+    "synthetic_inputs": [
+      "received40522 pot=100",
+      "received40522 hand_history.created_at=now()-1 hour",
+      "private bank-movement model"
+    ],
+    "not_proven": [
+      "actual atomic persistence/banking",
+      "real concurrent races",
+      "full production schema/trigger behavior",
+      "original historical balance movement",
+      "original engine interruption cause",
+      "player attribution",
+      "remote cancellation",
+      "provider delivery",
+      "component composition",
+      "native cleanup"
+    ]
+  },
+  "pending": [
+    "Independent parent source review and custody",
+    "Exact aggregate composition selection and reviewed source pins",
+    "Protected PostgreSQL17 admission with external deadline and independent cleanup",
+    "Native qualification receipts",
+    "Separately authorized install and exact body/authority readback",
+    "Natural future receipt preserving event identity and status"
+  ],
+  "installed": false,
+  "published": false,
+  "historical_data_changed": false,
+  "financial_behavior_changed": false,
+  "parent_source_review": {
+    "status": "reviewed_for_local_source_custody_only",
+    "recorded_at": "2026-09-15T02:45:01.951423+00:00",
+    "native_execution": "UNRUN",
+    "installed": false,
+    "published": false
+  },
+  "replay_proposal": {
+    "source_ref": "cce31a586e6bed94fb7e0c58352ab5fca0a2feb6",
+    "status": "SCRATCH_PROPOSAL_UNRUN_UNINSTALLED",
+    "execution_path": "existing GitHub-hosted accounting_postgres job",
+    "historical_fields": "Earlier branch/worktree/admission and evidence paths are provenance only; current Documents/AGENTS.md is authoritative."
+  }
+}

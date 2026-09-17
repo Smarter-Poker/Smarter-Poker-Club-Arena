@@ -19,12 +19,22 @@ const spinExpiry =
 const productionAlertsSql =
   /^(scripts\/ci\/(?:test-(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\.py$|probes\/(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\/)|tests\/tournament-rake-attribution-retries-inside-its-own-transaction\.law\.test\.ts$)/;
 
+// These alert components and their exact inputs run in the same accounting job.
+const productionAlertCore =
+  /^(supabase\/components\/production-alert-identity-and-rake-wording(?:\.rollback)?\.sql$|scripts\/qualification\/production-alert-core-(?:identity|connected)\.sql$|scripts\/ci\/(?:test-production-alert-core-postgres\.py$|test_production_alert_core_postgres\.py$|probes\/production-alert-core\/))/;
+const alertEvidence =
+  /^(supabase\/components\/(?:duplicate-structure-record-evidence(?:\.rollback)?|rake-repair-record-evidence(?:-rollback)?|spin-repair-evidence(?:\.rollback)?)\.sql$|scripts\/qualification\/(?:alert-evidence-hosted\.manifest\.json$|(?:duplicate-structure-record-evidence|rake-repair-record-evidence|spin-repair-evidence)(?:\.manifest\.json|\.md|\.sql|-race\.spec)$|fixtures\/(?:duplicate-structure-record-evidence|rake-repair-record-evidence|spin-repair-evidence)\/)|scripts\/ci\/(?:test-alert-evidence-postgres|test_alert_evidence_wrapper)\.py$)/;
+
+const class4HandOutcome =
+  /^(supabase\/components\/class4-hand-outcome-evidence(?:\.rollback)?\.sql$|scripts\/qualification\/(?:class4-hand-outcome-evidence\.(?:sql|drift\.sql|concurrency\.spec|md|manifest\.json)$|fixtures\/class4-hand-outcome-evidence\.(?:preimage|candidate|originals)\.sql$)|scripts\/ci\/(?:test-class4-hand-outcome-postgres\.py$|test_class4_hand_outcome_postgres\.py$|probes\/class4-hand-outcome\/))/;
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  const nativeIsolationTool = matches(/^scripts\/ci\/build_pg17_isolationtester\.py$/);
   const horsePriority = matches(/^scripts\/qualification\/(?:horse-league-process-priority-native\.mjs$|fixtures\/horse-league-process-priority\/)/);
   // Rule-only changes must run the existing reporting contract suites.
   const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
@@ -32,8 +42,8 @@ export function classifyChangedPaths(paths) {
   const spinComparator = matches(/^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/);
   return {
     src: broad || matches(/^src\//),
-    server: broad || spinRules || horsePriority || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql),
-    tests: broad || spinRules || spinComparator || memoryMonitoring || horsePriority || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql),
+    server: broad || nativeIsolationTool || spinRules || horsePriority || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql) || matches(productionAlertCore) || matches(alertEvidence) || matches(class4HandOutcome),
+    tests: broad || nativeIsolationTool || spinRules || spinComparator || memoryMonitoring || horsePriority || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/) || matches(spinExpiry) || matches(productionAlertsSql) || matches(productionAlertCore) || matches(alertEvidence) || matches(class4HandOutcome),
     phase4: matches(phase4),
     fixture: matches(fixture),
   };

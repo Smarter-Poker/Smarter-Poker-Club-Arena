@@ -46,3 +46,17 @@ scripts/qualification/spin-expiry-lock-order.authority.json
 scripts/ci/probes/hand-index-writer-order/baseline.json
 scripts/ci/probes/hand-stat-writer-order/baseline.json
 scripts/ci/probes/rake-attribution-atomic/baseline.json
+
+# Captured and byte-pinned alert qualification source records.
+scripts/qualification/duplicate-structure-record-evidence.manifest.json
+scripts/qualification/duplicate-structure-record-evidence.md
+scripts/qualification/fixtures/rake-repair-record-evidence/images.json
+scripts/qualification/rake-repair-record-evidence.manifest.json
+scripts/qualification/rake-repair-record-evidence.md
+scripts/qualification/spin-repair-evidence.manifest.json
+scripts/qualification/spin-repair-evidence.md
+scripts/ci/probes/production-alert-core/inputs/core-images.json
+scripts/ci/probes/production-alert-core/notification/manifest.json
+scripts/ci/probes/class4-hand-outcome/captured-functions.json
+scripts/ci/probes/class4-hand-outcome/manifest.json
+scripts/qualification/class4-hand-outcome-evidence.md

@@ -8,6 +8,10 @@ Recover the assigned worktree, branch, PR and evidence. Use an owned linked work
 
 Use configured Git/GitHub tools; verify availability in the current environment. Prefer authenticated CLI/API tools for repository operations, with other authorized tools when needed. An unavailable interface is not proof that all access is unavailable. Never read `.env` values or scrape tokens from remotes, documents or sibling repos.
 
+## Read the actual check result
+
+Use `node scripts/ci/pr-status.mjs <PR-number>` or the authenticated Actions API for the exact head revision. `GET /commits/:sha/status` reports legacy commit statuses and can say pending with zero results even when Actions has failed. A denied `/commits/:sha/check-runs` read is UNKNOWN, never proof that no check failed. Read `/actions/runs?head_sha=<sha>` and its jobs to identify the actual result. On this Mac `/opt/homebrew/bin` must be on PATH for the configured `gh` executable; check the current environment before declaring it unavailable. A green check still requires the authorized agent to complete protected merge and publication under PUBLISHING.md.
+
 ## Complete the assigned result
 
 Do not stop at a push when authorized delivery is unfinished. Find or create the PR, pass applicable checks, complete protected merge, and verify the actual publication and behavior. Reuse a remote commit or PR already present. If its PR has merged, a new follow-up needs an owned branch and PR; pushing into a closed PR does not deliver it.

@@ -61,6 +61,22 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/ci/produce-money-trigger-recovery.mjs
+      # GitHub reveals bypass_actors only to a ruleset writer. This existing
+      # infrastructure App is restricted to this repository and Administration;
+      # trusted finish code performs one GET, then immediately revokes it.
+      # It is never the financial check reporter or a PR/SQL credential.
+      - name: Mint short-lived protection reader
+        if: success() && github.event_name == 'pull_request_target'
+        id: protection-reader
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: '4680372'
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: Smarter-Poker
+          repositories: Smarter-Poker-Club-Arena
+          permission-administration: write
+          # Keep automatic cancellation cleanup; normal finish revokes sooner.
+          skip-token-revoke: false
       - name: Finish explicit captured-head check
         if: always() && github.event_name == 'pull_request_target'
         env:
@@ -69,6 +85,7 @@ jobs:
           REPORTER_APP_ID: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}
           REPORTER_TOKEN: ${{ steps.reporter.outputs.token }}
           VERIFY_OUTCOME: ${{ steps.proof.outcome }}
+          PROTECTION_READER_TOKEN: ${{ steps.protection-reader.outputs.token }}
         run: node scripts/ci/money-trigger-check-report.mjs finish
       - uses: actions/upload-artifact@v4
         if: success() && github.event_name == 'workflow_dispatch'

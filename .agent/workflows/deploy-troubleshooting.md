@@ -1,65 +1,9 @@
-> **SUPERSEDED 2026-09-03 - READ THIS FIRST.**
-> Club Arena no longer publishes by committing its build into the World Hub
-> repo. It publishes by rsync to its own origin, `https://ca-static.smarter.poker`
-> (`/srv/club-arena` on the Hetzner box: `releases/<ca_sha>/`, an atomically
-> swapped `current` symlink, an additive `pool/`), and the World Hub carries a
-> single Next.js rewrite `/hub/club-arena/:path*` to it. `public/hub/club-arena/`
-> is GONE from that repo and a law test refuses to let it back.
->
-> **Every `sync-club-arena.sh` / `build-club-arena.sh` / `sync-to-world-hub.sh`
-> command below is dead.** Those scripts are deleted from `main`. If you find one
-> on disk you are on a stale branch - it still works, and running it would
-> re-vendor the bundle and shadow the origin.
->
-> **You do not publish by hand at all now:** push a branch, and
-> `agent-open-pr` -> `agent-autopilot` -> `publish-club-arena` does the rest.
-> The current path is `.agent/architecture/deploy-paths.md`.
+# Protected publication guide
 
----
+Read root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. Recover the assigned branch, existing PR and evidence. Commit explicit paths in an owned worktree with normal hooks; push through configured authenticated Git; find or create the PR; pass required checks; complete protected squash merge; verify the owning publisher and actual live behavior. The authorized agent owns the whole delivery. No stop-after-push rule or disabled autopilot supplies the remaining steps.
 
-## description: What to do when a Club Arena change is not live
+World Hub uses the existing Vercel Git source integration for `hub-vanguard` and production `/api/health`. Club Arena client uses its own `publish-club-arena.yml` and `ca-static.smarter.poker`; verify `build-info.json` there and at `https://smarter.poker/hub/club-arena/build-info.json`. A client release does not require a World Hub rebuild. Club Arena engine uses `stage-engine-release.yml` and `auto-deploy-hetzner.yml`, its sealed release result, engine health and applicable behavior proof. Preserve component revision selection, maintenance, immutable assets and concurrency. Prove inclusion if a newer protected revision contains the assigned change.
 
-# Deploy troubleshooting
+On failure, diagnose and repair immediately; retain valid evidence and rerun affected or required checks. Establish an unknown remote outcome before retrying. Recheck installed/live state before repeating publication. The hourly engine boundary does not delay build/test repair or missing-proof recovery. A fresh engine cutover still needs the existing safe certificate until the connected recovery-window improvement is implemented and verified.
 
-**REWRITTEN 2026-09-04.** The banner above has been on this file since
-2026-09-03 and 240 lines of dead procedure sat under it: `sync-club-arena.sh`
-failure modes, World Hub commit conflicts, `public/hub/club-arena/` partial
-pushes. None of those steps exist any more. A banner over a body that still
-reads as instructions does not help a reader who skims into the middle.
-
-## Step 0 - establish what is actually live
-
-```bash
-curl -s https://smarter.poker/hub/club-arena/build-info.json
-git -C ~/Documents/club-arena rev-parse origin/main
-```
-
-If `ca_sha` equals `origin/main`, **production is current** and your problem is
-somewhere else: a browser cache, a service worker holding an old shell, or a
-change that never merged.
-
-## Then work down this list
-
-| Symptom                                       | Where to look                                                                                                                                                                                                                                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Branch pushed, no pull request                | `agent-branch-proposal.yml` records an unprivileged push signal; the trusted default-branch `agent-open-pr.yml` consumes it through `workflow_run`. Check those two runs; there is no periodic repair sweep                                                                                            |
-| PR open, not merging                          | A required check is red, or auto-merge was never enabled. Read the check, not the PR. Six are required: TypeScript Check, Client Unit Tests, Server Engine, Production Build, CSS Beat E2E, Silent Revert Guard                                                                                        |
-| Merged, but production is behind              | The single Hetzner publisher failed or was cancelled. Inspect that run, fix the root cause, and send `publish-club-arena` with the exact full current-main SHA through reviewed default-branch authority. The production integrity audit reports drift but cannot retry, dispatch, or publish anything |
-| A publish run says "cancelled"                | The publisher's concurrency group is `cancel-in-progress: false`, so a later push may supersede a PENDING run. Confirm a newer run owns the exact current-main SHA; otherwise immediately send the exact-SHA repository event through the one trusted lane                                             |
-| An asset 404s for some players                | `/assets/*` and `/fonts/*` come from an ADDITIVE pool on the origin, pruned by age only. If someone "cleaned it up", old hashed chunks are gone and any tab holding the previous `index.html` breaks mid-hand                                                                                          |
-| A route 404s entirely                         | The World Hub's rewrite. `tests/club-arena-is-a-rewrite.test.mjs` in that repo pins both rewrite rules                                                                                                                                                                                                 |
-| Production serves a bundle that never changes | Someone re-created `public/hub/club-arena/` in the World Hub. Next serves `public/` BEFORE the rewrite, so a file there SHADOWS the origin silently. That test fails CI if it comes back - check whether it was disabled                                                                               |
-
-## What NOT to do
-
-- **Do not publish by hand.** If infrastructure is degraded, re-dispatch the
-  owning Club Arena workflow when its runner path is available; section 9 of
-  `.agent/AGENT-OPERATIONS-GUIDE.md` preserves that single authority.
-- **Do not run the Vercel CLI.** Club Arena's own Vercel project has
-  `deploymentEnabled: false` and CLAUDE.md 1.3 forbids it.
-- **Do not re-vendor the bundle into the World Hub.** See the last row above.
-- **Do not wait passively for the next engine schedule.** If an exact engine
-  SHA is already staged and no owner run is active, send the
-  `deploy-club-arena-engine` repository event with its exact full `ref_sha`
-  toward the current certified maintenance break, then verify the sealed result
-  and cache-busted live SHA. Never use selectable-ref workflow dispatch.
+No local/custom fallback, shared-clone push script, release watcher, scheduler, retired telemetry or replacement approval label is authorized. Never source `.env` or copy credential values. Record pending run identities, exact blockers and remaining verification in the existing task checkpoint.

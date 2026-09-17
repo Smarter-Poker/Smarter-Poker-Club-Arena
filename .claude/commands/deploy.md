@@ -18,8 +18,7 @@ Hard boundaries:
 - A successful dispatch is not a release. The exact target must pass the sealed
   cutover and appear in cache-busted public health while tables keep dealing.
 
-If a target image is already staged, dispatch it immediately toward the current
-certified maintenance break instead of waiting for another scheduled tick:
+First recover the stage, dispatch and host operation identity. Reattach if an operation already owns the target; never duplicate an in-flight event. Only if the automatic route demonstrably did not dispatch the eligible staged target, send its one exact event promptly. This prepares activation through the existing certified maintenance path:
 
 ```bash
 TARGET_SHA=<exact-merged-sha>

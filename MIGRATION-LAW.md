@@ -1,3 +1,5 @@
+> Execution authority: root `AGENTS.md`, the operating law and `PUBLISHING.md`. This plan does not assign new work; preserve its actual migration prerequisites.
+
 # MIGRATION LAW — ABSOLUTE ENFORCEMENT RULES
 
 ## Zero Exceptions. Zero Shortcuts. Zero Rubber-Stamping.
@@ -48,7 +50,7 @@ Before making ANY change, you MUST:
 3. **DOCUMENT what you're changing** — write down exactly what you're replacing it with and WHY
 4. **MAKE the change** — only after steps 1-3
 5. **VERIFY the change** — read the file again, confirm the change is correct
-6. **DOCUMENT what you did** — add to the migration changelog with before/after
+6. **DOCUMENT what you did** — record before/after in the task changelog
 
 If you skip any of these 6 sub-steps, you are rubber-stamping. STOP and go back.
 
@@ -65,7 +67,7 @@ If you skip any of these 6 sub-steps, you are rubber-stamping. STOP and go back.
 
 ## LAW 5: DOCUMENT EVERYTHING
 
-Every single change MUST be recorded in `MIGRATION-CHANGELOG.md` with:
+Record each change in its own `docs/changelog/YYYY-MM-DD-<slug>.md` file. `MIGRATION-CHANGELOG.md` is frozen historical evidence. Include:
 
 ```
 ## Change #[N] — [Short description]
@@ -106,17 +108,13 @@ If ANY verification fails, you DO NOT proceed. You fix it first.
 
 ---
 
-## LAW 8: WHEN IN DOUBT, STOP AND ASK
+## LAW 8: INVESTIGATE UNCERTAINTY DIRECTLY
 
-If you encounter ANY of the following, STOP and ask Dan before proceeding:
-
-- A file that looks different from what the migration document describes
-- A dependency you didn't expect between components
-- A change that would affect more than the file you're working on
-- Uncertainty about whether something is client-authoritative or server-authoritative
-- Any situation where you're tempted to say "this should be fine"
-
-"This should be fine" = rubber-stamping. STOP.
+Read the actual changed file and connected dependency. Resolve implementation
+choices within the assigned scope using the current owner policy; no additional
+human approval is required. Verify client/server authority instead of guessing.
+If a genuinely missing input prevents a specific action, identify it precisely
+and continue all independent work. Never label an unverified result as passing.
 
 ---
 
@@ -262,7 +260,7 @@ After any Club Arena change:
 
 1. **PUSH** — from an isolated worktree to a feature branch, through normal
    hooks. Record the commit SHA; do not push directly to `main`.
-2. **WATCH** — follow the Club Arena required checks, autopilot merge, and the
+2. **WATCH** — follow the Club Arena required checks, agent-owned protected merge, and the
    owning Hetzner workflow to a terminal result. A World Hub or Vercel
    deployment is not Club Arena release evidence.
 3. **VERIFY** — both the direct Hetzner origin and public rewrite must report

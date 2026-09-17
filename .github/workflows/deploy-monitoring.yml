@@ -37,6 +37,8 @@ on:
     paths:
       - 'infra/monitoring/**'
       - 'server/scripts/install-caddy-websocket-log-redaction.sh'
+      - 'scripts/ci/check-alert-rules-match.mjs'
+      - 'scripts/ci/rule-metric-producers.mjs'
       - '.github/workflows/deploy-monitoring.yml'
   repository_dispatch:
     types: [deploy-club-arena-monitoring]
@@ -334,8 +336,9 @@ jobs:
           ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ env.HETZNER_HOST }}
         run: |
           set -euo pipefail
-          # Prometheus reloads asynchronously after the symlinks swap.
-          sleep 20
+          # The verifier permits one declared evaluation interval only for an
+          # exact replacement rule that has not evaluated yet. Reload success
+          # alone and a fixed short sleep cannot prove rule health.
           node scripts/ci/check-alert-rules-match.mjs
 
       - name: Remove Hetzner SSH credentials

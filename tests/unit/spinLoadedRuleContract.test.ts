@@ -4,7 +4,10 @@ import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { parse } from 'yaml';
-import { compareSpinReportingContract } from '../../scripts/ci/check-alert-rules-match.mjs';
+import {
+  compareSpinReportingContract,
+  readEvaluatedSpinRules,
+} from '../../scripts/ci/check-alert-rules-match.mjs';
 import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 import { metricsIn } from '../../scripts/ci/rule-metric-producers.mjs';
 
@@ -31,6 +34,7 @@ function loaded() {
         {
           name: groups[0].name,
           file: '/etc/prometheus/spin-rules.yml',
+          interval: 60,
           rules: [
             {
               type: 'alerting',
@@ -41,6 +45,8 @@ function loaded() {
               labels: rule.labels,
               annotations: rule.annotations,
               health: 'ok',
+              lastError: '',
+              lastEvaluation: '2026-09-17T13:05:30.5729651Z',
             },
           ],
         },
@@ -160,6 +166,156 @@ describe('the loaded Spin rule must carry the actual reporting correction', () =
         loaded()
       )
     ).toEqual([]);
+  });
+});
+
+describe('a changed rule gets one bounded first-evaluation read', () => {
+  function pending() {
+    const response = loaded();
+    alert(response).health = 'unknown';
+    alert(response).lastEvaluation = '0001-01-01T00:00:00Z';
+    // Prometheus uses omitempty: a fresh no-error rule omits lastError.
+    delete (alert(response) as any).lastError;
+    return response;
+  }
+
+  it('binds its maximum wait to the declared group cadence', () => {
+    const document = parse(source);
+    expect(document.groups.find((group: any) => group.name === 'spin-experience').interval).toBe(
+      '60s'
+    );
+  });
+
+  it.each(['omitted', 'empty'])(
+    'reproduces the old premature refusal with %s lastError and accepts only the evaluated replacement',
+    async (shape) => {
+      const first = pending();
+      if (shape === 'empty') alert(first).lastError = '';
+      expect(() => compareSpinReportingContract(source, first)).toThrow('healthy');
+      const reads = [first, loaded()];
+      const waits: number[] = [];
+      let count = 0;
+      const response = await readEvaluatedSpinRules(
+        source,
+        () => reads[count++],
+        async (ms: number) => {
+          waits.push(ms);
+        }
+      );
+      expect(waits).toEqual([60000]);
+      expect(count).toBe(2);
+      expect(compareSpinReportingContract(source, response)).toEqual([]);
+      expect(alert(first).health).toBe('unknown');
+    }
+  );
+
+  it.each([null, 0, false, {}, 'evaluation failed'])(
+    'refuses malformed or actual errors without waiting: %j',
+    async (lastError) => {
+      const first = pending();
+      (alert(first) as any).lastError = lastError;
+      let reads = 0;
+      let waits = 0;
+      const response = await readEvaluatedSpinRules(
+        source,
+        () => {
+          reads++;
+          return first;
+        },
+        async () => {
+          waits++;
+        }
+      );
+      expect(reads).toBe(1);
+      expect(waits).toBe(0);
+      expect(() => compareSpinReportingContract(source, response)).toThrow('healthy');
+      alert(response).health = 'ok';
+      expect(() => compareSpinReportingContract(source, response)).toThrow('healthy');
+    }
+  );
+
+  it.each(['unknown', 'err'])('does not retry again or accept final %s health', async (health) => {
+    const final = pending();
+    alert(final).health = health;
+    if (health === 'err') alert(final).lastError = 'evaluation failed';
+    let count = 0;
+    const waits: number[] = [];
+    const response = await readEvaluatedSpinRules(
+      source,
+      () => (++count === 1 ? pending() : final),
+      async (ms: number) => {
+        waits.push(ms);
+      }
+    );
+    expect(waits).toEqual([60000]);
+    expect(count).toBe(2);
+    expect(() => compareSpinReportingContract(source, response)).toThrow('healthy');
+  });
+
+  it.each([
+    'healthy',
+    'error',
+    'prior-evaluation',
+    'last-error',
+    'wrong-type',
+    'drift',
+    'interval',
+  ])('does not wait for %s evidence', async (kind) => {
+    const first = kind === 'healthy' ? loaded() : pending();
+    if (kind === 'error') alert(first).health = 'err';
+    if (kind === 'prior-evaluation') alert(first).lastEvaluation = '2026-09-17T13:04:30Z';
+    if (kind === 'last-error') alert(first).lastError = 'evaluation failed';
+    if (kind === 'wrong-type') alert(first).type = 'recording';
+    if (kind === 'drift') alert(first).annotations.summary = 'old content';
+    if (kind === 'interval') first.data.groups[0].interval = 61;
+    let count = 0;
+    let waits = 0;
+    const response = await readEvaluatedSpinRules(
+      source,
+      () => {
+        count++;
+        return first;
+      },
+      async () => {
+        waits++;
+      }
+    );
+    expect(count).toBe(1);
+    expect(waits).toBe(0);
+    if (kind === 'healthy') expect(compareSpinReportingContract(source, response)).toEqual([]);
+    else expect(() => compareSpinReportingContract(source, response)).toThrow('healthy');
+  });
+
+  it('rechecks content and duplicate identity after the wait', async () => {
+    for (const kind of ['drift', 'duplicate']) {
+      const final = loaded();
+      if (kind === 'drift') alert(final).annotations.summary = 'changed during wait';
+      else final.data.groups.push({ ...final.data.groups[0] });
+      let count = 0;
+      const response = await readEvaluatedSpinRules(
+        source,
+        () => (++count === 1 ? pending() : final),
+        async () => {}
+      );
+      if (kind === 'drift')
+        expect(compareSpinReportingContract(source, response)).toEqual(['annotations']);
+      else expect(() => compareSpinReportingContract(source, response)).toThrow('ambiguous');
+    }
+  });
+
+  it('propagates transport failure on the final read', async () => {
+    let count = 0;
+    await expect(
+      readEvaluatedSpinRules(
+        source,
+        () => {
+          if (++count === 1) return pending();
+          throw new Error('transport refused');
+        },
+        async () => {}
+      )
+    ).rejects.toThrow('transport refused');
+    expect(count).toBe(2);
   });
 });
 

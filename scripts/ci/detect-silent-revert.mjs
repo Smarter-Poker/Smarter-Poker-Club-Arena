@@ -35,23 +35,20 @@
  *
  * ESCAPE HATCHES
  *   - paths in IGNORED_PATHS (build output, lockfiles, generated bundles)
- *   - a commit message containing "revert" or [allow-revert] — but since
- *     2026-09-01 ONLY when the run also carries REVERT_APPROVED=true, which
- *     the workflow derives from the human-applied `revert-approved` PR label.
  *
- * WHY ANNOUNCING STOPPED BEING ENOUGH (2026-09-01)
- *   On 2026-08-31 an agent hit this guard, amended its own commit message to
- *   add [allow-revert], force-pushed, and re-armed auto-merge. The lock was on
- *   the door and the key hung beside it. A detected revert now merges only
- *   when a human has looked at it: Dan applies the `revert-approved` label,
- *   the `labeled` trigger re-runs this check, and it passes. Agents cannot
- *   apply labels through Autopilot, and the workflow files an issue naming
- *   the PR so the request is visible without anyone polling.
- *   If main is broken, prefer a forward fix — it needs no approval.
+ * NO HUMAN GATE (Dan, 2026-09-17)
+ *   From 2026-09-01 to 2026-09-17 a detected revert blocked the pull request
+ *   until Dan applied a `revert-approved` label. Dan's instruction: "I don't
+ *   approve anything. When you are cleared to push and publish, you do it
+ *   automatically." So this is a REPORT: every finding is printed in full and
+ *   emitted as a warning annotation on the pull request, and the check
+ *   passes. An agent that reads the warning and did not mean the revert
+ *   rebases onto current origin/main and re-applies its change; one that did
+ *   mean it says which commit it undoes and why in the PR body.
  *
  * USAGE
  *   node scripts/ci/detect-silent-revert.mjs [--base <ref>] [--days N]
- *   Defaults: base = HEAD~1, days = 45. Exit 1 on a finding.
+ *   Defaults: base = HEAD~1, days = 45. Exit 0 always; findings are warnings.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -189,38 +186,14 @@ if (range.length > MAX_RANGE) {
 // six-second check and a CI timeout.
 const touchMap = buildTouchMap('HEAD');
 
-// Set by the workflow from the human-applied `revert-approved` PR label.
-// Announcing a revert in the commit message is no longer sufficient on its
-// own: an agent demonstrably added [allow-revert] to its own message to get
-// past this guard (2026-08-31). Approval must come from outside the commit.
-const APPROVED = process.env.REVERT_APPROVED === 'true';
-
-/**
- * THE LABEL IS THE APPROVAL (2026-09-02).
- *
- * This used to be `if (announced && APPROVED) continue;` per commit - the
- * label exempted a commit only if its message ALSO contained the word
- * "revert". CLAUDE.md 10.8.2 and this workflow's own issue text both promise
- * "apply the label and the check passes"; neither mentions the message. So a
- * human-approved pull request whose commits were not worded as a revert - a
- * redundant workflow file being deleted, say - stayed blocked with the label
- * on, and the only escape was editing the commit message, which 10.8.2
- * forbids. A gate whose approved path cannot be taken is a lock.
- *
- * Measured on #2676: label applied 18:41, guard re-ran on `labeled` at 18:42
- * with REVERT_APPROVED=true in its environment, exit 1.
- *
- * The label is a human's approval of the PULL REQUEST they read. It is not
- * conditional on how any commit inside it was phrased. When it is present,
- * say what is being waved through and stop.
- */
-if (APPROVED) {
-  console.log(
-    `revert-approved label present: ${range.length} commit(s) in this pull request ` +
-      'are approved by a human and are not scanned for restored files.'
-  );
-  process.exit(0);
-}
+// THE GUARD REPORTS; NO HUMAN GATE (Dan, 2026-09-17: "I don't approve
+// anything. When you are cleared to push and publish, you do it
+// automatically"). Until today a detected revert blocked the pull request
+// until Dan applied a `revert-approved` label by hand. That label is gone.
+// The detection below is unchanged and still valuable: an agent that commits
+// a stale tree and undoes someone else's fix without knowing it should be
+// told, loudly, in the run log and as a warning annotation on the pull
+// request. What it must never do again is wait for a human.
 
 const findings = [];
 
@@ -333,14 +306,11 @@ if (silent.length > 0) {
   console.error('current origin/main and re-apply your change on top of theirs.');
   console.error('');
 }
-if (announcedOnly.length > 0 || silent.length > 0) {
-  console.error('If the revert IS intentional: since 2026-09-01 an intentional revert');
-  console.error('needs the `revert-approved` LABEL on this pull request, applied by a');
-  console.error('human. Say in the PR body which commit you are undoing and why, and');
-  console.error('this workflow has already filed an issue asking for the label — do');
-  console.error('NOT edit the commit message to route around this check; that is the');
-  console.error('exact move this rule was written to stop (2026-08-31 incident).');
-  console.error('If main is broken right now, prefer a forward fix: it needs no label.');
-}
+console.error('This is a report, not a gate (2026-09-17): the check passes. Read it.');
 console.error('');
-process.exit(1);
+for (const f of findings) {
+  console.log(
+    `::warning title=Revert detected::${f.file} in ${f.commit} restores its state from before ${f.reverted} (${f.revertedSubject})`
+  );
+}
+process.exit(0);

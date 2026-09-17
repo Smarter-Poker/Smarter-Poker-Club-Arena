@@ -1,26 +1,24 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  THE REVERT-APPROVED LABEL IS THE APPROVAL (2026-09-02)
+ *  A DETECTED REVERT IS REPORTED, NOT GATED (2026-09-17)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * MEASURED on #2676. The Silent Revert Guard flagged a pull request that
- * deleted a redundant workflow file. The `revert-approved` label was applied
- * at 18:41; the guard re-ran on `labeled` at 18:42 with REVERT_APPROVED=true
- * in its environment and exited 1 anyway.
+ * History: from 2026-09-01 the Silent Revert Guard blocked a pull request
+ * that restored a file to an earlier state until Dan applied a
+ * `revert-approved` label (and on 2026-09-02 the label itself could not clear
+ * it, which this file first pinned). On 2026-09-17 Dan removed the human gate
+ * globally: "I don't approve anything. When you are cleared to push and
+ * publish, you do it automatically."
  *
- * The label only exempted a commit whose MESSAGE also contained the word
- * "revert". CLAUDE.md 10.8.2 and the guard's own issue text promise "apply the
- * label and the check passes" and say nothing about the message; 10.8.2 also
- * forbids editing commit messages to route around the guard. So a human's
- * approval could not be acted on. A gate whose approved path cannot be taken
- * is a lock.
- *
- * These run the real script against a throwaway repository so the pin is on
- * behaviour, not on the shape of the source.
+ * So the guard is a reporter. It still finds the restored file, prints the
+ * finding in full and emits a `::warning` annotation for the pull request,
+ * and then EXITS 0. No environment variable, label or commit-message token
+ * changes that. These run the real script against a throwaway repository so
+ * the pin is on behaviour, not on the shape of the source.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gitFixtureEnvironment } from '../helpers/gitFixtureEnvironment';
@@ -53,17 +51,21 @@ const git = (...args: string[]) =>
     stdio: ['ignore', 'pipe', 'pipe'],
   }).toString();
 
-/** Run the guard; return the exit code (the script exits 1 on a finding). */
-function guard(env: Record<string, string>): number {
+/** Run the guard; return the exit code and what it printed. */
+function guard(env: Record<string, string>): { code: number; stdout: string; stderr: string } {
   try {
-    execFileSync('node', [SCRIPT, '--base', 'HEAD~1', '--days', '45'], {
+    const stdout = execFileSync('node', [SCRIPT, '--base', 'HEAD~1', '--days', '45'], {
       cwd: repo,
       env: cleanEnv(env),
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return 0;
+    }).toString();
+    return { code: 0, stdout, stderr: '' };
   } catch (e: any) {
-    return typeof e.status === 'number' ? e.status : 1;
+    return {
+      code: typeof e.status === 'number' ? e.status : 1,
+      stdout: e.stdout?.toString() ?? '',
+      stderr: e.stderr?.toString() ?? '',
+    };
   }
 }
 
@@ -95,24 +97,35 @@ afterAll(() => {
   rmSync(repo, { recursive: true, force: true });
 });
 
-describe('the revert-approved label is the approval', () => {
-  it('without the label, a deletion is reported and the guard exits 1', () => {
-    expect(guard({ REVERT_APPROVED: 'false' })).toBe(1);
+describe('a detected revert is reported, not gated', () => {
+  it('a restored file is reported as a warning annotation and the guard exits 0', () => {
+    const run = guard({});
+    expect(run.code).toBe(0);
+    expect(run.stdout).toMatch(/::warning title=Revert detected::guarded\.yml/);
   });
 
-  it('WITH the label, the same pull request passes - whatever the commit said', () => {
-    // The message above contains no "revert" and no [allow-revert]. Before
-    // 2026-09-02 this returned 1 with the label on, which is the bug.
-    expect(guard({ REVERT_APPROVED: 'true' })).toBe(0);
+  it('no label or environment variable is consulted any more', () => {
+    expect(guard({ REVERT_APPROVED: 'false' }).code).toBe(0);
+    expect(guard({ REVERT_APPROVED: 'true' }).code).toBe(0);
+    const workflow = readFileSync(
+      resolve(__dirname, '../../.github/workflows/silent-revert-guard.yml'),
+      'utf8'
+    );
+    expect(workflow).not.toMatch(/REVERT_APPROVED/);
+    expect(workflow).not.toMatch(/types:.*labeled/);
+    expect(workflow).not.toMatch(/gh issue create/);
+    const script = readFileSync(SCRIPT, 'utf8');
+    expect(script).not.toMatch(/process\.env\.REVERT_APPROVED/);
+    expect(script).not.toMatch(/process\.exit\(1\)/);
   });
 
-  it('a commit message saying "revert" is NOT an approval on its own', () => {
-    // 2026-08-31: an agent wrote [allow-revert] into its own message to get
-    // past the guard. Announcing must never substitute for the label.
+  it('an announced revert is reported the same way, and still passes', () => {
     writeFileSync(join(repo, 'guarded.yml'), 'name: three\n');
     git('commit', '-q', '-am', 'change again');
     writeFileSync(join(repo, 'guarded.yml'), 'name: one\n');
     git('commit', '-q', '-am', 'revert: back to one [allow-revert]');
-    expect(guard({ REVERT_APPROVED: 'false' })).toBe(1);
+    const run = guard({});
+    expect(run.code).toBe(0);
+    expect(run.stdout).toMatch(/::warning title=Revert detected::guarded\.yml/);
   });
 });

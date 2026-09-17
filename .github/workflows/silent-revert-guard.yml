@@ -1,7 +1,7 @@
 name: Silent Revert Guard
 
-# Fails a push whose commits restore a file to exactly its state before an
-# earlier commit, without saying so in the message.
+# Reports a pull request whose commits restore a file to exactly its state
+# before an earlier commit. Since 2026-09-17 it reports and never blocks.
 #
 # The case this exists for: World Hub 902d8b2b, "match icon sizes to profile
 # orb, show hamburger menu on all pages", which also reverted every line of
@@ -25,12 +25,11 @@ on:
   # request turns the same check into prevention: the revert never lands.
   pull_request:
     branches: [main]
-    # `labeled`/`unlabeled` added 2026-09-01: approval for an intentional
-    # revert is now the human-applied `revert-approved` LABEL, not a token in
-    # a commit message an agent can edit (which is exactly what happened on
-    # 2026-08-31 — an agent amended [allow-revert] into its own message and
-    # force-pushed past this guard). Labeling re-runs the check automatically.
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    # NO HUMAN GATE (Dan, 2026-09-17). The `revert-approved` label and its
+    # `labeled`/`unlabeled` triggers are gone: a detected revert is reported
+    # as a warning annotation and in the run log, and the check passes. An
+    # agent cleared to push and publish does so without waiting for anyone.
+    types: [opened, synchronize, reopened]
 
 concurrency:
   group: silent-revert-${{ github.ref }}
@@ -38,7 +37,6 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   detect:
@@ -92,27 +90,3 @@ jobs:
             fi
           fi
           node scripts/ci/detect-silent-revert.mjs --base "$BASE" --days 45
-        env:
-          # True only when a human has applied the `revert-approved` label.
-          # Autopilot never applies labels, and agents route merges through
-          # Autopilot, so this cannot be self-served from a commit message.
-          REVERT_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'revert-approved') && 'true' || 'false' }}
-
-      # A blocked revert must be LOUD, not a red line in a run log nobody
-      # reads. One self-describing issue per PR asks for the label; applying
-      # it re-runs this workflow via the `labeled` trigger above.
-      - name: Ask for the revert-approved label
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          TITLE="Revert detected in PR #${PR} — needs the revert-approved label or a rebase"
-          EXISTING=$(gh issue list --repo "$REPO" --state open --search "in:title \"PR #${PR}\" revert" --limit 1 --json number --jq '.[0].number' || echo "")
-          if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --repo "$REPO" --body "Still blocked. Latest run: $RUN" || true
-          else
-            gh issue create --repo "$REPO" --title "$TITLE" --body "$(printf 'The Silent Revert Guard found that PR #%s restores files to an earlier state.\n\nIf this revert is INTENTIONAL: a human applies the revert-approved label to the PR and the check re-runs and passes.\nIf it is NOT intentional: the author rebases onto current origin/main and re-applies their change.\n\nDetails: %s\n\nDo not edit the commit message to add [allow-revert] — announcing is no longer sufficient without the label (2026-08-31 incident).' "$PR" "$RUN")" || true
-          fi

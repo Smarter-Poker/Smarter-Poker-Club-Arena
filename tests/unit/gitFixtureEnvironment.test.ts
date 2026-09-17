@@ -167,7 +167,7 @@ describe('disposable Git fixture environment', () => {
       [
         join(repository, 'node_modules/vitest/vitest.mjs'),
         'run',
-        'tests/unit/theLabelIsTheApproval.test.ts',
+        'tests/unit/aDetectedRevertIsReportedNotGated.test.ts',
         'tests/config/orphanedWorkGuard.test.ts',
         'tests/unit/buildProvenanceRefusesStaleSource.test.ts',
       ],

@@ -1,0 +1,106 @@
+[
+  {
+    "before": "extension=load_module('bounded_bbj0124',HERE/'case_module.py')",
+    "after": "extension=load_module('bounded_bbj_backup0001',HERE/'case_module.py')"
+  },
+  {
+    "before": "start_attempted=False\n    pending_case_result=None",
+    "after": "start_attempted=False\n    pending_case_result=None\n    base_oid=None\n    base_physical=None\n    base_preflight_complete=False\n    owned_connections=[]"
+  },
+  {
+    "before": "prefix='g8s08bbj24-'",
+    "after": "prefix='g8bbjbackup-' "
+  },
+  {
+    "before": "PGAPPNAME='g8-bbj-integration-0124'",
+    "after": "PGAPPNAME='g8-bbj-backup-0001'"
+  },
+  {
+    "before": "ledger['fixture_base_oid']=base_oid",
+    "after": "ledger['fixture_base_oid']=base_oid\n        base_physical_raw=decode_catalog_result(command(psql+['-d','fixture_base','-A','-t','-c',extension.PHYSICAL_SQL]).stdout,\n            'physical_identity',canonical_oid,()) if False else json.loads(command(psql+['-d','fixture_base','-A','-t','-c',extension.PHYSICAL_SQL]).stdout)\n        base_physical={'database':'fixture_base','database_oid':base_oid,\n                       'system_identifier':base_physical_raw['system_identifier'],\n                       'data_directory':str(data),'socket_directory':str(sock)}\n        extension.validate_physical(base_physical_raw,base_physical)\n        ledger['physical_identity']=base_physical_raw\n        def owned_connect(database,label,events,expected):\n            return extension.owned_connect(Psql,[str(BIN/'psql'),'-d',database],env,label,events,owned_connections,expected)"
+  },
+  {
+    "before": "base_physical_raw=decode_catalog_result(command(psql+['-d','fixture_base','-A','-t','-c',extension.PHYSICAL_SQL]).stdout,\n            'physical_identity',canonical_oid,()) if False else json.loads(command(psql+['-d','fixture_base','-A','-t','-c',extension.PHYSICAL_SQL]).stdout)",
+    "after": "base_physical_raw=json.loads(command(psql+['-d','fixture_base','-A','-t','-c',extension.PHYSICAL_SQL]).stdout)"
+  },
+  {
+    "before": "lambda label,events:Psql([str(BIN/'psql'),'-d','fixture_base'],env,label,events),\n                    review,base_oid,physical={'data_directory':str(data),'socket_directory':str(sock)}",
+    "after": "lambda label,events:owned_connect('fixture_base',label,events,base_physical),\n                    review,base_oid,physical=base_physical"
+  },
+  {
+    "before": "pre=Psql([str(BIN/'psql'),'-d','fixture_base'],env,'preflight',preevents)",
+    "after": "pre=owned_connect('fixture_base','preflight',preevents,base_physical)"
+  },
+  {
+    "before": "pf['supplemental_functions']=extension.supplemental_preflight(pre)",
+    "after": "pf['supplemental_functions']=extension.supplemental_preflight(pre)\n            pf['backup_supplemental']=extension.backup_preflight(pre,'base_preflight')"
+  },
+  {
+    "before": "assert_complete_preflight(pf,schema_fixture,fixture)",
+    "after": "assert_complete_preflight(pf,schema_fixture,fixture)\n            base_preflight_complete=True"
+  },
+  {
+    "before": "pf.update(passed=False,error_type=type(exc).__name__,error=str(exc),events=preevents)",
+    "after": "pf.update(passed=False,error_type=type(exc).__name__,error=str(exc),events=preevents)\n            if hasattr(exc,'backup_metadata_report'):pf['backup_metadata_report']=exc.backup_metadata_report"
+  },
+  {
+    "before": "failure=None\n            try:",
+    "after": "failure=None\n            result=None\n            case_connection_start=len(owned_connections)\n            try:"
+  },
+  {
+    "before": "def connect(label,record):\n                    return Psql([str(BIN/'psql'),'-d',db],env,case+':'+label,record)",
+    "after": "case_physical={**base_physical,'database':db,'database_oid':owned_oid}\n                def connect(label,record):\n                    return owned_connect(db,case+':'+label,record,case_physical)"
+  },
+  {
+    "before": "def combined():",
+    "after": "def combined(phase):"
+  },
+  {
+    "before": "sql=(HERE/'COMBINED-COMMAND.sql').read_text()\n                    argv=",
+    "after": "sql=(HERE/'COMBINED-COMMAND.sql').read_text()\n                    endpoint_events=[]\n                    endpoint=None\n                    endpoint_report={'phase':phase,'events':endpoint_events,'status':'ATTEMPTED'}\n                    ledger.setdefault('combined_endpoint_checks',[]).append(endpoint_report)\n                    write(evidence/'RUN.json',ledger)\n                    try:\n                        endpoint=connect('combined_endpoint:'+phase,endpoint_events)\n                        endpoint_report['identity']=extension.validate_physical(endpoint.one(extension.PHYSICAL_SQL),case_physical)\n                        endpoint_report['status']='MATCHED'\n                    finally:\n                        endpoint_report['cleanup']=extension.cleanup_connection(endpoint)\n                        if any(r['status']=='ERROR' for r in endpoint_report['cleanup']):\n                            endpoint_report['status']='CLEANUP_FAILED'\n                        write(evidence/'RUN.json',ledger,emergency=endpoint_report['status']!='MATCHED')\n                    if endpoint_report['status']!='MATCHED':\n                        raise RuntimeError('Combined physical endpoint/cleanup not proven')\n                    argv="
+  },
+  {
+    "before": "def complete_case_metadata(connection):\n                    observed=extension.complete_original_metadata(connection,preflight,check_registry,schema_fixture,fixture,db,owned_oid)\n                    return observed",
+    "after": "metadata_reports=[]\n                def complete_case_metadata(connection):\n                    report={'status':'ATTEMPTED'}\n                    metadata_reports.append(report)\n                    try:\n                        extension.validate_physical(connection.one(extension.PHYSICAL_SQL),case_physical)\n                        report['original']=extension.complete_original_metadata(connection,preflight,check_registry,schema_fixture,fixture,db,owned_oid)\n                        report['opening']=extension.supplemental_preflight(connection)\n                        report['complete']=extension.backup_preflight(connection,'case_metadata')\n                        report['status']='PASSED'\n                        return report['complete']\n                    except Exception as exc:\n                        report.update(status='FAIL',error=str(exc),error_type=type(exc).__name__)\n                        if hasattr(exc,'backup_metadata_report'):report['backup_metadata_report']=exc.backup_metadata_report\n                        raise"
+  },
+  {
+    "before": "result['root_combined_command_count']=combined_count\n                if result['status']=='PASS_IMPLEMENTED_SUBSET' and combined_count!=3:\n                    result.update(status='FAIL',root_callback_error='Exactly three actual combined requests required')",
+    "after": "result['root_metadata_reports']=metadata_reports\n                result['root_combined_command_count']=combined_count\n                if result['status']=='PASS_IMPLEMENTED_SUBSET' and combined_count!=5:\n                    result.update(status='FAIL',root_callback_error='Exactly three opening plus two backup actual combined requests required')"
+  },
+  {
+    "before": "post=Psql([str(BIN/'psql'),'-d',db],env,case+':postflight',postevents)",
+    "after": "post=owned_connect(db,case+':postflight',postevents,case_physical)"
+  },
+  {
+    "before": "postpf['supplemental_functions']=extension.supplemental_preflight(post)",
+    "after": "postpf['supplemental_functions']=extension.supplemental_preflight(post)\n                    postpf['backup_supplemental']=extension.backup_preflight(post,'case_postflight')\n                    postpf['full_backup_raw']=extension.backup_module().capture(post)"
+  },
+  {
+    "before": "postpf.update(passed=False,error_type=type(exc).__name__,error=str(exc),events=postevents)",
+    "after": "postpf.update(passed=False,error_type=type(exc).__name__,error=str(exc),events=postevents)\n                    if hasattr(exc,'backup_metadata_report'):postpf['backup_metadata_report']=exc.backup_metadata_report\n                    if hasattr(exc,'capture_cleanup_errors'):postpf['capture_cleanup_errors']=exc.capture_cleanup_errors"
+  },
+  {
+    "before": "# Driver closes every owned reader/writer connection even on failure.",
+    "after": "# Preserve constructor failures too; always attempt all owned clients before ordinary DROP.\n            case_cleanup=extension.cleanup_registry(owned_connections[case_connection_start:])\n            ledger.setdefault('owned_connection_cleanup',[]).append({'case':case,'outcomes':case_cleanup})\n            if extension.registry_failed(case_cleanup):\n                if result is not None:result.update(status='FAIL',root_registry_cleanup_error='Full outcomes retained')\n                failure=failure or RuntimeError('Owned connection cleanup/constructor failure')\n            if result is not None:\n                result['root_registry_cleanup']=case_cleanup\n                pending_case_result=result\n                try:\n                    case_path=evidence/(case+'.json')\n                    write(case_path,result,emergency=failure is not None)\n                    summary={**{k:result[k] for k in ('case','status','error_type','error','whole_original_case_qualified') if k in result},\n                             'evidence_file':case_path.name,'sha256':digest(case_path)}\n                    ledger['cases']=[c for c in ledger['cases'] if c['case']!=case]+[summary]\n                    pending_case_result=None\n                except Exception as exc:\n                    failure=failure or exc\n            # Driver closes every owned reader/writer connection even on failure."
+  },
+  {
+    "before": "ledger['remaining_cases']='SEQ08 genuine100-chip BBJ opening_setup and actual pool/club/absent aliases only; fullSEQ08 and foundation remain open; no provider or production claim'",
+    "after": "ledger['remaining_cases']='Only fresh opening100 setup plus backup25 continuation; original side-filter/subxid and fullSEQ06/08 remain open; no production claim'"
+  },
+  {
+    "before": "# Stop only the freshly-created owned cluster.",
+    "after": "# Independently recheck the unchanged base after any admitted case, including a FAIL.\n        if base_preflight_complete and not store.space_exhausted and not ledger.get('resource_admission_refused'):\n            basepost=None\n            baseevents=[]\n            base_report={'status':'ATTEMPTED','events':baseevents}\n            ledger['base_postflight']=base_report\n            try:\n                basepost=owned_connect('fixture_base','base_postflight',baseevents,base_physical)\n                base_report['original']=extension.complete_original_metadata(basepost,preflight,check_registry,schema_fixture,fixture,'fixture_base',base_oid)\n                base_report['opening']=extension.supplemental_preflight(basepost)\n                base_report['backup']=extension.backup_preflight(basepost,'base_postflight')\n                base_report['raw']=extension.backup_module().capture(basepost)\n                original_base=ledger['bbj_supplemental_install']['backup_installation']['raw_after']\n                extension.backup_module().raw_equal(original_base,base_report['raw'])\n                if original_base['sequences']!=base_report['raw']['sequences']:\n                    raise RuntimeError('Unchanged fixture_base sequence state differs')\n                if any(base_report['raw']['raw'][name] for name in ('auth.users','public.clubs','public.chip_ledger','public.ca_account_snapshots','public.ca_currency_meter')):\n                    raise RuntimeError('Original fixture_base was populated unexpectedly')\n                base_report['status']='PASSED'\n            except Exception as exc:\n                base_report.update(status='FAIL',error_type=type(exc).__name__,error=str(exc))\n                if hasattr(exc,'backup_metadata_report'):base_report['backup_metadata_report']=exc.backup_metadata_report\n                ledger['execution_status_before_base_postflight']=ledger.get('status')\n                ledger['status']='BASE_POSTFLIGHT_FAILED'\n            finally:\n                base_report['cleanup']=extension.cleanup_connection(basepost)\n                if any(r['status']=='ERROR' for r in base_report['cleanup']):\n                    base_report['status']='FAIL'\n                    ledger['execution_status_before_base_cleanup']=ledger.get('status')\n                    ledger['status']='BASE_POSTFLIGHT_CLEANUP_FAILED'\n        elif base_preflight_complete:\n            ledger['base_postflight']={'status':'NOT_ATTEMPTED_RESOURCE_REFUSAL','passed':False,\n                                      'reason':'Existing evidence/storage admission forbids further non-cleanup work'}\n            ledger['execution_status_before_base_postflight']=ledger.get('status')\n            ledger['status']='BASE_POSTFLIGHT_UNQUALIFIED_RESOURCE_REFUSAL'\n        final_clients=extension.cleanup_registry(owned_connections)\n        ledger['all_owned_connection_cleanup']=final_clients\n        if extension.registry_failed(final_clients):\n            ledger['execution_status_before_client_cleanup']=ledger.get('status')\n            ledger['status']='OWNED_CLIENT_CLEANUP_FAILED'\n        # Stop only the freshly-created owned cluster."
+  },
+  {
+    "before": "post=owned_connect(db,case+':postflight',postevents,case_physical)\n                postpf={'passed':False,'events':postevents}\n                try:",
+    "after": "post=None\n                postpf={'passed':False,'events':postevents}\n                try:\n                    post=owned_connect(db,case+':postflight',postevents,case_physical)"
+  },
+  {
+    "before": "post_path=evidence/(case+'-POSTFLIGHT.json')",
+    "after": "if postpf.get('passed') is not True:\n                    if not store.space_exhausted and not ledger.get('resource_admission_refused'):\n                        postpf['independent_failure_postflight']=extension.capture_failed_postflight(\n                            connect,case_physical,'case_failure_postflight')\n                    else:\n                        postpf['independent_failure_postflight']={'status':'NOT_ATTEMPTED_RESOURCE_REFUSAL','passed':False}\n                post_path=evidence/(case+'-POSTFLIGHT.json')"
+  },
+  {
+    "before": "elif base_preflight_complete:",
+    "after": "    if base_report['status']!='PASSED':\n                base_report['independent_failure_postflight']=extension.capture_failed_postflight(\n                    lambda label,events:owned_connect('fixture_base',label,events,base_physical),\n                    base_physical,'base_failure_postflight')\n        elif base_preflight_complete:"
+  }
+]

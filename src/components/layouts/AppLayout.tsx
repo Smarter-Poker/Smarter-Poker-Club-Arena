@@ -97,8 +97,13 @@ function AppLayoutContent() {
 
   return (
     <div className={styles.layout} data-profile-gate-status={profileStatus}>
-      {/* First-time Welcome Modal */}
-      {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
+      {/* First-time Welcome Modal. Signed-in players only (2026-09-17): the
+          Help Center and the legal documents are public and indexed, and a
+          reader arriving from a search result must not meet an entry
+          acknowledgement before the page they came for. The acknowledgement
+          is about ENTERING the arena; a signed-out reader cannot. They meet
+          it the first time they are signed in, exactly as before. */}
+      {isReady && !!user && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 
       {/* Force Poker Alias Selection for Google Auth users */}
       {profileReady && (

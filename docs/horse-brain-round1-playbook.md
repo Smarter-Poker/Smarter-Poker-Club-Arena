@@ -1,5 +1,7 @@
 # Horse Brain: the common first-round standard
 
+> **Current implementation plan — September 17, 2026:** use the [source-grounded Phase 6–15 completion plan](horse-brain-phases6-15-completion-plan-2026-09-17.md), based on protected source `4a2bff6f`. Earlier dated source-only counts and delivery restrictions below are historical; they are not current execution or completion status.
+
 > **Current status — September 15, 2026 (source-only).** The reviewed blueprint requirements below remain in force. The owned Club Arena worktree contains 52 maintained runtime source/test/helper edits over `a8ce6b5697ba17cf92d81b8559e74c1d22f9f595`, with 1,547 focused cases prepared; no new tests have been executed and no installation or publication has occurred for these changes. Older counts and status statements below (including 651-case composition snapshots) are historical observations, not current acceptance claims. See [current Horse Brain acceptance record](/Users/smarter.poker/Documents/Codex/2026-09-11/ple/outputs/horse-brain-current-acceptance.md) for current evidence and remaining gates.
 
 Revised September 11, 2026 at the user's direction, following the Phase 6–10 parity audit.
@@ -91,11 +93,11 @@ Reconcile every production variant/configuration with an implemented pack or an 
 
 **Later enhancement.** More reference coverage, stronger results and sustained long-horizon certification. Graph ownership, complete execution accounting, deployed observability and honest completion status cannot wait.
 
-## September 14 delivery-policy update
+## Current publication policy — September 17
 
-The repository owner's current policy requires local computation and prohibits GitHub use. Historical PR, CI and deployment records below remain evidence of their own runs; they do not authorize new GitHub transfers, API calls or workflows. Local Git commits and exact-source offline review bundles are permitted.
+Read the current shared AGENTS policy. The former local-only/no-GitHub instructions are revoked. Assigned Horse changes use protected GitHub checks and merge, then the existing Club Arena client and engine publishers on Hetzner. Each authorized owner completes its own delivery without a numbered queue or human-only approval label. Preserve required automatic checks, exact revision proof, maintenance safeguards and provider concurrency. Retired local/custom publishers, new release watchers and repair loops remain prohibited.
 
-Current Documents/AGENTS.md records the installed shared interface and permits read-only status, while preparation status remains an unconfirmed refusal. Cleanup, provider and source-job qualification still block execution. The native delivery replacement must preserve review, source ancestry, artifact integrity and production safeguards; interface installation and admitted execution are separate acceptance facts. A local build or verified Git bundle does not establish either. The common first-round publication gate remains open until the authorized route publishes the reviewed Horse source, exact served identity is verified, and the required natural behavior is observed. Do not weaken that gate or implement unrelated infrastructure to close this Horse-only task.
+The common first-round publication gate remains open until the authorized route publishes the reviewed Horse source, exact served identity is verified, and the required natural behavior is observed. A completed build or an installed interface is not that proof. Do not weaken the gate or expand this Horse-only task into unrelated infrastructure.
 
 ## Required closeout record for every phase
 

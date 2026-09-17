@@ -1,0 +1,54 @@
+[
+  {
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "argument_types": [],
+    "body_md5": "ad6aca0f391fd3f9b0afc94fb8aa56ac",
+    "cost": 100,
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_log_jackpot_payout_without_hand()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF NEW.hand_id IS NULL THEN\n    INSERT INTO public.bbj_hand_evidence_log (kind, payout_id, table_id, hand_number, detail)\n    VALUES ('payout_without_hand', NEW.id, NEW.table_id, NEW.hand_number,\n            jsonb_build_object('total_amount', NEW.total_amount,\n                               'note', 'hand_history row was not found when the payout was written'));\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+    "identity": "public.fn_log_jackpot_payout_without_hand()",
+    "kind": "f",
+    "language": "plpgsql",
+    "leakproof": false,
+    "owner": "postgres",
+    "parallel": "u",
+    "result": "trigger",
+    "returns_set": false,
+    "rows": 0,
+    "security_definer": true,
+    "settings": [
+      "search_path=public"
+    ],
+    "strict": false,
+    "support": "-",
+    "volatility": "v"
+  },
+  {
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "argument_types": [],
+    "body_md5": "6bc2058752433fc729fbd1d9331c1d0d",
+    "cost": 100,
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_bbj_ledger_delete_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  INSERT INTO public.bbj_ledger_deletions (source_table, row_data)\n  VALUES (TG_TABLE_NAME, to_jsonb(OLD));\n  -- One alert per statement would flood on a cascade; dedupe to one per table per hour.\n  IF NOT EXISTS (\n    SELECT 1 FROM public.financial_alerts\n     WHERE source = 'bbj_ledger_delete_guard'\n       AND context->>'table' = TG_TABLE_NAME\n       AND created_at > now() - interval '1 hour') THEN\n    INSERT INTO public.financial_alerts (severity, source, message, context)\n    VALUES ('critical', 'bbj_ledger_delete_guard',\n      'A BBJ ledger row was deleted. The 2026-08 drift incident was exactly this. Review bbj_ledger_deletions.',\n      jsonb_build_object('table', TG_TABLE_NAME, 'role', current_user,\n                         'app', current_setting('application_name', true)));\n  END IF;\n  RETURN OLD;\nEND $function$\n",
+    "identity": "public.fn_bbj_ledger_delete_guard()",
+    "kind": "f",
+    "language": "plpgsql",
+    "leakproof": false,
+    "owner": "postgres",
+    "parallel": "u",
+    "result": "trigger",
+    "returns_set": false,
+    "rows": 0,
+    "security_definer": true,
+    "settings": [
+      "search_path=public"
+    ],
+    "strict": false,
+    "support": "-",
+    "volatility": "v"
+  }
+]

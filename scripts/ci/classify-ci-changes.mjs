@@ -44,6 +44,7 @@ export function classifyChangedPaths(paths) {
     tests:
       broad ||
       commitmentAudit ||
+      matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/),
     phase4: phase4Changed,
     fixture: matches(fixture),

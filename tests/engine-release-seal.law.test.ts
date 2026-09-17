@@ -121,6 +121,16 @@ describe('disposable Git fixtures preserve the calling repository', () => {
   );
 });
 
+it('executes the actual bounded recovery request without duplicate pauses', () => {
+  const result = spawnSync(
+    'python3',
+    [resolve(ROOT, 'tests/operations/engine-release-recovery-window.py')],
+    { encoding: 'utf8' }
+  );
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.stderr).toContain('Ran 5 tests');
+});
+
 describe('the durable engine release seal', () => {
   let sandbox = '';
   let bin = '';
@@ -1190,6 +1200,66 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
       runSeal(['attest-terminal', '--sha', B_SHA, '--run-id', '309-1', '--control-sha', C_SHA])
         .stdout
     ).toBe('sealed');
+  });
+
+  it('reserves one recovery window only for an unshipped failed ancestor or an observed missed certificate', () => {
+    expect(
+      runSeal([
+        'bootstrap-running',
+        '--container',
+        'club-arena-engine',
+        ...auditArgs('410-1', 'bootstrap fixture'),
+      ]).status
+    ).toBe(0);
+    const reserve = [
+      'reserve-recovery-window',
+      '--sha',
+      B_SHA,
+      '--run-id',
+      '412-1',
+      '--repo',
+      sandbox,
+    ];
+    expect(runSeal(reserve).stdout).toBe('unavailable');
+    expect(
+      runSeal([
+        'record-failure',
+        '--sha',
+        B_SHA,
+        '--run-id',
+        '411-1',
+        '--control-sha',
+        C_SHA,
+        '--invocation-id',
+        'e'.repeat(32),
+        '--exit-status',
+        '1',
+        '--container',
+        'club-arena-engine',
+      ]).status
+    ).toBe(0);
+    const first = runSeal(reserve);
+    expect(first.status, first.stderr).toBe(0);
+    expect(Number(first.stdout)).toBeGreaterThan(Date.now() - 10000);
+    const receipt = join(sandbox, 'state', 'engine-recovery-window-412-1.json');
+    const value = JSON.parse(readFileSync(receipt, 'utf8'));
+    expect(value.cause).toBe('failed-release:411-1');
+    // Replaying after completion keeps the expired original announcement;
+    // it cannot pause players again or turn a lost response into a fresh end.
+    value.announcedAt -= 600000;
+    writeFileSync(receipt, JSON.stringify(value));
+    expect(runSeal(reserve).stdout).toBe(String(value.announcedAt));
+    expect(runSeal([...reserve.slice(0, 2), A_SHA, ...reserve.slice(3)]).stdout).toBe(
+      'unavailable'
+    );
+    expect(
+      runSeal(['reserve-recovery-window', '--sha', C_SHA, '--run-id', '413-1', '--repo', sandbox])
+        .status
+    ).toBe(1);
+    rmSync(join(sandbox, 'state', 'engine-release-results', '411-1.json'));
+    expect(
+      runSeal([...reserve.slice(0, 4), '414-1', ...reserve.slice(5), '--missed-window']).status
+    ).toBe(0);
   });
 
   it('fsyncs one immutable terminal failure after desired recovery and never aliases it with success', () => {

@@ -1,0 +1,13 @@
+# Immediate recovery inside the existing engine release transaction
+
+A failed release could consume the small admission interval at the start of the hourly break and wait for the next hour. The existing 285-second candidate/rollback requirement stays intact.
+
+The host transaction can now reserve one immutable announcement timestamp per run after a durable failed ancestor that has not shipped, or after directly observing a missed certificate. It reads existing seal failure receipts; no GitHub request fields, frozen v1 wrappers, scheduler, separate publisher or release observer gain write authority. An already serving target still completes by exact certification without another pause.
+
+The running engine receives the fixed timestamp through an internally authenticated, loopback-only request. Its existing maintenance owner checks the installed database capability, startup recovery, current break/thaw and separation from the next hourly announcement. Accepted requests use the same two-minute lead, five-minute countdown, table parking, ownership token, absolute end and v3 thaw as the regular break. Duplicate or expired requests cannot extend it. An unknown HTTP outcome retains the original reservation. A failed extra attempt does not allocate another timestamp.
+
+The database guard now covers the durable announcement, countdown and release boundary outside the hourly clock window. Governed DDL takes the existing maintenance boundary lock shared; an exclusive announcement cannot race migration admission. Existing provider-role exclusions and audited emergency overrides remain. The service-only capability requires both expected guard bodies and both enabled event-trigger bindings. Preimage assertions prevent overwriting concurrent guard changes.
+
+Qualification uses the existing server suite, release-seal suite and required PostgreSQL fixture job. Cases cover authentication, malformed input, duplicates, process replacement, lost acknowledgment, stragglers, expired replay, fixed duration, original hourly behavior, receipt eligibility, unknown request outcome, rollback budgets, real PostgreSQL roles, DDL rollback and concurrency. The isolated PostgreSQL test demonstrates the old outside-hour admission gap before applying the candidate.
+
+Installation order: qualify and install the exact migration outside protected maintenance, read back its history and capability, then publish through the existing protected engine route. The first runtime installation may still use an hourly window because an older serving engine has no recovery endpoint. Source qualification is not production installation or an observed production recovery event; record those separately in the task evidence.

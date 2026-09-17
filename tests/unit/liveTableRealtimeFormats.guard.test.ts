@@ -2,12 +2,67 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { remainingObservationMs } from '../e2e/support/observationDeadline';
+import { assertInitialTableOwnership } from '../e2e/support/initialTableOwnership';
 
 const root = resolve(__dirname, '../..');
 const spec = readFileSync(join(root, 'tests/e2e/production-live-table-realtime.spec.ts'), 'utf8');
 const server = readFileSync(join(root, 'server/src/GameServer.ts'), 'utf8');
 
 describe('the production realtime certificate covers every live-game lane', () => {
+  it('accepts the retained same-transport handoff before observation', () => {
+    // Actual MTT and Spin requests in production run 35249791396. Both
+    // handoffs preceded their presentation journal and causal observation.
+    for (const [requests, observationStartedAt] of [
+      [[1789664624353, 1789664625115], 1789664625935],
+      [[1789664653161, 1789664653895], 1789664657850],
+    ] as const) {
+      expect(() =>
+        assertInitialTableOwnership(
+          requests.map((at) => ({ at, socketId: 1 })),
+          1,
+          observationStartedAt
+        )
+      ).not.toThrow();
+    }
+    expect(spec).toContain('assertInitialTableOwnership(');
+    expect(spec).toContain('preOutageTransports[0]!');
+  });
+
+  it('rejects missing acquisition, competing transports and acquisition during gameplay', () => {
+    expect(() => assertInitialTableOwnership([], 1, 100)).toThrow('no subscription request');
+    expect(() => assertInitialTableOwnership([{ at: 10, socketId: 2 }], 1, 100)).toThrow(
+      'crossed physical transports'
+    );
+    expect(() =>
+      assertInitialTableOwnership(
+        [
+          { at: 10, socketId: 1 },
+          { at: 20, socketId: 2 },
+        ],
+        1,
+        100
+      )
+    ).toThrow('crossed physical transports');
+    for (const at of [100, 101]) {
+      expect(() =>
+        assertInitialTableOwnership(
+          [
+            { at: 10, socketId: 1 },
+            { at, socketId: 1 },
+          ],
+          1,
+          100
+        )
+      ).toThrow('during the observed hand cycle');
+    }
+    expect(() => assertInitialTableOwnership([{ at: Number.NaN, socketId: 1 }], 1, 100)).toThrow(
+      'invalid subscription timestamp'
+    );
+    expect(() => assertInitialTableOwnership([{ at: 10, socketId: 1 }], 1, Number.NaN)).toThrow(
+      'exact observation and transport'
+    );
+  });
+
   it('keeps one finite case deadline across long hands and reconnect proof', () => {
     const startedAt = 1_000_000;
     const deadline = startedAt + 390_000;

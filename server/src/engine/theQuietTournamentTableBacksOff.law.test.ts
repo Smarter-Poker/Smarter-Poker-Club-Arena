@@ -77,6 +77,7 @@ function startable(pauses: number[], stopAfter: number) {
   engine.restoreSitOutsFromSeats = () => {};
   engine.evictExpiredSitOuts = async () => {};
   engine.checkCrashRecovery = async () => false;
+  engine.readParkedTimeBanks = async () => {};
   engine.resolveOrphanedAddOns = async () => {};
   engine.broadcastCurrentState = async () => {};
   engine.scheduleHeartbeatCheck = () => {};
@@ -92,6 +93,7 @@ function pacedByRealTimers() {
   engine.restoreSitOutsFromSeats = () => {};
   engine.evictExpiredSitOuts = async () => {};
   engine.checkCrashRecovery = async () => false;
+  engine.readParkedTimeBanks = async () => {};
   engine.resolveOrphanedAddOns = async () => {};
   engine.broadcastCurrentState = async () => {};
   engine.scheduleHeartbeatCheck = () => {};

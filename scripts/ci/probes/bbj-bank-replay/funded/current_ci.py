@@ -95,6 +95,66 @@ def identity(environment, event, head, parents, workspace):
                 runner=environment['RUNNER_NAME'], event=event_name, ref=environment['GITHUB_REF'])
 
 
+# Only fixed local validation messages may become public diagnostic codes.
+# Never print exception text: an HTTP/Git/JSON error can contain private inputs.
+TIMING_REFUSAL_CODES = {
+    'Pristine current checkout required': 'CHECKOUT_NOT_PRISTINE',
+    'Existing GitHub accounting CI invocation required': 'CI_INVOCATION_MISMATCH',
+    'Wrong repository or accounting job': 'REPOSITORY_OR_JOB_MISMATCH',
+    'Wrong workflow origin': 'WORKFLOW_ORIGIN_MISMATCH',
+    'Original GitHub-hosted Linux X64 accounting job required': 'HOSTED_RUNNER_ROUTE_MISMATCH',
+    'Actual checkout must match this workflow revision': 'CHECKOUT_REVISION_MISMATCH',
+    'Unexpected accounting checkout': 'CHECKOUT_PATH_MISMATCH',
+    'Canonical current workflow run/attempt required': 'RUN_OR_ATTEMPT_MALFORMED',
+    'Actual hosted runner name required for evidence': 'RUNNER_NAME_MISSING',
+    'Same-repository main-target PR required': 'PR_REPOSITORY_OR_BASE_MISMATCH',
+    'PR source is not in the actual checkout identity': 'PR_SOURCE_NOT_CHECKOUT_PARENT',
+    'Current PR merge reference required': 'PR_MERGE_REFERENCE_MISMATCH',
+    'Scheduled existing main verification only': 'SCHEDULE_REFERENCE_MISMATCH',
+    'No manual, external, or historical financial admission is accepted': 'EVENT_NOT_ADMITTED',
+    'Malformed checked-out commit parent header': 'COMMIT_PARENT_HEADER_MALFORMED',
+    'Hosted temporary directory required': 'TIMING_DIRECTORY_MISSING',
+    'Exact owned current-attempt timing path required': 'TIMING_PATH_MISMATCH',
+    'Current timing observation cannot be replaced or reused': 'TIMING_OBSERVATION_ALREADY_EXISTS',
+    'Timing step requires its scoped read-only Actions token': 'TIMING_TOKEN_MISSING',
+    'Timing metadata redirect refused': 'TIMING_REDIRECT_REFUSED',
+    'Timing metadata response refused': 'TIMING_HTTP_STATUS_REFUSED',
+    'Timing metadata response exceeds bound': 'TIMING_RESPONSE_OVERSIZED',
+    'Incomplete current-attempt job response': 'ATTEMPT_JOB_RESPONSE_INCOMPLETE',
+    'Exactly one current accounting job required': 'ACCOUNTING_JOB_NOT_UNIQUE',
+    'Actual job does not match this hosted checkout/run/attempt/runner': 'JOB_IDENTITY_MISMATCH',
+    'Actual UTC job start required': 'JOB_START_MISSING',
+    'Malformed actual job start': 'JOB_START_MALFORMED',
+    'Actual accounting job start/deadline is not current': 'JOB_DEADLINE_NOT_CURRENT',
+    'Insufficient actual job time for a bounded case and cleanup': 'JOB_BUDGET_INSUFFICIENT',
+}
+
+
+class TimingRequestRefused(RuntimeError):
+    def __init__(self, reason_code):
+        allowed = set(TIMING_REFUSAL_CODES.values()) | {'TIMING_TRANSPORT_OR_DECODING_REFUSED'}
+        self.reason_code = reason_code if reason_code in allowed else 'LOCAL_OPERATION_REFUSED'
+        super().__init__('Current job timing request refused; no retry')
+
+
+def timing_refusal_reason(error):
+    if type(error) is TimingRequestRefused:
+        return error.reason_code
+    if type(error) is RuntimeError:
+        return TIMING_REFUSAL_CODES.get(str(error), 'LOCAL_OPERATION_REFUSED')
+    return 'LOCAL_OPERATION_REFUSED'
+
+
+def checkout_identity(git):
+    """Read physical commit headers; revision walking hides shallow parents."""
+    head = git('rev-parse', 'HEAD')
+    headers = git('cat-file', '-p', head).split('\n\n', 1)[0]
+    parents = [line[7:] for line in headers.splitlines() if line.startswith('parent ')]
+    require(all(re.fullmatch('[0-9a-f]{40}', parent) is not None for parent in parents),
+            'Malformed checked-out commit parent header')
+    return head, parents
+
+
 def timing_url(current):
     return ('https://api.github.com/repos/' + REPOSITORY + '/actions/runs/' +
             current['run_id'] + '/attempts/' + current['run_attempt'] + '/jobs?per_page=100')
@@ -152,7 +212,8 @@ def produce_job_timing(repository, output):
     require(git('rev-parse','--show-toplevel') == str(repository) and
             not git('status','--porcelain','--untracked-files=no'), 'Pristine current checkout required')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-    current = identity(os.environ,event,git('rev-parse','HEAD'),git('show','-s','--format=%P','HEAD').split(),repository)
+    head, parents = checkout_identity(git)
+    current = identity(os.environ,event,head,parents,repository)
     output = timing_path(output,current,os.environ)
     require(not output.exists(), 'Current timing observation cannot be replaced or reused')
     token = os.environ.get('GH_TOKEN')
@@ -171,7 +232,10 @@ def produce_job_timing(repository, output):
         selected, timing = timing_observation(current,json.loads(raw),time.time())
     except BaseException as error:
         # Never put HTTP headers, token, response body or server error details in logs.
-        raise RuntimeError('Current job timing request refused (' + type(error).__name__ + '); no retry') from None
+        reason = timing_refusal_reason(error)
+        if reason == 'LOCAL_OPERATION_REFUSED':
+            reason = 'TIMING_TRANSPORT_OR_DECODING_REFUSED'
+        raise TimingRequestRefused(reason) from None
     finally:
         token = None
     write_exclusive(output,{'format':1,'identity':current,'request_url':timing_url(current),
@@ -195,8 +259,7 @@ class CurrentAccountingRun:
         event_path = Path(os.environ.get('GITHUB_EVENT_PATH', ''))
         require(event_path.is_file(), 'Current Actions event file required')
         event = json.loads(event_path.read_text())
-        head = self.git('rev-parse', 'HEAD')
-        parents = self.git('show', '-s', '--format=%P', 'HEAD').split()
+        head, parents = checkout_identity(self.git)
         self.identity = identity(os.environ, event, head, parents, self.repository)
         require(self.output.is_relative_to(self.repository / 'artifacts/bbj-bank-replay') and
                 not self.output.is_symlink(), 'Funded receipts must use the existing retained artifact directory')
@@ -393,5 +456,6 @@ if __name__ == '__main__':
         print(json.dumps({'status':'CURRENT_JOB_TIMING_RECORDED','path':str(path)}))
     except BaseException as error:
         print(json.dumps({'status':'CURRENT_JOB_TIMING_REFUSED','error_type':type(error).__name__,
+                          'reason_code':timing_refusal_reason(error),
                           'financial_execution':False,'automatic_retry':False}))
         sys.exit(1)

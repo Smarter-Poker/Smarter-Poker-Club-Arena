@@ -390,11 +390,68 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
         Path(environment['GITHUB_EVENT_PATH']).write_text(json.dumps(self.event))
         def git(arguments,**kwargs):
             return {('rev-parse','--show-toplevel'):directory,('status','--porcelain','--untracked-files=no'):'',
-                    ('rev-parse','HEAD'):self.commit,('show','-s','--format=%P','HEAD'):self.source}[tuple(arguments[3:])]
+                    ('rev-parse','HEAD'):self.commit,
+                    # actions/checkout depth=1: the raw commit retains parents,
+                    # while Git's revision walker treats HEAD as a shallow root.
+                    ('cat-file','-p',self.commit):'tree ' + 'c'*40 + '\nparent ' + self.source + '\n\nPR merge\n',
+                    ('show','-s','--format=%P','HEAD'):''}[tuple(arguments[3:])]
         stack.enter_context(patch.dict(ci.os.environ,environment,clear=True))
         stack.enter_context(patch.object(ci.subprocess,'check_output',side_effect=git))
         stack.enter_context(patch.object(ci.time,'time',return_value=1000))
         return stack
+
+    def test_shallow_pr_checkout_retains_authoritative_parent_identity(self):
+        from unittest.mock import MagicMock
+        # Actual PR4733 checkout/log and attempt1 REST source identities.
+        self.commit='fff56d9ab3ae6519130e50f882e3724939309849'
+        self.source='f6a292dd06a3deaa1b48cd8eaa462178df52b8c0'
+        base='03a82d9ea218ab01f74b5939b272f5f6a7d156fb'
+        self.env.update(GITHUB_SHA=self.commit,GITHUB_RUN_ID='35187063376',
+                        RUNNER_NAME='GitHub Actions 1000150378',
+                        GITHUB_REF='refs/pull/4733/merge',
+                        GITHUB_WORKFLOW_REF=ci.WORKFLOW+'refs/pull/4733/merge')
+        self.event['number']=4733
+        self.event['pull_request']['head']['sha']=self.source
+        body=self.job_response();job=body['jobs'][0]
+        job.update(id=105091407834,run_id=35187063376,started_at='2026-09-17T05:47:10Z')
+        response=MagicMock(status=200);response.read.return_value=json.dumps(body).encode()
+        response.__enter__.return_value=response
+        opener=MagicMock();opener.open.return_value=response
+        headers='tree f89d8ac211fee52f44ba320de4c5ffeabc682d65\nparent '+base+'\nparent '+self.source+'\n\nMerge\n'
+        with tempfile.TemporaryDirectory() as directory,self.timing_producer_context(directory),\
+                patch.object(ci.time,'time',return_value=1789624070),\
+                patch.object(ci.urllib.request,'build_opener',return_value=opener):
+            original_git=ci.subprocess.check_output.side_effect
+            def shallow_git(arguments,**kwargs):
+                if tuple(arguments[3:])==('cat-file','-p',self.commit):return headers
+                return original_git(arguments,**kwargs)
+            ci.subprocess.check_output.side_effect=shallow_git
+            path=Path(directory).resolve()/'bbj-job-timing-35187063376-1.json'
+            ci.produce_job_timing(directory,path)
+            packet=json.loads(path.read_text())
+            self.assertEqual(packet['identity']['commit'],self.commit)
+            self.assertEqual(packet['identity']['source_commit'],self.source)
+            self.assertEqual(packet['job']['head_sha'],self.source)
+            self.assertEqual(packet['timing']['job_started_at_unix'],1789624030)
+            self.assertEqual(opener.open.call_count,1)
+            self.assertFalse(any(call.args[0][3:4]==['show'] for call in ci.subprocess.check_output.call_args_list))
+            class ModeledCustody:
+                def receipt(self):return {'manifest_sha256':'c'*64}
+            output=Path(directory).resolve()/'artifacts/bbj-bank-replay/funded'
+            output.parent.mkdir(parents=True)
+            run=ci.CurrentAccountingRun(directory,'/unexecuted/postgresql',output,ModeledCustody())
+            self.assertEqual(run.identity,packet['identity'])
+            self.assertEqual(run.read_job_timing(str(path)),packet['timing'])
+            self.assertNotIn('GH_TOKEN',run.child_env)
+            self.assertEqual(run.attempt['funded_cases_executed'],[])
+            # Commit-message text must not manufacture a missing parent.
+            with self.assertRaises(RuntimeError):
+                head,parents=ci.checkout_identity(lambda *args:self.commit if args[0]=='rev-parse' else
+                                                 'tree '+'c'*40+'\nparent '+base+'\n\nparent '+self.source)
+                ci.identity(ci.os.environ,self.event,head,parents,Path(directory))
+            with self.assertRaises(RuntimeError):
+                ci.checkout_identity(lambda *args:self.commit if args[0]=='rev-parse' else
+                                     'tree '+'c'*40+'\nparent invalid\n\nMerge')
 
     def test_timing_producer_is_single_read_exclusive_and_receipt_is_bound(self):
         from unittest.mock import MagicMock
@@ -424,5 +481,23 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             with self.assertRaises(RuntimeError) as observed:ci.produce_job_timing(directory,path)
             self.assertNotIn('modeled-token-only',str(observed.exception))
             self.assertNotIn('private response',str(observed.exception))
+            self.assertEqual(opener.open.call_count,1)
+            self.assertFalse(path.exists())
+            self.assertEqual(ci.timing_refusal_reason(observed.exception),'TIMING_TRANSPORT_OR_DECODING_REFUSED')
+        self.assertEqual(ci.timing_refusal_reason(RuntimeError('PR source is not in the actual checkout identity')),
+                         'PR_SOURCE_NOT_CHECKOUT_PARENT')
+        self.assertEqual(ci.timing_refusal_reason(RuntimeError('modeled-token-only private response')),
+                         'LOCAL_OPERATION_REFUSED')
+        self.assertEqual(ci.timing_refusal_reason(ci.TimingRequestRefused('modeled-token-only private response')),
+                         'LOCAL_OPERATION_REFUSED')
+        response=MagicMock(status=200)
+        body=self.job_response();body['jobs'][0]['runner_name']='wrong'
+        response.read.return_value=json.dumps(body).encode();response.__enter__.return_value=response
+        opener=MagicMock();opener.open.return_value=response
+        with tempfile.TemporaryDirectory() as directory,self.timing_producer_context(directory),\
+                patch.object(ci.urllib.request,'build_opener',return_value=opener):
+            path=Path(directory).resolve()/'bbj-job-timing-123-1.json'
+            with self.assertRaises(RuntimeError) as observed:ci.produce_job_timing(directory,path)
+            self.assertEqual(ci.timing_refusal_reason(observed.exception),'JOB_IDENTITY_MISMATCH')
             self.assertEqual(opener.open.call_count,1)
             self.assertFalse(path.exists())

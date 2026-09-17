@@ -38,6 +38,7 @@ IDENTITY_TESTS = {
     'test_final_teardown_interrupts_cannot_skip_later_owned_stages',
     'test_actual_job_start_supplies_finite_caps_without_invocation_time',
     'test_timing_refuses_ambiguous_or_wrong_current_job',
+    'test_shallow_pr_checkout_retains_authoritative_parent_identity',
     'test_timing_producer_is_single_read_exclusive_and_receipt_is_bound',
     'test_timing_api_failure_is_redacted_without_retry',
 }

@@ -21,6 +21,7 @@ import { Link } from 'react-router-dom';
 import styles from './PokerArenaLandingPage.module.css';
 import { signInUrl } from '../lib/signIn';
 import { WEB_ORIGIN } from '../lib/appBase';
+import { capture } from '../lib/analytics';
 
 const SIGN_UP_URL = `${WEB_ORIGIN}/auth/signup?redirect=${encodeURIComponent('/hub/club-arena')}`;
 
@@ -66,9 +67,27 @@ const STEPS = [
   },
 ];
 
+/**
+ * DISCOVERABILITY PHASE 5 (2026-09-17). The landing page is the top of the
+ * activation funnel (signup -> first_login -> first_table_seat ..., see
+ * src/lib/analytics.ts), and until now nothing recorded that a visitor saw
+ * it or which button took them out of it. Two events, through the same
+ * consent-gated PostHog path as every other event in the arena: a view on
+ * mount, and a click on each way in, named by placement so the hero and the
+ * closing call to action can be compared. The page itself still fetches
+ * nothing; capture() is a no-op until the visitor has consented.
+ */
+const LANDING_VIEWED = 'landing_viewed';
+const LANDING_CTA_CLICKED = 'landing_cta_clicked';
+
+function trackCta(cta: 'sign_up' | 'sign_in', placement: 'hero' | 'closing'): void {
+  capture(LANDING_CTA_CLICKED, { cta, placement, product: 'poker_arena' });
+}
+
 export default function PokerArenaLandingPage() {
   useEffect(() => {
     window.scrollTo(0, 0);
+    capture(LANDING_VIEWED, { product: 'poker_arena', referrer: document.referrer || null });
   }, []);
 
   return (
@@ -81,10 +100,18 @@ export default function PokerArenaLandingPage() {
           Own Players, And Run The Whole Club From One Dashboard.
         </p>
         <div className={styles.actions}>
-          <a className={styles.primary} href={SIGN_UP_URL}>
+          <a
+            className={styles.primary}
+            href={SIGN_UP_URL}
+            onClick={() => trackCta('sign_up', 'hero')}
+          >
             Create A Free Account
           </a>
-          <a className={styles.secondary} href={signInUrl('/')}>
+          <a
+            className={styles.secondary}
+            href={signInUrl('/')}
+            onClick={() => trackCta('sign_in', 'hero')}
+          >
             Sign In
           </a>
         </div>
@@ -139,10 +166,18 @@ export default function PokerArenaLandingPage() {
       <section className={styles.cta}>
         <h2>Ready To Deal?</h2>
         <div className={styles.actions}>
-          <a className={styles.primary} href={SIGN_UP_URL}>
+          <a
+            className={styles.primary}
+            href={SIGN_UP_URL}
+            onClick={() => trackCta('sign_up', 'closing')}
+          >
             Create A Free Account
           </a>
-          <a className={styles.secondary} href={signInUrl('/')}>
+          <a
+            className={styles.secondary}
+            href={signInUrl('/')}
+            onClick={() => trackCta('sign_in', 'closing')}
+          >
             Sign In To Poker Arena
           </a>
         </div>

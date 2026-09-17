@@ -10,7 +10,7 @@ describe('the production realtime certificate covers every live-game lane', () =
   it('runs MTT, Spin and Sit & Go through the same read-only WebKit contract', () => {
     expect(spec).toContain("const TOURNAMENT_FORMATS = ['mtt', 'spin', 'sng'] as const");
     expect(spec).toContain('certifyReadOnlyTournamentFormat(page, request, testInfo, gameFormat)');
-    expect(spec).toContain('selectProgressingTournamentTable(request, gameFormat)');
+    expect(spec).toContain('selectProgressingTournamentTable(request, gameFormat, testInfo)');
     expect(spec).toContain('journal.waitForCausalHandCycle(');
     expect(spec).toContain('expectNextHandPresentation(page, cycle');
     expect(spec).toContain('whileConnectionBannerStaysHidden(');

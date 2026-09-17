@@ -1,4 +1,4 @@
 {
-  "_owner": "fix/google-discoverability - RouteSeo mounts beside <Routes> and rewrites robots, canonical and JSON-LD for EVERY route on first render; the static head is now indexable, so a signed-in route must flip to noindex before a crawler reads it, which cannot wait for a lazy chunk. seo.ts is the route table and DOM writer it needs, no dependencies. Together about 3kB gz; the entry chunk measured 148kB gz against the 161kB baseline with them in.",
-  "modules": ["src/components/seo/RouteSeo.tsx", "src/lib/seo.ts"]
+  "_owner": "fix/google-discoverability - RouteSeo mounts beside <Routes> and rewrites robots, canonical and JSON-LD for EVERY route on first render; the static head is now indexable, so a signed-in route must flip to noindex before a crawler reads it, which cannot wait for a lazy chunk. seo.ts is the route table and DOM writer it needs, no dependencies. Together about 3kB gz; the entry chunk measured 148kB gz against the 161kB baseline with them in. helpContent.ts (2026-09-17) is the Help Center's questions, imported by seo.ts to emit the FAQPage schema on /help; pure data, about 3kB gz.",
+  "modules": ["src/components/seo/RouteSeo.tsx", "src/lib/seo.ts", "src/pages/helpContent.ts"]
 }

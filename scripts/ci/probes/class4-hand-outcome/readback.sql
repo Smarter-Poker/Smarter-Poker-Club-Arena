@@ -8,6 +8,12 @@ DO $$ BEGIN
     OR has_parameter_privilege('service_role','session_replication_role','SET')
     OR has_parameter_privilege('authenticated','session_replication_role','SET')
     OR has_parameter_privilege('anon','session_replication_role','SET')
+    OR NOT EXISTS (
+      SELECT 1 FROM pg_index i
+      WHERE i.indexrelid=to_regclass('public.ca_drift_incidents_alert_uuid_idx')
+        AND i.indrelid='public.ca_drift_incidents'::regclass AND i.indisvalid AND i.indisready
+        AND pg_get_indexdef(i.indexrelid)=$index$CREATE INDEX ca_drift_incidents_alert_uuid_idx ON public.ca_drift_incidents USING btree ((((metadata ->> 'alert_id'::text))::uuid)) WHERE ((metadata ->> 'alert_id'::text) ~ '^[0-9a-fA-F-]{36}$'::text)$index$
+    )
     OR EXISTS(SELECT 1 FROM public.financial_alerts)
     OR EXISTS(SELECT 1 FROM public.hand_atomic_commits)
     OR EXISTS(SELECT 1 FROM public.ca_drift_incidents)

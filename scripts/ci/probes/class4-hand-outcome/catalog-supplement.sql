@@ -48,6 +48,10 @@ CREATE INDEX idx_financial_alerts_severity ON public.financial_alerts USING btre
 CREATE INDEX idx_financial_alerts_source_created ON public.financial_alerts USING btree (source, created_at DESC);
 CREATE INDEX idx_hand_atomic_commits_post_commit_pending ON public.hand_atomic_commits USING btree (table_id, hand_number) WHERE ((post_commit_payload IS NOT NULL) AND (post_commit_completed_at IS NULL));
 
+-- Exact existing mirror lookup index captured 2026-09-17T04:20:04Z.
+-- The original schema capture omitted this non-unique UUID-expression index.
+CREATE INDEX ca_drift_incidents_alert_uuid_idx ON public.ca_drift_incidents USING btree ((((metadata ->> 'alert_id'::text))::uuid)) WHERE ((metadata ->> 'alert_id'::text) ~ '^[0-9a-fA-F-]{36}$'::text);
+
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligations(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb, p_instance_id text, p_lease_generation uuid)
  RETURNS jsonb
  LANGUAGE plpgsql

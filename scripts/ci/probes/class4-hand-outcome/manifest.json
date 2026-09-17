@@ -78,8 +78,8 @@
     },
     "catalog_supplement": {
       "path": "scripts/ci/probes/class4-hand-outcome/catalog-supplement.sql",
-      "bytes": 81706,
-      "sha256": "4615fdb691add33016e4fb3f24d7e855c19b1f0ff2a1fa507373dc06ec5173d9"
+      "bytes": 82056,
+      "sha256": "ae5464035261f6307ad2ef95857ea6d5c8a006a32099323016b8232f4f4c2721"
     },
     "captured_functions": {
       "path": "scripts/ci/probes/class4-hand-outcome/captured-functions.json",
@@ -88,8 +88,8 @@
     },
     "readback": {
       "path": "scripts/ci/probes/class4-hand-outcome/readback.sql",
-      "bytes": 2042,
-      "sha256": "6fb08324937b9f24d5b324934a04ed76abdb0c1820212d9fad0273dede6df7b6"
+      "bytes": 2532,
+      "sha256": "a59d6c4d9d1feec6d8f8b8c488f8d48f674a305e2aeb7ca37f6615c0ee6d7d23"
     },
     "class4_component": {
       "path": "supabase/components/class4-hand-outcome-evidence.sql",

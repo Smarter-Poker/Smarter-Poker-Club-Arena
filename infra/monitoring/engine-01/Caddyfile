@@ -21,6 +21,15 @@
 }
 
 engine.smarter.poker {
+    # Compress the engine's HTTP responses (/health, /actions, lobby JSON).
+    # WebSocket frames are untouched: Caddy never encodes an upgraded
+    # connection. The static origin has carried `encode zstd gzip` since it
+    # went up; the engine host never did (performance checklist audit,
+    # 2026-09-17). The live /etc/caddy/Caddyfile on engine-01 is operator
+    # managed host state, so this line reaches production only when the
+    # operator adds it there and runs `caddy reload`.
+    encode zstd gzip
+
     @cors_preflight method OPTIONS
     handle @cors_preflight {
         header Access-Control-Allow-Origin "https://smarter.poker"

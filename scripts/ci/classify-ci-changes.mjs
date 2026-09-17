@@ -53,7 +53,7 @@ export function classifyChangedPaths(paths) {
   // These maintained verification inputs execute in the existing CSS browser
   // job. A test-only correction must run its connected browser regressions.
   const cashLobbyBrowser = matches(
-    /^tests\/e2e\/(?:mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
+    /^tests\/e2e\/(?:global-setup\.ts|mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
   );
   const nativeIsolationTool = matches(/^scripts\/ci\/build_pg17_isolationtester\.py$/);
   const horsePriority = matches(

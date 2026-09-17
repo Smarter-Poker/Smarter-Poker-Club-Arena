@@ -14,12 +14,20 @@ failed, browser cleanup rejected the orphaned response wait, terminating Node
 and hiding the initiating error from Playwright's report. Observe both promises
 with `Promise.all` so a failed click remains the reported failure. Successful
 setup still requires the real RPC's successful response and the closed dialog.
-This correction does not assert that the initiating production click failure
-is resolved; its actual diagnostic and final browser acceptance remain required.
+The isolated production account has zero chips, 500 diamonds, no occupied seat,
+and a live `bust_prompt=true` response. The existing Diamond invitation can cover
+the greeting. A real browser fixture reproduced that intercepted click. Reuse
+the already-tested lobby action handler to select the offer's real Not Now
+control before persisting the club message. No game or financial action occurs.
+The fixture runs in the existing Chromium/WebKit CSS gate; the classifier also
+routes future global-setup changes to that gate. Final production acceptance
+remains required; the old run could not retain its initiating error.
 
 Validation: the new wallet-source regression failed against the old pin. The
 Node-promise regression reproduced the unhandled page-closed rejection before
-the repair. All 50 cases in the four affected certification/preflight suites
-passed afterward. The exact amended read-only Cashier SQL contract passed on
+the repair. The real browser regression failed on the obstructing invitation
+before the handler was connected; all six affected Chromium/WebKit cases
+passed afterward with zero retries. All 317 cases in the five affected
+certification/preflight and CI-classification suites passed on the final code. The exact amended read-only Cashier SQL contract passed on
 production without any financial write or migration. Final hosted checks,
 protected integration and the production browser verdict are separate evidence.

@@ -12,6 +12,7 @@ function fixture(response: Promise<unknown>, click = vi.fn().mockResolvedValue(u
   const page = {
     getByRole: vi.fn((role: string) => (role === 'dialog' ? dialog : dismiss)),
     waitForResponse: vi.fn(() => response),
+    addLocatorHandler: vi.fn().mockResolvedValue(undefined),
   };
   return { page: page as unknown as Page, dialog, dismiss };
 }

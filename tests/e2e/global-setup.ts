@@ -31,6 +31,7 @@ import { dirname } from 'node:path';
 import { ensureClubMembership } from './support/ensureClubMembership';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
+import { registerDiamondInvitationDismissal } from './support/cashLobbyOverlays';
 
 export const STORAGE_STATE = 'tests/e2e/.auth/state.json';
 
@@ -108,6 +109,10 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
     .then(() => true)
     .catch(() => false);
   if (!appeared) return false;
+
+  // New zero-chip accounts can receive the existing Diamond invitation above
+  // this greeting. Take its real Not Now door before persisting the message.
+  await registerDiamondInvitationDismissal(page);
 
   // Observe both promises immediately. If the click fails, the finally block
   // closes the browser and rejects the response waiter too; an unobserved

@@ -18,6 +18,7 @@ const native = parse(
 
 describe('cash lobby verification reaches the existing browser gate', () => {
   it.each([
+    'tests/e2e/global-setup.ts',
     'tests/e2e/mobile-lobby-chrome.spec.ts',
     'tests/e2e/production-live-table-realtime.spec.ts',
     'tests/e2e/support/cashLobbyOverlays.ts',

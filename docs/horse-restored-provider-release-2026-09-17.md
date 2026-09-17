@@ -33,10 +33,16 @@ unrelated behavior and external-telemetry removal.
   `20260914155815` or recreate the existing private audit tables.
 - The unchanged guarded forward audit repair is installed as `20260917051350`
   (prepared reservation `20260916061537`); its body, owner and service-only ACL
-  are verified independently. The private reader `20260917050940` still needs
-  its own installation/readback evidence. The reader
-  retains its reviewed body and creates only the absent private RPC. It does
-  not run an audit, write game/financial data or activate a correction.
+  are verified independently. The private reader is installed as `20260917052511`
+  (prepared reservation `20260917050940`). Hosted CI run `35185140361`, job
+  `105085619766`, passed its directly invoked 109-case audit controls and
+  27-row reader fixture at `2026-09-17T05:21:14Z` on `da1fea11b45c`.
+  The installed reader source SHA256 is
+  `51a8337cc2f699d5f602247f1fb996cc87b303055cbabf83e52dff4b9452e427`;
+  body MD5 `769ff23dd4d9473a772a78585b12349b`, postgres owner,
+  STABLE/SECURITY DEFINER, fixed search path and service-only execution were
+  read back. It neither runs an audit nor writes game/financial data nor
+  activates a correction. The actual private gateway call remains to verify.
 - Source, PR checks, protected merge, database installation, engine release,
   client publication and observed live behavior are separate acceptance facts.
   The release owner must record each exact run and revision before closure.
@@ -61,3 +67,31 @@ Publication uses the existing protected GitHub-to-Hetzner client and engine
 routes. There is no agent-managed numbered release queue. Only actual source
 or database dependencies and existing provider safeguards constrain this
 assigned delivery. No new development phase begins as part of publication.
+
+## Private capture wiring
+
+Read-only host inspection found `HORSE_DECISION_JOURNAL_DIR` absent from both
+current-container and next-start environment key names. Node 22.23.2 supports
+`node:sqlite`, but no private Horse bind existed. That is a demonstrated capture
+availability gap in the published baseline, not a claim based only on source.
+
+The existing canonical `engine-up.sh` now supplies the fixed container path
+`/var/lib/club-arena/horse-decisions` and its dedicated durable bind together.
+Its bounded write/fsync and private directory/file preflight runs before the
+old engine is stopped. The existing executable launch regression verifies both
+candidate and desired launches, retained bytes and nine unsafe-path refusals;
+existing store tests own actual SQLite reopen/privacy/capacity behavior. No
+Dockerfile default, new publisher stage, watcher or retention process is added.
+Fresh hosted validation and actual published mount/capture evidence are pending.
+
+Capture remains bounded at 64 MiB/100,000 logical records and a 128 MiB SQLite
+main-file ceiling. Exhaustion preserves old evidence and reports capture gaps;
+there is no indefinite-retention or complete-population claim.
+
+## Protected integration
+
+PR #4726 intentionally recovers seven exact Horse prerequisites removed by
+restoration commit `ea498c1fa`. Silent Revert Guard run `35185140110` requires a
+human-applied `revert-approved` label for this recovery. The PR identifies the
+files and rationale. Do not self-apply that label or alter the guard, messages
+or application bytes to evade it. Required checks and publication remain open.

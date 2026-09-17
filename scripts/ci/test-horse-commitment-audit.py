@@ -23,7 +23,7 @@ INPUTS = {
     'format85': ('scripts/ci/probes/horse-commitment-audit/format-and-commitment.sql', 'e9011307afa8d70a835917a775173b9e16d399d94f28a49b7b53121591f1f8f3'),
     'roster24': ('scripts/ci/probes/horse-commitment-audit/roster-identity.sql', '95234c46cb34fb26a39974a3c0df4cf56f51cad03e4b71419295d0e58a6e818a'),
     'reader_auth': ('scripts/ci/probes/horse-commitment-audit/reader-auth.sql', 'fed395d00a7abff91d72309cf2f27b0edc6260c9451f3142a5ba39492c84d45c'),
-    'reader': ('supabase/migrations/20260917050940_horse_private_commitment_review_reader.sql', '51a8337cc2f699d5f602247f1fb996cc87b303055cbabf83e52dff4b9452e427'),
+    'reader': ('supabase/migrations/20260917052511_horse_private_commitment_review_reader.sql', '51a8337cc2f699d5f602247f1fb996cc87b303055cbabf83e52dff4b9452e427'),
     'reader27': ('scripts/ci/probes/horse-commitment-audit/reader-page.sql', '9f2f3598b8df9dc6eb7d2ede83b7e09e99de326d35486743885709685902395b'),
 }
 JOBS = (

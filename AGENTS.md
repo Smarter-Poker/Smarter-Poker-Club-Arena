@@ -1,3 +1,9 @@
+## Required reading and precedence
+
+At task start, every resumption/context loss, and before final validation read [the owner policy](docs/agent-policy/OWNER-POLICY.md), [operating law](docs/agent-policy/OPERATING-LAW.md), [hardening standard](docs/agent-policy/HARDENING.md), and [reference index](docs/agent-policy/REFERENCE-INDEX.md), plus the actual task checkpoint and applicable path instructions. On the owner’s Mac read the current shared sources in `/Users/smarter.poker/Documents` as well. Later explicit owner directions take precedence over an older mirror. Use [PUBLISHING.md](PUBLISHING.md) for this repository's delivery route.
+
+Historical handoffs and programmes are evidence and dependency references, not standing release instructions. Do not restore revoked global freezes, human approval labels, numbered queues or retired publishers. Preserve specific task holds and actual schema/financial/maintenance safeguards.
+
 # Current owner publication instruction, September 17, 2026
 
 This is the active instruction for local and cloud agents. Read [PUBLISHING.md](PUBLISHING.md) for the push, protected merge, provider publication and live-verification procedure. This later owner instruction supersedes the earlier restoration-only authority, ordered replay holds and conflicting historical playbooks.

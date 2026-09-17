@@ -5,7 +5,7 @@
 cannot provide an authenticated branch verdict.
 
 It is the one thing standing between an agent and a push that succeeds while
-delivering nothing: autopilot squash-merges the moment the required checks pass,
+delivering nothing: a PR can already be squash-merged before a follow-up push,
 and a commit pushed after that lands on a closed pull request. World Hub #1387
 shipped 1 of its 3 commits that way on 2026-09-06.
 

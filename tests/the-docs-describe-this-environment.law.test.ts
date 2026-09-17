@@ -286,3 +286,37 @@ describe('the docs describe THIS environment', () => {
     );
   });
 });
+
+
+const POLICY_FILES = [
+  'OWNER-POLICY.md', 'OPERATING-LAW.md', 'HARDENING.md', 'REFERENCE-INDEX.md',
+];
+const FIRST_OPEN_DOCS = [
+  'AGENT-PLAYBOOK.md', 'AGENTS-PUSH-GUIDE.md', 'CLAUDE.md',
+  '.agents/rules/00-agent-playbook.md',
+];
+const RETIRED_ACTIVE_DIRECTIONS = [
+  /your job ends at [“"`]push a branch/i,
+  /autopilot (?:squash-)?merges (?:it |only |the moment)/i,
+  /gh[^\n]{0,20}is NOT installed/i,
+  /migrations[^\n]*will be applied by CI/i,
+  /root retains sole (?:integration|release)/i,
+];
+
+describe('active agent instructions use the current policy', () => {
+  it('the root loader reaches the portable policy and every policy file exists', () => {
+    const loader = read('AGENTS.md');
+    for (const file of POLICY_FILES) {
+      expect(loader).toContain(`docs/agent-policy/${file}`);
+      expect(read(`docs/agent-policy/${file}`).trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('first-open guides do not reinstate retired release or environment directions', () => {
+    for (const file of FIRST_OPEN_DOCS) {
+      for (const retired of RETIRED_ACTIVE_DIRECTIONS) {
+        expect(read(file), `${file} reinstates ${retired}`).not.toMatch(retired);
+      }
+    }
+  });
+});

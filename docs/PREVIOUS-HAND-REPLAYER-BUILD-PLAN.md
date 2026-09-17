@@ -1,3 +1,5 @@
+> Current execution authority: root `AGENTS.md`, `docs/agent-policy/OPERATING-LAW.md`, and `PUBLISHING.md`. This dated plan supplies scope/dependency context only; it does not assign new work or override current delivery policy.
+
 # Previous Hand and Video Replayer - Build Plan
 
 Dan, 2026-09-05: "TAKE EVERYTHING YOU JUST SUGGESTED, AND CREATE COMPREHENSIVE
@@ -11,7 +13,7 @@ archive and the replayer; your own folded cards; hi-lo halves; casino-realism
 styling; Leave Table in real time; share link v3. Every phase below builds on
 that model. Nothing re-walks the action log.
 
-A phase is DONE when: built, wired, tests green, pushed, merged by autopilot,
+A phase is DONE when: built, wired, tests green, pushed, protected-merged by the authorized agent,
 `build-info.json` shows the squash SHA, and the change is seen on the live page.
 The changelog for each phase lives in `docs/changelog/2026-09-05-previous-hand-phase-N.md`.
 

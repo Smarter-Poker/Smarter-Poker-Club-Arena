@@ -690,7 +690,7 @@ root `node_modules` (the sandbox's Linux rollup binary is useless on the Mac).
 poll the log in later calls. `nohup … & disown` is not enough. `setsid` does not
 exist on macOS, and a `launchctl submit` job cannot read the working directory.
 
-**7.12 Merged is not landed.** Autopilot can squash-merge in under two minutes.
+**7.12 Merged is not landed.** Check the current PR state before every follow-up push.
 A follow-up push to a merged branch exits 0 and reaches nobody. If the PR has
 merged, start a **new branch off current `main`**; the `guard-merged-branch.sh`
 hook refuses that push and prints the recovery.
@@ -699,33 +699,11 @@ hook refuses that push and prints the recovery.
 
 ## 8. Shipping
 
-```bash
-# on the Mac (you have host_terminal), node is not on the default PATH:
-export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"
+Read root `AGENTS.md`, `AGENT-PLAYBOOK.md`, `docs/agent-policy/OPERATING-LAW.md` and `PUBLISHING.md`. Use the owned worktree and ordinary hooks. Inspect the actual environment and dependency contract; do not replace another task's directories or assume an old host tool or mismatched dependency symlink works.
 
-git fetch git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git main
-nohup git worktree add -b feat/<slug> ~/Documents/.agent-trees/club-arena/<name> FETCH_HEAD &
-cd ~/Documents/.agent-trees/club-arena/<name>
-ln -sfn ~/Documents/club-arena/node_modules node_modules
-ln -sfn ~/Documents/club-arena/server/node_modules server/node_modules
+The authorized agent owns the PR, required checks, protected merge, provider publication and actual behavior proof. Record the pending run and continue eligible authorized work during provider waits. Do not stop at the PR number or add a release watcher. Failed deployments enter immediate recovery under the operating law, with existing maintenance safeguards intact.
 
-git -c user.name="Smarter-Poker" \
-    -c user.email="254329056+Smarter-Poker@users.noreply.github.com" commit -m "…"
-
-# the hook runs guards + tsc + every test covering your diff, ~3 minutes:
-tmux new-session -d -s push "git push origin HEAD:refs/heads/feat/<slug> > /tmp/push.log 2>&1"
-```
-
-Never `--no-verify`. `agent-open-pr.yml` opens the PR, `agent-autopilot.yml`
-arms squash auto-merge, `publish-club-arena.yml` ships it. **Report the PR
-number and stop** — never sit in a loop watching CI. Verify later, once:
-
-```bash
-curl -s https://smarter.poker/hub/club-arena/build-info.json    # ca_sha == the squash commit
-```
-
-Write your own changelog at `docs/changelog/YYYY-MM-DD-<slug>.md` — never append
-to a shared file, that is the repo's biggest source of merge conflicts.
+Write scoped evidence to the existing task checkpoint and a separate changelog when required. Preserve other tasks' records.
 
 ---
 

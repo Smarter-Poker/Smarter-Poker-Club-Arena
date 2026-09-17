@@ -74,7 +74,7 @@ The deprecated repo `Smarter-Poker/Club-Arena-Design` is archived (read-only). D
 | Output               | `dist/`                                                                                                    |
 | Published to         | `ca-static.smarter.poker` — Caddy on the Hetzner box `estate-ci-1`, `/srv/club-arena/`                     |
 | Auto-deploy on push? | **YES, on merge to `main`** — `publish-club-arena.yml`, job `publish-to-origin`                            |
-| How to deploy        | Push a branch; follow required checks, autopilot merge, publish, and exact-SHA live verification.          |
+| How to deploy        | Push a branch; follow required checks, agent-owned protected merge, publish, and exact-SHA live verification.          |
 | Visible at           | `smarter.poker/hub/club-arena/*`, via ONE rewrite in the World Hub's `next.config.js`                      |
 | Vercel project       | none. `vercel.json` still has `git.deploymentEnabled: false`; the bundle is not a Vercel deployment at all |
 

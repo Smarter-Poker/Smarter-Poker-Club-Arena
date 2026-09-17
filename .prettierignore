@@ -80,3 +80,8 @@ scripts/qualification/fixtures/spin-history-retention/completed-start-authority.
 scripts/qualification/spin-history-retention-completed.manifest.json
 scripts/qualification/spin-history-retention-completed.md
 scripts/qualification/fixtures/spin-history-retention/social-alias-reference-authority.json
+
+# Exact captured receipt-lane authority and reviewed qualification seals.
+scripts/qualification/fixtures/spin-receipt-lane/authority.json
+scripts/qualification/spin-receipt-lane.hosted.manifest.json
+scripts/qualification/spin-receipt-lane.md

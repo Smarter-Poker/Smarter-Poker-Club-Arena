@@ -7,6 +7,7 @@ target, retry or resume.
 The financial schedules and their independent oracle remain authoritative.
 """
 import argparse
+from decimal import Decimal
 import hashlib
 import importlib.util
 import json
@@ -97,6 +98,198 @@ PURE_ORACLE = 'scripts/qualification/fixtures/spin-history-retention/database-st
 PURE_INPUTS = (PURE_COMPONENT, PURE_SHAPE, PURE_PREIMAGE, PURE_QUALIFIER, PURE_ORACLE, PURE_MANIFEST)
 PURE_STAGE = 'mixed_pure_evidence_rollback'
 REPLACEMENTS.update({name: name for name in PURE_INPUTS})
+LANE_MANIFEST = 'scripts/qualification/spin-receipt-lane.hosted.manifest.json'
+LANE_MANIFEST_SHA256 = 'a6627a5d5e40a615975b66309116cfb6413d88c384d081ea87ec71ee0fb5891c'
+LANE_BASE = 'scripts/qualification/fixtures/spin-receipt-lane/'
+LANE_COMPONENT = 'supabase/components/spin-mixed-basis-receipt-lane.sql'
+LANE_ROLLBACK = 'supabase/components/spin-mixed-basis-receipt-lane.rollback.sql'
+LANE_PROGRAM = 'scripts/qualification/spin-receipt-lane.py'
+LANE_SESSION = 'scripts/qualification/spin-expiry-business-races.py'
+LANE_RESULT = 'receipt-lane.json'
+LANE_PHASE = 'receipt_lane_statements'
+LANE_STAGES = {
+    'receipt_lane_provider': LANE_BASE + 'provider.sql',
+    'receipt_lane_catalog': 'scripts/qualification/spin-receipt-lane.sql',
+    'receipt_lane_before': LANE_BASE + 'snapshot.sql',
+    'receipt_lane_install': LANE_COMPONENT,
+    LANE_PHASE: LANE_PROGRAM,
+    'receipt_lane_rollback': LANE_ROLLBACK,
+    'receipt_lane_after': LANE_BASE + 'snapshot.sql',
+}
+LANE_CASES = ('receipt_insert', 'receipt_update', 'receipt_delete', 'history_insert',
+              'history_identity_update', 'history_metadata_update', 'reverse_shared_lane',
+              'truncate_relation_then_refusal', 'zero_rake_rpc_entry_and_replay')
+LANE_INPUTS = (LANE_MANIFEST, LANE_COMPONENT, LANE_ROLLBACK, LANE_PROGRAM, LANE_SESSION, PURE_ORACLE,
+    'scripts/qualification/spin-receipt-lane.sql', 'scripts/qualification/spin-receipt-lane-compactor.sql',
+    'scripts/qualification/spin-receipt-lane.md',
+    *(LANE_BASE + name for name in ('authority.json','boundary.sql','provider.sql','state.sql',
+                                  'snapshot.sql','component-inputs.sql')))
+REPLACEMENTS.update({name: name for name in LANE_INPUTS})
+LANE_CATALOG = {'qualification':'receipt_lane_catalog','original_and_candidate_compactor_checked':True,
+    'unrelated_update_trigger_refused':True,'altered_binding_refusals':7,'helper_authority_drift_refusals':2,'missing_preimage_refused':True,
+    'replay_refused':True,'existing_function_metadata_preserved':True,'guarded_and_outer_rollback_verified':True,
+    'business_rows_unchanged':True,'historical_rows_qualified':False,'financial_completion_qualified':False,
+    'full_qualification':False}
+
+
+def lane_program_argv(PG, source, execution):
+    return [sys.executable, str(source / LANE_PROGRAM), '--psql', str(PG/'psql'),
+            '--execution', execution, '--output', str(source.parent/'work'/LANE_RESULT)]
+
+
+def lane_json(output):
+    values = [json.loads(line,object_pairs_hook=unique_object,parse_float=Decimal)
+              for line in output.splitlines() if line.lstrip().startswith(b'{')]
+    require(len(values) == 1, 'lane original JSON absent, malformed or repeated')
+    return values[0]
+
+
+def validate_lane_sources(files):
+    require(set(LANE_INPUTS) <= set(files), 'receipt lane source inventory incomplete')
+    require(digest(files[LANE_MANIFEST]) == LANE_MANIFEST_SHA256, 'receipt lane manifest differs')
+    manifest = decode(files[LANE_MANIFEST])
+    require(set(manifest['files']) == set(LANE_INPUTS)-{LANE_MANIFEST}, 'receipt lane leaf inventory differs')
+    for name, expected in manifest['files'].items():
+        require(pin(files[name]) == expected, 'receipt lane source pin mismatch: ' + name)
+    require(digest(files[LANE_BASE+'authority.json']) == 'a4aadc81c0b50396dbed0c3d9b8bf7c72887ecb897ffd2e0b05e96534d78c39c',
+            'authentic lane capture differs')
+    require(digest(files[LANE_SESSION]) == '33040b22707d84990cc87489d97b412ca1a5163906646769a9961842a1f3eae8',
+            'existing Session implementation differs')
+    graph = {}
+    for name in manifest['files']:
+        if not name.endswith('.sql'): continue
+        targets = []
+        for line in files[name].decode().splitlines():
+            if not line.lstrip().startswith('\\ir'): continue
+            match = re.fullmatch(r'\\ir ([A-Za-z0-9_./-]+)', line.strip())
+            require(match is not None, 'unsupported lane include')
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(name), match[1]))
+            safe_name(target); require(target in files, 'lane include missing from staged source')
+            targets.append(target)
+        if targets: graph[name] = targets
+    require(graph == manifest['relative_include_graph'], 'lane include graph changed')
+    embedded = files[LANE_BASE+'component-inputs.sql'].decode()
+    for label, name, end in [('forward',LANE_COMPONENT,'COMMIT;'),('rollback',LANE_ROLLBACK,'COMMIT;'),
+                            ('compactor','scripts/qualification/spin-receipt-lane-compactor.sql','ROLLBACK;')]:
+        source = files[name].decode()
+        require(source.splitlines().count('BEGIN;') == 1 and source.splitlines().count(end) == 1,
+                'lane embedded transaction boundary changed')
+        body = ''.join(line for line in source.splitlines(keepends=True) if line.strip() not in ('BEGIN;',end))
+        parts = embedded.split('$lane_'+label+'$')
+        require(len(parts)==3 and parts[1]==body, 'lane embedded source differs: '+label)
+    require(manifest['stage_order'] == list(LANE_STAGES) and manifest['image']=='candidate'
+            and manifest['full_qualification'] is False, 'lane stage/scope contract differs')
+
+
+def validate_lane_races(value, execution, files):
+    require(value.get('execution') == execution and value.get('qualification') == 'receipt_statement_lane_and_zero_rake_compatibility',
+            'wrong/stale lane execution')
+    for key in ('passed','cleanup_verified','source_stable'):
+        require(value.get(key) is True, 'lane assertion false: '+key)
+    for key in ('full_qualification','historical_rows_qualified','financial_completion_qualified'):
+        require(value.get(key) is False, 'lane unsupported qualification claim')
+    require(not any(key in value for key in ('failure','cleanup_failure','verifier_cleanup_error'))
+            and value.get('work_deadline_seconds')==20 and value.get('cleanup_deadline_seconds')==5,
+            'lane original failure or deadline mismatch')
+    expected_sources = {name: digest(files[name]) for name in LANE_INPUTS}
+    require(value.get('source_sha256') == expected_sources, 'lane executed source set differs')
+    require(value.get('source_readback') == {name:{'sha256':sha,'matches':True} for name,sha in expected_sources.items()},
+            'lane final input readback differs')
+    require(value.get('shared_helper_authority') == {'owner':'postgres','acl':'{postgres=X/postgres,service_role=X/postgres}',
+        'security_definer':False,'volatility':'v','config':['search_path=public, pg_temp'],
+        'full_md5':'409b14ee72ce888d3b26524c52d49a68'}, 'lane helper authority unproven')
+    ids = value.get('backend_pids',{})
+    require(set(ids)=={'observer','holder','writer'} and all(type(x) is int and x>0 for x in ids.values())
+            and len(set(ids.values()))==3, 'lane backend identities invalid')
+    environment = value.get('environment',{})
+    require(environment.get('database') == 'qual_spin_expiry_'+execution.replace('-','')
+            and environment.get('user') == 'postgres' and environment.get('session_user') == 'postgres'
+            and environment.get('address') is None and environment.get('port') == '5432'
+            and type(environment.get('version')) is int and 170000 <= environment['version'] < 180000
+            and environment.get('others') == 0, 'lane endpoint proof differs')
+    cases = value.get('cases',[])
+    require([row.get('case') for row in cases] == list(LANE_CASES), 'lane case order/count differs')
+    for row in cases:
+        name = row['case']; reverse = name=='reverse_shared_lane'
+        holder,writer = (ids['writer'],ids['holder']) if reverse else (ids['holder'],ids['writer'])
+        role = 'service_role' if name.startswith('receipt_') or name in ('truncate_relation_then_refusal','zero_rake_rpc_entry_and_replay') else 'postgres'
+        require(row.get('role')==role and row.get('holder_pid')==holder and row.get('writer_pid')==writer
+                , 'lane role/PID differs')
+        if name!='zero_rake_rpc_entry_and_replay':
+            require(type(row.get('affected_rows')) is int and row['affected_rows']==0, 'lane affected row count differs')
+        if name != 'history_metadata_update':
+            require(row.get('wait') == {'pid':writer,'wait_event_type':'Lock',
+                'wait_event':'relation' if name=='truncate_relation_then_refusal' else 'advisory',
+                'blockers':[holder]}, 'lane original wait/binding absent')
+        else:
+            require('wait' not in row, 'metadata path incorrectly joined the identity lane')
+        if name=='truncate_relation_then_refusal': require(row.get('sqlstate')=='55000','truncate refusal absent')
+    rpc=cases[-1]
+    table_id=str(uuid.uuid5(uuid.UUID(execution),'receipt-lane-zero-rake-table'))
+    hand_id=str(uuid.uuid5(uuid.UUID(execution),'receipt-lane-zero-rake-hand'))
+    expected={'success':True,'table_id':table_id,'hand_id':hand_id,
+              'rake':{'success':True,'skipped':'zero_rake'},'commissions':[]}
+    require(all(type(rpc.get(k)) is int and rpc[k]==v for k,v in
+                {'before_receipt_count':0,'pre_entry_receipt_write_locks':0,'created_receipts':1,'rollback_receipts':0,'receipt_fk_count':0}.items())
+            and rpc.get('request_compatibility_only') is True and rpc.get('first_result')==expected
+            and rpc.get('replay_result')==expected, 'zero-rake request compatibility proof differs')
+    one=rpc.get('receipt_before_replay',{})
+    require(one==rpc.get('receipt_after_replay') and one.get('count')==1
+            and isinstance(one.get('rows'),list) and len(one['rows'])==1, 'RPC replay receipt tuple changed')
+    physical=one['rows'][0];row=physical.get('row',{})
+    require(set(physical)=={'row','ctid','xmin','cmin'}
+            and all(isinstance(physical[k],str) and physical[k] for k in ('ctid','xmin','cmin'))
+            and row.get('table_id')==table_id and row.get('hand_id')==hand_id and row.get('status')=='succeeded'
+            and row.get('result')==expected and row.get('error') is None and row.get('attempt_count')==1
+            and isinstance(row.get('completed_at'),str) and row.get('first_attempt_at')==row.get('last_attempt_at')==row['completed_at'],
+            'real zero-rake receipt contents or identity missing')
+    before,after=value.get('before'),value.get('after')
+    require(isinstance(before,dict) and set(before)=={'catalog','handler','business'} and before==after
+            and before['handler'] == {'owner':'postgres','acl':'{postgres=X/postgres}',
+                'body_md5':'534850c97847e72075044d8604b0a09d','config':['search_path=pg_catalog, public, pg_temp'],
+                'security_definer':False,'volatility':'v'} and isinstance(before['business'],dict)
+            and before['business'].get('public.hand_history')==[]
+            and before['business'].get('public.settlement_idempotency_keys')==[], 'lane exact empty state/rollback differs')
+    clients=value.get('clients',[])
+    require(len(clients)==3 and {c.get('backend_pid') for c in clients}==set(ids.values())
+            and all(c.get('client_exit')==0 and 'cleanup_error' not in c for c in clients)
+            and value.get('backend_cleanup')=={'backends':0,'locks':0}, 'lane client/backend cleanup unproven')
+    observer=value.get('verifier_client',{})
+    require(type(observer.get('backend_pid')) is int and observer['backend_pid']>0
+            and observer['backend_pid'] not in ids.values() and observer.get('client_exit')==0,
+            'lane final observer terminal unknown')
+    require(set(value.get('transcripts',{})) == {'lane_'+name+'_'+execution for name in ids}
+            and all(isinstance(s,str) and s for s in value['transcripts'].values())
+            and isinstance(value.get('cleanup_transcript'),str) and value['cleanup_transcript'],
+            'lane original session transcripts missing')
+    return value
+
+
+def lane_outputs(outputs, result, execution, files):
+    provider=lane_json(outputs['receipt_lane_provider'])
+    require(provider=={'qualification':'receipt_lane_provider','exact_authority':True,
+                      'financial_rows_seeded':False,'full_qualification':False}
+            and all(type(provider.get(key)) is bool for key in ('exact_authority','financial_rows_seeded','full_qualification')),
+            'lane provider result differs')
+    catalog=lane_json(outputs['receipt_lane_catalog'])
+    require(catalog == LANE_CATALOG and all(type(catalog[k]) is type(v) for k,v in LANE_CATALOG.items()),
+            'lane catalog controls incomplete')
+    before,after=(lane_json(outputs[name]) for name in ('receipt_lane_before','receipt_lane_after'))
+    require(set(before)==set(after)=={'catalog','handler','business','relation_trigger_hints'}
+            and before['handler'] is None and after['handler'] is None
+            and all(before[key]==after[key] for key in ('catalog','business')),
+            'lane guarded rollback changed full rows/catalog or retained private handler')
+    # Preserve both raw physical hint values; never turn them into semantic trigger proof.
+    for observation in (before,after):
+        require(set(observation['relation_trigger_hints'])=={'hand_history','settlement_idempotency_keys'}
+                and all(type(v) is bool for v in observation['relation_trigger_hints'].values()), 'raw trigger hints absent')
+    validate_lane_races(decode(result), execution, files)
+    return {'catalog':catalog,'result_sha256':digest(result),
+            'observed_outputs':{name:digest(raw) for name,raw in outputs.items()},
+            'guarded_rollback_verified':True,'historical_rows_qualified':False,
+            'financial_completion_qualified':False,'full_qualification':False}
+
+
 RETENTION_STAGES = {
     'retention_provider_authority': ('fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
     'retention_catalog_rollback': ('postgres', 'scripts/qualification/spin-history-retention.sql'),
@@ -551,6 +744,7 @@ def source_packet():
         require(git_read('show', head + ':' + name) == actual, 'wrapper source differs from checkout HEAD: ' + name)
     validate_completed_sources(copied)
     validate_pure_sources(copied)
+    validate_lane_sources(copied)
     manifest = {'schemaVersion': 1, 'kind': 'spin-expiry-hosted-attempt',
                 'checkout': {'head': head, 'tree': tree}, 'fixtureManifestSha256': digest(raw),
                 'fixtureProvenance': fixture_manifest,
@@ -594,6 +788,7 @@ def verify_packet(source, raw, manifest):
         require(pin(files[name]) == expected, 'staged source changed: ' + name)
     validate_completed_sources(files)
     validate_pure_sources(files)
+    validate_lane_sources(files)
 
 
 def find_pg():
@@ -662,12 +857,13 @@ def business_stage_name(case):
 
 def retained_evidence(work, output, receipt, source_manifest):
     # Exact allowlist: no PGDATA, homes, passwords, arbitrary worktrees or env.
-    names = {'receipt.json', 'postgres.log'} | set(CASE_RESULTS.values())
+    names = {'receipt.json', 'postgres.log', LANE_RESULT} | set(CASE_RESULTS.values())
     for stage in receipt.get('stages', []):
         name = stage['stage']
         require(re.fullmatch(r'[a-z0-9_]+', name), 'unsafe evidence stage name')
         names.update((name + '.stdout', name + '.stderr'))
     mandatory = {'receipt.json'}
+    if receipt.get('receipt_lane_qualification') is not None: mandatory.add(LANE_RESULT)
     for stage in receipt.get('stages', []):
         mandatory.update((stage['stage'] + '.stdout', stage['stage'] + '.stderr'))
     mandatory.update(case['result_path'] for case in receipt.get('business_cases', []) if case.get('state') == 'passed')
@@ -725,6 +921,7 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                'business_scenario_passed': False, 'business_qualified': False,
                'catalog_slice_passed': False, 'retention_qualification': None,
                'completed_retention_qualification': None, 'mixed_pure_qualification': None,
+               'receipt_lane_qualification': None,
                'image': args.image, 'tournament': args.tournament, 'business_cases': [],
                'qualification_scope': ('captured completed-receipt retention eligibility only' if args.image == 'retention-completed'
                                        else 'one authentic funded Spin expiry schedule'),
@@ -848,6 +1045,17 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
             # committed logical starting estate never reaches funding or cases.
             persist()
             return receipt
+        if args.image == 'candidate':
+            lane_original = {}
+            for name,path in LANE_STAGES.items():
+                if name == LANE_PHASE:
+                    lane_original[name] = command(name, lane_program_argv(PG,ROOT,args.execution), timeout=30).encode()
+                else:
+                    lane_original[name] = sql(name,ROOT/path,user='postgres').encode()
+            lane_files = {name:(ROOT/name).read_bytes() for name in LANE_INPUTS}
+            receipt['receipt_lane_qualification'] = lane_outputs(lane_original,(work/LANE_RESULT).read_bytes(),
+                                                               args.execution,lane_files)
+            persist()
         # Same finite allocation and original deadline. The rollback-only estate
         # precedes funding; it does not qualify completed-terminal or race behavior.
         retention_stdout = {'retention_provider_authority': retention_provider_original.encode()}
@@ -999,12 +1207,26 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
                 'completed receipt estate reached unrelated catalog or financial stages')
     else:
         expected = ['authentic_settlement_source_authority', 'retention_provider_authority',
-                    PURE_STAGE, *list(RETENTION_STAGES)[1:]]
+                    PURE_STAGE, *(list(LANE_STAGES) if image=='candidate' else []), *list(RETENTION_STAGES)[1:]]
         expected += (catalog + ['install_candidate'] if image == 'candidate' else []) + ['real_funded_paid_seat_fixture']
         expected += [business_stage_name(case) for case in CASES[image]]
         require(receipt.get('completed_retention_qualification') is None
                 and not any(name in names for name in ('restore_completed_start', 'retention_completed_eligibility')),
                 'completed starting estate contaminated a financial image')
+    lane = receipt.get('receipt_lane_qualification')
+    if image == 'candidate':
+        require(isinstance(lane,dict) and lane.get('catalog')==LANE_CATALOG
+                and lane.get('guarded_rollback_verified') is True
+                and all(lane.get(k) is False for k in ('full_qualification','historical_rows_qualified','financial_completion_qualified'))
+                and re.fullmatch(r'[0-9a-f]{64}',lane.get('result_sha256','')) is not None
+                and set(lane.get('observed_outputs',{}))==set(LANE_STAGES), 'lane qualification receipt incomplete')
+        for name in LANE_STAGES:
+            matching=[x for x in stages if x['stage']==name]
+            require(len(matching)==1 and matching[0].get('stdout_sha256')==lane['observed_outputs'][name],
+                    'lane original output identity missing')
+    else:
+        require(lane is None and not any(name in names for name in LANE_STAGES),
+                'lane phase must remain solely in original candidate allocation')
     require(all(names.count(name) == 1 for name in expected)
             and [names.index(name) for name in expected] == sorted(names.index(name) for name in expected),
             'original phase sequence absent or repeated')
@@ -1025,6 +1247,7 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     sql_inputs = {
         'authentic_settlement_source_authority': 'inputs/settle-source-authority.sql',
         PURE_STAGE: PURE_QUALIFIER,
+        **{name:path for name,path in LANE_STAGES.items() if name != LANE_PHASE},
         **{name: path for name, (_, path) in RETENTION_STAGES.items()},
         'spin_catalog_before': 'spin-catalog-observer.sql',
         'spin_catalog_rollback_qualification': 'scripts/qualification/spin-expiry-lock-order.sql',
@@ -1038,8 +1261,11 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
         stage = stages[names.index(name)]
         require(stage.get('returncode') == 0 and isinstance(stage.get('argv'), list) and stage['argv'],
                 'stage identity or outcome mismatch')
-        if completed or name in RETENTION_STAGES or name in (PURE_STAGE, 'authentic_settlement_source_authority'):
-            role = (completed_inputs[name][0] if completed else 'postgres' if name == PURE_STAGE else
+        if name == LANE_PHASE:
+            require(stage['argv']==lane_program_argv(PG,source,execution), 'lane finite session invocation differs')
+            continue
+        if completed or name in LANE_STAGES or name in RETENTION_STAGES or name in (PURE_STAGE, 'authentic_settlement_source_authority'):
+            role = (completed_inputs[name][0] if completed else 'postgres' if name == PURE_STAGE or name in LANE_STAGES else
                     RETENTION_STAGES[name][0] if name in RETENTION_STAGES else 'fixture_bootstrap')
             require(stage['argv'] == qualification_sql_argv(PG, source, execution, ordinary, tournament,
                                                            role, sql_inputs[name]),
@@ -1115,6 +1341,16 @@ def run_image(image, PG):
         require(digest(pure_original) == pure_stage['stdout_sha256']
                 and pure_output(pure_original) == receipt['mixed_pure_qualification'],
                 'pure result differs from original output')
+        if image == 'candidate':
+            originals = {}
+            for name in LANE_STAGES:
+                original = read_regular(allocation/'work'/(name+'.stdout'), 16777216)
+                stage = next(item for item in receipt['stages'] if item['stage']==name)
+                require(digest(original)==stage['stdout_sha256'], 'lane original output changed')
+                originals[name]=original
+            original = read_regular(allocation/'work'/LANE_RESULT, 16777216)
+            require(lane_outputs(originals,original,args.execution,files)==receipt['receipt_lane_qualification'],
+                    'lane receipt differs from original source/SQL/session observations')
         retention_stdout = {}
         observed_stages = (('restore_completed_start', 'retention_provider_authority', 'retention_completed_eligibility')
                            if image == 'retention-completed' else tuple(RETENTION_STAGES))

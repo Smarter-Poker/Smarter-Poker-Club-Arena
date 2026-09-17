@@ -426,6 +426,20 @@ describe('required CI owns native fixture verification', () => {
 // Keep the full current qualification closure explicit: no manifest read is
 // needed to classify its own removal, or a source renamed outside the scope.
 const spinExpiryAccountingPaths = [
+  'scripts/qualification/spin-receipt-lane.hosted.manifest.json',
+  'supabase/components/spin-mixed-basis-receipt-lane.sql',
+  'supabase/components/spin-mixed-basis-receipt-lane.rollback.sql',
+  'scripts/qualification/spin-receipt-lane.py',
+  'scripts/qualification/spin-receipt-lane.sql',
+  'scripts/qualification/spin-receipt-lane-compactor.sql',
+  'scripts/qualification/spin-receipt-lane.md',
+  'scripts/qualification/fixtures/spin-receipt-lane/authority.json',
+  'scripts/qualification/fixtures/spin-receipt-lane/boundary.sql',
+  'scripts/qualification/fixtures/spin-receipt-lane/provider.sql',
+  'scripts/qualification/fixtures/spin-receipt-lane/state.sql',
+  'scripts/qualification/fixtures/spin-receipt-lane/snapshot.sql',
+  'scripts/qualification/fixtures/spin-receipt-lane/component-inputs.sql',
+
   'supabase/components/spin-mixed-basis-evidence.sql',
   'scripts/qualification/spin-mixed-basis-shape.sql',
   'scripts/qualification/spin-mixed-basis-evidence.preimage.sql',
@@ -539,6 +553,9 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
 
   it.each([
     'docs/spin-expiry-plan.md',
+    'supabase/components/spin-mixed-basis-receipt-lane.sql.bak',
+    'scripts/qualification/spin-receipt-lane.py.bak',
+    'scripts/qualification/spin-receipt-lane.hosted.manifest.json.bak',
     'scripts/qualification/unrelated.sql',
     'supabase/components/unrelated.sql',
     'supabase/components/spin-expiry-lock-order.sql.bak',

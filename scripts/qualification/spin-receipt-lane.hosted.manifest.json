@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "scope": "empty receipt statement lane, zero-rake request compatibility and compactor early path only",
+  "image": "candidate",
+  "full_qualification": false,
+  "historical_rows_qualified": false,
+  "financial_completion_qualified": false,
+  "authority_observed_at": "2026-09-17T18:21:53.810361+00:00",
+  "work_seconds": 240,
+  "cleanup_seconds": 30,
+  "stage_order": [
+    "receipt_lane_provider",
+    "receipt_lane_catalog",
+    "receipt_lane_before",
+    "receipt_lane_install",
+    "receipt_lane_statements",
+    "receipt_lane_rollback",
+    "receipt_lane_after"
+  ],
+  "files": {
+    "scripts/qualification/fixtures/spin-history-retention/database-state.sql": {
+      "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12",
+      "bytes": 3095
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/authority.json": {
+      "sha256": "a4aadc81c0b50396dbed0c3d9b8bf7c72887ecb897ffd2e0b05e96534d78c39c",
+      "bytes": 18524
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql": {
+      "sha256": "ce344c93571ba4e6163321d33c2fb858cc8e73b68d56ef1aecc228a2497b51af",
+      "bytes": 689
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/component-inputs.sql": {
+      "sha256": "349e121718fe9e05c40b2a8225854cea54e568e2db90943f0de57385828031a6",
+      "bytes": 28297
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/provider.sql": {
+      "sha256": "e52f3be200df700de3eb5659e9cd9a658141c01b909ba5d9224bfa405a3acd0d",
+      "bytes": 37562
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/snapshot.sql": {
+      "sha256": "506d3b331a2606ab6f5d7b09355cb8f7fdfca0a896c070c8ccad53c88da54252",
+      "bytes": 553
+    },
+    "scripts/qualification/fixtures/spin-receipt-lane/state.sql": {
+      "sha256": "aa1b44359ea0279e236f99554ffb7a94ca81205fa94211d258e0666d737608a4",
+      "bytes": 1983
+    },
+    "scripts/qualification/spin-expiry-business-races.py": {
+      "sha256": "33040b22707d84990cc87489d97b412ca1a5163906646769a9961842a1f3eae8",
+      "bytes": 25461
+    },
+    "scripts/qualification/spin-receipt-lane-compactor.sql": {
+      "sha256": "fc0709bbfd4325a47a96b3246617351a512ca4eba4672afa3b6ef7724a554c60",
+      "bytes": 1869
+    },
+    "scripts/qualification/spin-receipt-lane.md": {
+      "sha256": "d7bea51678efed74e97fcad786f654e01fd6abbbdf2572606f6c168e613d055f",
+      "bytes": 4408
+    },
+    "scripts/qualification/spin-receipt-lane.py": {
+      "sha256": "ff54acd76a3223c43bb522c196bfd74158e6e5eab3ca02ae16388d9c3b99f83b",
+      "bytes": 18128
+    },
+    "scripts/qualification/spin-receipt-lane.sql": {
+      "sha256": "331d9cc6ce2f8a3e6336f4bb3b979d4006d4e4d94b7683c7b9356d5b3389ba6f",
+      "bytes": 7840
+    },
+    "supabase/components/spin-mixed-basis-receipt-lane.rollback.sql": {
+      "sha256": "b4506629162e3603df25dc98f2e7910f795fdbac23e64665215a41953c15f41c",
+      "bytes": 12986
+    },
+    "supabase/components/spin-mixed-basis-receipt-lane.sql": {
+      "sha256": "e65954462b3cc9b90b304e5bf62ae87e48555f2c0e2ad88051668c9dcc5e52ee",
+      "bytes": 13228
+    }
+  },
+  "relative_include_graph": {
+    "scripts/qualification/spin-receipt-lane.sql": [
+      "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql",
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql",
+      "scripts/qualification/fixtures/spin-receipt-lane/state.sql",
+      "scripts/qualification/fixtures/spin-receipt-lane/component-inputs.sql"
+    ],
+    "scripts/qualification/fixtures/spin-receipt-lane/provider.sql": [
+      "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql"
+    ],
+    "scripts/qualification/fixtures/spin-receipt-lane/snapshot.sql": [
+      "scripts/qualification/fixtures/spin-receipt-lane/boundary.sql",
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql",
+      "scripts/qualification/fixtures/spin-receipt-lane/state.sql"
+    ]
+  },
+  "held_forward_sha256": "e41376e2fbfa4d5dcf57d009fa0f660b105abc3a30c5b5f731601b679ef84a9d",
+  "forward_delta": "Only exact captured share-helper owner, ACL, invoker, volatility and search_path admission; runtime function bodies unchanged."
+}

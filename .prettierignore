@@ -138,3 +138,6 @@ tests/fixtures/pnl-evidence/captured-pnl-metadata.json
 tests/fixtures/rakeback-history-privacy/policy-preimage.json
 tests/fixtures/tournament-fee-lifecycle/full-lifecycle-terminal-receipts.json
 tests/fixtures/weekly-union-continuation/RUNNER.md
+
+# Exact captured installed money-DDL authority; byte-bound by the native fixture.
+scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json

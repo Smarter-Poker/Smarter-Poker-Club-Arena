@@ -29,6 +29,7 @@ import {
 } from '../../services/MysteryBountyService';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 import TournamentPaymentStatus from '../../components/tournament/TournamentPaymentStatus';
+import { isRecordedSatelliteQualifier } from '../../utils/satelliteQualification';
 
 interface CompletedTournament {
   id: string;
@@ -49,6 +50,9 @@ interface CompletedTournament {
   is_pko: boolean;
   is_mystery_bounty: boolean;
   spin_multiplier: number | null;
+  format_contract?: string | null;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
 }
 
 /**
@@ -77,6 +81,7 @@ interface TournamentResult {
   /** Knockouts that paid. */
   bounties_collected: number;
   status: string;
+  chips: number | null;
 }
 
 interface ArchiveRead<T> {
@@ -250,7 +255,7 @@ export default function TournamentResultsPage() {
          The inner join pushes both problems into one query: the newest 100
          completed events THE PLAYER WAS IN. */
       const cols =
-        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier';
+        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target';
       const mine = filter === 'mine' && user?.id;
       let query = supabase
         .from('tournaments')
@@ -430,7 +435,7 @@ export default function TournamentResultsPage() {
         const { data, error: deepLinkErr } = await supabase
           .from('tournaments')
           .select(
-            'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
+            'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target'
           )
           .eq('id', tournamentId)
           .maybeSingle();
@@ -473,7 +478,9 @@ export default function TournamentResultsPage() {
            both as it credits a chest. Reading them here means the results table
            is right for a plain KO event and a PKO as well, and the mystery
            split below is an extra breakdown rather than the only source. */
-        .select('user_id, username, position, prize, bounty_winnings, bounties_collected, status')
+        .select(
+          'user_id, username, position, prize, bounty_winnings, bounties_collected, status, chips'
+        )
         .eq('tournament_id', tournamentId)
         .order('position', { ascending: true, nullsFirst: false })
         /* A 1,001-entrant field would have lost its tail - and the tail of a
@@ -499,6 +506,7 @@ export default function TournamentResultsPage() {
             bounties_collected:
               Number((r as { bounties_collected: number | null }).bounties_collected) || 0,
             status: String((r as { status: string | null }).status ?? ''),
+            chips: (r as { chips: number | null }).chips ?? null,
           })),
         });
       }
@@ -750,8 +758,18 @@ export default function TournamentResultsPage() {
    * change loses silently: sort or highlight on the placement prize alone and
    * the table names the wrong person as the winner of the night.
    */
-  const finishers = results.filter((r) => r.position !== null && r.position !== undefined);
-  const sortedResults = sortResults(finishers, resultSort);
+  const isQualifier = (r: TournamentResult) => isRecordedSatelliteQualifier(selectedTournament, r);
+  const finishers = results.filter((r) => r.position != null || isQualifier(r));
+  const sortedResults =
+    resultSort === 'finish'
+      ? [
+          ...finishers.filter(isQualifier),
+          ...sortResults(
+            finishers.filter((r) => !isQualifier(r)),
+            resultSort
+          ),
+        ]
+      : sortResults(finishers, resultSort);
   const topEarner = biggestEarner(finishers);
   const championWasOutEarned = bountyBeatTheChampion(finishers);
 
@@ -898,7 +916,7 @@ export default function TournamentResultsPage() {
                     const { data, error: hitRowErr } = await supabase
                       .from('tournaments')
                       .select(
-                        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
+                        'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target'
                       )
                       .eq('id', h.tournamentId)
                       .maybeSingle();
@@ -1357,7 +1375,7 @@ export default function TournamentResultsPage() {
                                     minWidth: '28px',
                                   }}
                                 >
-                                  {getOrdinalPosition(r.position)}
+                                  {isQualifier(r) ? 'Qualified' : getOrdinalPosition(r.position)}
                                 </span>
                                 <span
                                   style={{

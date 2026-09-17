@@ -960,6 +960,56 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryAttempts.clear();
   }
 
+  /** Only the recorded new format can complete with an unranked qualifier cohort. */
+  protected isCohortSatellite(): boolean {
+    return (
+      this.tournamentCache?.format_contract === 'mtt-v2' &&
+      Boolean(this.tournamentCache.satellite_target_id || this.tournamentCache.satellite_target)
+    );
+  }
+
+  protected satelliteQualifierBoundaryPending = false;
+  protected satelliteQualifierBoundaryGeneration = 0;
+  private readonly satelliteQualifierEngines = new Map<string, ServerTableEngine>();
+
+  private holdSatelliteQualifierEngine(tableId: string, engine: ServerTableEngine): void {
+    this.satelliteQualifierEngines.set(tableId, engine);
+    // This call arms the existing sticky next-hand fence synchronously. Zero
+    // is a nonblocking probe, never a claim that physical parking succeeded.
+    void engine
+      .parkForTerminalCloseout(0)
+      .catch((error) =>
+        reportError(error, 'Tournament.satellite_qualifier_boundary_failed', { tableId })
+      );
+  }
+
+  protected holdSatelliteQualifierBoundary(): void {
+    this.satelliteQualifierBoundaryPending = true;
+    this.satelliteQualifierBoundaryGeneration++;
+    for (const [tableId, engine] of this.tableEngines) {
+      this.holdSatelliteQualifierEngine(tableId, engine);
+    }
+  }
+
+  /** A positive authoritative continuation releases only this exact generation. */
+  protected releaseSatelliteQualifierBoundary(generation: number): boolean {
+    if (generation !== this.satelliteQualifierBoundaryGeneration || !this.isRunning()) return false;
+    for (const [tableId, engine] of this.satelliteQualifierEngines) {
+      if (
+        this.tableEngines.get(tableId) !== engine ||
+        this.gameServer.getTableEngine(tableId) !== engine ||
+        !engine.isRunning()
+      )
+        return false;
+    }
+    this.satelliteQualifierBoundaryPending = false;
+    for (const engine of this.satelliteQualifierEngines.values())
+      engine.releaseTerminalCloseoutPause();
+    this.satelliteQualifierEngines.clear();
+    this.advanceHandForHandBarrier();
+    return true;
+  }
+
   /** A replacement inherits every pause authority before it can deal. */
   private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
@@ -1255,6 +1305,11 @@ export abstract class TournamentManagerBase {
     const lifecycle = this.lifecycleEpoch.current();
     const tableId = this.tableIdForManagedEngine(engine);
     this.holdManagedTableUntilBookedStart(engine);
+    if (tableId && this.isCohortSatellite()) {
+      // Adoption cannot infer that a previous manager left more players than
+      // tickets. Read the serialized state before this generation deals.
+      this.holdSatelliteQualifierBoundary();
+    }
     const operation = engine.start().catch(async (error) => {
       reportError(error, errorContext, metadata);
       if (!lifecycle || !tableId || !this.lifecycleIsCurrent(lifecycle)) return;
@@ -1509,10 +1564,22 @@ export abstract class TournamentManagerBase {
   protected wireEliminationWake(engine: ServerTableEngine): void {
     engine.onHandComplete((_tableId, finalStacks) => {
       if (finalStacks.some((player) => Number(player.stack) <= 0)) {
+        if (this.isCohortSatellite()) {
+          const tableId = this.tableIdForManagedEngine(engine);
+          if (!tableId || !this.isRunning() || this.gameServer.getTableEngine(tableId) !== engine)
+            return;
+          // Stop the next deal before asynchronous elimination and HfH can
+          // release the boundary. Other hands may finish; none may start.
+          this.holdSatelliteQualifierBoundary();
+        }
         this.requestEliminationSweep();
       }
     });
-    engine.onPauseReady(() => this.advanceHandForHandBarrier());
+    engine.onPauseReady(() => {
+      if (this.satelliteQualifierBoundaryPending) {
+        this.requestEliminationSweep('satellite_qualifier_boundary');
+      } else this.advanceHandForHandBarrier();
+    });
     engine.onRestartRequired((reason) => {
       const lifecycle = this.captureLifecycleToken();
       const tableId = this.tableIdForManagedEngine(engine);
@@ -2878,7 +2945,13 @@ export abstract class TournamentManagerBase {
    */
   private advanceHandForHandBarrier(): void {
     // The tournament break owns this shared pause until its own end edge.
-    if (!this.handForHandActive || !this.running || this.isOnBreak()) return;
+    if (
+      !this.handForHandActive ||
+      !this.running ||
+      this.isOnBreak() ||
+      this.satelliteQualifierBoundaryPending
+    )
+      return;
     const expectedIds = [...this.handForHandTableIds];
     if (expectedIds.length === 0) return;
     const engines = expectedIds.map((tableId) => this.tableEngines.get(tableId));
@@ -2912,6 +2985,7 @@ export abstract class TournamentManagerBase {
    * successfully broken/closed table must not hold every survivor forever.
    */
   protected retireManagedTableFromHandForHand(tableId: string): void {
+    this.satelliteQualifierEngines.delete(tableId);
     if (!this.handForHandTableIds.delete(tableId)) return;
     this.advanceHandForHandBarrier();
   }

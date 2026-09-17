@@ -43,8 +43,18 @@
 
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
+import { readMySatelliteQualifierResult } from '../../src/services/satelliteQualifierResult';
+
+const receiptTransport = vi.hoisted(() => ({ rpc: vi.fn() }));
+vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: receiptTransport.rpc } }));
 import { resolve } from 'node:path';
-import { sliceEnclosingBlock, sliceMethod, sliceStatement } from '../helpers/sourceWindow';
+import {
+  sliceEnclosingBlock,
+  sliceMethod,
+  sliceStatement,
+  sliceBetween,
+} from '../helpers/sourceWindow';
 import {
   awaitTournamentResultEnrichment,
   TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS,
@@ -235,7 +245,9 @@ describe("The champion's exit", () => {
     );
     expect(fn.indexOf('publishSessionSummary(')).toBeLessThan(fn.indexOf("emit('TABLE_LEFT'"));
     expect(fn).toMatch(/\.\.\.\(full \?\? \{/);
-    expect(fn).toMatch(/finishPlace:\s*position \|\| full\?\.finishPlace \|\| null/);
+    expect(fn).toMatch(
+      /finishPlace:[\s\S]*?committedSatelliteQualification\?\.qualified[\s\S]*?null[\s\S]*?position \|\| full\?\.finishPlace \|\| null/
+    );
     expect(fn).toMatch(/prize:\s*prize \|\| full\?\.prize \|\| 0/);
   });
 
@@ -443,5 +455,144 @@ describe('One card, one carrier', () => {
     // column added here does not fail a spec about Spin branding.
     expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type/);
     expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type[^']*'\)/);
+  });
+});
+
+describe('The actual TablePage qualifier completion caller', () => {
+  const tid = 'f21ad7f8-3030-29af-d95c-c76b83d6b8e4';
+  const uid = '10000000-0000-4000-8000-000000000001';
+  const targetId = '20000000-0000-4000-8000-000000000002';
+  const receipt = () => ({
+    ok: true,
+    receipt_version: 3,
+    tournament_id: tid,
+    user_id: uid,
+    target_id: targetId,
+    qualified: true,
+    position: null,
+    amount: 50,
+    delivery_kind: 'seat',
+    settled_at: '2026-09-17T21:00:00.000Z',
+  });
+
+  function actualCaller(row = { status: 'winner', position: null as number | null, prize: 50 }) {
+    const exit = vi.fn(),
+      champion = vi.fn(),
+      retry = vi.fn(),
+      report = vi.fn();
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn(async () => ({ data: row, error: null })),
+    };
+    // Execute the maintained caller, not a copied approximation. Only its
+    // browser/REST boundaries are controlled; the receipt decoder is real.
+    const body = sliceMethod(tablePage, 'async function exitFromDurableCompletion()');
+    const compiled = ts.transpileModule(body, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const factory = new Function(
+      'supabase',
+      'readMySatelliteQualifierResult',
+      'goToLobbyWithResult',
+      'setTournamentWinner',
+      'scheduleDurableCompletionRetry',
+      'reportError',
+      `let isMounted=true, durableCompletionLookupInFlight=false, durableCompletionHandled=false;
+       let durableCompletionFailureReported=false, durableCompletionRetryTimer=null;
+       let committedSatelliteQualification=null;
+       const durableTournamentId=${JSON.stringify(tid)}, userId=${JSON.stringify(uid)};
+       const durableTournamentName='Native Satellite', formatGameTitle=(s)=>s;
+       ${compiled}
+       return { run:exitFromDurableCompletion, dispose:()=>{isMounted=false},
+         qualification:()=>committedSatelliteQualification };`
+    );
+    const actual = factory(
+      { from: () => query },
+      readMySatelliteQualifierResult,
+      exit,
+      champion,
+      retry,
+      report
+    );
+    return { ...actual, exit, champion, retry, report, query };
+  }
+  beforeEach(() => {
+    receiptTransport.rpc.mockReset();
+  });
+
+  it('exits an unranked qualifier from the committed own-result receipt', async () => {
+    receiptTransport.rpc.mockResolvedValue({ data: receipt(), error: null });
+    const c = actualCaller();
+    await c.run();
+    await c.run();
+    expect(receiptTransport.rpc).toHaveBeenCalledExactlyOnceWith(
+      'fn_get_my_satellite_qualifier_result',
+      { p_tournament_id: tid }
+    );
+    expect(c.exit).toHaveBeenCalledExactlyOnceWith(0, 50, 2500);
+    expect(c.qualification()).toEqual({
+      qualified: true,
+      targetId,
+      position: null,
+      amount: 50,
+      deliveryKind: 'seat',
+    });
+    expect(c.champion).not.toHaveBeenCalled();
+    expect(c.retry).not.toHaveBeenCalled();
+  });
+  it('retains one in-flight lookup across duplicate terminal events and ignores post-unmount delivery', async () => {
+    let resolve!: (value: unknown) => void;
+    receiptTransport.rpc.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        })
+    );
+    const c = actualCaller();
+    const pending = c.run();
+    await Promise.resolve();
+    await c.run();
+    expect(receiptTransport.rpc).toHaveBeenCalledTimes(1);
+    c.dispose();
+    resolve({ data: receipt(), error: null });
+    await pending;
+    expect(c.exit).not.toHaveBeenCalled();
+    expect(c.champion).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['wrong entrant', { user_id: '30000000-0000-4000-8000-000000000003' }],
+    ['wrong event', { tournament_id: targetId }],
+    ['invented placement', { position: 1 }],
+    ['wrong version', { receipt_version: 2 }],
+    ['unpaid award', { delivery_kind: 'none' }],
+    ['invalid amount', { amount: -1 }],
+  ])('keeps %s unproven and does not announce a champion', async (_name, over) => {
+    receiptTransport.rpc.mockResolvedValue({ data: { ...receipt(), ...over }, error: null });
+    const c = actualCaller();
+    await c.run();
+    expect(c.exit).not.toHaveBeenCalled();
+    expect(c.champion).not.toHaveBeenCalled();
+    expect(c.retry).toHaveBeenCalledTimes(1);
+    expect(c.report).toHaveBeenCalledTimes(1);
+  });
+  it('preserves a normal single-winner result without calling the new RPC', async () => {
+    const c = actualCaller({ status: 'winner', position: 1, prize: 100 });
+    await c.run();
+    expect(receiptTransport.rpc).not.toHaveBeenCalled();
+    expect(c.champion).toHaveBeenCalledWith({ prize: 100, name: 'Native Satellite' });
+    expect(c.exit).toHaveBeenCalledWith(1, 100, 7000);
+  });
+  it('connects the named event and initial/reconnect recovery to this same receipt reader', () => {
+    const branch = sliceBetween(
+      tablePage,
+      "} else if (data?.type === 'satellite_qualifiers')",
+      "} else if (data?.type === 'final_table_deal')"
+    );
+    expect(branch).toMatch(/data\.payload\?\.tournamentId === durableTournamentId/);
+    expect(branch).toMatch(/data\.payload\?\.receiptVersion === 3/);
+    expect(branch).toMatch(/exitFromDurableCompletion\(\)/);
+    expect(branch).not.toMatch(/goToLobbyWithResult|setTournamentWinner/);
+    expect(realtime).toContain("'satellite_qualifiers'");
   });
 });

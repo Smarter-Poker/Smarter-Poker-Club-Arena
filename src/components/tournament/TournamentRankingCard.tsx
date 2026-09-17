@@ -252,7 +252,8 @@ export default function TournamentRankingCard({
 
   if (typeof document === 'undefined') return null;
 
-  const place = result.finishPlace;
+  const qualification = result.satelliteQualification;
+  const place = qualification ? null : result.finishPlace;
   const eventName = formatGameTitle(result.name || tableName || 'Tournament');
   const totalWon = (result.prize || 0) + (result.bountyWinnings || 0);
   /* MYSTERY BOUNTY (section 43). Cents, and absent on any non-mystery event. */
@@ -285,8 +286,9 @@ export default function TournamentRankingCard({
    * the button itself — a toast provider is not guaranteed at this portal.
    */
   const handleShare = async () => {
-    const text =
-      place != null
+    const text = qualification
+      ? `I qualified in ${eventName} on Smarter.Poker.`
+      : place != null
         ? `I finished ${ordinal(place)} in ${eventName} on Smarter.Poker` +
           (totalWon > 0 ? ` for ${formatMoney(totalWon)}.` : '.')
         : `I just played ${eventName} on Smarter.Poker.`;
@@ -330,7 +332,7 @@ export default function TournamentRankingCard({
       <div className="trc2__card">
         {/* ── Title bar ── */}
         <div className="trc2__titlebar">
-          <span className="trc2__title">RANKING</span>
+          <span className="trc2__title">{qualification ? 'QUALIFIED' : 'RANKING'}</span>
           <button className="trc2__close" onClick={onDismiss} aria-label="Close">
             ×
           </button>
@@ -373,7 +375,7 @@ export default function TournamentRankingCard({
 
         {/* ── Place band ── */}
         <div className={`trc2__placeband ${medalClass(place)}`}>
-          {place != null ? ordinal(place) : 'Finished'}
+          {qualification ? 'Qualified' : place != null ? ordinal(place) : 'Finished'}
         </div>
 
         {/* ── Player row ── */}
@@ -400,8 +402,18 @@ export default function TournamentRankingCard({
                 frequently most of the interest. The label names it as the
                 total, and the line underneath shows the two halves whenever
                 there are two. */}
-            <span className="trc2__reward-label">Total Payout:</span>
-            <span className="trc2__reward-value">{formatMoney(totalWon)}</span>
+            <span className="trc2__reward-label">
+              {qualification
+                ? qualification.deliveryKind === 'seat'
+                  ? 'Target Entry:'
+                  : qualification.deliveryKind === 'ticket'
+                    ? 'Entry Ticket:'
+                    : 'Cash Award:'
+                : 'Total Payout:'}
+            </span>
+            <span className="trc2__reward-value">
+              {formatMoney(qualification?.amount ?? totalWon)}
+            </span>
           </div>
         </div>
 

@@ -186,6 +186,42 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/ci/test-satellite-qualifiers.py',
+    'scripts/ci/satellite_qualifier_fixture.py',
+    'scripts/ci/satellite_qualifier_concurrency.py',
+    'scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json',
+    'scripts/ci/probes/satellite-qualifiers-native.sql',
+    'scripts/ci/probes/satellite-qualifier-reader.spec',
+    'scripts/ci/probes/satellite-qualifier-finish.spec',
+    'tests/operations/satellite-qualifier-results.test.py',
+  ])('runs the existing accounting job for satellite input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('executes satellite settlement and retains exact receipts in accounting', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const satellite = steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-satellite-qualifiers.py')
+    );
+    expect(satellite).toHaveLength(1);
+    expect(satellite[0].run).toContain('satellite-qualifier-results.test.py');
+    expect(satellite[0].run).toContain('--pg-bin "$PG_BIN"');
+    expect(satellite[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(satellite[0].env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+    expect(satellite[0]['continue-on-error']).toBeUndefined();
+    expect(satellite[0].if).toBeUndefined();
+    const upload = steps.find(
+      (step: { name?: string }) => step.name === 'Retain satellite qualifier receipts'
+    );
+    expect(upload.uses).toBe('actions/upload-artifact@v4');
+    expect(upload.if).toContain('always()');
+    expect(upload.if).toContain('steps.satellite_qualifiers.outcome');
+    expect(upload.with['if-no-files-found']).toBe('error');
+  });
+
+  it.each([
     'scripts/ci/test-mtt-unlimited.py',
     'scripts/ci/mtt_unlimited_fixture.py',
     'scripts/ci/mtt_format_qualification.py',

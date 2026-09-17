@@ -2,6 +2,7 @@
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { HorseDecisionJournalStore } from '../services/horseDecisionJournal/store.js';
+import { readonlyHorseJournalStoreOptions } from '../services/horseDecisionJournal/config.js';
 import { verifyCorrectiveAuthority, sha256 } from '../services/horseCorrectiveReview/authority.js';
 import { reviewHorseCorrectiveHand } from '../services/horseCorrectiveReview/review.js';
 import {
@@ -49,7 +50,7 @@ export function runHorseCorrectiveReview(args: readonly string[]): {
           process.env.HORSE_CORRECTIVE_REVIEW_TRUSTED_KEY_SHA256
         )
       : null;
-    store = new HorseDecisionJournalStore(args[0]!, { readOnly: true });
+    store = new HorseDecisionJournalStore(args[0]!, readonlyHorseJournalStoreOptions(args[0]!));
     const result = reviewHorseCorrectiveHand(
       {
         records: store.readHand(args[1]!),

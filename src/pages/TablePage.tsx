@@ -159,6 +159,7 @@ import {
 // Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
+import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import type { HeroLeaveClock } from '../lib/chipContinuity';
@@ -1480,7 +1481,7 @@ function warmSeatsToPlayers(
 export default function TablePage(props: TablePageProps = {}) {
   return (
     <TableRouteBoundary embeddedTableId={props.embeddedTableId}>
-      {(tableId) => <LiveTablePage {...props} embeddedTableId={tableId} />}
+      {(tableId) => <LiveTablePage key={tableId} {...props} />}
     </TableRouteBoundary>
   );
 }
@@ -2173,6 +2174,19 @@ function LiveTablePage({
    */
   const engineSnapshot = rawEngineSnapshot;
   const engineLastEvent = rawEngineLastEvent;
+
+  useSeatMoveNavigation({
+    tableId,
+    userId,
+    event: engineLastEvent,
+    follow: (destination) => {
+      if (embeddedTableId) {
+        onTableInfoUpdate?.({ movedToTableId: destination });
+        return;
+      }
+      navigate(`/table/${destination}`, { replace: true });
+    },
+  });
 
   // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
   // engine WS payload. Drives DisconnectToast below.
@@ -15461,15 +15475,8 @@ function LiveTablePage({
        * next state broadcast.
        */
       case 'SEAT_MOVED': {
-        const d = evt.data as { user_id?: string; to_table_id?: string };
         setClusterRefreshKey((k) => k + 1);
-        if (d?.user_id !== userId || !d?.to_table_id) break;
-        if (embeddedTableId) {
-          // The tab follows the chair; the container swaps the id.
-          onTableInfoUpdate?.({ movedToTableId: d.to_table_id });
-          break;
-        }
-        navigate(`/table/${d.to_table_id}`, { replace: true });
+        // useSeatMoveNavigation retains the handoff until account hydration.
         break;
       }
       /**

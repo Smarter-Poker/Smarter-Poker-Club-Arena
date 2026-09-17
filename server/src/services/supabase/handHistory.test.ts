@@ -271,6 +271,53 @@ beforeEach(() => {
 });
 
 describe('logHandHistory - worker-owned completed-hand observation', () => {
+  it('preserves forced-post and return provenance in the accepted JSON and observation without changing money or order', async () => {
+    const input = identityParams();
+    const userId = input.actions[1].userId;
+    const actions = [
+      {
+        seat: 1,
+        userId,
+        action: 'sb',
+        amount: 1,
+        stage: 'preflop',
+        timestamp: 1000,
+        dead: false,
+        origin: 'forced' as const,
+      },
+      ...input.actions,
+      {
+        seat: 1,
+        userId,
+        action: 'return',
+        amount: 10,
+        stage: 'flop',
+        timestamp: 1002,
+        historyEvent: 'uncalled_bet_returned' as const,
+      },
+    ];
+    const before = structuredClone(actions);
+    acceptAtomicHand();
+    await logHandHistory({ ...input, actions });
+    const row = rpcCalls[0].args.p_hand_row as Record<string, unknown>;
+    const persisted = row.actions as Array<Record<string, unknown>>;
+    expect(persisted[0]).toEqual(actions[0]);
+    expect(persisted.at(-1)).toEqual(actions.at(-1));
+    expect(persisted.at(-1)).not.toHaveProperty('origin');
+    expect(persisted[3].observationIdentity).toMatchObject({
+      status: 'bound',
+      actionOrdinal: 3,
+      observationId: `${historyId}:3`,
+    });
+    expect(persisted.map(({ action, amount }) => ({ action, amount }))).toEqual(
+      actions.map(({ action, amount }) => ({ action, amount }))
+    );
+    expect(row.pot_size).toBe(input.potSize);
+    expect(row.rake_amount).toBe(input.rakeAmount);
+    expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(persisted);
+    expect(actions).toEqual(before);
+  });
+
   it('preserves action-node metadata in the accepted row and worker payload without adding player cards', async () => {
     acceptAtomicHand();
     const publicNode = Object.freeze({

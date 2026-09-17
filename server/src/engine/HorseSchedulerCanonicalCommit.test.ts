@@ -115,6 +115,7 @@ function answer(decision: HorseDecision) {
     });
     return {
       type: 'FAST_RESULT',
+      planIssueDisposition: 'no_effects',
       planBinding: horsePlanBatchBindingFromRequest({ ...snapshot, requestId: 1 }),
       requestId: 1,
       generation: snapshot.generation,

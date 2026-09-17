@@ -1,0 +1,13 @@
+# Parked time banks keep the same seat
+
+A clean engine restart used to seed a fresh base allowance because legacy `table_seats.time_bank_remaining` defaults cannot prove an initialized bank. This change writes an explicit initialized-bank marker in the existing engine-only park row and restores the remaining seconds, uses and billed accounting basis for the same occupancy and completed hand. It does not infer consumption from legacy defaults.
+
+The marker carries the exact outer write timestamp. Older writers, later hands, replacement occupancies, expired records and malformed values cannot revive it. Existing current-process banks win. Serialized announcement/park writes prevent a late announcement from replacing the final state. All three maintenance park paths save it; the existing restart readiness predicate waits for initialized banks to reach storage. No scheduled repair or new release stage is added.
+
+The additive nullable column preserves the table's existing engine-only ACL and rejects incompatible schema/permissions. Legacy or invalid markers retain the existing allowance fallback; an unreadable database result fails startup before readiness; this does not certify preservation after an unplanned process loss without a durable park. Existing best-effort VIP consumption behavior is unchanged.
+
+Validation includes the existing bank/VIP/presence/reentry tests, a direct maintenance-gate regression, migration replay in disposable PostgreSQL 17, and actual source/destination engines moving a 25-chip stack, persisting seven remaining seconds, replacing the destination engine and independently rechecking wallet plus stack and unchanged ledger/receipt counts. The connected transfer cases also exercise a lost committed response, both swap boundaries and retained native WebSocket reconnect replay. The fixture authentication identity is synthetic; these cases do not alone certify production TablePage navigation or the broad browser suite.
+
+Baseline: published `afae00d32fd7417464924bb22db0ba48f3bfef92` explicitly retained fresh bank seeding, and no successful same-occupancy durable-bank restart proof existed. The old refill behavior is identifiable in the actual seed path; no claim is made that the complete production restart was reproduced destructively.
+
+An unreadable parked bank now fails that table's startup before readiness; it is not treated as an empty bank eligible for another allowance. The existing startup failure path owns the outcome. Startup-only fixtures explicitly isolate this new read, while the parked-state and composed PostgreSQL cases exercise it.

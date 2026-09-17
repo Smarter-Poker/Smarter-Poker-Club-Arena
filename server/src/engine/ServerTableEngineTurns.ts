@@ -3061,6 +3061,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           type: 'FAST_RESULT',
           requestId: -1,
           planBinding: null,
+          planIssueDisposition: 'no_effects',
           generation: turnToken,
           fence,
           decision: safeDecision,
@@ -3522,9 +3523,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 acceptedWager.record.amount === decision.executionWitness.selected.amount);
             if (
               intendedApplied &&
+              decision === fastResult.decision &&
               exactWagerAccepted &&
               fastResult.planBinding !== null &&
-              fastResult.effects.length > 0 &&
               (action === 'bet' || action === 'raise')
             ) {
               // HorseMind intent is speculative until this exact wager lands.
@@ -3532,12 +3533,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               // dispatch barrier inserts this commit after older FIFO work and
               // before any decision that event enqueued. Rejected or degraded
               // actions never alter future-street plans.
-              void worker.commitDecisionEffects(fastResult).catch((error) => {
-                reportError(
-                  error,
-                  'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
-                );
-              });
+              if (fastResult.effects.length === 0) {
+                noteFire('phase15_plan_accepted_no_effects');
+              } else if (fastResult.planIssueDisposition !== 'issued') {
+                noteFire(`phase15_plan_accepted_${fastResult.planIssueDisposition}`);
+              } else
+                void worker.commitDecisionEffects(fastResult).catch((error) => {
+                  reportError(
+                    error,
+                    'ServerTableEngine.' + this.tableId + '.horse_decision_effect_commit_failed'
+                  );
+                });
             }
             if (!applied) {
               attemptingFallback = true;
@@ -3737,6 +3743,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }, remainingThinkMs);
       })
       .catch((error) => {
+        markPendingUtilityNotExecuted();
         if (!(error instanceof HorseDecisionAbortedError) && !abortController.signal.aborted) {
           reportError(error, 'ServerTableEngineTurns.horse_decision_continuation');
         }

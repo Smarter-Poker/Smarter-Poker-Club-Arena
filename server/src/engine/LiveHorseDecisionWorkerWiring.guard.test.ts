@@ -85,8 +85,14 @@ describe('live horse decisions stay outside the table event loop', () => {
     expect(commit).not.toContain('this.deps.applyDecisionEffects(request.effects)');
     expect(schedule).toContain('worker.runWithDispatchBarrier(() =>');
     expect(schedule).toContain('intendedApplied = applied');
-    expect(schedule).toMatch(/intendedApplied\s*&&\s*exactWagerAccepted\s*&&/);
-    expect(schedule).toContain('fastResult.effects.length > 0');
+    expect(schedule).toMatch(
+      /intendedApplied\s*&&\s*decision === fastResult\.decision\s*&&\s*exactWagerAccepted\s*&&/
+    );
+    // Empty or unissued batches report their outcome instead of entering COMMIT.
+    // The nonempty issued branch remains under the exact original FAST wager gate.
+    expect(schedule).toMatch(
+      /if \(fastResult\.effects\.length === 0\)\s*\{\s*noteFire\('phase15_plan_accepted_no_effects'\);\s*\} else if \(fastResult\.planIssueDisposition !== 'issued'\)\s*\{\s*noteFire\(`phase15_plan_accepted_\$\{fastResult\.planIssueDisposition\}`\);\s*\} else\s*void worker\.commitDecisionEffects\(fastResult\)/
+    );
     expect(schedule).toContain("action === 'bet' || action === 'raise'");
     expect(schedule).toContain('.commitDecisionEffects(');
     expect(schedule.indexOf('intendedApplied = applied')).toBeLessThan(

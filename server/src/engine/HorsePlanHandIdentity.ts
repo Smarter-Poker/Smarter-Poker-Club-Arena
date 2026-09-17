@@ -4,6 +4,36 @@ import {
   type HorseMindHandIdentity,
 } from './HorseMindHandIdentity.js';
 
+/** Private volatile ownership outcomes, never action or durable-application authority. */
+export const HORSE_PLAN_ISSUE_DISPOSITIONS = [
+  'issued',
+  'no_effects',
+  'capacity_unavailable',
+  'reissue_unavailable',
+] as const;
+export type HorsePlanIssueDisposition = (typeof HORSE_PLAN_ISSUE_DISPOSITIONS)[number];
+export const HORSE_PLAN_REFUSALS = [
+  'issue_absent',
+  'issue_ambiguous',
+  'issue_failed',
+  'issue_retired',
+  'no_effects',
+  'binding_mismatch',
+  'effects_mismatch',
+] as const;
+export type HorsePlanRefusal = (typeof HORSE_PLAN_REFUSALS)[number];
+export type HorsePlanRetirementReason =
+  | 'decision_finalized'
+  | 'caller_settled'
+  | 'commit_unconfirmed';
+export type HorsePlanCommitDisposition = 'applied_volatile' | 'already_applied_volatile';
+export type HorsePlanRetirementDisposition =
+  | 'retired'
+  | 'already_retired'
+  | 'already_applied_volatile'
+  | 'issue_absent'
+  | 'issue_failed';
+
 /** A local plan namespace, not a controller acceptance or durable receipt. */
 export interface HorsePlanContext {
   readonly version: 1;

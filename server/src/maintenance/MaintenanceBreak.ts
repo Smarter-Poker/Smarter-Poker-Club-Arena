@@ -128,6 +128,8 @@ export interface PausableTableEngine {
    * the restart gate asks (PHASE 2, 2026-09-02) - see `unparkedTables`.
    */
   isBetweenHands(): boolean;
+  /** Initialized time banks have reached the durable park row. */
+  isMaintenanceStateDurable?(): boolean;
   isRunning(): boolean;
   /**
    * Cash or tournament. Optional: an engine that does not say is treated as
@@ -1672,7 +1674,8 @@ export class MaintenanceBreak {
     for (const [tableId, engine] of this.deps.engines()) {
       try {
         if (!engine.isRunning()) continue;
-        if (!engine.isBetweenHands()) out.push(tableId);
+        if (!engine.isBetweenHands() || engine.isMaintenanceStateDurable?.() === false)
+          out.push(tableId);
       } catch {
         // Unreadable engines are not counted against the gate; an engine that
         // throws on inspection is already being handled by the reapers.

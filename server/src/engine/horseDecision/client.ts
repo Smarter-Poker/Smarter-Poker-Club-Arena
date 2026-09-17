@@ -3,6 +3,9 @@ import {
   horsePlanBatchBindingMatchesRequest,
   horsePlanContextFromDecision,
   horsePlanContextMatchesRequest,
+  HORSE_PLAN_ISSUE_DISPOSITIONS,
+  type HorsePlanBatchBinding,
+  type HorsePlanRetirementReason,
 } from '../HorsePlanHandIdentity.js';
 import { horsePhase6AttributionMatchesSnapshot } from '../HorsePhase6Attribution.js';
 import { Worker } from 'node:worker_threads';
@@ -332,6 +335,14 @@ export class LiveHorseDecisionWorkerClient {
    * is the job it is running (or about to run).
    */
   private readonly inFlight: QueuedJob[] = [];
+  /** Owned by the delivered FAST object; does not retain abandoned results. */
+  private readonly planOwners = new WeakMap<
+    FastHorseDecisionResult,
+    {
+      binding: HorsePlanBatchBinding;
+      state: 'available' | 'committing' | 'retired';
+    }
+  >();
   /** When the current head of `inFlight` became the worker's running job. */
   private activeStartedAt: number | null = null;
   private dispatchHoldDepth = 0;
@@ -501,7 +512,7 @@ export class LiveHorseDecisionWorkerClient {
     return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', signal);
   }
 
-  commitDecisionEffects(result: FastHorseDecisionResult): Promise<HorseDecisionWorkerAck> {
+  async commitDecisionEffects(result: FastHorseDecisionResult): Promise<HorseDecisionWorkerAck> {
     if (
       !horsePlanBatchBindingIsValid(result.planBinding) ||
       result.planBinding.fastRequestId !== result.requestId ||
@@ -510,6 +521,9 @@ export class LiveHorseDecisionWorkerClient {
     ) {
       return Promise.reject(new Error('Horse plan commit lacks its original FAST binding'));
     }
+    const owner = this.planOwners.get(result);
+    if (!owner || owner.state === 'retired' || result.planIssueDisposition !== 'issued')
+      return Promise.reject(new Error('Horse plan commit has no available client ownership'));
     const request: CommitDecisionEffectsRequest = {
       generation: result.generation,
       fence: result.fence,
@@ -518,9 +532,43 @@ export class LiveHorseDecisionWorkerClient {
       planBinding: structuredClone(result.planBinding),
       effects: structuredClone(result.effects),
     };
+    // Transfer only after the detached request exists and before enqueue.
+    // A caller timeout cannot prove whether the accepted plan applied.
+    owner.state = 'committing';
     // Worker issue ownership is checked separately. This transport method does
     // not certify table acceptance; Turns retains its exact accepted-wager gate.
-    return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', undefined, true);
+    return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', undefined, true).catch((error) => {
+      // Retirement is ordered after a posted commit, never a blind replay.
+      // If that commit applied, the worker preserves its applied terminal state.
+      this.retireDecisionEffects(result, 'commit_unconfirmed', true);
+      throw error;
+    });
+  }
+
+  private retireDecisionEffects(
+    result: FastHorseDecisionResult,
+    reason: HorsePlanRetirementReason = 'decision_finalized',
+    afterCommitFailure = false
+  ): void {
+    const owner = this.planOwners.get(result);
+    if (
+      !owner ||
+      owner.state === 'retired' ||
+      (owner.state === 'committing' && !afterCommitFailure)
+    )
+      return;
+    owner.state = 'retired';
+    void this.enqueue<HorseDecisionWorkerAck>(
+      {
+        type: 'RETIRE_DECISION_EFFECTS',
+        requestId: this.nextRequestId++,
+        generation: owner.binding.generation,
+        fence: owner.binding.fence,
+        planBinding: structuredClone(owner.binding),
+        reason,
+      },
+      'ACK'
+    ).catch(() => noteFire('phase15_plan_retirement_unconfirmed'));
   }
 
   decideDiscard(
@@ -903,13 +951,32 @@ export class LiveHorseDecisionWorkerClient {
                 ? 'OBSERVE_DISCARD_EXECUTION'
                 : active.request.type === 'COMMIT_DECISION_EFFECTS'
                   ? 'COMMIT_DECISION_EFFECTS'
-                  : null;
+                  : active.request.type === 'RETIRE_DECISION_EFFECTS'
+                    ? 'RETIRE_DECISION_EFFECTS'
+                    : null;
       if (message.operation !== expectedOperation) {
         this.fail(
           new Error(
             `horse decision worker ACK operation mismatch: expected ${String(expectedOperation)}, received ${message.operation}`
           )
         );
+        return;
+      }
+      if (
+        (expectedOperation === 'COMMIT_DECISION_EFFECTS' &&
+          !['applied_volatile', 'already_applied_volatile'].includes(
+            message.planDisposition ?? ''
+          )) ||
+        (expectedOperation === 'RETIRE_DECISION_EFFECTS' &&
+          ![
+            'retired',
+            'already_retired',
+            'already_applied_volatile',
+            'issue_absent',
+            'issue_failed',
+          ].includes(message.planDisposition ?? ''))
+      ) {
+        this.fail(new Error('horse decision worker ACK has no valid plan disposition'));
         return;
       }
     }
@@ -956,7 +1023,11 @@ export class LiveHorseDecisionWorkerClient {
     if (
       message.type === 'FAST_RESULT' &&
       active.request.type === 'DECIDE_FAST' &&
-      (!horsePlanBatchBindingMatchesRequest(message.planBinding, active.request) ||
+      (typeof message.planIssueDisposition !== 'string' ||
+        !HORSE_PLAN_ISSUE_DISPOSITIONS.includes(message.planIssueDisposition) ||
+        (message.planIssueDisposition === 'issued' && message.effects?.length === 0) ||
+        (message.planIssueDisposition === 'no_effects' && message.effects?.length !== 0) ||
+        !horsePlanBatchBindingMatchesRequest(message.planBinding, active.request) ||
         !horseDecisionEffectsMatchRequest(message.effects, {
           userId: active.request.player.user_id,
           history: active.request.gameState.actionHistory,
@@ -1009,20 +1080,37 @@ export class LiveHorseDecisionWorkerClient {
       });
       message.decision.executionWitness = witness;
       this.committedDecisions.track(witness);
-      if (this.journalConfigured)
+      const ownedFast =
+        message.type === 'FAST_RESULT' && message.planIssueDisposition === 'issued'
+          ? message
+          : null;
+      if (ownedFast)
+        this.planOwners.set(ownedFast, {
+          binding: structuredClone(ownedFast.planBinding),
+          state: 'available',
+        });
+      // The witness has one finalizer. Retirement and optional journal capture
+      // share it so enabling the journal cannot overwrite application ownership.
+      if (ownedFast || this.journalConfigured)
         onHorseExecutionFinalized(witness, (record) => {
-          void this.enqueue<HorseDecisionWorkerAck>(
-            {
-              type: 'OBSERVE_EXECUTION',
-              requestId: this.nextRequestId++,
-              generation: record.identity.generation,
-              fence: record.identity.fence,
-              witness: structuredClone(record),
-            },
-            'ACK',
-            undefined,
-            true
-          ).catch(() => noteFire('phase15_journal_capture_unavailable'));
+          if (ownedFast)
+            this.retireDecisionEffects(
+              ownedFast,
+              record.retirementReason === 'caller_settled' ? 'caller_settled' : 'decision_finalized'
+            );
+          if (this.journalConfigured)
+            void this.enqueue<HorseDecisionWorkerAck>(
+              {
+                type: 'OBSERVE_EXECUTION',
+                requestId: this.nextRequestId++,
+                generation: record.identity.generation,
+                fence: record.identity.fence,
+                witness: structuredClone(record),
+              },
+              'ACK',
+              undefined,
+              true
+            ).catch(() => noteFire('phase15_journal_capture_unavailable'));
         });
       // A result received after abort/expiry is never delivered to the table.
       // Retire it here; an executor callback cannot account for this response.

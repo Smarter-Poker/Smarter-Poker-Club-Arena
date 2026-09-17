@@ -1,4 +1,12 @@
-import type { HorsePlanBatchBinding, HorsePlanContext } from '../HorsePlanHandIdentity.js';
+import type {
+  HorsePlanBatchBinding,
+  HorsePlanContext,
+  HorsePlanIssueDisposition,
+  HorsePlanRefusal,
+  HorsePlanRetirementReason,
+  HorsePlanCommitDisposition,
+  HorsePlanRetirementDisposition,
+} from '../HorsePlanHandIdentity.js';
 /**
  * Structured-clone-safe messages for the one live HorseLogic compute lane.
  *
@@ -173,6 +181,7 @@ export interface CompletedHandObservation extends HorseDecisionFence {
         isFullRaise?: boolean;
         publicNode?: import('../HorsePublicActionNode.js').HorsePublicActionNode;
         origin?: import('../../types.js').AcceptedActionOrigin;
+        historyEvent?: 'uncalled_bet_returned';
         observationIdentity?: import('../HorseObservationIdentity.js').HorseObservationIdentity;
       }>
     | undefined;
@@ -192,6 +201,14 @@ export interface CommitDecisionEffectsRequest extends HorseDecisionFence {
   /** Original FAST issue identity; this requestId is only the new FIFO job. */
   planBinding: HorsePlanBatchBinding;
   effects: HorseMindDecisionEffect[];
+}
+
+/** Ends only this original FAST's volatile ownership; never authorizes a wager. */
+export interface RetireDecisionEffectsRequest extends HorseDecisionFence {
+  type: 'RETIRE_DECISION_EFFECTS';
+  requestId: number;
+  planBinding: HorsePlanBatchBinding;
+  reason: HorsePlanRetirementReason;
 }
 
 export interface ObserveHorseExecutionRequest extends HorseDecisionFence {
@@ -258,6 +275,7 @@ export type HorseDecisionJobRequest =
   | DeepHorseDecisionRequest
   | ObserveCompletedHandRequest
   | CommitDecisionEffectsRequest
+  | RetireDecisionEffectsRequest
   | HorseDecisionStatusRequest
   | DecidePineappleDiscardRequest;
 
@@ -331,6 +349,7 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
   type: 'FAST_RESULT';
   requestId: number;
   planBinding: HorsePlanBatchBinding;
+  planIssueDisposition: HorsePlanIssueDisposition;
   decision: HorseDecision;
   rngBefore: number;
   rngAfter: number;
@@ -357,8 +376,11 @@ export interface HorseDecisionWorkerAck extends HorseDecisionFence {
     | 'OBSERVE_REQUEST_RETIREMENT'
     | 'OBSERVE_COMPLETED_HAND'
     | 'COMMIT_DECISION_EFFECTS'
+    | 'RETIRE_DECISION_EFFECTS'
     | 'OBSERVE_EXECUTION'
     | 'OBSERVE_DISCARD_EXECUTION';
+  /** Only effect operations carry this; it never means durable application. */
+  planDisposition?: HorsePlanCommitDisposition | HorsePlanRetirementDisposition;
 }
 
 export interface HorseDecisionWorkerStatusResult extends HorseDecisionFence {
@@ -393,6 +415,7 @@ export interface HorseDecisionWorkerError {
    * boundary and remains safe to use. Missing means terminal runtime failure.
    */
   recoverable?: true;
+  planRefusal?: HorsePlanRefusal;
 }
 
 export type HorseDecisionWorkerResponse =

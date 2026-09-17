@@ -2,6 +2,7 @@
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { HorseDecisionJournalStore } from '../services/horseDecisionJournal/store.js';
+import { readonlyHorseJournalStoreOptions } from '../services/horseDecisionJournal/config.js';
 import {
   readPrivateCorrectiveJson,
   writePrivateCorrectiveResult,
@@ -33,7 +34,7 @@ export function runUnsignedAcceptedSourceExport(args: readonly string[]): CliRes
   try {
     const input: unknown = readPrivateCorrectiveJson(args[3], MAX_INPUT);
     if (!object(input) || input.version !== 1 || !Array.isArray(input.rows)) fail('invalid_input');
-    store = new HorseDecisionJournalStore(args[0], { readOnly: true });
+    store = new HorseDecisionJournalStore(args[0], readonlyHorseJournalStoreOptions(args[0]));
     const result = createUnsignedAcceptedCommitmentExport({
       records: store.readHand(args[1]),
       handKey: args[1],

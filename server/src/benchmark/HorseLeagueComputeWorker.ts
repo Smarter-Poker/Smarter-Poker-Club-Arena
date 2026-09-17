@@ -25,6 +25,7 @@ import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../engine/GtoPostflo
 import { loadGtoCharts } from '../services/GtoChartLoader.js';
 import { loadGtoPostflop } from '../services/GtoPostflopLoader.js';
 import { loadGtoPostflopV31 } from '../services/GtoPostflopV31Loader.js';
+import { prepareTournamentFutureHandFacts } from '../engine/HorseTournamentFutureHand.js';
 import type {
   HorseLeagueComputeRequest,
   HorseLeagueComputeResponse,
@@ -66,6 +67,10 @@ if (runtimeAvailable) {
       // to an empty solver store while the live brain has a hydrated one.
       await Promise.all([loadGtoCharts(), loadGtoPostflop(), loadGtoPostflopV31()]);
     }
+    // This child owns the benchmark decisions. Preparing in its parent does
+    // not populate this process's cache. Match live decision-worker startup
+    // before READY, including offline fixtures that skip solver hydration.
+    prepareTournamentFutureHandFacts();
     send({
       type: 'READY',
       executionNice: getPriority(0),

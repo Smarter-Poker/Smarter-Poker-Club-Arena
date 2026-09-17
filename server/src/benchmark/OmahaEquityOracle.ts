@@ -85,10 +85,14 @@ type PreparedPlayer = OmahaEquityRequest['players'][number] & {
   combos: { cards: Card[]; weight: number }[] | null;
 };
 export async function evaluateOmahaEquity(
-  request: OmahaEquityRequest,
+  input: OmahaEquityRequest,
   shouldContinue: () => boolean = () => true
 ): Promise<OmahaEquityResult> {
   const started = performance.now();
+  // This offline operation yields to its caller. Own the admitted identity,
+  // boards and nested range cards before validation so later caller mutation
+  // cannot change the reference answer under an already accepted contract.
+  const request = structuredClone(input);
   const rules = referenceVariant(request.variant);
   if (
     !['sampled', 'exact_river'].includes(request.mode) ||

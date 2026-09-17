@@ -437,6 +437,11 @@ export function qualifyAdaptiveHand(
         throw Error('hand scope changed');
       handScope = capturedHandScope;
       if (
+        // Recheck persisted action ownership even when an earlier producer
+        // attached a bound identity. A changed actor must not inherit another
+        // seat's public position, price, stack or node-specific model scope.
+        !Number.isInteger(action.seat) ||
+        node.actorSeat !== action.seat ||
         node.street !== action.stage ||
         !node.legalActions.includes(action.action as never) ||
         STREETS.indexOf(node.street) < previousStreet

@@ -44,6 +44,7 @@ describe('Phase 8 paired tournament league', () => {
       ...result,
       eligible: 1,
       fired: 1,
+      completed: 1,
       latencyMs: { p50: 1, p95: 2, p99: 3, max: 3 },
     };
     expect(tournamentBaselineRunVerified(exercising)).toBe(true);
@@ -122,6 +123,7 @@ describe('Phase 8 paired tournament league', () => {
         standardError: 0.01,
         changed: 1,
         fired: 1,
+        completed: 1,
         eligible: 1,
         decisions: 2,
         promotionEligible: false,

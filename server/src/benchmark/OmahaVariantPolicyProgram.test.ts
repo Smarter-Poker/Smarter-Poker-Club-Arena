@@ -15,6 +15,41 @@ import {
 import { omahaCardFacts } from '../engine/omaha/OmahaCardFacts.js';
 
 describe('Phase 11 independent high/low references', () => {
+  it('retains an away all-in winner in the independent side-pot reference', async () => {
+    const spot = omahaVariantReferenceSpots().find((s) =>
+      s.name.includes('short-stack-wins-main')
+    )!;
+    const input = structuredClone(spot.input);
+    input.state.dealtSeatIds = input.state.players.map((p) => p.seat);
+    input.state.players[1].is_sitting_out = true;
+    const result = await evaluateOmahaVariantProgram(input);
+    expect(result.equity?.complete, result.reason).toBe(true);
+    expect(result.equity!.perPot.map((p) => [p.amount, p.equity])).toEqual([
+      [150, 0],
+      [300, 1],
+    ]);
+    expect(result.equity!.maxConservationError).toBe(0);
+    expect(result.equity!.equity).toBeCloseTo(2 / 3, 10);
+  });
+
+  it.each(['plo5', 'plo6', 'plo8'] as const)(
+    '%s preserves folded deals and away all-ins, and excludes undealt spectators from public priors',
+    (variant) => {
+      const s = omahaVariantSpot(variant, 'river', 4);
+      s.state.dealtSeatIds = [1, 2, 3];
+      Object.assign(s.state.players[1], { is_sitting_out: true, is_all_in: true, stack: 0 });
+      Object.assign(s.state.players[2], { is_sitting_out: true, is_folded: true });
+      Object.assign(s.state.players[3], {
+        is_sitting_out: true,
+        is_folded: true,
+        totalInvested: 0,
+        bet: 0,
+      });
+      const ranges = omahaVariantPublicRanges(variant, s.hero, s.state, 11191);
+      expect(Object.keys(ranges).sort()).toEqual(['v2', 'v3']);
+    }
+  );
+
   it('does not raise tied nut high plus tied nut low as a scoop in a four-way quartered pot', async () => {
     const s = omahaVariantSpot('plo8', 'river', 4);
     s.hero.cards = variantCards('As 2s 7s 8s');
@@ -116,13 +151,14 @@ describe('Phase 11 independent high/low references', () => {
     const s = omahaVariantSpot('plo5', 'preflop');
     for (const bad of [{ seed: 0 }, { seed: 1, samples: 129 }]) {
       const r = await evaluateOmahaVariantProgram({ ...s, ...bad, mode: 'candidate' });
-      expect(r.selected).toBe(s.baseline);
+      expect(r.selected).toEqual(s.baseline);
+      expect(r.selected).not.toBe(s.baseline);
     }
     const r = await evaluateOmahaVariantProgram({ ...s, seed: 1, mode: 'candidate' }, () => false);
-    expect(r.selected).toBe(s.baseline);
+    expect(r.selected).toEqual(s.baseline);
     const tournament = omahaVariantSpot('plo8', 'preflop', 2, 'tournament');
     expect(
       (await evaluateOmahaVariantProgram({ ...tournament, seed: 1, mode: 'candidate' })).selected
-    ).toBe(tournament.baseline);
+    ).toEqual(tournament.baseline);
   });
 });

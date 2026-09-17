@@ -1,0 +1,9 @@
+# Scheduled games preserve their configured rules
+
+Saved schedules using the legacy `plo` name previously fell through to NLH. The scheduled row then supplied NLH to the table creator, so this was an actual game-rule mismatch. On September17, a read-only production review found30active `plo` schedules and19live children stored asNLH:14registering and5running. An inspected “Afternoon PLO Turbo” child and all its tables were NLH.
+
+The scheduled creator now recognizes that alias as PLO4 and preserves the already supported FLH/FLO8 catalogue. An explicit unsupported or malformed game refuses through the existing error reporter before claiming a spawn key or inserting an event. The established absent/null NLH default remains. The repair changes future creation only; it neither changes a funded event's game nor rewrites historical names, entries, chips or prices.
+
+The same readiness review found two actual accounting inputs outside the CI selector: the ranking rollback SQL and the reminder probe's nested PostgreSQL-driver package/lock. Their edits now select the existing accounting/server checks and routing tests. Unrelated documentation still skips those suites, and rename/incomplete-diff behavior is preserved. This does not wire every historical native probe into CI or certify a full tournament lifecycle.
+
+The final new creator regression detects ten failures against the original implementation;130checks in the two directly affected engine files pass after repair, with server TypeScript compilation. Selector regressions detect six failures before repair;76focused existing classifier/fixture checks pass afterward. The creator tests invoke the real row builder and spawn caller with controlled persistence, not funded production entries. Required provider checks, protected integration, publication and affected live verification remain separate delivery steps.

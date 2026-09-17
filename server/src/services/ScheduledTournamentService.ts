@@ -351,15 +351,18 @@ export function restartCloneStartMs(args: {
   return next;
 }
 
-/** Same normalization fn_create_tournament and TournamentRecurringService use. */
+/** Canonical engine games plus legacy aliases retained in saved schedules. */
 const GAME_TYPE_MAP: Record<string, string> = {
   nlh: 'NLH',
+  plo: 'PLO4',
   plo4: 'PLO4',
   plo5: 'PLO5',
   plo6: 'PLO6',
   plo8: 'PLO8',
   shortdeck: 'SHORT_DECK',
   short_deck: 'SHORT_DECK',
+  flh: 'FLH',
+  flo8: 'FLO8',
 };
 
 const KNOWN_TYPES = new Set([
@@ -949,8 +952,20 @@ export class ScheduledTournamentService {
       return null;
     }
 
-    const gameVariant = String(cfg.gameVariant ?? 'nlh').toLowerCase();
-    const dbGameType = GAME_TYPE_MAP[gameVariant] || 'NLH';
+    const configuredGame = cfg.gameVariant ?? 'nlh';
+    const gameVariant = typeof configuredGame === 'string' ? configuredGame.toLowerCase() : '';
+    // An explicit unsupported game must not silently become Hold'em. Resolve
+    // this before spawnInstance claims a key or writes a tournament.
+    if (!Object.hasOwn(GAME_TYPE_MAP, gameVariant)) {
+      reportError(
+        new Error(
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} has unknown game variant "${String(configuredGame)}" - skipping`
+        ),
+        'ScheduledTournaments.unknown_game_variant'
+      );
+      return null;
+    }
+    const dbGameType = GAME_TYPE_MAP[gameVariant];
 
     // Explicit arrays win; otherwise a named preset resolves them. This keeps
     // schedule rows (and the seed migration) readable instead of embedding

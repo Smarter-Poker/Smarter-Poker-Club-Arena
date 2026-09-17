@@ -47,6 +47,9 @@ BEGIN
         AND public.fn_union_pnl_close_quality(v_union.id,v_from,v_end)->>'status'='ready' THEN$predicate$)>0,
   'old successful union receipt cannot skip the current P&L quality requirement');
  SELECT prosrc INTO source FROM pg_proc WHERE oid='public.fn_union_settle_player_pnl(uuid,timestamptz,timestamptz,boolean)'::regprocedure;
+ PERFORM pg_temp.assert_pnl_hook(strpos(source,'DELETE FROM pg_temp._pnl_tmp WHERE true;')>0
+  AND strpos(source,'DELETE FROM pg_temp._pnl_tmp;')=0,
+  'installed P&L scratch cleanup carries the predicate required by safeupdate');
  PERFORM pg_temp.assert_pnl_hook(strpos(source,'IF NOT public.fn_caller_is_engine()')
   <strpos(source,'PERFORM public.fn_require_union_pnl_evidence')
   AND strpos(source,'PERFORM public.fn_require_union_pnl_evidence')<strpos(source,'SELECT * INTO v_existing')

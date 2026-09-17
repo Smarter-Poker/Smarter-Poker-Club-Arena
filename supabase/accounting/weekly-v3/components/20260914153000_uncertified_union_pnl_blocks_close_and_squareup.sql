@@ -76,8 +76,10 @@ BEGIN
     IS DISTINCT FROM '630e87c9842a423e6a5198551623dec0'
   OR md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))
     IS DISTINCT FROM '63f8248cd6d804f450a0b8f0fbc05e77'
+  -- The restored mirror adds WHERE true to its transaction-local scratch
+  -- delete. Accept only that exact correction or the captured installed body.
   OR md5(pg_get_functiondef('public.fn_union_settle_player_pnl(uuid,timestamptz,timestamptz,boolean)'::regprocedure))
-    IS DISTINCT FROM 'a7eb35f0906ad77fd5eb0975d90023b7'
+    NOT IN ('a7eb35f0906ad77fd5eb0975d90023b7','a3c29b9b9b9d7f6ec64e3f6194875339')
   OR md5(pg_get_functiondef('public.fn_union_club_invoice(uuid,timestamptz,timestamptz)'::regprocedure))
     IS DISTINCT FROM 'bee79493a9a724e043b658ba328d663f' THEN
   RAISE EXCEPTION 'union_pnl_quality_hook_preimage_changed'; END IF;
@@ -146,6 +148,9 @@ BEGIN
  EXECUTE replace(source,needle,replacement);
 
  source:=pg_get_functiondef('public.fn_union_settle_player_pnl(uuid,timestamptz,timestamptz,boolean)'::regprocedure);
+ -- Install the same permanent predicate correction on the captured production
+ -- predecessor. It changes only the current transaction's scratch relation.
+ source:=replace(source,'DELETE FROM pg_temp._pnl_tmp;','DELETE FROM pg_temp._pnl_tmp WHERE true;');
  needle:=$needle$  SELECT * INTO v_existing FROM public.union_pnl_settlements$needle$;
  replacement:=$replacement$  -- Preview, replay and payment share one quality gate after original auth,
   -- window/floor validation and scope locks. No historical record is changed.

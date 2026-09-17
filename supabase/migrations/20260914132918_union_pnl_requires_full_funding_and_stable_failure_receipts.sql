@@ -81,7 +81,7 @@ BEGIN
 
   CREATE TEMP TABLE IF NOT EXISTS _pnl_tmp (
     club_id uuid PRIMARY KEY, net numeric, seated numeric, detail jsonb, opening_treasury numeric) ON COMMIT DROP;
-  DELETE FROM pg_temp._pnl_tmp;
+  DELETE FROM pg_temp._pnl_tmp WHERE true;
 
   INSERT INTO pg_temp._pnl_tmp (club_id, net, seated, detail)
   SELECT c.club_id,

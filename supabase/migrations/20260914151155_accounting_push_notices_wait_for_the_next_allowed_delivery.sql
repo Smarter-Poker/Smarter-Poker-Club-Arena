@@ -42,8 +42,10 @@ BEGIN
   RETURNING *;
 END;
 $function$;
--- CREATE OR REPLACE preserves the established function ACL. No receipt is
--- inserted, deleted, reset or re-enqueued; archived/history/opt-out rows stay put.
+-- Reassert the existing backend-only dispatch boundary in this definition.
+-- No receipt is inserted, deleted, reset or re-enqueued.
+REVOKE ALL ON FUNCTION public.claim_push_outbox_batch(integer,integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_push_outbox_batch(integer,integer) TO service_role;
 COMMENT ON COLUMN public.push_outbox.next_attempt_at IS 'Earliest next dispatch of a typed accounting receipt. Temporary preference deferral preserves the same receipt and provider retry budget.';
 
 COMMIT;

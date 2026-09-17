@@ -1,0 +1,332 @@
+{
+  "query": "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='1s';\n-- SELECT ONLY. Parent executes once in REPEATABLE READ READ ONLY with a bounded\n-- statement deadline (20s) and lock deadline (1s). No advisory/business calls.\n-- One naturally completed ordinary Spin, canonical terminal receipt and exact\n-- closed-table set. Purpose: isolated receipt-eligibility/pruner fixture ONLY.\n-- It is not a financial/terminal-replay estate and does not restore production.\n-- Source identities remain private; every UUID must be deterministically\n-- replaced before fixture use. Descriptive names/contact/auth secrets omitted.\nWITH selected AS MATERIALIZED (\n SELECT t.id\n FROM public.tournament_terminal_settlements r\n JOIN public.tournaments t ON t.id=r.tournament_id\n JOIN public.clubs c ON c.id=t.club_id\n WHERE t.status='COMPLETED' AND lower(t.variant)='spin' AND upper(t.tournament_type)='SPIN'\n   AND t.max_players=3 AND NOT COALESCE(t.is_premium_spin,false)\n   AND NOT COALESCE(t.is_bounty,false) AND NOT COALESCE(t.is_pko,false)\n   AND NOT COALESCE(t.is_mystery_bounty,false)\n   AND t.satellite_target_id IS NULL AND t.satellite_target IS NULL\n   AND t.parent_tournament_id IS NULL AND t.survivors_advance_to IS NULL\n   AND c.retired_by IS NULL AND r.settlement_mode='places'\n   AND r.receipt_version=1 AND r.closed_table_count=1\n   AND cardinality(r.closed_table_ids)=1\n   AND r.source_seat_count BETWEEN 0 AND 3\n   AND cardinality(r.source_seat_ids)=r.source_seat_count\n   AND r.released_seat_count BETWEEN 0 AND r.source_seat_count\n   AND cardinality(r.released_seat_ids)=r.released_seat_count\n   AND r.released_seat_ids <@ r.source_seat_ids\n   AND r.prize_pool=t.prize_pool AND r.bounty_pool=t.bounty_pool\n   AND r.cash_payout_total=r.prize_pool AND r.bounty_payout_total=r.bounty_pool\n   AND r.completed_at=t.ended_at AND r.escrow_closed_at IS NOT NULL\n   AND EXISTS(SELECT 1 FROM public.tables b WHERE b.id=r.closed_table_ids[1]\n     AND b.tournament_id=t.id AND b.club_id=t.club_id\n     AND b.union_id IS NOT DISTINCT FROM t.union_id\n     AND b.cluster_id IS NULL AND b.status='closed' AND b.lifecycle='closed')\n   AND (SELECT count(*) FROM public.tables b WHERE b.tournament_id=t.id)=1\n   AND NOT EXISTS(SELECT 1 FROM public.tournament_cancellation_receipts x WHERE x.tournament_id=t.id)\n ORDER BY r.completed_at DESC,r.tournament_id\n LIMIT 1\n), t AS MATERIALIZED (\n SELECT x.* FROM public.tournaments x JOIN selected s ON s.id=x.id\n), r AS MATERIALIZED (\n SELECT x.* FROM public.tournament_terminal_settlements x JOIN selected s ON s.id=x.tournament_id\n), b AS MATERIALIZED (\n SELECT x.* FROM public.tables x JOIN selected s ON s.id=x.tournament_id\n), c AS MATERIALIZED (\n SELECT x.* FROM public.clubs x JOIN t ON t.club_id=x.id\n), union_ids AS MATERIALIZED (\n SELECT union_id id FROM t WHERE union_id IS NOT NULL\n UNION SELECT union_id FROM b WHERE union_id IS NOT NULL\n UNION SELECT union_id FROM c WHERE union_id IS NOT NULL\n), u AS MATERIALIZED (\n SELECT x.* FROM public.unions x JOIN union_ids y ON y.id=x.id\n), profile_ids AS MATERIALIZED (\n SELECT owner_id id FROM c WHERE owner_id IS NOT NULL\n UNION SELECT owner_id FROM u WHERE owner_id IS NOT NULL\n), auth_ids AS MATERIALIZED (\n SELECT id FROM profile_ids\n UNION SELECT created_by FROM b WHERE created_by IS NOT NULL\n UNION SELECT winner_id FROM r\n), auth_rows AS MATERIALIZED (\n SELECT x.id,x.aud,x.role FROM auth.users x JOIN auth_ids y ON y.id=x.id\n), profile_rows AS MATERIALIZED (\n SELECT x.id,x.is_horse FROM public.profiles x JOIN profile_ids y ON y.id=x.id\n), relations AS MATERIALIZED (\n SELECT c.oid,c.relname,n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace\n WHERE (n.nspname='public' AND c.relname IN('tournaments','tournament_terminal_settlements','tables','clubs','unions','profiles'))\n    OR (n.nspname='auth' AND c.relname='users')\n), packet AS (\n SELECT jsonb_build_object(\n  'schema_version',1,'observed_at',clock_timestamp(),'transaction_timestamp',transaction_timestamp(),\n  'server_version_num',current_setting('server_version_num'),\n  'transaction_read_only',current_setting('transaction_read_only'),\n  'transaction_isolation',current_setting('transaction_isolation'),\n  'purpose','authentic completed-receipt eligibility fixture; no financial lifecycle replay',\n  'tournament',COALESCE((SELECT jsonb_agg(jsonb_build_object(\n    'id',id,'club_id',club_id,'union_id',union_id,'game_type',game_type,\n    'variant',variant,'tournament_type',tournament_type,'status',status,\n    'buy_in_amount',buy_in_amount,'buy_in_fee',buy_in_fee,'guaranteed_prize',guaranteed_prize,\n    'prize_pool',prize_pool,'prize_pool_finalized',prize_pool_finalized,\n    'bounty_pool',bounty_pool,'bounty_pool_paid',bounty_pool_paid,'total_rake',total_rake,\n    'spin_multiplier',spin_multiplier,'is_premium_spin',is_premium_spin,\n    'spin_locked_tiers',spin_locked_tiers,'starting_chips',starting_chips,\n    'blind_structure',blind_structure,'payout_structure',payout_structure,\n    'start_time',start_time,'started_at',started_at,'ended_at',ended_at,\n    'max_players',max_players,'min_players',min_players,'table_size',table_size,\n    'current_players',current_players,'is_bounty',is_bounty,'is_pko',is_pko,'is_mystery_bounty',is_mystery_bounty,\n    'satellite_target_id',satellite_target_id,'satellite_target',satellite_target,\n    'parent_tournament_id',parent_tournament_id,'survivors_advance_to',survivors_advance_to,\n    'payout_math_version',payout_math_version,'payout_unit_cents',payout_unit_cents,\n    'source_row_md5',md5(to_jsonb(t)::text))) FROM t),'[]'::jsonb),\n  'terminal_receipts',COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY tournament_id) FROM r),'[]'::jsonb),\n  'tables',COALESCE((SELECT jsonb_agg(jsonb_build_object(\n    'id',id,'club_id',club_id,'union_id',union_id,'tournament_id',tournament_id,\n    'cluster_id',cluster_id,'created_by',created_by,'status',status,'lifecycle',lifecycle,\n    'game_type',game_type,'game_variant',game_variant,'small_blind',small_blind,'big_blind',big_blind,\n    'min_buy_in',min_buy_in,'max_buy_in',max_buy_in,'max_players',max_players,'current_players',current_players,\n    'terminal_closed_at',terminal_closed_at,'source_row_md5',md5(to_jsonb(b)::text)) ORDER BY id) FROM b),'[]'::jsonb),\n  'clubs',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'owner_id',owner_id,'union_id',union_id,\n    'retired_by',retired_by,'asset',asset,'is_platform',is_platform,'is_union',is_union,\n    'source_row_md5',md5(to_jsonb(c)::text)) ORDER BY id) FROM c),'[]'::jsonb),\n  'unions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'owner_id',owner_id,\n    'source_row_md5',md5(to_jsonb(u)::text)) ORDER BY id) FROM u),'[]'::jsonb),\n  'profiles',COALESCE((SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM profile_rows x),'[]'::jsonb),\n  'auth_identities',COALESCE((SELECT jsonb_agg(to_jsonb(x) ORDER BY id) FROM auth_rows x),'[]'::jsonb),\n  'foreign_keys',COALESCE((SELECT jsonb_agg(jsonb_build_object('schema',x.nspname,'relation',x.relname,\n    'name',k.conname,'definition',pg_get_constraintdef(k.oid,true),'validated',k.convalidated,\n    'deferrable',k.condeferrable,'deferred',k.condeferred) ORDER BY x.nspname,x.relname,k.conname)\n    FROM relations x JOIN pg_constraint k ON k.conrelid=x.oid AND k.contype='f'),'[]'::jsonb),\n  'eligibility_authority',jsonb_build_object(\n    'pruner_full_definition_md5',md5(pg_get_functiondef('public.sp_prune_hand_history(integer)'::regprocedure)),\n    'history_writer_full_definition_md5',md5(pg_get_functiondef('public.fn_ca_insert_hand_with_awards(jsonb,jsonb)'::regprocedure)),\n    'terminal_immutable_binding',(SELECT jsonb_build_object('name',x.tgname,'enabled',x.tgenabled,\n      'definition',pg_get_triggerdef(x.oid,true),'handler_full_definition_md5',md5(pg_get_functiondef(x.tgfoid)))\n      FROM pg_trigger x WHERE x.tgrelid='public.tournament_terminal_settlements'::regclass\n        AND x.tgname='tournament_terminal_settlements_append_only' AND NOT x.tgisinternal))\n ) value\n), admission AS (\n SELECT (SELECT count(*)=1 FROM t) AND (SELECT count(*)=1 FROM r)\n  AND (SELECT count(*)=1 FROM b) AND (SELECT count(*)=1 FROM c)\n  AND (SELECT count(*) FROM union_ids)=(SELECT count(*) FROM u)\n  AND (SELECT count(*) FROM u)<=2\n  AND (SELECT count(*) FROM auth_ids)=(SELECT count(*) FROM auth_rows)\n  AND (SELECT count(*) FROM auth_rows)<=5\n  AND (SELECT count(*) FROM profile_ids)=(SELECT count(*) FROM profile_rows)\n  AND (SELECT count(*) FROM profile_rows)<=3\n  AND (SELECT count(*)=7 FROM relations)\n  AND current_setting('transaction_read_only')='on'\n  AND current_setting('transaction_isolation')='repeatable read' complete\n)\nSELECT jsonb_build_object('complete',complete AND octet_length(value::text)<=262144,\n 'counts',jsonb_build_object('tournaments',(SELECT count(*) FROM t),'receipts',(SELECT count(*) FROM r),\n   'tables',(SELECT count(*) FROM b),'clubs',(SELECT count(*) FROM c),'unions',(SELECT count(*) FROM u),\n   'auth',(SELECT count(*) FROM auth_rows),'profiles',(SELECT count(*) FROM profile_rows)),\n 'serialized_bytes',octet_length(value::text),\n 'packet',CASE WHEN complete AND octet_length(value::text)<=262144 THEN value ELSE NULL END)\nFROM packet CROSS JOIN admission;\n\nCOMMIT;",
+  "rows": [
+    {
+      "jsonb_build_object": {
+        "counts": {
+          "auth": 2,
+          "clubs": 1,
+          "tables": 1,
+          "unions": 0,
+          "profiles": 1,
+          "receipts": 1,
+          "tournaments": 1
+        },
+        "packet": {
+          "clubs": [
+            {
+              "id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+              "asset": "chips",
+              "is_union": false,
+              "owner_id": "47965354-0e56-43ef-931c-ddaab82af765",
+              "union_id": null,
+              "retired_by": null,
+              "is_platform": false,
+              "source_row_md5": "b9b2de1ca9651960ebd5cb4ebc6c7114"
+            }
+          ],
+          "tables": [
+            {
+              "id": "db7d88c1-ab9c-4798-93c4-d8eac9e57a5e",
+              "status": "closed",
+              "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+              "union_id": null,
+              "big_blind": 290,
+              "game_type": "tournament",
+              "lifecycle": "closed",
+              "cluster_id": null,
+              "created_by": null,
+              "max_buy_in": 0,
+              "min_buy_in": 0,
+              "max_players": 3,
+              "small_blind": 145,
+              "game_variant": "plo4",
+              "tournament_id": "1c82bb98-502a-460f-91ba-7d8b069d3445",
+              "source_row_md5": "3bd4d434415b649551bf1257ef854102",
+              "current_players": 0,
+              "terminal_closed_at": "2026-09-17T07:34:26.980991+00:00"
+            }
+          ],
+          "unions": [],
+          "purpose": "authentic completed-receipt eligibility fixture; no financial lifecycle replay",
+          "profiles": [
+            {
+              "id": "47965354-0e56-43ef-931c-ddaab82af765",
+              "is_horse": false
+            }
+          ],
+          "tournament": [
+            {
+              "id": "1c82bb98-502a-460f-91ba-7d8b069d3445",
+              "is_pko": false,
+              "status": "COMPLETED",
+              "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+              "variant": "spin",
+              "ended_at": "2026-09-17T07:34:26.980991+00:00",
+              "union_id": null,
+              "game_type": "PLO4",
+              "is_bounty": false,
+              "buy_in_fee": 0,
+              "prize_pool": 6,
+              "start_time": "2026-09-17T06:56:20.485+00:00",
+              "started_at": "2026-09-17T06:56:20.485+00:00",
+              "table_size": 3,
+              "total_rake": 0,
+              "bounty_pool": 0,
+              "max_players": 3,
+              "min_players": 3,
+              "buy_in_amount": 3,
+              "source_row_md5": "21814a4bf4f15295fa444c8f722e5e2d",
+              "starting_chips": 300,
+              "blind_structure": "[{\"ante\": 0, \"level\": 1, \"bigBlind\": 20, \"duration\": 180, \"smallBlind\": 10}, {\"ante\": 0, \"level\": 2, \"bigBlind\": 30, \"duration\": 180, \"smallBlind\": 15}, {\"ante\": 0, \"level\": 3, \"bigBlind\": 40, \"duration\": 180, \"smallBlind\": 20}, {\"ante\": 0, \"level\": 4, \"bigBlind\": 60, \"duration\": 180, \"smallBlind\": 30}, {\"ante\": 0, \"level\": 5, \"bigBlind\": 80, \"duration\": 180, \"smallBlind\": 40}, {\"ante\": 0, \"level\": 6, \"bigBlind\": 100, \"duration\": 180, \"smallBlind\": 50}, {\"ante\": 0, \"level\": 7, \"bigBlind\": 120, \"duration\": 180, \"smallBlind\": 60}, {\"ante\": 0, \"level\": 8, \"bigBlind\": 150, \"duration\": 180, \"smallBlind\": 75}, {\"ante\": 0, \"level\": 9, \"bigBlind\": 180, \"duration\": 180, \"smallBlind\": 90}, {\"ante\": 0, \"level\": 10, \"bigBlind\": 210, \"duration\": 180, \"smallBlind\": 105}, {\"ante\": 0, \"level\": 11, \"bigBlind\": 290, \"duration\": 180, \"smallBlind\": 145}, {\"ante\": 0, \"level\": 12, \"bigBlind\": 410, \"duration\": 180, \"smallBlind\": 205, \"spinContinuation\": {\"growth\": 1.4, \"version\": 1, \"roundBigTo\": 10, \"anchorLevel\": 10, \"anchorBigBlind\": 210}}]",
+              "current_players": 0,
+              "is_premium_spin": false,
+              "spin_multiplier": 2,
+              "tournament_type": "SPIN",
+              "bounty_pool_paid": 0,
+              "guaranteed_prize": 0,
+              "payout_structure": "[{\"place\":1,\"percentage\":100}]",
+              "satellite_target": null,
+              "is_mystery_bounty": false,
+              "payout_unit_cents": 1,
+              "spin_locked_tiers": [],
+              "payout_math_version": 1,
+              "satellite_target_id": null,
+              "parent_tournament_id": null,
+              "prize_pool_finalized": true,
+              "survivors_advance_to": null
+            }
+          ],
+          "observed_at": "2026-09-17T07:35:54.523723+00:00",
+          "foreign_keys": [
+            {
+              "name": "clubs_owner_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "clubs",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (owner_id) REFERENCES profiles(id)"
+            },
+            {
+              "name": "clubs_retired_by_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "clubs",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (retired_by) REFERENCES auth.users(id) ON DELETE SET NULL"
+            },
+            {
+              "name": "clubs_union_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "clubs",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (union_id) REFERENCES unions(id)"
+            },
+            {
+              "name": "profiles_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "profiles",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE"
+            },
+            {
+              "name": "fk_tables_club_id",
+              "schema": "public",
+              "deferred": false,
+              "relation": "tables",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+            },
+            {
+              "name": "tables_cluster_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "tables",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (cluster_id) REFERENCES cash_games(id)"
+            },
+            {
+              "name": "tables_created_by_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "tables",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (created_by) REFERENCES auth.users(id)"
+            },
+            {
+              "name": "tables_tournament_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "tables",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id)"
+            },
+            {
+              "name": "tables_union_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "tables",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+            },
+            {
+              "name": "tournament_terminal_settlements_tournament_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "tournament_terminal_settlements",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+            },
+            {
+              "name": "tournaments_club_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "tournaments",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+            },
+            {
+              "name": "tournaments_satellite_target_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "tournaments",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (satellite_target_id) REFERENCES tournaments(id)"
+            },
+            {
+              "name": "fk_unions_owner_id_profiles",
+              "schema": "public",
+              "deferred": false,
+              "relation": "unions",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (owner_id) REFERENCES profiles(id) ON DELETE CASCADE"
+            },
+            {
+              "name": "unions_owner_id_fkey",
+              "schema": "public",
+              "deferred": false,
+              "relation": "unions",
+              "validated": true,
+              "deferrable": false,
+              "definition": "FOREIGN KEY (owner_id) REFERENCES auth.users(id)"
+            }
+          ],
+          "schema_version": 1,
+          "auth_identities": [
+            {
+              "id": "097fccb7-2ec3-4eff-8050-36862a080e24",
+              "aud": "authenticated",
+              "role": "authenticated"
+            },
+            {
+              "id": "47965354-0e56-43ef-931c-ddaab82af765",
+              "aud": "authenticated",
+              "role": "authenticated"
+            }
+          ],
+          "terminal_receipts": [
+            {
+              "winner_id": "097fccb7-2ec3-4eff-8050-36862a080e24",
+              "prize_pool": 6,
+              "settled_at": "2026-09-17T07:34:26.980991+00:00",
+              "bounty_pool": 0,
+              "rake_amount": 0.72,
+              "cash_receipt": {
+                "ok": true,
+                "status": "COMPLETING",
+                "payouts": [
+                  {
+                    "place": 1,
+                    "amount": 6,
+                    "user_id": "097fccb7-2ec3-4eff-8050-36862a080e24"
+                  }
+                ],
+                "deal_shares": [],
+                "fully_settled": true,
+                "winner_amount": 6,
+                "bubble_protection": null
+              },
+              "completed_at": "2026-09-17T07:34:26.980991+00:00",
+              "tournament_id": "1c82bb98-502a-460f-91ba-7d8b069d3445",
+              "bounty_receipt": {
+                "ok": true,
+                "funded": true,
+                "reason": "not_a_bounty_tournament",
+                "residual": 0
+              },
+              "started_status": "RUNNING",
+              "mystery_receipt": {
+                "ok": true,
+                "reason": "not_a_mystery_tournament",
+                "balanced": true,
+                "pool_cents": 0,
+                "settled_cents": 0,
+                "variance_cents": 0,
+                "unclaimed_cents": 0,
+                "residual_paid_cents": 0
+              },
+              "rake_settled_at": "2026-09-17T07:34:26.980991+00:00",
+              "receipt_version": 1,
+              "settlement_mode": "places",
+              "source_seat_ids": [
+                "06e3a6c3-7cf0-421c-84e3-2184ec7d625b",
+                "3747089f-f6ce-4637-8ea1-b25915ad4c47",
+                "6ee7ec36-22f9-4a86-938c-3b545d37c316"
+              ],
+              "closed_table_ids": [
+                "db7d88c1-ab9c-4798-93c4-d8eac9e57a5e"
+              ],
+              "escrow_closed_at": "2026-09-17T07:34:26.980991+00:00",
+              "rake_destination": "club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+              "cash_payout_count": 1,
+              "cash_payout_total": 6,
+              "escrow_close_note": "terminal receipt: exact zero",
+              "released_seat_ids": [
+                "06e3a6c3-7cf0-421c-84e3-2184ec7d625b"
+              ],
+              "source_seat_count": 3,
+              "closed_table_count": 1,
+              "mystery_pool_cents": 0,
+              "mystery_was_active": false,
+              "rake_attributed_at": "2026-09-17T07:34:26.980991+00:00",
+              "bounty_payout_total": 0,
+              "released_seat_count": 1,
+              "rake_attributed_users": 3
+            }
+          ],
+          "server_version_num": "170006",
+          "eligibility_authority": {
+            "pruner_full_definition_md5": "03f156a50f882354f7d09f30fe08afd2",
+            "terminal_immutable_binding": {
+              "name": "tournament_terminal_settlements_append_only",
+              "enabled": "O",
+              "definition": "CREATE TRIGGER tournament_terminal_settlements_append_only BEFORE DELETE OR UPDATE ON tournament_terminal_settlements FOR EACH ROW EXECUTE FUNCTION fn_tournament_terminal_receipts_are_append_only()",
+              "handler_full_definition_md5": "618843a6d0646709dac2a9c3b24a7652"
+            },
+            "history_writer_full_definition_md5": "e7f05bb7d61360be7424c5f429066047"
+          },
+          "transaction_isolation": "repeatable read",
+          "transaction_read_only": "on",
+          "transaction_timestamp": "2026-09-17T07:35:54.484304+00:00"
+        },
+        "complete": true,
+        "serialized_bytes": 9030
+      }
+    }
+  ]
+}

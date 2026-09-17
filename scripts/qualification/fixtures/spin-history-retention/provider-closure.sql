@@ -473,7 +473,7 @@ DO $bomb_guard$ BEGIN
     WHERE p.oid=to_regprocedure('public.fn_ca_bomb_hand_keeps_its_award_units()')
       AND md5(pg_get_functiondef(p.oid))='4f19a7516985b6e452732a891289ad2b'
       AND pg_get_userbyid(p.proowner)='postgres'
-      AND p.proacl::text='{postgres=X/postgres}') THEN
+      AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}') THEN
    RAISE EXCEPTION 'spin retention closure: bomb-hand handler authority differs';
  END IF;
 END $bomb_guard$;

@@ -73,3 +73,9 @@ scripts/qualification/alert-evidence-hosted.manifest.json
 scripts/ci/probes/bbj-bank-replay/funded/source/
 scripts/ci/probes/bbj-bank-replay/funded/regressions/original/
 scripts/ci/probes/bbj-bank-replay/funded/provenance/
+
+# Exact captured terminal receipt and reviewed qualification packet seals.
+scripts/qualification/spin-history-retention.manifest.json
+scripts/qualification/fixtures/spin-history-retention/completed-start-authority.json
+scripts/qualification/spin-history-retention-completed.manifest.json
+scripts/qualification/spin-history-retention-completed.md

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Finite hosted PG17 Spin expiry qualification, using authentic captured inputs.
 
-Runs source-specific controls first, then independent preimage and candidate
-clusters. No provider daemon, VM, arbitrary database target, retry or resume.
+Runs source-specific controls first, then independent preimage, candidate and
+completed-receipt eligibility clusters. No provider daemon, VM, arbitrary database
+target, retry or resume.
 The financial schedules and their independent oracle remain authoritative.
 """
 import argparse
@@ -29,8 +30,9 @@ ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 OWNER = '47965354-0e56-43ef-931c-ddaab82af765'
 REFUND_ACTOR = '2d1cd6c3-5700-4af9-a271-d4863fdab20d'
-IMAGES = ('preimage', 'candidate')
-CASES = {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund')}
+IMAGES = ('preimage', 'candidate', 'retention-completed')
+CASES = {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
+         'retention-completed': ()}
 CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.json',
                 'committed-refund': 'committed-refund.jsonl'}
 SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
@@ -42,7 +44,7 @@ CLEAN_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
              'PYTHONDONTWRITEBYTECODE': '1'}
 REPLACEMENTS = {'scripts/qualification/spin-expiry-business-races.md': 'scripts/qualification/spin-expiry-business-races.md', 'scripts/qualification/spin-expiry-business-races.py': 'scripts/qualification/spin-expiry-business-races.py', 'scripts/qualification/spin-expiry-business-state.sql': 'scripts/qualification/spin-expiry-business-state.sql', 'scripts/qualification/spin-expiry-committed-refund-oracle.py': 'scripts/qualification/spin-expiry-committed-refund-oracle.py', 'scripts/qualification/spin-expiry-committed-refund-state.sql': 'scripts/qualification/spin-expiry-committed-refund-state.sql', 'scripts/qualification/spin-expiry-committed-refund.authority.json': 'scripts/qualification/spin-expiry-committed-refund.authority.json', 'scripts/qualification/spin-expiry-committed-refund.md': 'scripts/qualification/spin-expiry-committed-refund.md', 'scripts/qualification/spin-expiry-committed-refund.py': 'scripts/qualification/spin-expiry-committed-refund.py', 'scripts/qualification/spin-expiry-lock-order.authority.json': 'scripts/qualification/spin-expiry-lock-order.authority.json', 'scripts/qualification/spin-expiry-lock-order.component-inputs.sql': 'scripts/qualification/spin-expiry-lock-order.component-inputs.sql', 'scripts/qualification/spin-expiry-lock-order.md': 'scripts/qualification/spin-expiry-lock-order.md', 'scripts/qualification/spin-expiry-lock-order.sql': 'scripts/qualification/spin-expiry-lock-order.sql', 'scripts/qualification/spin-expiry-real-funded-fixture.sql': 'scripts/qualification/spin-expiry-real-funded-fixture.sql', 'supabase/components/spin-expiry-lock-order.rollback.sql': 'supabase/components/spin-expiry-lock-order.rollback.sql', 'supabase/components/spin-expiry-lock-order.sql': 'supabase/components/spin-expiry-lock-order.sql'}
 RETENTION_MANIFEST = 'scripts/qualification/spin-history-retention.manifest.json'
-RETENTION_MANIFEST_SHA256 = '4fea0abf37646e87780f2fae84686f3c5ca70e2acabf02bca832cf50971ece90'
+RETENTION_MANIFEST_SHA256 = 'b08dd0fae57054ea596fbe9a8a2072c26372e2150a20bffe13b37d12161c9539'
 RETENTION_INPUTS = (
     'scripts/qualification/fixtures/spin-history-retention/capture-closure.sql',
     'scripts/qualification/fixtures/spin-history-retention/capture-provider.sql',
@@ -67,7 +69,21 @@ RETENTION_INPUTS = (
     'supabase/components/spin-history-retention.sql',
     'scripts/qualification/spin-history-retention.manifest.json',
 )
-REPLACEMENTS.update({name: name for name in RETENTION_INPUTS})
+COMPLETED_MANIFEST = 'scripts/qualification/spin-history-retention-completed.manifest.json'
+COMPLETED_MANIFEST_SHA256 = 'ac47c76a7e711b63cb7c4d44f446a7ea225dc80bb816dd6db7a7c453c91327ec'
+COMPLETED_INPUTS = (
+    'scripts/qualification/fixtures/spin-history-retention/capture-completed-start.sql',
+    'scripts/qualification/fixtures/spin-history-retention/completed-start-authority.json',
+    'scripts/qualification/fixtures/spin-history-retention/completed-start-input.sql',
+    'scripts/qualification/fixtures/spin-history-retention/completed-start-restore.sql',
+    'scripts/qualification/spin-history-retention-completed.sql',
+    'scripts/qualification/spin-history-retention-completed.md',
+    COMPLETED_MANIFEST,
+)
+COMPLETED_RESTORE = 'scripts/qualification/fixtures/spin-history-retention/completed-start-restore.sql'
+COMPLETED_CONSUMER = 'scripts/qualification/spin-history-retention-completed.sql'
+COMPLETED_CAPTURE_TIME = '2026-09-17T07:35:54.523723+00:00'
+REPLACEMENTS.update({name: name for name in (*RETENTION_INPUTS, *COMPLETED_INPUTS)})
 RETENTION_STAGES = {
     'retention_provider_authority': ('fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
     'retention_catalog_rollback': ('postgres', 'scripts/qualification/spin-history-retention.sql'),
@@ -301,16 +317,42 @@ def validate_retention_sources(files):
             for role, path in RETENTION_STAGES.values()], 'retention stage contract changed')
 
 
-def validate_retention_behavior(value):
-    fixed = {'qualification': 'spin_history_retention_behavior', 'old_deleted': 5,
-             'candidate_deleted': 2, 'canonical_cancellation_count': 2,
-             'table_and_catalog_rollback_verified': True, 'sequence_counters_restored': False,
-             'completed_spin_qualified': False, 'multi_session_race_qualified': False}
-    require(isinstance(value, dict) and set(value) == set(fixed) | {'sequence_before', 'sequence_after'},
-            'retention behavior JSON shape differs')
-    for key, expected in fixed.items():
-        require(type(value[key]) is type(expected) and value[key] == expected,
-                'retention behavior assertion differs: ' + key)
+def validate_completed_sources(files):
+    require(set(COMPLETED_INPUTS) <= set(files), 'completed retention source inventory incomplete')
+    require(digest(files[COMPLETED_MANIFEST]) == COMPLETED_MANIFEST_SHA256,
+            'completed retention manifest differs from reviewed source')
+    manifest = decode(files[COMPLETED_MANIFEST])
+    require(set(manifest['files']) == set(COMPLETED_INPUTS) - {COMPLETED_MANIFEST},
+            'completed retention leaf inventory differs')
+    for name, expected in manifest['files'].items():
+        require(pin(files[name]) == expected, 'completed retention source pin mismatch: ' + name)
+    # Preserve the author provenance separately; consume only the exact adopted
+    # provider revision, including its native-discovered ACL guard correction.
+    require(manifest['consumed_retention_manifest'] == {
+        'path': RETENTION_MANIFEST, 'sha256': RETENTION_MANIFEST_SHA256,
+        'all_existing_leaf_pins_match': True}, 'completed retention dependency revision differs')
+    validate_retention_sources(files)
+    graph = {}
+    for name in manifest['files']:
+        if not name.endswith('.sql'): continue
+        includes = []
+        for line in files[name].decode().splitlines():
+            if not line.lstrip().startswith('\\ir'): continue
+            match = re.fullmatch(r'\\ir ([A-Za-z0-9_./-]+)', line.strip())
+            require(match is not None, 'unsupported completed retention include directive')
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(name), match[1]))
+            safe_name(target)
+            require(target in files, 'completed retention include missing from staged source: ' + target)
+            includes.append(match[1])
+        graph[name] = includes
+    require(graph == manifest['relative_include_graph'], 'completed retention include graph changed')
+    require(manifest['stage_order'][0]['path'] == COMPLETED_RESTORE
+            and manifest['stage_order'][0]['role'] == 'fixture_bootstrap'
+            and manifest['stage_order'][2]['path'] == COMPLETED_CONSUMER
+            and manifest['stage_order'][2]['role'] == 'postgres', 'completed retention role contract changed')
+
+
+def validate_sequence_observations(value):
     for key in ('sequence_before', 'sequence_after'):
         rows = value[key]
         require(isinstance(rows, dict) and set(rows) == RETENTION_SEQUENCES,
@@ -321,6 +363,66 @@ def validate_retention_behavior(value):
                     and re.fullmatch(r'[1-9][0-9]*', row['last_value'])
                     and int(row['last_value']) <= 9223372036854775807,
                     'retention sequence observation must preserve exact decimal text')
+
+
+def validate_completed_retention(value):
+    fixed = {'qualification': 'spin_history_retention_completed_receipt_eligibility',
+             'old_deleted': 1, 'candidate_deleted': 1, 'captured_receipt_unchanged': True,
+             'projection_and_catalog_rollback_verified': True,
+             'starting_estate_retained_until_database_disposal': True,
+             'terminal_creation_qualified': False, 'financial_lifecycle_qualified': False,
+             'multi_session_race_qualified': False, 'sequence_counters_restored': False,
+             'source_capture_observed_at': COMPLETED_CAPTURE_TIME}
+    require(isinstance(value, dict) and set(value) == set(fixed) | {'sequence_before', 'sequence_after'},
+            'completed retention JSON shape differs')
+    for key, expected in fixed.items():
+        require(type(value[key]) is type(expected) and value[key] == expected,
+                'completed retention assertion differs: ' + key)
+    validate_sequence_observations(value)
+    return value
+
+
+def completed_retention_output(output):
+    values = [decode(line) for line in output.splitlines() if line.lstrip().startswith(b'{')]
+    require(len(values) == 1, 'completed retention original JSON absent or repeated')
+    return validate_completed_retention(values[0])
+
+
+def completed_sql_stages(source):
+    # Insertion order is the actual required restore/trigger/consumer protocol.
+    stages = {
+        'schema_prefix': ('fixture_bootstrap', str(source.parent / 'work/schema-prefix.sql')),
+        'restore_preexisting_principals': ('fixture_bootstrap', 'principals.sql'),
+        'empty_provider_readback': ('fixture_bootstrap', 'empty-provider-check.sql'),
+        'restore_completed_start': ('fixture_bootstrap', COMPLETED_RESTORE),
+        'schema_suffix_all_real_triggers': ('fixture_bootstrap', str(source.parent / 'work/schema-suffix.sql')),
+        'authentic_access': ('fixture_bootstrap', 'inputs/access.sql'),
+        'authentic_policies': ('fixture_bootstrap', 'inputs/policies.sql'),
+        'current_notification_supplement': ('fixture_bootstrap', 'provider-supplement.sql'),
+        'current_tested_roles': ('fixture_bootstrap', 'provider-roles.sql'),
+        'tested_role_readback': ('fixture_bootstrap', 'provider-roles-check.sql'),
+        'current_catalog_readback': ('fixture_bootstrap', 'provider-check.sql'),
+        'authentic_spin_catalog_supplement': ('fixture_bootstrap', 'inputs/spin-catalog-supplement.sql'),
+        'authentic_entry_provider_supplement': ('fixture_bootstrap', 'inputs/entry-provider-supplement.sql'),
+        'authentic_entry_sequence_authority': ('fixture_bootstrap', 'inputs/entry-sequence-authority.sql'),
+        'authentic_settlement_source_authority': ('fixture_bootstrap', 'inputs/settle-source-authority.sql'),
+        'retention_provider_authority': RETENTION_STAGES['retention_provider_authority'],
+        'retention_completed_eligibility': ('postgres', COMPLETED_CONSUMER),
+    }
+    return stages
+
+
+def validate_retention_behavior(value):
+    fixed = {'qualification': 'spin_history_retention_behavior', 'old_deleted': 5,
+             'candidate_deleted': 2, 'canonical_cancellation_count': 2,
+             'table_and_catalog_rollback_verified': True, 'sequence_counters_restored': False,
+             'completed_spin_qualified': False, 'multi_session_race_qualified': False}
+    require(isinstance(value, dict) and set(value) == set(fixed) | {'sequence_before', 'sequence_after'},
+            'retention behavior JSON shape differs')
+    for key, expected in fixed.items():
+        require(type(value[key]) is type(expected) and value[key] == expected,
+                'retention behavior assertion differs: ' + key)
+    validate_sequence_observations(value)
     return value
 
 
@@ -360,7 +462,7 @@ def source_packet():
     for name in ('scripts/ci/test-spin-expiry-postgres.py', 'scripts/ci/test_spin_expiry_wrapper.py'):
         actual = read_regular(ROOT / name, 1048576)
         require(git_read('show', head + ':' + name) == actual, 'wrapper source differs from checkout HEAD: ' + name)
-    validate_retention_sources(copied)
+    validate_completed_sources(copied)
     manifest = {'schemaVersion': 1, 'kind': 'spin-expiry-hosted-attempt',
                 'checkout': {'head': head, 'tree': tree}, 'fixtureManifestSha256': digest(raw),
                 'fixtureProvenance': fixture_manifest,
@@ -402,7 +504,7 @@ def verify_packet(source, raw, manifest):
     for name, expected in manifest['files'].items():
         files[name] = read_regular(source / name, 16777216)
         require(pin(files[name]) == expected, 'staged source changed: ' + name)
-    validate_retention_sources(files)
+    validate_completed_sources(files)
 
 
 def find_pg():
@@ -533,8 +635,10 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                'native_status': 'running', 'stages': [], 'full_qualification': False,
                'business_scenario_passed': False, 'business_qualified': False,
                'catalog_slice_passed': False, 'retention_qualification': None,
+               'completed_retention_qualification': None,
                'image': args.image, 'tournament': args.tournament, 'business_cases': [],
-               'qualification_scope': 'one authentic funded Spin expiry schedule',
+               'qualification_scope': ('captured completed-receipt retention eligibility only' if args.image == 'retention-completed'
+                                       else 'one authentic funded Spin expiry schedule'),
                'connected_services_qualified': False, 'cleanup_verified': False,
                'execution_backend': 'hosted-owned-pg17-unix-socket',
                'work_deadline_seconds': 240, 'cleanup_deadline_seconds': 30,
@@ -625,6 +729,9 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         command('create_database', [str(PG / 'createdb'), '-w', '-h', str(work / 'socket'), '-p', '5432', '-U', 'fixture_bootstrap', '-O', 'postgres', db], timeout=5)
         sql('schema_prefix', work / 'schema-prefix.sql')
         sql('restore_preexisting_principals', ROOT / 'principals.sql')
+        if args.image == 'retention-completed':
+            sql('empty_provider_readback', ROOT / 'empty-provider-check.sql')
+            sql('restore_completed_start', ROOT / COMPLETED_RESTORE)
         sql('schema_suffix_all_real_triggers', work / 'schema-suffix.sql')
         sql('authentic_access', ROOT / 'inputs/access.sql')
         sql('authentic_policies', ROOT / 'inputs/policies.sql')
@@ -632,11 +739,21 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         sql('current_tested_roles', ROOT / 'provider-roles.sql')
         sql('tested_role_readback', ROOT / 'provider-roles-check.sql')
         sql('current_catalog_readback', ROOT / 'provider-check.sql')
-        sql('empty_provider_readback', ROOT / 'empty-provider-check.sql')
+        if args.image != 'retention-completed':
+            sql('empty_provider_readback', ROOT / 'empty-provider-check.sql')
         sql('authentic_spin_catalog_supplement', ROOT / 'inputs/spin-catalog-supplement.sql')
         sql('authentic_entry_provider_supplement', ROOT / 'inputs/entry-provider-supplement.sql')
         sql('authentic_entry_sequence_authority', ROOT / 'inputs/entry-sequence-authority.sql')
         sql('authentic_settlement_source_authority', ROOT / 'inputs/settle-source-authority.sql')
+        if args.image == 'retention-completed':
+            role, path = RETENTION_STAGES['retention_provider_authority']
+            sql('retention_provider_authority', ROOT / path, user=role)
+            original = sql('retention_completed_eligibility', ROOT / COMPLETED_CONSUMER, user='postgres')
+            receipt['completed_retention_qualification'] = completed_retention_output(original.encode())
+            # The finally block still proves cleanup/source stability. This
+            # committed logical starting estate never reaches funding or cases.
+            persist()
+            return receipt
         # Same finite allocation and original deadline. The rollback-only estate
         # precedes funding; it does not qualify completed-terminal or race behavior.
         retention_stdout = {}
@@ -736,7 +853,9 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         except BaseException as error:
             receipt['source_stable'] = False
             receipt['source_readback_error'] = str(error)
-        receipt['native_status'] = 'business_scenario_passed_cleanup_observed' if failed is None and cleanup_outcome.qualifies() and receipt['source_stable'] else 'failed_or_unknown'
+        success = ('retention_completed_eligibility_passed_cleanup_observed' if args.image == 'retention-completed'
+                   else 'business_scenario_passed_cleanup_observed')
+        receipt['native_status'] = success if failed is None and cleanup_outcome.qualifies() and receipt['source_stable'] else 'failed_or_unknown'
         receipt['postmaster_pid'] = original_pid
         receipt['hosted_cleanup_observed'] = cleanup_outcome.qualifies()
         persist()
@@ -749,8 +868,11 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(receipt.get('execution') == execution and receipt.get('source_manifest_sha256') == manifest_sha
             and receipt.get('image') == image and receipt.get('tournament') == tournament,
             'wrong/stale qualification receipt')
-    require(receipt.get('native_status') == 'business_scenario_passed_cleanup_observed'
-            and receipt.get('business_scenario_passed') is True and receipt.get('cleanup_verified') is True
+    completed = image == 'retention-completed'
+    status = ('retention_completed_eligibility_passed_cleanup_observed' if completed
+              else 'business_scenario_passed_cleanup_observed')
+    require(receipt.get('native_status') == status
+            and receipt.get('business_scenario_passed') is (not completed) and receipt.get('cleanup_verified') is True
             and receipt.get('cleanup_errors') == [] and receipt.get('source_stable') is True
             and 'failure' not in receipt, 'business scenario or cleanup did not qualify')
     require(receipt.get('full_qualification') is False and receipt.get('connected_services_qualified') is False
@@ -771,9 +893,22 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
             and endpoint_stage.get('argv') == server_endpoint_command(PG, source.parent / 'work/socket'),
             'server endpoint readback identity or outcome differs')
     catalog = ['spin_catalog_before', 'spin_catalog_rollback_qualification', 'spin_catalog_after']
-    expected = ['authentic_settlement_source_authority', *RETENTION_STAGES]
-    expected += (catalog + ['install_candidate'] if image == 'candidate' else []) + ['real_funded_paid_seat_fixture']
-    expected += [business_stage_name(case) for case in CASES[image]]
+    completed_inputs = completed_sql_stages(source)
+    if completed:
+        expected = list(completed_inputs)
+        require(receipt.get('retention_qualification') is None and 'natural_aging' not in receipt,
+                'completed estate cannot qualify unfinished retention or funded aging')
+        validate_completed_retention(receipt.get('completed_retention_qualification'))
+        require(not any(name in names for name in catalog + ['install_candidate',
+                    'real_funded_paid_seat_fixture', 'retention_catalog_rollback', 'retention_behavior_rollback']),
+                'completed receipt estate reached unrelated catalog or financial stages')
+    else:
+        expected = ['authentic_settlement_source_authority', *RETENTION_STAGES]
+        expected += (catalog + ['install_candidate'] if image == 'candidate' else []) + ['real_funded_paid_seat_fixture']
+        expected += [business_stage_name(case) for case in CASES[image]]
+        require(receipt.get('completed_retention_qualification') is None
+                and not any(name in names for name in ('restore_completed_start', 'retention_completed_eligibility')),
+                'completed starting estate contaminated a financial image')
     require(all(names.count(name) == 1 for name in expected)
             and [names.index(name) for name in expected] == sorted(names.index(name) for name in expected),
             'original phase sequence absent or repeated')
@@ -782,14 +917,15 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     if image == 'preimage':
         require(not any(name in names for name in catalog + ['install_candidate']),
                 'candidate installation or catalog execution in preimage allocation')
-    else:
+    elif image == 'candidate':
         before, after = (stages[names.index(name)].get('stdout_sha256')
                          for name in ('spin_catalog_before', 'spin_catalog_after'))
         require(isinstance(before, str) and re.fullmatch(r'[0-9a-f]{64}', before) and before == after,
                 'original catalog observer bytes changed or missing')
     require([name for name in names if isinstance(name, str) and name.startswith('actual_business_')]
             == [business_stage_name(case) for case in CASES[image]], 'unexpected or reordered business invocation')
-    validate_retention_behavior(receipt.get('retention_qualification'))
+    if not completed:
+        validate_retention_behavior(receipt.get('retention_qualification'))
     sql_inputs = {
         'authentic_settlement_source_authority': 'inputs/settle-source-authority.sql',
         **{name: path for name, (_, path) in RETENTION_STAGES.items()},
@@ -799,12 +935,15 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
         'install_candidate': 'supabase/components/spin-expiry-lock-order.sql',
         'real_funded_paid_seat_fixture': 'scripts/qualification/spin-expiry-real-funded-fixture.sql',
     }
+    if completed:
+        sql_inputs.update({name: path for name, (_, path) in completed_inputs.items()})
     for name in expected:
         stage = stages[names.index(name)]
         require(stage.get('returncode') == 0 and isinstance(stage.get('argv'), list) and stage['argv'],
                 'stage identity or outcome mismatch')
-        if name in RETENTION_STAGES or name == 'authentic_settlement_source_authority':
-            role = RETENTION_STAGES[name][0] if name in RETENTION_STAGES else 'fixture_bootstrap'
+        if completed or name in RETENTION_STAGES or name == 'authentic_settlement_source_authority':
+            role = (completed_inputs[name][0] if completed else
+                    RETENTION_STAGES[name][0] if name in RETENTION_STAGES else 'fixture_bootstrap')
             require(stage['argv'] == qualification_sql_argv(PG, source, execution, ordinary, tournament,
                                                            role, sql_inputs[name]),
                     'retention SQL role, endpoint or original identity mismatch')
@@ -875,14 +1014,21 @@ def run_image(image, PG):
         validate_receipt(receipt, args.execution, args.ordinary_user, args.tournament, image,
                          digest(manifest_bytes), allocation / 'source', PG)
         retention_stdout = {}
-        for stage in RETENTION_STAGES:
+        observed_stages = (('restore_completed_start', 'retention_provider_authority', 'retention_completed_eligibility')
+                           if image == 'retention-completed' else tuple(RETENTION_STAGES))
+        for stage in observed_stages:
             original = read_regular(allocation / 'work' / (stage + '.stdout'), 1048576)
             observed = next(item for item in receipt['stages'] if item['stage'] == stage)
             require(digest(original) == observed['stdout_sha256'], 'retention original output digest mismatch')
             retention_stdout[stage] = original
-        require(retention_output(retention_stdout['retention_catalog_rollback'],
-                                 retention_stdout['retention_behavior_rollback']) == receipt['retention_qualification'],
-                'retention result differs from original output')
+        if image == 'retention-completed':
+            require(completed_retention_output(retention_stdout['retention_completed_eligibility'])
+                    == receipt['completed_retention_qualification'],
+                    'completed retention result differs from original output')
+        else:
+            require(retention_output(retention_stdout['retention_catalog_rollback'],
+                                     retention_stdout['retention_behavior_rollback']) == receipt['retention_qualification'],
+                    'retention result differs from original output')
         for case in receipt['business_cases']:
             original = read_regular(allocation / 'work' / case['result_path'], 33554432)
             require(digest(original) == case['result_sha256'], 'original case receipt digest mismatch')

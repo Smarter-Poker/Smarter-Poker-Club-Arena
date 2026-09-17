@@ -1,6 +1,6 @@
 """Source-specific hosted adapter controls; not native financial qualification.
 
-The normal wrapper runs these controls before its two authentic PG17 images.
+The normal wrapper runs these controls before its three separate PG17 images.
 No successful mocked protocol receipt establishes that SQL or refunds passed.
 """
 import copy
@@ -45,9 +45,61 @@ def retention_source_files():
     return {name: (root / name).read_bytes() for name in names}
 
 
-def receipt(image='candidate'):
+def completed_source_files():
+    root = Path(__file__).resolve().parents[2]
+    files = retention_source_files()
+    files.update({name: (root / name).read_bytes() for name in W.COMPLETED_INPUTS})
+    return files
+
+
+def completed_result():
+    sequences = retention_behavior()['sequence_before']
+    return {'qualification': 'spin_history_retention_completed_receipt_eligibility',
+            'old_deleted': 1, 'candidate_deleted': 1, 'captured_receipt_unchanged': True,
+            'projection_and_catalog_rollback_verified': True,
+            'starting_estate_retained_until_database_disposal': True,
+            'terminal_creation_qualified': False, 'financial_lifecycle_qualified': False,
+            'multi_session_race_qualified': False, 'sequence_counters_restored': False,
+            'source_capture_observed_at': '2026-09-17T07:35:54.523723+00:00',
+            'sequence_before': sequences, 'sequence_after': copy.deepcopy(sequences)}
+
+
+def completed_receipt(source=SOURCE):
+    value = receipt('preimage', source)
+    value.update(image='retention-completed', business_cases=[], catalog_slice_passed=False,
+                 native_status='retention_completed_eligibility_passed_cleanup_observed',
+                 business_scenario_passed=False, retention_qualification=None,
+                 completed_retention_qualification=completed_result())
+    # Deliberately independent literal schedule: do not generate expected order
+    # from the production validator's table.
+    inputs = [
+        ('schema_prefix', 'fixture_bootstrap', str(source.parent / 'work/schema-prefix.sql')),
+        ('restore_preexisting_principals', 'fixture_bootstrap', 'principals.sql'),
+        ('empty_provider_readback', 'fixture_bootstrap', 'empty-provider-check.sql'),
+        ('restore_completed_start', 'fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/completed-start-restore.sql'),
+        ('schema_suffix_all_real_triggers', 'fixture_bootstrap', str(source.parent / 'work/schema-suffix.sql')),
+        ('authentic_access', 'fixture_bootstrap', 'inputs/access.sql'),
+        ('authentic_policies', 'fixture_bootstrap', 'inputs/policies.sql'),
+        ('current_notification_supplement', 'fixture_bootstrap', 'provider-supplement.sql'),
+        ('current_tested_roles', 'fixture_bootstrap', 'provider-roles.sql'),
+        ('tested_role_readback', 'fixture_bootstrap', 'provider-roles-check.sql'),
+        ('current_catalog_readback', 'fixture_bootstrap', 'provider-check.sql'),
+        ('authentic_spin_catalog_supplement', 'fixture_bootstrap', 'inputs/spin-catalog-supplement.sql'),
+        ('authentic_entry_provider_supplement', 'fixture_bootstrap', 'inputs/entry-provider-supplement.sql'),
+        ('authentic_entry_sequence_authority', 'fixture_bootstrap', 'inputs/entry-sequence-authority.sql'),
+        ('authentic_settlement_source_authority', 'fixture_bootstrap', 'inputs/settle-source-authority.sql'),
+        ('retention_provider_authority', 'fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
+        ('retention_completed_eligibility', 'postgres', 'scripts/qualification/spin-history-retention-completed.sql'),
+    ]
+    value['stages'] = [value['stages'][0]] + [
+        {'stage': name, 'returncode': 0, 'stdout_sha256': 'e' * 64,
+         'argv': W.qualification_sql_argv(PG, source, EXECUTION, ORDINARY, TOURNAMENT, role, path)}
+        for name, role, path in inputs]
+    return value
+
+
+def receipt(image='candidate', source=SOURCE):
     # Tiny protocol observations only, never evidence that SQL or refunds passed.
-    source = SOURCE
     sql = [str(PG / 'psql'), '-X', '-w', '-A', '-t', '-h', str(source.parent / 'work/socket'),
            '-p', '5432', '-d', 'qual_spin_expiry_' + EXECUTION.replace('-', ''),
            '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose', '-v', 'execution_uuid=' + EXECUTION,
@@ -565,7 +617,7 @@ class FixtureSourceTests(unittest.TestCase):
     def test_staged_inventory_and_postrun_bytes_are_bound(self):
         files = dict(self.files)
         files.update({name: ('current source '+name).encode() for name in W.REPLACEMENTS})
-        files.update(retention_source_files())
+        files.update(completed_source_files())
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -870,8 +922,9 @@ class HostedLifecycleTests(unittest.TestCase):
             self.assertEqual(set(kept),{'receipt.json','postgres.log','business-order.json','native.stdout','native.stderr'})
             self.assertFalse((out/'data').exists());self.assertFalse((out/'home').exists());self.assertFalse((out/'unrelated').exists())
 
-    def test_two_images_run_in_order_and_stop_after_first_failure(self):
-        for outcomes,expected in [([1],['preimage']),([0,1],['preimage','candidate']),([0,0],['preimage','candidate'])]:
+    def test_three_images_run_in_order_and_stop_after_first_failure(self):
+        for outcomes,expected in [([1],['preimage']),([0,1],['preimage','candidate']),
+                                  ([0,0,1],list(W.IMAGES)),([0,0,0],list(W.IMAGES))]:
             with self.subTest(outcomes=outcomes),patch.object(W,'source_controls',return_value=True), \
                     patch.object(W,'find_pg',return_value=PG),patch.object(W,'run_image',side_effect=outcomes) as run, \
                     patch.object(W.sys,'argv',['wrapper']),patch.object(W.sys,'platform','linux'), \
@@ -885,3 +938,134 @@ class HostedLifecycleTests(unittest.TestCase):
                 patch.object(W.sys,'argv',['wrapper']):
             self.assertEqual(W.main(),1)
         run.assert_not_called()
+
+
+class CompletedRetentionTests(unittest.TestCase):
+    def validate(self, value):
+        return W.validate_receipt(value, EXECUTION, ORDINARY, TOURNAMENT,
+                                  'retention-completed', MANIFEST_SHA, SOURCE, PG)
+
+    def test_success_is_receipt_eligibility_only_with_no_business_cases(self):
+        self.assertEqual(self.validate(completed_receipt()), [])
+        self.assertEqual(W.completed_retention_output(json.dumps(completed_result()).encode()), completed_result())
+        self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed'))
+        self.assertEqual(W.CASES, {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
+                                  'retention-completed': ()})
+
+    def test_exact_source_pins_and_every_relative_include_are_staged(self):
+        files = completed_source_files()
+        W.validate_completed_sources(files)
+        manifest = W.decode(files[W.COMPLETED_MANIFEST])
+        self.assertEqual(len(manifest['files']), 6)
+        self.assertTrue(set(W.COMPLETED_INPUTS) <= set(W.REPLACEMENTS))
+        for name in W.COMPLETED_INPUTS:
+            missing = dict(files); del missing[name]
+            with self.subTest(missing=name), self.assertRaises(RuntimeError): W.validate_completed_sources(missing)
+            changed = dict(files); changed[name] += b'changed'
+            with self.subTest(changed=name), self.assertRaises(RuntimeError): W.validate_completed_sources(changed)
+        for shared in ('database-state.sql', 'component-inputs.sql'):
+            changed = dict(files)
+            changed['scripts/qualification/fixtures/spin-history-retention/' + shared] += b'changed'
+            with self.subTest(shared=shared), self.assertRaises(RuntimeError): W.validate_completed_sources(changed)
+
+        files = completed_source_files(); manifest = W.decode(files[W.COMPLETED_MANIFEST])
+        manifest['consumed_retention_manifest']['sha256'] = '0' * 64
+        files[W.COMPLETED_MANIFEST] = json.dumps(manifest).encode()
+        with patch.object(W, 'COMPLETED_MANIFEST_SHA256', W.digest(files[W.COMPLETED_MANIFEST])), \
+                self.assertRaisesRegex(RuntimeError, 'dependency revision'):
+            W.validate_completed_sources(files)
+
+    def test_include_graph_rejects_undeclared_or_missing_include_even_if_rebound(self):
+        for include in ('completed-start-authority.json', '../../../../missing.sql'):
+            files = completed_source_files(); manifest = W.decode(files[W.COMPLETED_MANIFEST])
+            name = W.COMPLETED_RESTORE
+            files[name] += ('\n\\ir ' + include + '\n').encode()
+            manifest['files'][name] = W.pin(files[name])
+            files[W.COMPLETED_MANIFEST] = json.dumps(manifest).encode()
+            with patch.object(W, 'COMPLETED_MANIFEST_SHA256', W.digest(files[W.COMPLETED_MANIFEST])), \
+                    self.assertRaises(RuntimeError): W.validate_completed_sources(files)
+
+    def test_each_phase_requires_original_role_source_success_identity_and_order(self):
+        for name in W.completed_sql_stages(SOURCE):
+            for mode in ('missing', 'repeated', 'early', 'late', 'failed', 'role', 'endpoint', 'source', 'hash'):
+                value = completed_receipt(); stages = value['stages']
+                stage = next(item for item in stages if item['stage'] == name)
+                if mode == 'missing': stages.remove(stage)
+                if mode == 'repeated': stages.append(copy.deepcopy(stage))
+                if mode == 'early': stages.remove(stage); stages.insert(0, stage)
+                if mode == 'late':
+                    # Move before the prior phase; moving the last stage to the
+                    # end would not mutate the protocol.
+                    index = stages.index(stage); stages[index-1], stages[index] = stage, stages[index-1]
+                if mode == 'failed': stage['returncode'] = 1
+                if mode == 'role': stage['argv'][stage['argv'].index('-U') + 1] = 'service_role'
+                if mode == 'endpoint': stage['argv'][stage['argv'].index('-h') + 1] = '127.0.0.1'
+                if mode == 'source': stage['argv'][-1] = '/old/retention.sql'
+                if mode == 'hash': stage.pop('stdout_sha256')
+                with self.subTest(stage=name, mode=mode), self.assertRaises(RuntimeError): self.validate(value)
+
+    def test_completed_estate_cannot_reach_money_or_unfinished_cases(self):
+        for stage in ('real_funded_paid_seat_fixture', 'actual_business_order', 'actual_business_committed_refund',
+                      'spin_catalog_before', 'install_candidate', 'retention_catalog_rollback', 'retention_behavior_rollback'):
+            value = completed_receipt(); value['stages'].append({'stage': stage, 'returncode': 0, 'argv': []})
+            with self.subTest(stage=stage), self.assertRaises(RuntimeError): self.validate(value)
+        for key, bad in (('natural_aging', {}), ('business_scenario_passed', True), ('business_qualified', True),
+                         ('full_qualification', True), ('catalog_slice_passed', True), ('retention_qualification', retention_behavior()),
+                         ('cleanup_errors', ['original stop failed']), ('cleanup_verified', False),
+                         ('hosted_cleanup_observed', False), ('original_clients_terminal', False),
+                         ('source_stable', False), ('native_status', 'business_scenario_passed_cleanup_observed')):
+            with self.subTest(key=key), self.assertRaises(RuntimeError): self.validate(dict(completed_receipt(), **{key: bad}))
+        for image in ('preimage', 'candidate'):
+            for stage in ('restore_completed_start', 'retention_completed_eligibility'):
+                value = receipt(image); value['stages'].append({'stage': stage, 'returncode': 0, 'argv': []})
+                with self.subTest(image=image, stage=stage), self.assertRaises(RuntimeError):
+                    W.validate_receipt(value, EXECUTION, ORDINARY, TOURNAMENT, image, MANIFEST_SHA, SOURCE, PG)
+
+    def test_result_refuses_changed_receipt_missing_rollback_overclaims_and_duplicate_json(self):
+        for key, value in completed_result().items():
+            if key.startswith('sequence_') and isinstance(value, dict): continue
+            changed = completed_result(); changed[key] = not value if type(value) is bool else None
+            with self.subTest(key=key), self.assertRaises(RuntimeError): W.validate_completed_retention(changed)
+        for key in ('sequence_before', 'sequence_after'):
+            for wrong in (None, {}, {'last_value': 1}):
+                with self.subTest(key=key, wrong=wrong), self.assertRaises(RuntimeError):
+                    W.validate_completed_retention(dict(completed_result(), **{key: wrong}))
+        good = json.dumps(completed_result()).encode()
+        for output in (b'', good + b'\n' + good, good.replace(b'"old_deleted": 1', b'"old_deleted": 1, "old_deleted": 1')):
+            with self.subTest(output=output), self.assertRaises(RuntimeError): W.completed_retention_output(output)
+
+    def test_completed_original_output_and_cleanup_required_before_allocation_disposal(self):
+        # Only the adapter protocol is simulated; no PG command executes.
+        for mode in ('success', 'changed-output', 'failed-cleanup'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder).resolve(); allocation = root / 'allocation'; allocation.mkdir(mode=0o700)
+                args = W.argparse.Namespace(execution=EXECUTION, ordinary_user=ORDINARY,
+                                            tournament=TOURNAMENT, image='retention-completed')
+                def staged(allocation, manifest, files):
+                    (allocation / 'source').mkdir(mode=0o700)
+                    return b'{}'
+                def qualified(args, allocation, raw, manifest, pg):
+                    work = allocation / 'work'; work.mkdir(mode=0o700)
+                    value = completed_receipt(allocation / 'source')
+                    value['source_manifest_sha256'] = W.digest(raw)
+                    if mode == 'failed-cleanup': value['cleanup_errors'] = ['original fast-stop failure']
+                    for stage in value['stages']:
+                        output = (json.dumps(completed_result()).encode() if stage['stage'] == 'retention_completed_eligibility'
+                                  else b'original protocol output')
+                        stage['stdout_sha256'] = W.digest(output)
+                        if mode == 'changed-output' and stage['stage'] == 'retention_completed_eligibility': output += b'changed'
+                        (work / (stage['stage'] + '.stdout')).write_bytes(output)
+                        (work / (stage['stage'] + '.stderr')).write_bytes(b'')
+                    (work / 'receipt.json').write_text(json.dumps(value))
+                    return value
+                with patch.object(W, 'ROOT', root), patch.object(W, 'new_identity', return_value=args), \
+                        patch.object(W, 'source_packet', return_value=({'files': {}}, {})), \
+                        patch.object(W.tempfile, 'mkdtemp', return_value=str(allocation)), \
+                        patch.object(W, 'stage_packet', side_effect=staged), patch.object(W, 'qualify', side_effect=qualified):
+                    result = W.run_image('retention-completed', PG)
+                self.assertEqual(result, 0 if mode == 'success' else 1)
+                self.assertEqual(allocation.exists(), mode != 'success')
+                output = root / 'artifacts/spin-expiry' / EXECUTION
+                self.assertTrue((output / 'receipt.json').exists())
+                self.assertTrue((output / 'retention_completed_eligibility.stdout').exists())
+                self.assertEqual(json.loads((output / 'RESULT.json').read_text())['passed'], mode == 'success')

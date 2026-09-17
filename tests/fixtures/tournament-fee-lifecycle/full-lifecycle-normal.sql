@@ -206,10 +206,39 @@ BEGIN
   'genuine finish claim records the sole observed winner');
 END $promise$;
 
+-- Observe the actual backend after nested Union settlement, without acquiring
+-- any lane on behalf of the writer. Bigint advisory keys use objsubid=1.
+CREATE FUNCTION pg_temp.normal_finish_lane_state() RETURNS jsonb LANGUAGE sql AS $lanes$
+ SELECT jsonb_build_object('tournament',COALESCE(current_setting('ca.finish_lane_tournament',true),''),
+  'locks',COALESCE(jsonb_agg(jsonb_build_object('lane',k.lane,'mode',l.mode,'granted',l.granted)
+   ORDER BY k.lane,l.mode,l.granted) FILTER(WHERE l.pid IS NOT NULL),'[]'::jsonb))
+ FROM (VALUES
+  ('G',hashtextextended('ca:tournament-terminal-settlement:v1',0)),
+  ('F',hashtextextended('ca:tournament-finish-lane:v1',0)),
+  ('B',hashtextextended('ca:hand-settlement-barrier:v1',0)),
+  ('T',hashtextextended('ca:tournament-terminal-settlement:v1:98510000-0000-0000-0000-000000000001',0))
+ ) k(lane,key) LEFT JOIN pg_locks l ON l.pid=pg_backend_pid() AND l.locktype='advisory'
+  AND l.database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND l.objsubid=1
+  AND l.classid::bigint=((k.key>>32)&4294967295) AND l.objid::bigint=(k.key&4294967295);
+$lanes$;
+CREATE FUNCTION pg_temp.assert_normal_finish_lane() RETURNS void LANGUAGE plpgsql AS $lane$
+DECLARE observed jsonb:=pg_temp.normal_finish_lane_state();
+BEGIN
+ IF observed->>'tournament' IS DISTINCT FROM '98510000-0000-0000-0000-000000000001'
+  OR NOT (observed->'locks' @> '[{"lane":"G","mode":"ShareLock","granted":true},
+   {"lane":"F","mode":"ExclusiveLock","granted":true},
+   {"lane":"T","mode":"ExclusiveLock","granted":true}]'::jsonb)
+  OR EXISTS(SELECT 1 FROM jsonb_array_elements(observed->'locks') l
+   WHERE l->>'lane' IN ('G','B') AND l->>'mode'='ExclusiveLock')
+ THEN RAISE EXCEPTION 'normal finish did not retain G shared / F and T exclusive without G or B upgrade'
+  USING DETAIL=observed::text; END IF;
+END $lane$;
+
 CREATE FUNCTION pg_temp.assert_normal_completed() RETURNS void LANGUAGE plpgsql AS $complete$
 DECLARE tid uuid:='98510000-0000-0000-0000-000000000001'; config record;
 BEGIN
  SELECT * INTO STRICT config FROM native_normal_config;
+ PERFORM pg_temp.assert_normal_finish_lane();
  PERFORM pg_temp.normal_assert((SELECT status='COMPLETED' AND ended_at IS NOT NULL
   AND prize_pool=config.pool AND guaranteed_prize=config.pool AND prize_pool_finalized
   FROM public.tournaments WHERE id=tid),'actual terminal lifecycle pays the unchanged published prize pool');
@@ -289,13 +318,20 @@ CREATE TRIGGER native_normal_terminal_receipt_fault AFTER INSERT ON public.tourn
 FOR EACH ROW EXECUTE FUNCTION pg_temp.normal_terminal_receipt_fault();
 DO $rollback$
 DECLARE before_state jsonb:=pg_temp.normal_terminal_state(); refused boolean:=false;
+ before_lanes jsonb:=pg_temp.normal_finish_lane_state();
 BEGIN
+ IF before_lanes->>'tournament'<>'' OR EXISTS(
+  SELECT 1 FROM jsonb_array_elements(before_lanes->'locks') l
+  WHERE l->>'lane' IN ('G','B','F') AND l->>'mode'='ExclusiveLock')
+ THEN RAISE EXCEPTION 'normal fixture already holds a finish or global exclusive lane'
+  USING DETAIL=before_lanes::text; END IF;
  BEGIN PERFORM public.fn_complete_tournament_terminal('98510000-0000-0000-0000-000000000001',
   md5('normal-overlay-user:1')::uuid,'places');
  EXCEPTION WHEN SQLSTATE 'ZX007' THEN refused:=true; END;
  PERFORM pg_temp.normal_assert(refused,'late fault reaches the real receipt after funding, payment and closure');
- PERFORM pg_temp.normal_assert(pg_temp.normal_terminal_state() IS NOT DISTINCT FROM before_state,
-  'late fault rolls back the independent bank debit, overlay, every payment and all lifecycle evidence');
+ PERFORM pg_temp.normal_assert(pg_temp.normal_terminal_state() IS NOT DISTINCT FROM before_state
+  AND pg_temp.normal_finish_lane_state() IS NOT DISTINCT FROM before_lanes,
+  'late fault rolls back the independent bank debit, overlay, every payment, lifecycle evidence and finish locks');
 END $rollback$;
 DROP TRIGGER native_normal_terminal_receipt_fault ON public.tournament_terminal_settlements;
 CREATE TEMP TABLE native_normal_terminal_result(receipt jsonb) ON COMMIT DROP;
@@ -312,6 +348,7 @@ BEGIN
   md5('normal-overlay-user:1')::uuid,'places');
  outcome:=public.fn_resolve_tournament_terminal_outcome('98510000-0000-0000-0000-000000000001',
   md5('normal-overlay-user:1')::uuid,'places');
+ PERFORM pg_temp.assert_normal_finish_lane();
  PERFORM pg_temp.normal_assert(replay IS NOT DISTINCT FROM result
   AND outcome->>'terminal_committed'='true' AND outcome->>'definitively_not_committed'='false'
   AND outcome->'receipt' IS NOT DISTINCT FROM result

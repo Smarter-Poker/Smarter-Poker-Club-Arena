@@ -66,7 +66,7 @@
     "supabase/migrations/20260914132918_union_pnl_requires_full_funding_and_stable_failure_receipts.sql": "68c2d7a15a5e95f58014aa36c6429b8c7f3925063ea976890d909d033b11f8d3",
     "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-deferred.sql": "45d8cfd5dd3f8e68c11b7c88418027e793258a3bd350436843b28d8334fd8404",
     "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-earning.sql": "8add7053211cd40ffc988cac51f2df02d0fcccd7b20f13dd32595e0ae16bb3d4",
-    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-normal.sql": "51e657212902648e48fdc5e79848958205f9efd90c1697f5bb4da5336e7783da",
+    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-normal.sql": "9751b412273a897f9107ec052009201a0b17f92daacf34665ec3d00f83a791a9",
     "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-satellite.sql": "5148799c56ef11876d00dcbecdd720bd20ec4c1e780e0aa593b1f5fdf29cd068",
     "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-seed.sql": "94e09f38a3998784faca103bdfe4728207a9b0a8ca1ff22d430a4cc8e84a3192",
     "tests/fixtures/pnl-evidence/PROTECTED-QUALIFICATION.md": "dd27d25a6b7eaf3bf4cc36801c62ab4957107fb06b3e2abd510df7edd618247a",
@@ -276,7 +276,7 @@
     "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.json": "2a16360c3268ac1e7197110845096e1bc30ef20b75a53a7d9935b7207596cfd7",
     "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.query.sql": "d6cbff7c7c9caecf2170b4312e057674c33a947e37f49eeaa67c429c2b20bd7f",
     "tests/fixtures/tournament-fee-lifecycle/current-settlement-predecessor.sql": "5362494ea3001eb9c998a482a6f09d8343e8e809962c2e7c7de70ab12a1874a1",
-    "tests/fixtures/union-provider-preimages-20260917/README.md": "3917ffd5e8ede22b217cbcf98355020c29ab77182ec3f967ce3deca62bda359f",
+    "tests/fixtures/union-provider-preimages-20260917/README.md": "98df7b6b1d124a900063885470307434bb474c2920bdf002a29c738410774f72",
     "tests/fixtures/union-provider-preimages-20260917/alerts-and-ledger.sql": "be3106d8f0451b49fc6861bb2f7733f0d5d79ccbe0653fd96181e04ac6d6c527",
     "tests/fixtures/union-provider-preimages-20260917/captured-authority.json": "7151693f43246b4b0a6a132665239d427c049ed3844d51acd1d581c018d71696",
     "tests/fixtures/union-provider-preimages-20260917/owner-notification-coexistence.sql": "8e8bed52245d8b10ec0c21f5f422562acc03652ea5ef144e3eec1d556c25c08e",
@@ -294,7 +294,15 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-provenance.json": "133671eab10758d77d8e65a885f19b44eea2a20db579a1b241fe92c3b0e23f5c",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
-    "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5"
+    "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "a6ada63495cfb1a22abd21f98269429d91f72b32f7d2bbd12ce0325caec5270b",
+    "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-prerequisites.sql": "604e9f8cbdc0e89b15dcfb548f98eca15c4b2f41a6565e6b983a62cca5803870",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-seat-move-authority.raw.txt": "2ca4ebcb887713e661a2661833726cc80ef151c04d1a9185e616b5495c774781",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-successor-provenance.json": "58289123ad4fee1e1f402b9dd7120ea267dab4cf792bbc608f59d6da1989b23d",
+    "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -1004,5 +1012,58 @@
       }
     ],
     "authority": "All other function definitions and all owners/grants unchanged. No production writes by Union. New composed native qualification pending."
+  },
+  "finish_lane_successor_20260917": {
+    "basis": "Installed PR4761 migration20260917113717 and three separate installed catalog captures; exact maintained migration before Union37 in each existing fresh fixture cluster.",
+    "prior_binding_sha256": "fe50f4599945dc3fd6c8b68602d885f0ea5da47071a8f2827011aedde8e9252b",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-normal.sql",
+        "prior_sha256": "51e657212902648e48fdc5e79848958205f9efd90c1697f5bb4da5336e7783da",
+        "sha256": "9751b412273a897f9107ec052009201a0b17f92daacf34665ec3d00f83a791a9"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/README.md",
+        "prior_sha256": "3917ffd5e8ede22b217cbcf98355020c29ab77182ec3f967ce3deca62bda359f",
+        "sha256": "98df7b6b1d124a900063885470307434bb474c2920bdf002a29c738410774f72"
+      }
+    ],
+    "added_repository_bindings": [
+      {
+        "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
+        "sha256": "a6ada63495cfb1a22abd21f98269429d91f72b32f7d2bbd12ce0325caec5270b"
+      },
+      {
+        "path": "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql",
+        "sha256": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt",
+        "sha256": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql",
+        "sha256": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-prerequisites.sql",
+        "sha256": "604e9f8cbdc0e89b15dcfb548f98eca15c4b2f41a6565e6b983a62cca5803870"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-seat-move-authority.raw.txt",
+        "sha256": "2ca4ebcb887713e661a2661833726cc80ef151c04d1a9185e616b5495c774781"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-successor-provenance.json",
+        "sha256": "58289123ad4fee1e1f402b9dd7120ea267dab4cf792bbc608f59d6da1989b23d"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt",
+        "sha256": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c"
+      }
+    ],
+    "preserved_historical_captures": 29,
+    "preserved_lifecycle_assertion_executions": 123,
+    "qualification": "Source custody and shell syntax only. The existing normal lifecycle now observes composed finish locks, rollback and replay; native execution remains pending. No new phase or Union component change."
   }
 }

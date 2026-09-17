@@ -86,6 +86,7 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleHealth>[1]['gameServer'] &
   Parameters<typeof handleMetrics>[1]['gameServer'] & {
     getTournamentLifecycleDiagnostic?: GameServer['getTournamentLifecycleDiagnostic'];
+    requestMaintenanceRecoveryWindow?: GameServer['requestMaintenanceRecoveryWindow'];
   };
 
 export interface RouterDeps {
@@ -351,6 +352,42 @@ export function createRouter(
       res.writeHead(204, CORS_HEADERS);
       res.end();
       return;
+    }
+
+    if (url === '/internal/maintenance-recovery-window') {
+      res.setHeader('Cache-Control', 'no-store');
+      // Only the host-owned release transaction calls this inside the serving
+      // container. A public reverse-proxy request is never a local request.
+      const peer = req.socket.remoteAddress;
+      if (
+        !verifyInternalKey(req) ||
+        !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(peer || '') ||
+        req.headers['x-forwarded-for'] !== undefined ||
+        req.headers.forwarded !== undefined
+      )
+        return sendJSON(res, 401, { error: 'Unauthorized' });
+      if (method !== 'POST') return sendJSON(res, 405, { error: 'Method not allowed' });
+      const body = await readBody(req);
+      if (
+        !body ||
+        typeof body !== 'object' ||
+        Array.isArray(body) ||
+        Object.keys(body).length !== 1 ||
+        typeof body.announcedAt !== 'number' ||
+        !Number.isSafeInteger(body.announcedAt)
+      )
+        return sendJSON(res, 400, { error: 'Invalid recovery request' });
+      if (!gameServer.requestMaintenanceRecoveryWindow) {
+        return sendJSON(res, 503, { error: 'Recovery window unavailable' });
+      }
+      try {
+        const result = await gameServer.requestMaintenanceRecoveryWindow(body.announcedAt);
+        return sendJSON(res, 200, result);
+      } catch {
+        // A lost database acknowledgment is UNKNOWN. The host retains and
+        // reuses its original timestamp; it must never create another pause.
+        return sendJSON(res, 503, { error: 'Recovery window outcome unknown' });
+      }
     }
 
     if (/^\/internal\/tournament-diagnostics(?:\/|$)/.test(url)) {

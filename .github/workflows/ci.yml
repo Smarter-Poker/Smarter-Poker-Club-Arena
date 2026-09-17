@@ -59,7 +59,9 @@ on:
 # only case where cancelling was ever safe. A run for the sha the check is
 # actually evaluated against can no longer be killed by a newer push.
 #
-# The cost is that a superseded sha's run finishes instead of dying early.
+# The current PR event now retires its verified obsolete heads explicitly.
+# That bounded step also handles jobs whose always() ignores normal cancellation.
+# Historically, a superseded sha's run finished instead of dying early.
 # That is a few runner-minutes. The thing it buys is that no pull request can
 # be stranded by a check that will never speak again, which cost six of them.
 # ═══════════════════════════════════════════════════════════════════════════
@@ -99,6 +101,8 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
+      pull-requests: read
+      actions: write
     outputs:
       src: ${{ steps.f.outputs.src }}
       server: ${{ steps.f.outputs.server }}
@@ -123,6 +127,14 @@ jobs:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/ci/classify-ci-changes.mjs
+      # Keep always() failure-reporting gates intact. Normal cancellation can
+      # leave their old jobs queued; this one event retires only proven older
+      # heads of this same PR, never current checks or a production workflow.
+      - name: Retire this PR's superseded CI attempts
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/retire-superseded-pr-ci.mjs
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -277,7 +289,7 @@ jobs:
       - name: Native fixture gate rejects missing and skipped proof
         run: node --test tests/operations/fixture-required-ci.test.mjs
 
-      - name: Mac dependency policy keeps Linux enforcement
+      - name: Local dependency preflight refuses incomplete or stale installs
         run: node --test tests/operations/local-dependency-policy.test.mjs
 
       - name: Money-trigger CI caller preserves independent authority
@@ -1205,6 +1217,10 @@ jobs:
           path: artifacts/bbj-bank-replay/
           retention-days: 3
           if-no-files-found: error
+      - name: Event-owned engine recovery database boundaries
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-engine-recovery-postgres.py
       - name: Weekly union close rolls back failed stages and records scheduler results
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1471,6 +1487,8 @@ jobs:
         run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 
   server_shards:
+    # Independent engine tests run alongside isolated PostgreSQL qualification.
+    # The required server aggregate below still refuses unless both pass.
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -1478,7 +1496,7 @@ jobs:
     # when it takes twenty seconds.
     # 78% of pull requests never touch server/. This suite is two billed
     # minutes and cannot be broken by a file outside it.
-    needs: [changes, accounting_postgres]
+    needs: changes
     # FAILS CLOSED, and this is the whole point.
     #
     # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
@@ -1513,13 +1531,6 @@ jobs:
         working-directory: server
 
     steps:
-      - name: Require successful real PostgreSQL accounting tests
-        if: needs.accounting_postgres.result != 'success'
-        working-directory: ${{ github.workspace }}
-        run: |
-          echo "::error::The required isolated PostgreSQL accounting tests did not pass."
-          exit 1
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -1574,30 +1585,35 @@ jobs:
   # Preserve the required check name. A cancelled/failed matrix, or an
   # unexplained skip, must never satisfy branch protection through one shard.
   server:
-    needs: [changes, server_shards]
+    needs: [changes, server_shards, accounting_postgres]
     if: always()
     name: Server Engine (typecheck + tests)
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every shard passed
+      - name: Every shard and real PostgreSQL accounting passed
         env:
           MATRIX_RESULT: ${{ needs.server_shards.result }}
+          ACCOUNTING_RESULT: ${{ needs.accounting_postgres.result }}
           DIFF_RESULT: ${{ needs.changes.result }}
           SERVER_CHANGED: ${{ needs.changes.outputs.server }}
           CI_EVENT_NAME: ${{ github.event_name }}
         run: |
-          case "$MATRIX_RESULT" in
-            success) echo 'All four server shards passed.' ;;
-            skipped)
-              if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
-                echo 'Server tests skipped: the checked diff does not change the server.'
-              else
-                echo '::error::Required server tests were unexpectedly skipped.'
-                exit 1
-              fi ;;
-            *) echo "::error::The server matrix did not pass ($MATRIX_RESULT)."; exit 1 ;;
-          esac
+          for dependency in "server:$MATRIX_RESULT" "accounting:$ACCOUNTING_RESULT"; do
+            suite="${dependency%%:*}"
+            result="${dependency#*:}"
+            case "$result" in
+              success) echo "Required $suite checks passed." ;;
+              skipped)
+                if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
+                  echo "$suite checks skipped: the checked diff does not change the server."
+                else
+                  echo "::error::Required $suite checks were unexpectedly skipped."
+                  exit 1
+                fi ;;
+              *) echo "::error::Required $suite checks did not pass ($result)."; exit 1 ;;
+            esac
+          done
 
   # ═══════════════════════════════════════════════════════════════════════════
   #  WHAT DID THIS RUN ACTUALLY VERIFY?
@@ -1706,8 +1722,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Provenance compares ancestry against origin/main. A shallow merge
-          # can falsely appear behind even when main is its direct parent.
+          # Validate this event's exact merge/base/head with full ancestry.
+          # Main may advance while queued; this disposable PR build never
+          # qualifies as a publishable current-main artifact.
           fetch-depth: 0
           filter: blob:none
 
@@ -2161,8 +2178,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Provenance compares ancestry against origin/main. A shallow merge
-          # can falsely appear behind even when main is its direct parent.
+          # Validate this event's exact merge/base/head with full ancestry.
+          # Main may advance while queued; this disposable PR build never
+          # qualifies as a publishable current-main artifact.
           fetch-depth: 0
           filter: blob:none
 

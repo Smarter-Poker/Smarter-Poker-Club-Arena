@@ -1,4 +1,6 @@
 import { getIdentityDNAStatus } from '../core/IdentityDNA';
+import { runCreditReduction, type CreditReductionStart } from './CreditReductionOperation';
+import type { CreditReductionEnvelope } from '../lib/CreditReductionContract';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * 💳 CREDIT SERVICE — Agent Credit Line Management
@@ -11,8 +13,8 @@ import { getIdentityDNAStatus } from '../core/IdentityDNA';
  * - CREDIT LINE: Agent plays on credit, settles weekly
  *
  * DEBT FORMULA:
- * Debt = Credit Limit - Current Balance
- * Example: 10,000 Limit - 2,500 Balance = 7,500 Owed
+ * Debt = agents.credit_used, the credit actually drawn.
+ * Unused credit capacity and wallet balances are not debt.
  *
  * SETTLEMENT CYCLE:
  * - Sunday 11:59:59 PM PST → Generate invoices
@@ -21,6 +23,7 @@ import { getIdentityDNAStatus } from '../core/IdentityDNA';
 
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
+import { creditRequestService } from './CreditRequestService';
 import { SettlementService } from './SettlementService';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { masterBus } from '../core/MasterBus';
@@ -28,17 +31,37 @@ import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { uuid } from '../utils/uuid';
 
 // AUDIT M17: fn_pay_credit_invoice_from_wallet returns a `reason` for ordinary
 // refusals rather than raising, so "you cannot afford this" and "the database is
 // down" do not read as the same event.
 const CREDIT_PAYMENT_REASON_TEXT: Record<string, string> = {
   non_positive_amount: 'Enter an amount greater than zero',
+  invalid_payment: 'Enter a positive amount with no more than two decimal places',
+  amount_exceeds_remaining: 'The invoice balance changed. Refresh it before paying.',
+  operation_conflict: 'This payment attempt has different details. Refresh the invoice.',
+  invoice_voided: 'This invoice was cancelled',
+  already_settled: 'This invoice is already paid',
+  invoice_not_payable: 'Resolve the invoice dispute before paying',
+  payment_reference_required: 'Enter the external payment reference',
+  unsupported_payment_method: 'This payment method is not available for chip credit invoices',
   invoice_not_found: 'That invoice no longer exists',
   agent_user_not_found: 'No wallet is linked to that agent',
   not_your_wallet: 'You can only pay an invoice from your own wallet',
   insufficient_balance: 'Not enough chips in your wallet for this payment',
 };
+
+function drawnCredit(value: unknown): number {
+  const amount =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('Drawn credit is unavailable');
+  return amount;
+}
 
 function creditPaymentReasonText(reason: string | undefined): string {
   return CREDIT_PAYMENT_REASON_TEXT[reason ?? ''] ?? `Payment refused (${reason ?? 'unknown'})`;
@@ -71,6 +94,7 @@ export const OWED_INVOICE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<Invoice
 
 export interface CreditAccount {
   agentId: string;
+  userId?: string;
   /** The club this agent belongs to. Required by every credit_requests row. */
   clubId: string | null;
   agentName: string;
@@ -151,6 +175,24 @@ masterBus.subscribe('AUTH_STATE_CHANGED', (event) => {
   creditReadGeneration += 1;
 });
 
+function currentCreditRequestActor(): string | null {
+  const snapshot = getIdentityDNAStatus();
+  const actor = snapshot?.loaded && snapshot.authenticated ? snapshot.userId : null;
+  if (actor !== creditIdentity) {
+    creditIdentity = actor;
+    creditReadGeneration += 1;
+  }
+  return actor;
+}
+
+function assertCreditRequestActor(actor: string, generation: number): void {
+  if (currentCreditRequestActor() !== actor || creditReadGeneration !== generation) {
+    throw new Error(
+      'Account Changed. This Credit Request May Have Committed. Refresh Its Status In The Original Account.'
+    );
+  }
+}
+
 export const CreditService = {
   // ─────────────────────────────────────────────────────────────────────────────
   // CREDIT LINE MANAGEMENT
@@ -164,7 +206,9 @@ export const CreditService = {
       .from('agents')
       // club_id is selected because credit_requests.club_id is NOT NULL with no
       // default, and requestCreditIncrease had nowhere else to get it.
-      .select('id, user_id, club_id, credit_limit, agent_wallet_balance, is_prepaid, status')
+      .select(
+        'id, user_id, club_id, credit_limit, credit_used, agent_wallet_balance, is_prepaid, status'
+      )
       .eq('id', agentId)
       .maybeSingle();
 
@@ -187,12 +231,11 @@ export const CreditService = {
     }
 
     const utilization =
-      agent.credit_limit > 0
-        ? ((agent.credit_limit - agent.agent_wallet_balance) / agent.credit_limit) * 100
-        : 0;
+      agent.credit_limit > 0 ? (drawnCredit(agent.credit_used) / agent.credit_limit) * 100 : 0;
 
     return {
       agentId: agent.id,
+      userId: agent.user_id,
       clubId: (agent as { club_id?: string | null }).club_id ?? null,
       agentName,
       creditLimit: agent.credit_limit || 0,
@@ -246,62 +289,9 @@ export const CreditService = {
     return true;
   },
 
-  /**
-   * Take some of an agent's credit line back.
-   *
-   * "Revoke Credit" on the agent dashboard used to call a player-wallet
-   * transfer, which moved chips between two people and left credit_limit and
-   * credit_used exactly where they were. Revoking credit is lowering the line.
-   *
-   * fn_admin_update_agent owns every rule that applies: it refuses a new limit
-   * below what the agent has already drawn, and it refuses to leave an agent
-   * on credit with a limit of zero, naming the amount in both cases. When the
-   * reduction takes the line to nothing and nothing is owed, the agent moves
-   * to prepaid, which is the only way that function will accept a zero limit.
-   */
-  async lowerCreditLine(
-    userId: string,
-    clubId: string,
-    amount: number,
-    reason?: string
-  ): Promise<{ newLimit: number; movedToPrepaid: boolean }> {
-    /* The error is bound and thrown, not dropped. This read decides the new
-       limit, so a refused or failed read must not be indistinguishable from
-       "this agent has no line" - that difference is the difference between
-       leaving a limit alone and taking it to zero. */
-    const { data: agentRow, error: readError } = await supabase
-      .from('agents')
-      .select('id, credit_limit, credit_used')
-      .eq('user_id', userId)
-      .eq('club_id', clubId)
-      .maybeSingle();
-    if (readError) throw new Error(`Could not read this agent's credit line: ${readError.message}`);
-    if (!agentRow?.id) throw new Error('No agent found for this club');
-
-    const current = Number(agentRow.credit_limit) || 0;
-    const drawn = Number(agentRow.credit_used) || 0;
-    const target = Math.max(current - amount, 0);
-    const toPrepaid = target === 0;
-
-    if (toPrepaid && drawn > 0) {
-      throw new Error(
-        `This agent still owes ${drawn.toLocaleString()} chips on their credit line. Take a payment before closing it.`
-      );
-    }
-
-    const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
-      p_agent_id: agentRow.id,
-      p_credit_limit: target,
-      p_is_prepaid: toPrepaid ? true : null,
-      p_credit_reason: reason || 'Credit line reduced',
-    });
-    if (error || !res?.success) {
-      throw new Error(error?.message || res?.error || 'credit update failed');
-    }
-    if (res.club_id) {
-      masterBus.emit('CREDIT_UPDATED', { clubId: res.club_id, amount: target });
-    }
-    return { newLimit: target, movedToPrepaid: toPrepaid };
+  /** Reduce only a prepared, captured durable intent. Historical receipts never overwrite current balances. */
+  async lowerCreditLine(start: CreditReductionStart): Promise<Readonly<CreditReductionEnvelope>> {
+    return runCreditReduction(start);
   },
 
   /**
@@ -312,31 +302,67 @@ export const CreditService = {
     requestedLimit: number,
     reason: string
   ): Promise<CreditLimitRequest> {
-    const account = await this.getCreditAccount(agentId);
+    const actor = currentCreditRequestActor();
+    if (!actor) throw new Error('Sign In To Request Credit');
+    const generation = creditReadGeneration;
+    const account = await this.getCreditAccount(agentId).catch((error: unknown) => {
+      assertCreditRequestActor(actor, generation);
+      throw error;
+    });
+    assertCreditRequestActor(actor, generation);
     if (!account) throw new Error('Agent not found');
-    // club_id is NOT NULL with no default. Omitting it made EVERY credit
-    // increase request a rejected statement: the caller saw a thrown error with
-    // a Postgres message and no request was ever recorded. Refuse with
-    // something readable instead of sending a write that cannot land.
-    if (!account.clubId) {
-      throw new Error('This agent has no club, so a credit request cannot be raised');
+    if (!account.clubId || account.userId !== actor || account.agentId !== agentId) {
+      throw new Error('This Credit Account Does Not Match Your User And Club');
     }
-
-    const { data, error } = await supabase
-      .from('credit_requests')
-      .insert({
-        // credit_requests schema: requester_id, requested_amount (NOT agent_id, current_limit, requested_limit)
-        requester_id: agentId,
-        club_id: account.clubId,
-        requested_amount: requestedLimit,
-        reason,
-        status: 'pending',
-      })
-      .select()
-      .maybeSingle();
-
+    const { data: owners, error } = await Promise.resolve(
+      supabase.from('clubs').select('id, owner_id').eq('id', account.clubId).limit(2)
+    ).catch((error: unknown) => {
+      assertCreditRequestActor(actor, generation);
+      throw error;
+    });
+    assertCreditRequestActor(actor, generation);
     if (error) throw error;
-    return this.mapCreditRequest(data, account.agentName);
+    const owner = owners?.length === 1 ? owners[0] : null;
+    if (
+      !owner ||
+      owner.id !== account.clubId ||
+      typeof owner.owner_id !== 'string' ||
+      !owner.owner_id ||
+      owner.owner_id === actor
+    ) {
+      throw new Error('A Different Current Club Owner Must Review This Credit Request');
+    }
+    const receipt = await creditRequestService
+      .submitRequest(actor, {
+        clubId: account.clubId,
+        approverId: owner.owner_id,
+        requestedAmount: requestedLimit,
+        reason,
+      })
+      .catch((error: unknown) => {
+        assertCreditRequestActor(actor, generation);
+        throw error;
+      });
+    assertCreditRequestActor(actor, generation);
+    if (
+      receipt.status !== 'pending' ||
+      receipt.requesterId !== actor ||
+      receipt.clubId !== account.clubId ||
+      receipt.approverId !== owner.owner_id ||
+      receipt.requestedAmount !== requestedLimit
+    ) {
+      throw new Error('Credit Request Creation Was Not Confirmed By The Server');
+    }
+    return {
+      id: receipt.id,
+      agentId: account.agentId,
+      agentName: account.agentName,
+      currentLimit: account.creditLimit,
+      requestedLimit: receipt.requestedAmount,
+      reason: receipt.reason,
+      status: 'pending',
+      createdAt: receipt.createdAt,
+    };
   },
 
   /**
@@ -347,51 +373,8 @@ export const CreditService = {
     approved: boolean,
     reviewerId: string
   ): Promise<boolean> {
-    const status = approved ? 'approved' : 'denied';
-
-    const { data: request, error: fetchError } = await supabase
-      .from('credit_requests')
-      .select('requester_id, requested_amount')
-      .eq('id', requestId)
-      .maybeSingle();
-
-    if (fetchError || !request) throw fetchError || new Error('Credit request not found');
-
-    // Update request
-    const { error: reqUpdateErr } = await supabase
-      .from('credit_requests')
-      .update({
-        status,
-        reviewed_by: reviewerId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', requestId);
-
-    if (reqUpdateErr) throw new Error(`Failed to update credit request: ${reqUpdateErr.message}`);
-
-    // If approved, update credit limit
-    if (approved) {
-      const { error: limitErr } = await supabase
-        .from('agents')
-        .update({ credit_limit: request.requested_amount })
-        .eq('id', request.requester_id);
-
-      if (limitErr) throw new Error(`Failed to update credit limit: ${limitErr.message}`);
-
-      // Emit CREDIT_UPDATED
-      const { data: agent } = await supabase
-        .from('agents')
-        .select('club_id')
-        .eq('id', request.requester_id)
-        .maybeSingle();
-      if (agent?.club_id) {
-        masterBus.emit('CREDIT_UPDATED', {
-          clubId: agent.club_id,
-          amount: request.requested_amount,
-        });
-      }
-    }
-
+    if (approved) await creditRequestService.approveRequest(requestId, reviewerId);
+    else await creditRequestService.denyRequest(requestId, reviewerId);
     return true;
   },
 
@@ -405,7 +388,7 @@ export const CreditService = {
   async calculateDebt(agentId: string): Promise<DebtCalculation> {
     const { data: agent, error } = await supabase
       .from('agents')
-      .select('credit_limit, agent_wallet_balance, is_prepaid')
+      .select('credit_limit, credit_used, agent_wallet_balance, is_prepaid')
       .eq('id', agentId)
       .maybeSingle();
 
@@ -422,7 +405,7 @@ export const CreditService = {
       };
     }
 
-    const debt = agent.credit_limit - agent.agent_wallet_balance;
+    const debt = drawnCredit(agent.credit_used);
 
     return {
       agentId,
@@ -441,7 +424,7 @@ export const CreditService = {
     const resolvedId = await resolveClubUUID(clubId);
     const { data: agents, error } = await supabase
       .from('agents')
-      .select('id, credit_limit, agent_wallet_balance, is_prepaid')
+      .select('id, credit_limit, credit_used, agent_wallet_balance, is_prepaid')
       .eq('club_id', resolvedId)
       .eq('is_prepaid', false);
 
@@ -451,7 +434,7 @@ export const CreditService = {
       agentId: agent.id,
       creditLimit: agent.credit_limit || 0,
       currentBalance: agent.agent_wallet_balance || 0,
-      debtOwed: Math.max(0, (agent.credit_limit || 0) - (agent.agent_wallet_balance || 0)),
+      debtOwed: drawnCredit(agent.credit_used),
       isPrepaid: false,
       gracePeriodRemaining: this.getGracePeriodRemaining(),
     }));
@@ -562,96 +545,49 @@ export const CreditService = {
   async processPayment(
     invoiceId: string,
     amount: number,
-    method: 'wallet' | 'diamonds' | 'external'
+    method: 'wallet' | 'diamonds' | 'external',
+    options: { operationId?: string; reference?: string } = {}
   ): Promise<CreditPayment> {
-    // AUDIT M17: the wallet path used to be deduct -> apply -> compensating
-    // credit if apply failed. That compensating leg existed because the two
-    // writes were separate round trips that could diverge — a real hazard, and
-    // carefully written. It was also unreachable: atomic_deduct_wallet_and_log
-    // is granted to postgres and service_role only, so STEP 1 threw on every
-    // browser call and nothing downstream of it ever ran.
-    //
-    // fn_pay_credit_invoice_from_wallet puts the deduct and the apply in ONE
-    // transaction. The rollback is deleted rather than repaired, because there
-    // is no longer anything to compensate for: if the apply fails, the deduct
-    // rolls back with it. The function also refuses to spend a wallet that is
-    // not the caller's own.
-    if (method === 'wallet') {
-      const { data, error } = await retryAsync(
-        () =>
-          supabase.rpc('fn_pay_credit_invoice_from_wallet', {
-            p_invoice_id: invoiceId,
-            p_amount: amount,
-          }),
-        3
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-7
+    )
+      throw new Error('Enter a positive amount with no more than two decimal places');
+    const generation = creditReadGeneration;
+    // Reuse this identity for transport retries; callers may preserve it across an uncertain response.
+    const operationId = options.operationId ?? uuid();
+    const { data, error } = await retryAsync(
+      () =>
+        supabase.rpc('fn_process_credit_invoice_payment', {
+          p_invoice_id: invoiceId,
+          p_amount: amount,
+          p_method: method,
+          p_operation_id: operationId,
+          p_reference: options.reference ?? null,
+        }),
+      3
+    );
+    if (error) {
+      reportError(error, 'CreditService.processPayment', { invoiceId, operationId });
+      throw new Error(
+        'Payment status could not be confirmed. Retry this payment to check its receipt.'
       );
-
-      if (error) {
-        reportError(error, 'CreditService.processPayment.wallet', {
-          invoiceId,
-          amount,
-        });
-        throw new Error('Payment failed');
-      }
-
-      const res = data as {
-        ok: boolean;
-        reason?: string;
-        amount?: number;
-        payment?: { id?: string; transaction_id?: string; created_at?: string };
-      } | null;
-
-      if (!res?.ok) {
-        throw new Error(creditPaymentReasonText(res?.reason));
-      }
-
-      masterBus.emit('BALANCE_UPDATED', {
-        source: 'credit_payment',
-        amount: -(res.amount ?? amount),
-      });
-
-      return {
-        id: res.payment?.id,
-        invoiceId,
-        amount: res.amount ?? amount,
-        paymentMethod: method,
-        transactionId: res.payment?.transaction_id,
-        createdAt: res.payment?.created_at,
-      } as CreditPayment;
     }
-
-    // Non-wallet methods move no chips here — they only record that money
-    // arrived by some other rail — so they stay on the existing SECURITY
-    // DEFINER apply RPC, which recomputes amount_paid/remaining/status from the
-    // locked invoice row (no TOCTOU).
-    const { data: applyRes, error: applyErr } = await supabase.rpc('fn_apply_credit_payment', {
-      p_invoice_id: invoiceId,
-      p_amount: amount,
-      p_method: method,
-    });
-
-    if (applyErr) {
-      reportError(applyErr, 'CreditService.processPayment.apply', {
-        invoiceId,
-        method,
-      });
-      throw new Error(`Invoice update failed: ${applyErr.message}`);
+    if (!data?.ok) throw new Error(creditPaymentReasonText(data?.reason));
+    const postedAmount = Number(data.amount);
+    if (!data.payment?.id || !Number.isFinite(postedAmount) || postedAmount !== amount)
+      throw new Error('Payment receipt is incomplete. Refresh the invoice before continuing.');
+    if (method === 'wallet' && generation === creditReadGeneration) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'credit_payment', amount: -postedAmount });
     }
-
-    if (!applyRes?.success) {
-      throw new Error(`Invoice update failed: ${applyRes?.error || 'payment application failed'}`);
-    }
-
-    const paymentRow = applyRes.payment;
-
-    // Payment row was recorded atomically by fn_apply_credit_payment above.
     return {
-      id: paymentRow?.id,
+      id: data.payment.id,
       invoiceId,
-      amount,
+      amount: postedAmount,
       paymentMethod: method,
-      transactionId: paymentRow?.transaction_id,
-      createdAt: paymentRow?.created_at,
+      transactionId: data.payment.transaction_id,
+      createdAt: data.payment.created_at,
     };
   },
 

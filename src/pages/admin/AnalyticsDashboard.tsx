@@ -309,7 +309,6 @@ export default function AnalyticsDashboard() {
   useMasterBusSubscription('HAND_COMPLETED', debouncedRefresh);
   useMasterBusSubscription('BALANCE_UPDATED', refreshAll, { debounce: 2000 });
   useMasterBusSubscription('CHIPS_DISTRIBUTED', refreshAll, { debounce: 2000 });
-  useMasterBusSubscription('SETTLEMENT_COMPLETED', refreshAll, { debounce: 1000 });
   useMasterBusSubscription('MILESTONE_UNLOCKED', refreshAll, { debounce: 1000 });
   useMasterBusSubscription('COMPONENT_CRASH', (payload) => {
     if (payload && payload.componentName) {

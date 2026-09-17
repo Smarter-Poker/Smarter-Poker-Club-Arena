@@ -15,10 +15,40 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import type { ChipTransaction } from '../types/database.types';
-import { cashoutService, newOpId } from '../services/CashoutService';
+import {
+  CashoutReceiptChecks,
+  useCashoutReceiptChecks,
+} from '../components/wallet/CashoutReceiptChecks';
+import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
+import {
+  runCashoutOperation,
+  recoverCashoutOperation,
+  captureCashoutStart,
+  assertCashoutStartCurrent,
+  type CashoutStart,
+} from '../services/CashoutOperation';
+import {
+  usePreparedCashoutOperations,
+  isCashoutStartCurrent,
+} from '../hooks/usePreparedCashoutOperations';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
+import {
+  prepareCreditReduction,
+  captureCreditReduction,
+  assertCreditReductionCurrent,
+  listPendingCreditReductions,
+  capturePendingCreditReduction,
+  recoverCreditReduction,
+  retireCreditReduction,
+  type PreparedCreditReduction,
+  type PendingCreditReduction,
+} from '../services/CreditReductionOperation';
+import {
+  creditReductionAmount,
+  type CreditReductionEnvelope,
+} from '../lib/CreditReductionContract';
 import {
   assertChipAmount,
   runAgentWalletOperation,
@@ -101,9 +131,21 @@ interface AgentCommission {
 // ChipTransaction imported from types/database.types (canonical definition)
 
 export default function AgentDashboardPage() {
+  const { user } = useAuthUser();
+  const [params] = useSearchParams();
+  const key = useCashoutScopeKey(user?.id, params.toString());
+  return <AgentDashboardContent key={key} />;
+}
+
+function AgentDashboardContent() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuthUser();
+  const isCurrent = useCashoutScope(user?.id, searchParams.toString());
+  const cashoutRowsCurrent = useRef<(() => boolean) | null>(null);
+  const cashoutRowsScope = useRef<(() => boolean) | null>(null);
+  const cashoutInFlight = useRef(false);
+  const cashoutReadGeneration = useRef(0);
 
   const [tab, setTab] = useState<AgentTab>('overview');
   const [loading, setLoading] = useState(true);
@@ -116,6 +158,8 @@ export default function AgentDashboardPage() {
 
   // Overview data
   const [players, setPlayers] = useState<DownlineMember[]>([]);
+  const [cashoutsLoaded, setCashoutsAvailable] = useState(false);
+  const cashoutsAvailable = cashoutsLoaded && cashoutRowsScope.current?.() === true;
   const [pendingCashouts, setPendingCashouts] = useState<CashoutRequest[]>([]);
   const [commissions, setCommissions] = useState<AgentCommission[]>([]);
   const [recentTx, setRecentTx] = useState<ChipTransaction[]>([]);
@@ -145,6 +189,12 @@ export default function AgentDashboardPage() {
   const [creditAction, setCreditAction] = useState('issue_credit');
   const [creditAmount, setCreditAmount] = useState('');
   const [creditNotes, setCreditNotes] = useState('');
+  const creditInputEpoch = useRef(0);
+  const [creditInputRevision, setCreditInputRevision] = useState(0);
+  const invalidateCreditInput = () => {
+    creditInputEpoch.current += 1;
+    setCreditInputRevision(creditInputEpoch.current);
+  };
 
   // Agents list (for promo/credit selectors)
   const [agents, setAgents] = useState<DownlineMember[]>([]);
@@ -174,12 +224,24 @@ export default function AgentDashboardPage() {
   }, [clubId]);
 
   const dashLoadingRef = useRef(false);
+  const dashReloadRef = useRef<string | null | undefined>(undefined);
 
   // ── Load Dashboard Data ───────────────────────────────────
   const loadDashboard = useCallback(
     async (cId: string | null) => {
-      if (dashLoadingRef.current) return;
+      if (!isCurrent()) return;
+      // Cashout events can arrive before the verified service receipt returns.
+      // Keep that accepted row valid until acknowledgment, then refresh once.
+      if (cashoutInFlight.current || dashLoadingRef.current) {
+        dashReloadRef.current = cId;
+        return;
+      }
       dashLoadingRef.current = true;
+      const cashoutGeneration = ++cashoutReadGeneration.current;
+      const cashoutReadCurrent = () =>
+        isCurrent() && cashoutReadGeneration.current === cashoutGeneration;
+      cashoutRowsCurrent.current = null;
+      setCashoutsAvailable(false);
       try {
         setLoading(true);
         setError(null);
@@ -270,7 +332,7 @@ export default function AgentDashboardPage() {
         }));
 
         // cashout_requests schema: player_id (not user_id), player_note (not notes), no payment_method
-        const { data: cashouts } = await retryFetch(
+        const { data: cashouts, error: cashoutError } = await retryFetch(
           () =>
             supabase
               .from('cashout_requests')
@@ -281,6 +343,11 @@ export default function AgentDashboardPage() {
               .then((r) => r),
           { maxRetries: 2, isMountedRef: mountedRef }
         );
+
+        if (cashoutError) {
+          cashoutRowsCurrent.current = null;
+          throw cashoutError;
+        }
 
         // Get commission history
         const { data: comms } = await retryFetch(
@@ -325,7 +392,10 @@ export default function AgentDashboardPage() {
             profile: profileMap[m.user_id] || {},
           }));
 
-        if (!mountedRef.current) return;
+        if (!isCurrent()) return;
+        cashoutRowsCurrent.current = cashoutReadCurrent;
+        cashoutRowsScope.current = isCurrent;
+        setCashoutsAvailable(true);
         setPlayers(enrichedPlayers);
         setPendingCashouts(cashouts || []);
         setCommissions(comms || []);
@@ -361,10 +431,15 @@ export default function AgentDashboardPage() {
         if (mountedRef.current) setError(safeErrorMessage(err));
       } finally {
         dashLoadingRef.current = false;
-        if (mountedRef.current) setLoading(false);
+        const trailing = dashReloadRef.current;
+        dashReloadRef.current = undefined;
+        if (isCurrent()) {
+          setLoading(false);
+          if (trailing !== undefined) void loadDashboard(trailing);
+        }
       }
     },
-    [clubId, user?.id]
+    [clubId, user?.id, isCurrent]
   );
 
   // ── Initial Load ──────────────────────────────────────────
@@ -439,7 +514,7 @@ export default function AgentDashboardPage() {
         const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
         if (age < SWR_TTL_MS && parsed.players) {
           setPlayers(parsed.players);
-          if (parsed.pendingCashouts) setPendingCashouts(parsed.pendingCashouts);
+          // Cashout decisions require the fresh scoped request read, never cached rows.
           if (parsed.commissions) {
             setCommissions(parsed.commissions);
             setCommissionsHasMore(parsed.commissions.length >= COMMISSION_PAGE);
@@ -543,7 +618,6 @@ export default function AgentDashboardPage() {
       masterBus.subscribeDebounced('AGENT_UPDATED', filteredRefresh, 300),
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 300),
       masterBus.subscribeDebounced('CREDIT_UPDATED', filteredRefresh, 300),
-      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', filteredRefresh, 300),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, refreshDashboard]);
@@ -601,75 +675,117 @@ export default function AgentDashboardPage() {
   // ── Visibility Refresh — refresh on tab focus after 30s ──
   useVisibilityRefresh(() => loadDashboard(clubId));
 
-  // ── Cashout Actions ────────────────────────────────────────
-  /* ONE OP ID PER (ACTION, REQUEST), HELD ACROSS RETRIES (2026-09-09).
-     Both calls below omitted `opId`, so `CashoutService` fell through to
-     `opId || newOpId()` and minted a fresh key on every attempt: an approval
-     that committed and lost its response released the player's chips twice
-     on the next press. The key is scoped to the ACTION as well as the
-     request because `chip_transactions_agent_wallet_op_id_uidx` spans every
-     type - reusing an approve's key for a later decline would COLLIDE rather
-     than replay, and `fn_cashout_release` has no unique_violation handler.
-     This is `AgentCashoutPanel`'s map, which had it right; the dashboard is
-     the second surface for the same money and never got it. */
-  const cashoutOpIdsRef = useRef<Map<string, string>>(new Map());
-  const cashoutOpIdFor = (action: 'approve' | 'reject', cashoutId: string): string => {
-    const key = `${action}:${cashoutId}`;
-    const held = cashoutOpIdsRef.current.get(key);
-    if (held) return held;
-    const fresh = newOpId();
-    cashoutOpIdsRef.current.set(key, fresh);
-    return fresh;
-  };
+  const decisions = usePreparedCashoutOperations(
+    pendingCashouts.flatMap((row) => [
+      {
+        key: `${row.id}:approve`,
+        intent: {
+          userId: user?.id ?? '',
+          receiptViewCurrent: isCurrent,
+          playerId: row.player_id,
+          clubId: row.club_id,
+          targetId: row.id,
+          kind: 'cashout_approve' as const,
+          amount: row.amount,
+        },
+      },
+      {
+        key: `${row.id}:reject`,
+        intent: {
+          userId: user?.id ?? '',
+          receiptViewCurrent: isCurrent,
+          playerId: row.player_id,
+          clubId: row.club_id,
+          targetId: row.id,
+          kind: 'cashout_decline' as const,
+          amount: row.amount,
+          note: 'Denied by agent',
+        },
+      },
+    ]),
+    cashoutRowsCurrent.current,
+    pendingCashouts
+  );
 
-  const approveCashout = async (cashoutId: string) => {
-    if (!(await confirmDialog({ message: 'Approve this cashout request?', variant: 'danger' })))
-      return;
-    setProcessing(true);
-    setError(null);
-    try {
-      await cashoutService.approveCashout(
-        cashoutId,
-        user?.id || '',
-        undefined,
-        cashoutOpIdFor('approve', cashoutId)
-      );
-      setSuccess('Cashout approved successfully.');
-      masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: clubId || '' });
-      loadDashboard(clubId);
-    } catch (err: unknown) {
-      setError(safeErrorMessage(err));
-    } finally {
-      setProcessing(false);
-    }
-  };
+  const receiptChecks = useCashoutReceiptChecks(isCurrent, () => {
+    void loadDashboard(clubId);
+  });
 
-  const denyCashout = async (cashoutId: string) => {
+  // Cashout decisions use a frozen scoped row and durable operation identity.
+  const processCashout = async (cashoutId: string, action: 'approve' | 'reject') => {
     if (
-      !(await confirmDialog({
-        message: 'Deny and refund this cashout request?',
-        variant: 'danger',
-      }))
+      !user?.id ||
+      !clubId ||
+      !isCurrent() ||
+      !cashoutRowsCurrent.current?.() ||
+      cashoutInFlight.current
     )
       return;
-    setProcessing(true);
-    setError(null);
+    const cashout = pendingCashouts.find((row) => row.id === cashoutId && row.status === 'pending');
+    if (!cashout || cashout.club_id !== resolvedClubIdRef.current) {
+      setError('Refresh To Verify This Cashout Before Acting');
+      return;
+    }
+    cashoutInFlight.current = true;
+    let start: CashoutStart | null = null;
+    let checkingOutcome = false;
     try {
-      await cashoutService.rejectCashout(
-        cashoutId,
-        user?.id || '',
-        'Denied by agent',
-        cashoutOpIdFor('reject', cashoutId)
+      const prepared = decisions.get(
+        `${cashout.id}:${action}`,
+        action === 'approve' ? 'cashout_approve' : 'cashout_decline'
       );
-      setSuccess('Cashout denied and chips refunded to player.');
-      masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: clubId || '' });
-      loadDashboard(clubId);
-    } catch (err: unknown) {
-      setError(safeErrorMessage(err));
+      if (!prepared) throw new Error('Wait For This Cashout Request To Be Verified');
+      start = captureCashoutStart(prepared);
+      setProcessing(true);
+      setError(null);
+      checkingOutcome = true;
+      const recovery = await recoverCashoutOperation(start);
+      checkingOutcome = false;
+      assertCashoutStartCurrent(start);
+      if (!recovery.found) {
+        const confirmed = await confirmDialog({
+          message:
+            action === 'approve'
+              ? 'Approve this cashout request?'
+              : 'Decline and return this cashout’s chips?',
+          variant: 'danger',
+        });
+        if (!confirmed) return;
+        assertCashoutStartCurrent(start);
+        checkingOutcome = true;
+        await runCashoutOperation(start);
+        checkingOutcome = false;
+      }
+      assertCashoutStartCurrent(start);
+      setSuccess(
+        action === 'approve'
+          ? 'Cashout approved. Invoice recorded.'
+          : 'Cashout declined. Chips returned to the player.'
+      );
+      void loadDashboard(clubId);
+    } catch (err) {
+      if (checkingOutcome && start && isCurrent())
+        receiptChecks.retain(
+          `${cashout.id}:${action}`,
+          cashout.amount,
+          action === 'approve' ? 'Cashout Approval' : 'Cashout Decline',
+          start
+        );
+      if (isCurrent() && (!start || isCashoutStartCurrent(start))) setError(safeErrorMessage(err));
     } finally {
-      setProcessing(false);
+      cashoutInFlight.current = false;
+      if (isCurrent()) {
+        setProcessing(false);
+        if (!dashLoadingRef.current && dashReloadRef.current !== undefined) {
+          const trailing = dashReloadRef.current;
+          dashReloadRef.current = undefined;
+          void loadDashboard(trailing);
+        }
+      }
     }
   };
+  const approveCashout = (id: string) => processCashout(id, 'approve');
+  const denyCashout = (id: string) => processCashout(id, 'reject');
 
   // ── Transfer ───────────────────────────────────────────────
   /**
@@ -938,7 +1054,11 @@ export default function AgentDashboardPage() {
                         { key: 'joined', label: 'Joined' },
                       ]
                     );
-                  } else if (tab === 'cashouts' && pendingCashouts.length > 0) {
+                  } else if (
+                    tab === 'cashouts' &&
+                    cashoutsAvailable &&
+                    pendingCashouts.length > 0
+                  ) {
                     exportToCSV(pendingCashouts, 'agent_cashouts.csv', [
                       { key: 'player_id', label: 'Player ID' },
                       { key: 'amount', label: 'Amount' },
@@ -976,7 +1096,7 @@ export default function AgentDashboardPage() {
         </div>
 
         {/* Pending Cashouts Alert */}
-        {pendingCashouts.length > 0 && tab !== 'cashouts' && (
+        {cashoutsAvailable && pendingCashouts.length > 0 && tab !== 'cashouts' && (
           <div
             className="admin-error-banner"
             style={{
@@ -1005,7 +1125,7 @@ export default function AgentDashboardPage() {
             {
               id: 'cashouts' as AgentTab,
               label: 'Cashouts',
-              badge: pendingCashouts.length || undefined,
+              badge: cashoutsAvailable ? pendingCashouts.length || undefined : undefined,
             },
             { id: 'commissions' as AgentTab, label: 'Commissions' },
             { id: 'statement' as AgentTab, label: 'Statement' },
@@ -1059,15 +1179,17 @@ export default function AgentDashboardPage() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
-                  {fmt(pendingCashouts.length)}
+                  {cashoutsAvailable ? fmt(pendingCashouts.length) : 'Unavailable'}
                 </div>
                 <div className="admin-stat-label">Pending Cashouts</div>
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {fmtChips(
-                    pendingCashouts.reduce((s: number, c: CashoutRequest) => s + (c.amount || 0), 0)
-                  )}
+                  {cashoutsAvailable
+                    ? fmtChips(
+                        pendingCashouts.reduce((s: number, c: CashoutRequest) => s + c.amount, 0)
+                      )
+                    : 'Unavailable'}
                 </div>
                 <div className="admin-stat-label">Cashout Amount</div>
               </div>
@@ -1250,17 +1372,24 @@ export default function AgentDashboardPage() {
           </div>
         )}
 
+        <CashoutReceiptChecks checks={receiptChecks} />
         {/* ══════ TAB: CASHOUTS ══════ */}
         {tab === 'cashouts' && (
           <div className="admin-tab-content">
             <h3 className="admin-section-title">
               Pending Cashout Requests
               <span className="admin-badge" style={{ marginLeft: '8px' }}>
-                {pendingCashouts.length} Pending
+                {cashoutsAvailable ? `${pendingCashouts.length} Pending` : 'Unavailable'}
               </span>
             </h3>
 
-            {pendingCashouts.length === 0 ? (
+            {decisions.error && <p role="status">{decisions.error}</p>}
+            {!cashoutsAvailable ? (
+              <div className="admin-empty-state" role="status">
+                <span>Pending Cashouts Could Not Be Verified.</span>
+                <button onClick={() => void loadDashboard(clubId)}>Refresh Cashouts</button>
+              </div>
+            ) : pendingCashouts.length === 0 ? (
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">✓</span>
                 <span>No Pending Cashout Requests</span>
@@ -1301,14 +1430,18 @@ export default function AgentDashboardPage() {
                             <button
                               onClick={() => approveCashout(c.id)}
                               className="admin-btn admin-btn-success admin-btn-sm"
-                              disabled={processing}
+                              disabled={
+                                processing || !decisions.get(`${c.id}:approve`, 'cashout_approve')
+                              }
                             >
                               Approve
                             </button>
                             <button
                               onClick={() => denyCashout(c.id)}
                               className="admin-btn admin-btn-danger admin-btn-sm"
-                              disabled={processing}
+                              disabled={
+                                processing || !decisions.get(`${c.id}:reject`, 'cashout_decline')
+                              }
                             >
                               Deny
                             </button>
@@ -1324,15 +1457,17 @@ export default function AgentDashboardPage() {
             <div className="admin-stats-grid" style={{ marginTop: '16px' }}>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
-                  {fmt(pendingCashouts.length)}
+                  {cashoutsAvailable ? fmt(pendingCashouts.length) : 'Unavailable'}
                 </div>
                 <div className="admin-stat-label">Pending</div>
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {fmtChips(
-                    pendingCashouts.reduce((s: number, c: CashoutRequest) => s + (c.amount || 0), 0)
-                  )}
+                  {cashoutsAvailable
+                    ? fmtChips(
+                        pendingCashouts.reduce((s: number, c: CashoutRequest) => s + c.amount, 0)
+                      )
+                    : 'Unavailable'}
                 </div>
                 <div className="admin-stat-label">Total Amount</div>
               </div>
@@ -1648,7 +1783,10 @@ export default function AgentDashboardPage() {
                   <select
                     className="admin-input"
                     value={creditTarget}
-                    onChange={(e) => setCreditTarget(e.target.value)}
+                    onChange={(e) => {
+                      invalidateCreditInput();
+                      setCreditTarget(e.target.value);
+                    }}
                   >
                     <option value="">Select Agent...</option>
                     {agents.map((a: DownlineMember) => (
@@ -1664,7 +1802,10 @@ export default function AgentDashboardPage() {
                   <select
                     className="admin-input"
                     value={creditAction}
-                    onChange={(e) => setCreditAction(e.target.value)}
+                    onChange={(e) => {
+                      invalidateCreditInput();
+                      setCreditAction(e.target.value);
+                    }}
                   >
                     <option value="issue_credit">Set Credit Line To</option>
                     <option value="add_prepaid">Send Prepaid Chips</option>
@@ -1677,7 +1818,10 @@ export default function AgentDashboardPage() {
                     className="admin-input"
                     type="number"
                     value={creditAmount}
-                    onChange={(e) => setCreditAmount(e.target.value)}
+                    onChange={(e) => {
+                      invalidateCreditInput();
+                      setCreditAmount(e.target.value);
+                    }}
                     placeholder="0"
                     min="1"
                   />
@@ -1687,23 +1831,41 @@ export default function AgentDashboardPage() {
                   <input
                     className="admin-input"
                     value={creditNotes}
-                    onChange={(e) => setCreditNotes(e.target.value)}
+                    onChange={(e) => {
+                      invalidateCreditInput();
+                      setCreditNotes(e.target.value);
+                    }}
                     placeholder="Reason..."
                   />
                 </div>
-                <button
-                  className="admin-btn admin-btn-primary"
-                  disabled={processing || !creditTarget || !creditAmount}
-                  style={{ marginTop: '4px' }}
-                  onClick={async () => {
-                    if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
-                    walletOperationInFlightRef.current = true;
-                    setProcessing(true);
-                    setError(null);
-                    try {
-                      const amt = Number(creditAmount);
-                      assertChipAmount(amt);
-                      /*
+                {user?.id && clubId && (
+                  <CreditReductionControls
+                    key={`${user.id}:${clubId}`}
+                    actorId={user.id}
+                    clubId={clubId}
+                    targetUserId={creditTarget}
+                    amount={creditAmount}
+                    note={creditNotes}
+                    enabled={creditAction === 'revoke_credit'}
+                    isCurrent={isCurrent}
+                    revision={creditInputRevision}
+                    getRevision={() => creditInputEpoch.current}
+                  />
+                )}
+                {creditAction !== 'revoke_credit' && (
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    disabled={processing || !creditTarget || !creditAmount}
+                    style={{ marginTop: '4px' }}
+                    onClick={async () => {
+                      if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
+                      walletOperationInFlightRef.current = true;
+                      setProcessing(true);
+                      setError(null);
+                      try {
+                        const amt = Number(creditAmount);
+                        assertChipAmount(amt);
+                        /*
                         ALL THREE OF THESE WERE WRONG, EACH IN ITS OWN WAY.
 
                         ISSUE CREDIT was the only one that could work, and it
@@ -1721,95 +1883,85 @@ export default function AgentDashboardPage() {
                         agent means sending them chips, which is
                         fn_agent_wallet_send into their agent wallet.
 
-                        REVOKE CREDIT did not touch credit. It called
-                        wallet_user_transfer - an ungranted invoker function,
-                        so it errored - and had it run it would have moved
-                        chips out of the agent's own player wallet into the
-                        signed-in owner's player wallet, leaving credit_limit
-                        and credit_used untouched. Revoking credit is lowering
-                        the line, which is fn_admin_update_agent, and which
-                        refuses on its own terms when the agent has already
-                        drawn more than the new limit.
+                        Credit reductions use the prepared operation controls below.
                       */
-                      const resolvedCreditClub = await resolveClubUUID(clubId || '');
-                      const note = creditNotes.trim() || undefined;
-                      if (creditAction === 'issue_credit') {
-                        await CreditService.setCreditLine(
-                          creditTarget,
-                          resolvedCreditClub,
-                          amt,
-                          false,
-                          note
-                        );
-                      } else if (creditAction === 'add_prepaid') {
-                        await runAgentWalletOperation(
-                          {
-                            userId: user.id,
-                            clubId: resolvedCreditClub,
-                            targetId: creditTarget,
-                            kind: 'agent_send',
-                            destination: 'agent_wallet',
-                            amount: amt,
-                          },
-                          async (operation) => {
-                            const { data, error: fundError } = await supabase.rpc(
-                              'fn_agent_wallet_send',
-                              {
-                                p_club_id: resolvedCreditClub,
-                                p_to_user_id: creditTarget,
-                                p_amount: amt,
-                                p_destination: 'agent_wallet',
-                                p_reason: note || 'Prepaid funding',
-                                p_op_id: operation.operationId,
-                              }
-                            );
-                            if (fundError) throw fundError;
-                            if (
-                              !confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')
-                            ) {
-                              throw new Error(
-                                data?.error || 'The Cashier Did Not Confirm That Funding'
+                        const resolvedCreditClub = await resolveClubUUID(clubId || '');
+                        const note = creditNotes.trim() || undefined;
+                        if (creditAction === 'issue_credit') {
+                          await CreditService.setCreditLine(
+                            creditTarget,
+                            resolvedCreditClub,
+                            amt,
+                            false,
+                            note
+                          );
+                        } else if (creditAction === 'add_prepaid') {
+                          await runAgentWalletOperation(
+                            {
+                              userId: user.id,
+                              clubId: resolvedCreditClub,
+                              targetId: creditTarget,
+                              kind: 'agent_send',
+                              destination: 'agent_wallet',
+                              amount: amt,
+                            },
+                            async (operation) => {
+                              const { data, error: fundError } = await supabase.rpc(
+                                'fn_agent_wallet_send',
+                                {
+                                  p_club_id: resolvedCreditClub,
+                                  p_to_user_id: creditTarget,
+                                  p_amount: amt,
+                                  p_destination: 'agent_wallet',
+                                  p_reason: note || 'Prepaid funding',
+                                  p_op_id: operation.operationId,
+                                }
                               );
+                              if (fundError) throw fundError;
+                              if (
+                                !confirmedAgentWalletReceipt(
+                                  data,
+                                  amt,
+                                  'agent_send',
+                                  'agent_wallet'
+                                )
+                              ) {
+                                throw new Error(
+                                  data?.error || 'The Cashier Did Not Confirm That Funding'
+                                );
+                              }
                             }
-                          }
-                        );
-                      } else {
-                        await CreditService.lowerCreditLine(
-                          creditTarget,
-                          resolvedCreditClub,
-                          amt,
-                          note
-                        );
+                          );
+                        }
+                        const labels: Record<string, string> = {
+                          issue_credit: 'Credit line set to',
+                          add_prepaid: 'Prepaid balance sent',
+                        };
+                        setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
+                        masterBus.emit('CREDIT_UPDATED', {
+                          clubId: clubId || '',
+                          userId: creditTarget,
+                        });
+                        setCreditAmount('');
+                        setCreditNotes('');
+                        loadDashboard(clubId);
+                      } catch (err: unknown) {
+                        setError(safeErrorMessage(err));
+                      } finally {
+                        walletOperationInFlightRef.current = false;
+                        setProcessing(false);
                       }
-                      const labels: Record<string, string> = {
-                        issue_credit: 'Credit line set to',
-                        add_prepaid: 'Prepaid balance sent',
-                        revoke_credit: 'Credit line reduced by',
-                      };
-                      setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
-                      masterBus.emit('CREDIT_UPDATED', {
-                        clubId: clubId || '',
-                        userId: creditTarget,
-                      });
-                      setCreditAmount('');
-                      setCreditNotes('');
-                      loadDashboard(clubId);
-                    } catch (err: unknown) {
-                      setError(safeErrorMessage(err));
-                    } finally {
-                      walletOperationInFlightRef.current = false;
-                      setProcessing(false);
-                    }
-                  }}
-                >
-                  {processing
-                    ? 'Processing...'
-                    : creditAction === 'issue_credit'
-                      ? 'Set Credit Line'
-                      : creditAction === 'add_prepaid'
-                        ? 'Send Prepaid Chips'
-                        : 'Reduce Credit Line'}
-                </button>
+                    }}
+                  >
+                    {processing
+                      ? 'Processing...'
+                      : creditAction === 'issue_credit'
+                        ? 'Set Credit Line'
+                        : creditAction === 'add_prepaid'
+                          ? 'Send Prepaid Chips'
+                          : 'Reduce Credit Line'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1826,7 +1978,11 @@ export default function AgentDashboardPage() {
               border: '1px solid rgba(255,255,255,0.08)',
             }}
           >
-            <AgentBackOffice title="Weekly Statement & Roster" />
+            <AgentBackOffice
+              key={`${user?.id}:${clubId}`}
+              clubId={clubId ?? undefined}
+              title="Weekly Statement & Roster"
+            />
           </div>
         </div>
       )}
@@ -1851,6 +2007,234 @@ export default function AgentDashboardPage() {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The reduction form owns its accepted intent; reload cards have receipt-only authority. */
+export function CreditReductionControls(props: {
+  actorId: string;
+  clubId: string;
+  targetUserId: string;
+  amount: string;
+  note: string;
+  enabled: boolean;
+  isCurrent: () => boolean;
+  revision: number;
+  getRevision: () => number;
+}) {
+  const { actorId, clubId } = props;
+  const scope = useCashoutScope(actorId, clubId);
+  const live = useRef(true);
+  const token = useRef<object | null>(null);
+  const busy = useRef(false);
+  const [working, setWorking] = useState(false);
+  const [prepared, setPrepared] = useState<{
+    token: object;
+    value: PreparedCreditReduction;
+  } | null>(null);
+  const [preparationError, setPreparationError] = useState<string | null>(null);
+  const [pendingRows, setPendingRows] = useState<{
+    scope: () => boolean;
+    rows: PendingCreditReduction[];
+  } | null>(null);
+  const [receipt, setReceipt] = useState<{
+    scope: () => boolean;
+    value: Readonly<CreditReductionEnvelope>;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const inputKey = JSON.stringify([
+    actorId,
+    clubId,
+    props.targetUserId,
+    props.amount,
+    props.note,
+    props.enabled,
+    props.revision,
+    refresh,
+  ]);
+  const input = useRef<{ key: string; token: object } | null>(null);
+  if (!input.current || input.current.key !== inputKey)
+    input.current = { key: inputKey, token: {} };
+  token.current = input.current.token;
+  const formToken = input.current.token;
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+      token.current = null;
+    };
+  }, []);
+  const receiptCurrent = useCallback(
+    () => live.current && scope() && props.isCurrent(),
+    [scope, props.isCurrent]
+  );
+  useEffect(() => {
+    let active = true;
+    setPendingRows(null);
+    void listPendingCreditReductions(actorId, clubId, receiptCurrent)
+      .then((rows) => {
+        if (active && receiptCurrent()) setPendingRows({ scope: receiptCurrent, rows });
+      })
+      .catch(() => {
+        if (active && receiptCurrent())
+          setError(
+            'Pending Credit Changes Are Unavailable. Keep This Browser Data And Check Again.'
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [actorId, clubId, receiptCurrent, refresh]);
+  useEffect(() => {
+    setPrepared(null);
+    setPreparationError(null);
+    if (!props.enabled || !props.targetUserId || !props.amount) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const current = () =>
+      active &&
+      receiptCurrent() &&
+      token.current === formToken &&
+      props.getRevision() === props.revision;
+    try {
+      const amount = creditReductionAmount(props.amount);
+      const reason = props.note.trim() || null;
+      // Invalidation above is immediate. Delay only idle snapshot/hash/storage
+      // preparation so ordinary typing does not lock the server row per key.
+      timer = setTimeout(() => {
+        if (!current()) return;
+        void prepareCreditReduction({
+          actorId,
+          clubId,
+          targetUserId: props.targetUserId,
+          amount,
+          reason,
+          isCurrent: current,
+          receiptViewCurrent: receiptCurrent,
+        })
+          .then((value) => {
+            if (current()) setPrepared({ token: formToken, value });
+          })
+          .catch((err) => {
+            if (current()) setPreparationError(safeErrorMessage(err));
+          });
+      }, 300);
+    } catch (err) {
+      if (current()) setPreparationError(safeErrorMessage(err));
+    }
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [formToken, receiptCurrent, actorId, clubId]);
+  const canStart =
+    props.enabled &&
+    !working &&
+    prepared?.token === formToken &&
+    receiptCurrent() &&
+    props.getRevision() === props.revision;
+  const showResult = (value: Readonly<CreditReductionEnvelope>) => {
+    if (!receiptCurrent()) return;
+    setReceipt({ scope: receiptCurrent, value });
+    setRefresh((value) => value + 1);
+  };
+  const rows = pendingRows?.scope() ? pendingRows.rows : [];
+  const result = receipt?.scope() ? receipt.value : null;
+  return (
+    <div aria-label="Credit Reduction Recovery">
+      {props.enabled && (
+        <>
+          {preparationError && <p role="alert">{preparationError}</p>}
+          <button
+            className="admin-btn admin-btn-primary"
+            disabled={!canStart}
+            onClick={async () => {
+              if (!canStart || !prepared || busy.current) return;
+              busy.current = true;
+              setWorking(true);
+              setError(null);
+              try {
+                // Capture before any wait. A capture refusal is shown without dispatching.
+                const start = captureCreditReduction(prepared.value);
+                const value = await CreditService.lowerCreditLine(start);
+                assertCreditReductionCurrent(start);
+                showResult(value);
+              } catch (err) {
+                if (receiptCurrent()) {
+                  setError(safeErrorMessage(err));
+                  setRefresh((value) => value + 1);
+                }
+              } finally {
+                busy.current = false;
+                if (receiptCurrent()) setWorking(false);
+              }
+            }}
+          >
+            {working ? 'Checking Credit Change...' : 'Reduce Credit Line'}
+          </button>
+        </>
+      )}
+      {error && <p role="alert">{error}</p>}
+      {rows.length > 0 && (
+        <div aria-label="Pending Credit Changes">
+          <p>
+            A Pending Credit Change Must Be Checked Or Cancelled Before Another Change For That
+            Agent.
+          </p>
+          {rows.map((row, index) => (
+            <div key={row.operationId}>
+              <span>Pending Credit Change {index + 1}</span>
+              {(['check', 'cancel'] as const).map((action) => (
+                <button
+                  key={action}
+                  disabled={working}
+                  onClick={async () => {
+                    if (busy.current || !receiptCurrent()) return;
+                    busy.current = true;
+                    setWorking(true);
+                    setError(null);
+                    try {
+                      const start = capturePendingCreditReduction(row);
+                      const value =
+                        action === 'check'
+                          ? await recoverCreditReduction(start)
+                          : await retireCreditReduction(start);
+                      assertCreditReductionCurrent(start);
+                      showResult(value);
+                    } catch (err) {
+                      if (receiptCurrent()) setError(safeErrorMessage(err));
+                    } finally {
+                      busy.current = false;
+                      if (receiptCurrent()) setWorking(false);
+                    }
+                  }}
+                >
+                  {action === 'check' ? 'Check Receipt' : 'Cancel Pending Change'}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {result?.state === 'recorded' && (
+        <div role="status">
+          <p>
+            {result.receipt.outcome === 'no_change'
+              ? 'No Credit Capacity Changed.'
+              : `Credit Line Reduced By ${result.receipt.applied_reduction} Chips.`}
+          </p>
+          <p>Limit After This Change: {result.receipt.after_limit} Chips.</p>
+          <p>This Is The Recorded Result Of That Change. No Chips Moved And No Payment Is Due.</p>
+        </div>
+      )}
+      {result?.state === 'retired' && (
+        <p role="status">Pending Change Cancelled. Its Original Request Cannot Apply.</p>
+      )}
+      {result?.state === 'absent' && (
+        <p role="status">No Recorded Result Yet. This Change Remains Pending.</p>
+      )}
     </div>
   );
 }

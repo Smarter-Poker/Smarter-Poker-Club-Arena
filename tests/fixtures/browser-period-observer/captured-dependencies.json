@@ -1,0 +1,3004 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "read_only": true,
+  "catalog": {
+    "scope": "Legacy browser period retirement and canonical observer dependency metadata only; no application rows or function invocation",
+    "registry": null,
+    "functions": [
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "signature": "ca_can_oversee_union(uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.ca_can_oversee_union(p_union_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_uid uuid := auth.uid();\nBEGIN\n  IF v_uid IS NULL OR p_union_id IS NULL THEN RETURN false; END IF;\n  IF fn_is_union_overseer(p_union_id, v_uid) THEN RETURN true; END IF;\n  RETURN EXISTS (SELECT 1 FROM profiles p\n                  WHERE p.id = v_uid AND COALESCE(p.is_admin, false));\nEND;\n$function$\n",
+        "source_md5": "e515d46b96bdc60c09d6af38228cfa7e",
+        "volatility": "s",
+        "anon_execute": false,
+        "definition_md5": "79cb90482aa4af61ea4e6a286768efa4",
+        "service_execute": true,
+        "security_definer": true,
+        "authenticated_execute": true
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "signature": "ca_can_view_club(uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.ca_can_view_club(p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT\n    session_user IN ('postgres', 'supabase_admin')\n    OR coalesce(auth.role(), '') = 'service_role'\n    OR (\n      auth.uid() IS NOT NULL\n      AND (\n        EXISTS (\n          SELECT 1 FROM club_members cm\n          WHERE cm.club_id = p_club_id\n            AND cm.user_id = auth.uid()\n            AND coalesce(cm.status, 'active') NOT IN ('banned', 'suspended')\n        )\n        OR EXISTS (\n          SELECT 1 FROM clubs c WHERE c.id = p_club_id AND c.owner_id = auth.uid()\n        )\n        OR EXISTS (\n          SELECT 1 FROM profiles pr\n          WHERE pr.id = auth.uid() AND coalesce(pr.is_admin, false)\n        )\n      )\n    );\n$function$\n",
+        "source_md5": "9ddbe589c28096058ea2d5e7356bcd22",
+        "volatility": "s",
+        "anon_execute": false,
+        "definition_md5": "0fa2974fd5b8d2b3b8089a1c172cbd7a",
+        "service_execute": true,
+        "security_definer": true,
+        "authenticated_execute": true
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "signature": "fn_accounting_party_users(text,uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_party_users(p_kind text, p_id uuid)\n RETURNS TABLE(user_id uuid)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n SELECT DISTINCT p.id FROM public.profiles p WHERE p.id IN (\n  SELECT p_id WHERE p_kind IN('agent','player')\n  UNION SELECT c.owner_id FROM public.clubs c WHERE p_kind='club' AND c.id=p_id\n  UNION SELECT m.user_id FROM public.club_members m WHERE p_kind='club' AND m.club_id=p_id\n   AND m.role IN('owner','co_owner','admin') AND COALESCE(m.status,'active') IN('active','approved')\n  UNION SELECT u.owner_id FROM public.unions u WHERE p_kind='union' AND u.id=p_id\n  UNION SELECT a.user_id FROM public.union_admins a WHERE p_kind='union' AND a.union_id=p_id\n   AND public.fn_is_union_overseer(p_id,a.user_id)\n );\n$function$\n",
+        "source_md5": "f6bc6c55e49c6f72ffb0336a405885a1",
+        "volatility": "s",
+        "anon_execute": false,
+        "definition_md5": "2436b25400e0ee73dbbe3158fdb47b0d",
+        "service_execute": true,
+        "security_definer": true,
+        "authenticated_execute": false
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "signature": "fn_union_accounting_run_at(timestamp with time zone)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_union_accounting_run_at(p_period_end timestamp with time zone)\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public'\nAS $function$\n  SELECT (((p_period_end AT TIME ZONE 'America/Chicago')::date + time '04:00')\n           AT TIME ZONE 'America/Chicago');\n$function$\n",
+        "source_md5": "1256826ade994f8b96430227bf61a594",
+        "volatility": "i",
+        "anon_execute": false,
+        "definition_md5": "85e9f0ab83b1655a90af953c0d547117",
+        "service_execute": true,
+        "security_definer": false,
+        "authenticated_execute": true
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "owner": "postgres",
+        "config": [
+          "search_path=public, extensions"
+        ],
+        "signature": "fn_union_week_start(timestamp with time zone)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_union_week_start(p_at timestamp with time zone DEFAULT now())\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT date_trunc('week', (p_at AT TIME ZONE 'America/Los_Angeles'))\n           AT TIME ZONE 'America/Los_Angeles';\n$function$\n",
+        "source_md5": "271c8a1269dc2e570ee20bd781493e9d",
+        "volatility": "i",
+        "anon_execute": false,
+        "definition_md5": "103f192a228084dad0e4268c36c82c4b",
+        "service_execute": true,
+        "security_definer": false,
+        "authenticated_execute": true
+      }
+    ],
+    "isolation": "repeatable read",
+    "relations": [
+      {
+        "acl": [
+          "postgres=arwdDxtm/postgres",
+          "anon=arwxtm/postgres",
+          "authenticated=arwxtm/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
+        "rls": true,
+        "kind": "r",
+        "name": "club_members",
+        "owner": "postgres",
+        "columns": [
+          {
+            "acl": null,
+            "name": "club_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "user_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "role",
+            "type": "text",
+            "default": "'player'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "agent_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "joined_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "parent_agent_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "invited_by",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "notes",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "last_active_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "updated_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "is_bot",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "status",
+            "type": "text",
+            "default": "'active'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "chip_balance",
+            "type": "numeric(20,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "diamonds",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "is_active",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "orange_ball_status",
+            "type": "text",
+            "default": "'inactive'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "rank_level",
+            "type": "integer",
+            "default": "1",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "credit_limit",
+            "type": "numeric(15,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "credit_used",
+            "type": "numeric(15,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "nickname",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "last_active",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "tier",
+            "type": "text",
+            "default": "'bronze'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "trust_score",
+            "type": "integer",
+            "default": "50",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "sessions_played",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "promo_balance",
+            "type": "numeric(14,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "chips_won",
+            "type": "bigint",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "chips_lost",
+            "type": "bigint",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "commission_rate",
+            "type": "numeric(5,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "rakeback_rate",
+            "type": "numeric(5,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "hands_played",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "total_rake_paid",
+            "type": "bigint",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "biggest_pot",
+            "type": "bigint",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "locked_chips",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "player_rakeback_pct",
+            "type": "numeric(5,4)",
+            "default": "0.0000",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "held_chips",
+            "type": "numeric",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "display_name",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "is_prepaid",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "promo_received_total",
+            "type": "numeric(14,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "promo_wagered",
+            "type": "numeric(14,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "promo_playthrough_required",
+            "type": "numeric(14,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "missions_completed",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "membership_lifecycle_status",
+            "type": "text",
+            "default": "'active'::text",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "departed_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "departed_by",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "departure_reason",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          }
+        ],
+        "policies": [
+          {
+            "cmd": "SELECT",
+            "qual": "(is_club_admin(club_id, ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_members.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))",
+            "roles": [
+              "authenticated"
+            ],
+            "tablename": "club_members",
+            "permissive": "PERMISSIVE",
+            "policyname": "Club staff can read club rosters",
+            "schemaname": "public",
+            "with_check": null
+          },
+          {
+            "cmd": "SELECT",
+            "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+            "roles": [
+              "authenticated"
+            ],
+            "tablename": "club_members",
+            "permissive": "PERMISSIVE",
+            "policyname": "Members can read own club memberships",
+            "schemaname": "public",
+            "with_check": null
+          },
+          {
+            "cmd": "ALL",
+            "qual": "true",
+            "roles": [
+              "service_role"
+            ],
+            "tablename": "club_members",
+            "permissive": "PERMISSIVE",
+            "policyname": "Service role manages",
+            "schemaname": "public",
+            "with_check": null
+          },
+          {
+            "cmd": "INSERT",
+            "qual": null,
+            "roles": [
+              "public"
+            ],
+            "tablename": "club_members",
+            "permissive": "PERMISSIVE",
+            "policyname": "Users can join clubs",
+            "schemaname": "public",
+            "with_check": "((user_id = ( SELECT auth.uid() AS uid)) AND (COALESCE(credit_limit, (0)::numeric) = (0)::numeric) AND (COALESCE(credit_used, (0)::numeric) = (0)::numeric) AND (agent_id IS NULL) AND (parent_agent_id IS NULL) AND ((role = ANY (ARRAY['member'::text, 'player'::text])) OR is_club_admin(club_id, ( SELECT auth.uid() AS uid))))"
+          },
+          {
+            "cmd": "SELECT",
+            "qual": "((fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'downline'::text) AND fn_club_cashier_can_transact(club_id, ( SELECT auth.uid() AS uid), user_id))",
+            "roles": [
+              "authenticated"
+            ],
+            "tablename": "club_members",
+            "permissive": "PERMISSIVE",
+            "policyname": "cashier_downline_read",
+            "schemaname": "public",
+            "with_check": null
+          },
+          {
+            "cmd": "UPDATE",
+            "qual": "((user_id = ( SELECT auth.uid() AS uid)) OR is_club_admin(club_id, ( SELECT auth.uid() AS uid)))",
+            "roles": [
+              "public"
+            ],
+            "tablename": "club_members",
+            "permissive": "PERMISSIVE",
+            "policyname": "club_members_update",
+            "schemaname": "public",
+            "with_check": "(is_club_admin(club_id, ( SELECT auth.uid() AS uid)) OR ((user_id = ( SELECT auth.uid() AS uid)) AND (role = ANY (ARRAY['member'::text, 'player'::text])) AND (COALESCE(credit_limit, (0)::numeric) = (0)::numeric) AND (COALESCE(credit_used, (0)::numeric) = (0)::numeric) AND (agent_id IS NULL) AND (parent_agent_id IS NULL)))"
+          },
+          {
+            "cmd": "SELECT",
+            "qual": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
+            "roles": [
+              "authenticated"
+            ],
+            "tablename": "club_members",
+            "permissive": "PERMISSIVE",
+            "policyname": "union_overseer_read",
+            "schemaname": "public",
+            "with_check": null
+          }
+        ],
+        "triggers": [
+          {
+            "name": "accounting_agreement_history",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER accounting_agreement_history AFTER INSERT OR DELETE OR UPDATE OF club_id, user_id, agent_id, parent_agent_id, role, status, is_active, commission_rate, rakeback_rate, player_rakeback_pct ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_capture()"
+          },
+          {
+            "name": "club_members_updated_at",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER club_members_updated_at BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()"
+          },
+          {
+            "name": "lock_cashier_hierarchy_insert_delete",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER lock_cashier_hierarchy_insert_delete BEFORE INSERT OR DELETE ON public.club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()"
+          },
+          {
+            "name": "lock_cashier_hierarchy_update",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER lock_cashier_hierarchy_update BEFORE UPDATE OF club_id, agent_id, role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()"
+          },
+          {
+            "name": "poker_arena_membership_guard",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER poker_arena_membership_guard BEFORE INSERT OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()"
+          },
+          {
+            "name": "trg_admin_holds_no_player_wallet",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_admin_holds_no_player_wallet BEFORE INSERT OR UPDATE OF role, chip_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_admin_holds_no_player_wallet()"
+          },
+          {
+            "name": "trg_approval_gate_ins",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_approval_gate_ins BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()"
+          },
+          {
+            "name": "trg_approval_gate_upd",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_approval_gate_upd BEFORE UPDATE OF status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()"
+          },
+          {
+            "name": "trg_audit_club_join",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_audit_club_join AFTER INSERT OR UPDATE OF status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_entry_mutation()"
+          },
+          {
+            "name": "trg_audit_club_member_delete",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_audit_club_member_delete AFTER DELETE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_member_change()"
+          },
+          {
+            "name": "trg_audit_club_member_update",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_audit_club_member_update AFTER UPDATE OF role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_member_change()"
+          },
+          {
+            "name": "trg_block_browser_balance_inserts",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_block_browser_balance_inserts BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_inserts()"
+          },
+          {
+            "name": "trg_block_browser_balance_writes",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_block_browser_balance_writes BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_writes()"
+          },
+          {
+            "name": "trg_ca_autoledger",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF promo_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('promo_balance=promo_wallet')"
+          },
+          {
+            "name": "trg_ca_autoledger_delete",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('chip_balance=player_wallet', 'promo_balance=promo_wallet')"
+          },
+          {
+            "name": "trg_ca_autoledger_insert",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON public.club_members FOR EACH ROW WHEN (((COALESCE(new.chip_balance, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.promo_balance, (0)::numeric) <> (0)::numeric))) EXECUTE FUNCTION fn_ca_autoledger('chip_balance=player_wallet', 'promo_balance=promo_wallet')"
+          },
+          {
+            "name": "trg_club_member_notes_guard",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_member_notes_guard BEFORE UPDATE OF nickname, notes ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_club_member_notes_guard()"
+          },
+          {
+            "name": "trg_club_members_audit_chip_movement",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_audit_chip_movement AFTER UPDATE OF chip_balance ON public.club_members FOR EACH ROW WHEN ((old.chip_balance IS DISTINCT FROM new.chip_balance)) EXECUTE FUNCTION fn_club_members_ledger_writer()"
+          },
+          {
+            "name": "trg_club_members_bot_follows_horse",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_bot_follows_horse BEFORE INSERT OR UPDATE OF user_id, is_bot ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_bot_follows_horse()"
+          },
+          {
+            "name": "trg_club_members_emit_management_access",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_emit_management_access AFTER INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_emit_management_access_event()"
+          },
+          {
+            "name": "trg_club_members_guard_lifecycle_write",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_guard_lifecycle_write BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_membership_lifecycle_write()"
+          },
+          {
+            "name": "trg_club_members_human_user_club_only",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id, is_bot ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()"
+          },
+          {
+            "name": "trg_club_members_level_sync",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_level_sync AFTER INSERT OR DELETE OR UPDATE OF role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION trg_auto_recompute_club_level()"
+          },
+          {
+            "name": "trg_club_members_no_agent_cycle_ins",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_ins BEFORE INSERT ON public.club_members FOR EACH ROW WHEN ((new.agent_id IS NOT NULL)) EXECUTE FUNCTION fn_club_members_no_agent_cycle()"
+          },
+          {
+            "name": "trg_club_members_no_agent_cycle_upd",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_upd BEFORE UPDATE OF agent_id ON public.club_members FOR EACH ROW WHEN (((new.agent_id IS NOT NULL) AND (new.agent_id IS DISTINCT FROM old.agent_id))) EXECUTE FUNCTION fn_club_members_no_agent_cycle()"
+          },
+          {
+            "name": "trg_club_members_require_explicit_join",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_require_explicit_join BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_require_explicit_club_membership_source()"
+          },
+          {
+            "name": "trg_club_members_role_guard",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_role_guard BEFORE UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_role_guard()"
+          },
+          {
+            "name": "trg_club_members_staff_earn_no_rakeback",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_members_staff_earn_no_rakeback BEFORE INSERT OR UPDATE ON public.club_members FOR EACH ROW WHEN (((new.role = ANY (ARRAY['co_owner'::text, 'admin'::text])) AND ((COALESCE(new.player_rakeback_pct, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.rakeback_rate, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.commission_rate, (0)::numeric) <> (0)::numeric)))) EXECUTE FUNCTION fn_club_members_staff_earn_no_rakeback()"
+          },
+          {
+            "name": "trg_deep_stack_members_are_protected",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_deep_stack_members_are_protected BEFORE DELETE ON public.club_members FOR EACH ROW WHEN ((old.club_id = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid)) EXECUTE FUNCTION fn_deep_stack_society_cannot_be_deleted_by_accident()"
+          },
+          {
+            "name": "trg_four_club_limit_ins",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_four_club_limit_ins BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()"
+          },
+          {
+            "name": "trg_four_club_limit_upd",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_four_club_limit_upd BEFORE UPDATE OF status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()"
+          },
+          {
+            "name": "trg_guard_retired_club_mutation",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+          },
+          {
+            "name": "trg_membership_starts_with_zero_chips",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_membership_starts_with_zero_chips BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_starts_with_zero_chips()"
+          },
+          {
+            "name": "trg_recompute_club_level_on_member_change",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_recompute_club_level_on_member_change AFTER INSERT OR DELETE OR UPDATE OF role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_recompute_club_level_on_member_change()"
+          },
+          {
+            "name": "trg_sync_agent_player_counts",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_sync_agent_player_counts AFTER INSERT OR DELETE OR UPDATE OF agent_id, club_id, is_active ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_agent_player_counts()"
+          },
+          {
+            "name": "trg_sync_club_member_count",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_sync_club_member_count AFTER INSERT OR DELETE OR UPDATE OF status, club_id, role ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_club_member_count()"
+          },
+          {
+            "name": "trg_sync_mfa_required_on_club_role",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_sync_mfa_required_on_club_role AFTER INSERT OR UPDATE OF role, user_id ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_mfa_required_on_club_role()"
+          },
+          {
+            "name": "zz_freeze_guard",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('chip_balance')"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "chk_held_chips_is_two_decimal_places",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK (((held_chips IS NULL) OR (held_chips = round(held_chips, 2))))"
+          },
+          {
+            "name": "club_members_agent_id_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (agent_id) REFERENCES profiles(id) ON DELETE SET NULL"
+          },
+          {
+            "name": "club_members_bot_house_only",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK (((NOT COALESCE(is_bot, false)) OR fn_ca_house_board_allows_automation(club_id)))"
+          },
+          {
+            "name": "club_members_chip_balance_nonneg",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((chip_balance >= (0)::numeric))"
+          },
+          {
+            "name": "club_members_club_id_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+          },
+          {
+            "name": "club_members_membership_lifecycle_check",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((membership_lifecycle_status = ANY (ARRAY['active'::text, 'departed'::text])))"
+          },
+          {
+            "name": "club_members_pkey",
+            "type": "p",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "PRIMARY KEY (club_id, user_id)"
+          },
+          {
+            "name": "club_members_profiles_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+          },
+          {
+            "name": "club_members_promo_balance_nonneg",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((promo_balance >= (0)::numeric))"
+          },
+          {
+            "name": "club_members_role_check",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text, 'super_agent'::text, 'agent'::text, 'sub_agent'::text, 'player'::text])))"
+          }
+        ],
+        "effective_privileges": {
+          "anon": {
+            "table": {
+              "DELETE": false,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": false,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          },
+          "service_role": {
+            "table": {
+              "DELETE": true,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": true,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          },
+          "authenticated": {
+            "table": {
+              "DELETE": false,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": false,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          }
+        }
+      },
+      {
+        "acl": [
+          "postgres=arwdDxtm/postgres",
+          "anon=arwxtm/postgres",
+          "authenticated=arwxtm/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
+        "rls": true,
+        "kind": "r",
+        "name": "clubs",
+        "owner": "postgres",
+        "columns": [
+          {
+            "acl": null,
+            "name": "id",
+            "type": "uuid",
+            "default": "uuid_generate_v4()",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "name",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "description",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "owner_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "is_union",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "club_id",
+            "type": "integer",
+            "default": "(((10000)::double precision + floor((random() * (90000)::double precision))))::integer",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "avatar_url",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "is_public",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "requires_approval",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "gps_restricted",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "settings",
+            "type": "jsonb",
+            "default": "'{\"rake_cap\": 15, \"max_buy_in_bb\": 200, \"min_buy_in_bb\": 40, \"allow_straddle\": true, \"time_bank_seconds\": 30, \"allow_run_it_twice\": true, \"default_rake_percent\": 5}'::jsonb",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "updated_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "union_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "color_theme",
+            "type": "text",
+            "default": "'royal-blue'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "slug",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "chip_treasury",
+            "type": "numeric(18,2)",
+            "default": "100000",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "total_rake",
+            "type": "numeric(18,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "online_count",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "game_types",
+            "type": "text[]",
+            "default": "ARRAY['NLH'::text]",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "member_count",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "table_count",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "promo_balance",
+            "type": "numeric(14,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "code",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "rake_percent",
+            "type": "numeric(5,2)",
+            "default": "5.0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "rake_cap_bb",
+            "type": "numeric(8,2)",
+            "default": "3.0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "max_tables",
+            "type": "integer",
+            "default": "20",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "max_members",
+            "type": "integer",
+            "default": "500",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "status",
+            "type": "text",
+            "default": "'active'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "hands_played",
+            "type": "bigint",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "logo_url",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "banner_url",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "game_variants",
+            "type": "text[]",
+            "default": "ARRAY['nlh'::text]",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "settlement_locked",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "settlement_locked_until",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "auto_settlement_enabled",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "auto_settlement_day",
+            "type": "text",
+            "default": "'monday'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "auto_settlement_hour",
+            "type": "integer",
+            "default": "10",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "club_commission_rate",
+            "type": "numeric(5,4)",
+            "default": "0.9000",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "insurance_balance",
+            "type": "numeric(14,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "bbj_enabled",
+            "type": "boolean",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "player_level",
+            "type": "integer",
+            "default": "1",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "hierarchy_level",
+            "type": "integer",
+            "default": "1",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "level",
+            "type": "integer",
+            "default": "1",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "player_threshold_current",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "player_threshold_next",
+            "type": "integer",
+            "default": "30",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "hierarchy_units",
+            "type": "numeric(10,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "hierarchy_units_rounded_up",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "hierarchy_threshold_current",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "hierarchy_threshold_next",
+            "type": "integer",
+            "default": "2",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "tags",
+            "type": "text[]",
+            "default": "'{}'::text[]",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "average_rating",
+            "type": "numeric(3,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "game_type",
+            "type": "text",
+            "default": "'Texas Holdem'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "settlement_lock_until",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "card_image_url",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "active_players",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "default_rake_percent",
+            "type": "numeric(5,2)",
+            "default": "'-1'::integer",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "rake_cap",
+            "type": "numeric(18,4)",
+            "default": "'-1'::integer",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "min_buyin_bb",
+            "type": "integer",
+            "default": "20",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "max_buyin_bb",
+            "type": "integer",
+            "default": "200",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "allow_straddle",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "allow_run_it_twice",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "allow_rabbit_hunt",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "logo",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "is_private",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "min_buy_in",
+            "type": "numeric(18,4)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "max_buy_in",
+            "type": "numeric(18,4)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "default_game_type",
+            "type": "text",
+            "default": "'NLHE'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "allow_insurance",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "auto_approve_agents",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "auto_settlement",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "active_tables",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "admin_count",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "super_agent_count",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "agent_count",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "chip_pool",
+            "type": "numeric(18,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "bbj_rake_enabled",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "spins_enabled",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "spins_preseed_amount",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "spins_wallet_funding",
+            "type": "text",
+            "default": "'PROMO'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "ticker_enabled",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "guarantee_treasury_floor",
+            "type": "numeric",
+            "default": "0",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "guarantee_enforcement_enabled",
+            "type": "boolean",
+            "default": "true",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "tagline",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "opening_checklist_started_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "lobby_message",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "lobby_message_updated_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "message_revision",
+            "type": "bigint",
+            "default": "1",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "lifecycle_status",
+            "type": "text",
+            "default": "'active'::text",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "retired_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "retired_by",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "retirement_reason",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "asset",
+            "type": "text",
+            "default": "'chips'::text",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "is_platform",
+            "type": "boolean",
+            "default": "false",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          }
+        ],
+        "policies": [
+          {
+            "cmd": "SELECT",
+            "qual": "true",
+            "roles": [
+              "public"
+            ],
+            "tablename": "clubs",
+            "permissive": "PERMISSIVE",
+            "policyname": "Anyone can view clubs",
+            "schemaname": "public",
+            "with_check": null
+          },
+          {
+            "cmd": "INSERT",
+            "qual": null,
+            "roles": [
+              "authenticated"
+            ],
+            "tablename": "clubs",
+            "permissive": "PERMISSIVE",
+            "policyname": "Authenticated users can create clubs",
+            "schemaname": "public",
+            "with_check": "(owner_id = ( SELECT auth.uid() AS uid))"
+          },
+          {
+            "cmd": "UPDATE",
+            "qual": "(owner_id = ( SELECT auth.uid() AS uid))",
+            "roles": [
+              "authenticated"
+            ],
+            "tablename": "clubs",
+            "permissive": "PERMISSIVE",
+            "policyname": "Owners can update clubs",
+            "schemaname": "public",
+            "with_check": "(owner_id = ( SELECT auth.uid() AS uid))"
+          }
+        ],
+        "triggers": [
+          {
+            "name": "clubs_updated_at",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER clubs_updated_at BEFORE UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()"
+          },
+          {
+            "name": "diamond_game_club_reserves",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER diamond_game_club_reserves BEFORE UPDATE OF promo_balance, chip_treasury ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_diamond_game_reserved_cover_guard()"
+          },
+          {
+            "name": "poker_arena_identity_guard",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER poker_arena_identity_guard BEFORE INSERT OR UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()"
+          },
+          {
+            "name": "trg_audit_club_created",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_audit_club_created AFTER INSERT ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_audit_club_entry_mutation()"
+          },
+          {
+            "name": "trg_audit_club_delete",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_audit_club_delete BEFORE DELETE ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_audit_club_delete()"
+          },
+          {
+            "name": "trg_audit_club_settings",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_audit_club_settings AFTER UPDATE ON public.clubs FOR EACH ROW WHEN (((old.name IS DISTINCT FROM new.name) OR (old.description IS DISTINCT FROM new.description) OR (old.is_public IS DISTINCT FROM new.is_public) OR (old.requires_approval IS DISTINCT FROM new.requires_approval) OR (old.default_rake_percent IS DISTINCT FROM new.default_rake_percent) OR (old.rake_cap IS DISTINCT FROM new.rake_cap) OR (old.allow_straddle IS DISTINCT FROM new.allow_straddle) OR (old.allow_run_it_twice IS DISTINCT FROM new.allow_run_it_twice) OR (old.allow_rabbit_hunt IS DISTINCT FROM new.allow_rabbit_hunt) OR (old.min_buyin_bb IS DISTINCT FROM new.min_buyin_bb) OR (old.max_buyin_bb IS DISTINCT FROM new.max_buyin_bb) OR (old.logo_url IS DISTINCT FROM new.logo_url) OR (old.bbj_rake_enabled IS DISTINCT FROM new.bbj_rake_enabled) OR (old.spins_enabled IS DISTINCT FROM new.spins_enabled) OR (old.spins_preseed_amount IS DISTINCT FROM new.spins_preseed_amount) OR (old.spins_wallet_funding IS DISTINCT FROM new.spins_wallet_funding))) EXECUTE FUNCTION fn_audit_club_settings_change()"
+          },
+          {
+            "name": "trg_autocreate_club_social_page",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_autocreate_club_social_page AFTER INSERT ON public.clubs FOR EACH ROW EXECUTE FUNCTION trg_fn_autocreate_club_social_page()"
+          },
+          {
+            "name": "trg_block_browser_treasury_writes",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_block_browser_treasury_writes BEFORE UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_writes()"
+          },
+          {
+            "name": "trg_ca_autoledger",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF chip_treasury, chip_pool, promo_balance, insurance_balance ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('chip_treasury=club_treasury', 'chip_pool=club_treasury', 'promo_balance=promo_wallet', 'insurance_balance=insurance_bank')"
+          },
+          {
+            "name": "trg_ca_autoledger_delete",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('chip_treasury=club_treasury', 'chip_pool=club_treasury', 'promo_balance=promo_wallet', 'insurance_balance=insurance_bank')"
+          },
+          {
+            "name": "trg_ca_club_gets_a_baseline",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_ca_club_gets_a_baseline AFTER INSERT ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_ca_club_gets_a_baseline()"
+          },
+          {
+            "name": "trg_club_identity_emit_management_event",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_identity_emit_management_event AFTER UPDATE OF tagline, lobby_message, description ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_emit_management_content_event()"
+          },
+          {
+            "name": "trg_club_owner_emit_management_access",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_owner_emit_management_access AFTER UPDATE OF owner_id ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_emit_club_union_access_event()"
+          },
+          {
+            "name": "trg_club_owner_has_a_player_wallet",
+            "enabled": "O",
+            "definition": "CREATE CONSTRAINT TRIGGER trg_club_owner_has_a_player_wallet AFTER INSERT OR UPDATE ON public.clubs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_club_owner_has_a_player_wallet()"
+          },
+          {
+            "name": "trg_club_union_emit_management_access",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_club_union_emit_management_access AFTER UPDATE OF union_id ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_emit_club_union_access_event()"
+          },
+          {
+            "name": "trg_clubs_guard_lifecycle_write",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_clubs_guard_lifecycle_write BEFORE DELETE OR UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_guard_club_lifecycle_write()"
+          },
+          {
+            "name": "trg_clubs_lobby_message_keeps_its_own_books",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_clubs_lobby_message_keeps_its_own_books BEFORE INSERT OR UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_clubs_lobby_message_keeps_its_own_books()"
+          },
+          {
+            "name": "trg_clubs_protect_level_columns",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_clubs_protect_level_columns BEFORE UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION trg_protect_club_level_columns()"
+          },
+          {
+            "name": "trg_delete_club_social_page",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_delete_club_social_page AFTER DELETE ON public.clubs FOR EACH ROW EXECUTE FUNCTION trg_fn_delete_club_social_page()"
+          },
+          {
+            "name": "trg_guard_clubs_chip_pool_ins",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_guard_clubs_chip_pool_ins BEFORE INSERT ON public.clubs FOR EACH ROW WHEN (((new.chip_pool IS NOT NULL) AND (new.chip_pool <> (0)::numeric))) EXECUTE FUNCTION guard_wallet_balance_write()"
+          },
+          {
+            "name": "trg_guard_clubs_chip_pool_upd",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_guard_clubs_chip_pool_upd BEFORE UPDATE OF chip_pool ON public.clubs FOR EACH ROW WHEN ((new.chip_pool IS DISTINCT FROM old.chip_pool)) EXECUTE FUNCTION guard_wallet_balance_write()"
+          },
+          {
+            "name": "trg_mark_new_club_opening_checklist",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_mark_new_club_opening_checklist BEFORE INSERT ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_mark_new_club_opening_checklist()"
+          },
+          {
+            "name": "trg_new_club_gets_the_ladder",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_new_club_gets_the_ladder AFTER INSERT ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_new_club_gets_the_ladder()"
+          },
+          {
+            "name": "trg_record_new_club_opening_bank",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_record_new_club_opening_bank AFTER INSERT ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_record_new_club_opening_bank()"
+          },
+          {
+            "name": "trg_seed_new_club_opening_bank",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_seed_new_club_opening_bank BEFORE INSERT ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_seed_new_club_opening_bank()"
+          },
+          {
+            "name": "trg_spin_pool_follows_union_membership",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_spin_pool_follows_union_membership AFTER UPDATE OF union_id ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_spin_pool_follows_union_membership()"
+          },
+          {
+            "name": "trg_sync_mfa_required_on_club_owner",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_sync_mfa_required_on_club_owner AFTER INSERT OR UPDATE OF owner_id ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_sync_mfa_required_on_club_owner()"
+          },
+          {
+            "name": "trg_union_totals_follow_club_counts",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_union_totals_follow_club_counts AFTER UPDATE ON public.clubs REFERENCING OLD TABLE AS oldrows NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION fn_union_totals_follow_club_counts()"
+          },
+          {
+            "name": "zz_freeze_guard",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER zz_freeze_guard BEFORE UPDATE ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('chip_pool', 'total_rake')"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "clubs_asset_known",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text])))"
+          },
+          {
+            "name": "clubs_chip_pool_nonneg",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((chip_pool >= (0)::numeric))"
+          },
+          {
+            "name": "clubs_chip_treasury_nonneg",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((chip_treasury >= (0)::numeric))"
+          },
+          {
+            "name": "clubs_club_id_key",
+            "type": "u",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "UNIQUE (club_id)"
+          },
+          {
+            "name": "clubs_default_rake_percent_range",
+            "type": "c",
+            "deferred": false,
+            "validated": false,
+            "deferrable": false,
+            "definition": "CHECK (((default_rake_percent IS NULL) OR (default_rake_percent = ('-1'::integer)::numeric) OR ((default_rake_percent >= (0)::numeric) AND (default_rake_percent <= (10)::numeric)))) NOT VALID"
+          },
+          {
+            "name": "clubs_description_character_limit",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((char_length(COALESCE(description, ''::text)) <= 500))"
+          },
+          {
+            "name": "clubs_insurance_balance_nonneg",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((insurance_balance >= (0)::numeric))"
+          },
+          {
+            "name": "clubs_lifecycle_status_check",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((lifecycle_status = ANY (ARRAY['active'::text, 'retired'::text])))"
+          },
+          {
+            "name": "clubs_lobby_message_character_limit",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((char_length(COALESCE(lobby_message, ''::text)) <= 240))"
+          },
+          {
+            "name": "clubs_message_revision_positive",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((message_revision > 0))"
+          },
+          {
+            "name": "clubs_name_not_blank",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((btrim(name) <> ''::text))"
+          },
+          {
+            "name": "clubs_owner_id_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (owner_id) REFERENCES profiles(id)"
+          },
+          {
+            "name": "clubs_pkey",
+            "type": "p",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "PRIMARY KEY (id)"
+          },
+          {
+            "name": "clubs_promo_balance_nonneg",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((promo_balance >= (0)::numeric))"
+          },
+          {
+            "name": "clubs_rake_cap_range",
+            "type": "c",
+            "deferred": false,
+            "validated": false,
+            "deferrable": false,
+            "definition": "CHECK (((rake_cap IS NULL) OR (rake_cap = ('-1'::integer)::numeric) OR ((rake_cap >= (0)::numeric) AND (rake_cap <= (10)::numeric)))) NOT VALID"
+          },
+          {
+            "name": "clubs_retired_by_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (retired_by) REFERENCES auth.users(id) ON DELETE SET NULL"
+          },
+          {
+            "name": "clubs_tagline_character_limit",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((char_length(COALESCE(tagline, ''::text)) <= 72))"
+          },
+          {
+            "name": "clubs_tagline_length",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK (((tagline IS NULL) OR (char_length(tagline) <= 72)))"
+          },
+          {
+            "name": "clubs_union_id_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (union_id) REFERENCES unions(id)"
+          },
+          {
+            "name": "poker_arena_diamond_identity",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((((asset = 'chips'::text) AND (NOT is_platform)) OR ((asset = 'diamonds'::text) AND is_platform AND (union_id IS NULL) AND (NOT COALESCE(is_union, false)) AND (COALESCE(chip_treasury, (0)::numeric) = (0)::numeric) AND (COALESCE(chip_pool, (0)::numeric) = (0)::numeric) AND (COALESCE(promo_balance, (0)::numeric) = (0)::numeric) AND (COALESCE(insurance_balance, (0)::numeric) = (0)::numeric))))"
+          },
+          {
+            "name": "trg_club_owner_has_a_player_wallet",
+            "type": "t",
+            "deferred": true,
+            "validated": true,
+            "deferrable": true,
+            "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+          }
+        ],
+        "effective_privileges": {
+          "anon": {
+            "table": {
+              "DELETE": false,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": false,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          },
+          "service_role": {
+            "table": {
+              "DELETE": true,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": true,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          },
+          "authenticated": {
+            "table": {
+              "DELETE": false,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": false,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          }
+        }
+      },
+      {
+        "acl": [
+          "postgres=arwdDxtm/postgres",
+          "anon=rxt/postgres",
+          "authenticated=rxt/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
+        "rls": true,
+        "kind": "r",
+        "name": "settlement_periods",
+        "owner": "postgres",
+        "columns": [
+          {
+            "acl": null,
+            "name": "id",
+            "type": "uuid",
+            "default": "gen_random_uuid()",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "club_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "union_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "period_number",
+            "type": "integer",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "year",
+            "type": "integer",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "start_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "end_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "status",
+            "type": "text",
+            "default": "'open'::text",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "total_rake_collected",
+            "type": "numeric(15,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "total_bbj_contributions",
+            "type": "numeric(15,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "total_player_winnings",
+            "type": "numeric(15,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "total_player_losses",
+            "type": "numeric(15,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "total_hands_dealt",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "settled_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "settled_by",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "updated_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "total_commissions_paid",
+            "type": "numeric(12,2)",
+            "default": "0",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "notes",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "seated_stack_snapshot",
+            "type": "numeric",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          }
+        ],
+        "policies": [
+          {
+            "cmd": "SELECT",
+            "qual": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = settlement_periods.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid)) AND (cm.role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text, 'agent'::text])))))",
+            "roles": [
+              "public"
+            ],
+            "tablename": "settlement_periods",
+            "permissive": "PERMISSIVE",
+            "policyname": "settlement_read",
+            "schemaname": "public",
+            "with_check": null
+          },
+          {
+            "cmd": "ALL",
+            "qual": "true",
+            "roles": [
+              "service_role"
+            ],
+            "tablename": "settlement_periods",
+            "permissive": "PERMISSIVE",
+            "policyname": "settlement_svc",
+            "schemaname": "public",
+            "with_check": null
+          },
+          {
+            "cmd": "SELECT",
+            "qual": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
+            "roles": [
+              "authenticated"
+            ],
+            "tablename": "settlement_periods",
+            "permissive": "PERMISSIVE",
+            "policyname": "union_overseer_read",
+            "schemaname": "public",
+            "with_check": null
+          }
+        ],
+        "triggers": [
+          {
+            "name": "trg_guard_retired_club_mutation",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.settlement_periods FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+          },
+          {
+            "name": "zz_closed_period_is_immutable",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER zz_closed_period_is_immutable BEFORE DELETE OR UPDATE ON public.settlement_periods FOR EACH ROW EXECUTE FUNCTION zz_closed_period_is_immutable()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "settlement_periods_club_id_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+          },
+          {
+            "name": "settlement_periods_pkey",
+            "type": "p",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "PRIMARY KEY (id)"
+          },
+          {
+            "name": "settlement_periods_status_check",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'processing'::text, 'settled'::text, 'disputed'::text, 'closed'::text])))"
+          },
+          {
+            "name": "settlement_periods_union_id_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+          }
+        ],
+        "effective_privileges": {
+          "anon": {
+            "table": {
+              "DELETE": false,
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "TRIGGER": true,
+              "MAINTAIN": false,
+              "TRUNCATE": false,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": true
+            }
+          },
+          "service_role": {
+            "table": {
+              "DELETE": true,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": true,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          },
+          "authenticated": {
+            "table": {
+              "DELETE": false,
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "TRIGGER": true,
+              "MAINTAIN": false,
+              "TRUNCATE": false,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": true
+            }
+          }
+        }
+      },
+      {
+        "acl": [
+          "postgres=arwdDxtm/postgres",
+          "service_role=arwdDxtm/postgres",
+          "authenticated=r/postgres"
+        ],
+        "rls": true,
+        "kind": "r",
+        "name": "union_accounting_runs",
+        "owner": "postgres",
+        "columns": [
+          {
+            "acl": null,
+            "name": "union_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "period_start",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "period_end",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "scheduled_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "status",
+            "type": "text",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "attempts",
+            "type": "integer",
+            "default": "0",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "started_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "finished_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "result",
+            "type": "jsonb",
+            "default": "'{}'::jsonb",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          }
+        ],
+        "policies": [
+          {
+            "cmd": "SELECT",
+            "qual": "ca_can_oversee_union(union_id)",
+            "roles": [
+              "authenticated"
+            ],
+            "tablename": "union_accounting_runs",
+            "permissive": "PERMISSIVE",
+            "policyname": "union_accounting_runs_scoped_read",
+            "schemaname": "public",
+            "with_check": null
+          }
+        ],
+        "triggers": null,
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "union_accounting_runs_attempts_check",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((attempts >= 0))"
+          },
+          {
+            "name": "union_accounting_runs_check",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((isfinite(period_start) AND isfinite(period_end) AND (period_start < period_end)))"
+          },
+          {
+            "name": "union_accounting_runs_pkey",
+            "type": "p",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "PRIMARY KEY (union_id, period_start, period_end)"
+          },
+          {
+            "name": "union_accounting_runs_status_check",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((status = ANY (ARRAY['running'::text, 'complete'::text, 'failed'::text])))"
+          }
+        ],
+        "effective_privileges": {
+          "anon": {
+            "table": {
+              "DELETE": false,
+              "INSERT": false,
+              "SELECT": false,
+              "UPDATE": false,
+              "TRIGGER": false,
+              "MAINTAIN": false,
+              "TRUNCATE": false,
+              "REFERENCES": false
+            },
+            "any_column": {
+              "INSERT": false,
+              "SELECT": false,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          },
+          "service_role": {
+            "table": {
+              "DELETE": true,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": true,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          },
+          "authenticated": {
+            "table": {
+              "DELETE": false,
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "TRIGGER": false,
+              "MAINTAIN": false,
+              "TRUNCATE": false,
+              "REFERENCES": false
+            },
+            "any_column": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": false
+            }
+          }
+        }
+      },
+      {
+        "acl": [
+          "postgres=arwdDxtm/postgres",
+          "anon=rxt/postgres",
+          "authenticated=rxt/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
+        "rls": true,
+        "kind": "r",
+        "name": "union_admins",
+        "owner": "postgres",
+        "columns": [
+          {
+            "acl": null,
+            "name": "id",
+            "type": "uuid",
+            "default": "gen_random_uuid()",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "union_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "user_id",
+            "type": "uuid",
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "role",
+            "type": "text",
+            "default": "'union_admin'::text",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "permissions",
+            "type": "jsonb",
+            "default": "'{\"manage_clubs\": true, \"manage_settlements\": true}'::jsonb",
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "acl": null,
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          }
+        ],
+        "policies": [
+          {
+            "cmd": "SELECT",
+            "qual": "(user_id = ( SELECT auth.uid() AS uid))",
+            "roles": [
+              "public"
+            ],
+            "tablename": "union_admins",
+            "permissive": "PERMISSIVE",
+            "policyname": "union_admins_read",
+            "schemaname": "public",
+            "with_check": null
+          },
+          {
+            "cmd": "ALL",
+            "qual": "true",
+            "roles": [
+              "service_role"
+            ],
+            "tablename": "union_admins",
+            "permissive": "PERMISSIVE",
+            "policyname": "union_admins_svc",
+            "schemaname": "public",
+            "with_check": null
+          }
+        ],
+        "triggers": [
+          {
+            "name": "trg_union_admins_emit_management_access",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_union_admins_emit_management_access AFTER INSERT OR DELETE OR UPDATE ON public.union_admins FOR EACH ROW EXECUTE FUNCTION fn_emit_management_access_event()"
+          }
+        ],
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "fk_union_admins_user_id_profiles",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+          },
+          {
+            "name": "union_admins_pkey",
+            "type": "p",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "PRIMARY KEY (id)"
+          },
+          {
+            "name": "union_admins_role_check",
+            "type": "c",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "CHECK ((role = ANY (ARRAY['union_lead'::text, 'union_admin'::text])))"
+          },
+          {
+            "name": "union_admins_union_id_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+          },
+          {
+            "name": "union_admins_union_id_user_id_key",
+            "type": "u",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "UNIQUE (union_id, user_id)"
+          },
+          {
+            "name": "union_admins_user_id_fkey",
+            "type": "f",
+            "deferred": false,
+            "validated": true,
+            "deferrable": false,
+            "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+          }
+        ],
+        "effective_privileges": {
+          "anon": {
+            "table": {
+              "DELETE": false,
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "TRIGGER": true,
+              "MAINTAIN": false,
+              "TRUNCATE": false,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": true
+            }
+          },
+          "service_role": {
+            "table": {
+              "DELETE": true,
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "TRIGGER": true,
+              "MAINTAIN": true,
+              "TRUNCATE": true,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": true,
+              "SELECT": true,
+              "UPDATE": true,
+              "REFERENCES": true
+            }
+          },
+          "authenticated": {
+            "table": {
+              "DELETE": false,
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "TRIGGER": true,
+              "MAINTAIN": false,
+              "TRUNCATE": false,
+              "REFERENCES": true
+            },
+            "any_column": {
+              "INSERT": false,
+              "SELECT": true,
+              "UPDATE": false,
+              "REFERENCES": true
+            }
+          }
+        }
+      }
+    ],
+    "captured_at": "2026-09-15T05:32:26.673473+00:00",
+    "lock_timeout": "2s",
+    "role_authority": [
+      {
+        "role": "anon",
+        "super": false,
+        "inherit": true,
+        "bypass_rls": false,
+        "can_set_service": false,
+        "effective_service": false
+      },
+      {
+        "role": "authenticated",
+        "super": false,
+        "inherit": true,
+        "bypass_rls": false,
+        "can_set_service": false,
+        "effective_service": false
+      },
+      {
+        "role": "service_role",
+        "super": false,
+        "inherit": true,
+        "bypass_rls": true,
+        "can_set_service": true,
+        "effective_service": true
+      }
+    ],
+    "statement_timeout": "10s",
+    "transaction_read_only": "on",
+    "body_reference_functions": null,
+    "direct_function_dependents": null
+  }
+}

@@ -21,18 +21,34 @@
  *     person's earnings, and Dan's rule is that agents handle their own
  *     payouts."
  *
- * Every pin below is one of those. A control that reports success without
- * doing anything is worse than no control, because it stops anybody looking.
+ * The admin tab now shows only canonical club weekly summaries. Preserve the
+ * no-browser-payer law without requiring this club surface to read or expose
+ * individual commission claims. A summary is neither a claim button nor a
+ * balance inferred from the currently visible rows.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceMethod } from './helpers/sourceWindow';
 
 const SRC = readFileSync(join(__dirname, '..', 'src', 'pages', 'AdminDashboardPage.tsx'), 'utf8');
 // Comments describe the bug that was removed; they must not satisfy or defeat
 // a pin about the code.
 const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const TAB = sliceMethod(CODE, 'function SettlementsTab(');
+const SUMMARY = readFileSync(
+  join(__dirname, '..', 'src/components/accounting/ClubWeeklyAccountingSummary.tsx'),
+  'utf8'
+)
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '');
+const READER = readFileSync(
+  join(__dirname, '..', 'src/services/ClubWeeklyAccountingReader.ts'),
+  'utf8'
+)
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('the settlements tab does not write to the commission ledger', () => {
   /* THE LEDGER IS REACHED BY THREE NAMES (2026-09-08, phase 7). The table
@@ -41,8 +57,6 @@ describe('the settlements tab does not write to the commission ledger', () => {
      owed). Round 2 stopped stamping settled_at on 20260908025653, so this
      screen reads the view; a law that only knew the table's name would have
      gone vacuously green the moment it did. */
-  const LEDGER = /from\('(?:v_)?agent_commissions(?:_unsettled)?'\)/g;
-
   it('never deletes from the commission ledger', () => {
     expect(CODE).not.toMatch(
       /from\('(?:v_)?agent_commissions(?:_unsettled)?'\)[\s\S]{0,200}\.delete\(\)/
@@ -61,56 +75,80 @@ describe('the settlements tab does not write to the commission ledger', () => {
     expect(CODE).not.toMatch(/Mark All As Paid/);
   });
 
-  it('writes nothing at all to agent_commissions from the browser', () => {
-    // Read-only: RLS would refuse anything else, silently.
-    const calls = [
-      ...CODE.matchAll(/from\('(?:v_)?agent_commissions(?:_unsettled)?'\)([\s\S]{0,160})/g),
-    ];
-    expect(calls.length).toBeGreaterThan(0);
-    for (const [, tail] of calls) {
-      expect(tail).toMatch(/\.select\(/);
-      expect(tail).not.toMatch(/\.(delete|update|insert|upsert)\(/);
+  it('uses the real weekly summary without reading individual commissions or dispatching a payer', () => {
+    expect(TAB).toMatch(/<ClubWeeklyAccountingSummary\s+clubId=\{clubId\}\s*\/>/);
+    expect(CODE).toMatch(
+      /activeTab\s*===\s*'settlements'\s*&&\s*<SettlementsTab\s+clubId=\{clubId\}/
+    );
+    for (const source of [CODE, SUMMARY, READER]) {
+      expect(source).not.toMatch(/from\('(?:v_)?agent_commissions(?:_unsettled)?'\)/);
+    }
+    for (const source of [TAB, SUMMARY, READER]) {
+      expect(source).not.toMatch(/\.(delete|update|insert|upsert|rpc)\s*\(/);
     }
   });
 });
 
-describe('it tells the truth about what is owed instead', () => {
-  it('reads settled_at through the view that resolves BOTH payers', () => {
-    // settled_at on the bare table is only what fn_agent_claim_commission
-    // stamps. Since 20260908025653 round 2 pays a period and records it in
-    // agent_commission_settlements without stamping a single row, so the bare
-    // column reports money the union close already paid as still owed.
-    // v_agent_commissions resolves it: COALESCE(own stamp, settlement paid_at),
-    // plus settled_via naming which one paid.
-    expect(CODE).toMatch(/settled_at/);
-    expect(CODE).toMatch(/v_agent_commissions/);
-    expect(CODE).toMatch(/settled_via/);
+describe('it shows verified club weekly records rather than individual claims', () => {
+  it('queries only canonical summaries for the selected club and verifies their returned scope', () => {
+    expect(READER).toMatch(/CLUB_WEEKLY_INVOICE_TYPE\s*=\s*'club_weekly_accounting'/);
+    expect(READER).toMatch(
+      /\.from\('settlement_invoices'\)\s*\.select\(COLUMNS\)\s*\.eq\('club_id',\s*clubId\)\s*\.eq\('invoice_type',\s*CLUB_WEEKLY_INVOICE_TYPE\)/
+    );
+    expect(READER).toMatch(/value\.club_id\s*!==\s*clubId/);
+    expect(READER).toMatch(/value\.invoice_type\s*!==\s*CLUB_WEEKLY_INVOICE_TYPE/);
+    expect(READER).toMatch(/value\.summary_club_id\s*!==\s*clubId/);
+    expect(READER).toMatch(/value\.summary_period_id\s*!==\s*value\.period_id/);
   });
 
-  it('shows a status rather than an action', () => {
-    expect(CODE).toMatch(/Awaiting Claim/);
-    expect(CODE).toMatch(/Claimed/);
+  it('labels received, paid and retained summary amounts without exposing claim actions', () => {
+    expect(SUMMARY).toMatch(/<th>Rake Received<\/th>/);
+    expect(SUMMARY).toMatch(/<th>Rakeback Paid<\/th>/);
+    expect(SUMMARY).toMatch(/<th>Rake Retained<\/th>/);
+    expect(SUMMARY).toMatch(/formatWeeklyChips\(row\.rakeFunding\)/);
+    expect(SUMMARY).toMatch(/formatWeeklyChips\(row\.paidByClub\)/);
+    expect(SUMMARY).toMatch(/formatWeeklyChips\(row\.retainedByClub\)/);
+    expect(`${TAB}\n${SUMMARY}`).not.toMatch(
+      /Awaiting Claim|Mark Paid|Mark All As Paid|Fund The Bank/
+    );
   });
 
-  it('surfaces the club bank, which is the real blocker on a claim', () => {
-    // fn_agent_claim_commission refuses when chip_treasury < amount owed, and
-    // funding the bank is the one part of this an operator controls.
-    expect(CODE).toMatch(/chip_treasury/);
-    expect(CODE).toMatch(/Fund The Bank/);
+  it('bounds the visible issued records without presenting them as a current bank balance', () => {
+    expect(READER).toMatch(/CLUB_WEEKLY_STATEMENT_LIMIT\s*=\s*50/);
+    expect(SUMMARY).toMatch(
+      /readClubWeeklyStatements\(\{\s*clubId,\s*userId:\s*user\.id,\s*limit:\s*CLUB_WEEKLY_STATEMENT_LIMIT,\s*isCurrent:\s*current,?\s*\}\)/
+    );
+    expect(SUMMARY).toContain(
+      'Latest Up To {CLUB_WEEKLY_STATEMENT_LIMIT} Issued Weekly Summaries.'
+    );
+    expect(`${TAB}\n${SUMMARY}`).not.toMatch(/chip_treasury|bankBalance|\.reduce\(/);
   });
 
-  it('counts only unclaimed rows toward what the bank must cover', () => {
-    expect(CODE).toMatch(/filter\(\(c\) => !c\.settled_at\)/);
+  it('uses exact verified weekly funding, paid and retained amounts instead of summing claims', () => {
+    expect(READER).toContain('gross_amount::text,deductions::text,net_amount::text');
+    expect(READER).toMatch(/funding\s*=\s*cents\(value\.gross_amount\)/);
+    expect(READER).toMatch(/paid\s*=\s*cents\(value\.deductions\)/);
+    expect(READER).toMatch(/retained\s*=\s*cents\(value\.net_amount,\s*true\)/);
+    expect(READER).toMatch(/funding\s*-\s*paid\s*!==\s*retained/);
+    expect(READER).toMatch(/funding\s*!==\s*cents\(value\.total_rake_funding\)/);
+    expect(READER).toMatch(/paid\s*!==\s*cents\(value\.total_paid_by_club\)/);
+    expect(READER).toMatch(/retained\s*!==\s*cents\(value\.retained_by_club,\s*true\)/);
   });
 
-  it('never reports a balance it could not read as zero', () => {
-    /* A discarded error would make bankBalance 0 and put "the club bank
-       cannot cover what agents are owed" on the screen because we could not
-       ask. That is the same false alarm the fee reconciler raised 23 times on
-       2026-09-08, and the ratchet in discardedErrorReadRatchet.test.ts caught
-       this very line. Unknown must render as unknown. */
-    expect(CODE).toMatch(/error: bankErr/);
-    expect(CODE).toMatch(/bankErr \|\| clubRow == null \? null :/);
-    expect(CODE).toMatch(/Could Not Be Read/);
+  it('keeps unavailable reads distinct from an empty club history and fences stale responses', () => {
+    expect(READER).toMatch(
+      /if\s*\(error\)\s*throw new Error\('Weekly Statements Are Unavailable'\)/
+    );
+    expect(SUMMARY).toMatch(
+      /const current\s*=\s*\(\)\s*=>\s*scope\(\)\s*&&\s*sequence\.current\s*===\s*read/
+    );
+    expect(SUMMARY).toMatch(
+      /if\s*\(current\(\)\)\s*setObservation\(\{\s*scope,\s*read,\s*phase:\s*'unavailable',\s*rows:\s*\[\]\s*\}\)/
+    );
+    expect(SUMMARY).toMatch(
+      /unavailable\s*&&\s*\(?\s*<p\s+role="alert">\s*Weekly Summaries Are Unavailable/
+    );
+    expect(SUMMARY).toMatch(/!loading\s*&&\s*!unavailable\s*&&\s*current\?\.phase\s*===\s*'ready'/);
+    expect(SUMMARY).toContain('No Issued Weekly Summaries Were Found For This Club.');
   });
 });

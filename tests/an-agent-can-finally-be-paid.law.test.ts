@@ -183,33 +183,34 @@ describe('commission does not pay the debt down', () => {
   });
 });
 
-describe('the client stops lying and starts claiming', () => {
-  it('no longer calls the function that minted chips', () => {
-    expect(SERVICE).not.toMatch(/execute_commission_payout/);
-    expect(SERVICE).toMatch(/fn_agent_claim_commission/);
+// September 14, 2026: the user's single automatic Monday process supersedes
+// the August 31 manual claim UI. The historical SQL conservation pins above
+// remain relevant until the database owner retires that legacy RPC.
+describe('the client uses the single automatic weekly settlement path', () => {
+  it('contains no manual payout writer', () => {
+    expect(SERVICE).not.toMatch(
+      /execute_commission_payout|fn_agent_claim_commission|async claimCommission/
+    );
+    expect(jsCodeOnly(DASHBOARD)).not.toMatch(/claimPayout|claimCommission|Claim Commission/);
   });
 
-  it('loops with a fresh op_id per batch', () => {
-    const method = SERVICE.slice(SERVICE.indexOf('async claimCommission'));
-    expect(method).toMatch(/const opId = uuid\(\);/);
-    expect(method).toMatch(/if \(!result\.more\) break;/);
-    expect(method).toMatch(/MAX_BATCHES/);
-  });
-
-  it('reads what is owed from the ledger, not the column nothing writes', () => {
+  it('retains the authoritative unpaid balance reader', () => {
     expect(SERVICE).toMatch(/fn_agent_unsettled_commission/);
     expect(DASHBOARD).toMatch(/CommissionService\.unsettledCommission/);
+    expect(DASHBOARD).toMatch(/Unpaid Commission/);
+    expect(DASHBOARD).toMatch(/'Unavailable'/);
   });
 
-  it('the button claims instead of reassuring', () => {
-    expect(DASHBOARD).not.toMatch(/paid out automatically at the weekly settlement/);
-    expect(DASHBOARD).toMatch(/Claim Commission/);
-    expect(DASHBOARD).toMatch(/onClick=\{claimPayout\}/);
-    expect(DASHBOARD).toMatch(/disabled=\{claiming \|\| !clubId\}/);
+  it('shows the schedule without asserting that an unpaid transfer succeeded', () => {
+    expect(DASHBOARD).toMatch(/Automatic Weekly Settlement/);
+    expect(DASHBOARD).toMatch(/Every Monday At 4:00 AM Central Time/);
+    expect(DASHBOARD).toMatch(/Until A Verified Transfer Is Recorded/);
   });
 
-  it("shows the server's own refusal, which names the shortfall", () => {
-    const handler = DASHBOARD.slice(DASHBOARD.indexOf('const claimPayout'));
-    expect(handler).toMatch(/e instanceof Error \? e\.message/);
+  it('opens the selected club invoice tab through the existing platform bridge', () => {
+    expect(DASHBOARD).toMatch(/leaveForHub/);
+    expect(DASHBOARD).toMatch(/encodeURIComponent\(resolvedClubId\)/);
+    expect(DASHBOARD).toMatch(/&folder=invoices/);
+    expect(DASHBOARD).toMatch(/View Invoices/);
   });
 });

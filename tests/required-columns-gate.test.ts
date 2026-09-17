@@ -28,6 +28,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { pathToFileURL } from 'url';
+import { sliceMethod } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -125,8 +126,24 @@ describe('the two writes that were broken now supply what they must', () => {
 
   it('a credit request carries its club', () => {
     const src = read('src/services/CreditService.ts');
-    expect(src).toContain('club_id: account.clubId');
-    expect(src).toContain("select('id, user_id, club_id,");
-    expect(src).toContain('no club, so a credit request cannot be raised');
+    const account = sliceMethod(src, 'async getCreditAccount(');
+    const request = sliceMethod(src, 'async requestCreditIncrease(');
+    expect(account).toMatch(/\.select\(\s*'id, user_id, club_id,/);
+    expect(request).toMatch(
+      /!account\.clubId\s*\|\|\s*account\.userId\s*!==\s*actor\s*\|\|\s*account\.agentId\s*!==\s*agentId/
+    );
+    expect(request).toMatch(
+      /creditRequestService\s*\.submitRequest\(\s*actor,\s*\{\s*clubId:\s*account\.clubId,\s*approverId:\s*owner\.owner_id/
+    );
+    expect(request).not.toMatch(/\.from\('credit_requests'\)/);
+    const insert = sliceMethod(
+      read('src/services/CreditRequestService.ts'),
+      'async submitRequest('
+    );
+    expect(insert).toMatch(/!request\.clubId\s*\|\|/);
+    expect(insert).toMatch(
+      /\.from\('credit_requests'\)\s*\.insert\(\{\s*requester_id:\s*requesterId,\s*approver_id:\s*request\.approverId,\s*club_id:\s*request\.clubId,/
+    );
+    expect(insert).toMatch(/data\.club_id\s*!==\s*request\.clubId/);
   });
 });

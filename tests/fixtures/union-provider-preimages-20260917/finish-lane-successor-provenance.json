@@ -1,0 +1,145 @@
+{
+  "status": "EXACT_INSTALLED_SUCCESSOR_COMPOSITION_NATIVE_UNRUN",
+  "installed_migration": "20260917113717",
+  "maintained_migration": {
+    "path": "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql",
+    "sha256": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
+    "bytes": 28106
+  },
+  "incoming_source": {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-provider-preflight-20260917/incoming-finish-lane-4761.sql",
+    "sha256": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
+    "bytes": 28106
+  },
+  "maintained_migration_matches_incoming_bytes": true,
+  "captures": [
+    {
+      "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt",
+      "sha256": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
+      "bytes": 10638
+    },
+    {
+      "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt",
+      "sha256": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c",
+      "bytes": 1527
+    },
+    {
+      "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-seat-move-authority.raw.txt",
+      "sha256": "2ca4ebcb887713e661a2661833726cc80ef151c04d1a9185e616b5495c774781",
+      "bytes": 3237
+    }
+  ],
+  "fixture_files": [
+    {
+      "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-prerequisites.sql",
+      "sha256": "604e9f8cbdc0e89b15dcfb548f98eca15c4b2f41a6565e6b983a62cca5803870",
+      "bytes": 7217
+    },
+    {
+      "path": "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql",
+      "sha256": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
+      "bytes": 2665
+    }
+  ],
+  "installed_functions": [
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "58962520e072fe177eaa29809db909f3",
+      "identity": "fn_ca_lock_settlement_lane_for_finish(uuid)",
+      "proconfig": ["search_path=public, pg_temp"],
+      "anon_execute": false,
+      "definition_md5": "76e4c6b5291bab20f0cfc65dd060022b",
+      "security_definer": false,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    },
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "2270895ea61dfdfc47b2a17754c9de4a",
+      "identity": "fn_ca_lock_settlement_lane_global()",
+      "proconfig": ["search_path=public, pg_temp"],
+      "anon_execute": false,
+      "definition_md5": "7c759bb7a639c3124de2607bdbf12577",
+      "security_definer": false,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    },
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "36384d5eaef31083e0ee5424d814138d",
+      "identity": "fn_complete_tournament_terminal(uuid,uuid,text)",
+      "proconfig": ["search_path=public, pg_temp", "statement_timeout=45s"],
+      "anon_execute": false,
+      "definition_md5": "c64e049911fd99c1d784cdb042ca714b",
+      "security_definer": true,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    },
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "f4dbfcaed8d50d95183a0b3fa6a6c290",
+      "identity": "fn_resolve_tournament_terminal_outcome(uuid,uuid,text)",
+      "proconfig": ["search_path=public", "statement_timeout=45s"],
+      "anon_execute": false,
+      "definition_md5": "be748996b334541f84debbc2e9eb5457",
+      "security_definer": true,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    }
+  ],
+  "captured_dependencies": [
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "7a4d464261d6cc5cb185ad6c8b846440",
+      "identity": "fn_ca_share_settlement_lane_for_table(uuid)",
+      "proconfig": ["search_path=public, pg_temp"],
+      "anon_execute": false,
+      "definition_md5": "409b14ee72ce888d3b26524c52d49a68",
+      "security_definer": false,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    },
+    {
+      "owner": "postgres",
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+      "body_md5": "f00ad0e9a08496d96f6375cbf6f30678",
+      "identity": "fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)",
+      "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+      "anon_execute": false,
+      "definition_md5": "43c53a2b376cb28161584db487bfd17c",
+      "security_definer": true,
+      "service_role_execute": true,
+      "authenticated_execute": false
+    }
+  ],
+  "last_equivalent_full_union_run": {
+    "run_id": 35219096812,
+    "head": "038086f91cd0b78e96dc4aee324c25d20fc97fed",
+    "result": "success",
+    "boundary": "Pre-composition Union baseline; does not qualify the installed finish-lane successor."
+  },
+  "load_order": [
+    "finish-lane-prerequisites.sql",
+    "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql",
+    "finish-lane-installed-readback.sql",
+    "Union37 candidate"
+  ],
+  "transformations": [
+    "The maintained PR4761 migration runs byte-identically with every original precondition, postcondition and transaction. No Union component is edited.",
+    "The isolated prerequisite restores only two absent captured function definitions with exact owners, configurations and grants, then verifies full definition/body hashes and effective access.",
+    "The installed readback verifies all four maintained successor functions against the separate actual installed metadata. Raw evidence uses .raw.txt to preserve bytes through ordinary hooks.",
+    "The existing full-lifecycle-normal test observes actual G shared / F and target T exclusive locks after nested financial calls, refuses pre-held global exclusive locks, checks late-fault lock/setting rollback and replay/resolver locks. Existing financial checks and PASS notice count remain unchanged.",
+    "All original historical catalog/capture files remain unchanged."
+  ],
+  "limitations": [
+    "The captured seat-move resolver is included only to reproduce the migration catalog guard. Its separate fn_ca_tournament_seat_move_receipt dependency is absent in the historical fixture and this path is not invoked or qualified by the finish tests.",
+    "The normal fixture proves locks held by the actual composed call and subtransaction rollback; it does not newly qualify multi-session finish-versus-hand concurrency.",
+    "The earning fixture previously settles a satellite in the same transaction and already holds G/B exclusive; it keeps its existing financial assertions and is not claimed as evidence of narrower finish locking.",
+    "New SQL composition remains unrun until the existing required native job. No production mutation or new test phase was performed."
+  ]
+}

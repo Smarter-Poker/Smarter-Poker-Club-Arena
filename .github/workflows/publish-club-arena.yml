@@ -729,7 +729,7 @@ jobs:
             provenance &&
             !Array.isArray(provenance) &&
             provenance.schema === 1 &&
-            provenance.buildPurpose === 'release' &&
+            (!Object.prototype.hasOwnProperty.call(provenance, 'validationOnly') || provenance.validationOnly === false) &&
             provenance.commit === expectedSha &&
             provenance.builtBy === 'github-actions' &&
             provenance.dirty === false &&
@@ -924,8 +924,8 @@ jobs:
           require(type(build_info) is dict, 'release build-info is not one JSON object')
           require(type(provenance.get('schema')) is int and provenance['schema'] == 1,
                   'release provenance schema is invalid')
-          require(provenance.get('buildPurpose', 'release') == 'release',
-                  'PR validation artifacts cannot be published')
+          require('validationOnly' not in provenance or provenance['validationOnly'] is False,
+                  'CI validation bundles cannot be published')
           require(provenance.get('commit') == expected_sha,
                   'release provenance does not match its source SHA')
           require(provenance.get('builtBy') == 'github-actions',

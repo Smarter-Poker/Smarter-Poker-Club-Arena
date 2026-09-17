@@ -74,26 +74,8 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
       },
       500
     );
-    const unsubSettlement = masterBus.subscribeDebounced(
-      'SETTLEMENT_COMPLETED',
-      () => {
-        fetchWalletData();
-        fetchCommissionHistory();
-      },
-      500
-    );
-    const unsubCommission = masterBus.subscribeDebounced(
-      'COMMISSION_PAID',
-      () => {
-        fetchWalletData();
-        fetchCommissionHistory();
-      },
-      500
-    );
     return () => {
       unsubBalance();
-      unsubSettlement();
-      unsubCommission();
     };
   }, [agentId, user?.id]);
 

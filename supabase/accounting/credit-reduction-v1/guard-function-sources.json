@@ -1,0 +1,1221 @@
+[
+  {
+    "owner": "postgres",
+    "arguments": "p_user_id uuid, p_amount numeric, p_category text DEFAULT 'debit'::text, p_description text DEFAULT ''::text, p_table_id uuid DEFAULT NULL::uuid, p_hand_id uuid DEFAULT NULL::uuid, p_related_entity_id uuid DEFAULT NULL::uuid",
+    "result": "boolean",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, extensions, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.atomic_deduct_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "ab3d8e4c0baac59e7194319ffceba71e",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_agent_user_id uuid, p_club_id uuid, p_rake_credit numeric, p_source_type text DEFAULT 'rake_settlement'::text, p_source_id uuid DEFAULT NULL::uuid, p_notes text DEFAULT NULL::text",
+    "result": "void",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.credit_agent_commission_from_rake(uuid,uuid,numeric,text,uuid,text)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "supabase/accounting/weekly-v3/components/20260914145706_cash_compatibility_calls_share_durable_source_authority.sql literal final36 body",
+    "source_md5": "122cb6cb0d40450916640dfa60b8313d"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_accounting_agreement_capture()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "746fab25cd56f6ad761325e7c0d525d5",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_accounting_credit_document_on_insert()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "64b3c2467897361d25e4646613ca6b7d",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_agent_id uuid, p_status text DEFAULT NULL::text, p_role text DEFAULT NULL::text, p_credit_limit numeric DEFAULT NULL::numeric, p_commission_rate numeric DEFAULT NULL::numeric, p_player_rakeback_rate numeric DEFAULT NULL::numeric, p_assigned_by uuid DEFAULT NULL::uuid, p_credit_reason text DEFAULT NULL::text, p_is_prepaid boolean DEFAULT NULL::boolean",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, extensions"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_admin_update_agent(uuid,text,text,numeric,numeric,numeric,uuid,text,boolean)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "supabase/accounting/weekly-v3/components/20260914150500_agent_agreements_preserve_club_scope_and_atomic_role_changes.sql literal final36 body",
+    "source_md5": "d35ffecfde82d1d24582d95759ec4ed8"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_cashout_id uuid, p_agent_user_id uuid, p_agent_note text DEFAULT NULL::text",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, extensions"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": false,
+      "authenticated": false
+    },
+    "signature": "public.fn_agent_approve_cashout(uuid,uuid,text)",
+    "acl": [
+      "postgres=X/postgres"
+    ],
+    "full_definition_md5": "78e105b17122b2b7bdd9dfe3df0e8de6",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_transaction_id uuid, p_amount numeric DEFAULT NULL::numeric, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_agent_wallet_claim_back(uuid,uuid,numeric,text,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "31d05a227849bda2a1195594c57b90eb",
+    "basis": "retained 14:22:10.194019+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_transaction_id uuid, p_amount numeric DEFAULT NULL::numeric, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_agent_wallet_claim_back_phase2_core_20260831(uuid,uuid,numeric,text,uuid)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "29e28090d6d7316ff108918f5ca839f1",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_agent_wallet_send(uuid,uuid,numeric,text,text,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "0214036f29a6d121842496c91c7912af",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_agent_wallet_send_core_20260830(uuid,uuid,numeric,text,text,uuid)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "c6bb171c71aa0d6022296b29269a016b",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text DEFAULT 'player_wallet'::text, p_reason text DEFAULT NULL::text, p_op_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_agent_wallet_send_phase2_core_20260831(uuid,uuid,numeric,text,text,uuid)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "53ba478533aec762384aa9ac7d63a9b2",
+    "basis": "retained 14:22:10.194019+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_agents_staff_earn_no_rakeback()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "17346b77ec8f5a1d6d42dca3eb06e061",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_invoice_id uuid, p_amount numeric, p_method text",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_apply_credit_payment(uuid,numeric,text)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "5d01c2dda901644a473057a81dade2a9",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_agent_user_id uuid, p_super_agent_user_id uuid, p_club_id uuid",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_assign_agent_to_super_agent(uuid,uuid,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "13f6d2408d152e7d15a8b3b0bf113a9f",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_ca_autoledger()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "2ff8923b4c2d8fd3d343cf37acce0f2c",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_ca_autoledger_delete()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "c6d7e02df8b654fbccc3e8844418bd01",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_category text, p_from_type text, p_from_entity uuid, p_to_type text, p_to_entity uuid, p_amount numeric, p_club_id uuid, p_idempotency_key text, p_description text",
+    "result": "boolean",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_ca_post_leg(text,text,uuid,text,uuid,numeric,uuid,text,text)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "e6835ba26f6a2fc99c130a8b715c7866",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_ca_record_frozen_pool_deletion()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "09b843d7a8af627f91a9ff05708778b9",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_ca_reject_automated_user_club_row()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "7c73094df30c90f94a78cbbd5d24f504",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "boolean",
+    "language": "sql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=pg_catalog, public, auth"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_caller_is_engine()",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "d9a70f1d932538025e656bfe2b4d091d",
+    "basis": "retained 14:22:10.194019+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_user_id uuid DEFAULT NULL::uuid",
+    "result": "text",
+    "language": "sql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_club_bank_role(uuid,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "b36e67efcfaba2f867d62140322a8ed8",
+    "basis": "retained 14:22:10.194019+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_actor uuid, p_target uuid",
+    "result": "boolean",
+    "language": "sql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_club_cashier_can_transact(uuid,uuid,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "a812c44870554f37cddb36edf600e386",
+    "basis": "retained 14:22:10.194019+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_user_id uuid, p_role text, p_actor_user_id uuid DEFAULT NULL::uuid, p_commission_rate numeric DEFAULT NULL::numeric, p_player_rakeback_rate numeric DEFAULT NULL::numeric, p_is_prepaid boolean DEFAULT NULL::boolean, p_credit_limit numeric DEFAULT NULL::numeric",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_club_set_member_role(uuid,uuid,text,uuid,numeric,numeric,boolean,numeric)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "59e8df8dc16220b5bad8e5f2437241e7",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_user_id uuid, p_club_id uuid, p_role text, p_parent_agent_id uuid, p_commission_rate numeric, p_player_rakeback_rate numeric, p_credit_limit numeric, p_is_prepaid boolean",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, extensions"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_create_agent(uuid,uuid,text,uuid,numeric,numeric,numeric,boolean)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "supabase/accounting/weekly-v3/components/20260914150500_agent_agreements_preserve_club_scope_and_atomic_role_changes.sql literal final36 body",
+    "source_md5": "5a8b6509322398f374f210685056cc89"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_deep_stack_society_cannot_be_deleted_by_accident()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "213a7fa40330c703cb23dc001a99d31e",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_enforce_agent_commission_bounds()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "3e4f5df422b121391cc40f711ae5b5ee",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid, p_user_id uuid, p_role text",
+    "result": "uuid",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_ensure_agent_row(uuid,uuid,text)",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "3bd1e0aeed55ae8e56c9e28e8967ae2b",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_user_id uuid, p_club_id uuid",
+    "result": "boolean",
+    "language": "sql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_ensure_club_wallet(uuid,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "dd462a9943724d4b94fbe683ed364250",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "boolean",
+    "language": "sql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": true,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_freeze_bypass_active()",
+    "acl": [
+      "=X/postgres",
+      "anon=X/postgres",
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "2bfad412c70b965fd9d2c72b2ad83310",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_agent_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone, p_debt_owed numeric, p_due_date timestamp with time zone",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, extensions"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_generate_credit_invoice(uuid,timestamp with time zone,timestamp with time zone,numeric,timestamp with time zone)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "b0e4603b081f48ce1beb6963e0356c9a",
+    "basis": "retained 14:22:10.194019+00"
+  },
+  {
+    "signature": "public.fn_guard_agent_agreement()",
+    "arguments": "",
+    "result": "trigger",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "acl": [
+      "postgres=X/postgres"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    "source_md5": "68e43754262db190d0725388e6a7f8c7",
+    "basis": "supabase/accounting/weekly-v3/components/20260914150500_agent_agreements_preserve_club_scope_and_atomic_role_changes.sql literal staged definition; explicit grants"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_guard_retired_club_mutation()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "b82be212e7ccf2a15637c231861ff993",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_club_id uuid",
+    "result": "boolean",
+    "language": "sql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_is_club_admin_uid(uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "021940a1e457cf22312eb139d3d05267",
+    "basis": "retained 14:22:10.194019+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "boolean",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_is_platform_admin()",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "ed89787c7b832e76a886734e16a27c3d",
+    "basis": "retained 14:22:10.194019+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_notify_credit_request()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "basis": "supabase/accounting/weekly-v3/components/20260914164600_credit_request_reviews_share_one_credit_authority.sql literal final36 body",
+    "source_md5": "738087390791275a4cdece1527a149a5"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_invoice_id uuid, p_amount numeric",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_pay_credit_invoice_from_wallet(uuid,numeric)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "7c5e2861fde25856b1cce59b5119770e",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "boolean",
+    "language": "sql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": true,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_platform_frozen()",
+    "acl": [
+      "anon=X/postgres",
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "ec683805e052fceeae74789e82dce4cc",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_user_id uuid, p_club_hint uuid DEFAULT NULL::uuid",
+    "result": "uuid",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_player_home_club(uuid,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "bdced39339da2e5ec46404177bab7dc2",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_poker_reject_diamond_hierarchy()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "49037a2bf4322d2a327bc9141a7a7a89",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_invoice_id uuid, p_amount numeric, p_method text, p_operation_id uuid, p_reference text DEFAULT NULL::text",
+    "result": "jsonb",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_process_credit_invoice_payment(uuid,numeric,text,uuid,text)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "3c31d57d2c4f6ecdf388c5157f311e5a",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.fn_refuse_while_frozen()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "3a866372172806a8a69cc3d37413f0cc",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "signature": "public.fn_review_credit_request(uuid,text,numeric,text,uuid)",
+    "arguments": "p_request_id uuid, p_decision text, p_approved_amount numeric DEFAULT NULL::numeric, p_notes text DEFAULT NULL::text, p_expected_actor_id uuid DEFAULT NULL::uuid",
+    "result": "jsonb",
+    "owner": "postgres",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public",
+      "statement_timeout=30s"
+    ],
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "authenticated": true,
+      "service_role": true
+    },
+    "source_md5": "1e3ff399a303a90c56396a2d5586ba29",
+    "basis": "supabase/accounting/weekly-v3/components/20260914164600_credit_request_reviews_share_one_credit_authority.sql literal staged definition; explicit grants"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "p_user_id uuid, p_tournament_id uuid, p_preferred_club uuid DEFAULT NULL::uuid",
+    "result": "uuid",
+    "language": "plpgsql",
+    "security_definer": true,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "s",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": true
+    },
+    "signature": "public.fn_tournament_club_for_user(uuid,uuid,uuid)",
+    "acl": [
+      "authenticated=X/postgres",
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "344609ab3cf21094b9e85167bfb6655e",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, pg_temp"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.guard_agent_wallet_direct_update()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "736aa9e92265453c3015223562108141",
+    "basis": "retained 14:12:09.241743+00"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.guard_wallet_balance_write()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "2af2718d22fcf12be394f9239e88e3c7",
+    "basis": "retained payment closure14:41:34.710789+00; no final36 literal definition change"
+  },
+  {
+    "owner": "postgres",
+    "arguments": "",
+    "result": "trigger",
+    "language": "plpgsql",
+    "security_definer": false,
+    "strict": false,
+    "leakproof": false,
+    "volatility": "v",
+    "parallel": "u",
+    "config": [
+      "search_path=public, extensions"
+    ],
+    "effective_execute": {
+      "anon": false,
+      "service_role": true,
+      "authenticated": false
+    },
+    "signature": "public.sync_agent_wallet_columns()",
+    "acl": [
+      "postgres=X/postgres",
+      "service_role=X/postgres"
+    ],
+    "full_definition_md5": "3a3d351dd05b5dc13b525b7eb4635e5c",
+    "basis": "retained 14:12:09.241743+00"
+  }
+]

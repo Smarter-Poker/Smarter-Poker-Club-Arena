@@ -75,6 +75,7 @@ vi.mock('../../src/services/FinancialAlertService', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { FinancialCronService } from '../../src/services/FinancialCronService';
+import { supabase } from '../../src/lib/supabase';
 
 describe('FinancialCronService', () => {
   beforeEach(() => {
@@ -86,6 +87,14 @@ describe('FinancialCronService', () => {
   afterEach(() => {
     FinancialCronService.stop();
     vi.useRealTimers();
+  });
+
+  it('refuses the retired weekly payout without reading clubs or moving money', async () => {
+    await expect(FinancialCronService.settleAllClubRakebacks()).rejects.toThrow(
+      'Weekly Accounting Is Automatic'
+    );
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,9 @@
+{
+  "source_readback_only": true,
+  "sql_parsed": false,
+  "sql_executed": false,
+  "original_call_sites": 14,
+  "exact_side_guards": 14,
+  "old_assertions_retained": true,
+  "helper_unchanged": true
+}

@@ -1,0 +1,27 @@
+# Reviewed inert accounting source inputs
+
+These are not migrations or financial acceptance. The pure insurance helper cases are now wired into the existing `test_insurance.verify_insurance(run)` PostgreSQL probe, with the guard described below. No new runner or CI entrypoint is supplied. S7 and full FWP04 integration remain pending.
+
+`s7-0143/` preserves the complete Accounting0143 packet accepted by ProgramReview0186 and composed by Durability0140/0189. Its SEAL.json SHA256 is `b4bc39d9067c88c4ff9ceae084fc9483ef6c8d251d436dc93f47c2bf3b4e867f`.
+
+`insurance0145/` preserves the complete Accounting0145 packet accepted by ProgramReview0191. Its SEAL.json SHA256 is `80b0a8df4019ed8ca4da04ef48391b05ffe0308fc8c94b7503fbc73136ddecb3`. All49 structural vectors and predecessor regression remain unrun. The helper always returns accepted=false; its source references are not canonical producer custody.
+
+`predecessor0141/` retains only the original rejected helper definition and its original packet seal for the existing before/after regression. The seal references other original packet members that are intentionally not copied here; this directory is not a complete0141 packet. Do not install the rejected helper in application or production paths.
+
+Full FWP04/S7 integration must use the recovered original schema/fixture source contract. The compact chip-journal probe and service-only native smoke cannot substitute for that complete fixture. Do not fabricate missing schema authority or relax checks to make the full integration executable.
+
+Load order, once qualified within the original fixture: original schema/authority preconditions; private S7 definition and exact S7 cases; preserved insurance0141 and unchanged insurance0144 definition from0145; exact0145 cases and predecessor regression. Whether these units share a transaction must follow the original fixture contract, not this README. No automatic installation or dispatch is authorized by this order.
+
+S7 empty/duplicate-side controls remain designed but unrun: each applicable case site must refuse missing, duplicate or extra sides before selected-side assertions, including loop iterations. Preserve accepted source bytes and original detector; do not repeat the0090 omission experiment. Full constructor, actual ACLs, immutable producer joins, coverage, original j/q capture and funded behavior remain open.
+
+Original packet handoffs and dependency paths remain unchanged for provenance. Their historical execution restrictions do not supersede the current owner policy. This preparation does not require the stopped custom-native platform.
+
+## Pure insurance guard contract — authored, unrun
+
+The existing Linux isolated probe owns the query connection and disposable cluster. The guard requires PostgreSQL17, local socket, database postgres and its journal_test superuser, absent smarter_private/postgres/authenticator names, and the three prior fixture roles with their expected inert flags and no relevant memberships/default privileges. Unexpected state refuses without replacement. It snapshots all role/membership/default-ACL rows before a savepoint, creates only isolated nonlogin/nonsuperuser owner/revoke-target roles and a private schema, then loads hash-pinned unchanged helper definitions.
+
+Readback checks exact function bodies/signatures/language/return type/security/volatility/search_path/owner and effective execute privileges across non-superuser roles. It also checks private schema ownership and access. Both accepted case source and predecessor control run as the non-superuser postgres fixture owner. Rollback to the savepoint must remove owned schema/functions/roles and match the preimage role graph/default ACLs before the outer transaction rolls back. A query failure prevents the success line and the existing connection-finally/cluster cleanup remains responsible for termination.
+
+Finite review checklist: exact four executable source hashes; original caller wiring; explicit fixture-only connection and absence predicates; no unexpected role/default-ACL/inheritance acceptance; atomic definition/revoke/readback before cases; exact49 vectors and predecessor refusal; accepted=false retained; post-savepoint catalog equality; original unrelated insurance checks preserved. Actual PostgreSQL behavior remains unrun and must be assessed by independent review and existing queued self-hosted checks. No manual heavy execution is admitted.
+
+The same original query path now contains nine retained controls: wrong execution role, owned schema collision, guarded membership, creating-role default ACL, altered function body, unlisted-role function grant, schema access, post-savepoint rollback contamination, and a unique unexpected post-install error. Each requires the exact P0001/message pair emitted by query.mjs; any other error or unexpected success fails. After every failed subprocess closes its connection, a fresh query checks absent owned objects and the complete original role/membership/default-ACL preimage. A separately named test-only baseline table captures that preimage before faults, refuses an existing same-name table and is dropped after all controls; it is not a financial baseline or substitute detector. Failed controls retain failure and stop the positive case dispatch. These controls are authored, not executed; cluster-stop suppression in the shared runner remains an inherited limitation, not certified cleanup.

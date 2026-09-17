@@ -75,3 +75,36 @@ export function mttPayoutPercent(value: unknown): 10 | 15 | 20 {
   const depth = Number(value);
   return isSupportedMttPayoutDepth(depth) ? depth : 10;
 }
+
+/** Nominal playing minutes through the indexed registration cutoff. The engine
+ * skips structure break markers and extends the final playable clock beyond the
+ * ladder. Its level gate stays authoritative; maintenance credits are separate.
+ * The persisted minute column is an integer, so never truncate a partial minute.
+ * Call after validating the authored MTT structure, before inserting the event. */
+export function mttLateRegistrationMinutes(structure: readonly unknown[], levels: number): number {
+  if (!Number.isSafeInteger(levels) || levels < 0) {
+    throw new Error('Invalid tournament late-registration level count');
+  }
+  if (levels === 0) return 0;
+  let totalMs = 0;
+  let lastPlayableMs = 0;
+  for (const [index, entry] of structure.entries()) {
+    const level = entry as Record<string, unknown>;
+    if (level?.isBreak === true) continue;
+    const minutes = Number(level?.durationMinutes ?? level?.duration_minutes);
+    const seconds = Number(level?.duration);
+    const duration = Number.isFinite(minutes) && minutes > 0 ? minutes * 60_000 : seconds * 1000;
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new Error('Invalid tournament late-registration clock');
+    }
+    lastPlayableMs = duration;
+    if (index < levels) totalMs += duration;
+  }
+  if (lastPlayableMs <= 0) throw new Error('Missing tournament late-registration clock');
+  if (levels > structure.length) totalMs += (levels - structure.length) * lastPlayableMs;
+  const result = Math.ceil(totalMs / 60_000);
+  if (!Number.isSafeInteger(result) || result > 2_147_483_647) {
+    throw new Error('Tournament late-registration minutes exceed the database range');
+  }
+  return result;
+}

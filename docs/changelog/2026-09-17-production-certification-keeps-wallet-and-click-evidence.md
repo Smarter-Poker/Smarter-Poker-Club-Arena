@@ -50,3 +50,11 @@ weekly-accounting source binding. The unchanged verifier reproduced the single
 mismatch before and passed all 271 bindings afterward; all 30 modal tests passed.
 The 37-component activation builder and captured-wrapper source check also passed.
 Historical custody records and financial assertions are unchanged.
+
+The same merge hook formatted the Spin pure-evidence manifest. The existing
+Spin wrapper also pins that manifest's complete bytes through its named digest
+constant. Its two source controls reproduced the mismatch locally. Parsed JSON
+is identical to the protected pre-format baseline; updating that single digest
+passes all 71 existing wrapper controls. Embedded SQL, file inventories, roles,
+case counts, budgets and negative controls remain unchanged. The historical
+retention manifest's recorded predecessor bindings are not rewritten.

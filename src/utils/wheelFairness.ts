@@ -1,4 +1,8 @@
-import type { WheelSpinResult, WheelSegment } from '../services/DiamondWheelService';
+import type {
+  WheelDrawDomain,
+  WheelSpinResult,
+  WheelSegment,
+} from '../services/DiamondWheelService';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DIAMOND WHEEL FAIRNESS - recompute a spin in the browser
@@ -24,7 +28,7 @@ import type { WheelSpinResult, WheelSegment } from '../services/DiamondWheelServ
 const TWO_48 = 281474976710656n; // 2^48
 
 export interface WheelFairnessInput {
-  domain?: 'wheel-v2' | 'wheel-v2-upgrade';
+  domain?: WheelDrawDomain;
   serverSeed: string;
   serverSeedHash: string;
   clientSeed: string;

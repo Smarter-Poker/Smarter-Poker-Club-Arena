@@ -3,7 +3,10 @@
  * Legacy RPCs remain exclusively for inactive hosts and old-request recovery. */
 
 import { supabase } from '../lib/supabase';
-import { assertWheelAward } from '../utils/wheelAward';
+import { assertWheelAward, assertWheelUpgradeTable } from '../utils/wheelAward';
+
+export type WheelContractVersion = 2 | 3;
+export type WheelDrawDomain = 'wheel-v2' | 'wheel-v2-upgrade' | 'wheel-v3' | 'wheel-v3-upgrade';
 
 /** Legacy receipts retain their original kind; new tables never include an empty prize. */
 export type WheelSegmentKind =
@@ -97,7 +100,7 @@ export interface WheelBonusAward {
 }
 
 export interface WheelState {
-  contract_version?: 2;
+  contract_version?: WheelContractVersion;
   enabled?: boolean;
   min_entry?: number;
   max_entry?: number;
@@ -113,6 +116,8 @@ export interface WheelState {
   club_id?: string;
   config?: WheelConfigView;
   segments: WheelSegment[];
+  /** Server quote for Upgrade's secondary draw at the selected entry. */
+  upgrade_segments?: WheelSegment[];
   pool?: WheelPoolView;
   player?: WheelPlayerView;
   frozen?: boolean;
@@ -199,7 +204,7 @@ export interface WheelDailyBonusState {
 }
 
 export interface WheelFairness {
-  domain?: 'wheel-v2' | 'wheel-v2-upgrade';
+  domain?: WheelDrawDomain;
   commit_id: string;
   server_seed_hash: string;
   server_seed: string;
@@ -212,7 +217,7 @@ export interface WheelFairness {
 }
 
 export interface WheelSpinResult {
-  contract_version?: 2;
+  contract_version?: WheelContractVersion;
   segments?: WheelSegment[];
   ok: boolean;
   error?: string;
@@ -386,7 +391,8 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
   const pool = raw.pool as Record<string, unknown> | undefined;
   const player = raw.player as Record<string, unknown> | undefined;
   return {
-    contract_version: raw.contract_version === 2 ? 2 : undefined,
+    contract_version:
+      raw.contract_version === 2 || raw.contract_version === 3 ? raw.contract_version : undefined,
     enabled: raw.enabled === true,
     min_entry: num(raw.min_entry),
     max_entry: num(raw.max_entry),
@@ -428,6 +434,9 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
     segments: Array.isArray(raw.segments)
       ? (raw.segments as Record<string, unknown>[]).map(normaliseSegment)
       : [],
+    upgrade_segments: Array.isArray(raw.upgrade_segments)
+      ? (raw.upgrade_segments as Record<string, unknown>[]).map(normaliseSegment)
+      : undefined,
     pool: pool
       ? {
           spins: num(pool.spins),
@@ -463,7 +472,10 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
 
 function normaliseFairness(fairness: Record<string, unknown>): WheelFairness {
   return {
-    ...(fairness.domain === 'wheel-v2' || fairness.domain === 'wheel-v2-upgrade'
+    ...(fairness.domain === 'wheel-v2' ||
+    fairness.domain === 'wheel-v2-upgrade' ||
+    fairness.domain === 'wheel-v3' ||
+    fairness.domain === 'wheel-v3-upgrade'
       ? { domain: fairness.domain }
       : {}),
     commit_id: String(fairness.commit_id ?? ''),
@@ -495,7 +507,8 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
     ok: Boolean(raw.ok),
     error: raw.error ? String(raw.error) : undefined,
     detail: raw.detail ? String(raw.detail) : undefined,
-    contract_version: raw.contract_version === 2 ? 2 : undefined,
+    contract_version:
+      raw.contract_version === 2 || raw.contract_version === 3 ? raw.contract_version : undefined,
     segments: Array.isArray(raw.segments)
       ? (raw.segments as Record<string, unknown>[]).map(normaliseSegment)
       : undefined,
@@ -560,6 +573,7 @@ function spinResponse(data: unknown): WheelSpinResult {
   const raw = data as Record<string, unknown>;
   if (
     typeof raw.ok !== 'boolean' ||
+    (raw.contract_version != null && raw.contract_version !== 2 && raw.contract_version !== 3) ||
     (raw.ok === false && typeof raw.error !== 'string') ||
     (raw.ok === true && (!raw.spin_id || !raw.fairness || !raw.outcome))
   ) {
@@ -612,7 +626,11 @@ const DiamondWheelService = {
       p_entry_diamonds: entryDiamonds,
     });
     if (error) throw error;
-    if (!data || data.contract_version !== 2 || typeof data.enabled !== 'boolean')
+    if (
+      !data ||
+      (data.contract_version !== 2 && data.contract_version !== 3) ||
+      typeof data.enabled !== 'boolean'
+    )
       throw new Error('Diamond Spins Availability Could Not Be Confirmed');
     if (!data.enabled) return this.getState(clubId);
     const state = normaliseState(data);
@@ -626,6 +644,15 @@ const DiamondWheelService = {
       state.segments.some((s) => s.kind === 'nothing')
     )
       throw new Error('The Diamond Spins Prize Table Could Not Be Confirmed');
+    if (state.contract_version === 3) {
+      if (state.config?.spin_price_diamonds !== entryDiamonds)
+        throw new Error('The Diamond Spins Prize Table Could Not Be Confirmed');
+      assertWheelUpgradeTable(
+        state.upgrade_segments,
+        entryDiamonds,
+        state.config.diamonds_per_chip
+      );
+    }
     return state;
   },
 
@@ -647,7 +674,7 @@ const DiamondWheelService = {
     });
     if (error) throw error;
     const result = spinResponse(data);
-    if (result.ok && result.contract_version !== 2)
+    if (result.ok && result.contract_version !== 2 && result.contract_version !== 3)
       throw new Error('The Diamond Spins Receipt Version Could Not Be Confirmed');
     return result;
   },
@@ -754,7 +781,11 @@ const DiamondWheelService = {
       p_limit: limit,
     });
     if (error) throw error;
-    return Array.isArray(data) ? (data as Record<string, unknown>[]).map(normaliseSpin) : [];
+    return Array.isArray(data)
+      ? (data as Record<string, unknown>[]).map((raw) =>
+          raw.contract_version == null ? normaliseSpin(raw) : spinResponse(raw)
+        )
+      : [];
   },
 
   /** The welcome spin: whether this member still has theirs, and the table it pays from. */

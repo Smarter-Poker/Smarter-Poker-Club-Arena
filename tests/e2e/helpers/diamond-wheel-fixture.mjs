@@ -8,13 +8,17 @@ let bundled;
 export function diamondWheelFixture() {
   bundled ??= (async () => {
     const records = JSON.parse(
-      readFileSync('tests/fixtures/diamond-wheel-v2-receipts.json', 'utf8')
-    );
+      readFileSync('tests/fixtures/diamond-spins/wheel-v3-postgres-receipts.json', 'utf8')
+    ).records;
     const wheel = records.filter((record) => record.kind === 'wheel').map((record) => record.value);
     const receipts = {
       prize: wheel.find((receipt) => receipt.outcome.kind === 'chips'),
       bonus: wheel.find((receipt) => receipt.outcome.kind === 'bonus'),
-      upgrade: wheel.find((receipt) => receipt.outcome.kind === 'upgrade'),
+      upgrade: wheel.find((receipt) => receipt.secondary?.outcome.kind === 'bonus'),
+      upgradechips: wheel.find(
+        (receipt) =>
+          receipt.secondary?.outcome.multiplier === 100 && receipt.entry_value_diamonds === 2500
+      ),
     };
     if (Object.values(receipts).some((receipt) => !receipt))
       throw new Error('Wheel fixture receipts are incomplete');
@@ -28,6 +32,7 @@ export function diamondWheelFixture() {
           import {WheelExperience} from './src/components/wheel/WheelExperience';
           import {WheelCabinet,WheelPrizeGallery,WheelEntry} from './src/components/wheel/WheelCabinet';
           const receipts=${JSON.stringify(receipts)};
+          const previews=${JSON.stringify(wheel.filter((r) => r.secondary))};
           window.wheelProof={finished:0,events:[]};
           function Fixture(){
             const kind=new URLSearchParams(window.location.search).get('kind')||'prize';
@@ -46,7 +51,7 @@ export function diamondWheelFixture() {
                   setup={<WheelEntry value={entry} disabled={spinning} onChange={setEntry}/>}
                   primary={{label:'Preview Spin',disabled:spinning,onClick:()=>setSpinning(true)}}
                   secondary={{label:'Buy More',disabled:spinning,onClick:()=>{}}}>
-                  <WheelExperience segments={receipt.segments} receipt={spinning?receipt:null} spinKey={1}
+                  <WheelExperience segments={receipt.segments} upgradeSegments={previews[0].secondary.segments} receipt={spinning?receipt:null} spinKey={1}
                     spinning={spinning} size={900} onFinished={finish}/>
                 </WheelCabinet>
                 <WheelPrizeGallery segments={receipt.segments}/>

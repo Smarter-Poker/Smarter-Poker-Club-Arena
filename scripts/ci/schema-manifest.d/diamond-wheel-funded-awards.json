@@ -27,7 +27,10 @@
     "fn_wheel_v2_enabled",
     "fn_wheel_v2_model",
     "fn_wheel_v2_segments",
-    "fn_wheel_v2_welcome_spent"
+    "fn_wheel_v2_welcome_spent",
+    "fn_wheel_v3_model",
+    "fn_wheel_v3_segments",
+    "fn_wheel_v3_upgrade_model"
   ],
   "columns": {
     "wheel_spins": ["receipt_v2"],

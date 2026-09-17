@@ -51,7 +51,7 @@ function prizeLabel(seg: WheelSpinResult['outcome']): string {
 }
 
 function outcomeHeadline(result: WheelSpinResult): string {
-  const o = result.outcome;
+  const o = result.secondary?.outcome ?? result.outcome;
   if (o.kind === 'nothing') return 'No Prize This Spin';
   return result.welcome ? `Welcome Spin: You Won ${prizeLabel(o)}` : `You Won ${prizeLabel(o)}`;
 }
@@ -111,7 +111,9 @@ export default function DiamondWheelPage() {
   const [state, setState] = useState<WheelState | null>(null);
   const [welcomeState, setWelcome] = useState<WheelWelcomeState | null>(null);
   const welcome =
-    welcomeState && state?.contract_version === 2 && state.welcome
+    welcomeState &&
+    (state?.contract_version === 2 || state?.contract_version === 3) &&
+    state.welcome
       ? {
           ...welcomeState,
           available: state.welcome.available,
@@ -310,7 +312,7 @@ export default function DiamondWheelPage() {
     const entry = freeMode ? 100 : entryDiamonds;
     if (
       !clubUuid ||
-      state?.contract_version !== 2 ||
+      (state?.contract_version !== 2 && state?.contract_version !== 3) ||
       !validSpinAmount(entry) ||
       quotedEntry.current === entry ||
       spinning ||
@@ -338,7 +340,7 @@ export default function DiamondWheelPage() {
   const welcomeSegments: WheelSegment[] = welcome?.segments ?? [];
   /* The odds follow the offer; the rim follows the last spin (see `face`). */
   const table =
-    state?.contract_version === 2
+    state?.contract_version === 2 || state?.contract_version === 3
       ? segments
       : welcomeMode
         ? welcomeSegments
@@ -347,7 +349,7 @@ export default function DiamondWheelPage() {
           : segments;
   const rim =
     pending?.segments ??
-    (state?.contract_version === 2
+    (state?.contract_version === 2 || state?.contract_version === 3
       ? segments
       : face === 'welcome'
         ? welcomeSegments
@@ -360,7 +362,7 @@ export default function DiamondWheelPage() {
     recovery?.entryDiamonds ??
     (freeMode
       ? 100
-      : state?.contract_version === 2
+      : state?.contract_version === 2 || state?.contract_version === 3
         ? entryDiamonds
         : (cfg?.spin_price_diamonds ?? 0));
 
@@ -369,12 +371,16 @@ export default function DiamondWheelPage() {
     if (!user?.id) return 'Sign In To Spin';
     if (recovery) return null; // Receipt recovery must work even if the host has since closed.
     if (!validSpinAmount(price)) return 'Choose 25 To 2,500 Whole Diamonds';
-    if (quoting || (state.contract_version === 2 && quotedEntry.current !== price))
+    if (
+      quoting ||
+      ((state.contract_version === 2 || state.contract_version === 3) &&
+        quotedEntry.current !== price)
+    )
       return 'Checking Your Spin';
     if (!state.available)
       return state.reason === 'not_configured'
         ? 'The Diamond Wheel Is Not Open Here Yet'
-        : state.contract_version === 2 && state.reason
+        : (state.contract_version === 2 || state.contract_version === 3) && state.reason
           ? state.reason
           : 'The Diamond Wheel Is Paused';
     if (state.frozen) return 'The Platform Is In Its Maintenance Break';
@@ -461,14 +467,14 @@ export default function DiamondWheelPage() {
         commitHash: commit.hash,
         clientSeed: clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed(),
         ticketId: dailyBonusMode ? (dailyBonus?.ticket_id ?? null) : null,
-        ...(state?.contract_version === 2
-          ? { contractVersion: 2 as const, entryDiamonds: price }
+        ...(state?.contract_version === 2 || state?.contract_version === 3
+          ? { contractVersion: state.contract_version, entryDiamonds: price }
           : {}),
       };
       saveWheelPending(attempt);
       setRecovery(attempt);
       const result =
-        attempt.contractVersion === 2
+        attempt.contractVersion === 2 || attempt.contractVersion === 3
           ? await DiamondWheelService.spinV2({ ...attempt, entryDiamonds: attempt.entryDiamonds! })
           : attempt.mode === 'daily_bonus'
             ? await DiamondWheelService.dailyBonusSpin(
@@ -713,15 +719,16 @@ export default function DiamondWheelPage() {
               ? ' The Club Pays The Welcome Spin, So Its Owner Does Not Take One.'
               : ''
       : '';
+  const finalOutcome = lastResult?.secondary?.outcome ?? lastResult?.outcome;
   const readoutSubCopy = !lastResult
     ? ''
-    : lastResult.outcome.kind === 'nothing'
+    : finalOutcome?.kind === 'nothing'
       ? 'This Previous Spin Had No Prize'
       : lastResult.bonus
         ? 'Your Awarded Game Is Ready'
-        : lastResult.outcome.kind === 'chips'
+        : finalOutcome?.kind === 'chips'
           ? 'Paid Into Your Club Chips'
-          : lastResult.outcome.kind === 'diamonds'
+          : finalOutcome?.kind === 'diamonds'
             ? 'Paid Into Your Diamonds'
             : 'Added To Your Account';
 
@@ -744,7 +751,7 @@ export default function DiamondWheelPage() {
         pillInk={pillInk}
         aria-labelledby="diamond-wheel-title"
         setup={
-          state.contract_version === 2 ? (
+          state.contract_version === 2 || state.contract_version === 3 ? (
             <WheelEntry
               value={freeMode ? 100 : entryDiamonds}
               disabled={freeMode || spinning || running || Boolean(recovery)}
@@ -868,6 +875,7 @@ export default function DiamondWheelPage() {
             key={spinKey}
             receipt={pending}
             segments={rim}
+            upgradeSegments={state.upgrade_segments ?? []}
             spinKey={spinKey}
             spinning={spinning}
             autoContinue={running}
@@ -877,12 +885,14 @@ export default function DiamondWheelPage() {
           {lastResult && !spinning ? (
             <div className={styles.readout} role="status">
               <span className="sc-label sc-ink--blue">
-                {lastResult.outcome.kind === 'nothing' ? 'No Prize' : 'You Won'}
+                {finalOutcome?.kind === 'nothing' ? 'No Prize' : 'You Won'}
               </span>
               <span
-                className={`${styles.readoutValue} ${lastResult.outcome.kind === 'nothing' ? 'sc-ink--muted' : 'sc-ink--gold'}`}
+                className={`${styles.readoutValue} ${finalOutcome?.kind === 'nothing' ? 'sc-ink--muted' : 'sc-ink--gold'}`}
               >
-                {lastResult.outcome.kind === 'nothing' ? 'Nothing' : prizeLabel(lastResult.outcome)}
+                {finalOutcome?.kind === 'nothing'
+                  ? 'Nothing'
+                  : prizeLabel(lastResult.secondary?.outcome ?? lastResult.outcome)}
               </span>
               <span className={`sc-copy ${styles.readoutSub}`}>{readoutSubCopy}</span>
             </div>
@@ -896,7 +906,7 @@ export default function DiamondWheelPage() {
                     ? 'One Claimed Bonus Spin. 100 Diamond Value, No Diamonds Taken From You.'
                     : welcomeMode
                       ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, At No Cost To You, Once.`
-                      : `Spin ${price.toLocaleString()} Diamonds.${state.contract_version === 2 ? ' Every Spin Wins A Prize.' : ' Explore The Prizes Below.'}${welcomeNote}`}
+                      : `Spin ${price.toLocaleString()} Diamonds.${state.contract_version === 2 || state.contract_version === 3 ? ' Every Spin Wins A Prize.' : ' Explore The Prizes Below.'}${welcomeNote}`}
             </p>
           )}
         </div>
@@ -1039,7 +1049,7 @@ export default function DiamondWheelPage() {
             {history.map((h) => (
               <div key={h.spin_id} className={styles.row}>
                 <span className={`${styles.rowLabel} sc-ink--silver`}>
-                  {prizeLabel(h.outcome)}
+                  {prizeLabel(h.secondary?.outcome ?? h.outcome)}
                   <span className={`${styles.rowMeta} sc-ink--muted`}>
                     {h.daily_bonus
                       ? `Daily Bonus Spin, ${historyTime(h.created_at)}`
@@ -1051,7 +1061,9 @@ export default function DiamondWheelPage() {
                 <span
                   className={`${styles.rowValue} ${h.outcome.kind === 'nothing' ? 'sc-ink--muted' : 'sc-ink--gold'}`}
                 >
-                  {h.outcome.kind === 'nothing' ? '0' : worth(h.outcome.value_chips)}
+                  {h.outcome.kind === 'nothing'
+                    ? '0'
+                    : worth((h.secondary?.outcome ?? h.outcome).value_chips)}
                 </span>
               </div>
             ))}

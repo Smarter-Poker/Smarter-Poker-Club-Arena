@@ -31,11 +31,65 @@ const finishReveal = () =>
   fireEvent.animationEnd(screen.getByRole('dialog').querySelector('[data-motion="keep"]')!);
 
 describe('wheel to prize to earned game', () => {
+  it('shows the eight-option upper wheel before any entry is spent', () => {
+    render(
+      <WheelExperience
+        segments={[]}
+        upgradeSegments={
+          Array.from({ length: 8 }, (_, i) => ({
+            ...outcome('chips'),
+            ord: i + 1,
+          })) as WheelSegment[]
+        }
+        receipt={null}
+        spinKey={0}
+        spinning={false}
+        onFinished={vi.fn()}
+        size={500}
+      />
+    );
+    expect(screen.getByRole('heading', { name: 'Upgrade Wheel' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Land Bonus Wheel' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Land Main Wheel' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+  it('opens an upgraded instant chip prize and waits for acknowledgement without entering a game', () => {
+    const onFinished = vi.fn();
+    const receipt = {
+      outcome: outcome('upgrade'),
+      secondary: { outcome: { ...outcome('chips'), amount: 2500 }, segments: [outcome('chips')] },
+    } as unknown as WheelSpinResult;
+    render(
+      <WheelExperience
+        segments={[]}
+        receipt={receipt}
+        spinKey={1}
+        spinning
+        onFinished={onFinished}
+        size={500}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Land Main Wheel' }));
+    finishReveal();
+    fireEvent.click(screen.getByRole('button', { name: 'Land Bonus Wheel' }));
+    expect(screen.getByRole('heading', { name: '2,500 Chips' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    finishReveal();
+    expect(onFinished).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onFinished).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('completes both wheels and both reveals before opening an upgraded game once', () => {
     const onFinished = vi.fn();
     const receipt = {
       outcome: outcome('upgrade'),
-      secondary: { outcome: outcome('bonus', 'mines'), segments: [] },
+      secondary: {
+        outcome: outcome('bonus', 'mines'),
+        segments: [{ ...outcome('bonus', 'mines') }],
+      },
     } as unknown as WheelSpinResult;
     render(
       <WheelExperience

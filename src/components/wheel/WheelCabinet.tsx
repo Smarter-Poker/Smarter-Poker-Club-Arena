@@ -64,7 +64,7 @@ export function WheelPrizeGallery({ segments }: { segments: WheelSegment[] }) {
     <section className={styles.prizes} aria-label="Wheel Prizes">
       <h2>{segments.length === 12 ? 'The Twelve Prizes' : 'The Prizes'}</h2>
       {segments.some((s) => s.kind === 'upgrade') && (
-        <p>Land On A Bonus Game To Play. Land On Upgrade For A Second Spin With A Doubled Bonus.</p>
+        <p>Land On A Bonus Game To Play. Upgrade Opens Super Games And Instant Chip Wins.</p>
       )}
       <ul>
         {[...segments]
@@ -77,7 +77,7 @@ export function WheelPrizeGallery({ segments }: { segments: WheelSegment[] }) {
                 <span>{segment.multiplier}x Chip Payout</span>
               )}
               {segment.kind === 'bonus' && <span>Bonus Game</span>}
-              {segment.kind === 'upgrade' && <span>Second Spin · 2x Bonus</span>}
+              {segment.kind === 'upgrade' && <span>Super Games And Chip Wins</span>}
               <i aria-hidden="true" style={{ animationDelay: `${i * -0.2}s` }} />
             </li>
           ))}

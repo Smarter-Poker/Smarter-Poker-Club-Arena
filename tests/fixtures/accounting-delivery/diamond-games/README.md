@@ -95,3 +95,14 @@ The 40x ordinary / 30x upgraded reservation threshold covers Steady's complete
 20x table including one original-entry Double Down. `WHEEL_SAMPLE` notices are
 actual RPC receipts for the client parser integration, never production records.
 All prior probes still run, and the runner again requires exact all-table rollback.
+
+The additive v3 migration follows the preserved v2 probe, with a new baseline
+snapshot for its inactive release row. `diamond-wheel-upgrade-eight.sql` proves
+all twelve primary slots and eight weighted Upgrade slots, the independent 80%
+model across every 25–2500 entry, 2500 chips from the 100x prize (Promo 100 plus
+Main Bank 2400), exposure/real-cover refusal before payment, prepaid four-game
+Double Down, claimed Daily 100x with Mint entry only, Welcome 100x with no entry
+transfer, and unchanged historical v2 replay. The actual captured history RPC in
+`wheel-v3-history-dependency.sql` returns the mixed version receipts. Its source
+hash/ACL and exact candidate qualification are in `wheel-v3-provenance.json`.
+All monetary probe effects are rolled back, with the maintained all-row check.

@@ -13,6 +13,7 @@
  * client seed 'lucky-seven', nonce 7.
  */
 import { describe, expect, it } from 'vitest';
+import type { WheelDrawDomain } from '../../src/services/DiamondWheelService';
 import {
   hmacSha256Hex,
   pickOrd,
@@ -95,16 +96,18 @@ describe('the browser recomputes a spin exactly as Postgres does', () => {
   });
 });
 
-// Independent Python hashlib vectors for the two new server draw domains.
+// Independent Python hashlib vectors for both versioned server draw domains.
 it.each([
   ['wheel-v2', 248433345962604, 88261],
   ['wheel-v2-upgrade', 116590784161425, 41421],
+  ['wheel-v3', 89420543953390, 31768],
+  ['wheel-v3-upgrade', 88559417368527, 31462],
 ])(
   'verifies the distinct %s draw without changing legacy fairness',
   async (domain, roll, point) => {
     const eligible = [1, 2, 3, 4].map((ord) => ({ ord, weight: 25000 }));
     const v = await verifyWheelSpin({
-      domain: domain as 'wheel-v2' | 'wheel-v2-upgrade',
+      domain: domain as WheelDrawDomain,
       serverSeed: SEED,
       serverSeedHash: SEED_HASH,
       clientSeed: 'lucky-seven',

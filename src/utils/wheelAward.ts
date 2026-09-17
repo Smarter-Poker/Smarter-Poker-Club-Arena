@@ -1,14 +1,63 @@
-import type { WheelSpinResult } from '../services/DiamondWheelService';
+import type { WheelSegment, WheelSpinResult } from '../services/DiamondWheelService';
 
 const gameNames = ['plinko', 'crash', 'crossing', 'mines'] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const fail = (): never => {
+  throw new Error('The Wheel Award Could Not Be Confirmed. Recover The Same Spin');
+};
+
+/** Validate the server's v3 quote, without choosing prizes or assigning odds. */
+export function assertWheelUpgradeTable(
+  table: WheelSegment[] | undefined,
+  entry: number,
+  rate: number
+): asserts table is WheelSegment[] {
+  const games = table?.filter((s) => s.kind === 'bonus') ?? [];
+  const chips = table?.filter((s) => s.kind === 'chips') ?? [];
+  if (
+    !table ||
+    table.length !== 8 ||
+    !Number.isSafeInteger(entry) ||
+    entry < 25 ||
+    entry > 2500 ||
+    !Number.isSafeInteger(rate) ||
+    rate <= 0 ||
+    new Set(table.map((s) => s.ord)).size !== 8 ||
+    games.length !== 4 ||
+    gameNames.some((game) => games.filter((s) => s.game === game).length !== 1) ||
+    chips.length !== 4 ||
+    [5, 10, 25, 100].some(
+      (multiplier) => chips.filter((s) => s.multiplier === multiplier).length !== 1
+    ) ||
+    table.some(
+      (s) =>
+        !Number.isSafeInteger(s.ord) ||
+        s.ord < 1 ||
+        s.ord > 8 ||
+        s.locked ||
+        !Number.isSafeInteger(s.weight) ||
+        s.weight <= 0 ||
+        !Number.isFinite(s.probability) ||
+        s.probability !== s.weight / 100000
+    ) ||
+    table.reduce((sum, s) => sum + s.weight, 0) !== 100000 ||
+    games.some(
+      (s) => s.multiplier !== 2 || s.amount !== entry * 2 || s.value_chips !== (entry * 2) / rate
+    ) ||
+    chips.some(
+      (s) =>
+        s.game !== undefined ||
+        s.amount !== (entry * s.multiplier!) / rate ||
+        s.value_chips !== s.amount
+    )
+  )
+    fail();
+}
 
 /** A reveal must never invent a missing game, secondary result, or funded award. */
 export function assertWheelAward(receipt: WheelSpinResult): void {
   const { outcome, bonus, secondary } = receipt;
-  const fail = (): never => {
-    throw new Error('The Wheel Award Could Not Be Confirmed. Recover The Same Spin');
-  };
+  const versioned = receipt.contract_version === 2 || receipt.contract_version === 3;
   if (
     ![
       'nothing',
@@ -22,12 +71,12 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
     ].includes(outcome.kind)
   )
     fail();
-  if (receipt.contract_version === 2) {
+  if (versioned) {
     const table = receipt.segments;
     const kinds = table?.map((s) => s.kind) ?? [];
     const games = table?.filter((s) => s.kind === 'bonus').map((s) => s.game) ?? [];
     if (
-      receipt.fairness.domain !== 'wheel-v2' ||
+      receipt.fairness.domain !== `wheel-v${receipt.contract_version}` ||
       !table ||
       table.length !== 12 ||
       new Set(table.map((s) => s.ord)).size !== 12 ||
@@ -67,10 +116,7 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
       fail();
   }
   if (!Number.isFinite(outcome.amount) || outcome.amount < 0) fail();
-  if (
-    receipt.contract_version === 2 &&
-    ['throwables', 'time_bank', 'rabbit_hunt'].includes(outcome.kind)
-  ) {
+  if (versioned && ['throwables', 'time_bank', 'rabbit_hunt'].includes(outcome.kind)) {
     const feature = {
       throwables: 'throwable',
       time_bank: 'time_bank_seconds',
@@ -92,6 +138,67 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
     if (bonus || secondary) fail();
     return;
   }
+  if (outcome.kind === 'upgrade') {
+    const count = receipt.contract_version === 3 ? 8 : 4;
+    if (!secondary || secondary.segments.length !== count) return fail();
+    if (receipt.contract_version === 3) {
+      assertWheelUpgradeTable(
+        secondary.segments,
+        receipt.entry_value_diamonds!,
+        receipt.diamonds_per_chip
+      );
+      if (
+        outcome.amount !== receipt.entry_value_diamonds! * 2 ||
+        outcome.value_chips !== (receipt.entry_value_diamonds! * 2) / receipt.diamonds_per_chip
+      )
+        fail();
+    } else {
+      if (
+        new Set(secondary.segments.map((s) => s.game)).size !== 4 ||
+        secondary.segments.some(
+          (s) => s.kind !== 'bonus' || !s.game || !gameNames.includes(s.game)
+        ) ||
+        secondary.outcome.kind !== 'bonus'
+      )
+        fail();
+    }
+    const selected = secondary.segments.find((s) => s.ord === secondary.outcome.ord);
+    if (
+      new Set(secondary.segments.map((s) => s.ord)).size !== count ||
+      secondary.segments.some((s) => !Number.isSafeInteger(s.ord) || s.ord <= 0 || s.locked) ||
+      !selected ||
+      selected.kind !== secondary.outcome.kind ||
+      selected.game !== secondary.outcome.game ||
+      selected.multiplier !== secondary.outcome.multiplier ||
+      (receipt.contract_version === 3 &&
+        (selected.amount !== secondary.outcome.amount ||
+          selected.value_chips !== secondary.outcome.value_chips ||
+          selected.weight !== secondary.outcome.weight ||
+          selected.probability !== secondary.outcome.probability ||
+          secondary.outcome.locked)) ||
+      new Set(secondary.fairness.eligible_ords).size !== count ||
+      secondary.segments.some((s) => !secondary.fairness.eligible_ords.includes(s.ord)) ||
+      secondary.segments.some((s) => !Number.isSafeInteger(s.weight) || s.weight <= 0) ||
+      secondary.fairness.weight_total !==
+        secondary.segments.reduce((sum, s) => sum + s.weight, 0) ||
+      !Number.isSafeInteger(secondary.fairness.roll) ||
+      secondary.fairness.roll < 0 ||
+      secondary.fairness.roll >= 2 ** 48 ||
+      secondary.fairness.commit_id !== receipt.fairness.commit_id ||
+      secondary.fairness.server_seed_hash !== receipt.fairness.server_seed_hash ||
+      secondary.fairness.server_seed !== receipt.fairness.server_seed ||
+      secondary.fairness.client_seed !== receipt.fairness.client_seed ||
+      secondary.fairness.nonce !== receipt.fairness.nonce ||
+      (versioned && secondary.fairness.domain !== `wheel-v${receipt.contract_version}-upgrade`)
+    )
+      fail();
+    if (secondary.outcome.kind === 'chips') {
+      // Instant chips are already credited by the spin transaction. They may
+      // never masquerade as a funded game or require a second payout request.
+      if (receipt.contract_version !== 3 || bonus) fail();
+      return;
+    }
+  }
   if (
     !bonus ||
     !uuid.test(bonus.id) ||
@@ -103,7 +210,7 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
   )
     fail();
   if (
-    receipt.contract_version === 2 &&
+    versioned &&
     (!Number.isSafeInteger(bonus!.entry_diamonds) ||
       bonus!.entry_diamonds < 25 ||
       bonus!.entry_diamonds > 2500 ||
@@ -115,42 +222,5 @@ export function assertWheelAward(receipt: WheelSpinResult): void {
     if (secondary || outcome.game !== bonus?.game) fail();
     return;
   }
-  if (!secondary || secondary.segments.length !== 4) {
-    fail();
-    return;
-  }
-  const games = new Set(secondary.segments.map((s) => s.game));
-  const ords = new Set(secondary.segments.map((s) => s.ord));
-  if (
-    games.size !== 4 ||
-    ords.size !== 4 ||
-    secondary.segments.some(
-      (s) =>
-        s.kind !== 'bonus' ||
-        !s.game ||
-        !gameNames.includes(s.game) ||
-        !Number.isSafeInteger(s.ord) ||
-        s.ord <= 0 ||
-        s.locked
-    ) ||
-    secondary.outcome.kind !== 'bonus' ||
-    secondary.outcome.game !== bonus?.game ||
-    !secondary.segments.some(
-      (s) => s.ord === secondary.outcome.ord && s.game === secondary.outcome.game
-    ) ||
-    new Set(secondary.fairness.eligible_ords).size !== 4 ||
-    secondary.segments.some((s) => !secondary.fairness.eligible_ords.includes(s.ord)) ||
-    secondary.segments.some((s) => !Number.isSafeInteger(s.weight) || s.weight <= 0) ||
-    secondary.fairness.weight_total !== secondary.segments.reduce((sum, s) => sum + s.weight, 0) ||
-    !Number.isSafeInteger(secondary.fairness.roll) ||
-    secondary.fairness.roll < 0 ||
-    secondary.fairness.roll >= 2 ** 48 ||
-    secondary.fairness.commit_id !== receipt.fairness.commit_id ||
-    secondary.fairness.server_seed_hash !== receipt.fairness.server_seed_hash ||
-    secondary.fairness.server_seed !== receipt.fairness.server_seed ||
-    secondary.fairness.client_seed !== receipt.fairness.client_seed ||
-    secondary.fairness.nonce !== receipt.fairness.nonce ||
-    (receipt.contract_version === 2 && secondary.fairness.domain !== 'wheel-v2-upgrade')
-  )
-    fail();
+  if (secondary?.outcome.game !== bonus?.game) fail();
 }

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { WheelSegment, WheelSpinResult } from '../../services/DiamondWheelService';
 import DiamondWheel from './DiamondWheel';
 import { WheelWinReveal } from './WheelWinReveal';
+import styles from './WheelExperience.module.css';
 
 const inventoryNames: Record<string, string> = {
   throwable: 'Throwable',
@@ -37,6 +38,7 @@ export function wheelPrizeTitle(prize: WheelSpinResult['outcome']): string {
 /** The primary and upgraded wheels reveal one durable receipt, without a second debit. */
 export function WheelExperience({
   segments,
+  upgradeSegments = [],
   receipt,
   spinKey,
   spinning,
@@ -45,6 +47,7 @@ export function WheelExperience({
   autoContinue = false,
 }: {
   segments: WheelSegment[];
+  upgradeSegments?: WheelSegment[];
   receipt: WheelSpinResult | null;
   spinKey: number;
   spinning: boolean;
@@ -56,6 +59,14 @@ export function WheelExperience({
     'primary'
   );
   const secondary = phase === 'secondary' || phase === 'bonus';
+  const upperSegments = receipt?.secondary?.segments ?? upgradeSegments;
+  const mainStage = useRef<HTMLDivElement>(null);
+  const upgradeStage = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!spinning || (phase !== 'primary' && phase !== 'secondary')) return;
+    const stage = phase === 'secondary' ? upgradeStage.current : mainStage.current;
+    stage?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+  }, [spinning, phase]);
   const prize = secondary ? receipt?.secondary?.outcome : receipt?.outcome;
   const showPrize = (phase === 'prize' || phase === 'bonus') && prize && receipt;
   const finish = () => {
@@ -64,20 +75,42 @@ export function WheelExperience({
   };
   return (
     <>
-      <DiamondWheel
-        key={secondary ? 'secondary' : 'primary'}
-        segments={secondary ? (receipt?.secondary?.segments ?? []) : segments}
-        landingOrd={prize?.ord ?? null}
-        spinKey={spinKey}
-        spinning={spinning && (phase === 'primary' || phase === 'secondary')}
-        upgraded={secondary}
-        size={size}
-        onLanded={() => {
-          if (prize?.kind === 'nothing')
-            finish(); // Historical receipts keep their actual result.
-          else setPhase(secondary ? 'bonus' : 'prize');
-        }}
-      />
+      <div className={styles.stack}>
+        {upperSegments.length > 0 && (
+          <div
+            className={styles.upgradeStage}
+            ref={upgradeStage}
+            data-active={secondary || undefined}
+          >
+            <h2>Upgrade Wheel</h2>
+            <p>Super Games And Instant Chip Wins</p>
+            <DiamondWheel
+              segments={upperSegments}
+              landingOrd={receipt?.secondary?.outcome.ord ?? null}
+              spinKey={spinKey}
+              spinning={spinning && phase === 'secondary'}
+              upgraded
+              idleDirection={-1}
+              size={size}
+              presentation="cabinet"
+              onLanded={() => setPhase('bonus')}
+            />
+          </div>
+        )}
+        <div className={styles.mainStage} ref={mainStage}>
+          <DiamondWheel
+            segments={segments}
+            landingOrd={receipt?.outcome.ord ?? null}
+            spinKey={spinKey}
+            spinning={spinning && phase === 'primary'}
+            size={size}
+            onLanded={() => {
+              if (receipt?.outcome.kind === 'nothing') finish();
+              else setPhase('prize');
+            }}
+          />
+        </div>
+      </div>
       {showPrize && (
         <WheelWinReveal
           key={secondary ? 'bonus-prize' : 'primary-prize'}
@@ -86,7 +119,7 @@ export function WheelExperience({
           title={wheelPrizeTitle(prize)}
           detail={
             prize.kind === 'upgrade'
-              ? 'Your Bonus Wheel Opens With Upgraded Payouts.'
+              ? 'Your Upgrade Wheel Opens With Super Games And Instant Chip Wins.'
               : prize.kind === 'bonus'
                 ? 'Your Game Is Ready. Choose Your Bonus Setup Before Playing.'
                 : prize.grants

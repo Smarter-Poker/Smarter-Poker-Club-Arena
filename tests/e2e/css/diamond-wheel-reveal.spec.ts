@@ -24,12 +24,20 @@ async function insideViewport(page: Page, selector: string) {
 }
 
 for (const width of [320, 390, 1280]) {
-  for (const kind of ['prize', 'bonus', 'upgrade'] as const) {
+  for (const kind of ['prize', 'bonus', 'upgrade', 'upgradechips'] as const) {
     test(`Diamond wheel ${kind} completes its reveal at ${width}px`, async ({ page }, testInfo) => {
       const errors: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
       const receipt = await mountDiamondWheel(page, kind, width);
       const wheel = page.getByRole('img', { name: 'Diamond Wheel', exact: true });
+      const secondary = page.getByRole('img', { name: 'Upgrade Wheel', exact: true });
+      await expect(secondary.locator('[data-slot]')).toHaveCount(8);
+      await expect(secondary).toBeVisible();
+      const upperBox = await secondary.boundingBox();
+      const lowerBox = await wheel.boundingBox();
+      expect(upperBox!.y + upperBox!.height).toBeLessThanOrEqual(lowerBox!.y);
+      await expect(secondary.locator('..')).toHaveAttribute('data-idle-direction', '-1');
+      await expect(wheel.locator('..')).toHaveAttribute('data-idle-direction', '1');
       await expect(wheel.locator('[data-slot]')).toHaveCount(12);
       await expect(
         page.getByRole('region', { name: 'Wheel Prizes' }).getByRole('listitem')
@@ -40,6 +48,10 @@ for (const width of [320, 390, 1280]) {
       await expect(page.getByLabel('Diamonds To Spin')).toHaveValue(
         String(receipt.entry_value_diamonds)
       );
+      await page.screenshot({
+        path: testInfo.outputPath(`wheel-idle-${width}.png`),
+        fullPage: true,
+      });
       const idleRotation = await wheel.locator('[data-wheel-rotor]').getAttribute('transform');
       await expect
         .poll(() => wheel.locator('[data-wheel-rotor]').getAttribute('transform'))
@@ -49,8 +61,12 @@ for (const width of [320, 390, 1280]) {
       await expect(page.getByLabel('Diamonds To Spin')).toBeDisabled();
       await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
 
-      if (kind === 'prize') {
+      if (kind.startsWith('upgrade')) {
+        await expect(secondary.locator('..')).toHaveAttribute('data-phase', 'spinning');
+      }
+      if (kind === 'prize' || kind === 'upgradechips') {
         const dialog = page.getByRole('dialog');
+        await expect(dialog).toHaveAttribute('aria-label', /Chips?$/);
         await expect(dialog).toBeVisible();
         const proceed = dialog.getByRole('button', { name: 'Continue', exact: true });
         await expect(proceed).toBeEnabled();
@@ -71,9 +87,8 @@ for (const width of [320, 390, 1280]) {
         await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
       } else {
         if (kind === 'upgrade') {
-          const secondary = page.getByRole('img', { name: 'Upgraded Bonus Wheel', exact: true });
           await expect(secondary).toBeVisible();
-          await expect(secondary.locator('[data-slot]')).toHaveCount(4);
+          await expect(secondary.locator('[data-slot]')).toHaveCount(8);
           expect(await page.evaluate(() => window.wheelProof.finished)).toBe(0);
           await expect(page.getByTestId('destination')).toHaveText('/clubs/fixture/wheel');
           await page.screenshot({ path: testInfo.outputPath(`wheel-upgrade-${width}.png`) });
@@ -87,10 +102,10 @@ for (const width of [320, 390, 1280]) {
       expect(proof.finished).toBe(1);
       const starts = proof.events.filter((event) => event.event === 'animationstart');
       const ends = proof.events.filter((event) => event.event === 'animationend');
-      expect(starts).toHaveLength(kind === 'upgrade' ? 2 : 1);
+      expect(starts).toHaveLength(kind.startsWith('upgrade') ? 2 : 1);
       expect(ends).toHaveLength(starts.length);
       expect(proof.events.at(-1)?.event).toBe('finished');
-      if (kind === 'upgrade') {
+      if (kind.startsWith('upgrade')) {
         expect(starts[0].title).toBe('Bonus Upgrade');
         expect(starts[1].time).toBeGreaterThan(ends[0].time);
         expect(starts[1].title).not.toBe('Bonus Upgrade');

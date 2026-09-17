@@ -75,7 +75,7 @@ export function WheelWinReveal({
           eyebrow={prize.kind === 'upgrade' ? 'Wheel Upgrade' : 'You Won'}
           title={title}
           pill={
-            prize.kind === 'bonus' ? 'Bonus Game' : prize.kind === 'upgrade' ? '2x Bonus' : 'Paid'
+            prize.kind === 'bonus' ? 'Bonus Game' : prize.kind === 'upgrade' ? 'Super Spin' : 'Paid'
           }
           foot="foot"
         >

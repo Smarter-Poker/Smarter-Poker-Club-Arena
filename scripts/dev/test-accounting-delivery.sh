@@ -127,3 +127,8 @@ run_game_probe() {
 run_game_probe diamond-plinko-denominations 'NOTICE:  PASS Plinko denominations: nine choices, Double Down, exact drop budget, sealed outcomes, owner custody, Promo payout, replay and invalid allocation rollback'
 run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked multiplier: exact 2.57x, no late rescue, auto and cap preserved, future and foreign requests refused, one payout on replay'
 run_game_probe diamond-wheel-funded-awards 'NOTICE:  PASS Wheel v2: twelve fixed outcomes, exact model, sealed Upgrade, owner custody, inventory, prepaid four-game budgets, Double Down, replay identity, reserved cover, claimed Mint entry, independent welcome and private authority'
+
+# Qualify the additive contract after the historical v2 probe.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20260917210401_diamond_wheel_upgrade_adds_four_instant_chip_prizes.sql" -f "$diamond/wheel-v3-history-dependency.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-wheel-upgrade-eight 'NOTICE:  PASS Wheel v3: twelve primary and eight weighted Upgrade prizes, exact model, 2500-chip top payout, minimum exposure and real cover, prepaid games, original-entry Double Down, private authority, replay, Mint entry and welcome'

@@ -21,6 +21,44 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('the wheel owes its complete visible reveal', () => {
+  it('keeps both idle wheels moving slowly in opposite directions', () => {
+    let callbacks: FrameRequestCallback[] = [];
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((fn) => {
+      callbacks.push(fn);
+      return callbacks.length;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    const props = {
+      segments: [],
+      landingOrd: null,
+      spinKey: 0,
+      spinning: false,
+      onLanded: vi.fn(),
+    };
+    const { container } = render(
+      <>
+        <DiamondWheel {...props} />
+        <DiamondWheel {...props} upgraded idleDirection={-1} />
+      </>
+    );
+    act(() => {
+      const pending = callbacks;
+      callbacks = [];
+      pending.forEach((fn) => fn(50));
+    });
+    const rotors = container.querySelectorAll('[data-wheel-rotor]');
+    expect(Number(rotors[0].getAttribute('transform')!.match(/rotate\(([^ ]+)/)![1])).toBeCloseTo(
+      0.15
+    );
+    expect(Number(rotors[1].getAttribute('transform')!.match(/rotate\(([^ ]+)/)![1])).toBeCloseTo(
+      -0.15
+    );
+    expect(sounds.playSpinStart).not.toHaveBeenCalled();
+    expect(sounds.playSpinPeg).not.toHaveBeenCalled();
+  });
+
   it('keeps the result and matching peg sounds pending during a hidden tab', () => {
     let frame: FrameRequestCallback | null = null;
     let now = 0;

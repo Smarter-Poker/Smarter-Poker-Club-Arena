@@ -15,6 +15,9 @@
   aspect-ratio: 720 / 485;
   overflow: hidden;
 }
+.frame[data-presentation='cabinet'][data-prize-scale='2'] {
+  aspect-ratio: 360 / 345;
+}
 .frame[data-presentation='cabinet'] .svg {
   overflow: hidden;
   filter: drop-shadow(0 15px 6px #000);

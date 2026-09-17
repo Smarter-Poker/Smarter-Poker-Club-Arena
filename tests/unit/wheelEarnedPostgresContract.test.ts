@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../fixtures/diamond-spins/wheel-earned-postgres-receipts.json';
+import upgradeFixture from '../fixtures/diamond-spins/wheel-v3-postgres-receipts.json';
 import {
   WheelBonusEntryService,
   awardBudget,
@@ -26,7 +27,16 @@ type Receipt = {
   double: boolean;
   value: Record<string, unknown>;
 };
-const records = fixture.records as unknown as Receipt[];
+const versions = [
+  { version: 2, records: fixture.records as unknown as Receipt[] },
+  {
+    version: 3,
+    records: upgradeFixture.records.filter((r) => 'game' in r) as unknown as Receipt[],
+  },
+];
+const records = versions.flatMap(({ version, records: rows }) =>
+  rows.map((r) => ({ ...r, version }))
+);
 const starts = records.filter((r) => r.kind === 'start');
 const account = 'fixture-player';
 function request(receipt: Receipt): BonusStart {
@@ -60,18 +70,21 @@ beforeEach(() => {
 });
 
 describe('actual isolated PostgreSQL earned-game contract', () => {
-  it('retains normal, doubled, and maximum upgraded examples for every game', () => {
-    for (const game of ['plinko', 'crash', 'crossing', 'mines']) {
-      expect(starts.filter((r) => r.game === game).map((r) => r.value.bet_diamonds)).toEqual([
-        100, 200, 7500,
-      ]);
+  it.each(versions)(
+    'retains normal, doubled, and maximum upgraded examples from wheel v$version',
+    ({ records: rows }) => {
+      for (const game of ['plinko', 'crash', 'crossing', 'mines']) {
+        expect(
+          rows.filter((r) => r.kind === 'start' && r.game === game).map((r) => r.value.bet_diamonds)
+        ).toEqual([100, 200, 7500]);
+      }
+      expect(rows).toHaveLength(48);
     }
-    expect(records).toHaveLength(48);
-  });
+  );
   it.each(
     records.map((r, index) => ({
       ...r,
-      label: `${index}: ${r.game} ${r.kind}, stake ${r.stake}, double ${r.double}`,
+      label: `${index}: wheel v${r.version}, ${r.game} ${r.kind}, stake ${r.stake}, double ${r.double}`,
     }))
   )('$label', async (receipt) => {
     const raw = receipt.value;

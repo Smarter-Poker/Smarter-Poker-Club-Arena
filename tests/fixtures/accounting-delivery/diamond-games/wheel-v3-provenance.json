@@ -1,0 +1,60 @@
+{
+  "captured_at": "2026-09-17T21:00:34.373114+00:00",
+  "project": "kuklfnapbkmacvwxktbh",
+  "transport": "Supabase execute_sql SELECT catalog/config/pools only",
+  "scope": "Additive inactive v3 Upgrade model; installed20260917202351 remains immutable. Production-shaped deterministic synthetic wagers exist only in isolated PostgreSQL rollback transactions.",
+  "replaced_functions": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "md5": "2bd109b8db8401cc13564057843dd1a5",
+      "signature": "fn_wheel_spin_v2(uuid,uuid,text,integer,text,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "md5": "2e2a2a54df4f06b5faf253876419e6de",
+      "signature": "fn_wheel_state_v2(uuid,integer)"
+    }
+  ],
+  "captured_history": {
+    "signature": "fn_wheel_history(uuid,integer)",
+    "md5": "366b3a3aef77b83f0ff1eac370a332df",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+  },
+  "source_inputs": {
+    "supabase/migrations/20260917210401_diamond_wheel_upgrade_adds_four_instant_chip_prizes.sql": {
+      "sha256": "9b64446babe23ae31ace2e365473fe68087895bfd4759fb56f94868123588a60"
+    },
+    "tests/sql/diamond-wheel-upgrade-eight.sql": {
+      "sha256": "f5450a3dda540f89837cb49cbfb5a98bf58a063354c15fb016fabd6df284dcb2"
+    },
+    "tests/fixtures/accounting-delivery/diamond-games/wheel-v3-history-dependency.sql": {
+      "sha256": "7f51038bbb3d27b732a7396a67cdfa40d4ed84207213bc2cbb8331b29156bc4a"
+    },
+    "scripts/dev/test-accounting-delivery.sh": {
+      "sha256": "1407dfd2469f7058ce25cbb9c46a2269b1e1d953ec9e4e6558259ca6f5c6cbf7"
+    },
+    "scripts/ci/schema-manifest.d/diamond-wheel-funded-awards.json": {
+      "sha256": "d1ecf53a933aeb7a9ab5b9681d9e4e2c7902457751cf4620bd3430ba4c6e47ef"
+    }
+  },
+  "model": {
+    "primary_weights": [
+      10000, 5000, 15000, 10000, 5000, 15000, 10000, 2000, 15000, 10000, 1000, 2000
+    ],
+    "secondary_weights": [20000, 20000, 20000, 20000, 9600, 7400, 2000, 1000],
+    "secondary_entry_multipliers": [2, 2, 2, 2, 5, 10, 25, 100],
+    "secondary_expected_return": 4,
+    "whole_expected_return": 0.8,
+    "maximum_instant_chips_at_2500": 2500
+  },
+  "qualification": {
+    "command": "PG_BIN=/opt/homebrew/opt/postgresql@17/bin bash scripts/dev/test-accounting-delivery.sh",
+    "exit_code": 0,
+    "session": 1853,
+    "all_public_auth_rows_restored": true,
+    "log": "outputs/diamond-wheel-upgrade-20260917/upgrade-eight-full-accounting.log",
+    "client_actual_receipts": "101 sample records including 26-entry mixed v2/v3 history; helper real-client qualification266tests passed",
+    "production_installation": "not performed by server helper",
+    "config_mutation": "not performed by server helper"
+  }
+}

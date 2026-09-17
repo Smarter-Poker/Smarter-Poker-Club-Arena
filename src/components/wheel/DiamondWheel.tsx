@@ -19,6 +19,7 @@ export interface DiamondWheelProps {
   onLanded: () => void;
   size?: number;
   upgraded?: boolean;
+  idleDirection?: 1 | -1;
   presentation?: 'cabinet' | 'complete';
 }
 
@@ -34,11 +35,12 @@ function materialClass(seg: WheelSegment): string {
   return styles.reward;
 }
 
-function wheelLabel(segment: WheelSegment): string {
+function wheelLabel(segment: WheelSegment, upgraded = false): string {
   if (segment.kind === 'bonus') {
-    return { plinko: 'Plinko', crash: 'Crash', crossing: 'Donkey Cross', mines: 'Diamond Mines' }[
+    const name = { plinko: 'Plinko', crash: 'Crash', crossing: 'Donkey Cross', mines: 'Mines' }[
       segment.game ?? 'plinko'
     ];
+    return upgraded ? `Super ${name}` : name;
   }
   if (segment.kind === 'chips' && segment.multiplier) return `${segment.multiplier}x Chips`;
   if (segment.kind === 'time_bank') return 'Time Bank';
@@ -71,6 +73,7 @@ export default function DiamondWheel({
   onLanded,
   size = 760,
   upgraded = false,
+  idleDirection = 1,
   presentation = 'cabinet',
 }: DiamondWheelProps) {
   const arranged = useMemo(() => arrangeForDisplay(segments), [segments]);
@@ -90,8 +93,8 @@ export default function DiamondWheel({
   const startedKey = useRef<number | null>(null);
   const callback = useRef(onLanded);
   callback.current = onLanded;
-  const props = useRef({ spinning, count: arranged.length });
-  props.current = { spinning, count: arranged.length };
+  const props = useRef({ spinning, count: arranged.length, idleDirection });
+  props.current = { spinning, count: arranged.length, idleDirection };
   const [settledOrd, setSettledOrd] = useState<number | null>(null);
   const settledRef = useRef<number | null>(null);
   const expectedOrd = useRef<number | null>(null);
@@ -159,7 +162,8 @@ export default function DiamondWheel({
         }
       } else if (!props.current.spinning) {
         animation.current = null;
-        if (settledRef.current === null) position.current += (elapsed / 1000) * 3;
+        if (settledRef.current === null)
+          position.current += (elapsed / 1000) * 3 * props.current.idleDirection;
       }
       rotor.current?.setAttribute('transform', `rotate(${position.current} 500 500)`);
       frame = requestAnimationFrame(animate);
@@ -192,14 +196,22 @@ export default function DiamondWheel({
       data-motion="keep"
       data-phase={spinning ? 'spinning' : settledOrd === null ? 'idle' : 'landed'}
       data-upgraded={upgraded || undefined}
+      data-idle-direction={idleDirection}
       data-presentation={presentation}
+      data-prize-scale={presentation === 'cabinet' && !upgraded ? 2 : 1}
     >
       <div className={styles.aura} aria-hidden="true" />
       <svg
-        viewBox={presentation === 'cabinet' ? '140 45 720 485' : '0 0 1000 1000'}
+        viewBox={
+          presentation === 'cabinet'
+            ? upgraded
+              ? '140 45 720 485'
+              : '320 70 360 345'
+            : '0 0 1000 1000'
+        }
         className={styles.svg}
         role="img"
-        aria-label={upgraded ? 'Upgraded Bonus Wheel' : 'Diamond Wheel'}
+        aria-label={upgraded ? 'Upgrade Wheel' : 'Diamond Wheel'}
       >
         <defs>
           <linearGradient id={`${id}-chrome`} x1="0" y1="0" x2="1" y2="1">
@@ -275,10 +287,10 @@ export default function DiamondWheel({
                 <g transform={`translate(${x} ${y}) rotate(${mid})`}>
                   <g className={styles.prizeFloat} style={{ animationDelay: `${index * -0.24}s` }}>
                     <svg
-                      x={count === 4 ? -90 : -57}
-                      y={count === 4 ? -100 : -62}
-                      width={count === 4 ? 180 : 114}
-                      height={count === 4 ? 164 : 104}
+                      x={count <= 8 ? -77 : -57}
+                      y={count <= 8 ? -88 : -62}
+                      width={count <= 8 ? 154 : 114}
+                      height={count <= 8 ? 140 : 104}
                       overflow="visible"
                     >
                       <WheelPrizeArt segment={segment} />
@@ -287,10 +299,10 @@ export default function DiamondWheel({
                   <text
                     className={styles.segText}
                     textAnchor="middle"
-                    y={count === 4 ? 90 : 65}
-                    fontSize={count === 4 ? 30 : 19}
+                    y={count <= 8 ? 77 : 65}
+                    fontSize={count <= 8 ? 23 : 19}
                   >
-                    {wheelLabel(segment)
+                    {wheelLabel(segment, upgraded)
                       .split(' ')
                       .map((word, line) => (
                         <tspan key={line} x="0" dy={line ? '1.05em' : 0}>

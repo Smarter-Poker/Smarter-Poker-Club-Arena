@@ -15,8 +15,17 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { CashoutReceiptChecks, useCashoutReceiptChecks } from './CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
-import { runCashoutOperation, recoverCashoutOperation, captureCashoutStart, assertCashoutStartCurrent, type CashoutStart } from '../../services/CashoutOperation';
-import { usePreparedCashoutOperations, isCashoutStartCurrent } from '../../hooks/usePreparedCashoutOperations';
+import {
+  runCashoutOperation,
+  recoverCashoutOperation,
+  captureCashoutStart,
+  assertCashoutStartCurrent,
+  type CashoutStart,
+} from '../../services/CashoutOperation';
+import {
+  usePreparedCashoutOperations,
+  isCashoutStartCurrent,
+} from '../../hooks/usePreparedCashoutOperations';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
@@ -130,7 +139,8 @@ function CashoutRequestContent({
   currentBalance,
   onComplete,
 }: CashoutRequestModalProps) {
-  const balanceAvailable = currentBalance !== null && Number.isFinite(currentBalance) && currentBalance >= 0;
+  const balanceAvailable =
+    currentBalance !== null && Number.isFinite(currentBalance) && currentBalance >= 0;
   const isCurrent = useCashoutScope(playerId, JSON.stringify([clubId, isOpen]));
   const pendingGeneration = useRef(0);
   const [successText, setSuccessText] = useState('');
@@ -170,34 +180,85 @@ function CashoutRequestContent({
     if (!playerId || !clubId || !isCurrent()) return;
     // Defer ordinary refreshes through receipt acknowledgment, never account or
     // dialog retirement. A read started before acceptance still retires old rows.
-    if (submitLockRef.current || cancelLockRef.current) { queuedPendingReload.current = true; return; }
+    if (submitLockRef.current || cancelLockRef.current) {
+      queuedPendingReload.current = true;
+      return;
+    }
     const generation = ++pendingGeneration.current;
     const current = () => isCurrent() && generation === pendingGeneration.current;
     setLoadingPending(true);
     try {
       const cashouts = await cashoutService.getPlayerCashouts(playerId, clubId, 'pending');
-      if (current()) { rowsCurrent.current = current; rowsScope.current = isCurrent; setPendingCashouts(cashouts.filter((c) => c.status === 'pending')); }
+      if (current()) {
+        rowsCurrent.current = current;
+        rowsScope.current = isCurrent;
+        setPendingCashouts(cashouts.filter((c) => c.status === 'pending'));
+      }
     } catch (err) {
       reportError(err, 'CashoutRequestModal.Failed_to_load_pending_cashouts');
-      if (current()) { rowsScope.current = isCurrent; setPendingCashouts([]); setError('Could Not Verify Pending Cashouts. Refresh To Try Again.'); }
+      if (current()) {
+        rowsScope.current = isCurrent;
+        setPendingCashouts([]);
+        setError('Could Not Verify Pending Cashouts. Refresh To Try Again.');
+      }
     }
     if (current()) setLoadingPending(false);
   }, [playerId, clubId, isCurrent]);
 
   const preparedAmount = validateCashoutAmount(amount);
-  const requestFormError = !amount ? null : !preparedAmount.ok ? preparedAmount.error
-    : !balanceAvailable || currentBalance === null ? 'Your Club Balance Is Unavailable. Refresh Before Requesting A Cashout.'
-      : preparedAmount.amount > currentBalance ? 'That Is More Than Your Available Balance' : null;
-  const requests = usePreparedCashoutOperations(isOpen && preparedAmount.ok ? [{ key: 'request', intent: {
-      userId: playerId, playerId, clubId, targetId: playerId, kind: 'cashout_request',
-      amount: preparedAmount.amount, note,
-    } }] : [], isCurrent, null);
-  const cancellations = usePreparedCashoutOperations(pendingCashouts.map(row => ({ key: row.id, intent: {
-    userId: playerId, receiptViewCurrent: isCurrent, playerId: row.playerId, clubId: row.clubId, targetId: row.id,
-    kind: 'cashout_cancel', amount: row.amount,
-  } })), rowsCurrent.current, pendingCashouts);
-  const editAmount = (value: string) => { requests.invalidate(); setAmount(value); };
-  const editNote = (value: string) => { requests.invalidate(); setNote(value); };
+  const requestFormError = !amount
+    ? null
+    : !preparedAmount.ok
+      ? preparedAmount.error
+      : !balanceAvailable || currentBalance === null
+        ? 'Your Club Balance Is Unavailable. Refresh Before Requesting A Cashout.'
+        : preparedAmount.amount > currentBalance
+          ? 'That Is More Than Your Available Balance'
+          : null;
+  const requests = usePreparedCashoutOperations(
+    isOpen && preparedAmount.ok
+      ? [
+          {
+            key: 'request',
+            intent: {
+              userId: playerId,
+              playerId,
+              clubId,
+              targetId: playerId,
+              kind: 'cashout_request',
+              amount: preparedAmount.amount,
+              note,
+            },
+          },
+        ]
+      : [],
+    isCurrent,
+    null
+  );
+  const cancellations = usePreparedCashoutOperations(
+    pendingCashouts.map((row) => ({
+      key: row.id,
+      intent: {
+        userId: playerId,
+        receiptViewCurrent: isCurrent,
+        playerId: row.playerId,
+        clubId: row.clubId,
+        targetId: row.id,
+        kind: 'cashout_cancel',
+        amount: row.amount,
+      },
+    })),
+    rowsCurrent.current,
+    pendingCashouts
+  );
+  const editAmount = (value: string) => {
+    requests.invalidate();
+    setAmount(value);
+  };
+  const editNote = (value: string) => {
+    requests.invalidate();
+    setNote(value);
+  };
 
   // CA-16 BUG FIX: autoCloseTimer had no unmount-guard useEffect. If the parent
   // destroys the modal (route change) while the 2s post-success auto-close
@@ -347,7 +408,10 @@ function CashoutRequestContent({
   const handleSubmit = async () => {
     if (submitLockRef.current || !isCurrent()) return;
     const validation = validateCashoutAmount(amount);
-    if (!validation.ok) { setError(validation.error); return; }
+    if (!validation.ok) {
+      setError(validation.error);
+      return;
+    }
     const cashoutAmount = validation.amount;
     submitLockRef.current = true;
     setIsSubmitting(true);
@@ -361,17 +425,21 @@ function CashoutRequestContent({
       const recovery = await recoverCashoutOperation(accepted);
       assertCashoutStartCurrent(start);
       if (!recovery.found) {
-        if (!balanceAvailable || currentBalance === null) throw new Error('Your Club Balance Is Unavailable. Refresh Before Requesting A Cashout.');
-        if (cashoutAmount > currentBalance) throw new Error('That Is More Than Your Available Balance');
+        if (!balanceAvailable || currentBalance === null)
+          throw new Error('Your Club Balance Is Unavailable. Refresh Before Requesting A Cashout.');
+        if (cashoutAmount > currentBalance)
+          throw new Error('That Is More Than Your Available Balance');
         const lock = await checkSettlementLock(accepted.clubId);
         assertCashoutStartCurrent(start);
         if (lock.locked) throw new Error('Settlement In Progress. Cashout Requests Are Frozen');
       }
       const result = recovery.found ? recovery.result : await runCashoutOperation(accepted);
       assertCashoutStartCurrent(start);
-      setSuccessText(result.status === 'pending'
-        ? 'Cashout Requested. Chips Are Held For Review. Your Invoice Is Available In Messenger.'
-        : `This Cashout Is Already ${result.status}. Check Its Invoice For Details.`);
+      setSuccessText(
+        result.status === 'pending'
+          ? 'Cashout Requested. Chips Are Held For Review. Your Invoice Is Available In Messenger.'
+          : `This Cashout Is Already ${result.status}. Check Its Invoice For Details.`
+      );
       setSuccess(true);
       setAmount('');
       setNote('');
@@ -385,7 +453,8 @@ function CashoutRequestContent({
         autoCloseTimer.current = null;
       }, 2000);
     } catch (err) {
-      if (isCurrent() && (!start || isCashoutStartCurrent(start))) setError(safeErrorMessage(err, 'Refresh To Check The Cashout Outcome'));
+      if (isCurrent() && (!start || isCashoutStartCurrent(start)))
+        setError(safeErrorMessage(err, 'Refresh To Check The Cashout Outcome'));
     } finally {
       submitLockRef.current = false;
       if (isCurrent()) {
@@ -398,13 +467,21 @@ function CashoutRequestContent({
     }
   };
 
-  const receiptChecks = useCashoutReceiptChecks(isCurrent, () => { void loadPendingCashouts(); onComplete?.(); });
+  const receiptChecks = useCashoutReceiptChecks(isCurrent, () => {
+    void loadPendingCashouts();
+    onComplete?.();
+  });
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const handleCancel = async (cashoutId: string) => {
     if (cancelLockRef.current || !isCurrent() || !rowsCurrent.current?.()) return;
-    const cashout = pendingCashouts.find((row) => row.id === cashoutId && row.playerId === playerId);
-    if (!cashout) { setError('Refresh To Verify This Cashout Before Cancelling'); return; }
+    const cashout = pendingCashouts.find(
+      (row) => row.id === cashoutId && row.playerId === playerId
+    );
+    if (!cashout) {
+      setError('Refresh To Verify This Cashout Before Cancelling');
+      return;
+    }
     cancelLockRef.current = true;
     setCancellingId(cashoutId);
     let start: CashoutStart | null = null;
@@ -423,8 +500,12 @@ function CashoutRequestContent({
       void loadPendingCashouts();
       onComplete?.();
     } catch (err) {
-      if (checkingOutcome && start && isCurrent()) receiptChecks.retain(cashout.id, cashout.amount, 'Cashout Cancellation', start);
-      if (isCurrent() && (!start || isCashoutStartCurrent(start))) { setSuccess(false); setError(safeErrorMessage(err, 'Refresh To Check The Cashout Outcome')); }
+      if (checkingOutcome && start && isCurrent())
+        receiptChecks.retain(cashout.id, cashout.amount, 'Cashout Cancellation', start);
+      if (isCurrent() && (!start || isCashoutStartCurrent(start))) {
+        setSuccess(false);
+        setError(safeErrorMessage(err, 'Refresh To Check The Cashout Outcome'));
+      }
     } finally {
       cancelLockRef.current = false;
       if (isCurrent()) {
@@ -474,7 +555,9 @@ function CashoutRequestContent({
           {/* Current Balance */}
           <div className="balance-display">
             <span className="label">Available Balance</span>
-            <span className="value">{balanceAvailable ? `${currentBalance!.toLocaleString()} Chips` : 'Unavailable'}</span>
+            <span className="value">
+              {balanceAvailable ? `${currentBalance!.toLocaleString()} Chips` : 'Unavailable'}
+            </span>
           </div>
 
           {/* LOADING STATE. `loadingPending` was declared, set true, set false,
@@ -489,7 +572,9 @@ function CashoutRequestContent({
           )}
 
           {/* Pending Cashouts */}
-          {visiblePendingCashouts.length === 100 && <p>Showing The Most Recent 100 Pending Requests.</p>}
+          {visiblePendingCashouts.length === 100 && (
+            <p>Showing The Most Recent 100 Pending Requests.</p>
+          )}
           {visiblePendingCashouts.length > 0 && (
             <div className="pending-section">
               <h3>Pending Requests</h3>
@@ -506,7 +591,10 @@ function CashoutRequestContent({
                     <button
                       type="button"
                       className="cancel-btn"
-                      disabled={cancellingId === cashout.id || !cancellations.get(cashout.id, 'cashout_cancel')}
+                      disabled={
+                        cancellingId === cashout.id ||
+                        !cancellations.get(cashout.id, 'cashout_cancel')
+                      }
                       onClick={() => handleCancel(cashout.id)}
                     >
                       {cancellingId === cashout.id ? 'Cancelling...' : 'Cancel'}
@@ -522,9 +610,7 @@ function CashoutRequestContent({
 
           {/* New Request Form */}
           {success ? (
-            <div className="success-message">
-              {successText}
-            </div>
+            <div className="success-message">{successText}</div>
           ) : (
             <div className="cashout-form">
               <div className="form-group">
@@ -537,7 +623,11 @@ function CashoutRequestContent({
                     value={amount}
                     onChange={(e) => editAmount(e.target.value)}
                     disabled={isSubmitting}
-                    max={balanceAvailable ? Math.min(currentBalance!, CASHOUT_AMOUNT_LIMIT) : CASHOUT_AMOUNT_LIMIT}
+                    max={
+                      balanceAvailable
+                        ? Math.min(currentBalance!, CASHOUT_AMOUNT_LIMIT)
+                        : CASHOUT_AMOUNT_LIMIT
+                    }
                     min={0.01}
                     step={0.01}
                     inputMode="decimal"
@@ -564,7 +654,9 @@ function CashoutRequestContent({
                   <button
                     type="button"
                     className="quick-btn"
-                    disabled={isSubmitting || cashoutPercentage(currentBalance ?? NaN, 100) === null}
+                    disabled={
+                      isSubmitting || cashoutPercentage(currentBalance ?? NaN, 100) === null
+                    }
                     onClick={() => {
                       const selected = cashoutPercentage(currentBalance ?? NaN, 100);
                       if (selected !== null) editAmount(selected);
@@ -590,10 +682,16 @@ function CashoutRequestContent({
                 />
               </div>
 
-              {(error || requests.error || cancellations.error || requestFormError) &&
-                <div className="error-message">{error || requests.error || cancellations.error || requestFormError}
-                  {requests.error && <button type="button" onClick={requests.invalidate}>Refresh</button>}
-                </div>}
+              {(error || requests.error || cancellations.error || requestFormError) && (
+                <div className="error-message">
+                  {error || requests.error || cancellations.error || requestFormError}
+                  {requests.error && (
+                    <button type="button" onClick={requests.invalidate}>
+                      Refresh
+                    </button>
+                  )}
+                </div>
+              )}
 
               <button
                 className="submit-btn"

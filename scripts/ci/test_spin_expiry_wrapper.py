@@ -27,6 +27,103 @@ PG = Path('/usr/lib/postgresql/17/bin')
 SOURCE = Path('/tmp/spin5-protocol/source')
 
 
+def lane_source_files():
+    return {name:(Path(__file__).resolve().parents[2]/name).read_bytes() for name in W.LANE_INPUTS}
+
+
+def lane_catalog():
+    return {'qualification':'receipt_lane_catalog','original_and_candidate_compactor_checked':True,
+        'unrelated_update_trigger_refused':True,'altered_binding_refusals':7,'helper_authority_drift_refusals':2,'missing_preimage_refused':True,
+        'original_cohort_mismatch_reproduced':True,'reverse_prerequisite_refusals':4,
+        'replay_refused':True,'existing_function_metadata_preserved':True,'guarded_and_outer_rollback_verified':True,
+        'business_rows_unchanged':True,'historical_rows_qualified':False,'financial_completion_qualified':False,
+        'full_qualification':False}
+
+
+def lane_races():
+    # Independent tiny protocol example; no database behavior is simulated/proven.
+    value={'execution':EXECUTION,'qualification':'receipt_statement_lane_and_zero_rake_compatibility',
+        'passed':True,'cleanup_verified':True,'source_stable':True,'full_qualification':False,
+        'historical_rows_qualified':False,'financial_completion_qualified':False,
+        'work_deadline_seconds':20,'cleanup_deadline_seconds':5,
+        'source_sha256':{name:W.digest(data) for name,data in lane_source_files().items()},
+        'backend_pids':{'observer':101,'holder':102,'writer':103},
+        'environment':{'database':'qual_spin_expiry_'+EXECUTION.replace('-',''),'user':'postgres','session_user':'postgres',
+                       'address':None,'port':'5432','version':170006,'others':0},
+        'shared_helper_authority':{'owner':'postgres','acl':'{postgres=X/postgres,service_role=X/postgres}',
+          'security_definer':False,'volatility':'v','config':['search_path=public, pg_temp'],
+          'full_md5':'409b14ee72ce888d3b26524c52d49a68'},
+        'clients':[{'backend_pid':pid,'client_exit':0} for pid in (101,102,103)],
+        'backend_cleanup':{'backends':0,'locks':0},'verifier_client':{'backend_pid':104,'client_exit':0},
+        'transcripts':{'lane_'+name+'_'+EXECUTION:'original transcript' for name in ('observer','holder','writer')},
+        'cleanup_transcript':'original cleanup transcript'}
+    state={'catalog':{'original':'selected'},'handler':{'owner':'postgres','acl':'{postgres=X/postgres}',
+        'body_md5':'534850c97847e72075044d8604b0a09d','config':['search_path=pg_catalog, public, pg_temp'],
+        'security_definer':False,'volatility':'v'},
+           'business':{'public.hand_history':[],'public.settlement_idempotency_keys':[]}}
+    value['before']=state;value['after']=copy.deepcopy(state)
+    value['source_readback']={name:{'sha256':sha,'matches':True} for name,sha in value['source_sha256'].items()}
+    cases=[]
+    for name,role in [('receipt_insert','service_role'),('receipt_update','service_role'),('receipt_delete','service_role'),
+                      ('history_insert','postgres'),('history_identity_update','postgres'),('history_metadata_update','postgres'),
+                      ('reverse_shared_lane','postgres'),('truncate_relation_then_refusal','service_role')]:
+        holder,writer=(103,102) if name=='reverse_shared_lane' else (102,103)
+        row={'case':name,'role':role,'holder_pid':holder,'writer_pid':writer,'affected_rows':0}
+        if name!='history_metadata_update':row['wait']={'pid':writer,'wait_event_type':'Lock','wait_event':
+            'relation' if name=='truncate_relation_then_refusal' else 'advisory','blockers':[holder]}
+        if name=='truncate_relation_then_refusal':row['sqlstate']='55000'
+        cases.append(row)
+    import uuid
+    table_id=str(uuid.uuid5(uuid.UUID(EXECUTION),'receipt-lane-zero-rake-table'))
+    hand_id=str(uuid.uuid5(uuid.UUID(EXECUTION),'receipt-lane-zero-rake-hand'))
+    result={'success':True,'table_id':table_id,'hand_id':hand_id,
+            'rake':{'success':True,'skipped':'zero_rake'},'commissions':[]}
+    row={'table_id':table_id,'hand_id':hand_id,'status':'succeeded','result':result,'error':None,
+         'attempt_count':1,'first_attempt_at':'2026-09-17T00:00:00+00:00',
+         'last_attempt_at':'2026-09-17T00:00:00+00:00','completed_at':'2026-09-17T00:00:00+00:00'}
+    one={'count':1,'rows':[{'row':row,'ctid':'(0,1)','xmin':'1234','cmin':'0'}]}
+    cases.append({'case':'zero_rake_rpc_entry_and_replay','role':'service_role','holder_pid':102,'writer_pid':103,
+        'wait':{'pid':103,'wait_event_type':'Lock','wait_event':'advisory','blockers':[102]},
+        'before_receipt_count':0,'pre_entry_receipt_write_locks':0,'created_receipts':1,'rollback_receipts':0,'receipt_fk_count':0,
+        'request_compatibility_only':True,'first_result':result,'replay_result':copy.deepcopy(result),
+        'receipt_before_replay':one,'receipt_after_replay':copy.deepcopy(one)})
+    value['cases']=cases
+    return value
+
+
+def lane_originals():
+    before={'catalog':{'retained':'catalog'},'handler':None,'business':{'retained':[]},
+            'relation_trigger_hints':{'hand_history':True,'settlement_idempotency_keys':False}}
+    after=copy.deepcopy(before);after['relation_trigger_hints']['settlement_idempotency_keys']=True
+    values={'receipt_lane_provider':{'qualification':'receipt_lane_provider','exact_authority':True,
+             'financial_rows_seeded':False,'full_qualification':False},
+        'receipt_lane_catalog':lane_catalog(),'receipt_lane_before':before,'receipt_lane_after':after}
+    return {name:json.dumps(values[name]).encode() if name in values else b'' for name in W.LANE_STAGES}
+
+
+def lane_summary():
+    return {'catalog':lane_catalog(),'result_sha256':'d'*64,
+            'observed_outputs':{name:'e'*64 for name in W.LANE_STAGES},'guarded_rollback_verified':True,
+            'historical_rows_qualified':False,'financial_completion_qualified':False,'full_qualification':False}
+
+
+def pure_source_files():
+    root = Path(__file__).resolve().parents[2]
+    return {name: (root / name).read_bytes() for name in W.PURE_INPUTS}
+
+
+def pure_result():
+    # Independent expected protocol only. The actual original SQL supplies proof.
+    return {'qualification': 'spin_mixed_basis_pure_evidence', 'shape_positive': 1,
+            'shape_negative': 24, 'key_scalar_controls': 17, 'private_invocation_refusals': 9,
+            'relative_timestamp_regression_reproduced': True, 'relative_timestamp_refusal_verified': True,
+            'installed_authority_verified': True, 'missing_preimage_refused': True,
+            'duplicate_install_refused': True, 'inner_and_outer_rollback_verified': True,
+            'business_rows_unchanged': True, 'historical_original_rows_qualified': False,
+            'statement_lane_qualified': False, 'financial_completion_qualified': False,
+            'full_qualification': False}
+
+
 def retention_behavior():
     # Protocol samples only; actual SQL must produce its own original result.
     sequences = {name: {'last_value': '1', 'is_called': False} for name in (
@@ -89,6 +186,7 @@ def completed_receipt(source=SOURCE):
         ('authentic_entry_sequence_authority', 'fixture_bootstrap', 'inputs/entry-sequence-authority.sql'),
         ('authentic_settlement_source_authority', 'fixture_bootstrap', 'inputs/settle-source-authority.sql'),
         ('retention_provider_authority', 'fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
+        ('mixed_pure_evidence_rollback', 'postgres', 'scripts/qualification/spin-mixed-basis-pure.sql'),
         ('retention_completed_eligibility', 'postgres', 'scripts/qualification/spin-history-retention-completed.sql'),
     ]
     value['stages'] = [value['stages'][0]] + [
@@ -118,6 +216,7 @@ def receipt(image='candidate', source=SOURCE):
     retention = [
         ('authentic_settlement_source_authority', 'fixture_bootstrap', 'inputs/settle-source-authority.sql'),
         ('retention_provider_authority', 'fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
+        ('mixed_pure_evidence_rollback', 'postgres', 'scripts/qualification/spin-mixed-basis-pure.sql'),
         ('retention_catalog_rollback', 'postgres', 'scripts/qualification/spin-history-retention.sql'),
         ('retention_behavior_rollback', 'postgres', 'scripts/qualification/spin-history-retention-behavior.sql'),
     ]
@@ -128,6 +227,21 @@ def receipt(image='candidate', source=SOURCE):
                  '-v', 'execution_uuid=' + EXECUTION, '-v', 'ordinary_user_uuid=' + ORDINARY,
                  '-v', 'tournament_uuid=' + TOURNAMENT, '-f', str(source / path)]}
         for name, role, path in retention]
+    if image=='candidate':
+        lane_stages=[]
+        for name,path in [
+            ('receipt_lane_provider','scripts/qualification/fixtures/spin-receipt-lane/provider.sql'),
+            ('receipt_lane_catalog','scripts/qualification/spin-receipt-lane.sql'),
+            ('receipt_lane_before','scripts/qualification/fixtures/spin-receipt-lane/snapshot.sql'),
+            ('receipt_lane_install','supabase/components/spin-mixed-basis-receipt-lane.sql'),
+            ('receipt_lane_statements','scripts/qualification/spin-receipt-lane.py'),
+            ('receipt_lane_rollback','supabase/components/spin-mixed-basis-receipt-lane.rollback.sql'),
+            ('receipt_lane_after','scripts/qualification/fixtures/spin-receipt-lane/snapshot.sql')]:
+            argv=([sys.executable,str(source/path),'--psql',str(PG/'psql'),'--execution',EXECUTION,
+                   '--output',str(source.parent/'work/receipt-lane.json')] if name=='receipt_lane_statements' else
+                  W.qualification_sql_argv(PG,source,EXECUTION,ORDINARY,TOURNAMENT,'postgres',path))
+            lane_stages.append({'stage':name,'returncode':0,'stdout_sha256':'e'*64,'argv':argv})
+        stages[3:3]=lane_stages
     endpoint = {'user': 'fixture_bootstrap', 'session_user': 'fixture_bootstrap',
                 'port': '5432', 'address': None, 'listen_addresses': '',
                 'autovacuum': 'off',
@@ -157,7 +271,8 @@ def receipt(image='candidate', source=SOURCE):
             'execution_backend': 'hosted-owned-pg17-unix-socket',
             'hosted_cleanup_observed': True, 'original_clients_terminal': True,
             'stages': stages, 'business_cases': records, 'server_endpoint': endpoint,
-            'retention_qualification': retention_behavior()}
+            'retention_qualification': retention_behavior(), 'mixed_pure_qualification': pure_result(),
+            'receipt_lane_qualification':lane_summary() if image=='candidate' else None}
 
 
 class SessionEnvironmentTests(unittest.TestCase):
@@ -674,6 +789,8 @@ class FixtureSourceTests(unittest.TestCase):
         files = dict(self.files)
         files.update({name: ('current source '+name).encode() for name in W.REPLACEMENTS})
         files.update(completed_source_files())
+        files.update(pure_source_files())
+        files.update(lane_source_files())
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -832,6 +949,8 @@ class ReceiptTests(unittest.TestCase):
                 if mode == 'missing': stages.remove(stage)
                 if mode == 'repeated': stages.append(copy.deepcopy(stage))
                 if mode == 'early': stages.remove(stage); stages.insert(0, stage)
+                if mode == 'before-provider':
+                    stages.remove(stage); stages.insert(next(i for i,x in enumerate(stages) if x['stage']=='retention_provider_authority'),stage)
                 if mode == 'late': stages.remove(stage); stages.append(stage)
                 if mode == 'failed': stage['returncode'] = 1
                 if mode == 'role': stage['argv'][stage['argv'].index('-U') + 1] = 'service_role'
@@ -977,6 +1096,7 @@ class HostedLifecycleTests(unittest.TestCase):
             work = Path(folder).resolve() / 'work'; work.mkdir(mode=0o700)
             out = work.parent / 'out'; out.mkdir(mode=0o700)
             (work / 'receipt.json').write_text(json.dumps(value))
+            (work / W.LANE_RESULT).write_text('original lane result')
             for stage in value['stages']:
                 for suffix in ('.stdout', '.stderr'):
                     (work / (stage['stage'] + suffix)).write_bytes(b'bounded case evidence')
@@ -1072,6 +1192,8 @@ class CompletedRetentionTests(unittest.TestCase):
                 if mode == 'missing': stages.remove(stage)
                 if mode == 'repeated': stages.append(copy.deepcopy(stage))
                 if mode == 'early': stages.remove(stage); stages.insert(0, stage)
+                if mode == 'before-provider':
+                    stages.remove(stage); stages.insert(next(i for i,x in enumerate(stages) if x['stage']=='retention_provider_authority'),stage)
                 if mode == 'late':
                     # Move before the prior phase; moving the last stage to the
                     # end would not mutate the protocol.
@@ -1115,7 +1237,7 @@ class CompletedRetentionTests(unittest.TestCase):
 
     def test_completed_original_output_and_cleanup_required_before_allocation_disposal(self):
         # Only the adapter protocol is simulated; no PG command executes.
-        for mode in ('success', 'changed-output', 'failed-cleanup'):
+        for mode in ('success', 'changed-output', 'failed-cleanup', 'changed-pure-output', 'missing-pure-output'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder).resolve(); allocation = root / 'allocation'; allocation.mkdir(mode=0o700)
                 args = W.argparse.Namespace(execution=EXECUTION, ordinary_user=ORDINARY,
@@ -1130,10 +1252,13 @@ class CompletedRetentionTests(unittest.TestCase):
                     if mode == 'failed-cleanup': value['cleanup_errors'] = ['original fast-stop failure']
                     for stage in value['stages']:
                         output = (json.dumps(completed_result()).encode() if stage['stage'] == 'retention_completed_eligibility'
+                                  else json.dumps(pure_result()).encode() if stage['stage'] == W.PURE_STAGE
                                   else b'original protocol output')
                         stage['stdout_sha256'] = W.digest(output)
                         if mode == 'changed-output' and stage['stage'] == 'retention_completed_eligibility': output += b'changed'
-                        (work / (stage['stage'] + '.stdout')).write_bytes(output)
+                        if mode == 'changed-pure-output' and stage['stage'] == W.PURE_STAGE: output += b'changed'
+                        if not (mode == 'missing-pure-output' and stage['stage'] == W.PURE_STAGE):
+                            (work / (stage['stage'] + '.stdout')).write_bytes(output)
                         (work / (stage['stage'] + '.stderr')).write_bytes(b'')
                     (work / 'receipt.json').write_text(json.dumps(value))
                     return value
@@ -1145,6 +1270,288 @@ class CompletedRetentionTests(unittest.TestCase):
                 self.assertEqual(result, 0 if mode == 'success' else 1)
                 self.assertEqual(allocation.exists(), mode != 'success')
                 output = root / 'artifacts/spin-expiry' / EXECUTION
-                self.assertTrue((output / 'receipt.json').exists())
-                self.assertTrue((output / 'retention_completed_eligibility.stdout').exists())
+                if mode == 'missing-pure-output':
+                    # Incomplete original logs refuse export/disposal; the exact
+                    # receipt and remaining evidence stay in the owned allocation.
+                    self.assertTrue((allocation / 'work/receipt.json').exists())
+                    self.assertFalse((output / 'receipt.json').exists())
+                else:
+                    self.assertTrue((output / 'receipt.json').exists())
+                    self.assertTrue((output / 'retention_completed_eligibility.stdout').exists())
                 self.assertEqual(json.loads((output / 'RESULT.json').read_text())['passed'], mode == 'success')
+
+
+class PureEvidenceTests(unittest.TestCase):
+    def validate(self, value, image='candidate'):
+        return W.validate_receipt(value, EXECUTION, ORDINARY, TOURNAMENT, image,
+                                  MANIFEST_SHA, SOURCE, PG)
+
+    def test_exact_sources_embedded_bodies_and_include_graph(self):
+        files = pure_source_files()
+        W.validate_pure_sources(files)
+        self.assertEqual(set(W.decode(files[W.PURE_MANIFEST])['files']),
+                         {W.PURE_COMPONENT, W.PURE_SHAPE, W.PURE_PREIMAGE, W.PURE_QUALIFIER, W.PURE_ORACLE})
+        self.assertFalse(any('terminal' in name or 'receipt-lane' in name for name in W.PURE_INPUTS))
+        for name in W.PURE_INPUTS:
+            missing = dict(files); missing.pop(name)
+            modified = dict(files); modified[name] += b'changed'
+            for value in (missing, modified):
+                with self.subTest(name=name), self.assertRaises(RuntimeError): W.validate_pure_sources(value)
+
+    def test_rebound_manifest_cannot_hide_embedded_authority_or_include_drift(self):
+        for mode in ('component', 'shape', 'preimage', 'embedded_preimage', 'preimage_commit', 'preimage_error', 'include', 'scope', 'role'):
+            files = pure_source_files(); manifest = W.decode(files[W.PURE_MANIFEST])
+            if mode in ('component', 'shape'):
+                path = W.PURE_COMPONENT if mode == 'component' else W.PURE_SHAPE
+                files[path] += b'-- source no longer matches embedded body\n'
+                manifest['files'][path] = W.pin(files[path])
+            if mode == 'preimage':
+                # Even rebinding the manifest cannot redefine the original HEAD bytes.
+                files[W.PURE_PREIMAGE] += b'-- original authority changed\n'
+                manifest['files'][W.PURE_PREIMAGE] = W.pin(files[W.PURE_PREIMAGE])
+                manifest['regression_preimage']['sha256'] = W.digest(files[W.PURE_PREIMAGE])
+            if mode == 'embedded_preimage':
+                files[W.PURE_QUALIFIER] = files[W.PURE_QUALIFIER].replace(
+                    b'$mixed_preimage_source$-- SOURCE-ONLY', b'$mixed_preimage_source$-- CHANGED', 1)
+                manifest['files'][W.PURE_QUALIFIER] = W.pin(files[W.PURE_QUALIFIER])
+            if mode == 'preimage_commit': manifest['regression_preimage']['commit'] = '0' * 40
+            if mode == 'preimage_error': manifest['regression_preimage']['control_sqlstate'] = 'P0001'
+            if mode == 'include':
+                files[W.PURE_QUALIFIER] += b'\n\\ir spin-mixed-basis-terminal.sql\n'
+                manifest['files'][W.PURE_QUALIFIER] = W.pin(files[W.PURE_QUALIFIER])
+            if mode == 'scope': manifest['full_qualification'] = True
+            if mode == 'role': manifest['stage']['role'] = 'service_role'
+            files[W.PURE_MANIFEST] = json.dumps(manifest).encode()
+            with self.subTest(mode=mode), patch.object(W, 'PURE_MANIFEST_SHA256', W.digest(files[W.PURE_MANIFEST])), \
+                    self.assertRaises(RuntimeError): W.validate_pure_sources(files)
+
+    def test_partial_original_result_exact_counts_types_and_no_extra_claims(self):
+        raw = json.dumps(pure_result()).encode()
+        self.assertEqual(W.pure_output(b'BEGIN\nROLLBACK\n' + raw), pure_result())
+        for output in (b'', raw+b'\n'+raw, b'{bad}\n'+raw, raw[:-1],
+                       raw.replace(b'"full_qualification": false', b'"full_qualification": false, "full_qualification": false')):
+            with self.subTest(output=output[:40]), self.assertRaises((RuntimeError, ValueError)):
+                W.pure_output(output)
+        for key, original in pure_result().items():
+            wrong = dict(pure_result()); wrong[key] = (not original if type(original) is bool else None)
+            with self.subTest(key=key), self.assertRaises(RuntimeError): W.validate_pure_result(wrong)
+        for wrong in (dict(pure_result(), shape_positive=True), dict(pure_result(), new_claim=True)):
+            with self.assertRaises(RuntimeError): W.validate_pure_result(wrong)
+
+    def test_every_original_image_requires_pure_phase_before_retention_or_money(self):
+        for image in W.IMAGES:
+            original = completed_receipt() if image == 'retention-completed' else receipt(image)
+            self.validate(original, image)
+            for mode in ('missing', 'repeated', 'early', 'before-provider', 'late', 'role', 'identity', 'failed', 'hash', 'result'):
+                value = copy.deepcopy(original); stages = value['stages']
+                stage = next(item for item in stages if item['stage'] == 'mixed_pure_evidence_rollback')
+                if mode == 'missing': stages.remove(stage)
+                if mode == 'repeated': stages.append(copy.deepcopy(stage))
+                if mode == 'early': stages.remove(stage); stages.insert(0, stage)
+                if mode == 'before-provider':
+                    stages.remove(stage); stages.insert(next(i for i,x in enumerate(stages) if x['stage']=='retention_provider_authority'),stage)
+                if mode == 'late': stages.remove(stage); stages.append(stage)
+                if mode == 'role': stage['argv'][stage['argv'].index('-U')+1] = 'fixture_bootstrap'
+                if mode == 'identity': stage['argv'][-1] = '/old/pure.sql'
+                if mode == 'failed': stage['returncode'] = 1
+                if mode == 'hash': stage.pop('stdout_sha256')
+                if mode == 'result': value['mixed_pure_qualification'] = None
+                with self.subTest(image=image, mode=mode), self.assertRaises(RuntimeError): self.validate(value,image)
+
+    def test_original_images_cases_and_budgets_unchanged(self):
+        self.assertEqual(W.IMAGES, ('preimage','candidate','retention-completed'))
+        self.assertEqual(W.CASES, {'preimage':('order',), 'candidate':('order','timeout','committed-refund'),
+                                  'retention-completed':()})
+        source = Path(W.__file__).read_text()
+        self.assertIn('deadline = time.monotonic() + 240', source)
+        self.assertIn("'cleanup_deadline_seconds': 30", source)
+
+
+class ReceiptLaneTests(unittest.TestCase):
+    def validate(self, value, image='candidate'):
+        return W.validate_receipt(value,EXECUTION,ORDINARY,TOURNAMENT,image,MANIFEST_SHA,SOURCE,PG)
+
+    def test_sealed_authentic_inputs_include_graph_and_embedded_components(self):
+        files=lane_source_files(); W.validate_lane_sources(files)
+        spec=importlib.util.spec_from_file_location('lane_session_custody',W.ROOT/W.LANE_PROGRAM)
+        lane=importlib.util.module_from_spec(spec);spec.loader.exec_module(lane)
+        self.assertEqual(lane.SESSION_PATH,W.LANE_SESSION)
+        self.assertEqual(lane.SESSION_SHA,W.digest(files[W.LANE_SESSION]))
+        self.assertEqual(W.IMAGES,('preimage','candidate','retention-completed'))
+        self.assertEqual(W.CASES,{'preimage':('order',),'candidate':('order','timeout','committed-refund'),
+                                 'retention-completed':()})
+        for name in W.LANE_INPUTS:
+            changed=dict(files);changed[name]+=b'changed'
+            with self.subTest(path=name),self.assertRaises((RuntimeError,ValueError)):
+                W.validate_lane_sources(changed)
+        missing=dict(files);del missing[W.PURE_ORACLE]
+        with self.assertRaises(RuntimeError): W.validate_lane_sources(missing)
+
+    def test_resealed_embedded_drift_and_include_omission_still_refuse(self):
+        for mode in ('body','include','capture','session','cohort-preimage','cohort-guard'):
+            files=lane_source_files();manifest=W.decode(files[W.LANE_MANIFEST])
+            if mode=='body':
+                name=W.LANE_BASE+'component-inputs.sql';files[name]=files[name].replace(b'PERFORM public.',b'PERFORM changed.',1)
+            elif mode=='include':
+                manifest['relative_include_graph'].pop('scripts/qualification/spin-receipt-lane.sql')
+                name=None
+            elif mode=='cohort-preimage':
+                manifest['cohort_guard_preimage']['transaction_body_sha256']='0'*64
+                name=None
+            elif mode=='cohort-guard':
+                name='scripts/qualification/spin-receipt-lane.sql'
+                files[name]=files[name].replace(b'480be3139fe0878e637ce54f533a2170',b'0'*32,1)
+            else:
+                name=W.LANE_BASE+'authority.json' if mode=='capture' else W.LANE_SESSION
+                files[name]+=b'\n'
+            if name:manifest['files'][name]=W.pin(files[name])
+            files[W.LANE_MANIFEST]=(json.dumps(manifest)+'\n').encode()
+            with patch.object(W,'LANE_MANIFEST_SHA256',W.digest(files[W.LANE_MANIFEST])),self.subTest(mode=mode),self.assertRaises(RuntimeError):
+                W.validate_lane_sources(files)
+
+    def test_exact_original_outputs_and_physical_hint_only_difference(self):
+        outputs=lane_originals(); raw=json.dumps(lane_races()).encode()
+        result=W.lane_outputs(outputs,raw,EXECUTION,lane_source_files())
+        self.assertEqual(result['catalog'],lane_catalog());self.assertFalse(result['full_qualification'])
+        for mode in ('retained-handler','changed-business','changed-proc','missing-hint','malformed','duplicate','catalog-control'):
+            changed=copy.deepcopy(outputs)
+            if mode in ('malformed','duplicate'):
+                changed['receipt_lane_catalog']+=b'{' if mode=='malformed' else b'\n'+changed['receipt_lane_catalog']
+            elif mode=='catalog-control':
+                row=lane_catalog();row['altered_binding_refusals']=6
+                changed['receipt_lane_catalog']=json.dumps(row).encode()
+            else:
+                row=W.lane_json(changed['receipt_lane_after'])
+                if mode=='retained-handler':row['handler']={'owner':'postgres'}
+                if mode=='changed-business':row['business']['retained']=[{'amount':1}]
+                if mode=='changed-proc':row['catalog']['retained']='changed'
+                if mode=='missing-hint':del row['relation_trigger_hints']
+                changed['receipt_lane_after']=json.dumps(row).encode()
+            with self.subTest(mode=mode),self.assertRaises((RuntimeError,ValueError)):
+                W.lane_outputs(changed,raw,EXECUTION,lane_source_files())
+
+    def test_session_protocol_refuses_wrong_role_lock_identity_rows_and_missing_cases(self):
+        W.validate_lane_races(lane_races(),EXECUTION,lane_source_files())
+        for mode in ('missing','repeat','reorder','role','pid','wait','blocker','affected','truncate','metadata'):
+            value=lane_races();rows=value['cases']
+            if mode=='missing':rows.pop()
+            if mode=='repeat':rows.append(copy.deepcopy(rows[0]))
+            if mode=='reorder':rows[:2]=reversed(rows[:2])
+            if mode=='role':rows[0]['role']='postgres'
+            if mode=='pid':rows[0]['writer_pid']=999
+            if mode=='wait':rows[0]['wait']['wait_event']='relation'
+            if mode=='blocker':rows[0]['wait']['blockers']=[999]
+            if mode=='affected':rows[0]['affected_rows']=1
+            if mode=='truncate':rows[7]['sqlstate']='42501'
+            if mode=='metadata':rows[5]['wait']=copy.deepcopy(rows[0]['wait'])
+            with self.subTest(mode=mode),self.assertRaises(RuntimeError):
+                W.validate_lane_races(value,EXECUTION,lane_source_files())
+
+    def test_reverse_cohort_protocol_requires_observed_before_and_four_refusals(self):
+        raw=json.dumps(lane_races()).encode(); files=lane_source_files()
+        value=W.lane_outputs(lane_originals(),raw,EXECUTION,files)['catalog']
+        self.assertIs(value['original_cohort_mismatch_reproduced'],True)
+        self.assertEqual(value['reverse_prerequisite_refusals'],4)
+        for key,bad in [('original_cohort_mismatch_reproduced',None),
+                        ('original_cohort_mismatch_reproduced',False),
+                        ('original_cohort_mismatch_reproduced',1),
+                        ('reverse_prerequisite_refusals',None),
+                        ('reverse_prerequisite_refusals',3),
+                        ('reverse_prerequisite_refusals',5),
+                        ('reverse_prerequisite_refusals',True)]:
+            outputs=lane_originals(); row=lane_catalog()
+            if bad is None: del row[key]
+            else: row[key]=bad
+            outputs['receipt_lane_catalog']=json.dumps(row).encode()
+            with self.subTest(key=key,bad=bad),self.assertRaises(RuntimeError):
+                W.lane_outputs(outputs,raw,EXECUTION,files)
+
+    def test_session_cleanup_authority_source_and_qualification_claims_fail_closed(self):
+        for mode in ('foreign-execution','helper-acl','helper-owner','source','dead-client','live-backend',
+                     'unknown-verifier','changed-state','failure','missing-transcript','overclaim'):
+            value=lane_races()
+            if mode=='foreign-execution':value['execution']=ORDINARY
+            if mode=='helper-acl':value['shared_helper_authority']['acl']='{postgres=X/postgres}'
+            if mode=='helper-owner':value['shared_helper_authority']['owner']='service_role'
+            if mode=='source':value['source_sha256'][W.LANE_SESSION]='0'*64
+            if mode=='dead-client':value['clients'][0]['client_exit']=-9
+            if mode=='live-backend':value['backend_cleanup']['backends']=1
+            if mode=='unknown-verifier':value['verifier_client']['client_exit']=None
+            if mode=='changed-state':value['after']['business']['public.hand_history']=[{'id':'fake'}]
+            if mode=='failure':value['failure']={'type':'TimeoutError'}
+            if mode=='missing-transcript':value['transcripts'].pop(next(iter(value['transcripts'])))
+            if mode=='overclaim':value['financial_completion_qualified']=True
+            with self.subTest(mode=mode),self.assertRaises(RuntimeError):
+                W.validate_lane_races(value,EXECUTION,lane_source_files())
+
+    def test_phase_protocol_requires_original_candidate_only_roles_order_and_identity(self):
+        self.validate(receipt())
+        for name in W.LANE_STAGES:
+            for mode in ('missing','repeated','early','role','argv','failed','digest'):
+                value=receipt();stages=value['stages'];row=next(x for x in stages if x['stage']==name)
+                if mode=='missing':stages.remove(row)
+                if mode=='repeated':stages.append(copy.deepcopy(row))
+                if mode=='early':stages.remove(row);stages.insert(1,row)
+                if mode=='role':
+                    if '-U' in row['argv']:row['argv'][row['argv'].index('-U')+1]='fixture_bootstrap'
+                    else:row['argv'][0]='/other/python'
+                if mode=='argv':row['argv'][-1]='/other/source'
+                if mode=='failed':row['returncode']=1
+                if mode=='digest':row['stdout_sha256']='f'*64
+                with self.subTest(stage=name,mode=mode),self.assertRaises(RuntimeError):self.validate(value)
+        for image in ('preimage','retention-completed'):
+            value=receipt(image) if image=='preimage' else completed_receipt()
+            value['stages'].append(next(x for x in receipt()['stages'] if x['stage']=='receipt_lane_install'))
+            with self.subTest(image=image),self.assertRaises(RuntimeError):self.validate(value,image)
+
+    def test_actual_finite_wait_refuses_early_completion_foreign_blocker_and_deadline(self):
+        spec=importlib.util.spec_from_file_location('lane_finite_wait',Path(__file__).resolve().parents[2]/W.LANE_PROGRAM)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        class Holder: pid=102
+        class Writer:
+            pid=103
+            def __init__(self,result=None):self.result=result
+            def poll(self):return self.result
+        class Observer:
+            def __init__(self,value):self.value=value;self.calls=0
+            def json(self,query):self.calls+=1;return self.value
+        expected={'pid':103,'wait_event_type':'Lock','wait_event':'advisory','blockers':[102]}
+        observer=Observer(expected)
+        with patch.object(module.time,'monotonic',return_value=1):
+            self.assertEqual(module.wait_for_block(observer,Holder(),Writer(),'advisory',2),expected)
+        with patch.object(module.time,'monotonic',return_value=1),self.assertRaisesRegex(RuntimeError,'completed'):
+            module.wait_for_block(observer,Holder(),Writer('0'),'advisory',2)
+        for value in (None,dict(expected,blockers=[999]),dict(expected,wait_event='relation')):
+            observer=Observer(value)
+            with patch.object(module.time,'monotonic',side_effect=[1,3]),patch.object(module.time,'sleep') as pause, \
+                    self.subTest(value=value),self.assertRaises(TimeoutError):
+                module.wait_for_block(observer,Holder(),Writer(),'advisory',2)
+            self.assertEqual(observer.calls,1);pause.assert_called_once_with(0.01)
+
+    def test_snapshot_comparison_keeps_exact_decimal_difference(self):
+        first=W.lane_json(b'{"amount":9007199254740992.01}')
+        second=W.lane_json(b'{"amount":9007199254740992.02}')
+        self.assertNotEqual(first,second)
+        self.assertEqual(str(second['amount']-first['amount']),'0.01')
+
+    def test_real_rpc_protocol_requires_entry_wait_canonical_row_and_unchanged_replay(self):
+        for mode in ('positive-rake','pre-entry-write','duplicate','no-real-row','replay-result','replay-tuple',
+                     'wrong-key','attempt-count','error','unrolled-row','foreign-key'):
+            value=lane_races();rpc=value['cases'][-1]
+            if mode=='positive-rake':rpc['first_result']['rake']={'success':True,'rake_amount':1}
+            if mode=='pre-entry-write':rpc['pre_entry_receipt_write_locks']=1
+            if mode=='duplicate':rpc['created_receipts']=2
+            if mode=='no-real-row':rpc['receipt_before_replay']['rows']=[]
+            if mode=='replay-result':rpc['replay_result']['commissions']=[{'amount':1}]
+            if mode=='replay-tuple':rpc['receipt_after_replay']['rows'][0]['ctid']='(0,2)'
+            if mode=='wrong-key':rpc['receipt_after_replay']['rows'][0]['row']['hand_id']=ORDINARY
+            if mode=='attempt-count':
+                rpc['receipt_before_replay']['rows'][0]['row']['attempt_count']=2
+                rpc['receipt_after_replay']['rows'][0]['row']['attempt_count']=2
+            if mode=='error':
+                rpc['receipt_before_replay']['rows'][0]['row']['error']='unknown'
+                rpc['receipt_after_replay']['rows'][0]['row']['error']='unknown'
+            if mode=='unrolled-row':rpc['rollback_receipts']=1
+            if mode=='foreign-key':rpc['receipt_fk_count']=1
+            with self.subTest(mode=mode),self.assertRaises(RuntimeError):
+                W.validate_lane_races(value,EXECUTION,lane_source_files())

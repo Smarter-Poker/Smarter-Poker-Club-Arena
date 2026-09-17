@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "kind": "spin-mixed-basis-pure-hosted",
+  "scope": "Pure supplied-JSON evidence and scalar key rules only; no original-row, statement-lane or financial completion qualification.",
+  "full_qualification": false,
+  "provider_preimage": {
+    "path": "scripts/ci/probes/spin-expiry/inputs/schema.sql",
+    "sha256": "5a5966afca3b2c9699aba326baf5f32d6c0e1baa2ad09340feaa3b23f4d9dc0a",
+    "function": "public.fn_settle_tournament_places(uuid,uuid)",
+    "prosrc_md5": "6181734ff98555ecc04648186f6ebf24"
+  },
+  "files": {
+    "supabase/components/spin-mixed-basis-evidence.sql": {
+      "sha256": "9905e73eaf1d9f955afcf03bdc6a30b53b6932826f8a9aa7a4899168b280bef8",
+      "bytes": 23950
+    },
+    "scripts/qualification/spin-mixed-basis-shape.sql": {
+      "sha256": "3b4379a33a44c0e0c040650180df89bc1ebd785392e2208c9f2f266a1ac54caa",
+      "bytes": 13281
+    },
+    "scripts/qualification/spin-mixed-basis-pure.sql": {
+      "sha256": "25edc71ba397e4e006260482685025386c81587ffd859090093980c9572d2eed",
+      "bytes": 71924
+    },
+    "scripts/qualification/fixtures/spin-history-retention/database-state.sql": {
+      "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12",
+      "bytes": 3095
+    },
+    "scripts/qualification/spin-mixed-basis-evidence.preimage.sql": {
+      "sha256": "f0d703e56be6f6bd171a2ed56cd4943a5021fd4bfc9da57a60c706d1af7d8572",
+      "bytes": 23640
+    }
+  },
+  "relative_include_graph": {
+    "scripts/qualification/spin-mixed-basis-pure.sql": [
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql"
+    ]
+  },
+  "embedded_sources": {
+    "mixed_component_source": {
+      "path": "supabase/components/spin-mixed-basis-evidence.sql",
+      "remove_outer_transaction": [
+        "BEGIN;",
+        "COMMIT;"
+      ]
+    },
+    "mixed_shape_source": {
+      "path": "scripts/qualification/spin-mixed-basis-shape.sql",
+      "remove_outer_transaction": [
+        "BEGIN;",
+        "ROLLBACK;"
+      ]
+    },
+    "mixed_preimage_source": {
+      "path": "scripts/qualification/spin-mixed-basis-evidence.preimage.sql",
+      "remove_outer_transaction": [
+        "BEGIN;",
+        "COMMIT;"
+      ]
+    }
+  },
+  "stage": {
+    "name": "mixed_pure_evidence_rollback",
+    "role": "postgres",
+    "path": "scripts/qualification/spin-mixed-basis-pure.sql"
+  },
+  "execution_status": "native_unrun",
+  "regression_preimage": {
+    "commit": "5ce406fbf32f562762910db2ed324839be01b683",
+    "path": "supabase/components/spin-mixed-basis-evidence.sql",
+    "sha256": "f0d703e56be6f6bd171a2ed56cd4943a5021fd4bfc9da57a60c706d1af7d8572",
+    "qualifier_input": "scripts/qualification/spin-mixed-basis-evidence.preimage.sql",
+    "control_sqlstate": "PZ020",
+    "control_message": "mixed shape accepted relative modern commit timestamps"
+  }
+}

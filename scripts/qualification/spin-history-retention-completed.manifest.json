@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "state": "SOURCE_WIRED_NATIVE_UNRUN",
+  "scope": "FIFO5 preventive retention completed-receipt eligibility only; no terminal creation or financial qualification",
+  "base_commit": "56115f5239ed735bc238757e4defda45b1edbda4",
+  "files": {
+    "scripts/qualification/fixtures/spin-history-retention/capture-completed-start.sql": {
+      "bytes": 9204,
+      "sha256": "4d90cfe1b5779ab9cb22e948e68bc2c42b8cd63c8a875f6980ab19634205bbd5"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/completed-start-authority.json": {
+      "bytes": 23033,
+      "sha256": "34e390830fe89c997d61d9966398f01f6bef942db628c600a54ed8b9c901d30c"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/completed-start-input.sql": {
+      "bytes": 8996,
+      "sha256": "1727dd0999c602fc9beb033fa7bb60fa00c8f2f8ff22aecf6f6c0ff00fa91ab2"
+    },
+    "scripts/qualification/fixtures/spin-history-retention/completed-start-restore.sql": {
+      "bytes": 7738,
+      "sha256": "9bc5ed046ef7eb38c7697a4f3691154fc4f346ec2c7153d39dbb26865105f116"
+    },
+    "scripts/qualification/spin-history-retention-completed.sql": {
+      "bytes": 10854,
+      "sha256": "9e74b246802a479a0d6171d38b5d3326ba28ae93236a3b651da172662784b053"
+    },
+    "scripts/qualification/spin-history-retention-completed.md": {
+      "bytes": 8256,
+      "sha256": "4aac45b7c87d6e0557a54c73c366a52d6cdbf7d66284dd52f9cb1efe536c9be4"
+    }
+  },
+  "relative_include_graph": {
+    "scripts/qualification/fixtures/spin-history-retention/capture-completed-start.sql": [],
+    "scripts/qualification/fixtures/spin-history-retention/completed-start-input.sql": [],
+    "scripts/qualification/fixtures/spin-history-retention/completed-start-restore.sql": [
+      "completed-start-input.sql"
+    ],
+    "scripts/qualification/spin-history-retention-completed.sql": [
+      "fixtures/spin-history-retention/completed-start-input.sql",
+      "fixtures/spin-history-retention/database-state.sql",
+      "fixtures/spin-history-retention/component-inputs.sql",
+      "fixtures/spin-history-retention/social-alias-reference.sql"
+    ]
+  },
+  "capture": {
+    "observed_at": "2026-09-17T07:35:54.523723+00:00",
+    "raw_sha256": "34e390830fe89c997d61d9966398f01f6bef942db628c600a54ed8b9c901d30c",
+    "terminal_receipt_exact_jsonb": true,
+    "parent_rows": "captured narrow projections, synthetic names and five explicit zero club financial fields; other omitted fields use provider defaults; not full historical rows",
+    "original_identity_retained": true,
+    "no_imported_auth_or_profile_rows": true,
+    "synthetic_zero_club_fields": [
+      "chip_treasury",
+      "chip_pool",
+      "promo_balance",
+      "insurance_balance",
+      "total_rake"
+    ],
+    "query_change": "Only UUID-handling comments corrected after root original-ID instruction; original executed query remains in raw capture and v1 snapshot."
+  },
+  "stage_order": [
+    {
+      "role": "fixture_bootstrap",
+      "boundary": "separate disposable database, exact existing schema prefix and principals, no user triggers yet",
+      "path": "scripts/qualification/fixtures/spin-history-retention/completed-start-restore.sql"
+    },
+    {
+      "role": "fixture_bootstrap",
+      "boundary": "restore remaining authentic trigger/access/policy/provider closure and all existing checks; do not use this database for empty funded estate",
+      "path": "existing provider + frozen v2 provider-supplement.sql"
+    },
+    {
+      "role": "postgres",
+      "boundary": "fresh non-super connection, all real triggers active",
+      "path": "scripts/qualification/spin-history-retention-completed.sql"
+    },
+    {
+      "role": "runner",
+      "boundary": "observe exits/backend retirement; dispose whole logical-fixture database/cluster",
+      "path": null
+    }
+  ],
+  "expected_result": {
+    "qualification": "spin_history_retention_completed_receipt_eligibility",
+    "old_deleted": 1,
+    "candidate_deleted": 1,
+    "captured_receipt_unchanged": true,
+    "projection_and_catalog_rollback_verified": true,
+    "starting_estate_retained_until_database_disposal": true,
+    "terminal_creation_qualified": false,
+    "financial_lifecycle_qualified": false,
+    "multi_session_race_qualified": false
+  },
+  "gaps": [
+    "No SQL/parser/native execution of the new source.",
+    "No completed transition commit-versus-rollback concurrency proof.",
+    "No restoration of original FIFO5 history or original22 membership proof."
+  ],
+  "self_hash_omitted": true,
+  "source_version": "completed_receipt_eligibility_v3_adopted",
+  "author_frozen_v2_provenance": {
+    "path": "scripts/qualification/spin-history-retention.manifest.json",
+    "sha256": "5d663a0ffef24d003698ed8afd8ae5e1ae7cb48b83743fb356ac6f4a83960067",
+    "all_existing_leaf_pins_match": false,
+    "note": "Historical author source only; the adopted provider below includes formatting and the actual bomb-handler ACL and trigger-deparser comparison corrections."
+  },
+  "consumed_retention_manifest": {
+    "path": "scripts/qualification/spin-history-retention.manifest.json",
+    "sha256": "00e114895b4eab4a4af80056649345a77acd85c1667dfa6ac57c35c579ab5429",
+    "all_existing_leaf_pins_match": true
+  },
+  "integration": {
+    "entrypoint": "scripts/ci/test-spin-expiry-postgres.py",
+    "image": "retention-completed",
+    "allocation": "independent from preimage/candidate funded images",
+    "source_protocol_controls": "53 passed; not native SQL proof",
+    "native_execution": "UNRUN"
+  }
+}

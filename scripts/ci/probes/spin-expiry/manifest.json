@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "kind": "spin-expiry-hosted-fixture",
+  "originManifestSha256": "bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff580",
+  "originDescription": "Immutable FIFO5 PostgreSQL17 genuine financial fixture v6; retained outside active checkout",
+  "files": {
+    "inputs/schema.sql": {
+      "bytes": 2709616,
+      "sha256": "5a5966afca3b2c9699aba326baf5f32d6c0e1baa2ad09340feaa3b23f4d9dc0a"
+    },
+    "inputs/access.sql": {
+      "bytes": 786489,
+      "sha256": "ad2cb0ddc955bd97c9ef719e9106aad9f55be5cf034e014d04c90b3a1667c541"
+    },
+    "inputs/policies.sql": {
+      "bytes": 46690,
+      "sha256": "075254070c905c0bac70a9bc5a0b3e938b5262f0e1a186ee2a56127da0f77698"
+    },
+    "principals.sql": {
+      "bytes": 4616,
+      "sha256": "c3ef3ee44d18bc846c675c7a02d22e6d5fb10a064414f1a90dbad60c9025085c"
+    },
+    "provider-supplement.sql": {
+      "bytes": 47884,
+      "sha256": "ed6443c1b413523e028a1d3ec746abefc7d8595b5e7dfe125ba99458e72ad3e4"
+    },
+    "provider-roles.sql": {
+      "bytes": 1457,
+      "sha256": "632811a7dd5283283a9637fab4fdb1338c946017ddde2b2aa06cb6653ebca349"
+    },
+    "provider-roles-check.sql": {
+      "bytes": 2562,
+      "sha256": "92db03bb138724e37c32293bea5cbf32fdadffcd2d9f512dac3b6f55c6f4e2f1"
+    },
+    "provider-check.sql": {
+      "bytes": 287784,
+      "sha256": "e3ce21fc27a18a01c0d6fc1af08f0330d46309f2acb00cc47fa3df567ff6bf3e"
+    },
+    "empty-provider-check.sql": {
+      "bytes": 2860,
+      "sha256": "b0652debe8733b22c1d808ce9641137cf23ffcc376f1668818b475ac07e049a8"
+    },
+    "inputs/catalog-sequence-exact.json": {
+      "bytes": 2041,
+      "sha256": "8b69958e0111c12c7f82d3db2c997d5672d2d944796e7566a40871b8e3332bd2"
+    },
+    "inputs/spin-catalog-supplement.sql": {
+      "bytes": 16282,
+      "sha256": "0f47f30bed981740b3210ecbda1c53486afec4353c6fcd3f11e591f77faa6e7a"
+    },
+    "inputs/entry-provider-supplement.sql": {
+      "bytes": 109699,
+      "sha256": "9a177656fa182a5b2fe3568fea13fb058d2999b411e5334d110d9d095a3db588"
+    },
+    "inputs/entry-sequence-authority.sql": {
+      "bytes": 9088,
+      "sha256": "f006da94229989b5354dab1b7184edf145321d2178d492039c6dc932a6da6224"
+    },
+    "inputs/settle-source-authority.sql": {
+      "bytes": 3017,
+      "sha256": "7ac41059e4f1d42aaa180d3d45d2e87038aefddad58b62c0e5f1e743b8a9c947"
+    },
+    "inputs/captured-financial-store-policy.sql": {
+      "bytes": 1042,
+      "sha256": "9eff2f0cf8f217befe1cfdc5cbfaabb9bb682c6524e1a8358e2c1df54822594f"
+    },
+    "inputs/captured-spin-catalog.json": {
+      "bytes": 35148,
+      "sha256": "9b77c0915db5d0ae3a998d6725ead5a40f7485ace81492547125f8ef813c4bac"
+    },
+    "spin-catalog-observer.sql": {
+      "bytes": 1440,
+      "sha256": "808e3a6feafcd04f0119a5e37d63a00bf009148fa7374ff13b06df7bd65a218f"
+    }
+  },
+  "derivations": [
+    {
+      "path": "inputs/schema.sql",
+      "change": "Remove exactly one unused provider-only CREATE SEQUENCE declaration; preserve first-party signup_errors structure and every other byte. Original immutable evidence unchanged.",
+      "removedDeclaration": "CREATE SEQUENCE \"public\".\"sentry_error_log_id_seq\" AS bigint INCREMENT 1 MINVALUE 1 MAXVALUE 9223372036854775807 START 1 CACHE 1 NO CYCLE;",
+      "originalBytes": 2709755,
+      "originalSha256": "db0f5a5ea4a884b3715620c925ae7bb19b1a53c9c6716e97b769f42712674fd9",
+      "derivedBytes": 2709616,
+      "derivedSha256": "5a5966afca3b2c9699aba326baf5f32d6c0e1baa2ad09340feaa3b23f4d9dc0a"
+    }
+  ]
+}

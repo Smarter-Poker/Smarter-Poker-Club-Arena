@@ -431,8 +431,10 @@ describe('Horse League compute isolation', () => {
     expect(workerSource).toContain("process.env.EQUITY_GOVERNOR !== 'off'");
     expect(workerSource).toContain('Tournament evidence requires a fixed equity sample budget');
     expect(clientSource).not.toContain('new Worker(');
-    expect(processSource).toContain('setPriority(0, osConstants.priority.PRIORITY_LOW)');
-    expect(processSource).toContain('getPriority(0)');
+    expect(clientSource).toContain("execPath: '/usr/bin/nice'");
+    expect(processSource).toContain('verifyHorseLeagueBootstrapPriority()');
+    expect(processSource).not.toContain('setPriority(');
+    expect(workerSource).toContain('executionPriority: horseLeagueReadyPriorityProof()');
     expect(processSource).toContain("await import('./HorseLeagueComputeWorker.js')");
   });
 });

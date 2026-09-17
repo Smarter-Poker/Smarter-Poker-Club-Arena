@@ -1090,7 +1090,9 @@ jobs:
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Earlier checks consumed 14m07s; unchanged V31 exceeded the remaining 5m53s.
+    # Allow hosted runtime variance without changing case/statement/cleanup caps.
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: read
@@ -1110,7 +1112,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -x /usr/lib/postgresql/17/bin/initdb ]]; then exit 0; fi
+          pg_ci_build_tools_ready=true
+          for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
+            if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
+          done
+          if [[ -x /usr/lib/postgresql/17/bin/initdb && -x /usr/lib/postgresql/17/bin/pg_config && -f /usr/include/postgresql/17/server/postgres.h && "$pg_ci_build_tools_ready" == true ]]; then exit 0; fi
           # The hosted image also configures Chrome and Microsoft repositories.
           # An unrelated Chrome index hash mismatch blocked this accounting job.
           # Limit this installation to signed Ubuntu and PostgreSQL sources.
@@ -1130,7 +1136,23 @@ jobs:
             "$pg_ci_codename" > "$pg_ci_sources/pgdg.sources"
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-server-dev-17 build-essential bison flex perl bzip2 patch
+      - name: Build the matching native PostgreSQL isolation test tool
+        id: pg17_isolation_tool
+        timeout-minutes: 6
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/build_pg17_isolationtester.py
+      - name: Retain PostgreSQL isolation tool build evidence
+        if: always() && steps.pg17_isolation_tool.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg17-isolation-tool-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/postgresql-17-isolationtester/*.log
+            artifacts/postgresql-17-isolationtester/receipt.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Bind BBJ qualification to the actual accounting job deadline
         id: bbj_timing
         env:
@@ -1215,6 +1237,100 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      - name: Hand index writers retain canonical order and exact coverage
+        id: hand_index_writer_order
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-index-writer-order.py --migration supabase/migrations/20260914194928_hand_index_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-index
+
+      - name: Hand stat writers retain canonical order and rollback
+        id: hand_stat_writer_order
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-hand-stat-writer-order.py --migration supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-stat
+
+      - name: Rake attribution commits with its fee or rolls back together
+        id: rake_attribution_atomic
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution
+
+      - name: Check composed alert fixture admission and cleanup guards
+        run: python3 scripts/ci/test_production_alert_core_postgres.py
+
+      - name: Qualify composed alert identity and wording through the real inbox
+        id: production_alert_core
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-production-alert-core-postgres.py --output artifacts/production-alerts-sql/core
+
+      - name: Check native evidence race transcript controls
+        run: python3 -m unittest discover -s scripts/ci -p test_alert_evidence_wrapper.py
+
+      - name: Duplicate, rake and Spin evidence retain original financial outcomes
+        id: alert_evidence_postgres
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: python3 scripts/ci/test-alert-evidence-postgres.py --output artifacts/production-alerts-sql/evidence
+
+      - name: Class4 wrapper and actual PostgreSQL hand outcome evidence
+        id: class4_hand_outcome
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -m unittest discover -s scripts/ci -p test_class4_hand_outcome_postgres.py
+          python3 scripts/ci/test-class4-hand-outcome-postgres.py --output artifacts/production-alerts-sql/class4
+
+      - name: Build the exact native pg_cron used by cash failure qualification
+        id: cash_pgcron_build
+        timeout-minutes: 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/build_pg17_cash_pgcron.py
+      - name: Cash checker evidence and real scheduler failure intake
+        id: cash_native_failure
+        timeout-minutes: 5
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py
+          python3 scripts/ci/test-cash-failure-pgcron.py
+      - name: Retain cash native scheduler qualification evidence
+        if: always() && steps.cash_pgcron_build.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cash-native-pgcron-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/production-alerts-cash-pgcron-build/*.log
+            artifacts/production-alerts-cash-pgcron-build/receipt.json
+            artifacts/production-alerts-cash-native/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Retain production alert SQL qualification evidence
+        if: always() && steps.hand_index_writer_order.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-alerts-sql-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/production-alerts-sql/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Spin expiry lock order and committed refund contracts
+        id: spin_expiry_postgres
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-spin-expiry-postgres.py
+
+      - name: Retain Spin expiry PostgreSQL evidence
+        if: always() && steps.spin_expiry_postgres.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spin-expiry-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/spin-expiry/
+          retention-days: 7
+          if-no-files-found: warn
       - name: Diamond entries, claimed daily spins and Promo to Main Bank payouts
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1297,6 +1413,7 @@ jobs:
     steps:
       - name: Require successful real PostgreSQL accounting tests
         if: needs.accounting_postgres.result != 'success'
+        working-directory: ${{ github.workspace }}
         run: |
           echo "::error::The required isolated PostgreSQL accounting tests did not pass."
           exit 1
@@ -1920,6 +2037,17 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Reserve disk for browser checks
+        # This browser-only job does not invoke the separate Android build.
+        # Keep its fixtures and failure evidence; reclaim the unused hosted SDK.
+        run: |
+          df -h /
+          if [ -d /usr/local/lib/android/sdk ]; then
+            sudo du -sh /usr/local/lib/android/sdk
+            sudo rm -rf -- /usr/local/lib/android/sdk
+          fi
+          df -h /
+
       - name: Checkout
         uses: actions/checkout@v4
         with:

@@ -1,0 +1,5 @@
+-- Exact current store-policy rows for real Mint, bank transfer and paid seats.
+-- Catalog policy only; no balances or financial effects are seeded.
+INSERT INTO public.ca_chip_store_coverage
+SELECT * FROM jsonb_populate_recordset(NULL::public.ca_chip_store_coverage,
+  $policy$[{"notes":"clubs chip_treasury","store":"club_treasury","added_at":"2026-09-11T16:10:27.128168+00:00","treatment":"counted","counted_by":"treasuries"},{"notes":"issuance held before it enters circulation","store":"issuance_reserve","added_at":"2026-09-11T16:10:27.128168+00:00","treatment":"noncirculating","counted_by":null},{"notes":"club_members chip_balance and promo_balance","store":"player_wallet","added_at":"2026-09-11T16:10:27.128168+00:00","treatment":"counted","counted_by":"member_wallets + member_promo"},{"notes":"tournament_escrow prize_balance, or the counters where an event has no escrow row yet","store":"prize_liability","added_at":"2026-09-11T16:10:27.128168+00:00","treatment":"counted","counted_by":"tournament_liability"}]$policy$::jsonb);

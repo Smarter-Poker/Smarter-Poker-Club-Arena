@@ -785,8 +785,8 @@ groups:
           description: 'A trigger is live on table_seats, club_members, wallets, chip_ledger, tournaments, tournament_players or ca_settlements with no row in ca_declared_money_triggers. Run SELECT * FROM fn_undeclared_money_triggers(). Either it is a legitimate change missing its declaration, or it is an unreviewed one - and the last unreviewed one broke a third of all hand settlements.'
           runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
-      # Criticals nobody has looked at in a day. Deliberately NOT the raw
-      # unresolved count: a critical raised a minute ago is the system working.
+      # Criticals unresolved for more than a day. This metric does not track
+      # whether an original has been read or investigated.
       - alert: MoneyAlertsGoingUnread
         expr: |
           poker_financial_alerts_stale_critical > 25
@@ -808,7 +808,7 @@ groups:
           component: money
         annotations:
           summary: '{{ $value }} unresolved money alerts'
-          description: 'Above the 1,345 the backlog stood at when it was first measured. Check poker_financial_alerts_distinct_conditions - if the row count is climbing and the condition count is not, the table is duplicating rather than finding new problems.'
+          description: 'The unresolved financial-alert backlog is above the threshold. poker_financial_alerts_distinct_conditions counts source categories, not unique fault identities. Review each original and its exact hand, period or incident linkage; a flat source count does not establish duplicate alerts.'
           runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: MoneyHealthBlind
@@ -1965,3 +1965,72 @@ groups:
             (curl localhost:9090/api/v1/rules), and that alertmanager is
             reachable from it.
           runbook: 'docs/runbooks/tables-say-reconnecting.md'
+
+  # Application memory observations; no rule initiates a release or restart.
+  - name: engine-memory
+    interval: 15s
+    rules:
+      # Preserve the measured 256 MiB critical threshold and two-minute window.
+      # Sustained pressure raises OOM risk; it does not predict the next victim.
+      - alert: EngineHostNearOOM
+        expr: |
+          node_memory_MemAvailable_bytes{host="engine-01"} < 268435456
+        for: 2m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'engine-01 has {{ $value | humanize1024 }}B available - the host is at elevated OOM risk'
+          description: |
+            Host MemAvailable has stayed below 256 MiB for two minutes.
+            Compare current engine RSS, worker activity and other resident
+            processes. A missing memory series is unknown, not zero usage.
+            The [heap] virtual extent is not resident memory or an allocation
+            diagnosis. Follow established incident and lifecycle authority;
+            a memory alert does not authorize a bare restart of live tables.
+          runbook: 'docs/runbooks/engine-memory.md'
+
+      # Current on-host builder: 896 MiB memory limit + 256 MiB reserve.
+      # The existing build gate evaluates available memory at its actual start;
+      # this thirty-minute warning reports sustained pressure, not permission.
+      - alert: EngineBuildHeadroomLost
+        expr: |
+          node_memory_MemAvailable_bytes{host="engine-01"} < 1207959552
+        for: 30m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'engine-01 has {{ $value | humanize1024 }}B available - under the 1152 MiB the engine image build refuses below'
+          description: |
+            Host MemAvailable has stayed below 1152 MiB for thirty minutes.
+            The restored GitHub/Hetzner engine publisher builds on this host;
+            server/scripts/build-engine-image.sh requires 1179648 KiB available
+            when its existing gate runs. This warning does not authorize a
+            build, release or restart, or predict conditions at a later attempt.
+            Compare engine RSS, worker activity and other resident processes.
+            Absent engine-memory series are unknown, not zero. MemAvailable
+            includes reclaimable cache. This warning alone identifies neither
+            an allocation cause nor imminent OOM; retain the separate critical alert.
+          runbook: 'docs/runbooks/engine-memory.md'
+
+      # Retain the historical 1.6 GiB warning, not a process cap or an exact
+      # present-day build fit: other resident memory and workloads vary.
+      - alert: EngineProcessMemoryHigh
+        expr: |
+          poker_engine_process_rss_bytes > 1717986918
+        for: 15m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the retained 1.6 GiB process-memory warning'
+          description: |
+            Engine process RSS has exceeded 1.6 GiB for fifteen minutes.
+            Compare whole-process RSS, main-isolate V8 usage, worker activity,
+            external memory and threads. poker_engine_native_main_arena_bytes
+            is current [heap] virtual extent, not RSS or allocation ownership.
+            Correlation between these observations does not establish a leak,
+            TLS attribution or a runtime memory limit. Use the existing
+            on-host build gate to establish build headroom at the actual attempt.
+          runbook: 'docs/runbooks/engine-memory.md'

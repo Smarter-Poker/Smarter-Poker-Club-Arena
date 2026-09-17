@@ -189,9 +189,7 @@
       "policies": [
         {
           "name": "union_clubs_read",
-          "roles": [
-            "PUBLIC"
-          ],
+          "roles": ["PUBLIC"],
           "using": "((EXISTS ( SELECT 1\n   FROM union_admins ua\n  WHERE ((ua.union_id = union_clubs.union_id) AND (ua.user_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = union_clubs.club_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = union_clubs.club_id) AND (cm.user_id = ( SELECT auth.uid() AS uid))))))",
           "command": "r",
           "permissive": true,
@@ -199,9 +197,7 @@
         },
         {
           "name": "union_clubs_svc",
-          "roles": [
-            "service_role"
-          ],
+          "roles": ["service_role"],
           "using": "true",
           "command": "*",
           "permissive": true,
@@ -408,128 +404,88 @@
   ],
   "functions": [
     {
-      "acl": [
-        "postgres=X/postgres",
-        "service_role=X/postgres"
-      ],
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "oid": "31387295",
       "name": "fn_accounting_agreement_capture",
       "owner": "postgres",
-      "config": [
-        "search_path=public"
-      ],
+      "config": ["search_path=public"],
       "schema": "public",
       "signature": "fn_accounting_agreement_capture()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_agreement_capture()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE b jsonb; a jsonb; identity_row jsonb; identity_key text; moved boolean;\nBEGIN\n b:=CASE WHEN TG_OP='INSERT' THEN NULL ELSE public.fn_accounting_agreement_terms(TG_TABLE_NAME,to_jsonb(OLD)) END;\n a:=CASE WHEN TG_OP='DELETE' THEN NULL ELSE public.fn_accounting_agreement_terms(TG_TABLE_NAME,to_jsonb(NEW)) END;\n IF b IS NOT DISTINCT FROM a THEN RETURN COALESCE(NEW,OLD); END IF;\n identity_row:=COALESCE(b,a);\n identity_key:=CASE WHEN TG_TABLE_NAME='club_members' THEN identity_row->>'club_id'||':'||(identity_row->>'user_id') ELSE identity_row->>'id' END;\n moved:=TG_OP='UPDATE' AND (b->>'id' IS DISTINCT FROM a->>'id'\n   OR b->>'club_id' IS DISTINCT FROM a->>'club_id' OR b->>'user_id' IS DISTINCT FROM a->>'user_id');\n INSERT INTO public.accounting_agreement_history(entity_type,entity_key,club_id,subject_user_id,event_type,actor_id,before_terms,after_terms)\n VALUES(TG_TABLE_NAME,identity_key,(identity_row->>'club_id')::uuid,(identity_row->>'user_id')::uuid,TG_OP,auth.uid(),b,CASE WHEN moved THEN NULL ELSE a END);\n -- A moved identity closes its original key and establishes the new key too.\n -- Both changes are observed in this transaction; neither is backdated.\n IF moved THEN\n   identity_key:=CASE WHEN TG_TABLE_NAME='club_members' THEN a->>'club_id'||':'||(a->>'user_id') ELSE a->>'id' END;\n   INSERT INTO public.accounting_agreement_history(entity_type,entity_key,club_id,subject_user_id,event_type,actor_id,before_terms,after_terms)\n   VALUES(TG_TABLE_NAME,identity_key,(a->>'club_id')::uuid,(a->>'user_id')::uuid,'UPDATE',auth.uid(),NULL,a);\n END IF;\n RETURN COALESCE(NEW,OLD);\nEND $function$\n",
       "security_definer": true
     },
     {
-      "acl": [
-        "postgres=X/postgres",
-        "service_role=X/postgres"
-      ],
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "oid": "18670611",
       "name": "fn_emit_management_access_event",
       "owner": "postgres",
-      "config": [
-        "search_path=public"
-      ],
+      "config": ["search_path=public"],
       "schema": "public",
       "signature": "fn_emit_management_access_event()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_emit_management_access_event()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_recipient uuid;\n  v_club uuid;\n  v_union uuid;\n  v_operation text := lower(TG_OP);\nBEGIN\n  IF TG_TABLE_NAME = 'club_members' THEN\n    IF TG_OP = 'UPDATE'\n       AND NEW.role IS NOT DISTINCT FROM OLD.role\n       AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id\n       AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n       AND NEW.status IS NOT DISTINCT FROM OLD.status\n       AND NEW.is_active IS NOT DISTINCT FROM OLD.is_active THEN\n      RETURN NULL;\n    END IF;\n\n    IF TG_OP IN ('UPDATE', 'DELETE') THEN\n      PERFORM public.fn_emit_game_management_event(\n        'management_access_changed', OLD.club_id, NULL, OLD.user_id,\n        'club', OLD.club_id, NULL,\n        jsonb_build_object('operation', v_operation, 'side', 'before'));\n    END IF;\n    IF TG_OP IN ('UPDATE', 'INSERT')\n       AND (TG_OP = 'INSERT'\n            OR NEW.user_id IS DISTINCT FROM OLD.user_id\n            OR NEW.club_id IS DISTINCT FROM OLD.club_id\n            OR NEW.role IS DISTINCT FROM OLD.role\n            OR NEW.status IS DISTINCT FROM OLD.status\n            OR NEW.is_active IS DISTINCT FROM OLD.is_active) THEN\n      -- When the row identity did not move, one after-event is sufficient.\n      IF TG_OP = 'INSERT'\n         OR NEW.user_id IS DISTINCT FROM OLD.user_id\n         OR NEW.club_id IS DISTINCT FROM OLD.club_id THEN\n        PERFORM public.fn_emit_game_management_event(\n          'management_access_changed', NEW.club_id, NULL, NEW.user_id,\n          'club', NEW.club_id, NULL,\n          jsonb_build_object('operation', v_operation, 'side', 'after'));\n      END IF;\n    END IF;\n\n  ELSIF TG_TABLE_NAME = 'union_admins' THEN\n    IF TG_OP = 'UPDATE'\n       AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id\n       AND NEW.union_id IS NOT DISTINCT FROM OLD.union_id\n       AND NEW.role IS NOT DISTINCT FROM OLD.role THEN\n      RETURN NULL;\n    END IF;\n\n    IF TG_OP IN ('UPDATE', 'DELETE') THEN\n      PERFORM public.fn_emit_game_management_event(\n        'management_access_changed', NULL, OLD.union_id, OLD.user_id,\n        'union', OLD.union_id, NULL,\n        jsonb_build_object('operation', v_operation, 'side', 'before'));\n    END IF;\n    IF TG_OP = 'INSERT'\n       OR (TG_OP = 'UPDATE' AND (\n         NEW.user_id IS DISTINCT FROM OLD.user_id\n         OR NEW.union_id IS DISTINCT FROM OLD.union_id)) THEN\n      PERFORM public.fn_emit_game_management_event(\n        'management_access_changed', NULL, NEW.union_id, NEW.user_id,\n        'union', NEW.union_id, NULL,\n        jsonb_build_object('operation', v_operation, 'side', 'after'));\n    END IF;\n\n  ELSE\n    -- union_clubs. UPDATE was omitted from the original trigger entirely.\n    -- Each side gets its own recipient set and its own union scope.\n    IF TG_OP IN ('UPDATE', 'DELETE') THEN\n      v_club := OLD.club_id;\n      v_union := OLD.union_id;\n      FOR v_recipient IN\n        SELECT c.owner_id FROM public.clubs c WHERE c.id = v_club\n        UNION SELECT m.user_id FROM public.club_members m\n          WHERE m.club_id = v_club\n            AND m.role IN ('owner','co_owner','admin')\n            AND m.status IN ('active','approved')\n            AND COALESCE(m.is_active, true)\n        UNION SELECT u.owner_id FROM public.unions u WHERE u.id = v_union\n        UNION SELECT a.user_id FROM public.union_admins a WHERE a.union_id = v_union\n      LOOP\n        PERFORM public.fn_emit_game_management_event(\n          'management_access_changed', v_club, v_union, v_recipient,\n          'club', v_club, NULL,\n          jsonb_build_object('operation', v_operation, 'side', 'before'));\n      END LOOP;\n    END IF;\n\n    IF TG_OP IN ('UPDATE', 'INSERT') THEN\n      v_club := NEW.club_id;\n      v_union := NEW.union_id;\n      FOR v_recipient IN\n        SELECT c.owner_id FROM public.clubs c WHERE c.id = v_club\n        UNION SELECT m.user_id FROM public.club_members m\n          WHERE m.club_id = v_club\n            AND m.role IN ('owner','co_owner','admin')\n            AND m.status IN ('active','approved')\n            AND COALESCE(m.is_active, true)\n        UNION SELECT u.owner_id FROM public.unions u WHERE u.id = v_union\n        UNION SELECT a.user_id FROM public.union_admins a WHERE a.union_id = v_union\n      LOOP\n        PERFORM public.fn_emit_game_management_event(\n          'management_access_changed', v_club, v_union, v_recipient,\n          'club', v_club, NULL,\n          jsonb_build_object('operation', v_operation, 'side', 'after'));\n      END LOOP;\n    END IF;\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n",
       "security_definer": true
     },
     {
-      "acl": [
-        "postgres=X/postgres",
-        "service_role=X/postgres"
-      ],
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "oid": "16221084",
       "name": "fn_enforce_club_enters_union_empty",
       "owner": "postgres",
-      "config": [
-        "search_path=public, pg_temp"
-      ],
+      "config": ["search_path=public, pg_temp"],
       "schema": "public",
       "signature": "fn_enforce_club_enters_union_empty()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_enforce_club_enters_union_empty()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  b jsonb;\nBEGIN\n  IF NEW.club_id = NEW.union_id THEN\n    RETURN NEW;\n  END IF;\n\n  b := public.fn_club_union_join_blockers(NEW.club_id);\n\n  IF (b->>'is_empty')::boolean THEN\n    RETURN NEW;\n  END IF;\n\n  RAISE EXCEPTION USING\n    ERRCODE = 'check_violation',\n    MESSAGE = 'This club still holds chips and cannot join a union yet.',\n    DETAIL  = format(\n      'treasury %s, club promo %s, member wallets %s across %s members, horse bankrolls %s across %s horses, agent wallets %s across %s agents, %s on the felt in %s open seats, BBJ pool %s. Total %s.',\n      b->>'club_treasury', b->>'club_promo',\n      b->>'member_wallets', b->>'member_count',\n      b->>'horse_wallets', b->>'horse_count',\n      b->>'agent_wallets', b->>'agent_count',\n      b->>'chips_on_felt', b->>'open_seats',\n      b->>'bbj_pool', b->>'total'),\n    HINT    = 'Cash your players and agents down to zero, close the tables and empty the treasury first. Once the club is in the union, the union funds it.';\nEND;\n$function$\n",
       "security_definer": true
     },
     {
-      "acl": [
-        "postgres=X/postgres",
-        "service_role=X/postgres"
-      ],
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "oid": "22319481",
       "name": "fn_guard_retired_club_mutation",
       "owner": "postgres",
-      "config": [
-        "search_path=public, pg_temp"
-      ],
+      "config": ["search_path=public, pg_temp"],
       "schema": "public",
       "signature": "fn_guard_retired_club_mutation()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_retired_club_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_club_id uuid;\n  v_old_club_id uuid;\n  v_maintenance boolean :=\n    auth.uid() IS NULL\n    AND coalesce(current_setting('app.club_retirement_maintenance', true), '') = 'on';\nBEGIN\n  IF v_maintenance THEN\n    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n    RETURN NEW;\n  END IF;\n\n  IF TG_OP = 'DELETE' THEN\n    IF TG_TABLE_NAME = 'unions' THEN\n      v_club_id := OLD.id;\n    ELSIF TG_TABLE_NAME = 'table_seats' THEN\n      SELECT t.club_id INTO v_club_id FROM public.tables t WHERE t.id = OLD.table_id;\n    ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n      SELECT t.club_id INTO v_club_id FROM public.tournaments t\n       WHERE t.id = OLD.tournament_id;\n    ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n      SELECT cr.club_id INTO v_club_id FROM public.cashout_requests cr\n       WHERE cr.id = OLD.cashout_request_id;\n    ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n      SELECT a.club_id INTO v_club_id FROM public.agents a WHERE a.id = OLD.agent_id;\n    ELSE\n      v_club_id := OLD.club_id;\n    END IF;\n  ELSE\n    IF TG_TABLE_NAME = 'unions' THEN\n      v_club_id := NEW.id;\n    ELSIF TG_TABLE_NAME = 'table_seats' THEN\n      SELECT t.club_id INTO v_club_id FROM public.tables t WHERE t.id = NEW.table_id;\n    ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n      SELECT t.club_id INTO v_club_id FROM public.tournaments t\n       WHERE t.id = NEW.tournament_id;\n    ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n      SELECT cr.club_id INTO v_club_id FROM public.cashout_requests cr\n       WHERE cr.id = NEW.cashout_request_id;\n    ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n      SELECT a.club_id INTO v_club_id FROM public.agents a WHERE a.id = NEW.agent_id;\n    ELSE\n      v_club_id := NEW.club_id;\n    END IF;\n\n    -- On UPDATE, check the source scope too. Moving a retained row to an active\n    -- club must not become an escape hatch from a retired club's write freeze.\n    IF TG_OP = 'UPDATE' THEN\n      IF TG_TABLE_NAME = 'unions' THEN\n        v_old_club_id := OLD.id;\n      ELSIF TG_TABLE_NAME = 'table_seats' THEN\n        SELECT t.club_id INTO v_old_club_id FROM public.tables t WHERE t.id = OLD.table_id;\n      ELSIF TG_TABLE_NAME IN ('tournament_players', 'tournament_escrow') THEN\n        SELECT t.club_id INTO v_old_club_id FROM public.tournaments t\n         WHERE t.id = OLD.tournament_id;\n      ELSIF TG_TABLE_NAME = 'chip_escrow' THEN\n        SELECT cr.club_id INTO v_old_club_id FROM public.cashout_requests cr\n         WHERE cr.id = OLD.cashout_request_id;\n      ELSIF TG_TABLE_NAME = 'credit_invoices' THEN\n        SELECT a.club_id INTO v_old_club_id FROM public.agents a WHERE a.id = OLD.agent_id;\n      ELSE\n        v_old_club_id := OLD.club_id;\n      END IF;\n    END IF;\n  END IF;\n\n  -- A union row can use a club UUID without an FK back to clubs. Serialize\n  -- that conversion with the retirement RPC so it cannot create a union\n  -- identity from a club that became retired in the same instant.\n  IF TG_TABLE_NAME = 'unions' AND v_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('cashier-hierarchy:' || v_club_id::text, 0)\n    );\n  END IF;\n\n  IF (v_club_id IS NOT NULL OR v_old_club_id IS NOT NULL) AND EXISTS (\n    SELECT 1 FROM public.clubs c\n     WHERE c.id IN (v_club_id, v_old_club_id) AND c.lifecycle_status = 'retired'\n  ) THEN\n    RAISE EXCEPTION 'CLUB_RETIRED: gameplay and cashier records are read-only'\n      USING ERRCODE = '55000';\n  END IF;\n\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND\n$function$\n",
       "security_definer": true
     },
     {
-      "acl": [
-        "postgres=X/postgres",
-        "service_role=X/postgres"
-      ],
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "oid": "24566568",
       "name": "fn_poker_guard_arena_structure",
       "owner": "postgres",
-      "config": [
-        "search_path=public, pg_temp"
-      ],
+      "config": ["search_path=public, pg_temp"],
       "schema": "public",
       "signature": "fn_poker_guard_arena_structure()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_guard_arena_structure()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_asset text;\nBEGIN\n  IF TG_TABLE_NAME='clubs' THEN\n    IF TG_OP='UPDATE' AND (NEW.asset,NEW.is_platform) IS DISTINCT FROM (OLD.asset,OLD.is_platform) THEN\n      RAISE EXCEPTION 'Arena Asset Is Immutable' USING ERRCODE='23514';\n    END IF;\n    IF NEW.asset='diamonds' AND auth.uid() IS NOT NULL AND coalesce(auth.jwt()->>'role','') <> 'service_role'\n       AND NOT coalesce(public.fn_is_platform_admin(),false) THEN\n      RAISE EXCEPTION 'Diamond Arena Requires Platform Operations' USING ERRCODE='42501';\n    END IF;\n    RETURN NEW;\n  END IF;\n  SELECT asset INTO v_asset FROM public.clubs WHERE id=NEW.club_id;\n  IF TG_TABLE_NAME='club_members' AND TG_OP='UPDATE' AND NEW.club_id IS DISTINCT FROM OLD.club_id\n     AND EXISTS (SELECT 1 FROM public.clubs WHERE id=OLD.club_id AND asset='diamonds') THEN\n    RAISE EXCEPTION 'Diamond Participation Cannot Become A Chip Membership' USING ERRCODE='23514';\n  END IF;\n  -- Branch before resolving fields: membership rows do not have union_id.\n  IF TG_TABLE_NAME IN ('tables','tournaments') THEN\n    IF TG_OP='UPDATE' AND NEW.club_id IS DISTINCT FROM OLD.club_id\n       AND (EXISTS (SELECT 1 FROM public.clubs WHERE id=OLD.club_id AND asset IS DISTINCT FROM v_asset)\n         OR (OLD.club_id IS NULL AND OLD.union_id IS NOT NULL AND v_asset='diamonds')) THEN\n      RAISE EXCEPTION 'Game Asset Is Immutable' USING ERRCODE='23514';\n    END IF;\n  END IF;\n  IF v_asset='diamonds' THEN\n    IF TG_TABLE_NAME='club_members' THEN\n      IF TG_OP='INSERT' OR NEW.role IS DISTINCT FROM 'player' OR NEW.status IS DISTINCT FROM 'automatic'\n         OR NEW.agent_id IS NOT NULL OR NEW.parent_agent_id IS NOT NULL\n         OR coalesce(NEW.chip_balance,0)<>0 OR coalesce(NEW.credit_limit,0)<>0\n         OR coalesce(NEW.credit_used,0)<>0 OR coalesce(NEW.promo_balance,0)<>0\n         OR coalesce(NEW.held_chips,0)<>0 THEN\n        RAISE EXCEPTION 'Diamond Membership Is Automatic And Has No Chip Wallet Or Hierarchy' USING ERRCODE='23514';\n      END IF;\n    ELSIF TG_TABLE_NAME='union_clubs' THEN\n      RAISE EXCEPTION 'Diamond Arena Cannot Join A Union' USING ERRCODE='23514';\n    ELSIF auth.uid() IS NOT NULL AND coalesce(auth.jwt()->>'role','') <> 'service_role'\n       AND NOT coalesce(public.fn_is_platform_admin(),false)\n       -- DIAMOND PHASE 8: a player's entry, add-on and withdrawal move the\n       -- play-state counters through the estate's doors; the structure is\n       -- still platform operations only.\n       AND NOT (TG_OP='UPDATE' AND TG_TABLE_NAME IN ('tournaments','tables')\n                AND (to_jsonb(NEW) - public.fn_poker_diamond_play_state_columns(TG_TABLE_NAME))\n                  = (to_jsonb(OLD) - public.fn_poker_diamond_play_state_columns(TG_TABLE_NAME))) THEN\n      RAISE EXCEPTION 'Diamond Games Require Platform Operations' USING ERRCODE='42501';\n    ELSIF NEW.union_id IS NOT NULL THEN\n      RAISE EXCEPTION 'Diamond Games Cannot Belong To A Union' USING ERRCODE='23514';\n    END IF;\n  END IF;\n  RETURN NEW;\nEND $function$\n",
       "security_definer": false
     },
     {
-      "acl": [
-        "postgres=X/postgres",
-        "service_role=X/postgres"
-      ],
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "oid": "2686607",
       "name": "fn_recompute_union_level_on_club_change",
       "owner": "postgres",
-      "config": [
-        "search_path=public"
-      ],
+      "config": ["search_path=public"],
       "schema": "public",
       "signature": "fn_recompute_union_level_on_club_change()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_recompute_union_level_on_club_change()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE v_union_id uuid;\nBEGIN\n  IF TG_OP = 'DELETE' THEN v_union_id := OLD.union_id;\n  ELSE                     v_union_id := NEW.union_id;\n  END IF;\n  BEGIN\n    PERFORM public.recompute_union_levels(v_union_id);\n  EXCEPTION WHEN OTHERS THEN\n    RAISE WARNING 'fn_recompute_union_level_on_club_change failed for union=%: % (%)',\n      v_union_id, SQLERRM, SQLSTATE;\n  END;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n",
       "security_definer": false
     },
     {
-      "acl": [
-        "postgres=X/postgres",
-        "service_role=X/postgres"
-      ],
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "oid": "14144616",
       "name": "fn_sync_club_union_mirror",
       "owner": "postgres",
-      "config": [
-        "search_path=public"
-      ],
+      "config": ["search_path=public"],
       "schema": "public",
       "signature": "fn_sync_club_union_mirror()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_sync_club_union_mirror()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    UPDATE clubs\n       SET union_id = NEW.union_id,\n           club_commission_rate = COALESCE(NEW.club_commission_rate, club_commission_rate)\n     WHERE id = NEW.club_id;\n    RETURN NEW;\n  ELSIF TG_OP = 'DELETE' THEN\n    UPDATE clubs SET union_id = NULL\n     WHERE id = OLD.club_id AND union_id = OLD.union_id;\n    RETURN OLD;\n  END IF;\n  RETURN NULL;\nEND $function$\n",
       "security_definer": true
     },
     {
-      "acl": [
-        "postgres=X/postgres",
-        "service_role=X/postgres"
-      ],
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "oid": "14498785",
       "name": "fn_sync_union_membership_table_counts",
       "owner": "postgres",
-      "config": [
-        "search_path=public, pg_temp"
-      ],
+      "config": ["search_path=public, pg_temp"],
       "schema": "public",
       "signature": "fn_sync_union_membership_table_counts()",
       "definition": "CREATE OR REPLACE FUNCTION public.fn_sync_union_membership_table_counts()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v_unions uuid[]; v_clubs uuid[];\nBEGIN\n  v_unions := array_remove(ARRAY[\n    CASE WHEN TG_OP <> 'DELETE' THEN NEW.union_id END,\n    CASE WHEN TG_OP <> 'INSERT' THEN OLD.union_id END\n  ], NULL);\n  v_clubs := array_remove(ARRAY[\n    CASE WHEN TG_OP <> 'DELETE' THEN NEW.club_id END,\n    CASE WHEN TG_OP <> 'INSERT' THEN OLD.club_id END\n  ], NULL);\n\n  UPDATE clubs SET table_count = fn_live_table_count(id)\n   WHERE id = ANY(v_clubs)\n      OR id = ANY(v_unions)\n      OR id IN (SELECT club_id FROM union_clubs WHERE union_id = ANY(v_unions));\n  RETURN NULL;\nEND $function$\n",

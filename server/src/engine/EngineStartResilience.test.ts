@@ -21,6 +21,7 @@
  * path that survives one.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { DiamondCashPolicyClosedError } from '../services/cashTablePlayEligibility.js';
 
 const loadSeatedPlayers = vi.fn();
 const loadTable = vi.fn();
@@ -69,8 +70,8 @@ const seat = (n: number) => ({
  * out. The subject here is the read and the wait sweep, not the rest of the
  * boot sequence.
  */
-function startable() {
-  const engine = new ServerTableEngine(TABLE) as any;
+function startable(leaseAuthority: ConstructorParameters<typeof ServerTableEngine>[1] = null) {
+  const engine = new ServerTableEngine(TABLE, leaseAuthority) as any;
   const killed: string[] = [];
   engine.killForRestart = (reason: string) => {
     killed.push(reason);
@@ -182,6 +183,55 @@ describe(
       expect(loadTable).toHaveBeenCalledTimes(1);
       expect(killed).toEqual(['start_failed:start_load_table']);
       await engine.stop();
+    });
+
+    it('fences a raced explicit cash policy refusal before ready=false without recording a watchdog', async () => {
+      const { engine, killed } = startable({
+        scope: 'cash',
+        verified: true,
+        generation: 'a17511ae-cbc1-4ef1-b8c6-64aaf9cf134f',
+        proofDeadlineMonotonicMs: performance.now() + 60_000,
+      });
+      const refusal = new DiamondCashPolicyClosedError(
+        TABLE,
+        '002c2d27-9584-4e52-835a-bb2be148fc81'
+      );
+      loadTable.mockRejectedValue(refusal);
+      const record = vi.spyOn(engine, 'recordRecoveryEvent');
+      const ready = engine.ready.then((value: boolean) => ({
+        value,
+        policy: engine.getStartupPolicyRefusal(),
+        ownershipReleased: engine.hasReleasedProcessOwnership(),
+      }));
+
+      await expect(engine.start()).rejects.toBe(refusal);
+      const observed = await ready;
+      expect(observed).toMatchObject({
+        value: false,
+        ownershipReleased: false,
+        policy: { code: 'diamond_cash_disabled', tableId: TABLE, arenaId: refusal.arenaId },
+      });
+      expect(Object.isFrozen(observed.policy)).toBe(true);
+      expect(engine.running).toBe(false);
+      expect(loadTable).toHaveBeenCalledTimes(1);
+      expect(killed).toEqual([]);
+      expect(record).not.toHaveBeenCalled();
+      await engine.stop();
+      expect(engine.hasReleasedProcessOwnership()).toBe(true);
+    });
+
+    it('does not excuse another table policy error or a matching ordinary error', async () => {
+      for (const error of [
+        new DiamondCashPolicyClosedError('other-table', 'arena'),
+        new Error('Diamond Cash Games Are Not Open'),
+      ]) {
+        const { engine, killed } = startable();
+        loadTable.mockRejectedValue(error);
+        await expect(engine.start()).rejects.toBe(error);
+        expect(engine.getStartupPolicyRefusal()).toBeNull();
+        expect(killed).toEqual(['start_failed:start_load_table']);
+        await engine.stop();
+      }
     });
 
     it('a failed seat sweep costs one sweep, not the engine', async () => {

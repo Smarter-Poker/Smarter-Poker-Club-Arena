@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "status": "SOURCE_REVIEWED_LOCAL_COMMIT_NATIVE_UNRUN_UNINSTALLED",
+  "component": "spin-repair-evidence",
+  "owned_branch": "fix/rake-alert-evidence-wording",
+  "assigned_source_base": "b5ff6bd3ad8ead65f8bd621382ed712aec1ace8f",
+  "parent_head_observed_during_handoff": "f5bf98733289a9b11697557b61ea3cf764073ea6",
+  "scope": "Successful repair message and additive provenance only; no money/history/status rewrite or repair invocation",
+  "target": "public.fn_spin_repair_missing_multiplier(integer)",
+  "captured_full_preimage": {
+    "bytes": 6925,
+    "md5": "833c06b59dfdd8fd29b74cce0c6be6a2",
+    "sha256": "198be941772b3b7769297878a1cc9fcf7bae65228f5b8a21f4ea342553c1a4d1",
+    "basis": "captured pg_get_functiondef, full definition not prosrc"
+  },
+  "candidate_full_postimage": {
+    "bytes": 8679,
+    "md5": "8bb6db8c165c5980e2fdb710fd473f0a",
+    "sha256": "ec37cad37a5fe7a6a933a1f909d0bb0deeb0c67a55518e8d0e66ceae8f375ad6",
+    "basis": "source-derived exact replacement text; native canonical readback not yet executed"
+  },
+  "authority": {
+    "owner": "postgres",
+    "security_definer": true,
+    "strict": false,
+    "volatility": "v",
+    "parallel": "u",
+    "settings": [
+      "search_path=public"
+    ],
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "exact_overloads": 1
+  },
+  "guarded_dependencies": [
+    {
+      "signature": "public.fn_ca_financial_alert_to_incident()",
+      "full_definition_md5": "00a43ae03ab12cec9505e2bfed71d937",
+      "security_definer": true
+    },
+    {
+      "signature": "public.fn_ca_guard_watchlist()",
+      "full_definition_md5": "92ee208d0887728444bda396d0b4d442",
+      "security_definer": false
+    }
+  ],
+  "schema_guard": {
+    "consumed_columns": 23,
+    "nondeferrable_primary_key_id_tables": [
+      "tournaments",
+      "spin_reserve_ledger",
+      "financial_alerts"
+    ],
+    "target_watchlist_and_guard_defs": "must remain absent",
+    "full_trigger_graph": "not modeled or qualified"
+  },
+  "originals": [
+    {
+      "inbox_id": 40497,
+      "financial_id": "2e3e8281-d4a1-47ec-9211-701ca6fed537",
+      "tournament_id": "dea62e98-7cd9-404f-966f-b9fe3c7a94d8",
+      "buy_in": "1",
+      "prize_pool": "3",
+      "draw_booking_id": "45317a75-0e4a-4b89-a7cc-4ae68f1141b4",
+      "wallet_prize_id": "f72335a8-0416-4533-9687-b8bea9998053"
+    },
+    {
+      "inbox_id": 40498,
+      "financial_id": "cbd34ffe-664a-4849-b79e-696ec3988068",
+      "tournament_id": "a374cdd3-b10e-4725-bab5-ff6e90bb2af5",
+      "buy_in": "2",
+      "prize_pool": "6",
+      "draw_booking_id": "433d0ea3-8560-4fbe-bbdd-39a76f873b48",
+      "wallet_prize_id": "6e861104-b762-48a1-8296-82fcd1ab18a3"
+    },
+    {
+      "inbox_id": 40499,
+      "financial_id": "e1956b38-cf92-412e-8a57-fb4db7883e3d",
+      "tournament_id": "78181713-fa93-4a52-93d8-e73bbf97851e",
+      "buy_in": "3",
+      "prize_pool": "9",
+      "draw_booking_id": "e47783bd-0b68-4b25-a81e-2122e787712d",
+      "wallet_prize_id": "1ea742af-8067-42e9-bd93-c06708f07975"
+    }
+  ],
+  "literal_fixture_cardinalities": {
+    "originals": 3,
+    "tournaments": 3,
+    "reserve_rows": 6,
+    "wallet_rows": 12,
+    "prize_wallet_rows": 3,
+    "later_structure_payout_rows": 3
+  },
+  "original_alert_time": "2026-08-22T18:24:04.240366Z",
+  "later_reserve_booking_time": "2026-08-23T04:04:59.880486Z",
+  "later_reserve_migration": {
+    "version": "20260823040459",
+    "name": "settle_the_three_aged_out_spins",
+    "statements_md5": "9049dadf4315d63cfad6f289cb4a4f83",
+    "basis": "reuses prior reconstructed multiplier; not original RNG proof"
+  },
+  "preserved_legacy_amount_semantics": {
+    "paid_over_drawn": "round(coalesce(recorded_pool,0) - selected_multiplier*coalesce(buy_in,0),2); not verified paid amount",
+    "paid_over_drawn_count": "unchanged positive nominal difference count",
+    "clawed_back": false
+  },
+  "native_qualification": {
+    "execution_uuid": null,
+    "provider_receipt": null,
+    "approval_receipt": null,
+    "terminal_receipt": null,
+    "cleanup_receipt": null,
+    "primary_source": "scripts/qualification/spin-repair-evidence.sql",
+    "concurrency_source": "scripts/qualification/spin-repair-evidence-race.spec",
+    "database_protocol": "empty isolated PostgreSQL17, postgres, qual_spin_<approved UUID without hyphens>, local socket/loopback only, preprovided public API roles",
+    "modeled_differences": [
+      "uniform time translation relative to Aug24",
+      "missing multiplier/premium reset in model only",
+      "consumed-column schema model without production trigger/provider graph"
+    ],
+    "expected_mixed": {
+      "repaired": 5,
+      "unreconstructable": 2,
+      "paid_over_drawn_count": 2,
+      "repaired_outside_window": 1
+    },
+    "expected_cas": {
+      "repaired": 0,
+      "lost_the_race": 1,
+      "preserved_competing_multiplier": "5",
+      "alert_rows": 0,
+      "reserve_rows": 0,
+      "required_observed_order": [
+        "claim_begin",
+        "claim_write",
+        "repair_call blocks",
+        "claim_commit",
+        "repair_call resumes",
+        "repair_assert",
+        "restore_preimage"
+      ]
+    },
+    "expected_guard_sqlstate": "P0001 only for named savepoint negative cases; other errors fail",
+    "proposed_owner_review_caps": {
+      "each_case_wall_seconds": 60,
+      "each_case_output_bytes": 524288,
+      "parallel_heavy_jobs": 0,
+      "run_serially": true
+    },
+    "missing_admission": [
+      "actual installed protected adapter",
+      "approved execution UUID and plan",
+      "complete provider closure and binary pins including isolationtester",
+      "exact parser/entrypoint/error and blocking oracle admission",
+      "resource reservation",
+      "independent cleanup/terminal logs",
+      "required-check intake"
+    ]
+  },
+  "replay_contract": {
+    "install": "exact preimage installs, exact postimage guarded no-op",
+    "rollback": "exact postimage restores literal preimage, exact preimage guarded no-op",
+    "unknown_state": "atomic refusal; never overwrite drift"
+  },
+  "delivery_boundary": {
+    "captured_bridge_only_critical": true,
+    "critical_branch_byte_identical": true,
+    "success_messages_bypass_captured_bridge": true,
+    "downstream_all_severity_routing_and_live_receipt": "requires parent composition and separate proof"
+  },
+  "files": [
+    {
+      "path": "supabase/components/spin-repair-evidence.sql",
+      "bytes": 21668,
+      "sha256": "11ccdb651a8dd91ac641a65904bcc0b6d8beb35584a592bd8ebec3ea0f365a8f"
+    },
+    {
+      "path": "supabase/components/spin-repair-evidence.rollback.sql",
+      "bytes": 21663,
+      "sha256": "79bccf86792b09ee4ee3e3cf4bfe4348650db59c783fdb322d13b493b964796b"
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-repair-evidence/preimage.sql",
+      "bytes": 18490,
+      "sha256": "a881f4d209efa9eb4b4ce82b81c2e1e5b348db18243ed97dc11d872dd49436ae"
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-repair-evidence/original-40497-40499.sql",
+      "bytes": 29749,
+      "sha256": "04fd0a12802df3979a7d931cde15027b5a2a0f335a86690243659492dd84cd7f"
+    },
+    {
+      "path": "scripts/qualification/spin-repair-evidence.sql",
+      "bytes": 23605,
+      "sha256": "3d5e09cedf03ae34788c4082bc88faf1ec620206e837386cf39bc358a5e31293"
+    },
+    {
+      "path": "scripts/qualification/spin-repair-evidence-race.spec",
+      "bytes": 4679,
+      "sha256": "6ef7008493ea5720b6b15b51df22f4c4bbda7d0204c89d376877a95db6a5883f"
+    },
+    {
+      "path": "scripts/qualification/spin-repair-evidence.md",
+      "bytes": 13141,
+      "sha256": "52ae0055b9312d1db32bfe0235549076693ff9d961fad59d0d324592dcdf5bef"
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-repair-evidence/original-bridge.sql",
+      "sha256": "ff502ee4e70051c012f7eb1d5051db670a0dd8512748db0822c43e6db4657593",
+      "bytes": 6474
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql",
+      "bytes": 64094,
+      "sha256": "86f5e7f15c7a678f061215f17e42d023fba3ee16774ccc28545f549858c0ddb9"
+    }
+  ],
+  "evidence_inputs": [
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/spin-repair-evidence-component-authority-0240.json",
+      "bytes": 27079,
+      "sha256": "a20a93e83d755d8a8532973c1f4ff65ee083550c7bfc5cf81237d1a25f77c16f"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-money-40497-40538-retained-and-pins-0220.json",
+      "bytes": 54812,
+      "sha256": "a1c6badda0780a97edad6b868564eea1eb111c556f6047ded1ea8ee645f84697"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-money-40497-40538-readonly-0220.json",
+      "bytes": 93773,
+      "sha256": "fe7540e12971cb387393b2fd70602c313371a548a8fdc5ddd735db4344e8e3a4"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-13/operational-alert-routing/evidence/helper-alert-intake-money-40497-40538-findings-0220.md",
+      "bytes": 14092,
+      "sha256": "154bd95f05b581e79c9b0daaaefda43a882edfef19911d788f4a47a6f826a43d"
+    }
+  ],
+  "existing_source_consumers": [
+    {
+      "path": "supabase/migrations/20260905175039_a_repair_counts_only_the_rows_it_actually_repaired.sql",
+      "bytes": 13150,
+      "sha256": "8c7d22e879c1c10105a31a5689e13259ca92515992691d50819cea756ee79d87"
+    },
+    {
+      "path": "tests/config/spinNullMultiplierRepair.test.ts",
+      "bytes": 8230,
+      "sha256": "41883a8437a54db0b504baff5109a7b4ce49af47d991616dec180853cb02be6e"
+    },
+    {
+      "path": "tests/config/spinStampCannotHideFromItsRepair.test.ts",
+      "bytes": 7035,
+      "sha256": "d9e1af5f1add4d807a534512d3dffe2f8a4e4df79ff4fb53181a753dc8063a98"
+    }
+  ],
+  "self_hash_policy": "This manifest excludes its own digest; final custody must bind its separate SHA256.",
+  "execution_statement": "No fixture/test/build/typecheck/syntax check/SQL component was executed; no production writes or GitHub; no helper commit.",
+  "parent_source_review": {
+    "status": "reviewed_for_local_source_custody_only",
+    "recorded_at": "2026-09-15T02:45:01.953311+00:00",
+    "native_execution": "UNRUN",
+    "installed": false,
+    "published": false
+  },
+  "replay_proposal": {
+    "source_ref": "cce31a586e6bed94fb7e0c58352ab5fca0a2feb6",
+    "status": "SCRATCH_PROPOSAL_UNRUN_UNINSTALLED",
+    "execution_path": "existing GitHub-hosted accounting_postgres job",
+    "historical_fields": "Earlier branch/worktree/admission and evidence paths are provenance only; current Documents/AGENTS.md is authoritative.",
+    "composed_bridge_sha256": "fab59ed398da15963ed5a1b2924adfdee34f87b3cd547893205a7f6d5725ce54",
+    "additional_native_controls": [
+      "pre-composition bridge rejected during install",
+      "pre-composition bridge rejected during rollback"
+    ],
+    "native_sql_transport": {
+      "setup": "scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql",
+      "rollbackFixtureFunction": "public.qualification_spin_restore_preimage()",
+      "rollbackProsrcMd5": "200971a0d5f8a4b720fc7996baf99f84",
+      "status": "SOURCE_ONLY_UNRUN",
+      "permutationUnchanged": true
+    }
+  }
+}

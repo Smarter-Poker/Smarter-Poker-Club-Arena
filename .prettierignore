@@ -35,3 +35,48 @@ server/src/gto/contracts/solver-policy.v1.schema.json
 server/src/gto/contracts/fixtures/chart-policy.v1.json
 server/src/gto/contracts/fixtures/exact-policy.v1.json
 server/src/gto/contracts/fixtures/chart-policy-artifact.v1.json
+
+# Captured financial authorities are checked byte-for-byte by the required
+# Spin expiry qualification. Preserve their original reviewed serialization.
+scripts/ci/probes/spin-expiry/inputs/captured-spin-catalog.json
+scripts/qualification/spin-expiry-committed-refund.authority.json
+scripts/qualification/spin-expiry-lock-order.authority.json
+
+# Preserve the reviewed serialization of captured Production Alert baselines.
+scripts/ci/probes/hand-index-writer-order/baseline.json
+scripts/ci/probes/hand-stat-writer-order/baseline.json
+scripts/ci/probes/rake-attribution-atomic/baseline.json
+
+# Captured and byte-pinned alert qualification source records.
+scripts/qualification/duplicate-structure-record-evidence.manifest.json
+scripts/qualification/duplicate-structure-record-evidence.md
+scripts/qualification/fixtures/rake-repair-record-evidence/images.json
+scripts/qualification/rake-repair-record-evidence.manifest.json
+scripts/qualification/rake-repair-record-evidence.md
+scripts/qualification/spin-repair-evidence.manifest.json
+scripts/qualification/spin-repair-evidence.md
+scripts/ci/probes/production-alert-core/inputs/core-images.json
+scripts/ci/probes/production-alert-core/notification/manifest.json
+scripts/ci/probes/class4-hand-outcome/captured-functions.json
+scripts/ci/probes/class4-hand-outcome/manifest.json
+scripts/qualification/class4-hand-outcome-evidence.md
+scripts/ci/probes/class4-hand-outcome/resource-population-basis.json
+scripts/operational-alerts/cash-pot-failed-run-intake.md
+scripts/qualification/cash-pot-check-evidence.manifest.json
+scripts/qualification/cash-pot-check-evidence.md
+scripts/qualification/cash-native-hosted.manifest.json
+scripts/qualification/class4-hand-outcome-evidence.manifest.json
+scripts/qualification/alert-evidence-hosted.manifest.json
+
+# Retained financial qualification inputs are checked against their original
+# exact-byte seals. Their source capture, not Prettier, owns formatting.
+scripts/ci/probes/bbj-bank-replay/funded/source/
+scripts/ci/probes/bbj-bank-replay/funded/regressions/original/
+scripts/ci/probes/bbj-bank-replay/funded/provenance/
+
+# Exact captured terminal receipt and reviewed qualification packet seals.
+scripts/qualification/spin-history-retention.manifest.json
+scripts/qualification/fixtures/spin-history-retention/completed-start-authority.json
+scripts/qualification/spin-history-retention-completed.manifest.json
+scripts/qualification/spin-history-retention-completed.md
+scripts/qualification/fixtures/spin-history-retention/social-alias-reference-authority.json

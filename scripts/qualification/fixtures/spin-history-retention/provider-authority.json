@@ -1,0 +1,1216 @@
+{
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "metadata": {
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_tournament_cancellation_receipts_append_only",
+        "prorows": 0,
+        "pronargs": 0,
+        "proconfig": ["search_path=public"],
+        "proretset": false,
+        "prosecdef": false,
+        "prorettype": "2279",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": null,
+        "proargtypes": [],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "fn_tournament_cancellation_receipts_append_only()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_cancellation_receipts_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  RAISE EXCEPTION\n    'tournament cancellation receipt is immutable; % refused for tournament %',\n    TG_OP, OLD.tournament_id USING ERRCODE = '55000';\nEND;\n$function$\n",
+      "security_definer": false,
+      "full_definition_md5": "fae27fa0a4d44ff04516e0bf069f6f9c"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "metadata": {
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "sp_prune_hand_history",
+        "prorows": 0,
+        "pronargs": 1,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proretset": false,
+        "prosecdef": false,
+        "prorettype": "23",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_batch"],
+        "proargtypes": ["23"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "proallargtypes": null,
+        "proargdefaults": "({CONST :consttype 23 :consttypmod -1 :constcollid 0 :constlen 4 :constbyval true :constisnull false :location -1 :constvalue 4 [ 196 9 0 0 0 0 0 0 ]})",
+        "pronargdefaults": 1
+      },
+      "signature": "sp_prune_hand_history(integer)",
+      "definition": "CREATE OR REPLACE FUNCTION public.sp_prune_hand_history(p_batch integer DEFAULT 2500)\n RETURNS integer\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_budget constant interval := interval '20 seconds';\n  v_deadline timestamptz := clock_timestamp()+v_budget;\n  v_days integer;\n  v_window interval;\n  v_doomed uuid[];\n  v_keepers uuid[];\n  v_deleted integer := 0;\n  v_round integer;\nBEGIN\n  SELECT greatest(coalesce(horse_retention_days,7),1)\n    INTO v_days FROM public.hand_history_retention_policy LIMIT 1;\n  IF v_days IS NULL THEN v_days := 7; END IF;\n  v_window := make_interval(days=>v_days);\n\n  LOOP\n    v_doomed := NULL;\n    v_keepers := NULL;\n    WITH candidates AS (\n      SELECT hh.id,hh.players\n        FROM public.hand_history hh\n       WHERE hh.has_human IS DISTINCT FROM true\n         AND hh.reported IS NOT true\n         AND hh.created_at<now()-v_window\n         AND NOT EXISTS (\n           SELECT 1 FROM public.bbj_payouts bp\n            WHERE bp.table_id=hh.table_id AND bp.hand_number=hh.hand_number)\n         AND NOT EXISTS (\n           SELECT 1 FROM public.hand_projection_outbox o WHERE o.hand_id=hh.id)\n         AND NOT EXISTS (\n           SELECT 1 FROM public.tournament_knockout_candidates c\n            WHERE c.hand_id=hh.id AND c.state='pending')\n       ORDER BY hh.created_at\n       LIMIT p_batch\n       FOR UPDATE SKIP LOCKED\n    ), classified AS (\n      SELECT c.id,\n        CASE\n          WHEN jsonb_typeof(c.players) IS DISTINCT FROM 'array' THEN true\n          WHEN jsonb_array_length(c.players)=0 THEN true\n          ELSE EXISTS (\n            SELECT 1\n              FROM jsonb_array_elements(c.players) e\n              LEFT JOIN public.profiles p ON p.id=(CASE\n                WHEN length(e.value->>'userId')=36\n                 AND (e.value->>'userId') ~\n                   '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n                THEN (e.value->>'userId')::uuid END)\n             WHERE p.id IS NULL OR p.is_horse IS NOT true)\n        END AS is_human\n        FROM candidates c\n    )\n    SELECT array_agg(id) FILTER (WHERE is_human IS false),\n           array_agg(id) FILTER (WHERE is_human IS DISTINCT FROM false)\n      INTO v_doomed,v_keepers FROM classified;\n\n    EXIT WHEN v_doomed IS NULL AND v_keepers IS NULL;\n    IF v_keepers IS NOT NULL AND cardinality(v_keepers)>0 THEN\n      UPDATE public.hand_history SET has_human=true WHERE id=ANY(v_keepers);\n    END IF;\n    IF v_doomed IS NOT NULL AND cardinality(v_doomed)>0 THEN\n      DELETE FROM public.rake_attributions WHERE hand_id=ANY(v_doomed);\n      DELETE FROM public.ca_hand_player_idx WHERE hand_id=ANY(v_doomed);\n      DELETE FROM public.hand_atomic_commits WHERE hand_id=ANY(v_doomed);\n      DELETE FROM public.hand_history WHERE id=ANY(v_doomed);\n      GET DIAGNOSTICS v_round=ROW_COUNT;\n      v_deleted := v_deleted+v_round;\n    END IF;\n    EXIT WHEN clock_timestamp()>=v_deadline;\n  END LOOP;\n  RETURN v_deleted;\nEND;\n$function$\n",
+      "security_definer": false,
+      "full_definition_md5": "03f156a50f882354f7d09f30fe08afd2"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "metadata": {
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "trg_finish_hand_post_commit_obligations",
+        "prorows": 0,
+        "pronargs": 0,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proretset": false,
+        "prosecdef": true,
+        "prorettype": "2279",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": null,
+        "proargtypes": [],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "trg_finish_hand_post_commit_obligations()",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_finish_hand_post_commit_obligations()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_result jsonb;\nBEGIN\n  v_result := public.fn_ca_process_hand_post_commit_obligations(OLD.hand_id);\n  IF COALESCE((v_result->>'ok')::boolean, false) IS NOT TRUE\n     AND v_result->>'reason' <> 'legacy_no_obligations' THEN\n    RAISE EXCEPTION 'hand post-commit obligations remain pending for %: %',\n      OLD.hand_id, v_result;\n  END IF;\n  RETURN OLD;\nEND;\n$function$\n",
+      "security_definer": true,
+      "full_definition_md5": "66d5a81792f64fc5ec1ab33ced6a05ba"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "metadata": {
+        "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "trg_notify_hand_projection_outbox",
+        "prorows": 0,
+        "pronargs": 0,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proretset": false,
+        "prosecdef": false,
+        "prorettype": "2279",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": null,
+        "proargtypes": [],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "trg_notify_hand_projection_outbox()",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_notify_hand_projection_outbox()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  -- The engine treats this as a wake-up only: it re-reads the outbox ordered\n  -- by hand_number (server/src/services/supabase/handProjection.ts runDrain).\n  -- hand_id:table_id is carried for logging and metrics, never consumed.\n  PERFORM pg_notify('hand_projection_outbox', NEW.hand_id::text || ':' || coalesce(NEW.table_id::text, ''));\n  RETURN NEW;\nEND;\n$function$\n",
+      "security_definer": false,
+      "full_definition_md5": "57069a33071dbb02460486310802be90"
+    }
+  ],
+  "relations": [
+    {
+      "acl": "{postgres=arwdDxtm/postgres,anon=rxt/postgres,authenticated=rxt/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "hand_history_retention_policy",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "id",
+          "type": "boolean",
+          "default": "true",
+          "ordinal": 1,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "horse_retention_days",
+          "type": "integer",
+          "default": "7",
+          "ordinal": 2,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "ordinal": 3,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "note",
+          "type": "text",
+          "default": null,
+          "ordinal": 4,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "live": true,
+          "name": "hand_history_retention_policy_pkey",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": true,
+          "definition": "CREATE UNIQUE INDEX hand_history_retention_policy_pkey ON public.hand_history_retention_policy USING btree (id)"
+        }
+      ],
+      "policies": null,
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "hand_history_retention_policy_horse_retention_days_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (horse_retention_days >= 1)"
+        },
+        {
+          "name": "hand_history_retention_policy_id_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (id)"
+        },
+        {
+          "name": "hand_history_retention_policy_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "hand_projection_outbox",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 1,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 2,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "ordinal": 3,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "ordinal": 4,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "live": true,
+          "name": "hand_projection_outbox_hand_number_key",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": false,
+          "definition": "CREATE UNIQUE INDEX hand_projection_outbox_hand_number_key ON public.hand_projection_outbox USING btree (hand_number)"
+        },
+        {
+          "live": true,
+          "name": "hand_projection_outbox_pkey",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": true,
+          "definition": "CREATE UNIQUE INDEX hand_projection_outbox_pkey ON public.hand_projection_outbox USING btree (hand_id)"
+        },
+        {
+          "live": true,
+          "name": "idx_hand_projection_outbox_table_hand",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "definition": "CREATE INDEX idx_hand_projection_outbox_table_hand ON public.hand_projection_outbox USING btree (table_id, hand_number)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "a0_finish_hand_post_commit_obligations",
+          "type": 11,
+          "enabled": "O",
+          "deferred": false,
+          "function": "trg_finish_hand_post_commit_obligations()",
+          "deferrable": false,
+          "definition": "CREATE TRIGGER a0_finish_hand_post_commit_obligations BEFORE DELETE ON hand_projection_outbox FOR EACH ROW EXECUTE FUNCTION trg_finish_hand_post_commit_obligations()",
+          "function_full_definition_md5": "66d5a81792f64fc5ec1ab33ced6a05ba"
+        },
+        {
+          "name": "z9_notify_hand_projection_outbox",
+          "type": 5,
+          "enabled": "O",
+          "deferred": false,
+          "function": "trg_notify_hand_projection_outbox()",
+          "deferrable": false,
+          "definition": "CREATE TRIGGER z9_notify_hand_projection_outbox AFTER INSERT ON hand_projection_outbox FOR EACH ROW EXECUTE FUNCTION trg_notify_hand_projection_outbox()",
+          "function_full_definition_md5": "57069a33071dbb02460486310802be90"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "hand_projection_outbox_hand_number_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (hand_number >= 1000000)"
+        },
+        {
+          "name": "hand_projection_outbox_hand_number_key",
+          "type": "u",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (hand_number)"
+        },
+        {
+          "name": "hand_projection_outbox_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (hand_id)"
+        }
+      ]
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "tournament_cancellation_receipts",
+      "owner": "postgres",
+      "columns": [
+        {
+          "acl": null,
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 1,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "actor_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 2,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "receipt_version",
+          "type": "integer",
+          "default": "2",
+          "ordinal": 3,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "source_player_count",
+          "type": "integer",
+          "default": null,
+          "ordinal": 4,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "source_player_ids",
+          "type": "uuid[]",
+          "default": null,
+          "ordinal": 5,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "refunded_count",
+          "type": "integer",
+          "default": null,
+          "ordinal": 6,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "refunded_registration_ids",
+          "type": "uuid[]",
+          "default": null,
+          "ordinal": 7,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "refund_line_count",
+          "type": "integer",
+          "default": null,
+          "ordinal": 8,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "ticket_return_count",
+          "type": "integer",
+          "default": null,
+          "ordinal": 9,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "ticket_return_ids",
+          "type": "uuid[]",
+          "default": null,
+          "ordinal": 10,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "total_ticket_returned",
+          "type": "numeric(15,2)",
+          "default": null,
+          "ordinal": 11,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "zero_refund_count",
+          "type": "integer",
+          "default": null,
+          "ordinal": 12,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "zero_refund_registration_ids",
+          "type": "uuid[]",
+          "default": null,
+          "ordinal": 13,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "total_refunded",
+          "type": "numeric(15,2)",
+          "default": null,
+          "ordinal": 14,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "fees_reversed",
+          "type": "numeric(15,2)",
+          "default": null,
+          "ordinal": 15,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "total_rake_before",
+          "type": "numeric(15,2)",
+          "default": null,
+          "ordinal": 16,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "total_rake_after",
+          "type": "numeric(15,2)",
+          "default": null,
+          "ordinal": 17,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "closed_table_count",
+          "type": "integer",
+          "default": null,
+          "ordinal": 18,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "closed_table_ids",
+          "type": "uuid[]",
+          "default": null,
+          "ordinal": 19,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "source_seat_count",
+          "type": "integer",
+          "default": null,
+          "ordinal": 20,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "source_seat_ids",
+          "type": "uuid[]",
+          "default": null,
+          "ordinal": 21,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "released_seat_count",
+          "type": "integer",
+          "default": null,
+          "ordinal": 22,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "released_seat_ids",
+          "type": "uuid[]",
+          "default": null,
+          "ordinal": 23,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "fee_reversal_ids",
+          "type": "uuid[]",
+          "default": null,
+          "ordinal": 24,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "escrow_closed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "ordinal": 25,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "escrow_close_note",
+          "type": "text",
+          "default": null,
+          "ordinal": 26,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "spin_unwind_tournament_id",
+          "type": "uuid",
+          "default": null,
+          "ordinal": 27,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "receipt",
+          "type": "jsonb",
+          "default": null,
+          "ordinal": 28,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "acl": null,
+          "name": "settled_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "ordinal": 29,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        {
+          "live": true,
+          "name": "tournament_cancellation_receipts_pkey",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": true,
+          "definition": "CREATE UNIQUE INDEX tournament_cancellation_receipts_pkey ON public.tournament_cancellation_receipts USING btree (tournament_id)"
+        },
+        {
+          "live": true,
+          "name": "tournament_cancellation_receipts_spin_unwind_tournament_id_key",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": false,
+          "definition": "CREATE UNIQUE INDEX tournament_cancellation_receipts_spin_unwind_tournament_id_key ON public.tournament_cancellation_receipts USING btree (spin_unwind_tournament_id)"
+        }
+      ],
+      "policies": null,
+      "triggers": [
+        {
+          "name": "tournament_cancellation_receipts_append_only",
+          "type": 27,
+          "enabled": "O",
+          "deferred": false,
+          "function": "fn_tournament_cancellation_receipts_append_only()",
+          "deferrable": false,
+          "definition": "CREATE TRIGGER tournament_cancellation_receipts_append_only BEFORE DELETE OR UPDATE ON tournament_cancellation_receipts FOR EACH ROW EXECUTE FUNCTION fn_tournament_cancellation_receipts_append_only()",
+          "function_full_definition_md5": "fae27fa0a4d44ff04516e0bf069f6f9c"
+        }
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "tournament_cancellation_rece_zero_refund_registration_ids_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (array_position(zero_refund_registration_ids, NULL::uuid) IS NULL)"
+        },
+        {
+          "name": "tournament_cancellation_receipt_refunded_registration_ids_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (array_position(refunded_registration_ids, NULL::uuid) IS NULL)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((fees_reversed::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND fees_reversed >= 0::numeric AND fees_reversed = round(fees_reversed, 2) AND fees_reversed <= (total_refunded + total_ticket_returned))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check1",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (source_player_count = cardinality(source_player_ids))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check10",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (released_seat_count = cardinality(released_seat_ids))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check11",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (released_seat_ids <@ source_seat_ids)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check12",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((total_rake_before::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (total_rake_after::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND total_rake_before >= 0::numeric AND total_rake_after = 0::numeric AND total_rake_before = fees_reversed)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check13",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (escrow_closed_at = settled_at)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check14",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (spin_unwind_tournament_id IS NULL OR spin_unwind_tournament_id = tournament_id)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check15",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'tournament_id'::text)::uuid) IS DISTINCT FROM tournament_id)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check16",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'actor_id'::text)::uuid) IS DISTINCT FROM actor_id)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check17",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'receipt_version'::text)::integer) IS DISTINCT FROM receipt_version)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check18",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'source_player_count'::text)::integer) IS DISTINCT FROM source_player_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check19",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'refunded_count'::text)::integer) IS DISTINCT FROM refunded_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check2",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (refunded_count = cardinality(refunded_registration_ids))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check20",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'refund_line_count'::text)::integer) IS DISTINCT FROM refund_line_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check21",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'ticket_return_count'::text)::integer) IS DISTINCT FROM ticket_return_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check22",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'total_ticket_returned'::text)::numeric) IS DISTINCT FROM total_ticket_returned)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check23",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'total_refunded'::text)::numeric) IS DISTINCT FROM total_refunded)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check24",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'fees_reversed'::text)::numeric) IS DISTINCT FROM fees_reversed)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check25",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'closed_table_count'::text)::integer) IS DISTINCT FROM closed_table_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check26",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'source_seat_count'::text)::integer) IS DISTINCT FROM source_seat_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check27",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'released_seat_count'::text)::integer) IS DISTINCT FROM released_seat_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check28",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT ((receipt ->> 'settled_at'::text)::timestamp with time zone) IS DISTINCT FROM settled_at)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check29",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (jsonb_array_length(receipt -> 'refunds'::text) = refund_line_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check3",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (ticket_return_count = cardinality(ticket_return_ids))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check30",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (jsonb_array_length(receipt -> 'ticket_returns'::text) = ticket_return_count)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check4",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (zero_refund_count = cardinality(zero_refund_registration_ids))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check5",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (source_player_count = (refunded_count + zero_refund_count))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check6",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((refunded_registration_ids && zero_refund_registration_ids) IS FALSE)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check7",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((refunded_registration_ids || zero_refund_registration_ids) <@ source_player_ids)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check8",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (closed_table_count = cardinality(closed_table_ids))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_check9",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (source_seat_count = cardinality(source_seat_ids))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_closed_table_count_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (closed_table_count >= 0)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_closed_table_ids_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (array_position(closed_table_ids, NULL::uuid) IS NULL)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_escrow_close_note_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (length(btrim(escrow_close_note)) > 0)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_fee_reversal_ids_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (array_position(fee_reversal_ids, NULL::uuid) IS NULL)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_pkey",
+          "type": "p",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (tournament_id)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_receipt_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (jsonb_typeof(receipt) = 'object'::text)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_receipt_check1",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT (receipt ->> 'status'::text) IS DISTINCT FROM 'CANCELLED'::text)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_receipt_check2",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((receipt ->> 'ok'::text)::boolean) IS TRUE)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_receipt_check3",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((receipt ->> 'success'::text)::boolean) IS TRUE)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_receipt_check4",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (((receipt ->> 'fully_settled'::text)::boolean) IS TRUE)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_receipt_check5",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT jsonb_typeof(receipt -> 'refunds'::text) IS DISTINCT FROM 'array'::text)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_receipt_check6",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (NOT jsonb_typeof(receipt -> 'ticket_returns'::text) IS DISTINCT FROM 'array'::text)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_receipt_version_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (receipt_version = 2)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_refund_line_count_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (refund_line_count >= 0)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_refunded_count_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (refunded_count >= 0)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_released_seat_count_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (released_seat_count >= 0)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_released_seat_ids_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (array_position(released_seat_ids, NULL::uuid) IS NULL)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_source_player_count_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (source_player_count >= 0)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_source_player_ids_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (array_position(source_player_ids, NULL::uuid) IS NULL)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_source_seat_count_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (source_seat_count >= 0)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_source_seat_ids_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (array_position(source_seat_ids, NULL::uuid) IS NULL)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_spin_unwind_tournament_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (spin_unwind_tournament_id) REFERENCES tournament_spin_cancellation_unwinds(tournament_id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_cancellation_receipts_spin_unwind_tournament_id_key",
+          "type": "u",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "UNIQUE (spin_unwind_tournament_id)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_ticket_return_count_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (ticket_return_count >= 0)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_ticket_return_ids_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (array_position(ticket_return_ids, NULL::uuid) IS NULL)"
+        },
+        {
+          "name": "tournament_cancellation_receipts_total_refunded_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((total_refunded::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND total_refunded >= 0::numeric AND total_refunded = round(total_refunded, 2))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_total_ticket_returned_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((total_ticket_returned::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND total_ticket_returned >= 0::numeric AND total_ticket_returned = round(total_ticket_returned, 2))"
+        },
+        {
+          "name": "tournament_cancellation_receipts_tournament_id_fkey",
+          "type": "f",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_cancellation_receipts_zero_refund_count_check",
+          "type": "c",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK (zero_refund_count >= 0)"
+        }
+      ]
+    }
+  ],
+  "hash_domain": "md5(pg_get_functiondef(oid))",
+  "observed_at": "2026-09-17T06:55:37.254267+00:00",
+  "server_version_num": "170006",
+  "requested_relations": [
+    "hand_history_retention_policy",
+    "hand_projection_outbox",
+    "tournament_cancellation_receipts"
+  ]
+}

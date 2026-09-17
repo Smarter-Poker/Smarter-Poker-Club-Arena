@@ -241,14 +241,18 @@ function effectiveGrants(sql, name) {
      open, which is the whole failure this file exists to prevent. `[^;]*?`
      keeps a verb inside its own statement. */
   const re = new RegExp(
-    String.raw`\b(GRANT|REVOKE)\b([^;]*?)\bON\s+FUNCTION\s+(?:public\.)?(\w+)\s*\(([^)]*)\)([^;]*?);`,
+    String.raw`\b(GRANT|REVOKE)\s+(?:ALL(?:\s+PRIVILEGES)?|EXECUTE)\s+ON\s+FUNCTION\s+([^;]*?)\s+(TO|FROM)\s+([^;]+);`,
     'gi'
   );
   let m;
   while ((m = re.exec(sql))) {
-    if (m[3].toLowerCase() !== name.toLowerCase()) continue;
+    // PostgreSQL permits several function signatures in one grant. Match each
+    // complete signature; commas inside its argument list are not separators.
+    const signatures = [...m[2].matchAll(/(?:^|,)\s*(?:public\.)?(\w+)\s*\([^)]*\)/gi)];
+    if (!signatures.some((signature) => signature[1].toLowerCase() === name.toLowerCase()))
+      continue;
     const verb = m[1].toUpperCase();
-    const named = `${m[2]} ${m[5]}`.toLowerCase();
+    const named = m[4].toLowerCase();
     for (const role of BROWSER_ROLES) {
       if (new RegExp(String.raw`\b${role}\b`).test(named)) {
         held[role] = verb === 'GRANT';

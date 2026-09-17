@@ -13,7 +13,7 @@
   "original_members": [
     {
       "original_path": "scripts/ci/probes/chip-journal-atomicity/test_insurance.py",
-      "preserved_path": "scripts/ci/probes/chip-journal-atomicity/test_insurance.py",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/historical/PR4702-test_insurance.py.txt",
       "bytes": 13317,
       "sha256": "e16350480e1060ae19ed8cd806e59c5eb6e8728d1667b00e716a7b55074bf44c",
       "execution_authority": false
@@ -180,7 +180,7 @@
         "HANDOFF.md",
         "cases.sql"
       ],
-      "purpose": "Original rejected definition for unchanged predecessor regression only"
+      "purpose": "Original rejected definition retained unchanged; the maintained loader applies one disclosed CASE parenthesization only for the unchanged predecessor regression."
     }
   },
   "active_source_path": "scripts/ci/probes/chip-journal-atomicity/test_insurance.py",
@@ -195,5 +195,19 @@
   "production_sql_authorized": false,
   "s7_executed_by_this_path": false,
   "funded_FWP04_S7_qualified": false,
-  "final_restored_runtime_result": "pending actual final-revision hosted check"
+  "final_restored_runtime_result": "Hosted run35185512588/job105086612528 failed compiling original predecessor CASE; corrected final-revision hosted check pending.",
+  "active_source_derivation": {
+    "path": "scripts/ci/probes/chip-journal-atomicity/test_insurance.py",
+    "original_preserved_path": "tests/sql/fixtures/g8-inert-accounting/historical/PR4702-test_insurance.py.txt",
+    "original_sha256": "e16350480e1060ae19ed8cd806e59c5eb6e8728d1667b00e716a7b55074bf44c",
+    "active_sha256": "001be1f8f5fd5e60afcc2f733736c1d9c96302fc540c701d925eef8580dce9a0",
+    "change": "After all four immutable source SHA256 checks, require exactly one original predecessor CASE comparison and parenthesize that CASE expression for PL/pgSQL compilation. Catalogue readback is derived from the corrected executable body. Original SQL, seals, 49 vectors, predecessor assertions and nine refusal checks are unchanged.",
+    "observed_failure": {
+      "run_id": 35185512588,
+      "job_id": 105086612528,
+      "sqlstate": "42601",
+      "stage": "function-body control compiled predecessor before reaching intended refusal"
+    },
+    "final_hosted_check": "pending corrected revision"
+  }
 }

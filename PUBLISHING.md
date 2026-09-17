@@ -1,5 +1,7 @@
 # Publishing through the restored providers
 
+Read [AGENTS.md](AGENTS.md) and [the operating law](docs/agent-policy/OPERATING-LAW.md), including immediate failed-deployment recovery.
+
 Current owner instruction, September 17, 2026. This is the active publication procedure for local and cloud agents. It supersedes older root-only authority, numbered delivery queues, stop-after-push directions, retired local-build procedures and reliance on disabled agent autopilot.
 
 ## Own the whole assigned delivery
@@ -53,3 +55,7 @@ Report the PR, merged revision, applicable checks, installation evidence, succes
 The restored production builds use GitHub, Vercel and Hetzner; reasonable provider compute is authorized. The M3/SSD can hold source and owned worktrees. Do not reactivate retired custom/local pipelines, release watchdogs, repair loops or the removed external error-telemetry integrations. A self-hosted build upgrade requires a later explicit owner instruction.
 
 On the owner's Mac, also read /Users/smarter.poker/Documents/AGENTS.md and /Users/smarter.poker/Documents/AGENT-HARDENING-STANDARD.md. Preserve later owner instructions and the assigned scope. Never print credentials or copy values from .env files into commands or documents.
+
+## Failed or interrupted deployment
+
+Follow the operating law's failure classification immediately. Repair build/test/preflight failures without waiting for a maintenance hour; reattach to an unknown owning operation; verify or recover missing proof without restarting a healthy deployed version. A cutover needs the existing durable maintenance certificate and full proof/rollback budget. Record failure, fix-ready, retry submission, admission and verification times separately. The additional certified engine recovery opportunity is a required implementation improvement, not a capability supplied by these Markdown changes. Do not extend a freeze or reduce safety reserves to force a retry.

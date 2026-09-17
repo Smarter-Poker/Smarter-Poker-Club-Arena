@@ -1,3 +1,5 @@
+> Execution authority: root `AGENTS.md`, the operating law and `PUBLISHING.md`. This plan does not assign new work; preserve its actual migration prerequisites.
+
 # MIGRATION LAW — ABSOLUTE ENFORCEMENT RULES
 
 ## Zero Exceptions. Zero Shortcuts. Zero Rubber-Stamping.
@@ -262,7 +264,7 @@ After any Club Arena change:
 
 1. **PUSH** — from an isolated worktree to a feature branch, through normal
    hooks. Record the commit SHA; do not push directly to `main`.
-2. **WATCH** — follow the Club Arena required checks, autopilot merge, and the
+2. **WATCH** — follow the Club Arena required checks, agent-owned protected merge, and the
    owning Hetzner workflow to a terminal result. A World Hub or Vercel
    deployment is not Club Arena release evidence.
 3. **VERIFY** — both the direct Hetzner origin and public rewrite must report

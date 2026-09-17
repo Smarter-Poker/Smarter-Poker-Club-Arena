@@ -20,6 +20,7 @@ import DiamondWheelService, {
   type WheelSegment,
   type WheelSpinResult,
   type WheelState,
+  type WheelBonusAward,
 } from '../services/DiamondWheelService';
 import {
   randomClientSeed,
@@ -550,6 +551,27 @@ export default function DiamondWheelPage() {
     endAuto,
   ]);
 
+  const openBonus = useCallback(
+    (award: WheelBonusAward) => {
+      const awardId = encodeURIComponent(award.id);
+      switch (award.game) {
+        case 'plinko':
+          navigate(`/clubs/${routeClubId}/plinko?wheelAward=${awardId}`);
+          break;
+        case 'crash':
+          navigate(`/clubs/${routeClubId}/crash?wheelAward=${awardId}`);
+          break;
+        case 'crossing':
+          navigate(`/clubs/${routeClubId}/crossing?wheelAward=${awardId}`);
+          break;
+        case 'mines':
+          navigate(`/clubs/${routeClubId}/mines?wheelAward=${awardId}`);
+          break;
+      }
+    },
+    [navigate, routeClubId]
+  );
+
   const handleLanded = useCallback(() => {
     if (!pending) return;
     const result = pending;
@@ -583,15 +605,12 @@ export default function DiamondWheelPage() {
     }
     if (result.bonus) {
       endAuto(null);
-      navigate(
-        `/clubs/${routeClubId}/${result.bonus.game}?wheelAward=${encodeURIComponent(result.bonus.id)}`
-      );
+      openBonus(result.bonus);
     }
     void freshCommit();
   }, [
     endAuto,
-    navigate,
-    routeClubId,
+    openBonus,
     recovery,
     pending,
     toast,
@@ -923,11 +942,7 @@ export default function DiamondWheelPage() {
                 type="button"
                 className={styles.back}
                 disabled={spinning || Boolean(recovery)}
-                onClick={() =>
-                  navigate(
-                    `/clubs/${routeClubId}/${award.game}?wheelAward=${encodeURIComponent(award.id)}`
-                  )
-                }
+                onClick={() => openBonus(award)}
               >
                 Open{' '}
                 {wheelPrizeTitle({

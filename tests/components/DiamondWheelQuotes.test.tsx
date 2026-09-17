@@ -74,6 +74,22 @@ const state = {
   },
 };
 describe('the selected wheel stake owns its availability quote', () => {
+  it.each(['plinko', 'crash', 'crossing', 'mines'])(
+    'opens an existing %s award on its declared game route without a new spin',
+    async (game) => {
+      backend.state.mockResolvedValue({
+        ...state,
+        pending_awards: [{ id: 'earned/award?1', game, base_diamonds: 100 }],
+      });
+      render(<DiamondWheelPage />);
+      const open = await screen.findByRole('button', { name: 'Open', exact: true });
+      fireEvent.click(open);
+      expect(backend.navigate).toHaveBeenCalledWith(
+        `/clubs/club-a/${game}?wheelAward=earned%2Faward%3F1`
+      );
+    }
+  );
+
   it('offers the funded new welcome wheel when the historical table is unavailable', async () => {
     backend.state.mockResolvedValue({
       ...state,

@@ -21,11 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The default branch, not the publish's own commit: the script reads
+      # what the publish put on the public address, so it does not have to
+      # exist at that commit (the first run checked out a publish older than
+      # the script and found nothing to run).
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Submit
+        continue-on-error: true
         run: node scripts/indexnow-public-routes.mjs

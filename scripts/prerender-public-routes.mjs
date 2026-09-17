@@ -247,12 +247,19 @@ function outputPathFor(route) {
 /** What a reader must find in each prerendered page for the build to pass. */
 export function verifyDocument(route, doc) {
   const problems = [];
-  if (!/<h1[\s>]/i.test(doc)) problems.push('no <h1>');
   // The landing block sits before #root; every other route's markup is inside it.
   const landingStart = doc.indexOf('<div id="prerender-landing"');
   const rootStart = doc.indexOf('<div id="root">');
   const bodyStart = landingStart === -1 ? rootStart : Math.min(landingStart, rootStart);
-  const text = doc.slice(bodyStart).replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ');
+  // THE HEADING MUST BE A HEADING, NOT A STRING INSIDE A SCRIPT (2026-09-17).
+  // index.html carries a last-resort "Loading Failed" screen as a JavaScript
+  // string containing `<h1 ...>`, so testing the WHOLE document for /<h1/ was
+  // satisfied by the shell alone: this guard would have passed a prerendered
+  // page with no heading at all. Look only at the rendered region, scripts
+  // removed, which is what an HTML parser hands a crawler.
+  const rendered = doc.slice(bodyStart).replace(/<script[\s\S]*?<\/script>/g, '');
+  if (!/<h1[\s>]/i.test(rendered)) problems.push('no <h1>');
+  const text = rendered.replace(/<[^>]+>/g, ' ');
   const words = text.split(/\s+/).filter(Boolean).length;
   if (words < 120) problems.push(`only ${words} words of readable text`);
   if (!/<meta name="robots" content="index, follow/i.test(doc)) problems.push('not indexable');

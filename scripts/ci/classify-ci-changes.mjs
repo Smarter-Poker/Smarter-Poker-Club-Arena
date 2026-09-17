@@ -51,6 +51,8 @@ export function classifyChangedPaths(paths) {
   const cashLobbyBrowser = matches(
     /^tests\/e2e\/(?:mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
   );
+  // Both PR builds invoke this stamper; its own changes must reach them.
+  const buildProvenance = paths.includes('scripts/stamp-build-provenance.mjs');
   const nativeIsolationTool = matches(/^scripts\/ci\/build_pg17_isolationtester\.py$/);
   const horsePriority = matches(
     /^scripts\/qualification\/(?:horse-league-process-priority-native\.mjs$|fixtures\/horse-league-process-priority\/)/
@@ -85,7 +87,7 @@ export function classifyChangedPaths(paths) {
     /^(docs\/changelog\/2026-09-11-a-bust-is-ranked-by-when-it-happened\.rollback\.sql|scripts\/ci\/probes\/chip-journal-atomicity\/postgres-runtime\/package(-lock)?\.json)$/
   );
   return {
-    src: broad || cashLobbyBrowser || matches(/^src\//),
+    src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
       broad ||
       bbjFixture ||
@@ -107,6 +109,7 @@ export function classifyChangedPaths(paths) {
       matches(cashEvidence),
     tests:
       broad ||
+      buildProvenance ||
       diamondGames ||
       commitmentAudit ||
       tournamentAccountingInput ||

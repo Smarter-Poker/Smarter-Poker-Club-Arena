@@ -1,6 +1,7 @@
 # FIFO5 receipt statement lane: finite partial qualification
 
-Source only; native execution is pending. This packet does not admit, recreate,
+The cohort-guard revision is source-wired; its native execution is pending.
+This packet does not admit, recreate,
 rank or settle the 415 currently identified missing original histories (including
 the original 57-record subset). It introduces no new image,
 workflow, runner service, timer or dependencies. The existing Spin required
@@ -27,6 +28,24 @@ Rollback drops all three new bindings and the private handler. Full business row
 remain equal. Raw `relhastriggers` values are retained separately: PostgreSQL can
 keep that conservative cache hint true after DROP; exact `pg_trigger` rows prove
 semantic trigger restoration. No other catalog field is omitted.
+
+The forward installer also requires the two original terminal definitions
+already required by its reverse installer: complete-terminal full MD5
+`480be3139fe0878e637ce54f533a2170` and places full MD5
+`c412c8b17186976df139f73a706175f2`. The live terminal wrapper observed on
+September 17 at 20:35 UTC belongs to a newer finish-lane contract and is
+deliberately refused. This change does not repin or redesign that financial lane.
+The catalog control reconstructs the exact committed `79d045d4` forward from
+the candidate by removing only these two clauses. Its independent frozen body
+digest must match before execution. A rollback-local timeout-metadata change
+then demonstrates the old forward really installs while the unchanged reverse
+returns its exact `55000` refusal. Four corrected controls separately remove or
+change each prerequisite and require the original forward refusal. No financial
+body is replaced or invoked. Each subtransaction restores the complete observed
+catalog, business state and handler absence. Actual before-reproduction and
+refusal-count values survive the outer rollback only as psql output variables;
+the original observed database state remains restored. These new native results
+must be obtained through the existing required CI before being claimed as passed.
 
 The session consumer imports the unchanged, source-pinned R1 Session class. A
 separate observer and two real backends exercise INSERT/UPDATE/DELETE of zero rows

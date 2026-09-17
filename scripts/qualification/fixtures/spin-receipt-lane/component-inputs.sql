@@ -14,6 +14,12 @@ BEGIN
   IF current_user <> 'postgres'
      OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999
      OR (SELECT md5(pg_get_functiondef(p.oid)) FROM pg_proc p
+          WHERE p.oid=to_regprocedure('public.fn_complete_tournament_terminal(uuid,uuid,text)'))
+          IS DISTINCT FROM '480be3139fe0878e637ce54f533a2170'
+     OR (SELECT md5(pg_get_functiondef(p.oid)) FROM pg_proc p
+          WHERE p.oid=to_regprocedure('public.fn_settle_tournament_places(uuid,uuid)'))
+          IS DISTINCT FROM 'c412c8b17186976df139f73a706175f2'
+     OR (SELECT md5(pg_get_functiondef(p.oid)) FROM pg_proc p
           WHERE p.oid=to_regprocedure('public.fn_ca_share_settlement_lane_for_table(uuid)'))
           IS DISTINCT FROM '409b14ee72ce888d3b26524c52d49a68'
      OR NOT EXISTS(SELECT 1 FROM pg_proc p

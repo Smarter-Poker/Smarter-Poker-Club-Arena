@@ -34,6 +34,7 @@ def lane_source_files():
 def lane_catalog():
     return {'qualification':'receipt_lane_catalog','original_and_candidate_compactor_checked':True,
         'unrelated_update_trigger_refused':True,'altered_binding_refusals':7,'helper_authority_drift_refusals':2,'missing_preimage_refused':True,
+        'original_cohort_mismatch_reproduced':True,'reverse_prerequisite_refusals':4,
         'replay_refused':True,'existing_function_metadata_preserved':True,'guarded_and_outer_rollback_verified':True,
         'business_rows_unchanged':True,'historical_rows_qualified':False,'financial_completion_qualified':False,
         'full_qualification':False}
@@ -1315,13 +1316,19 @@ class ReceiptLaneTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): W.validate_lane_sources(missing)
 
     def test_resealed_embedded_drift_and_include_omission_still_refuse(self):
-        for mode in ('body','include','capture','session'):
+        for mode in ('body','include','capture','session','cohort-preimage','cohort-guard'):
             files=lane_source_files();manifest=W.decode(files[W.LANE_MANIFEST])
             if mode=='body':
                 name=W.LANE_BASE+'component-inputs.sql';files[name]=files[name].replace(b'PERFORM public.',b'PERFORM changed.',1)
             elif mode=='include':
                 manifest['relative_include_graph'].pop('scripts/qualification/spin-receipt-lane.sql')
                 name=None
+            elif mode=='cohort-preimage':
+                manifest['cohort_guard_preimage']['transaction_body_sha256']='0'*64
+                name=None
+            elif mode=='cohort-guard':
+                name='scripts/qualification/spin-receipt-lane.sql'
+                files[name]=files[name].replace(b'480be3139fe0878e637ce54f533a2170',b'0'*32,1)
             else:
                 name=W.LANE_BASE+'authority.json' if mode=='capture' else W.LANE_SESSION
                 files[name]+=b'\n'
@@ -1367,6 +1374,25 @@ class ReceiptLaneTests(unittest.TestCase):
             if mode=='metadata':rows[5]['wait']=copy.deepcopy(rows[0]['wait'])
             with self.subTest(mode=mode),self.assertRaises(RuntimeError):
                 W.validate_lane_races(value,EXECUTION,lane_source_files())
+
+    def test_reverse_cohort_protocol_requires_observed_before_and_four_refusals(self):
+        raw=json.dumps(lane_races()).encode(); files=lane_source_files()
+        value=W.lane_outputs(lane_originals(),raw,EXECUTION,files)['catalog']
+        self.assertIs(value['original_cohort_mismatch_reproduced'],True)
+        self.assertEqual(value['reverse_prerequisite_refusals'],4)
+        for key,bad in [('original_cohort_mismatch_reproduced',None),
+                        ('original_cohort_mismatch_reproduced',False),
+                        ('original_cohort_mismatch_reproduced',1),
+                        ('reverse_prerequisite_refusals',None),
+                        ('reverse_prerequisite_refusals',3),
+                        ('reverse_prerequisite_refusals',5),
+                        ('reverse_prerequisite_refusals',True)]:
+            outputs=lane_originals(); row=lane_catalog()
+            if bad is None: del row[key]
+            else: row[key]=bad
+            outputs['receipt_lane_catalog']=json.dumps(row).encode()
+            with self.subTest(key=key,bad=bad),self.assertRaises(RuntimeError):
+                W.lane_outputs(outputs,raw,EXECUTION,files)
 
     def test_session_cleanup_authority_source_and_qualification_claims_fail_closed(self):
         for mode in ('foreign-execution','helper-acl','helper-owner','source','dead-client','live-backend',

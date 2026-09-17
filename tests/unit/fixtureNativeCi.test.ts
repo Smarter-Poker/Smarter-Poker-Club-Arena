@@ -33,6 +33,33 @@ describe('cash lobby verification reaches the existing browser gate', () => {
   });
 });
 
+describe('build provenance changes reach the existing client verification', () => {
+  it('runs Production Build, CSS Beat and client tests for the exact stamper path', () => {
+    expect(classifyChangedPaths(['scripts/stamp-build-provenance.mjs'])).toEqual({
+      src: true,
+      server: false,
+      tests: true,
+      phase4: false,
+      fixture: false,
+    });
+  });
+
+  it.each([
+    'scripts/stamp-build-provenance.mjs.md',
+    'scripts/stamp-build-provenance.mjsx',
+    'scripts/ci/stamp-build-provenance.mjs',
+    'docs/scripts/stamp-build-provenance.mjs',
+  ])('does not select client checks for a lookalike path: %s', (path) => {
+    expect(classifyChangedPaths([path])).toEqual({
+      src: false,
+      server: false,
+      tests: false,
+      phase4: false,
+      fixture: false,
+    });
+  });
+});
+
 type GitFixture = {
   directory: string;
   base: string;

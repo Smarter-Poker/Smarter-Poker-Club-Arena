@@ -31,8 +31,8 @@
       "bytes": 689
     },
     "scripts/qualification/fixtures/spin-receipt-lane/component-inputs.sql": {
-      "sha256": "349e121718fe9e05c40b2a8225854cea54e568e2db90943f0de57385828031a6",
-      "bytes": 28297
+      "sha256": "b00e734f280a434235fdb97bb73b7cd2c095d51c2c60c800a1fa60763dd2be65",
+      "bytes": 28730
     },
     "scripts/qualification/fixtures/spin-receipt-lane/provider.sql": {
       "sha256": "e52f3be200df700de3eb5659e9cd9a658141c01b909ba5d9224bfa405a3acd0d",
@@ -55,24 +55,24 @@
       "bytes": 1869
     },
     "scripts/qualification/spin-receipt-lane.md": {
-      "sha256": "d7bea51678efed74e97fcad786f654e01fd6abbbdf2572606f6c168e613d055f",
-      "bytes": 4408
+      "sha256": "790ab7664ae4f4b4b6d392dc1bec73bbdc6a91536eba3590154af7e23d48c5d8",
+      "bytes": 5738
     },
     "scripts/qualification/spin-receipt-lane.py": {
       "sha256": "ff54acd76a3223c43bb522c196bfd74158e6e5eab3ca02ae16388d9c3b99f83b",
       "bytes": 18128
     },
     "scripts/qualification/spin-receipt-lane.sql": {
-      "sha256": "1cf313bc14aa867668619b74f5a7e878e028c5af6905563c3e04f9a9e1a82164",
-      "bytes": 8019
+      "sha256": "cccbba45bb171919ae12be892493556c7d45f46bb5596ebb525a4ae992a2bf71",
+      "bytes": 13777
     },
     "supabase/components/spin-mixed-basis-receipt-lane.rollback.sql": {
       "sha256": "b4506629162e3603df25dc98f2e7910f795fdbac23e64665215a41953c15f41c",
       "bytes": 12986
     },
     "supabase/components/spin-mixed-basis-receipt-lane.sql": {
-      "sha256": "e65954462b3cc9b90b304e5bf62ae87e48555f2c0e2ad88051668c9dcc5e52ee",
-      "bytes": 13228
+      "sha256": "29483714a1cf90c85e76f93fd0a388de53812c10214c6b998a72769e6d2d491c",
+      "bytes": 13661
     }
   },
   "relative_include_graph": {
@@ -92,5 +92,11 @@
     ]
   },
   "held_forward_sha256": "e41376e2fbfa4d5dcf57d009fa0f660b105abc3a30c5b5f731601b679ef84a9d",
-  "forward_delta": "Only exact captured share-helper owner, ACL, invoker, volatility and search_path admission; runtime function bodies unchanged."
+  "forward_delta": "Only exact captured share-helper authority admission and existing reverse-installer complete-terminal/places preimage guards; runtime function bodies and reverse component unchanged.",
+  "cohort_guard_preimage": {
+    "commit": "79d045d4fb522fdc5382b4e2b1735c17ce214279",
+    "forward_sha256": "e65954462b3cc9b90b304e5bf62ae87e48555f2c0e2ad88051668c9dcc5e52ee",
+    "transaction_body_sha256": "8d8674cd09ec62b5739dca2d6535d0a1b40e3c773193d8fddde04db35278558e",
+    "transaction_body_md5": "a8be23df9188a91c63fb88c2813954ad"
+  }
 }

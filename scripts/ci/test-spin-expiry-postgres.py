@@ -99,7 +99,7 @@ PURE_INPUTS = (PURE_COMPONENT, PURE_SHAPE, PURE_PREIMAGE, PURE_QUALIFIER, PURE_O
 PURE_STAGE = 'mixed_pure_evidence_rollback'
 REPLACEMENTS.update({name: name for name in PURE_INPUTS})
 LANE_MANIFEST = 'scripts/qualification/spin-receipt-lane.hosted.manifest.json'
-LANE_MANIFEST_SHA256 = 'df957a7c5ce6d2ec2dcdc60021bb31ace22c557bff5392f933a283b2d58ec2a3'
+LANE_MANIFEST_SHA256 = 'ac9e16b51da2ad249cfef245d27e495200ada7d5f133d31c380cccbf81728366'
 LANE_BASE = 'scripts/qualification/fixtures/spin-receipt-lane/'
 LANE_COMPONENT = 'supabase/components/spin-mixed-basis-receipt-lane.sql'
 LANE_ROLLBACK = 'supabase/components/spin-mixed-basis-receipt-lane.rollback.sql'
@@ -127,6 +127,7 @@ LANE_INPUTS = (LANE_MANIFEST, LANE_COMPONENT, LANE_ROLLBACK, LANE_PROGRAM, LANE_
 REPLACEMENTS.update({name: name for name in LANE_INPUTS})
 LANE_CATALOG = {'qualification':'receipt_lane_catalog','original_and_candidate_compactor_checked':True,
     'unrelated_update_trigger_refused':True,'altered_binding_refusals':7,'helper_authority_drift_refusals':2,'missing_preimage_refused':True,
+    'original_cohort_mismatch_reproduced':True,'reverse_prerequisite_refusals':4,
     'replay_refused':True,'existing_function_metadata_preserved':True,'guarded_and_outer_rollback_verified':True,
     'business_rows_unchanged':True,'historical_rows_qualified':False,'financial_completion_qualified':False,
     'full_qualification':False}
@@ -155,6 +156,12 @@ def validate_lane_sources(files):
             'authentic lane capture differs')
     require(digest(files[LANE_SESSION]) == '33040b22707d84990cc87489d97b412ca1a5163906646769a9961842a1f3eae8',
             'existing Session implementation differs')
+    cohort_preimage = {'commit':'79d045d4fb522fdc5382b4e2b1735c17ce214279',
+        'forward_sha256':'e65954462b3cc9b90b304e5bf62ae87e48555f2c0e2ad88051668c9dcc5e52ee',
+        'transaction_body_sha256':'8d8674cd09ec62b5739dca2d6535d0a1b40e3c773193d8fddde04db35278558e',
+        'transaction_body_md5':'a8be23df9188a91c63fb88c2813954ad'}
+    require(manifest.get('cohort_guard_preimage') == cohort_preimage,
+            'receipt lane original cohort provenance differs')
     graph = {}
     for name in manifest['files']:
         if not name.endswith('.sql'): continue
@@ -177,6 +184,15 @@ def validate_lane_sources(files):
         body = ''.join(line for line in source.splitlines(keepends=True) if line.strip() not in ('BEGIN;',end))
         parts = embedded.split('$lane_'+label+'$')
         require(len(parts)==3 and parts[1]==body, 'lane embedded source differs: '+label)
+        if label=='forward': forward_body=body
+    qualifier=files['scripts/qualification/spin-receipt-lane.sql'].decode()
+    guard_parts=qualifier.split('$reverse_guards$')
+    require(len(guard_parts)==3 and guard_parts[1] and forward_body.count(guard_parts[1])==1,
+            'receipt lane reverse guard extraction differs')
+    original=forward_body.replace(guard_parts[1],'',1).encode()
+    require(digest(original)==cohort_preimage['transaction_body_sha256']
+            and hashlib.md5(original).hexdigest()==cohort_preimage['transaction_body_md5'],
+            'receipt lane original cohort source differs')
     require(manifest['stage_order'] == list(LANE_STAGES) and manifest['image']=='candidate'
             and manifest['full_qualification'] is False, 'lane stage/scope contract differs')
 

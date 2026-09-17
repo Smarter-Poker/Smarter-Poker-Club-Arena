@@ -1,0 +1,160 @@
+{
+  "status": "SOURCE_CONSTRUCTION_ONLY_REQUIRES_INDEPENDENT_REVIEW_AND_ROOT_ADAPTER",
+  "original": {
+    "identities": 327,
+    "expression_edges": 2957,
+    "registry_checks": 16,
+    "full_prerequisites_required": true,
+    "accepted_opening_supplemental_functions": 12,
+    "accepted_opening_supplemental_relations": 6,
+    "all_original_expectations_unchanged": true
+  },
+  "additional_current_functions": [
+    "public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)",
+    "public.fn_bbj_parked_reserve(uuid,text)"
+  ],
+  "additional_current_relations": [
+    "public.ca_bbj_bucket_moves",
+    "public.bbj_payouts",
+    "public.bbj_unclaimed_shares"
+  ],
+  "additional_current_trigger_helpers": [
+    "public.fn_log_jackpot_payout_without_hand()",
+    "public.fn_bbj_ledger_delete_guard()"
+  ],
+  "captured_builtins": [
+    "pg_catalog.RI_FKey_check_ins()",
+    "pg_catalog.RI_FKey_check_upd()",
+    "pg_catalog.RI_FKey_cascade_del()",
+    "pg_catalog.RI_FKey_restrict_del()",
+    "pg_catalog.RI_FKey_noaction_upd()"
+  ],
+  "historical_support_relations": [
+    "public.bbj_hand_evidence_log",
+    "public.bbj_ledger_deletions",
+    "public.bbj_payout_recipients"
+  ],
+  "active_closure": [
+    {
+      "from": "move",
+      "to": [
+        "auth.role()",
+        "auth.uid()",
+        "bbj_pools row FOR UPDATE",
+        "ca_bbj_bucket_moves op_id UNIQUE and receipt",
+        "fn_bbj_parked_reserve(uuid,text)",
+        "fn_ca_declare_ledger(text,text,uuid,uuid,text,text[])"
+      ],
+      "authority": "Two recovered current full bodies, exact captured attrs and migration transition; auth/declaration are original unchanged scope."
+    },
+    {
+      "from": "reserve",
+      "to": [
+        "bbj_unclaimed_shares.payout_id -> bbj_payouts.id",
+        "unclaimed.pool_id = selected actual pool",
+        "unclaimed.paid_at IS NULL",
+        "payout.kind maps mini->backup else main"
+      ],
+      "authority": "Exact SQL body; no write. Empty complete relations prove zero parked reserve; calling producer holds pool lock first."
+    },
+    {
+      "from": "pool UPDATE",
+      "to": [
+        "fn_ca_block_browser_money_table()",
+        "fn_guard_retired_club_mutation()",
+        "fn_ca_autoledger(main=bbj_pool,backup=bbj_pool,promo=bbj_pool)",
+        "source pool nonnegative/rounding constraints",
+        "original internal FK trigger graph"
+      ],
+      "authority": "Original full42 relation overlays and285 functions inside327; all trigger source retained. Browser and retired-club guards remain active. No default invoked on UPDATE; mini floor unchanged5000."
+    },
+    {
+      "from": "autoledger",
+      "to": [
+        "two INSERT chip_ledger rows",
+        "auth.uid()",
+        "original journal constraints",
+        "original declaration registry",
+        "all original journal trigger helpers",
+        "original epoch and chain sequence/digest"
+      ],
+      "authority": "ORIGINAL-SOURCE-CLOSURE plus original full pinned schema. No direct journal SQL in the case. Enrichment uses actual context, current epoch, sequence and timestamps. NULL idempotency means no chip_ledger_idem additions."
+    },
+    {
+      "from": "receipt INSERT",
+      "to": [
+        "ca_bbj_bucket_moves_id_seq owned by ca_bbj_bucket_moves.id",
+        "CURRENT_USER",
+        "now()",
+        "round(numeric,integer)",
+        "length(text)",
+        "btrim(text)",
+        "text equality/ANY bank vocabulary"
+      ],
+      "authority": "All10 columns,8 constraints,2 indexes, RLS/owner/ACL, no policies or user/internal triggers captured. Natural bigint ID; pool_id deliberately has no FK in captured schema. Do not add one."
+    }
+  ],
+  "cold_closure": [
+    {
+      "from": "bbj_payouts AFTER INSERT",
+      "to": "fn_log_jackpot_payout_without_hand -> bbj_hand_evidence_log",
+      "not_executed": "No payout INSERT, UPDATE or DELETE is in this finite source case. Retain helper and table source and full raw emptiness."
+    },
+    {
+      "from": "bbj_payouts BEFORE DELETE",
+      "to": "fn_bbj_ledger_delete_guard -> bbj_ledger_deletions + financial_alerts",
+      "not_executed": "No payout DELETE. Full raw rows preserve both sinks; financial_alerts already original47."
+    },
+    {
+      "from": "incoming FK bbj_payout_recipients.payout_id",
+      "to": "bbj_payouts.id ON DELETE CASCADE; recipient delete guard reuses fn_bbj_ledger_delete_guard",
+      "not_executed": "No payout/recipient mutation. Preserve full historical recipient table, index, FK, RLS/policy, delete trigger and empty raw rows."
+    },
+    {
+      "from": "payout/unclaimed/recipient SELECT policies",
+      "to": "auth.uid and original fn_is_platform_admin -> profiles",
+      "not_executed": "Actual owned postgres reader and SECURITY DEFINER postgres producer bypass non-forced RLS as owner/superuser, without disabling policy or changing claims. No authenticated or browser qualification."
+    },
+    {
+      "from": "original journal cold branches",
+      "to": "six functions in HISTORICAL-COLD-FUNCTIONS.json",
+      "not_executed": "Tournament/escrow/attestation/deletion/maintenance branches are unchanged original source. BBJ legs have NULL tournament/table/hand IDs, adjustment category, no issuance or prize liability. Preserve original guard branches and full source; no broad execution claim."
+    }
+  ],
+  "source_preimages": {
+    "move": "Exact historical $before$ body is verified against retained full schema and current body equals migration $candidate$ exactly. Only same-identity before->current transition or exact current no-op; never arbitrary replacement. Both preimage full definitions in FUNCTION-TRANSITION.json.",
+    "reserve_and_two_trigger_helpers": "Historical body hashes exactly match recovered current body hashes; full history and complete captured attributes retained. Construction still must match full attributes/owner/ACL at the installed endpoint.",
+    "acl": "No explicit historical target ACL/default-privilege/wildcard grant is found for the extra2 functions/2 trigger helpers/3 relations/sequence in the retained original construction. The source-built initial ACL is default NULL, NOT proof of an actual endpoint ACL. Exact original-NULL or exact captured-current transitions require root independently reviewed installer; no arbitrary ACL preimage and no production grants."
+  },
+  "metadata_limits": {
+    "current_capture_requests": 2,
+    "atomic_snapshot": false,
+    "raw_identity_recheck_equal": true,
+    "portable_OIDs": false,
+    "large_sequence_limit_transport_exact": false,
+    "observed_rounded_seqmax": "9223372036854776000",
+    "source_derived_bigint_limit": "9223372036854775807",
+    "three_cold_relations_current_metadata_captured": false,
+    "original_source_and_current_installation_are_distinct": true
+  },
+  "root_required_before_execution": [
+    "Independent case source decision and separately reviewed exact root adapter/installer, with all input and own seals bound and false authorization changed only by root external authorization.",
+    "Retain original full schema construction and all327/2957/prerequisite/16 registry contracts, accepted0123/0124 opening source and all12/6 supplemental contracts. Additional scopes never replace old expected models.",
+    "Build exact additional helper/3relation/2trigger metadata models from sealed source. Verify full defaults, constraints, indexes, policies, ACL, ownership, attributes, security/config, overload identity and all internal/user trigger modes. Use captured raw OIDs only to resolve capture-local links, never as fixture IDs.",
+    "Pin historical three cold-table effective source-built metadata and all incoming FK/internal trigger bindings, including pool-side RI triggers for bbj_payouts_pool_id_fkey. Capture-local parent/child RI names/OIDs are not portable; original source DDL implies normal mode but current pool-side RI modes were not recovered by the three-table request.",
+    "Read sequence configuration and every large integer/OID/count as text or preserve exact raw numeric tokens. Compare source-derived bigint maximum text9223372036854775807 with actual configuration, bind exact owned column and ACL; retain rounded capture unchanged as uncertain transport evidence.",
+    "Use fresh single root-owned serial fixture and same-socket actual database/OID/system identifier/private directory/role identity. Do not attach to or rerun accepted ec5d102b7b694b0abedf9d7afbdea441; original clone was disposed. Root constructor performs seed0007 and accepted opening100 once as funding prerequisite in the new authorized case.",
+    "Supply actual in-memory original0123 opening result after its real BEFORE/FIRST-POSITIVE/STABLE detector phases and successful connection cleanup. No reading saved old JSON to manufacture fresh funding; raw Decimal values come from original Psql.one. Case consumes proof and makes no seed/opening call.",
+    "Provide genuine unchanged complete original replay+meter callback and actual metadata checker, durable bounded raw outputs, original error/SQLSTATE/transport records and root final owned OID/database/role/physical cleanup. An uncertain commit is failed and never an invitation to retry."
+  ],
+  "remaining_true_gaps": [
+    "Independent source/adapter/installer acceptance not yet issued.",
+    "Fresh supplemental full metadata/RI and cold historical table source-built qualification is root integration work, not completed by these non-atomic captures.",
+    "Exact current sequence limit transport value is absent; source-derived limit does not establish installed value.",
+    "No native transfer25, first positive backup baseline, stable replay, durability or cleanup outcome has been observed.",
+    "Original SEQ05 subtransaction-visibility limit remains: any real -25 snapshot mismatch must fail and retain evidence. SEQ06-GAP-SIDE-FILTERS remains unchanged."
+  ],
+  "no_missing_active_helper_body_found": true,
+  "full_transitive_current_installation_qualified": false,
+  "no_outbound_messages": "Do not call send_message_to_thread, notify/send tools, or any app/outbound messaging tool. Do not retry pending/denied sends. Local artifacts and ordinary responses only."
+}

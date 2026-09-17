@@ -26,6 +26,10 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  // The existing accounting job owns the BBJ runner and its nested fixture inputs.
+  const bbjFixture = matches(
+    /^scripts\/ci\/(?:test-bbj-bank-replay\.py$|probes\/bbj-bank-replay\/)/
+  );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   const diamondGames = matches(/^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/);
@@ -39,6 +43,7 @@ export function classifyChangedPaths(paths) {
     src: broad || matches(/^src\//),
     server:
       broad ||
+      bbjFixture ||
       diamondGames ||
       phase4Changed ||
       commitmentAudit ||

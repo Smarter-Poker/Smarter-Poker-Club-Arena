@@ -1,0 +1,116 @@
+[
+  {
+    "file": "case_module.py",
+    "old": "original genuine opening100, then accepted backup25 once.",
+    "new": "original genuine opening100, then reviewed promo25 once.",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "def supplemental_module():",
+    "new": "def promo_module():\n    return module('reviewed_promo0086', Path(load(HERE / 'SOURCE-PINS.json')['promo_packet']) / 'case_module.py')\n\n\ndef supplemental_module():",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "    backup = backup_module()",
+    "new": "    promo = promo_module()",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "'backup_result'",
+    "new": "'promo_result'",
+    "expected_occurrences": 3
+  },
+  {
+    "file": "case_module.py",
+    "old": "'backup_dispatch_count'",
+    "new": "'promo_dispatch_count'",
+    "expected_occurrences": 2
+  },
+  {
+    "file": "case_module.py",
+    "old": "'backup_preseed_guard'",
+    "new": "'promo_preseed_guard'",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "empty = backup.capture(probe)",
+    "new": "empty = promo.capture(probe)",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "names = backup.read(",
+    "new": "names = promo.read(",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "Original fresh opening failed; backup not invoked",
+    "new": "Original fresh opening failed; promo not invoked",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "backup_auth",
+    "new": "promo_auth",
+    "expected_occurrences": 2
+  },
+  {
+    "file": "case_module.py",
+    "old": "pins['backup_integrity_sha256']",
+    "new": "pins['promo_integrity_sha256']",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "= backup.execute_prepared_case",
+    "new": "= promo.execute_prepared_case",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "['backup:FIRST-BACKUP-POSITIVE', 'backup:STABLE-BACKUP']",
+    "new": "['promo:FIRST-PROMO-POSITIVE', 'promo:STABLE-PROMO']",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "Backup case failed; full result retained",
+    "new": "Promo case failed; full result retained",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "case_module.py",
+    "old": "Exact opening3 plus backup2 phases required",
+    "new": "Exact opening3 plus promo2 phases required",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "run_integration.py",
+    "old": "bounded_bbj_backup0001",
+    "new": "bounded_bbj_promo0001",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "run_integration.py",
+    "old": "g8bbjbackup-",
+    "new": "g8bbjpromo-",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "run_integration.py",
+    "old": "g8-bbj-backup-0001",
+    "new": "g8-bbj-promo-0001",
+    "expected_occurrences": 1
+  },
+  {
+    "file": "run_integration.py",
+    "old": "Only fresh opening100 setup plus backup25 continuation;",
+    "new": "Only fresh opening100 setup plus promo25 continuation;",
+    "expected_occurrences": 1
+  }
+]

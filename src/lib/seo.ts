@@ -26,7 +26,7 @@ import { WEB_APP_URL, WEB_ORIGIN } from './appBase';
 import { FAQ_ITEMS } from '../pages/helpContent';
 
 export const SITE_NAME = 'Smarter.Poker';
-export const DEFAULT_OG_IMAGE = `${WEB_ORIGIN}/images/og-default.png`;
+export const DEFAULT_OG_IMAGE = `${WEB_ORIGIN}/images/og-card.jpg`;
 export const ROBOTS_INDEX =
   'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
 export const ROBOTS_NOINDEX = 'noindex, nofollow';

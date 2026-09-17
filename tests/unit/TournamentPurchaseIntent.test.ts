@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   withTournamentPurchaseIntent,
+  TournamentPurchaseNotSubmittedError,
   type TournamentPurchaseRequest,
 } from '../../src/services/TournamentPurchaseIntent';
 
@@ -55,6 +56,76 @@ afterEach(() => {
 });
 
 describe('Tournament Original Purchase Intent', () => {
+  it('keeps a published intent unknown when readback fails and a queued tab submits it', async () => {
+    vi.resetModules();
+    const other = (await import('../../src/services/TournamentPurchaseIntent'))
+      .withTournamentPurchaseIntent;
+    const readShared = localStorage.getItem.bind(localStorage);
+    const writeShared = localStorage.setItem.bind(localStorage);
+    let failReadback = false;
+    let published = false;
+    vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      writeShared(key, value);
+      if (!published) {
+        published = true;
+        failReadback = true;
+      }
+    });
+    vi.spyOn(localStorage, 'getItem').mockImplementation((key) => {
+      if (failReadback) {
+        failReadback = false;
+        throw new Error('Readback lost');
+      }
+      return readShared(key);
+    });
+    const originSubmit = vi.fn(async () => 1000);
+    const origin = withTournamentPurchaseIntent(scope, async () => payload(), originSubmit);
+    vi.stubGlobal('sessionStorage', memoryStorage());
+    const queuedBuild = vi.fn(async () => ({ ...payload(), p_cost: 50 }));
+    const queuedSubmit = vi.fn(async (_request: TournamentPurchaseRequest) => 1000);
+    const queued = other(scope, queuedBuild, queuedSubmit);
+    const [originResult, queuedResult] = await Promise.allSettled([origin, queued]);
+    expect(originResult.status).toBe('rejected');
+    if (originResult.status !== 'rejected') throw new Error('Expected failed readback');
+    expect(originResult.reason).not.toBeInstanceOf(TournamentPurchaseNotSubmittedError);
+    expect(originResult.reason.message).toBe('Readback lost');
+    expect(originSubmit).not.toHaveBeenCalled();
+    expect(queuedResult).toEqual({ status: 'fulfilled', value: 1000 });
+    expect(queuedBuild).not.toHaveBeenCalled();
+    expect(queuedSubmit).toHaveBeenCalledOnce();
+    expect(queuedSubmit.mock.calls[0][0].p_cost).toBe(10);
+  });
+  it('distinguishes a fresh local preflight failure from a purchase that reached the server', async () => {
+    const submit = vi.fn(async () => 1000);
+    await expect(
+      withTournamentPurchaseIntent(
+        scope,
+        async () => {
+          throw new Error('Quote unavailable');
+        },
+        submit
+      )
+    ).rejects.toBeInstanceOf(TournamentPurchaseNotSubmittedError);
+    expect(submit).not.toHaveBeenCalled();
+    expect(localStorage.getItem(key)).toBeNull();
+    await expect(
+      withTournamentPurchaseIntent(
+        scope,
+        async () => payload(),
+        async () => {
+          throw new Error('Lost reply');
+        }
+      )
+    ).rejects.not.toBeInstanceOf(TournamentPurchaseNotSubmittedError);
+    expect(JSON.parse(localStorage.getItem(key)!).state).toBe('pending');
+    vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
+      throw new Error('Storage unavailable');
+    });
+    await expect(
+      withTournamentPurchaseIntent(scope, async () => payload(), submit)
+    ).rejects.not.toBeInstanceOf(TournamentPurchaseNotSubmittedError);
+    expect(submit).not.toHaveBeenCalled();
+  });
   it('persists the complete payload before sending and retains it after an unknown response', async () => {
     const submit = vi.fn(async (request: TournamentPurchaseRequest) => {
       expect(JSON.parse(localStorage.getItem(key)!).request).toEqual(request);

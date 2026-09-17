@@ -8,7 +8,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PG = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
-MIGRATION = ROOT / 'supabase/migrations/20260917184734_protect_event_owned_engine_recovery_windows_from_ddl.sql'
+MIGRATION = ROOT / 'supabase/migrations/20260917190616_protect_event_owned_engine_recovery_windows_from_ddl.sql'
 
 
 def function(path, name):

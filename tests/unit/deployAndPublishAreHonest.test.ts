@@ -279,6 +279,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(existingRelease).toContain('verify_complete_manifest "$FINAL"');
     expect(existingRelease).toContain('verify_release_identity "$FINAL" "$SHA" "$REPOSITORY"');
     expect(origin).toContain("provenance.get('schema')");
+    expect(origin).toContain("provenance.get('buildPurpose', 'release') == 'release'");
     expect(origin).toContain("provenance.get('commit') == expected_sha");
     expect(origin).toContain("provenance.get('builtBy') == 'github-actions'");
     expect(origin).toContain("provenance.get('dirty') is False");
@@ -336,6 +337,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     const gate = origin.slice(gateStart, gateEnd);
     expect(gate).toContain("fs.readFileSync('dist/ca-provenance.json', 'utf8')");
     expect(gate).toContain('provenance.schema === 1');
+    expect(gate).toContain("provenance.buildPurpose === 'release'");
     expect(gate).toContain('provenance.commit === expectedSha');
     expect(gate).toContain("provenance.builtBy === 'github-actions'");
     expect(gate).toContain('provenance.dirty === false');

@@ -9,3 +9,11 @@ The recurring satellite board now applies the database admission horizon before 
 Scheduled feeders also retain their existing MTT tournament type. The actual installed legacy classifier rejects the proposed SATELLITE/satellite writer shape, while accepting MTT/satellite with its authored target. Four creator cases reproduce the incompatible type before this correction. An obsolete two-entry draft remains subject to the database's refusal until unlimited admission activates; no replacement numeric cap or historical conversion is introduced.
 
 Validation: 1,028 distinct focused assertions across 48 existing/new test files, with the directly affected creation and resume fixtures supplying real contract-shaped responses and checking completed calls. Both application and server TypeScript checks pass. Newer booked-start, atomic break-resume, balance-continuation and lifecycle diagnostics remain composed. Local tests mock database transport; they do not establish production activation or financial settlement. Protected CI, publication and live behavior remain separate. Six retained creation/edit/restart concurrency cases and the real activation transition still require their authoritative native qualification; replica-switched fixtures are not activation proof.
+
+The broader submission hook exposed older connected fixtures without recorded
+formats or an admission snapshot. Their explicit database-shaped responses now
+exercise the same payout, blind recovery, seating, funding and interruption
+assertions. Source pins follow recorded format and effective capacity while
+retaining paid-seat and separate seating-RPC checks. The affected client checks
+pass 53 assertions and the ten affected server files pass 172. The scheduled
+single-table size expression retains its previous numeric behavior unchanged.

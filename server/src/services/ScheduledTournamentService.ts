@@ -1354,7 +1354,7 @@ export class ScheduledTournamentService {
         cfg.tableSize,
         2,
         10,
-        isSng || isSpin ? Math.min(10, Math.max(2, Number(maxPlayers))) : 9
+        isSng || isSpin ? Math.min(10, Math.max(2, maxPlayers)) : 9
       ),
       accelerated_mtt: asBool(cfg.acceleratedMtt),
       addon_break_minutes: clampInt(cfg.addonBreakMinutes, 1, 10, 1),

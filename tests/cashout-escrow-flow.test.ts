@@ -167,7 +167,7 @@ describe('a player cannot ask for an amount the server is bound to refuse', () =
   it('the sheet refuses the same three before it touches the service', () => {
     expect(MODAL).toContain('validateCashoutAmount(amount)');
     expect(MODAL).toContain('setError(validation.error)');
-    expect(MODAL).toContain(
+    expect(MODAL.replace(/\s+/g, ' ')).toContain(
       "if (cashoutAmount > currentBalance) throw new Error('That Is More Than Your Available Balance')"
     );
     // Presets select an explicitly displayed amount at the cent quantum.

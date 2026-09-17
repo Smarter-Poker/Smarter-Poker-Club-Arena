@@ -101,7 +101,9 @@ describe('ServiceBootstrap', () => {
 
     it('retains actual startup failures on repeat instead of manufacturing healthy services', async () => {
       vi.mocked(OfflineQueueService.init).mockRejectedValueOnce(new Error('unavailable'));
-      vi.mocked(FinancialCronService.start).mockImplementationOnce(() => { throw new Error('unavailable'); });
+      vi.mocked(FinancialCronService.start).mockImplementationOnce(() => {
+        throw new Error('unavailable');
+      });
       const first = await bootServices();
       first.offlineQueue = true; // A caller cannot mutate the cached observation.
       const repeated = await bootServices();

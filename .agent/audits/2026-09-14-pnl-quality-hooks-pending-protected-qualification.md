@@ -10,16 +10,16 @@ Required order is the existing J coordinator, the remaining declared components 
 
 N's resulting definition MD5 was not separately captured before the execution policy changed. The hook therefore compares the exact embedded N `prosrc` literal and its signature, return type, volatility, SECURITY DEFINER and search-path contract before replacing it. This is not an invented native hash. Protected qualification must execute that guard against actual N and record the result. The other preimages come from existing readback/catalog evidence:
 
-| Function | Reviewed preimage MD5 |
-| --- | --- |
-| P&L evidence report | `501b5a243800f96ef549aa4b137bc7bf` |
-| Weekly invoice issuer | `aef6d2b4583dafbe291bab39e52953c6` |
-| ECO adjustment | `4bef87530456c7c0d291c59c70eb41cd` |
-| ECO record | `1ce954a9cc4e55ad191e9c40fb4a56d5` |
+| Function                                       | Reviewed preimage MD5              |
+| ---------------------------------------------- | ---------------------------------- |
+| P&L evidence report                            | `501b5a243800f96ef549aa4b137bc7bf` |
+| Weekly invoice issuer                          | `aef6d2b4583dafbe291bab39e52953c6` |
+| ECO adjustment                                 | `4bef87530456c7c0d291c59c70eb41cd` |
+| ECO record                                     | `1ce954a9cc4e55ad191e9c40fb4a56d5` |
 | Reconciliation reader authorization dependency | `630e87c9842a423e6a5198551623dec0` |
-| J private scoped coordinator | `63f8248cd6d804f450a0b8f0fbc05e77` |
-| Safe direct P&L core | `a7eb35f0906ad77fd5eb0975d90023b7` |
-| Legacy club invoice reader | `bee79493a9a724e043b658ba328d663f` |
+| J private scoped coordinator                   | `63f8248cd6d804f450a0b8f0fbc05e77` |
+| Safe direct P&L core                           | `a7eb35f0906ad77fd5eb0975d90023b7` |
+| Legacy club invoice reader                     | `bee79493a9a724e043b658ba328d663f` |
 
 The fairness owner agreed to require the new unique P&L skip predicate, reverse only that exact predicate for comparison with J's measured hash, then preserve the P&L condition in the fairness output. There remains one private coordinator.
 

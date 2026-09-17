@@ -78,8 +78,10 @@ export function creditAdminAuditRow(
     agentName: agent.displayName,
     oldLimit: readCreditMoney(row.old_limit),
     newLimit: readCreditMoney(row.new_limit),
-    createdAt: typeof row.created_at === 'string' && Number.isFinite(Date.parse(row.created_at))
-      ? row.created_at : null,
+    createdAt:
+      typeof row.created_at === 'string' && Number.isFinite(Date.parse(row.created_at))
+        ? row.created_at
+        : null,
   };
 }
 

@@ -594,6 +594,8 @@ describe('explicit lossless CSV field contract', () => {
     '\n=1',
     '\ttext',
     ' \u0000=1',
+    ...Array.from({ length: 32 }, (_, code) => String.fromCharCode(code) + 'text'),
+    '\u007ftext',
   ])(
     'escapes formula/control-leading free text %j independently from negative numeric values',
     (value) => {

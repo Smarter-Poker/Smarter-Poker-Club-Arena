@@ -314,10 +314,10 @@ export default function DiamondWheel({
                 <g transform={`translate(${x} ${y}) rotate(${mid})`}>
                   <g className={styles.prizeFloat} style={{ animationDelay: `${index * -0.24}s` }}>
                     <svg
-                      x={outerRing ? -43 : count <= 8 ? -77 : -57}
-                      y={outerRing ? -50 : count <= 8 ? -88 : -62}
-                      width={outerRing ? 86 : count <= 8 ? 154 : 114}
-                      height={outerRing ? 65 : count <= 8 ? 140 : 104}
+                      x={outerRing ? -110 : count <= 8 ? -77 : -57}
+                      y={outerRing ? -38 : count <= 8 ? -88 : -62}
+                      width={outerRing ? 88 : count <= 8 ? 154 : 114}
+                      height={outerRing ? 76 : count <= 8 ? 140 : 104}
                       overflow="visible"
                     >
                       <WheelPrizeArt segment={segment} />
@@ -326,14 +326,14 @@ export default function DiamondWheel({
                   <text
                     className={styles.segText}
                     textAnchor="middle"
-                    y={outerRing ? 28 : count <= 8 ? 77 : 65}
-                    fontSize={outerRing ? 16 : count <= 8 ? 23 : 19}
+                    y={outerRing ? -7 : count <= 8 ? 77 : 65}
+                    fontSize={outerRing ? 18 : count <= 8 ? 23 : 19}
                   >
                     {(outerRing && segment.kind === 'bonus'
                       ? ['Super', wheelLabel(segment)]
                       : wheelLabel(segment, upgraded).split(' ')
                     ).map((word, line) => (
-                      <tspan key={line} x="0" dy={line ? '1.05em' : 0}>
+                      <tspan key={line} x={outerRing ? 43 : 0} dy={line ? '1.05em' : 0}>
                         {word}
                       </tspan>
                     ))}

@@ -84,6 +84,13 @@ scripts/qualification/fixtures/spin-history-retention/social-alias-reference-aut
 # Incoming accounting captures and their exact-byte provenance seals.
 # The capture generator owns serialization; formatting breaks qualification.
 scripts/ci/schema-manifest.d/weekly-union-accounting.json
+# Exact captured receipt-lane authority and reviewed qualification seals.
+scripts/qualification/fixtures/spin-receipt-lane/authority.json
+scripts/qualification/spin-receipt-lane.hosted.manifest.json
+scripts/qualification/spin-receipt-lane.md
+
+# Exact captured accounting records and bound fixture witnesses retain their
+# protected source serialization; formatting must not rewrite their evidence.
 supabase/accounting/correction-writer-v1/captured-ledger-catalog.json
 supabase/accounting/correction-writer-v1/owner-SOURCE-CUSTODY.json
 supabase/accounting/credit-reduction-v1/captured-credit-catalog.json
@@ -95,6 +102,8 @@ supabase/accounting/credit-reduction-v1/guard-payment-relation-sources.json
 supabase/accounting/credit-reduction-v1/guard-relation-sources.json
 tests/fixtures/browser-period-observer/captured-dependencies.json
 tests/fixtures/browser-period-observer/captured-legacy.json
+tests/fixtures/browser-period-observer/README.md
+tests/fixtures/cashier-document-authority/README.md
 tests/fixtures/cashier-document-authority/captured-cashier-catalog.json
 tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json
 tests/fixtures/cashier-document-authority/captured-manual-writers.json
@@ -107,6 +116,7 @@ tests/fixtures/credit-reduction-authority/captured-incoming-relations.json
 tests/fixtures/credit-reduction-authority/captured-payment-closure.json
 tests/fixtures/credit-request-authority/captured-catalog.json
 tests/fixtures/credit-request-authority/captured-name-catalog.json
+tests/fixtures/full-weekly-accounting/README.md
 tests/fixtures/full-weekly-accounting/function-access.json
 tests/fixtures/full-weekly-accounting/functions.json
 tests/fixtures/full-weekly-accounting/legacy-period-writers-source-binding.json
@@ -121,6 +131,7 @@ tests/fixtures/full-weekly-accounting/table-access.json
 tests/fixtures/full-weekly-accounting/tables.json
 tests/fixtures/full-weekly-accounting/triggers-round-3.json
 tests/fixtures/full-weekly-accounting/types.json
+tests/fixtures/messenger-private-accounting/README.md
 tests/fixtures/messenger-private-accounting/captured-catalog.json
 tests/fixtures/pnl-evidence/captured-pnl-metadata.json
 tests/fixtures/rakeback-history-privacy/policy-preimage.json
@@ -128,8 +139,6 @@ tests/fixtures/tournament-fee-lifecycle/full-lifecycle-terminal-receipts.json
 
 # Byte-bound accounting fixture documents and regression inputs.
 # Keep reviewed bytes intact; intentional test repairs update their binding.
-tests/fixtures/full-weekly-accounting/README.md
-tests/fixtures/messenger-private-accounting/README.md
 tests/fixtures/weekly-union-continuation/RUNNER.md
 tests/credit-admin-data.test.ts
 tests/super-agent-credit-routing.test.tsx
@@ -139,10 +148,8 @@ tests/components/cashout-scope.test.tsx
 tests/helpers/cashoutV2Receipt.ts
 tests/components/agent-dashboard-durable-transfers.test.tsx
 tests/unit/CashoutRequestModal.test.tsx
-tests/fixtures/cashier-document-authority/README.md
 tests/helpers/clubWeeklyStatement.ts
 tests/unit/ClubWeeklyAccountingReader.test.ts
-tests/fixtures/browser-period-observer/README.md
 tests/unit/SettlementCronService.test.ts
 tests/unit/ServiceBootstrap.test.ts
 tests/unit/FinancialCronService.test.ts

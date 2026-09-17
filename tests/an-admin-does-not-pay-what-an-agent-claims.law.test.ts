@@ -116,7 +116,7 @@ describe('it shows verified club weekly records rather than individual claims', 
   it('bounds the visible issued records without presenting them as a current bank balance', () => {
     expect(READER).toMatch(/CLUB_WEEKLY_STATEMENT_LIMIT\s*=\s*50/);
     expect(SUMMARY).toMatch(
-      /readClubWeeklyStatements\(\{\s*clubId,\s*userId:\s*user\.id,\s*limit:\s*CLUB_WEEKLY_STATEMENT_LIMIT,\s*isCurrent:\s*current,?\s*\}\)/
+      /readClubWeeklyStatements\(\{\s*clubId,\s*userId:\s*user\.id,\s*limit:\s*CLUB_WEEKLY_STATEMENT_LIMIT,\s*isCurrent:\s*current\s*,?\s*\}\)/
     );
     expect(SUMMARY).toContain(
       'Latest Up To {CLUB_WEEKLY_STATEMENT_LIMIT} Issued Weekly Summaries.'

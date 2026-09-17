@@ -190,8 +190,8 @@ export function generateExportCSV(
   // Quotes protect CSV structure, not spreadsheet formulas. Text escaping is
   // separate from strictly parsed decimal cells; never emit ="..." formulas.
   const safeText = (v: string) => {
-    const first = v.charCodeAt(0);
-    return first <= 31 || first === 127 || /^[\s'=+\-@]/u.test(v) ? `'${v}` : v;
+    const firstCode = v.charCodeAt(0);
+    return firstCode <= 0x1f || firstCode === 0x7f || /^[\s'=+\-@]/u.test(v) ? `'${v}` : v;
   };
   const lines = [columns.map((c) => quote(safeText(c.label))).join(',')];
   for (const source of rows) {

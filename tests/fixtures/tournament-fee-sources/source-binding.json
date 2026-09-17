@@ -25,11 +25,11 @@
   },
   "fixtures": {
     "tournament-fee-native-bootstrap.sql": "63bbdf9d604925f55b1605b33549abcc78c78f31fafa1115f4b14db3d157834a",
-    "tournament-fee-native-regression.sql": "5ee072e90aebc99e244d3fd4f9814b826d2fe06d7b318ee8b44ab8c15f57e3b1",
+    "tournament-fee-native-regression.sql": "adeb1c0377ba8eb2f3a0996f2b0803bd712538d8fad5644d98889e2e4717d9cf",
     "tournament-fee-producer-native.sql": "b57503a359f1e765a27a48e2538b31151d5a2b05244832297362e19f069f2ef2",
     "tournament-fee-recognition-native.sql": "b7695dbd79a63fedf97c0c5395735715d947ca4ef8a9b11243a691843f370b78",
     "tournament-fee-settle-native-bootstrap.sql": "22728f001b4337f5a53658c85b1c163e1070055d36d8b3ff8aa4a93926f97659",
-    "tournament-fee-settle-native.sql": "f604e0fadc1ad8854724e24b2095487e1c9741f3d135673466aa7d18eef8b352",
+    "tournament-fee-settle-native.sql": "d7f2ea45f518aeeeead95e51d9610bc6c0cfa0c581b89b458c9a4d8b64741957",
     "tournament-fee-terminal-extra-native.sql": "5878fa04b308cf7beb0f4b293a9d603c80c99d309d1314a58fefe0ea6f82eb57",
     "tournament-fee-monitor-native-bootstrap.sql": "6c8eb78c9a02f851c146db920107f6dcd65f137c2f643f6f997501ed3cafbe89",
     "tournament-fee-monitor-native.sql": "4c4cc9a5f5a5c00d9238a34e9d2e8735ce99b577638e2bf4abca35594bd30d83",

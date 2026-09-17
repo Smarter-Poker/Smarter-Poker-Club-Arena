@@ -106,10 +106,8 @@ SELECT assert_true((SELECT result->>'no_attribution_due'='true' FROM settle_resu
  AND fn_settle_tournament_rake(u(4170),'zero-replay')->>'already_settled'='true',
  'exact zero completes and replays with explicit no-attribution-due proof');
 -- Raw +fee/-fee is exact zero, but its historical source identity is missing.
-INSERT INTO tournaments(id,club_id,union_id,is_private,tournament_type) VALUES(u(4180),u(99),u(90),false,'MTT');
-INSERT INTO rake_records(id,tournament_id,is_tournament,club_id,rake_amount,source,metadata,created_at)
- VALUES(u(4181),u(4180),true,u(99),1,'legacy','{}',transaction_timestamp()-interval '2 hours'),
- (u(4182),u(4180),true,u(99),-1,'legacy','{}',transaction_timestamp()-interval '2 hours');
+-- The unchanged old rows were seeded before producer-hook installation in
+-- tournament-fee-native-regression.sql; this is not a new producer INSERT.
 INSERT INTO settle_results VALUES(u(4180),fn_settle_tournament_rake(u(4180),'zero-history'));
 SELECT assert_true((SELECT result->>'no_attribution_due'='true' FROM settle_results WHERE tournament_id=u(4180))
  AND fn_settle_tournament_rake(u(4180),'zero-history-replay')->>'already_settled'='true'

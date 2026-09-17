@@ -67,5 +67,12 @@ SELECT assert_true((fn_capture_accounting_tournament_fee(u(1601))->>'status')='c
 SELECT set_config('fixture.engine','true',true);
 SELECT assert_true(NOT has_function_privilege('service_role','fn_capture_accounting_tournament_fee(uuid,jsonb)','execute'),'source capture is private to original producer owners');
 SELECT assert_true(NOT has_table_privilege('service_role','accounting_tournament_fee_sources','insert'),'service caller cannot forge source receipts');
+-- Historical exact-zero source gap used by the later settlement regression.
+-- Install these old raw rows before the producer adapter is installed next;
+-- inserting them afterward would falsely model a new original fee producer.
+INSERT INTO tournaments(id,club_id,union_id,is_private,tournament_type) VALUES(u(4180),u(99),u(90),false,'MTT');
+INSERT INTO rake_records(id,tournament_id,is_tournament,club_id,rake_amount,source,metadata,created_at)
+ VALUES(u(4181),u(4180),true,u(99),1,'legacy','{}',transaction_timestamp()-interval '2 hours'),
+ (u(4182),u(4180),true,u(99),-1,'legacy','{}',transaction_timestamp()-interval '2 hours');
 SELECT count(*) AS native_assertions FROM assertions;
 COMMIT;

@@ -2,6 +2,40 @@
 -- Atomic functions are admitted as pinned source authority; the Class4 fixture does not invoke them.
 BEGIN;
 SET LOCAL search_path=public,extensions,pg_catalog;
+
+-- Missing row type dependency captured from production catalog 2026-09-17T03:39:53Z.
+-- No rows or money writer calls are added. The captured atomic function remains source-only.
+DO $$ BEGIN
+ IF current_user<>'fixture_bootstrap' OR inet_server_addr() IS NOT NULL
+    OR current_database()<>'class4_native_'||replace(current_setting('app.class4_execution_uuid'),'-','')
+    OR to_regclass('public.table_pending_addons') IS NOT NULL
+ THEN RAISE EXCEPTION 'Class4 addon fixture requires exact fresh owned database'; END IF;
+END $$;
+CREATE TABLE public.table_pending_addons (
+ "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+ "table_id" uuid NOT NULL,
+ "user_id" uuid NOT NULL,
+ "amount" numeric NOT NULL,
+ "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+ "resolved_at" timestamp with time zone,
+ "applied_to_stack" numeric,
+ "refunded" numeric,
+ "kind" text DEFAULT 'addon'::text NOT NULL
+);
+ALTER TABLE public.table_pending_addons ADD CONSTRAINT "table_pending_addons_amount_check" CHECK (amount > 0::numeric);
+ALTER TABLE public.table_pending_addons ADD CONSTRAINT "table_pending_addons_amount_is_cents" CHECK (amount IS NULL OR (amount::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND amount = round(amount, 2)) NOT VALID;
+ALTER TABLE public.table_pending_addons ADD CONSTRAINT "table_pending_addons_applied_is_cents" CHECK (applied_to_stack IS NULL OR (applied_to_stack::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND applied_to_stack = round(applied_to_stack, 2)) NOT VALID;
+ALTER TABLE public.table_pending_addons ADD CONSTRAINT "table_pending_addons_kind_check" CHECK (kind = ANY (ARRAY['addon'::text, 'rebuy'::text]));
+ALTER TABLE public.table_pending_addons ADD CONSTRAINT "table_pending_addons_pkey" PRIMARY KEY (id);
+ALTER TABLE public.table_pending_addons ADD CONSTRAINT "table_pending_addons_refunded_is_cents" CHECK (refunded IS NULL OR (refunded::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND refunded = round(refunded, 2)) NOT VALID;
+CREATE INDEX idx_table_pending_addons_unresolved_all ON public.table_pending_addons USING btree (created_at) WHERE (resolved_at IS NULL);
+ALTER TABLE public.table_pending_addons OWNER TO postgres;
+ALTER TABLE public.table_pending_addons ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.table_pending_addons FROM PUBLIC,fixture_bootstrap,anon,authenticated,service_role;
+GRANT SELECT,REFERENCES,TRIGGER ON public.table_pending_addons TO anon,authenticated;
+GRANT ALL ON public.table_pending_addons TO service_role;
+-- Captured catalog has no policies and no non-internal triggers.
+
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligations(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb, p_instance_id text, p_lease_generation uuid)
  RETURNS jsonb
  LANGUAGE plpgsql

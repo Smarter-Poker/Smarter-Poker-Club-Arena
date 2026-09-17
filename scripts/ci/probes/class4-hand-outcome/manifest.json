@@ -78,8 +78,8 @@
     },
     "catalog_supplement": {
       "path": "scripts/ci/probes/class4-hand-outcome/catalog-supplement.sql",
-      "bytes": 77653,
-      "sha256": "8779594ecd8e3730592da0edf459b5b50ffae133ce58980fed1277ef2524ea3f"
+      "bytes": 80278,
+      "sha256": "3490cfe2de570e4e7392e3c7830d8283c86372bb9134016aac6e4256c6460434"
     },
     "captured_functions": {
       "path": "scripts/ci/probes/class4-hand-outcome/captured-functions.json",

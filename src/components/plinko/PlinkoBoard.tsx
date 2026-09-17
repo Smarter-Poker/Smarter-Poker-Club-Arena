@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { gameRenderer, inscription, metal, solid } from '../games/sceneKit';
+import { plinkoPegField } from './plinkoPegField';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { reportError } from '../../utils/errorReporter';
@@ -25,11 +26,14 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
   latest.current = props;
   const width = props.width ?? 360;
   const height = Math.round(width * 1.13);
+  const initialSize = useRef({ width, height });
+  const sceneRef = useRef<ReturnType<typeof gameRenderer> | null>(null);
   useEffect(() => {
     if (!canvas.current) return;
     let kit: ReturnType<typeof gameRenderer>;
     try {
-      kit = gameRenderer(canvas.current, width, height);
+      kit = gameRenderer(canvas.current, initialSize.current.width, initialSize.current.height);
+      sceneRef.current = kit;
       setFailed(false);
     } catch (error) {
       setFailed(true);
@@ -59,18 +63,10 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
     });
     solid(scene, glow, [0.06, 11.8, 0.06], [-5.56, 0, 0.07], 0.02);
     solid(scene, glow, [0.06, 11.8, 0.06], [5.56, 0, 0.07], 0.02);
-    const pegs: THREE.Mesh[][] = [];
-    for (let row = 0; row < 16; row++) {
-      const entries: THREE.Mesh[] = [];
-      for (let col = 0; col <= row; col++) {
-        const peg = new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), steel.clone());
-        peg.position.set((col - row / 2) * 0.65, 4.7 - row * 0.55, 0.15);
-        peg.castShadow = true;
-        scene.add(peg);
-        entries.push(peg);
-      }
-      pegs.push(entries);
-    }
+    // Two instanced draw calls preserve every physical peg and its blue contact
+    // light, without 136 separate material/shadow submissions on small devices.
+    const pegs = plinkoPegField(steel);
+    scene.add(pegs.group);
     const slots: THREE.Mesh[] = [];
     const labels: THREE.Mesh[] = [];
     for (let i = 0; i < 17; i++) {
@@ -151,6 +147,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         duration = 16 * 118 * getAnimationSpeed();
         landed = false;
         reported = -1;
+        pegs.reveal([], -1);
       }
       ball.visible = !p.batchPathBits?.length;
       batchBalls.forEach((mesh) => {
@@ -198,14 +195,7 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
         const x = (rights - row / 2) * 0.65;
         const dx = (p.path[row] === 1 ? 1 : -1) * 0.325;
         ball.position.set(x + dx * t, 4.95 - progress * 0.55 + Math.sin(t * Math.PI) * 0.17, 0.46);
-        pegs.forEach((entries, r) =>
-          entries.forEach((peg, c) => {
-            const m = peg.material as THREE.MeshPhysicalMaterial;
-            const touched = r <= row && c === p.path!.slice(0, r).reduce((a, b) => a + b, 0);
-            m.emissive.setHex(touched ? 0x1877f2 : 0);
-            m.emissiveIntensity = touched ? 1.3 : 0;
-          })
-        );
+        pegs.reveal(p.path, row);
         if (progress >= 16) {
           landed = true;
           const slot = p.path.reduce((a, b) => a + b, 0);
@@ -230,8 +220,20 @@ export default function PlinkoBoard(props: PlinkoBoardProps) {
       cancelAnimationFrame(raf);
       surface.removeEventListener('webglcontextlost', lost);
       surface.removeEventListener('webglcontextrestored', restored);
+      sceneRef.current = null;
+      pegs.dispose();
       kit.cleanup();
     };
+  }, []);
+  // A measured viewport change resizes the existing GPU resources. Rebuilding
+  // the room and every shader on the first ResizeObserver event stalled touch
+  // controls on software-rendered and resource-constrained browsers.
+  useEffect(() => {
+    const kit = sceneRef.current;
+    if (!kit) return;
+    kit.camera.aspect = width / height;
+    kit.camera.updateProjectionMatrix();
+    kit.renderer.setSize(width, height, false);
   }, [width, height]);
   return (
     <div className={styles.board} data-motion="keep">

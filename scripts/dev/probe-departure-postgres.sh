@@ -45,7 +45,8 @@ import re,sys
 from pathlib import Path
 root=Path(sys.argv[1])/'supabase/migrations'
 for file,name in [
- ('20260906152756_a_seat_cashout_locks_the_game_before_the_seat.sql','atomic_seat_cashout_locked')]:
+ ('20260906152756_a_seat_cashout_locks_the_game_before_the_seat.sql','atomic_seat_cashout_locked'),
+ ('20260909203940_an_expiring_credit_is_spent_before_an_allowance_that_renews.sql','fn_consume_time_bank')]:
  text=(root/file).read_text()
  pattern=r'CREATE OR REPLACE FUNCTION public\.'+name+r'\([\s\S]*?\$function\$[\s\S]*?\$function\$;'
  matches=re.findall(pattern,text)

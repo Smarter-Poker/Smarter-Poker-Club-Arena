@@ -15,6 +15,7 @@ const restore = sliceBetween(
 );
 const methods = [
   'private scheduleBlindLevelWake(',
+  'private scheduleBlindClockStart(',
   'protected startBlindTimer(',
   'protected suspendLevelClock(',
   'protected async waitForMaintenanceThaw(',
@@ -95,6 +96,10 @@ function harness(
     running: true,
     currentLevel: 0,
     onBreak: false,
+    blindStartTimer: null,
+    isOnBreak() {
+      return this.onBreak || this.addOnBreakActive;
+    },
     blindTimer: null,
     blindTimerStartedAt: 0,
     savedBlindTimerRemaining: 0,
@@ -454,5 +459,104 @@ describe('a running tournament comes off its break only after the maintenance th
     expect(tournament.on_break).toBe(false);
     expect(engine.resumeDealing).not.toHaveBeenCalled();
     expect(stopped.state.blindTimer).toBeNull();
+  });
+});
+
+describe('a prepared timed event owes the complete first level at its booked start', () => {
+  it('does not activate the blind clock when an earlier synchronized break ends', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:00:00.000Z'));
+    const tournament = fixture({
+      started_at: '2026-09-09T14:00:00.000Z',
+      start_time: '2026-09-09T15:00:00.000Z',
+      level_started_at: null,
+    });
+    const { state, writes } = harness(tournament);
+    state.onBreak = true;
+    state.savedBlindTimerRemaining = 600000;
+    await state.resumeFromBreak();
+    expect(state.onBreak).toBe(false);
+    expect(state.blindTimer).toBeNull();
+    expect(state.blindTimerStartedAt).toBe(0);
+    expect(writes).toEqual([]);
+    expect(state.advanceBlindLevel).not.toHaveBeenCalled();
+    const waiting = state.blindStartTimer;
+    expect(waiting.delay).toBe(3600000);
+    vi.setSystemTime(new Date('2026-09-09T14:00:00.000Z'));
+    await waiting.callback();
+    expect(state.blindTimer.delay).toBe(600000);
+    expect(writes).toEqual([{ level_started_at: '2026-09-09T14:00:00.000Z' }]);
+    const firstLevel = state.blindTimer;
+    vi.setSystemTime(new Date('2026-09-09T14:01:00.000Z'));
+    await waiting.callback();
+    expect(state.blindTimer).toBe(firstLevel);
+    expect(writes).toHaveLength(1);
+  });
+
+  it('does not activate a replacement manager clock before the admitted start', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:03:00.000Z'));
+    const tournament = fixture({
+      started_at: '2026-09-09T14:00:00.000Z',
+      level_started_at: null,
+      on_break: false,
+    });
+    const { state, writes } = harness(tournament);
+    await state.restore(tournament);
+    expect(state.blindTimer).toBeNull();
+    expect(writes).toEqual([]);
+  });
+});
+
+describe('the delayed first-level wake has one owner through a pause', () => {
+  it.each(['synchronized', 'add-on'])(
+    'does not arm at the booked boundary during a %s break',
+    async (kind) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-09T13:59:00.000Z'));
+      const tournament = fixture({
+        started_at: '2026-09-09T14:00:00.000Z',
+        level_started_at: null,
+      });
+      const { state, writes } = harness(tournament);
+      state.startBlindTimer(tournament.blind_structure);
+      const original = state.blindStartTimer;
+      if (kind === 'synchronized') state.onBreak = true;
+      else state.addOnBreakActive = true;
+      state.suspendLevelClock();
+      vi.setSystemTime(new Date('2026-09-09T14:00:00.000Z'));
+      await original.callback(); // already delivered before cancellation
+      expect(state.blindTimer).toBeNull();
+      expect(writes).toEqual([]);
+      expect(state.savedBlindTimerRemaining).toBe(600000);
+      state.onBreak = true;
+      state.addOnBreakActive = false;
+      vi.setSystemTime(new Date('2026-09-09T14:03:00.000Z'));
+      await state.resumeFromBreak();
+      const firstLevel = state.blindTimer;
+      expect(firstLevel.delay).toBe(600000);
+      expect(writes).toEqual([{ level_started_at: '2026-09-09T14:03:00.000Z' }]);
+      await original.callback();
+      expect(state.blindTimer).toBe(firstLevel);
+      expect(writes).toHaveLength(1);
+    }
+  );
+
+  it('replaces an earlier waiting callback without allowing it to reset the active level', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T13:59:00.000Z'));
+    const tournament = fixture({ started_at: '2026-09-09T14:00:00.000Z', level_started_at: null });
+    const { state, writes } = harness(tournament);
+    state.startBlindTimer(tournament.blind_structure);
+    const original = state.blindStartTimer;
+    state.startBlindTimer(tournament.blind_structure, 1000);
+    const current = state.blindStartTimer;
+    vi.setSystemTime(new Date('2026-09-09T14:00:00.000Z'));
+    await current.callback();
+    expect(state.blindTimer.delay).toBe(600000);
+    const active = state.blindTimer;
+    await original.callback();
+    expect(state.blindTimer).toBe(active);
+    expect(writes).toHaveLength(1);
   });
 });

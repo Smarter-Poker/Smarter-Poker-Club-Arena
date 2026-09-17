@@ -122,6 +122,39 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('choice-game entry quotes belong to the selected settings', () => {
+  it.each([
+    { game: 'mines' as const, picked: [], current: '0.00', next: '2.17' },
+    { game: 'mines' as const, picked: [2, 4], current: '5.33', next: '15.20' },
+    { game: 'crossing' as const, picked: [], current: '0.00', next: '2.17' },
+    { game: 'crossing' as const, picked: [0, 1], current: '5.33', next: '15.20' },
+  ])(
+    'shows current and next potential prizes for $game after $picked',
+    async ({ game, picked, current, next }) => {
+      backend.state.mockResolvedValue({
+        ...state,
+        // The active round owns these quotes. A refreshed lobby quote must not
+        // replace either amount while the player decides whether to continue.
+        prizes: [999, 999, 999],
+        open_round: {
+          ...fixtures.receipts.mines,
+          game,
+          mode: game === 'mines' ? '5' : 'steady',
+          status: 'open',
+          bet_diamonds: 100,
+          max_steps: 3,
+          picked,
+          prizes: [2.17, 5.33, 15.2],
+          proof: null,
+        },
+      });
+      render(<DiamondChoicePage game={game} />);
+      await act(async () => {});
+      expect(screen.getByText('Current Prize').nextElementSibling).toHaveTextContent(current);
+      expect(screen.getByText('Next Prize').nextElementSibling).toHaveTextContent(next);
+      expect(screen.queryByText('999.00')).not.toBeInTheDocument();
+    }
+  );
+
   it('does not show a previous proof verdict while starting another round', async () => {
     const proof = deferred<boolean>();
     backend.verify.mockReturnValue(proof.promise);

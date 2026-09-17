@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { diamondGamesFixture } from '../helpers/diamond-games-fixture.mjs';
+// Each case opens real Three.js scenes. Hosted software WebGL took 24s for
+// Plinko's first paint alone in run35263085862; avoid competing shader compiles
+// and allow all three scenes to complete without relaxing any assertion.
+test.describe.configure({ mode: 'default', timeout: 90_000 });
 for (const width of [320, 390, 1280])
   test(`Diamond playfields and reveals remain reachable at ${width}px`, async ({ page }) => {
     const bundle = await diamondGamesFixture();

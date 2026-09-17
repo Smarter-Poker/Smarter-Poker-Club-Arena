@@ -15,6 +15,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { validateCrashSettlement } from '../utils/crashReceipt';
 
 export type DiamondGame = 'plinko' | 'crash' | 'crossing' | 'mines';
 
@@ -448,7 +449,7 @@ export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
   const balances = rec(raw.balances);
   const pool = rec(raw.pool);
   return {
-    ok: Boolean(raw.ok),
+    ok: raw.ok === true,
     error: raw.error ? String(raw.error) : undefined,
     detail: raw.detail ? String(raw.detail) : undefined,
     replayed: Boolean(raw.replayed),
@@ -677,13 +678,15 @@ const DiamondGamesService = {
    * A tick (cashout = false) asks the server what the round is now; a cash-out
    * (cashout = true) asks it to settle at the multiplier its clock reads.
    */
-  async crashSettle(roundId: string, cashout: boolean): Promise<CrashRound> {
+  async crashSettle(roundId: string, cashout: boolean, expected?: CrashRound): Promise<CrashRound> {
     const { data, error } = await supabase.rpc('fn_crash_settle', {
       p_round_id: roundId,
       p_cashout: cashout,
     });
     if (error) throw error;
-    return normaliseCrash(rec(data));
+    const receipt = rec(data);
+    validateCrashSettlement(receipt, roundId, expected);
+    return normaliseCrash(receipt);
   },
 
   async plinkoHistory(clubId: string, limit = 25): Promise<PlinkoDrop[]> {

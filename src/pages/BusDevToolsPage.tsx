@@ -10,13 +10,6 @@
  *  - Offline queue status
  *  - Diagnostics snapshot (auto-refresh every 2s)
  *  - Test event emitter for debugging
- *
- * #ClubArenaConsole: one console. The six figures print as rows on the black
- * glass (label in lit blue, value in silver), the live log, the channel
- * registry and the subscriber counts as rows between engraved rules, the
- * test emitters as lit words, and the two painted plates carry Pause /
- * Resume and Clear Log. Every timer, stream, filter, ref and handler of the
- * generic page is kept; only the paint changed.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -26,8 +19,6 @@ import { busEventLogger } from '../services/BusEventLogger';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { supabase } from '../lib/supabase';
-import { SpadeConsole } from '../components/console/SpadeConsole';
-import { titleCase } from '../utils/titleCase';
 import './BusDevToolsPage.css';
 
 interface EventLogItem {
@@ -46,15 +37,13 @@ interface DiagSnapshot {
   channelFactories: number;
 }
 
-/* A channel's state prints in the master's own ink: green while it is
-   joined, red once it has closed or errored, gold while it is leaving. */
-const STATE_INK: Record<string, string> = {
-  joined: 'sc-ink--green',
-  subscribed: 'sc-ink--green',
-  closed: 'sc-ink--red',
-  errored: 'sc-ink--red',
-  leaving: 'sc-ink--gold',
-  unknown: 'sc-ink--muted',
+const STATE_COLORS: Record<string, string> = {
+  joined: '#31A24C',
+  subscribed: '#31A24C',
+  closed: '#b91c1c',
+  errored: '#dc2626',
+  leaving: '#d97706',
+  unknown: '#6b7280',
 };
 
 const TEST_EVENTS: { type: BusEventType; label: string }[] = [
@@ -180,202 +169,214 @@ export default function BusDevToolsPage() {
   const subscriberEntries = diagnostics
     ? Object.entries(diagnostics.subscribers).sort((a, b) => b[1] - a[1])
     : [];
-
-  const subscriberTotal = subscriberEntries.reduce((sum, [, v]) => sum + v, 0);
-  const online = Boolean(diagnostics?.initialized);
+  const maxSubscribers = Math.max(1, ...subscriberEntries.map(([, v]) => v));
 
   if (isAdmin === null)
     return (
-      <div className="bus-devtools">
-        <SpadeConsole
-          className="bdt__console"
-          eyebrow="Admin Diagnostics"
-          title="MasterBus DevTools"
-          titleId="bus-devtools-title"
-          pill="Checking"
-          pillInk="muted"
-          foot="foot"
-        >
-          <p className="sc-copy sc-copy--center bdt__state" aria-busy="true">
-            Checking Access...
-          </p>
-        </SpadeConsole>
+      <div
+        style={{
+          padding: 40,
+          color: '#aaa',
+          background: '#111',
+          minHeight: '100vh',
+          fontFamily: 'monospace',
+        }}
+      >
+        Checking Access...
       </div>
     );
   if (!isAdmin)
     return (
-      <div className="bus-devtools">
-        <SpadeConsole
-          className="bdt__console"
-          eyebrow="Admin Diagnostics"
-          title="Access Denied"
-          titleId="bus-devtools-title"
-          pill="Staff"
-          pillInk="red"
-          foot="foot"
-        >
-          <p className="sc-copy sc-copy--center bdt__state">
-            Admin Or Owner Role Required To View Bus DevTools.
-          </p>
-        </SpadeConsole>
+      <div
+        style={{
+          padding: 40,
+          color: '#FA383E',
+          background: '#111',
+          minHeight: '100vh',
+          fontFamily: 'monospace',
+        }}
+      >
+        <h2>Access Denied</h2>
+        <p>Admin Or Owner Role Required To View Bus DevTools.</p>
       </div>
     );
 
   return (
     <div className="bus-devtools">
-      <SpadeConsole
-        className="bdt__console"
-        eyebrow="Admin Diagnostics"
-        title="MasterBus DevTools"
-        titleId="bus-devtools-title"
-        pill={online ? 'Online' : 'Offline'}
-        pillInk={online ? 'green' : 'red'}
-        plates={{
-          secondary: {
-            label: isPaused ? 'Resume' : 'Pause',
-            ink: isPaused ? 'green' : 'gold',
-            onClick: () => setIsPaused(!isPaused),
-          },
-          primary: { label: 'Clear Log', ink: 'red', onClick: handleClearLog },
-        }}
-      >
-        {/* ═══ Figures: rows on the glass ═══ */}
-        <section className="bdt__section" aria-label="Bus Figures">
-          <div className="bdt__row">
-            <span className="bdt__row-label sc-ink--blue">Active Channels</span>
-            <span className="bdt__row-value sc-ink--silver">
-              {diagnostics?.channels.length || 0}
+      <header className="bdt-header">
+        <div className="bdt-title-row">
+          <h1>MasterBus DevTools</h1>
+          <div className="bdt-status-pills">
+            <span className={`bdt-pill ${diagnostics?.initialized ? 'green' : 'red'}`}>
+              {diagnostics?.initialized ? '● ONLINE' : '● OFFLINE'}
+            </span>
+            <span className="bdt-pill blue">{diagnostics?.channels.length || 0} Channels</span>
+            <span className="bdt-pill purple">
+              {subscriberEntries.reduce((s, [, v]) => s + v, 0)} Subscribers
             </span>
           </div>
-          <div className="bdt__row">
-            <span className="bdt__row-label sc-ink--blue">Event Subscribers</span>
-            <span className="bdt__row-value sc-ink--silver">{subscriberTotal}</span>
-          </div>
-          <div className="bdt__row">
-            <span className="bdt__row-label sc-ink--blue">Pending Debounce</span>
-            <span className="bdt__row-value sc-ink--silver">{diagnostics?.pendingTimers || 0}</span>
-          </div>
-          <div className="bdt__row">
-            <span className="bdt__row-label sc-ink--blue">Offline Queue</span>
-            <span className="bdt__row-value sc-ink--silver">{offlineCount}</span>
-          </div>
-          <div className="bdt__row">
-            <span className="bdt__row-label sc-ink--blue">Logger Batch</span>
-            <span className="bdt__row-value sc-ink--silver">{loggerBatchSize}</span>
-          </div>
-          <div className="bdt__row">
-            <span className="bdt__row-label sc-ink--blue">Recovery Factories</span>
-            <span className="bdt__row-value sc-ink--silver">
-              {diagnostics?.channelFactories || 0}
-            </span>
-          </div>
-        </section>
+        </div>
+      </header>
 
-        {/* ═══ Live Event Log ═══ */}
-        <section className="bdt__section" aria-labelledby="bdt-log-title">
-          <div className="bdt__section-head">
-            <h2 id="bdt-log-title" className="bdt__section-title sc-label sc-ink--silver">
-              Live Event Log
-            </h2>
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="bdt__field bdt__field--select"
-              aria-label="Filter Events By Type"
-            >
-              <option value="all">All Events ({eventLog.length})</option>
-              {eventTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t} ({eventLog.filter((e) => e.type === t).length})
-                </option>
-              ))}
-            </select>
+      {/* ═══ TOP ROW: Stats Cards ═══ */}
+      <div className="bdt-stats-grid">
+        <div className="bdt-stat-card">
+          <span className="bdt-stat-icon">◉</span>
+          <div className="bdt-stat-value">{diagnostics?.channels.length || 0}</div>
+          <div className="bdt-stat-label">Active Channels</div>
+        </div>
+        <div className="bdt-stat-card">
+          <span className="bdt-stat-icon">◉</span>
+          <div className="bdt-stat-value">{subscriberEntries.reduce((s, [, v]) => s + v, 0)}</div>
+          <div className="bdt-stat-label">Event Subscribers</div>
+        </div>
+        <div className="bdt-stat-card">
+          <span className="bdt-stat-icon">◷</span>
+          <div className="bdt-stat-value">{diagnostics?.pendingTimers || 0}</div>
+          <div className="bdt-stat-label">Pending Debounce</div>
+        </div>
+        <div className="bdt-stat-card">
+          <span className="bdt-stat-icon">▣</span>
+          <div className="bdt-stat-value">{offlineCount}</div>
+          <div className="bdt-stat-label">Offline Queue</div>
+        </div>
+        <div className="bdt-stat-card">
+          <span className="bdt-stat-icon">▤</span>
+          <div className="bdt-stat-value">{loggerBatchSize}</div>
+          <div className="bdt-stat-label">Logger Batch</div>
+        </div>
+        <div className="bdt-stat-card">
+          <span className="bdt-stat-icon">◇</span>
+          <div className="bdt-stat-value">{diagnostics?.channelFactories || 0}</div>
+          <div className="bdt-stat-label">Recovery Factories</div>
+        </div>
+      </div>
+
+      {/* ═══ MAIN: Two-column layout ═══ */}
+      <div className="bdt-main-grid">
+        {/* LEFT: Event Log */}
+        <div className="bdt-panel bdt-event-log">
+          <div className="bdt-panel-header">
+            <h2>Live Event Log</h2>
+            <div className="bdt-log-controls">
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="bdt-select"
+              >
+                <option value="all">All Events ({eventLog.length})</option>
+                {eventTypes.map((t) => (
+                  <option key={t} value={t}>
+                    {t} ({eventLog.filter((e) => e.type === t).length})
+                  </option>
+                ))}
+              </select>
+              <button
+                className={`bdt-btn ${isPaused ? 'bdt-btn-green' : 'bdt-btn-yellow'}`}
+                onClick={() => setIsPaused(!isPaused)}
+              >
+                {isPaused ? '▶ Resume' : 'Pause'}
+              </button>
+              <button className="bdt-btn bdt-btn-red" onClick={handleClearLog}>
+                ✕ Clear
+              </button>
+            </div>
           </div>
-          <div className="bdt__log" aria-live="off">
+          <div className="bdt-log-scroll">
             {filteredLog.length === 0 ? (
-              <p className="sc-copy sc-copy--center bdt__state">
+              <div className="bdt-empty">
                 No Events Yet - Interact With The App To See Events Flow
-              </p>
+              </div>
             ) : (
               filteredLog.map((entry) => (
-                <div key={entry.id} className="bdt__entry">
-                  <span className="bdt__entry-time sc-ink--muted">
-                    {formatTime(entry.timestamp)}
-                  </span>
-                  <span className="bdt__entry-type sc-ink--blue">{entry.type}</span>
-                  <code className="bdt__entry-payload">
+                <div key={entry.id} className="bdt-log-entry">
+                  <span className="bdt-log-time">{formatTime(entry.timestamp)}</span>
+                  <span className="bdt-log-type">{entry.type}</span>
+                  <span className="bdt-log-payload">
                     {JSON.stringify(entry.payload).slice(0, 120)}
-                  </code>
+                  </span>
                 </div>
               ))
             )}
             <div ref={logEndRef} />
           </div>
-        </section>
+        </div>
 
-        {/* ═══ Channel Registry ═══ */}
-        <section className="bdt__section" aria-labelledby="bdt-channels-title">
-          <h2 id="bdt-channels-title" className="bdt__section-title sc-label sc-ink--silver">
-            Channel Registry
-          </h2>
-          {diagnostics?.channels.length === 0 ? (
-            <p className="sc-copy sc-copy--center bdt__state">No Channels Registered</p>
-          ) : (
-            diagnostics?.channels.map((ch) => (
-              <div key={ch.key} className="bdt__row">
-                <span className="bdt__row-key sc-ink--silver">{titleCase(ch.key)}</span>
-                <span className={`bdt__row-state ${STATE_INK[ch.state] || STATE_INK.unknown}`}>
-                  {titleCase(ch.state)}
-                </span>
-              </div>
-            ))
-          )}
-        </section>
-
-        {/* ═══ Subscribers Per Event ═══ */}
-        <section className="bdt__section" aria-labelledby="bdt-subs-title">
-          <h2 id="bdt-subs-title" className="bdt__section-title sc-label sc-ink--silver">
-            Subscribers Per Event
-          </h2>
-          {subscriberEntries.length === 0 ? (
-            <p className="sc-copy sc-copy--center bdt__state">No Subscribers</p>
-          ) : (
-            subscriberEntries.map(([event, count]) => (
-              <div key={event} className="bdt__row">
-                <span className="bdt__row-key sc-ink--blue">{event}</span>
-                <span className="bdt__row-value sc-ink--silver">{count}</span>
-              </div>
-            ))
-          )}
-        </section>
-
-        {/* ═══ Test Emitter ═══ */}
-        <section className="bdt__section" aria-labelledby="bdt-test-title">
-          <h2 id="bdt-test-title" className="bdt__section-title sc-label sc-ink--silver">
-            Test Event Emitter
-          </h2>
-          <div className="bdt__emitters">
-            {TEST_EVENTS.map((te) => (
-              <button
-                key={te.type}
-                type="button"
-                className="bdt-word sc-ink--white"
-                onClick={() => handleEmitTest(te.type)}
-              >
-                Emit {te.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="bdt-word sc-ink--red"
-              onClick={handleClearOfflineQueue}
-              disabled={offlineCount === 0}
-            >
-              Clear Offline Queue ({offlineCount})
-            </button>
+        {/* RIGHT: Channels + Subscribers */}
+        <div className="bdt-right-col">
+          {/* Channel Registry */}
+          <div className="bdt-panel bdt-channels">
+            <h2>Channel Registry</h2>
+            <div className="bdt-channel-list">
+              {diagnostics?.channels.length === 0 ? (
+                <div className="bdt-empty">No Channels Registered</div>
+              ) : (
+                diagnostics?.channels.map((ch) => (
+                  <div key={ch.key} className="bdt-channel-row">
+                    <span
+                      className="bdt-channel-dot"
+                      style={{ background: STATE_COLORS[ch.state] || STATE_COLORS.unknown }}
+                    />
+                    <span className="bdt-channel-key">{ch.key}</span>
+                    <span
+                      className="bdt-channel-state"
+                      style={{ color: STATE_COLORS[ch.state] || STATE_COLORS.unknown }}
+                    >
+                      {ch.state}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        </section>
-      </SpadeConsole>
+
+          {/* Subscriber Bar Chart */}
+          <div className="bdt-panel bdt-subscribers">
+            <h2>Subscribers Per Event</h2>
+            <div className="bdt-sub-chart">
+              {subscriberEntries.length === 0 ? (
+                <div className="bdt-empty">No Subscribers</div>
+              ) : (
+                subscriberEntries.map(([event, count]) => (
+                  <div key={event} className="bdt-sub-row">
+                    <span className="bdt-sub-label">{event}</span>
+                    <div className="bdt-sub-bar-bg">
+                      <div
+                        className="bdt-sub-bar-fill"
+                        style={{ width: `${(count / maxSubscribers) * 100}%` }}
+                      />
+                    </div>
+                    <span className="bdt-sub-count">{count}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Test Emitter */}
+          <div className="bdt-panel bdt-test">
+            <h2>Test Event Emitter</h2>
+            <div className="bdt-test-grid">
+              {TEST_EVENTS.map((te) => (
+                <button
+                  key={te.type}
+                  className="bdt-btn bdt-btn-blue"
+                  onClick={() => handleEmitTest(te.type)}
+                >
+                  Emit {te.label}
+                </button>
+              ))}
+              <button
+                className="bdt-btn bdt-btn-red"
+                onClick={handleClearOfflineQueue}
+                disabled={offlineCount === 0}
+              >
+                Clear Offline Queue ({offlineCount})
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

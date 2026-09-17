@@ -30,7 +30,10 @@
  * was landing on the club discovery grid. Keep the namespace on anything added.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap');
+/* The fonts (Cinzel, Inter, Roboto Condensed) are declared once, in index.html,
+   and self-hosted at build. A second @import from Google Fonts here re-declared
+   the same faces later in the cascade, so every page swapped every word to a
+   fallback and back when this chunk loaded (measured CLS 0.12; 2026-09-17). */
 
 .invite-page {
   /* ── THE PALETTE ──────────────────────────────────────────────────────────

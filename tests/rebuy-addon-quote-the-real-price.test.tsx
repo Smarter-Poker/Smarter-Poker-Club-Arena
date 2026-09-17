@@ -12,16 +12,19 @@
  * `onAccept()` resolved, and the parent handler caught its own errors, so every
  * failed add-on was reported to the player as a success.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RebuyModal from '../src/components/table/RebuyModal';
 import AddOnModal from '../src/components/table/AddOnModal';
 import { tournamentService } from '../src/services/TournamentService';
+import { TournamentPurchaseNotSubmittedError } from '../src/services/TournamentPurchaseIntent';
 
 vi.mock('../src/services/SoundService', () => ({
   haptic: { light: vi.fn(), medium: vi.fn(), heavy: vi.fn() },
   soundService: { playBuyInConfirm: vi.fn() },
 }));
+
+afterEach(() => vi.useRealTimers());
 
 describe('TournamentService uses the canonical cent-accurate fee split', () => {
   it.each([
@@ -47,6 +50,43 @@ describe('TournamentService uses the canonical cent-accurate fee split', () => {
 
 describe('RebuyModal charges what it advertises', () => {
   const base = { isOpen: true, rebuyCost: 100, rebuyFee: 10, rebuyChips: 10000 };
+
+  it('cannot decline from the backdrop or buttons while a purchase is pending', () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <RebuyModal
+        {...base}
+        walletBalance={500}
+        onConfirm={vi.fn()}
+        onClose={onClose}
+        isProcessing
+      />
+    );
+    fireEvent.click(container.querySelector('.rebuyModalOverlay')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Close Rebuy' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('retries an unconfirmed purchase even if the debit has lowered the displayed balance', () => {
+    const onClose = vi.fn();
+    const onConfirm = vi.fn();
+    const { container } = render(
+      <RebuyModal
+        {...base}
+        walletBalance={0}
+        onConfirm={onConfirm}
+        onClose={onClose}
+        isProcessing={false}
+        purchaseUnconfirmed
+      />
+    );
+    fireEvent.click(container.querySelector('.rebuyModalOverlay')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Confirmation' }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
 
   it('shows the fee and the total, not just the base cost', () => {
     render(
@@ -163,7 +203,7 @@ describe('AddOnModal charges what it advertises', () => {
     expect(screen.getByText(/price unavailable/i)).toBeTruthy();
   });
 
-  it('reports a refused add-on as a failure, not a success', async () => {
+  it('does not infer an unpaid wallet from an unconfirmed false result', async () => {
     render(
       <AddOnModal
         {...base}
@@ -174,8 +214,78 @@ describe('AddOnModal charges what it advertises', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /Accept For 110/ }));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-    expect(screen.getByRole('alert').textContent).toMatch(/Add-On Failed/);
+    expect(screen.getByRole('alert').textContent).toMatch(/Add-On Not Confirmed/);
+    expect(screen.queryByText(/wallet was not charged/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry Confirmation' })).toBeTruthy();
     expect(screen.queryByText(/Add-On Accepted/)).toBeNull();
+  });
+
+  it('keeps an outstanding purchase open when its deadline expires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T10:00:00Z'));
+    let resolve!: (confirmed: boolean) => void;
+    const onAccept = vi.fn(
+      () =>
+        new Promise<boolean>((r) => {
+          resolve = r;
+        })
+    );
+    const onDecline = vi.fn();
+    render(
+      <AddOnModal
+        {...base}
+        endsAtMs={Date.now() + 1000}
+        walletBalance={5000}
+        onAccept={onAccept}
+        onDecline={onDecline}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Accept For/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    act(() => vi.advanceTimersByTime(2000));
+    expect(onDecline).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Processing...' })).toBeTruthy();
+    await act(async () => resolve(true));
+    expect(screen.getByText(/Add-On Accepted/)).toBeTruthy();
+    expect(screen.queryByText(/Add-On Declined/)).toBeNull();
+  });
+
+  it('allows only confirmation retry after an unknown reply, expiry and a changed balance', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T10:00:00Z'));
+    const endsAtMs = Date.now() + 1000;
+    const onAccept = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Lost reply'))
+      .mockResolvedValueOnce(true);
+    const onDecline = vi.fn();
+    const { rerender } = render(
+      <AddOnModal
+        {...base}
+        endsAtMs={endsAtMs}
+        walletBalance={5000}
+        onAccept={onAccept}
+        onDecline={onDecline}
+      />
+    );
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: /Accept For/ })));
+    act(() => vi.advanceTimersByTime(2000));
+    rerender(
+      <AddOnModal
+        {...base}
+        endsAtMs={endsAtMs}
+        walletBalance={0}
+        onAccept={onAccept}
+        onDecline={onDecline}
+      />
+    );
+    expect(onDecline).not.toHaveBeenCalled();
+    expect(screen.queryByText(/wallet was not charged/i)).toBeNull();
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Retry Confirmation' }))
+    );
+    expect(onAccept).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/Add-On Accepted/)).toBeTruthy();
   });
 
   it('still reports success when the add-on goes through', async () => {
@@ -189,6 +299,44 @@ describe('AddOnModal charges what it advertises', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /Accept For 110/ }));
     await waitFor(() => expect(screen.getByText(/Add-On Accepted/)).toBeTruthy());
+  });
+
+  it('dismisses an unknown add-on without relabeling the purchase as declined', async () => {
+    const onDecline = vi.fn();
+    render(
+      <AddOnModal
+        {...base}
+        walletBalance={5000}
+        onAccept={vi.fn().mockResolvedValue(false)}
+        onDecline={onDecline}
+      />
+    );
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: /Accept For/ })));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onDecline).toHaveBeenCalledOnce();
+    expect(screen.getByText('Add-On Not Confirmed')).toBeTruthy();
+    expect(screen.queryByText('Add-On Declined')).toBeNull();
+  });
+
+  it('allows a normal decline when the fresh purchase was provably never submitted', async () => {
+    const onDecline = vi.fn();
+    render(
+      <AddOnModal
+        {...base}
+        walletBalance={5000}
+        onAccept={vi
+          .fn()
+          .mockRejectedValue(
+            new TournamentPurchaseNotSubmittedError(new Error('Quote unavailable'))
+          )}
+        onDecline={onDecline}
+      />
+    );
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: /Accept For/ })));
+    expect(screen.getByRole('alert').textContent).toContain('Was Not Submitted');
+    expect(screen.queryByText('Add-On Not Confirmed')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    expect(onDecline).toHaveBeenCalledOnce();
   });
 
   it('accepts once when the button is double-tapped', async () => {

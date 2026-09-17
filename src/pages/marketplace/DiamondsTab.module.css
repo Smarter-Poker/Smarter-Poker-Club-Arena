@@ -22,6 +22,18 @@
     0 16px 40px rgba(0, 0, 0, 0.34);
 }
 
+.titleRow::after {
+  content: '♦';
+  position: absolute;
+  right: 12px;
+  bottom: -40px;
+  color: rgba(54, 185, 255, 0.08);
+  font:
+    700 140px/1 Georgia,
+    serif;
+  pointer-events: none;
+}
+
 .eyebrow {
   position: relative;
   z-index: 1;
@@ -72,19 +84,16 @@
 }
 
 .navTab {
-  appearance: none;
   min-width: max-content;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 9px 18px;
-  border: 0;
-  border-radius: 0;
-  color: #dceaf1;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png') center / 100%
-    100% no-repeat;
-  box-shadow: none;
+  gap: 7px;
+  padding: 9px 13px;
+  border: 1px solid var(--vault-line);
+  border-radius: 3px;
+  color: #a7b5be;
+  background: linear-gradient(180deg, #151e26, #0c1116);
   font:
     700 11px/1 Rajdhani,
     Inter,
@@ -92,7 +101,12 @@
   letter-spacing: 0.04em;
   text-decoration: none;
   text-transform: uppercase;
-  cursor: pointer;
+}
+
+.navIcon {
+  color: var(--vault-brass);
+  font-family: Georgia, serif;
+  font-size: 15px;
 }
 
 .navLabel {
@@ -160,9 +174,8 @@
   flex-direction: column;
   padding: 0;
   overflow: hidden;
-  border: 10px solid transparent;
-  border-image: url('/assets/club-buttons/club-utility-shell.webp') 130 / 10px stretch;
-  border-radius: 0;
+  border: 1px solid var(--vault-line);
+  border-radius: 6px;
   color: inherit;
   background:
     radial-gradient(circle at 20% 42%, rgba(54, 185, 255, 0.11), transparent 28%),
@@ -240,7 +253,6 @@
 .gem {
   display: block;
   max-width: 100%;
-  object-fit: contain;
 }
 .pkgInfo {
   min-width: 0;
@@ -275,24 +287,19 @@
 }
 
 .ctaRow {
-  display: flex;
-  justify-content: center;
   padding: 0 10px 10px;
 }
 
 .ctaBtn {
-  position: relative;
-  width: min(100%, 250px);
-  aspect-ratio: 1000 / 246;
+  min-height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 18px;
-  border: 0;
-  border-radius: 0;
-  color: #f4fbff;
-  background: url('/assets/club-buttons/action-primary-shell.webp') center / 100% 100% no-repeat;
-  text-shadow: 0 2px 3px #000;
+  border: 1px solid #8bdcff;
+  border-radius: 3px;
+  color: #061019;
+  background: linear-gradient(180deg, #6bd0ff, #2197cf);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.52);
   font:
     800 11px/1 Rajdhani,
     Inter,
@@ -350,7 +357,8 @@
 }
 
 :global([data-theme='light']) .navTab {
-  color: #eef9ff;
+  color: #2f4654;
+  background: linear-gradient(#edf2f4, #b8c5cd);
 }
 
 @media (min-width: 560px) {

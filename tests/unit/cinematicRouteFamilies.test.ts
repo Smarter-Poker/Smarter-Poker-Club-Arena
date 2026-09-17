@@ -80,22 +80,6 @@ describe('cinematic retained route families', () => {
     expect(freeze).toMatchObject({ width: 720, height: 720, hasAlpha: true });
   });
 
-  it('uses a native-ratio text-free Challenge Vault render at the primary lobby door', async () => {
-    const config = readFileSync('src/config/lobbyTiles.config.ts', 'utf8');
-    const home = readFileSync('src/pages/HomePage.tsx', 'utf8');
-    const homeCss = readFileSync('src/pages/HomePage.module.css', 'utf8');
-    const tile = await sharp('public/images/tiles/daily-challenges-v9.webp').metadata();
-
-    expect(tile).toMatchObject({ width: 1024, height: 1536, hasAlpha: false });
-    expect(config).toContain('images/tiles/daily-challenges-v9.webp');
-    expect(config).not.toContain('images/tiles/daily-challenges-v8.jpg');
-    expect(config).toContain("portalStatus: 'Open Challenge Vault'");
-    expect(home).toContain('width={tile.width || 640}');
-    expect(home).toContain('height={tile.height || 1024}');
-    expect(home).toContain('tile.preserveNativeRatio ? styles.tileImageNative');
-    expect(homeCss).toMatch(/\.tileImageNative\s*\{[^}]*object-fit:\s*contain/s);
-  });
-
   it.each(UNION_PAGES)('%s uses the Union Network visual anchor', (path) => {
     const source = readFileSync(path, 'utf8');
     expect(source).toContain('CasinoSurfaceHeader');

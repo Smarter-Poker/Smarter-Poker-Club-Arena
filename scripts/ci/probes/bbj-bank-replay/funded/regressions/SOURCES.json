@@ -1,0 +1,60 @@
+{
+  "format": 1,
+  "scope": "Exact retained regression inputs; no historical native result or admission authority",
+  "files": [
+    {
+      "group": "supplement",
+      "original_member": "test_offline.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/test_offline.py",
+      "path": "regressions/original/supplement/test_offline.py",
+      "sha256": "388e914d786636efb5b7099fb7755d64213207b88a8ef941113bdb4792ecdb65",
+      "bytes": 16230,
+      "original_seal": "33cfa2dda4240297c77b97b38cffdec28064022cee848970d2dc3428cca5943d"
+    },
+    {
+      "group": "supplement",
+      "original_member": "test_audit_contract.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-supplemental-0003/test_audit_contract.py",
+      "path": "regressions/original/supplement/test_audit_contract.py",
+      "sha256": "b2915c2e451005f4470eeedde3ecfacef30acf8a53468322993ef9b530e03f83",
+      "bytes": 8035,
+      "original_seal": "33cfa2dda4240297c77b97b38cffdec28064022cee848970d2dc3428cca5943d"
+    },
+    {
+      "group": "backup_adapter",
+      "original_member": "check_adapter.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/check_adapter.py",
+      "path": "regressions/original/backup_adapter/check_adapter.py",
+      "sha256": "9742ef0ebf4ceada6fb715cc9aa6e9c36cf3c83e88fbd74fcc6bbd303d1a70bc",
+      "bytes": 22500,
+      "original_seal": "9d559186b41451eaef2abafac31196bfa2b0feba4638669426845a6750c35476"
+    },
+    {
+      "group": "backup_adapter",
+      "original_member": "test_audit_reader.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-root-adapter-0002/test_audit_reader.py",
+      "path": "regressions/original/backup_adapter/test_audit_reader.py",
+      "sha256": "42c0e66894907da345166b1a80e348609b7f9ec17337d0fe5741762c3b9b7e6d",
+      "bytes": 3391,
+      "original_seal": "9d559186b41451eaef2abafac31196bfa2b0feba4638669426845a6750c35476"
+    },
+    {
+      "group": "promo_adapter",
+      "original_member": "test_promo_composition.py",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-promo-root-adapter-0001/test_promo_composition.py",
+      "path": "regressions/original/promo_adapter/test_promo_composition.py",
+      "sha256": "6313b4c51a62dbe7f56fcdb9ed50e3e01192b3c5b8abddf91fb1aa1957a05937",
+      "bytes": 5340,
+      "original_seal": "91016ba6729d7ceba4ee5aa4d19f588f780ad54ff3e4e171acc39b42cb021516"
+    },
+    {
+      "group": "backup",
+      "original_member": "CURRENT-TRIGGER-FUNCTIONS.json",
+      "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bbj-backup-source-0002/CURRENT-TRIGGER-FUNCTIONS.json",
+      "path": "regressions/original/backup/CURRENT-TRIGGER-FUNCTIONS.json",
+      "sha256": "caf0ba193b689e3bc1164f7d4e36a078a99baf78984ba2cad4b3dfafb3016a3c",
+      "bytes": 10370,
+      "original_seal": "81d1be4c513e2e8c3764a1f70ed13b9fcaf0ef71ed33145dce4cf7ba16a23dac"
+    }
+  ]
+}

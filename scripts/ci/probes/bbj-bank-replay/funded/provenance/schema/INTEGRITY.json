@@ -1,0 +1,187 @@
+{
+  "packet": "internal-ledger-native-fixture-0006",
+  "created_at": "2026-09-13T20:42:03.025Z",
+  "source_only": true,
+  "files": [
+    {
+      "path": "ACL-SHAPE-INVENTORY.json",
+      "sha256": "ac9e13e9996e6c19e24db9de64320ba34f9af9d6abb673a9009e504c62d669f8",
+      "bytes": 365296
+    },
+    {
+      "path": "build/00-roles.sql",
+      "sha256": "b8b52a6640879a763e5c6b9c5d070e9268e2af68b59f0ab1c495ddc964720991",
+      "bytes": 10469
+    },
+    {
+      "path": "build/10-historical-schema.sql",
+      "sha256": "83eaf66eb3c7e7110740b4cedeb3c6c5c445a905b9c70d3b882113ce127b250f",
+      "bytes": 11927472
+    },
+    {
+      "path": "build/15-current-prerequisites.sql",
+      "sha256": "b9f89372969b79ac171c5474e89b62439d4515ac277617e5eac267a10e41bd8b",
+      "bytes": 33420
+    },
+    {
+      "path": "build/20-current-schema.sql",
+      "sha256": "db7ef71d882176788c28f81ba81cb7fe0e363cf2425730cbcda702900b2d81d2",
+      "bytes": 504102
+    },
+    {
+      "path": "build/30-current-functions.sql",
+      "sha256": "470bb118cb13c7fde17e94284dd7173cf924ce2b75551c418a0cfb3a7dfd6343",
+      "bytes": 1454224
+    },
+    {
+      "path": "build/40-replay-candidate.sql",
+      "sha256": "fe609f6502fec2183a7dadf4126828e2df957aff1f2958a4ca797d393d4645e6",
+      "bytes": 12159
+    },
+    {
+      "path": "build/50-current-attachments-acl.sql",
+      "sha256": "cff67c65cee3ef4d517f44b67f48a42744ecf6603f4819d70c4799a0fe596b7a",
+      "bytes": 3837876
+    },
+    {
+      "path": "build/90-historical-event-triggers.sql",
+      "sha256": "8faafdde98338cd6ec7a1d99c07090d98ecb4552bdf49d72e842e652ae190d04",
+      "bytes": 4993
+    },
+    {
+      "path": "build/BUILD-MANIFEST.json",
+      "sha256": "9d0ce1ffcc86ca9b3b8aa3fd99e8fc9105c73aa7c1505f0edacf5bf5a76a41ed",
+      "bytes": 1539
+    },
+    {
+      "path": "build/expected-functions.json",
+      "sha256": "b9b821cc772394aa7d99b5ecd206da5044784cfa4c6b5395dcbc6642c24f09a1",
+      "bytes": 63603
+    },
+    {
+      "path": "build/expected-tables.json",
+      "sha256": "8eac6706146731ca97584c85c8e16bcf00847ba9313ee5a53affc1d2c4d05de2",
+      "bytes": 533695
+    },
+    {
+      "path": "build_fixture.py",
+      "sha256": "ce2c64a130bda4450ac96d5fcca61e92621a813933765e03cc460298ce37083b",
+      "bytes": 21670
+    },
+    {
+      "path": "check_source.py",
+      "sha256": "805a7cdf64b54e706015491e069a6040b215d3b4792b16876b1458defefae502",
+      "bytes": 11330
+    },
+    {
+      "path": "CONTEXT-AND-IDENTITY-INPUTS.json",
+      "sha256": "765227bb6375a83e55495429c2677d1b1f073c332f07db3c72234c4d57c63b8d",
+      "bytes": 994089
+    },
+    {
+      "path": "EXACT-SCHEMA-DEPENDENCIES.json",
+      "sha256": "1923893f8242ba81c09476aa2baed4220e651bf214d9391cf384bd76dd9c9d34",
+      "bytes": 203156
+    },
+    {
+      "path": "FIXTURE-INPUTS.json",
+      "sha256": "c38e114f3397683e9d0af14226b951037dc9ef9a9578141121d41ccccacadaac",
+      "bytes": 9247
+    },
+    {
+      "path": "FROZEN-INPUT-EQUALITY.json",
+      "sha256": "b23e1a922ea1109ea19e5d618c582f26ad182dd9ef7a5c2cff0ae79779c635b6",
+      "bytes": 4191
+    },
+    {
+      "path": "FUNCTION-OVERLAY-INPUTS.json",
+      "sha256": "a7b99f4323253a06375eba61d7f5ea724be081a8f349bc62c6df777584e52db7",
+      "bytes": 790126
+    },
+    {
+      "path": "HANDOFF.json",
+      "sha256": "532842312b5a226433c8fe6e81be8c274b4d7588e7f26a874f3c50a68eb1ab00",
+      "bytes": 2818
+    },
+    {
+      "path": "NAMESPACE-AND-SEQUENCE-INPUTS.json",
+      "sha256": "7afc9d6505507abca89bc30402cb9a86ec4c419782ee1e2061ca391cea0a461f",
+      "bytes": 4473
+    },
+    {
+      "path": "NATIVE-EXPRESSION-IDENTITY-QUERY.sql",
+      "sha256": "e9bcaa56f623d6421fc8da89980878e43f306a38906a2e25c3990e084e57a521",
+      "bytes": 2596
+    },
+    {
+      "path": "PREDECESSOR-AND-FAILED-ATTEMPT.json",
+      "sha256": "3be9a93e0a7acc179baa94526195fabadaa7edc549165ddd7b34c9a02ffb4ca6",
+      "bytes": 2353
+    },
+    {
+      "path": "preflight.py",
+      "sha256": "fb94ef5aa2a98ee266953bd81f1d37521a0c725c5ffbf7d5b21f9a0a31adf3f7",
+      "bytes": 10359
+    },
+    {
+      "path": "PRIMARY-SOURCE-REFERENCES.json",
+      "sha256": "042f873676a56039556bc2a76c67ec3c9df01b03a04bd6e05d56bbba1bf0ec6b",
+      "bytes": 749
+    },
+    {
+      "path": "RELATION-OPTION-CONTRACT.json",
+      "sha256": "3c7afeddfdb32b74170fb87a84d85f8dd20eb0175cae38e6c89a7f85932beee2",
+      "bytes": 1857
+    },
+    {
+      "path": "RELATION-OPTION-INVENTORY.json",
+      "sha256": "68aaf83836e9f3f9664b564769824ee4d9764e5b5d0b66d233b0a94bfbad083d",
+      "bytes": 13493
+    },
+    {
+      "path": "REVIEW.md",
+      "sha256": "2cc4d9faa77bb28cfa895661a746a21bc2659e0186d25e0318d95bef8a44d372",
+      "bytes": 3804
+    },
+    {
+      "path": "run_fixture.py",
+      "sha256": "83c1722a62deaff0da9de28075bfdc5a17692f8f098bed44dca855267a33ced3",
+      "bytes": 10636
+    },
+    {
+      "path": "RUN-INSTRUCTIONS.md",
+      "sha256": "34b413f476f00da23607fccd64093de9bb7dae3e7a70c44787465ad3131498f8",
+      "bytes": 1351
+    },
+    {
+      "path": "seed.sql",
+      "sha256": "e257c558166a462b55b315f7108c465dd0192cf37b6b0fb5682ccb8978be59f8",
+      "bytes": 4363
+    },
+    {
+      "path": "sequence_driver.py",
+      "sha256": "12c1d9b92c8d3ede4caa8cea8aa137faaccb1dcb92eb23a38c22026a4edf65e2",
+      "bytes": 13753
+    },
+    {
+      "path": "SOURCE-CHECKS.json",
+      "sha256": "bca0aa2bcd2d1ee00092b59b006ff6276b0172a6f432a2b7af82fd27553eda61",
+      "bytes": 2519
+    },
+    {
+      "path": "SOURCE-DELTA.patch",
+      "sha256": "ec4a394e2bf38c7fd1f8b8d8e8bd86b1ba8a504737e6abe3c06ea3b6098d4f5e",
+      "bytes": 12366
+    },
+    {
+      "path": "SOURCE-MANIFEST.json",
+      "sha256": "7252770b3e48196f5e95bfaf03f0bfa503d0fa15d2102cef7c2337cc8eb0a0de",
+      "bytes": 6841
+    },
+    {
+      "path": "TABLE-OVERLAY-INPUTS.json",
+      "sha256": "8eac6706146731ca97584c85c8e16bcf00847ba9313ee5a53affc1d2c4d05de2",
+      "bytes": 533695
+    }
+  ]
+}

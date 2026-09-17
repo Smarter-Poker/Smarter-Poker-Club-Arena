@@ -295,12 +295,18 @@ describe('the settler keeps running every sentinel it is meant to', () => {
   });
 });
 
-describe('ESM: every relative import carries its .js extension', () => {
+describe('ESM: every relative import carries its runtime extension', () => {
   it('because Node resolves the specifier literally at runtime', () => {
     // Defect: two files imported '../config/spinSpec' with no extension. tsc
     // accepts it, so it cleared the build gate and only died on boot with
     // ERR_MODULE_NOT_FOUND - which left main unbootable and blocked EVERY
     // engine deploy until it was found.
+    const hasRuntimeExtension = (specifier: string) => /\.(?:m?js|json)$/.test(specifier);
+    // Native ESM helpers retain .mjs; extensionless or TypeScript-only
+    // specifiers still cannot boot from the compiled server tree.
+    expect(hasRuntimeExtension('./fixture.test-support.mjs')).toBe(true);
+    expect(hasRuntimeExtension('../config/spinSpec')).toBe(false);
+    expect(hasRuntimeExtension('../config/spinSpec.ts')).toBe(false);
     const walk = (dir: string, out: string[] = []): string[] => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, e.name);
@@ -326,7 +332,7 @@ describe('ESM: every relative import carries its .js extension', () => {
         let m: RegExpExecArray | null;
         while ((m = re.exec(src)) !== null) {
           const spec = m[1];
-          if (!spec.endsWith('.js') && !spec.endsWith('.json')) {
+          if (!hasRuntimeExtension(spec)) {
             offenders.push(`${path.relative(process.cwd(), file)} -> ${spec}`);
           }
         }
@@ -651,7 +657,7 @@ describe('a seat-first top-up is measured in seats, not registrations', () => {
     // missing horse was never seated and the start gate never opened. Five
     // Spins were deadlocked that way, the oldest for 486 minutes.
     expect(code(RECURRING)).not.toContain('const shortfall = targetPlayers - (liveCount || 0);');
-    expect(code(RECURRING)).toContain('const shortfall = targetPlayers - liveCount;');
+    expect(code(RECURRING)).toContain('const shortfall = Math.max(0, targetPlayers - liveCount);');
   });
 
   it('does not run an idle count reconciler when there is nothing to add', () => {
@@ -659,7 +665,11 @@ describe('a seat-first top-up is measured in seats, not registrations', () => {
     // top-up pass has no write authority and the private AFTER-seat helper is
     // deliberately not exposed to service_role.
     expect(code(RECURRING)).not.toContain('if (shortfall <= 0) return 0;');
-    expect(code(RECURRING)).toContain('if (shortfall <= 0) {');
+    // Only MTT ticket recovery may continue with no ordinary funding shortfall.
+    // Seat-first games still return without an idle count mutation.
+    expect(code(RECURRING)).toContain(
+      'if (shortfall === 0 && (seatFirst || opts.redeemTickets !== true)) {'
+    );
     expect(code(RECURRING)).not.toContain("supabase.rpc('fn_sync_seat_first_player_count'");
   });
 });

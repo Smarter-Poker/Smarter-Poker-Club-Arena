@@ -78,7 +78,6 @@ import { rankOverlayAnnouncements, type OverlayCandidate } from '../../utils/ove
    type-only import, so this root-mounted ticker does not pull the whole
    lobby view-model into the entry bundle every player downloads. */
 import { lateRegEndMs } from '../lobby/lateRegWindow';
-import { isInsideLastCall, MAX_LEAD_MS, UPCOMING_ROW_LIMIT } from './tickerLeadWindow';
 import type { LobbyTournamentRow } from '../lobby/lobbyEntries';
 import {
   guaranteeItem,
@@ -92,43 +91,22 @@ import {
   type TickerItem,
   type UpcomingTournament,
 } from './tickerMessages';
-import { dismissItem, onDismissedElsewhere, readDismissed } from './tickerDismissals';
-import { tickerTelemetry } from '../../services/TickerTelemetry';
-import { announce as announceToChime } from './tickerChime';
+import { dismissItem, readDismissed } from './tickerDismissals';
 import { useTopChromeOffset } from './useTopChromeOffset';
 import { useRailSilence } from './useRailSilence';
 import { TickerRail } from './TickerRail';
 
-/* `LEAD_MS = 5 minutes` used to live here and was the ONE horizon for every
-   event on the rail. It has been `leadMsFor(totalBuyIn)` since 2026-09-13 - a
-   $200 major is announced fifteen minutes out, a $2 turbo five - and the
-   constant survived the change unreferenced. Removed 2026-09-14 rather than
-   left next to its replacement, where it reads like a second opinion. */
+/** How far ahead an event counts as "about to start". */
+const LEAD_MS = 5 * 60 * 1000;
 /** How often we ask the database. The countdown itself ticks locally. */
 const POLL_MS = 30_000;
 /** How long a cached club-membership list is trusted. */
 const SCOPE_TTL_MS = 5 * 60_000;
-/**
- * How often the HOST re-evaluates - expiry and the spoken line, not the digits.
- *
- * The visible countdown is TickerClock's own interval. This used to be 1000ms
- * and it re-ran the lane memo and rebuilt every announcement on every tick.
- */
-const CONTAINER_TICK_MS = 5_000;
 /** How long the exit animation runs before the strip is unmounted. */
 const LEAVE_MS = 240;
 
 interface Scope {
   clubIds: string[];
-  /**
-   * club id -> club name, for the clubs this player belongs to.
-   *
-   * Read once per scope (five-minute TTL) rather than per poll: the feed is
-   * scoped to every club the player is in, so an announcement can be about a
-   * club other than the one whose rail is being painted, and the player has no
-   * way to tell which. Names are what tells them.
-   */
-  clubNames: Record<string, string>;
   fetchedAt: number;
   userId: string | null;
 }
@@ -167,11 +145,6 @@ function TickerHost() {
   const [tickerScopeRevision, setTickerScopeRevision] = useState(0);
   const [viewerRevision, setViewerRevision] = useState(0);
   const scopeEpochRef = useRef(0);
-  /**
-   * The club whose rail this is - the one whose colours and source switches
-   * are painting the strip. An announcement about any OTHER club is named.
-   */
-  const railClubIdRef = useRef<string | null>(null);
   /** (reason, scope) pairs already reported this mount. See warnOnce below. */
   const warnedScopesRef = useRef<Set<string>>(new Set());
 
@@ -294,10 +267,6 @@ function TickerHost() {
             warnOnce(`table:${tableMatch[1]}`, 'unresolvedSegment', tableMatch[1]);
           }
         }
-        /* Whatever the route resolved to is the club this rail belongs to.
-           Recorded before the settings call so the feed can tell an
-           announcement about HERE from one about somewhere else. */
-        railClubIdRef.current = clubUuid;
         const next = await tickerManagementService.get(unionUuid ? null : clubUuid, unionUuid);
         if (!cancelled && epoch === scopeEpochRef.current) setManagedTicker(next);
       } catch (error) {
@@ -393,7 +362,7 @@ function TickerHost() {
       return cached;
     }
     if (!uid) {
-      scopeRef.current = { clubIds: [], clubNames: {}, fetchedAt: Date.now(), userId: null };
+      scopeRef.current = { clubIds: [], fetchedAt: Date.now(), userId: null };
       return scopeRef.current;
     }
     try {
@@ -407,33 +376,7 @@ function TickerHost() {
         return null;
       }
       const ids = (data || []).map((r: { club_id: string }) => r.club_id).filter(Boolean);
-
-      /* The names, once per scope rather than once per poll. The feed covers
-         every club this player belongs to, so an announcement can be about a
-         club other than the one whose rail is being painted - and without a
-         name the player cannot tell. A failed read is not fatal: the line
-         simply does not say where, which is what it did before. */
-      let clubNames: Record<string, string> = {};
-      if (ids.length > 0) {
-        const { data: named, error: nameError } = await supabase
-          .from('clubs')
-          .select('id,name')
-          .in('id', ids);
-        if (nameError) {
-          reportError(nameError, 'TournamentStartingTicker.loadScopeNames');
-        } else {
-          clubNames = Object.fromEntries(
-            (named || [])
-              .filter((row: { id?: string; name?: string }) => row?.id && row?.name)
-              .map((row: { id: string; name: string }) => [row.id, row.name])
-          );
-        }
-        if (epoch !== scopeEpochRef.current || (readLocalSession()?.userId || null) !== uid) {
-          return null;
-        }
-      }
-
-      scopeRef.current = { clubIds: ids, clubNames, fetchedAt: Date.now(), userId: uid };
+      scopeRef.current = { clubIds: ids, fetchedAt: Date.now(), userId: uid };
       return scopeRef.current;
     } catch (e) {
       reportError(e, 'TournamentStartingTicker.loadScope');
@@ -472,7 +415,7 @@ function TickerHost() {
           return;
         }
         const nowIso = new Date().toISOString();
-        const horizonIso = new Date(Date.now() + MAX_LEAD_MS).toISOString();
+        const horizonIso = new Date(Date.now() + LEAD_MS).toISOString();
 
         /* DB LOAD PASS 2026-08-24: the player's own registrations used to be
            fetched AFTER the upcoming-events query, filtered by the ids it
@@ -525,12 +468,7 @@ function TickerHost() {
               .gte('start_time', nowIso)
               .lte('start_time', horizonIso)
               .order('start_time', { ascending: true })
-              /* NOT five. The horizon covers the longest rung of the lead
-                 ladder and the per-stake filter runs on the client, so asking
-                 for five soonest-first lets cheap events that will be filtered
-                 out take every slot from a major that would have survived.
-                 See UPCOMING_ROW_LIMIT. */
-              .limit(UPCOMING_ROW_LIMIT)
+              .limit(5)
           : Promise.resolve({ data: [], error: null } as const);
 
         /* ── OVERLAY ANNOUNCEMENTS (Dan 2026-08-26) ──────────────────────────
@@ -543,7 +481,7 @@ function TickerHost() {
           ? supabase
               .from('tournaments')
               .select(
-                'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players'
+                'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, started_at, current_level, max_players'
               )
               .in('club_id', clubIds)
               .eq('tournament_type', 'MTT')
@@ -565,7 +503,7 @@ function TickerHost() {
           ? supabase
               .from('tournaments')
               .select(
-                'id,name,status,start_time,started_at,ended_at,updated_at,guaranteed_prize,prize_pool,current_players,late_reg_levels,late_reg_mins,current_level,blind_structure,level_started_at,max_players'
+                'id,name,status,start_time,started_at,ended_at,updated_at,guaranteed_prize,prize_pool,current_players,late_reg_levels,late_reg_mins,rebuy_levels,prize_pool_finalized,current_level,blind_structure,level_started_at,max_players'
               )
               .in('club_id', clubIds)
               // Completed results only render for ten minutes. Exclude older
@@ -613,29 +551,17 @@ function TickerHost() {
           failedKinds.add('starting_soon');
         } else {
           for (const t of (upcomingRes.data || []) as Record<string, unknown>[]) {
-            const eventClubId = (t.club_id as string) || null;
             const upcoming: UpcomingTournament = {
               id: String(t.id),
               name: String(t.name || 'Tournament'),
               startsAt: new Date(String(t.start_time)).getTime(),
-              clubId: eventClubId,
+              clubId: (t.club_id as string) || null,
               buyIn: Number(t.buy_in_amount) || 0,
               buyInFee: Number(t.buy_in_fee) || 0,
               registered: Number(t.current_players) || 0,
               isRegistered: myRegs.has(String(t.id)),
-              /* Named only when it is somewhere else. Naming the club a player
-                 is already standing in would be noise on every line. */
-              foreignClubName:
-                eventClubId && railClubIdRef.current && eventClubId !== railClubIdRef.current
-                  ? scope.clubNames[eventClubId] || null
-                  : null,
             };
             if (!Number.isFinite(upcoming.startsAt)) continue;
-            /* The query horizon is the LONGEST rung on the ladder so one read
-               serves every stake; each event is then held to its own last
-               call, so a 2-chip turbo is still a five-minute event. */
-            if (!isInsideLastCall(upcoming.startsAt, upcoming.buyIn + upcoming.buyInFee, current))
-              continue;
             next.push(startingSoonItem(upcoming));
           }
         }
@@ -827,21 +753,12 @@ function TickerHost() {
     itemsRef.current = items;
   }, [items]);
 
-  /* ── THE CONTAINER NO LONGER KEEPS A CLOCK ────────────────────────────────
-     `now` here does two jobs and neither of them is the countdown: it expires
-     announcements whose window has closed, and it feeds the spoken line, which
-     is rounded to the MINUTE precisely so a screen reader is not told the news
-     sixty times a minute.
-     The visible digits moved into TickerClock, which owns its own second, so
-     this no longer has to run at 1Hz to keep four characters current - it was
-     re-running the lane memo and rebuilding every field of every announcement
-     on a thread that is also running a live poker table. Five seconds is ample
-     for an expiry whose shortest window is thirty seconds of grace. */
   useEffect(() => {
     if (!hasClock && lane.length === 0) return undefined;
     const tick = setInterval(() => {
-      setNow(Date.now());
-    }, CONTAINER_TICK_MS);
+      const currentNow = Date.now();
+      setNow(currentNow);
+    }, 1000);
     return () => clearInterval(tick);
   }, [hasClock, lane.length]);
 
@@ -857,18 +774,6 @@ function TickerHost() {
       ),
     [items, sources.starting_soon]
   );
-  /* AND THE SECOND 1Hz LOOP (2026-09-14). This one renders nothing, which is
-     why it survived the first pass - it just walked every announcement once a
-     second, for every registered player, to catch two thresholds.
-
-     Five seconds is enough for both, because neither threshold is exact and
-     both already know it: the five minute toast fires on the first reading at
-     or under 300s and is suppressed below 120s, the ninety second toast fires
-     at or under 90s and is suppressed below 10s. Those suppression guards were
-     written for a tab that came back from the background having missed the
-     moment entirely, and a four second late reading is well inside what they
-     already tolerate. The player is told "starts in 5 minutes" at 4:56, which
-     is what "5 minutes" meant anyway. */
   useEffect(() => {
     if (upcomingForToasts.length === 0) return undefined;
     const tick = setInterval(() => {
@@ -896,17 +801,11 @@ function TickerHost() {
         }
         if (changed) notifiedRef.current[entry.id] = state;
       });
-    }, CONTAINER_TICK_MS);
+    }, 1000);
     return () => clearInterval(tick);
   }, [upcomingForToasts.length]);
 
-  /* A dismissal in another tab lands here too. Players multi-table on this
-     platform, and closing an announcement on one felt used to leave it on
-     every other one. */
-  useEffect(() => onDismissedElsewhere(setDismissed), []);
-
   const dismiss = useCallback((entry: TickerItem) => {
-    tickerTelemetry.dismissed(entry.kind);
     setDismissed(dismissItem(entry.id, entry.kind));
   }, []);
 
@@ -921,7 +820,6 @@ function TickerHost() {
          list with "+ CREATE TOURNAMENT" on it. `/tournaments/:id` is
          TournamentDetails, which owns the Register button, and no club id is
          involved, so there is no union surface left to leak. */
-      tickerTelemetry.opened(entry.kind);
       if (entry.tournamentId) navigate(`/tournaments/${entry.tournamentId}`);
       else if (entry.tableId) navigate(`/table/${entry.tableId}`);
       else navigate('/tournaments');
@@ -1005,28 +903,6 @@ function TickerHost() {
       clear();
     };
   }, [barVisible, headerBottom]);
-
-  /* ── AN IMPRESSION IS THE ITEM THAT OWNED THE BAR ────────────────────────
-     Counted once per tab, from an EFFECT rather than the render body: the
-     strip repaints every second while a clock is running, and a side effect in
-     a render is double-invoked under StrictMode. The seen-set inside
-     tickerTelemetry makes it idempotent either way, but "idempotent so it does
-     not matter where it lives" is how a render body collects side effects.
-
-     Keyed on the id, so a lane that keeps the same top announcement across a
-     poll counts once and a handover counts the new one. */
-  const speakingId = barVisible && lane.length > 0 ? lane[0].id : null;
-  const speakingKind = barVisible && lane.length > 0 ? lane[0].kind : null;
-  useEffect(() => {
-    if (!speakingId || !speakingKind) return;
-    tickerTelemetry.shown(speakingKind, speakingId);
-    /* Same effect, same key, deliberately: both of these care about exactly
-       one thing - a NEW announcement is now the one being made. The chime is
-       far stricter about what it does with that than telemetry is; see
-       tickerChime.ts, which stays silent for everything except an overlay
-       guarantee arriving after the tab has already shown something else. */
-    announceToChime(speakingKind, speakingId);
-  }, [speakingId, speakingKind]);
 
   if (!mounted || lane.length === 0) return null;
 

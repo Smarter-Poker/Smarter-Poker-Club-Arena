@@ -47,6 +47,12 @@
  * a SWAP, where the second table's transaction lands BOTH chairs: the partner
  * never runs an executor of its own, and its presence is already on deposit
  * from its own table's announce.
+ *
+ * CONFIRMED ARRIVAL (2026-09-15). Staging happens before the boundary's
+ * executor, but staging is not a completed move. A destination claims only
+ * the move/source occupancy named by the durable receipt for its current
+ * occupancy. Cancelled plans cannot seed voluntary arrivals. Separate move
+ * keys keep a delayed old deposit from overwriting a newer transfer.
  */
 
 import type { DisconnectFsmEntry } from './DisconnectEngine.js';
@@ -55,7 +61,6 @@ import type { DisconnectFsmEntry } from './DisconnectEngine.js';
 export interface CarriedTimeBank {
   remainingSeconds: number;
   usesRemaining: number;
-  unlimitedActivations: boolean;
   /** ServerTableEngineBase.timeBankMeta, so VIP quota accounting continues. */
   initialSeconds: number;
   baseSeconds: number;
@@ -63,6 +68,9 @@ export interface CarriedTimeBank {
 }
 
 export interface MovedPresence {
+  /** Immutable plan identity; never a later stay by the same player. */
+  moveId: string;
+  sourceOccupancyId: string;
   fsm: DisconnectFsmEntry;
   timeBank: CarriedTimeBank | null;
   depositedAtMs: number;
@@ -93,8 +101,13 @@ export const MOVED_PRESENCE_MAX = 2_000;
 
 const inTransit = new Map<string, MovedPresence>();
 
-function key(playerId: string, toTableId: string): string {
-  return `${playerId}:${toTableId}`;
+function key(
+  playerId: string,
+  toTableId: string,
+  moveId: string,
+  sourceOccupancyId: string
+): string {
+  return `${playerId}:${toTableId}:${moveId}:${sourceOccupancyId}`;
 }
 
 /** Drop every deposit older than MOVED_PRESENCE_FRESH_MS. */
@@ -111,8 +124,8 @@ export function pruneMovedPresence(nowMs: number = Date.now()): number {
 
 /**
  * The source engine hands this player's presence to the table they are moving
- * to. Overwrites any earlier deposit for the same destination on purpose: the
- * latest observation is the one worth carrying.
+ * to. Refreshes this same transfer only. A delayed old executor reply must
+ * not overwrite presence staged for a different move or later stay.
  */
 export function depositMovedPresence(
   playerId: string,
@@ -120,34 +133,59 @@ export function depositMovedPresence(
   presence: Omit<MovedPresence, 'depositedAtMs'>,
   nowMs: number = Date.now()
 ): void {
-  if (!playerId || !toTableId) return;
+  if (!playerId || !toTableId || !presence.moveId || !presence.sourceOccupancyId) return;
   pruneMovedPresence(nowMs);
-  if (inTransit.size >= MOVED_PRESENCE_MAX && !inTransit.has(key(playerId, toTableId))) {
+  const k = key(playerId, toTableId, presence.moveId, presence.sourceOccupancyId);
+  if (inTransit.size >= MOVED_PRESENCE_MAX && !inTransit.has(k)) {
     // Oldest first: Map preserves insertion order, and a deposit that has sat
     // here longest is the one least likely to still be claimed.
     const oldest = inTransit.keys().next();
     if (!oldest.done) inTransit.delete(oldest.value);
   }
-  inTransit.set(key(playerId, toTableId), { ...presence, depositedAtMs: nowMs });
+  inTransit.set(k, { ...presence, depositedAtMs: nowMs });
 }
 
 /**
- * The destination engine takes the presence left for this player, once. Null
- * when there is none, or when it is older than MOVED_PRESENCE_FRESH_MS - in
- * both cases the destination registers the player the ordinary way, which is
- * exactly what happened before this file existed.
+ * The destination takes the presence for its proven transfer, once. A caller
+ * must obtain arrival proof before calling; an unreadable proof defers seat
+ * registration. Missing, mismatched and expired deposits cannot be adopted.
  */
 export function claimMovedPresence(
   playerId: string,
   toTableId: string,
+  arrival: {
+    moveId: string;
+    fromTableId: string;
+    sourceOccupancyId: string;
+    destinationOccupancyId: string;
+  },
   nowMs: number = Date.now()
 ): MovedPresence | null {
-  const k = key(playerId, toTableId);
+  const k = key(playerId, toTableId, arrival.moveId, arrival.sourceOccupancyId);
   const found = inTransit.get(k);
   if (!found) return null;
+  if (nowMs - found.depositedAtMs > MOVED_PRESENCE_FRESH_MS) {
+    inTransit.delete(k);
+    return null;
+  }
+  if (
+    found.moveId !== arrival.moveId ||
+    found.fromTableId !== arrival.fromTableId ||
+    found.sourceOccupancyId !== arrival.sourceOccupancyId ||
+    !arrival.destinationOccupancyId ||
+    arrival.destinationOccupancyId === arrival.sourceOccupancyId
+  )
+    return null;
   inTransit.delete(k);
-  if (nowMs - found.depositedAtMs > MOVED_PRESENCE_FRESH_MS) return null;
   return found;
+}
+
+/** Only tables with an unclaimed deposit need a durable arrival read. */
+export function hasMovedPresence(playerId: string, toTableId: string): boolean {
+  pruneMovedPresence();
+  const prefix = `${playerId}:${toTableId}:`;
+  for (const k of inTransit.keys()) if (k.startsWith(prefix)) return true;
+  return false;
 }
 
 /** Test/ops hook: how many deposits are waiting to be claimed. */

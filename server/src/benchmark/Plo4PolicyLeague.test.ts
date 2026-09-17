@@ -31,7 +31,7 @@ describe('Phase 10 paired whole-hand PLO4 league', () => {
   it.each(PLO4_LEAGUE_PROFILES.map((p) => p.id))(
     '%s completes legal, conserved and repeatable paired hands',
     async (profileId) => {
-      const options = { profileId, pairs: 1, seed: PLO4_LEAGUE_SEEDS[1], samples: 16 };
+      const options = { profileId, pairs: 1, seed: PLO4_LEAGUE_SEEDS[1] };
       const first = await runPlo4PolicyLeague(options),
         second = await runPlo4PolicyLeague(options);
       expect(first.complete).toBe(true);
@@ -59,9 +59,6 @@ describe('Phase 10 paired whole-hand PLO4 league', () => {
     expect(result.completedPairs).toBe(0);
     expect(result.meanAfterRakeDifferenceBbPerHand).toBeNull();
     await expect(runPlo4PolicyLeague({ ...options, pairs: 33 })).rejects.toThrow('Invalid bounded');
-    await expect(runPlo4PolicyLeague({ ...options, samples: 129 })).rejects.toThrow(
-      'Invalid bounded'
-    );
     await expect(runPlo4PolicyLeague({ ...options, profileId: 'unknown' })).rejects.toThrow(
       'Invalid bounded'
     );
@@ -69,6 +66,10 @@ describe('Phase 10 paired whole-hand PLO4 league', () => {
 });
 
 describe('Phase 10 audit regressions', () => {
+  it('refuses an inert sample override instead of presenting it as benchmark work', async () => {
+    const unsupported = { profileId: 'heads-up-25bb', pairs: 1, seed: 10101101, samples: 16 };
+    await expect(runPlo4PolicyLeague(unsupported)).rejects.toThrow('sample overrides');
+  });
   it('covers every dealer-relative position, pairing identical seats and cards', () => {
     for (let seats = 2; seats <= 8; seats++) {
       const rotation = Array.from({ length: seats }, (_, i) => plo4LeagueSeating(i, seats));

@@ -1,3 +1,4 @@
+import { isCommittedPotAuditReceipt } from './horseAdaptiveJournal/commitmentReceipt.js';
 import { Worker } from 'node:worker_threads';
 import {
   parseDiscoveryReceipt,
@@ -39,6 +40,13 @@ export type JournalWorkerStatus = Readonly<{
   capturesRecovered: number;
   captureGaps: number;
   lastCapture: string | null;
+  commitmentHandsScanned: number;
+  commitmentHandsFlagged: number;
+  commitmentHandsUnknown: number;
+  commitmentSourceGaps: number;
+  commitmentPasses: number;
+  lastCommitmentStatus: string | null;
+  lastCommitmentAt: number | null;
   modelsRecorded: number;
   modelsRefused: number;
   modelUncertain: number;
@@ -103,6 +111,13 @@ export class HorseAdaptiveJournalWorker {
     capturesRecovered: 0,
     captureGaps: 0,
     lastCapture: null,
+    commitmentHandsScanned: 0,
+    commitmentHandsFlagged: 0,
+    commitmentHandsUnknown: 0,
+    commitmentSourceGaps: 0,
+    commitmentPasses: 0,
+    lastCommitmentStatus: null,
+    lastCommitmentAt: null,
     modelsRecorded: 0,
     modelsRefused: 0,
     modelUncertain: 0,
@@ -271,32 +286,51 @@ export class HorseAdaptiveJournalWorker {
       workStates.has(r.work) &&
       typeof r.retention === 'string' &&
       retentionStates.has(r.retention) &&
-      (r.model !== undefined
+      (r.commitment !== undefined
         ? r.work === 'skipped' &&
           r.retention === 'skipped' &&
           r.acquisition === undefined &&
           r.discovery === undefined &&
-          typeof r.model === 'string' &&
-          [
-            'recorded',
-            'refused',
-            'idle',
-            'unknown',
-            'lease_lost',
-            'capacity_full',
-            'disabled',
-          ].includes(String(r.model))
-        : r.discovery !== undefined
-          ? r.work === 'skipped' && r.retention === 'skipped' && r.acquisition === undefined
-          : r.acquisition === undefined
-            ? r.work !== 'skipped'
-            : r.work === 'skipped' &&
-              r.retention === 'skipped' &&
-              typeof r.acquisition === 'string' &&
-              captureStates.has(r.acquisition))
+          r.model === undefined &&
+          isCommittedPotAuditReceipt(r.commitment)
+        : r.model !== undefined
+          ? r.work === 'skipped' &&
+            r.retention === 'skipped' &&
+            r.acquisition === undefined &&
+            r.discovery === undefined &&
+            typeof r.model === 'string' &&
+            [
+              'recorded',
+              'refused',
+              'idle',
+              'unknown',
+              'lease_lost',
+              'capacity_full',
+              'disabled',
+            ].includes(String(r.model))
+          : r.discovery !== undefined
+            ? r.work === 'skipped' && r.retention === 'skipped' && r.acquisition === undefined
+            : r.acquisition === undefined
+              ? r.work !== 'skipped'
+              : r.work === 'skipped' &&
+                r.retention === 'skipped' &&
+                typeof r.acquisition === 'string' &&
+                captureStates.has(r.acquisition))
     ) {
       owner.activeAt = null;
+      const commitment = isCommittedPotAuditReceipt(r.commitment) ? r.commitment : null;
       this.update({
+        commitmentHandsScanned:
+          this.summary.commitmentHandsScanned + (commitment?.scannedHands ?? 0),
+        commitmentHandsFlagged:
+          this.summary.commitmentHandsFlagged + (commitment?.flaggedHorseHands ?? 0),
+        commitmentHandsUnknown:
+          this.summary.commitmentHandsUnknown + (commitment?.unknownHorseHands ?? 0),
+        commitmentSourceGaps: this.summary.commitmentSourceGaps + (commitment?.handGaps ?? 0),
+        commitmentPasses:
+          this.summary.commitmentPasses + (commitment?.status === 'pass_complete' ? 1 : 0),
+        lastCommitmentStatus: commitment?.status ?? this.summary.lastCommitmentStatus,
+        lastCommitmentAt: commitment ? Date.now() : this.summary.lastCommitmentAt,
         cycles: this.summary.cycles + 1,
         completed: this.summary.completed + (r.work === 'completed' ? 1 : 0),
         capturesAdmitted: this.summary.capturesAdmitted + (r.acquisition === 'admitted' ? 1 : 0),
@@ -323,7 +357,8 @@ export class HorseAdaptiveJournalWorker {
         quarantined: this.summary.quarantined + (r.work === 'quarantined' ? 1 : 0),
         uncertain:
           this.summary.uncertain +
-          (['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(r.work) ||
+          (commitment?.status === 'unknown' ||
+          ['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(r.work) ||
           ['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(String(r.acquisition)) ||
           (r.discovery !== undefined &&
             ['unavailable', 'deferred', 'unknown'].includes(

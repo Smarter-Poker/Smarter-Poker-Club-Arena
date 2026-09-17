@@ -1,0 +1,207 @@
+{
+  "schema": "derived-insurance-custody/v1",
+  "source_donor": "a3e3f8340132798103370698bf516e31330ae1fb",
+  "historical_base": "57653ba0f3429cb4b8db7f1785a95250fe6fb94d",
+  "restored_composition_base": "2ee072516821a335ddfda81ee6a33e21a0277c4c",
+  "authority": "Preserved historical source; no execution, installation, publication or funded financial qualification is conveyed by this map or the archived handoffs.",
+  "maintained_guidance": "README.md",
+  "historical_documents": [
+    "historical/PR4702-README.md",
+    "insurance0145/HANDOFF.md",
+    "s7-0143/HANDOFF.md"
+  ],
+  "original_members": [
+    {
+      "original_path": "scripts/ci/probes/chip-journal-atomicity/test_insurance.py",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/historical/PR4702-test_insurance.py.txt",
+      "bytes": 13317,
+      "sha256": "e16350480e1060ae19ed8cd806e59c5eb6e8728d1667b00e716a7b55074bf44c",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/README.md",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/historical/PR4702-README.md",
+      "bytes": 5446,
+      "sha256": "1bc7c71ab13572a84ca64678f29d9fcdc601c5e815fd5d6084481b93bd5d18fb",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/DEPENDENCIES.json",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/DEPENDENCIES.json",
+      "bytes": 1965,
+      "sha256": "5bdfd4e1237977f0d1980980f059dfcbcef4c84bfda58cb06a179864a4981d09",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/HANDOFF.md",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/HANDOFF.md",
+      "bytes": 4744,
+      "sha256": "dcbfd9f189f86d4e7b6026e3d7d5fc7d27aa9a7a769faf750e0fa1f380527367",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/SEAL.json",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/SEAL.json",
+      "bytes": 1350,
+      "sha256": "80b0a8df4019ed8ca4da04ef48391b05ffe0308fc8c94b7503fbc73136ddecb3",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/SOURCE-CHECKS.json",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/SOURCE-CHECKS.json",
+      "bytes": 443,
+      "sha256": "8e16b908e454269b28a6820e4bf58128309bcc8585b4564bd3c912a3e1c3a297",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/case-baseline.json",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/case-baseline.json",
+      "bytes": 3365,
+      "sha256": "f297aa85ebe8f0628259669398ae27cfa15d2340c4e46adbf0064074bc9924aa",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/case-vectors.json",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/case-vectors.json",
+      "bytes": 210808,
+      "sha256": "4347e0d593c44385c4234574a6351303529998129526f476d27317f968e78bfb",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/cases.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/cases.sql",
+      "bytes": 133497,
+      "sha256": "2afb465749df18ebc40a7f185cc26c2c5011697060bb3235d1391a99975f993e",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/definition.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/definition.sql",
+      "bytes": 17465,
+      "sha256": "d02b9708435e2fa754c98ae890bd33e992c633397432e08dd4d5910251f370d5",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/predecessor-regression.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/insurance0145/predecessor-regression.sql",
+      "bytes": 3265,
+      "sha256": "ddef2577a576a82f9df15ffbfced24e55b11cf0e4a348fcd3d2f12002ecc0bea",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/predecessor0141/SEAL.json",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/predecessor0141/SEAL.json",
+      "bytes": 258,
+      "sha256": "7d80546a082c4cff28a4c7ce8cc0a0bf6d87456820ccb027ffab05fe10578953",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/predecessor0141/definition.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/predecessor0141/definition.sql",
+      "bytes": 8482,
+      "sha256": "88d036432ddf5e4471752fb2dffc28e5ee51c5a95da494357b3786e7c58efe96",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/projection-install-guard.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/projection-install-guard.sql",
+      "bytes": 2333,
+      "sha256": "cd8a4473285e63d72aceb332307ee71a55aa411c943722546345355706fcced8",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/projection-readback.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/projection-readback.sql",
+      "bytes": 1745,
+      "sha256": "f42069e5cba61b397642753e4ad9562f98670ecb744699e44d1afcd3c8e4357b",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/projection-rollback.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/projection-rollback.sql",
+      "bytes": 783,
+      "sha256": "9e9841bb92838288c7f2cad561c7151f13201a2a283fb073b38890856d1a6b1d",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/HANDOFF.md",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/HANDOFF.md",
+      "bytes": 1221,
+      "sha256": "113e05052fbb22196d2b3d5f617e3333fa84a5e922bd3e9e8b6c83f054235f24",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/SEAL.json",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/SEAL.json",
+      "bytes": 690,
+      "sha256": "b4bc39d9067c88c4ff9ceae084fc9483ef6c8d251d436dc93f47c2bf3b4e867f",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/SOURCE-CHECKS.json",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/SOURCE-CHECKS.json",
+      "bytes": 202,
+      "sha256": "3740dbc59a842677b8a76b2e1b11ff327e577a7b7495153a3c6e12a0e55d6a46",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/definition.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/definition.sql",
+      "bytes": 3156,
+      "sha256": "37e0bcc3ace7a607cc79ea6ec343673e51cc20d3f46168aa36468febb75eb4bd",
+      "execution_authority": false
+    },
+    {
+      "original_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/s7-cases.sql",
+      "preserved_path": "tests/sql/fixtures/g8-inert-accounting/s7-0143/s7-cases.sql",
+      "bytes": 15632,
+      "sha256": "3ddc95ce22a6cf94cc25d47e89d267060fec84e89b03fda8087c56b49050abd1",
+      "execution_authority": false
+    }
+  ],
+  "original_packet_closure": {
+    "insurance0145": {
+      "complete_original_members": 8,
+      "seal_sha256": "80b0a8df4019ed8ca4da04ef48391b05ffe0308fc8c94b7503fbc73136ddecb3",
+      "immutable_original_seal_unchanged": true
+    },
+    "s7-0143": {
+      "complete_original_members": 4,
+      "seal_sha256": "b4bc39d9067c88c4ff9ceae084fc9483ef6c8d251d436dc93f47c2bf3b4e867f",
+      "immutable_original_seal_unchanged": true
+    },
+    "predecessor0141": {
+      "complete_original_packet": false,
+      "retained_members": ["definition.sql", "SEAL.json"],
+      "missing_original_members": ["HANDOFF.md", "cases.sql"],
+      "purpose": "Original rejected definition retained unchanged; the maintained loader applies one disclosed CASE parenthesization only for the unchanged predecessor regression."
+    }
+  },
+  "active_source_path": "scripts/ci/probes/chip-journal-atomicity/test_insurance.py",
+  "existing_caller_chain": [
+    ".github/workflows/ci.yml:typecheck_compile",
+    "scripts/ci/probes/chip-journal-atomicity/run-isolated.sh",
+    "scripts/ci/probes/chip-journal-atomicity/test_atomicity.py:verify_insurance(run)",
+    "scripts/ci/probes/chip-journal-atomicity/test_insurance.py:verify_private_projection(run)",
+    "scripts/ci/probes/chip-journal-atomicity/postgres-runtime/query.mjs"
+  ],
+  "application_activation": false,
+  "production_sql_authorized": false,
+  "s7_executed_by_this_path": false,
+  "funded_FWP04_S7_qualified": false,
+  "final_restored_runtime_result": "Hosted run35185512588/job105086612528 failed compiling original predecessor CASE; corrected final-revision hosted check pending.",
+  "active_source_derivation": {
+    "path": "scripts/ci/probes/chip-journal-atomicity/test_insurance.py",
+    "original_preserved_path": "tests/sql/fixtures/g8-inert-accounting/historical/PR4702-test_insurance.py.txt",
+    "original_sha256": "e16350480e1060ae19ed8cd806e59c5eb6e8728d1667b00e716a7b55074bf44c",
+    "active_sha256": "001be1f8f5fd5e60afcc2f733736c1d9c96302fc540c701d925eef8580dce9a0",
+    "change": "After all four immutable source SHA256 checks, require exactly one original predecessor CASE comparison and parenthesize that CASE expression for PL/pgSQL compilation. Catalogue readback is derived from the corrected executable body. Original SQL, seals, 49 vectors, predecessor assertions and nine refusal checks are unchanged.",
+    "observed_failure": {
+      "run_id": 35185512588,
+      "job_id": 105086612528,
+      "sqlstate": "42601",
+      "stage": "function-body control compiled predecessor before reaching intended refusal"
+    },
+    "final_hosted_check": "pending corrected revision"
+  }
+}

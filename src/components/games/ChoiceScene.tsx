@@ -126,6 +126,7 @@ export default function ChoiceScene(props: Props) {
       setFailed(true);
       return;
     }
+    setFailed(false);
     const canvas = renderer.domElement;
     canvas.className = styles.canvas;
     canvas.setAttribute('aria-hidden', 'true');
@@ -152,6 +153,7 @@ export default function ChoiceScene(props: Props) {
     Object.assign(key.shadow.camera, { left: -10, right: 10, top: 10, bottom: -10 });
     key.shadow.bias = -0.001;
     scene.add(key);
+    scene.add(key.target);
     const rim = new THREE.DirectionalLight(0x1877f2, 2.5);
     rim.position.set(8, 4, -7);
     scene.add(rim);
@@ -162,7 +164,7 @@ export default function ChoiceScene(props: Props) {
     const tiles: THREE.Mesh[] = [];
     const prizes: THREE.Group[] = [];
     const traffic: THREE.Group[] = [];
-    const animal = donkey();
+    const animal = props.game === 'crossing' ? donkey() : null;
     let ghost: THREE.Object3D | null = null;
     if (props.game === 'mines') {
       camera.position.set(7.4, 11.5, 9.8);
@@ -228,7 +230,7 @@ export default function ChoiceScene(props: Props) {
           return { x: (v.x + 1) * 50, y: (1 - v.y) * 50 };
         })
       );
-    } else {
+    } else if (animal) {
       camera.position.set(5.4, 6.5, 9);
       camera.lookAt(1, 0, 0);
       box(scene, gunmetal, 9, -0.38, 0, 38, 0.5, 11, 0.1);
@@ -317,7 +319,7 @@ export default function ChoiceScene(props: Props) {
           prizes[i].position.y = 0.92 + (reduced ? 0 : Math.sin(now / 800 + i) * 0.045);
           prizes[i].children[0].rotation.y = reduced ? 0 : now / 3000 + i;
         });
-      } else {
+      } else if (animal) {
         const step = p.picked.length - (p.phase === 'lost' ? 1 : 0);
         if (step !== previousStep) {
           previousStep = step;
@@ -370,12 +372,18 @@ export default function ChoiceScene(props: Props) {
       renderer.render(scene, camera);
     };
     frame = requestAnimationFrame(draw);
-    const lost = () => setFailed(true);
+    const lost = (event: Event) => {
+      event.preventDefault();
+      setFailed(true);
+    };
+    const restored = () => setFailed(false);
     canvas.addEventListener('webglcontextlost', lost);
+    canvas.addEventListener('webglcontextrestored', restored);
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
       canvas.removeEventListener('webglcontextlost', lost);
+      canvas.removeEventListener('webglcontextrestored', restored);
       const geometries = new Set<THREE.BufferGeometry>(),
         materials = new Set<THREE.Material>();
       scene.traverse((obj) => {
@@ -389,6 +397,7 @@ export default function ChoiceScene(props: Props) {
       geometries.forEach((g) => g.dispose());
       materials.forEach((m) => m.dispose());
       environment.dispose();
+      key.shadow.map?.dispose();
       renderer.dispose();
       canvas.remove();
     };

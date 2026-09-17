@@ -18,6 +18,7 @@ import { AsyncResource } from 'node:async_hooks';
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
+import { stopBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import {
   HorseDecisionAbortedError,
   liveHorseDecisionWorkerStatus,
@@ -102,10 +103,7 @@ import {
   leaseRenewalPassesTotal,
   leaseRenewalLoopRunning,
   leaseRenewalLoopRelaunchesTotal,
-  leaseRenewalOutstandingTotal,
 } from './observability/engineInstruments.js';
-import { processMemoryHealth } from './observability/processMemory.js';
-import { httpDispatcherReport } from './services/httpDispatcher.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
@@ -149,7 +147,7 @@ import {
   requeueUnbankedCashRake,
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
-import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
+import { reportError } from './services/errorReporter.js';
 import { startRakeSpecGuard, stopRakeSpecGuard } from './services/rakeSpecGuard.js';
 import { rakeSpecDriftState } from './config/rakeSpec.js';
 import {
@@ -220,7 +218,7 @@ export { TournamentManager };
 const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
 /**
- * Past-start horse top-ups one discovery pass runs at once (2026-09-11). With
+ * Discovery horse top-ups retained across passes at once. With
  * the fleet held once per pass (HorseTopUpPass) a top-up that seats nobody is
  * 3-7 short sequential reads (0.35-0.8 s at ~110 ms a round trip), so four
  * side by side walk the 150-200 boards that are due after a thaw in 13-40 s,
@@ -471,23 +469,6 @@ export class GameServer {
   /** When a renewal pass last SETTLED. Age past the proof window means the one
    *  lifecycle that keeps every lease alive has stopped. */
   private ownershipLeaseRenewalCompletedAtMs: number = Date.now();
-  /**
-   * WHICH HALF OF THE PASS HAS NOT COME BACK (2026-09-12).
-   *
-   * `performOwnedEngineLeaseProofRenewal` awaits exactly two things, and each of
-   * THOSE awaits exactly one thing: the cash heartbeat RPC and the tournament
-   * heartbeat RPC. So naming the half still outstanding when a pass is abandoned
-   * names the call that did not come back, with no third possibility left to
-   * rule out afterwards.
-   *
-   * That is the question the 2026-09-12 incident could not answer. The renewal
-   * loop stopped for four and a half hours, every cash table died on its twenty
-   * second proof, and telling "hung" from "gone" took a hand-diff of
-   * pg_stat_statements against the container log. The abandon timer stops that
-   * being terminal and superviseOwnershipLeaseRenewal stops an exit being
-   * terminal; this stops the next one being a mystery.
-   */
-  private ownershipLeaseRenewalOutstanding: { cash: boolean; tournament: boolean } | null = null;
   private shutdownOwnershipLeaseRenewalActive = false;
   private shutdownOwnershipLeaseRenewalOperation: Promise<void> | null = null;
   /** One distributed claim + manager publication operation per tournament id. */
@@ -809,21 +790,10 @@ export class GameServer {
       if (this.ownershipLeaseRenewalOperation !== tracked) return;
       this.ownershipLeaseRenewalOperation = null;
       leaseRenewalPassesTotal.inc(1, { outcome: 'abandoned' });
-      /* Name the half that never came back. Each half awaits exactly one RPC,
-         so this names the call rather than only the branch. */
-      const out = this.ownershipLeaseRenewalOutstanding;
-      const stuck: Array<'cash' | 'tournament'> = [];
-      if (out?.cash) stuck.push('cash');
-      if (out?.tournament) stuck.push('tournament');
-      for (const half of stuck) leaseRenewalOutstandingTotal.inc(1, { half });
       reportError(
         new Error(
           `ownership lease renewal pass did not settle within ${OWNERSHIP_LEASE_RENEWAL_ABANDON_MS}ms; ` +
-            `abandoning it so the next pass can run. Still outstanding: ${
-              stuck.length > 0
-                ? stuck.join(' and ')
-                : 'neither half (the pass settled as this fired)'
-            }`
+            'abandoning it so the next pass can run'
         ),
         'GameServer.ownership_lease_renewal_pass_abandoned'
       );
@@ -835,22 +805,10 @@ export class GameServer {
   }
 
   private async performOwnedEngineLeaseProofRenewal(): Promise<void> {
-    /* Each half clears its own flag the moment it settles, so the abandon timer
-       can say which is still out. `finally` and not `then`: a REJECTED half has
-       still come back, and is not the one that hung. */
-    const outstanding = { cash: true, tournament: true };
-    this.ownershipLeaseRenewalOutstanding = outstanding;
     const [cashResult, tournamentResult] = await Promise.allSettled([
-      this.renewVerifiedCashTableLeaseProofs().finally(() => {
-        outstanding.cash = false;
-      }),
-      this.renewVerifiedTournamentManagerLeaseProofs().finally(() => {
-        outstanding.tournament = false;
-      }),
+      this.renewVerifiedCashTableLeaseProofs(),
+      this.renewVerifiedTournamentManagerLeaseProofs(),
     ]);
-    if (this.ownershipLeaseRenewalOutstanding === outstanding) {
-      this.ownershipLeaseRenewalOutstanding = null;
-    }
 
     const lostTables =
       cashResult.status === 'fulfilled' ? cashResult.value : new Map<string, ServerTableEngine>();
@@ -1534,9 +1492,6 @@ export class GameServer {
     if (existing) return existing;
 
     const leaseGeneration = releaseLease ? manager.getTournamentLeaseGeneration() : null;
-    const observeLeaseRelease = leaseGeneration
-      ? manager.captureLeaseReleaseDiagnosticObserver(tournamentId, leaseGeneration)
-      : null;
     let resolveReleaseBarrier: (confirmed: boolean) => void = () => undefined;
     const releaseBarrier = leaseGeneration
       ? new Promise<boolean>((resolve) => {
@@ -1562,12 +1517,6 @@ export class GameServer {
         if (stopped && leaseGeneration) {
           this.tournamentManagerPendingLeaseReleases.set(tournamentId, leaseGeneration);
           const release = await releaseTournaments([{ tournamentId, leaseGeneration }]);
-          const releaseDiagnostic = observeLeaseRelease?.(release);
-          if (releaseDiagnostic) {
-            // The host-owned Docker log supplies container/process custody.
-            // This bounded record is an observation, never release authority.
-            console.info('[tournament-manager-release]', JSON.stringify(releaseDiagnostic));
-          }
           if (release.status !== 'confirmed') {
             throw new Error(
               `Tournament lease release was not confirmed for ${tournamentId}/${leaseGeneration}: ` +
@@ -1708,6 +1657,11 @@ export class GameServer {
     }
     const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
     if (existing) return existing;
+    // A top-up still owns this event's entry transaction. Unrelated events
+    // may start, but this event is re-read only after its real outcome settles.
+    if (mode === 'start' && this.tournamentTopUpsInFlight.has(tournamentId)) {
+      return Promise.resolve();
+    }
 
     const operation = this.performTournamentManagerAdmission(
       tournamentId,
@@ -1875,6 +1829,46 @@ export class GameServer {
    * is polling on its own clock anyway.
    */
   private lastMttRampAt: Map<string, number> = new Map();
+  /** Actual funding continuations, retained across discovery passes until settled. */
+  private readonly tournamentTopUpsInFlight = new Map<string, Promise<void>>();
+
+  private launchDiscoveryTopUp(
+    tournamentId: string,
+    generation: number,
+    work: () => Promise<void>,
+    context: string,
+    kind: 'registration' | 'late-ticket' = 'registration'
+  ): boolean {
+    const canStart = () =>
+      this.directAdmissionIsCurrent(generation) &&
+      !isMaintenanceFrozen() &&
+      // Late tickets enter an already RUNNING event; its manager remains live.
+      (kind === 'late-ticket' || !this.tournamentEngines.has(tournamentId)) &&
+      !this.tournamentManagerAdmissionOperations.has(tournamentId) &&
+      !this.tournamentManagerAdmissionRetryTimers.has(tournamentId);
+    if (
+      !canStart() ||
+      this.tournamentTopUpsInFlight.has(tournamentId) ||
+      this.tournamentTopUpsInFlight.size >= PAST_START_TOP_UP_CONCURRENCY
+    ) {
+      return false;
+    }
+
+    // Reserve before yielding. If stop wins the microtask boundary, no new
+    // funding starts and its callback does not spend the event's turn.
+    const operation = Promise.resolve().then(async () => {
+      if (!canStart()) return;
+      await work();
+    });
+    const tracked = operation.finally(() => {
+      if (this.tournamentTopUpsInFlight.get(tournamentId) === tracked) {
+        this.tournamentTopUpsInFlight.delete(tournamentId);
+      }
+    });
+    this.tournamentTopUpsInFlight.set(tournamentId, tracked);
+    this.launchDiscoveryJob(tracked, context, { tournamentId });
+    return true;
+  }
   /**
    * When each REGISTERING event was last topped up past its start, and how many
    * top-ups in a row came back empty (2026-09-11). The branch never had a
@@ -2248,9 +2242,6 @@ export class GameServer {
     // no other tables get picked up. Lifecycle / auto-rebuy stay off.
     const testTableId = process.env.TEST_TABLE_ID || '';
 
-    // Initialize Sentry FIRST so all subsequent errors are captured
-    initSentry();
-
     /* THE CORE IS MEASURED FROM BOOT (2026-09-06). The governor used to take
        a reading only when a horse computed equity, so a loop saturated by
        anything else - settlement, broadcasts, a boot adopting 195 tables -
@@ -2493,10 +2484,6 @@ export class GameServer {
       this.launchDiscoveryJob(
         this.discoverTournaments(),
         'GameServer.Tournament_discovery_fatal_err'
-      );
-      this.launchDiscoveryJob(
-        this.discoverScheduledMttStarts(),
-        'GameServer.scheduled_mtt_start_lane_fatal_err'
       );
       /**
        * RUNNING re-adoption, on its own five-second lane (2026-09-11). The
@@ -3051,14 +3038,28 @@ export class GameServer {
     // decision already accepted before its table was fenced. Dealers and
     // managers must stop first; then this drain flushes the worker-owned mind,
     // telemetry and solver clocks before any distributed lease is released.
-    const horseDecisionStop = await (startingHorseDecisionStop ??
-      beginOwnedStop('LiveHorseDecisionWorker', stopLiveHorseDecisionWorker));
+    // Main-process execution counters can still arrive while dealers finish
+    // their hands. Both Horse telemetry streams now flush after that drain.
+    // Join them concurrently so their bounded RPC waits do not add in series.
+    const [horseDecisionStop, horseExecutionTelemetryStop] = await Promise.all([
+      startingHorseDecisionStop ??
+        beginOwnedStop('LiveHorseDecisionWorker', stopLiveHorseDecisionWorker),
+      beginOwnedStop('HorseExecutionTelemetry', stopBrainTelemetryFlush),
+    ]);
     if (horseDecisionStop.status === 'rejected') {
       const error = new AggregateError(
         [horseDecisionStop.reason],
         'LiveHorseDecisionWorker did not certify shutdown ownership'
       );
       reportError(error, 'GameServer.horse_decision_worker_shutdown_failed');
+      ownershipFailures.push(error);
+    }
+    if (horseExecutionTelemetryStop.status === 'rejected') {
+      const error = new AggregateError(
+        [horseExecutionTelemetryStop.reason],
+        'HorseExecutionTelemetry did not confirm its final batch'
+      );
+      reportError(error, 'GameServer.horse_execution_telemetry_shutdown_failed');
       ownershipFailures.push(error);
     }
     await this.handOutboxListener.stop();
@@ -3079,7 +3080,6 @@ export class GameServer {
         `GameServer shutdown retained ${ownershipFailures.length} process owner(s); distributed leases were not released`
       );
       reportError(error, 'GameServer.shutdown_ownership_not_released');
-      await flushSentry();
       throw error;
     }
 
@@ -3118,7 +3118,6 @@ export class GameServer {
         `GameServer shutdown could not prove ${distributedReleaseFailures.length} exact distributed lease release(s)`
       );
       reportError(error, 'GameServer.shutdown_distributed_release_unproven');
-      await flushSentry();
       /* Leadership deliberately remains held and no success line is emitted.
          A supervisor may terminate this failed-stop process, after which the
          30-second DB lease boundary remains the conservative handoff gate. */
@@ -3134,9 +3133,6 @@ export class GameServer {
     // Phase 1.1 PR-5: no Supabase Realtime channels to clean up — engine
     // WebSocket server (EngineWebSocketServer.close()) handles its own
     // shutdown; TableStateHub has no channels to close.
-
-    // Flush pending Sentry events before exit
-    await flushSentry();
 
     console.log('[GameServer] Shutdown complete.');
   }
@@ -3461,18 +3457,6 @@ export class GameServer {
       // Still useful, but a different question: can the realtime table loop
       // service sockets, clocks, leases and state broadcasts without delay?
       mainEventLoopGovernor: equityGovernor.snapshot(),
-      // WHAT THE PROCESS WEIGHS (2026-09-14). The release train builds the
-      // next image on this same 3.8 GB host and refuses below 1.125 GiB free;
-      // it was refused 11 of 14 times overnight and nothing here could say
-      // whether the engine was the reason. Megabytes, rounded; nulls where
-      // /proc is unreadable. `nativeMainArenaMb` is [heap] virtual extent,
-      // not resident memory or TLS attribution (observability/processMemory.ts).
-      memory: processMemoryHealth(),
-      // Whether the process-wide fetch pool is bounded, and to what. The
-      // connection cap and longer keep-alive address measured churn; their
-      // effect on memory remains to be established. Failed installation is
-      // visible here (services/httpDispatcher.ts).
-      httpDispatcher: httpDispatcherReport(),
       // The one process-wide FIFO that owns live HorseLogic state. Queue depth
       // and phase distinguish worker pressure/failure from main-loop pressure;
       // solver store counts prove the worker reached an authoritative READY.
@@ -3513,7 +3497,7 @@ export class GameServer {
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
-      // Delivery failures remain inspectable even when the receiver or Sentry is unavailable.
+      // Delivery failures remain inspectable even when the receiver or error reporting is unavailable.
       alertDelivery: engineAlertDeliveryHealth(),
       // THE CLUSTER CONTROLLER'S LAST PASS (2026-09-05). On 2026-09-04 its
       // latch stalled for eleven minutes with no log line; the only witness
@@ -3663,8 +3647,14 @@ export class GameServer {
        fault must not put the old 1,363-sample bill back on the event loop at
        the very moment the loop is the thing that is wrong. Sorted worst-first,
        so a truncated list is still the list you wanted. */
+    /* A table below its deal minimum is waiting, not stalled: since 2026-09-16
+       a quiet tournament table reads its roster on a growing pause of up to a
+       minute (ServerTableEngineBase.WAIT_FOR_PLAYERS_MAX_POLL_MS), so its
+       progress clock is expected to show tens of seconds. Only a table that
+       could deal and did not is a stall, which is the definition the liveness
+       verdict and the alerts already use. */
     const stalledSamples = liveness
-      .filter((t) => t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS)
+      .filter((t) => t.dealable >= 2 && t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS)
       .sort((a, b) => b.msSinceProgress - a.msSinceProgress)
       .slice(0, PER_TABLE_LIVENESS_SAMPLE_CAP);
     const undealableSamples = liveness
@@ -3803,9 +3793,9 @@ export class GameServer {
       '# HELP poker_fleet_table_stall_max_ms Milliseconds since the least-recently-progressed table made progress',
       '# TYPE poker_fleet_table_stall_max_ms gauge',
       `poker_fleet_table_stall_max_ms ${liveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0)}`,
-      '# HELP poker_fleet_tables_stalled Tables that have made no observable progress for at least 30s',
+      '# HELP poker_fleet_tables_stalled Dealable tables (two or more seats that can be dealt) that have made no observable progress for at least 30s; a table below its deal minimum is waiting, not stalled',
       '# TYPE poker_fleet_tables_stalled gauge',
-      `poker_fleet_tables_stalled ${liveness.filter((t) => t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS).length}`,
+      `poker_fleet_tables_stalled ${liveness.filter((t) => t.dealable >= 2 && t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS).length}`,
       '# HELP poker_fleet_dealable_seats Seats able to be dealt into, summed across every table',
       '# TYPE poker_fleet_dealable_seats gauge',
       `poker_fleet_dealable_seats ${liveness.reduce((sum, t) => sum + t.dealable, 0)}`,
@@ -4142,7 +4132,6 @@ export class GameServer {
         handCount: engine.getHandCount(),
         msSinceProgress: engine.msSinceProgress(),
         settlementAgeMs: engine.settlementAgeMs(),
-        settlementAwaits: engine.settlementAwaits(),
         // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
         // /health could say a table had made no progress for 96 seconds but not
         // what it was doing for those 96 seconds, so a fleet-wide stall showed up
@@ -5577,12 +5566,6 @@ export class GameServer {
   private async discoverTournaments(): Promise<void> {
     const generation = this.lifecycleGeneration;
     while (this.directAdmissionIsCurrent(generation)) {
-      /* The past-start top-ups this pass launches beside its walk (see the
-         past-start branch below). Declared outside the try so that a pass
-         which throws part-way still waits for them after the catch: no top-up
-         outlives its pass, and the next pass never runs its own cap on top of
-         a previous pass's stragglers. */
-      const pastStartTopUps = new Set<Promise<void>>();
       try {
         // Find REGISTERING tournaments ready to start
         const registeringReadAt = Date.now();
@@ -5622,7 +5605,17 @@ export class GameServer {
           },
           { label: 'GameServer.registeringBoard', maxRows: 50_000 }
         );
+        // Enumerate by id, then offer the oldest scheduled events first.
+        // Invalid dates remain subject to the existing refusal below.
         const registering = registeringPage.rows;
+        registering.sort((a, b) => {
+          const aStart = Date.parse(String(a.start_time));
+          const bStart = Date.parse(String(b.start_time));
+          return (
+            (Number.isFinite(aStart) ? aStart : Infinity) -
+              (Number.isFinite(bStart) ? bStart : Infinity) || a.id.localeCompare(b.id)
+          );
+        });
         const registeringErr = registeringPage.complete
           ? null
           : { message: 'the REGISTERING board read came back incomplete' };
@@ -5665,15 +5658,36 @@ export class GameServer {
            and a club's whole membership, then ran to completion before the next
            row: ~2.6 s apiece against ~200 short boards, so a pass took 8-10
            minutes and the start branch below waited for it on every row. The
-           pass now holds those reads once (HorseTopUpPass), and past-start
-           top-ups run PAST_START_TOP_UP_CONCURRENCY at a time while the walk
-           goes on deciding starts. The pass waits for all of them after the
-           walk, so the next board read sees whatever they seated. */
+           pass holds those reads once (HorseTopUpPass). Ramp and past-start
+           top-ups share one retained PAST_START_TOP_UP_CONCURRENCY cap across
+           passes. A pending event keeps its operation; unrelated funded events
+           can reach admission without waiting for that funding to finish. */
         const topUpPass = new HorseTopUpPass();
+        // One hint scan per pass, not one request per event. The hint never
+        // authorizes entry; the existing atomic ticket-first horse door does.
+        const ticketEligible = (t: (typeof registering)[number]) =>
+          ['MTT', 'SATELLITE', 'XMTT'].includes(String(t.tournament_type).toUpperCase()) &&
+          t.variant !== 'spin' &&
+          t.variant !== 'sng' &&
+          t.max_players > 2 &&
+          t.prize_pool_finalized !== true &&
+          Date.parse(String(t.start_time)) > registeringReadAt &&
+          Date.parse(String(t.start_time)) - registeringReadAt <= MTT_PRESTART_RAMP_MS;
+        const ticketTargets =
+          this.directAdmissionIsCurrent(generation) && !isMaintenanceFrozen()
+            ? await this.readPendingSatelliteTicketTargets()
+            : null;
 
         for (const tournament of registering || []) {
           if (!this.directAdmissionIsCurrent(generation)) break;
-          if (this.tournamentEngines.has(tournament.id)) continue;
+          if (
+            this.tournamentEngines.has(tournament.id) ||
+            this.tournamentTopUpsInFlight.has(tournament.id) ||
+            this.tournamentManagerAdmissionOperations.has(tournament.id) ||
+            this.tournamentManagerAdmissionRetryTimers.has(tournament.id)
+          ) {
+            continue;
+          }
           // THE FREEZE IS TOTAL (Dan 2026-09-03): starting an event pre-seats its
           // field and topping it up buys horses in. Both are chip movement.
           // The event starts on the first pass after the thaw, exactly as a
@@ -5739,6 +5753,148 @@ export class GameServer {
             );
           }
 
+          const isPastStart = startTime <= now;
+
+          // SNG / Spin: start ONLY when every seat is bought (not time-based)
+          // MTT / Bounty / PKO / Mystery: start at scheduled time if min_players met
+          // Seat-first = spin or heads-up (2-seat SNG). Must agree with
+          // fn_take_seat_and_buy_in / isSeatFirstFormat — see 2026-08-24 audit.
+          const isSngOrSpin =
+            tournament.variant === 'spin' ||
+            (tournament.variant === 'sng' && Number(tournament.max_players) <= 2);
+
+          /**
+           * PAID SEATS, NOT REGISTRATIONS (Dan 2026-08-23, verbatim: "spins can
+           * never ever start until 3 players have sat down, and paid for there
+           * seat, only then does the spin feature start.")
+           *
+           * `current_players` is the registration counter. It is incremented by
+           * fn_register_for_tournament and never decremented when somebody
+           * leaves or busts, so it drifts badly: the live lobby was carrying
+           * spins reading 3/3 with two seats actually sold, and others reading
+           * 0/3 with three sold. Starting a spin off that number deals a game
+           * to seats nobody bought.
+           *
+           * A seat-first game's truth is the seat rows on its live table.
+           * Count those. Registrations do not open the door — money in a seat
+           * does.
+           */
+          const paidSeats = paidSeatsByTournament.get(tournament.id) ?? 0;
+          const seatFirstReady =
+            isSngOrSpin && tournament.max_players > 0 && paidSeats >= tournament.max_players;
+
+          const maxReached =
+            tournament.max_players > 0 && tournament.current_players >= tournament.max_players;
+          /**
+           * ONE MINUTE EARLY, ON PURPOSE — see TOURNAMENT_PRESEAT_LEAD_MS.
+           *
+           * The comparison used to be `startTime <= now`, which meant the field
+           * was seated after the advertised start rather than before it. The
+           * lead moves the SEATING, not the game: start() holds every table's
+           * dealing and its level clock to `start_time`, so a player who opens
+           * the lobby at T-60 finds a seat waiting and a TAKE SEAT button, and
+           * the first card is still dealt at the time the lobby advertised.
+           *
+           * The min-players requirement is unchanged and is still evaluated
+           * against the last complete board read. An event short of a field
+           * at T-60 is not started early; funding below can make it eligible
+           * on a later read after that operation actually settles.
+           */
+          const timeReached =
+            startTime - TOURNAMENT_PRESEAT_LEAD_MS <= now &&
+            tournament.current_players >= minPlayers;
+
+          // SNG/Spin: only start when every seat has been bought and paid for.
+          // MTT variants: start at scheduled time with minimum players.
+          /**
+           * A GAME THAT HAS ALREADY DEALT STARTS WITH THE FIELD IT HAS
+           * (2026-09-11).
+           *
+           * The comment above says the start gate still runs for a finalized
+           * row, so a launch that lost its engine before the RUNNING commit is
+           * recovered here. It does not, and it never did: `seatFirstReady`
+           * wants every seat sold and `timeReached` wants current_players >=
+           * min_players, and a game that has been PLAYED has neither, because
+           * its field has shrunk to the survivor. Measured on the forty rows
+           * dealt on 2026-09-08: seventeen at 1 seat of 2, twenty-two at 1-2
+           * of 3, one MTT at 2 of 4. Not one of them satisfied either gate, so
+           * the sentence was true of the code and false of the board, and the
+           * games sat for three days with their winners unpaid.
+           *
+           * The engine proposes and the database decides. This gate offers the
+           * row to the launch completion RPC; the proof inside it
+           * (fn_prove_played_launch_recovery) requires a finalized pool, a
+           * hand actually dealt, the receipt's own started_at equal to the
+           * moment of that first hand, no entrant in a pre-deal status, a
+           * dealt field that met the requirement, and every survivor seated.
+           * A row that cannot show that is refused there, which is where the
+           * evidence lives - never guessed here off a counter.
+           *
+           * Offered at most once every five minutes per row, because a refusal
+           * is a stable answer and not something to re-ask sixty times a
+           * minute.
+           */
+          const lastFinishAttempt = this.finalizedFinishAttempt.get(tournament.id) ?? 0;
+          const finishingADealtGame =
+            poolFinalized && isPastStart && now - lastFinishAttempt >= FINALIZED_FINISH_RETRY_MS;
+
+          const shouldStart =
+            (isSngOrSpin ? seatFirstReady : maxReached || timeReached) || finishingADealtGame;
+
+          // Preserve the old past-start minimum-field gate, including a
+          // malformed row whose maximum is below its minimum.
+          const needsPastStartTopUp =
+            !poolFinalized && isPastStart && tournament.current_players < minPlayers;
+          if (shouldStart && !needsPastStartTopUp) {
+            const isScheduledMtt =
+              tournament.tournament_type === 'MTT' &&
+              tournament.variant !== 'spin' &&
+              tournament.variant !== 'sng' &&
+              tournament.max_players > 2;
+            if (isScheduledMtt) {
+              // A retained claim or retry still owns capacity. Do not count a
+              // single id twice when its retry and current operation overlap.
+              const ownedAdmissions = new Set([
+                ...this.tournamentManagerAdmissionOperations.keys(),
+                ...this.tournamentManagerAdmissionRetryTimers.keys(),
+              ]);
+              if (ownedAdmissions.size >= this.engineStartBudget) continue;
+            }
+            if (finishingADealtGame) this.finalizedFinishAttempt.set(tournament.id, now);
+            /* Report the number the decision was actually made on. A Spin is
+               gated on SEATS, and current_players can disagree with those —
+               logging it here is how a drifted counter reads as a healthy
+               start in the logs. */
+            const reason = finishingADealtGame
+              ? `finalized pool, already dealt - finishing with the field it has (${tournament.current_players} on the board)`
+              : isSngOrSpin
+                ? `seats sold (${paidSeats}/${tournament.max_players})`
+                : maxReached
+                  ? `full (${tournament.current_players}/${tournament.max_players})`
+                  : startTime > now
+                    ? `pre-seating ${tournament.current_players} players, cards in ${Math.round((startTime - now) / 1000)}s`
+                    : `${tournament.current_players} players`;
+            /* Re-check in the same tick as the set: the seat-first fast lane
+               (discoverSeatFirstStarts) may have started this game while this
+               pass was busy with earlier rows. Both sites check-and-set with
+               no await in between, so one manager per id is structural. */
+            if (this.tournamentEngines.has(tournament.id)) continue;
+            const tournamentId = String(tournament.id);
+            this.launchDiscoveryJob(
+              this.ensureTournamentManagerAdmission(
+                tournamentId,
+                'start',
+                `Starting tournament: ${tournament.name} (${reason})`,
+                generation
+              ),
+              'GameServer.Tournament_start_failed_for_to',
+              { tournamentId }
+            );
+            // An eligible field goes to the existing admission authority;
+            // it does not first launch an optional registration top-up.
+            continue;
+          }
+
           /**
            * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
            *
@@ -5799,25 +5955,33 @@ export class GameServer {
                 prizePool: Number((tournament as { prize_pool?: unknown }).prize_pool) || 0,
                 buyInPrizeShare: Number(tournament.buy_in_amount) || 0,
               });
-              if (rampTarget > 0) {
-                this.lastMttRampAt.set(tournament.id, now);
-                const rampAdded = await this.tournamentRecurring.topUpWithHorses(
+              const redeemTickets =
+                ticketEligible(tournament) && ticketTargets?.has(tournament.id) === true;
+              if (rampTarget > 0 || redeemTickets) {
+                this.launchDiscoveryTopUp(
                   tournament.id,
-                  rampTarget,
-                  { pass: topUpPass }
+                  generation,
+                  async () => {
+                    this.lastMttRampAt.set(tournament.id, now);
+                    const rampAdded = await this.tournamentRecurring.topUpWithHorses(
+                      tournament.id,
+                      rampTarget,
+                      { pass: topUpPass, redeemTickets }
+                    );
+                    if (rampAdded > 0) {
+                      console.log(
+                        `[GameServer] Pre-start ramp: +${rampAdded} into "${tournament.name}" ` +
+                          `(${tournament.current_players} -> target ${rampTarget}, ` +
+                          `${Math.round(msUntilStart / 60000)}m to start)`
+                      );
+                    }
+                  },
+                  'GameServer.Tournament_discovery_error'
                 );
-                if (rampAdded > 0) {
-                  console.log(
-                    `[GameServer] Pre-start ramp: +${rampAdded} into "${tournament.name}" ` +
-                      `(${tournament.current_players} -> target ${rampTarget}, ` +
-                      `${Math.round(msUntilStart / 60000)}m to start)`
-                  );
-                }
               }
             }
           }
 
-          const isPastStart = startTime <= now;
           if (!poolFinalized && isPastStart && tournament.current_players < minPlayers) {
             /**
              * Dan 2026-08-19: fill to a FULL FIELD, every format.
@@ -5849,17 +6013,16 @@ export class GameServer {
               PAST_START_TOP_UP_MAX_INTERVAL_MS
             );
             if (!clock || now - clock.at >= every) {
-              while (pastStartTopUps.size >= PAST_START_TOP_UP_CONCURRENCY) {
-                await Promise.race(pastStartTopUps);
-              }
-              // Waiting for a slot can outlast the checks at the top of the
-              // loop. A top-up that never ran does not spend the event's turn,
-              // so the clock is set only once it is launched.
-              if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) continue;
-              this.pastStartTopUpClock.set(tournament.id, { at: now, misses });
-              const topUp: Promise<void> = this.tournamentRecurring
-                .topUpWithHorses(tournament.id, target, { pass: topUpPass })
-                .then((added) => {
+              this.launchDiscoveryTopUp(
+                tournament.id,
+                generation,
+                async () => {
+                  this.pastStartTopUpClock.set(tournament.id, { at: now, misses });
+                  const added = await this.tournamentRecurring.topUpWithHorses(
+                    tournament.id,
+                    target,
+                    { pass: topUpPass }
+                  );
                   this.pastStartTopUpClock.set(tournament.id, {
                     at: now,
                     misses: added > 0 ? 0 : misses + 1,
@@ -5869,144 +6032,18 @@ export class GameServer {
                       `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats - running it instead of cancelling`
                     );
                   }
-                })
-                .catch((err) =>
-                  reportError(err, 'GameServer.past_start_top_up_failed', {
-                    tournamentId: String(tournament.id),
-                  })
-                )
-                .finally(() => {
-                  pastStartTopUps.delete(topUp);
-                });
-              pastStartTopUps.add(topUp);
+                },
+                'GameServer.past_start_top_up_failed'
+              );
             }
             // Re-evaluate on the next discovery pass with the refreshed count.
             continue;
           }
-
-          // SNG / Spin: start ONLY when every seat is bought (not time-based)
-          // MTT / Bounty / PKO / Mystery: start at scheduled time if min_players met
-          // Seat-first = spin or heads-up (2-seat SNG). Must agree with
-          // fn_take_seat_and_buy_in / isSeatFirstFormat — see 2026-08-24 audit.
-          const isSngOrSpin =
-            tournament.variant === 'spin' ||
-            (tournament.variant === 'sng' && Number(tournament.max_players) <= 2);
-
-          /**
-           * PAID SEATS, NOT REGISTRATIONS (Dan 2026-08-23, verbatim: "spins can
-           * never ever start until 3 players have sat down, and paid for there
-           * seat, only then does the spin feature start.")
-           *
-           * `current_players` is the registration counter. It is incremented by
-           * fn_register_for_tournament and never decremented when somebody
-           * leaves or busts, so it drifts badly: the live lobby was carrying
-           * spins reading 3/3 with two seats actually sold, and others reading
-           * 0/3 with three sold. Starting a spin off that number deals a game
-           * to seats nobody bought.
-           *
-           * A seat-first game's truth is the seat rows on its live table.
-           * Count those. Registrations do not open the door — money in a seat
-           * does.
-           */
-          const paidSeats = paidSeatsByTournament.get(tournament.id) ?? 0;
-          const seatFirstReady =
-            isSngOrSpin && tournament.max_players > 0 && paidSeats >= tournament.max_players;
-
-          const maxReached =
-            tournament.max_players > 0 && tournament.current_players >= tournament.max_players;
-          /**
-           * ONE MINUTE EARLY, ON PURPOSE — see TOURNAMENT_PRESEAT_LEAD_MS.
-           *
-           * The comparison used to be `startTime <= now`, which meant the field
-           * was seated after the advertised start rather than before it. The
-           * lead moves the SEATING, not the game: start() holds every table's
-           * dealing and its level clock to `start_time`, so a player who opens
-           * the lobby at T-60 finds a seat waiting and a TAKE SEAT button, and
-           * the first card is still dealt at the time the lobby advertised.
-           *
-           * The min-players requirement is unchanged and is still evaluated
-           * against the pre-start horse ramp above, which runs right up to this
-           * moment — so an event short of a field at T-60 simply is not started
-           * early, and falls through to the past-start top-up branch as before.
-           */
-          const timeReached =
-            startTime - TOURNAMENT_PRESEAT_LEAD_MS <= now &&
-            tournament.current_players >= minPlayers;
-
-          // SNG/Spin: only start when every seat has been bought and paid for.
-          // MTT variants: start at scheduled time with minimum players.
-          /**
-           * A GAME THAT HAS ALREADY DEALT STARTS WITH THE FIELD IT HAS
-           * (2026-09-11).
-           *
-           * The comment above says the start gate still runs for a finalized
-           * row, so a launch that lost its engine before the RUNNING commit is
-           * recovered here. It does not, and it never did: `seatFirstReady`
-           * wants every seat sold and `timeReached` wants current_players >=
-           * min_players, and a game that has been PLAYED has neither, because
-           * its field has shrunk to the survivor. Measured on the forty rows
-           * dealt on 2026-09-08: seventeen at 1 seat of 2, twenty-two at 1-2
-           * of 3, one MTT at 2 of 4. Not one of them satisfied either gate, so
-           * the sentence was true of the code and false of the board, and the
-           * games sat for three days with their winners unpaid.
-           *
-           * The engine proposes and the database decides. This gate offers the
-           * row to the launch completion RPC; the proof inside it
-           * (fn_prove_played_launch_recovery) requires a finalized pool, a
-           * hand actually dealt, the receipt's own started_at equal to the
-           * moment of that first hand, no entrant in a pre-deal status, a
-           * dealt field that met the requirement, and every survivor seated.
-           * A row that cannot show that is refused there, which is where the
-           * evidence lives - never guessed here off a counter.
-           *
-           * Offered at most once every five minutes per row, because a refusal
-           * is a stable answer and not something to re-ask sixty times a
-           * minute.
-           */
-          const lastFinishAttempt = this.finalizedFinishAttempt.get(tournament.id) ?? 0;
-          const finishingADealtGame =
-            poolFinalized && isPastStart && now - lastFinishAttempt >= FINALIZED_FINISH_RETRY_MS;
-          if (finishingADealtGame) this.finalizedFinishAttempt.set(tournament.id, now);
-
-          const shouldStart =
-            (isSngOrSpin ? seatFirstReady : maxReached || timeReached) || finishingADealtGame;
-
-          if (shouldStart) {
-            /* Report the number the decision was actually made on. A Spin is
-               gated on SEATS, and current_players can disagree with those —
-               logging it here is how a drifted counter reads as a healthy
-               start in the logs. */
-            const reason = finishingADealtGame
-              ? `finalized pool, already dealt - finishing with the field it has (${tournament.current_players} on the board)`
-              : isSngOrSpin
-                ? `seats sold (${paidSeats}/${tournament.max_players})`
-                : maxReached
-                  ? `full (${tournament.current_players}/${tournament.max_players})`
-                  : startTime > now
-                    ? `pre-seating ${tournament.current_players} players, cards in ${Math.round((startTime - now) / 1000)}s`
-                    : `${tournament.current_players} players`;
-            /* Re-check in the same tick as the set: the seat-first fast lane
-               (discoverSeatFirstStarts) may have started this game while this
-               pass was busy with earlier rows. Both sites check-and-set with
-               no await in between, so one manager per id is structural. */
-            if (this.tournamentEngines.has(tournament.id)) continue;
-            const tournamentId = String(tournament.id);
-            this.launchDiscoveryJob(
-              this.ensureTournamentManagerAdmission(
-                tournamentId,
-                'start',
-                `Starting tournament: ${tournament.name} (${reason})`,
-                generation
-              ),
-              'GameServer.Tournament_start_failed_for_to',
-              { tournamentId }
-            );
-          }
         }
 
-        // Every top-up this pass launched finishes inside it: the next board
-        // read must see what they seated, and none may outlive the walk.
-        await Promise.allSettled([...pastStartTopUps]);
+        // Pending funding remains owned by discoveryJobs and its per-id cap.
+        // No later row or board read needs to await another event's funding.
+        await this.recoverLateSatelliteTickets(ticketTargets, topUpPass, generation);
 
         /**
          * ── FULLY PAID BUT NEVER STARTED (2026-08-24 audit, P2-7) ──
@@ -6067,7 +6104,7 @@ export class GameServer {
             /* A parked launch is not a stall this watchdog can cure: the
                front door would refuse the force-start anyway, and reporting
                "force-starting" every stall window for a game the authority
-               has refused would be a lie in Sentry. The clock is left
+               has refused would be a lie in error reporting. The clock is left
                running, so the pass after the park ends acts at once. */
             if (spinLaunchParks.isParked(id, stallNow)) continue;
 
@@ -6118,9 +6155,8 @@ export class GameServer {
          * between two hourly restarts.
          */
 
-        // The ramp map only ever holds tournaments still in REGISTERING.
-        // Without this it grows by every event the engine has ever seen and
-        // is never freed for the life of the process.
+        // Keep running-ticket timestamps through their existing throttle and
+        // retain any unresolved owner. Other departed events can be forgotten.
         if (
           this.lastMttRampAt.size > 0 ||
           this.pastStartTopUpClock.size > 0 ||
@@ -6128,8 +6164,13 @@ export class GameServer {
           spinLaunchParks.size > 0
         ) {
           const stillRegistering = new Set((registering || []).map((r) => String(r.id)));
-          for (const id of this.lastMttRampAt.keys()) {
-            if (!stillRegistering.has(id)) this.lastMttRampAt.delete(id);
+          for (const [id, lastAttempt] of this.lastMttRampAt) {
+            if (
+              !stillRegistering.has(id) &&
+              !this.tournamentTopUpsInFlight.has(id) &&
+              Date.now() - lastAttempt >= MTT_PRESTART_TICK_MS
+            )
+              this.lastMttRampAt.delete(id);
           }
           for (const id of this.pastStartTopUpClock.keys()) {
             if (!stillRegistering.has(id)) this.pastStartTopUpClock.delete(id);
@@ -6712,11 +6753,162 @@ export class GameServer {
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
       }
-      // Empty unless the walk threw before its own drain. Each top-up reports
-      // its own failure; this only makes the pass wait for it.
-      await Promise.allSettled([...pastStartTopUps]);
-
+      // A failed pass does not discard its admitted funding operations.
+      // Existing lifecycle shutdown joins them through discoveryJobs.
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+    }
+  }
+
+  private async recoverLateSatelliteTickets(
+    targets: Set<string> | null,
+    pass: HorseTopUpPass,
+    generation: number
+  ): Promise<void> {
+    if (!targets?.size || !this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen())
+      return;
+    type Target = {
+      id: string;
+      name: string;
+      status: string;
+      tournament_type: string;
+      variant: string | null;
+      max_players: number;
+      prize_pool_finalized: boolean;
+    };
+    try {
+      const ids = [...targets].sort();
+      const candidates: Target[] = [];
+      // A bounded IN list never asks the gateway to carry the whole fleet.
+      // Read every chunk before any eligibility or entry operation.
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const chunk = ids.slice(offset, offset + 100);
+        const latePage = await fetchAllRows<Target>(
+          (cursor, want) => {
+            let query = supabase
+              .from('tournaments')
+              .select(
+                'id, name, status, tournament_type, variant, max_players, prize_pool_finalized'
+              )
+              .in('id', chunk)
+              .eq('status', 'RUNNING')
+              .eq('prize_pool_finalized', false)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) query = query.gt('id', cursor);
+            return query.then((result) =>
+              Array.isArray(result.data) || result.error
+                ? result
+                : { ...result, error: new Error('Late ticket target response has no row array') }
+            );
+          },
+          // One sentinel row beyond the IN-list size proves a full 100-row
+          // result is complete instead of reaching the pagination hard cap.
+          { label: 'GameServer.lateTicketTargets', maxRows: chunk.length + 1 }
+        );
+        if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) return;
+        if (
+          !latePage.complete ||
+          latePage.rows.some(
+            (row) =>
+              typeof row?.id !== 'string' ||
+              !chunk.includes(row.id) ||
+              typeof row.status !== 'string' ||
+              typeof row.prize_pool_finalized !== 'boolean' ||
+              !Number.isInteger(row.max_players)
+          ) ||
+          new Set(latePage.rows.map((row) => row.id)).size !== latePage.rows.length
+        ) {
+          throw new Error('Late-registration ticket targets are incomplete or malformed');
+        }
+        candidates.push(
+          ...latePage.rows.filter(
+            (row) =>
+              row.status === 'RUNNING' &&
+              row.prize_pool_finalized === false &&
+              ['MTT', 'SATELLITE', 'XMTT'].includes(row.tournament_type) &&
+              row.variant !== 'spin' &&
+              row.variant !== 'sng' &&
+              row.max_players > 2
+          )
+        );
+      }
+      candidates.sort(
+        (a, b) =>
+          (this.lastMttRampAt.get(a.id) ?? 0) - (this.lastMttRampAt.get(b.id) ?? 0) ||
+          a.id.localeCompare(b.id)
+      );
+      for (const target of candidates) {
+        if (Date.now() - (this.lastMttRampAt.get(target.id) ?? 0) < MTT_PRESTART_TICK_MS) continue;
+        if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) break;
+        this.launchDiscoveryTopUp(
+          target.id,
+          generation,
+          async () => {
+            this.lastMttRampAt.set(target.id, Date.now());
+            // This read avoids a locked entry request after the window closes.
+            // The unchanged atomic horse door rechecks eligibility before entry.
+            const { data: open, error } = await supabase.rpc(
+              'fn_tournament_late_registration_open',
+              {
+                p_tournament_id: target.id,
+              }
+            );
+            if (error || typeof open !== 'boolean') {
+              throw new Error('Late-registration ticket eligibility is unreadable');
+            }
+            if (!open || !this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen())
+              return;
+            await this.tournamentRecurring.topUpWithHorses(target.id, 0, {
+              pass,
+              redeemTickets: true,
+            });
+          },
+          'GameServer.late_ticket_entry_failed',
+          'late-ticket'
+        );
+      }
+    } catch (error) {
+      reportError(error, 'GameServer.late_ticket_targets_unreadable');
+    }
+  }
+
+  private async readPendingSatelliteTicketTargets(): Promise<Set<string> | null> {
+    try {
+      const ticketPage = await fetchAllRows<{ id: string; source_tournament_id: string }>(
+        (cursor, want) => {
+          let query = supabase
+            .from('tournament_tickets')
+            .select('id, source_tournament_id')
+            .eq('status', 'issued')
+            .eq('redemption_mode', 'tournament_entry_only')
+            .is('source_refund_entitlement_id', null)
+            .not('source_tournament_id', 'is', null)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) query = query.gt('id', cursor);
+          return query.then((result) =>
+            Array.isArray(result.data) || result.error
+              ? result
+              : { ...result, error: new Error('Satellite ticket hint response has no row array') }
+          );
+        },
+        { label: 'GameServer.satelliteTicketTargets', maxRows: 50_000 }
+      );
+      if (
+        !ticketPage.complete ||
+        ticketPage.rows.some(
+          (row) =>
+            typeof row?.id !== 'string' ||
+            !row.id.trim() ||
+            typeof row.source_tournament_id !== 'string' ||
+            !row.source_tournament_id.trim()
+        )
+      )
+        throw new Error('Satellite ticket target hints are incomplete or malformed');
+      return new Set(ticketPage.rows.map((row) => row.source_tournament_id));
+    } catch (error) {
+      reportError(error, 'GameServer.satellite_ticket_targets_unreadable');
+      return null;
     }
   }
 
@@ -7707,109 +7899,6 @@ export class GameServer {
     return paidSeatsByTournament;
   }
 
-  /** Scheduled starts cannot await another event's registration funding.
-   * The broad discovery walk retains its pending top-ups and their ownership;
-   * this read-only lane offers due fields to the SAME coalesced start authority.
-   * No lease, seat, payment, launch receipt or physical request is bypassed. */
-  private async discoverScheduledMttStarts(): Promise<void> {
-    const generation = this.lifecycleGeneration;
-    while (this.directAdmissionIsCurrent(generation)) {
-      try {
-        if (!isMaintenanceFrozen()) {
-          const dueBefore = new Date(Date.now() + TOURNAMENT_PRESEAT_LEAD_MS).toISOString();
-          const board = await fetchAllRows<{
-            id: string;
-            name: string;
-            start_time: string | null;
-            variant: string | null;
-            tournament_type: string | null;
-            current_players: number | null;
-            min_players: number | null;
-            max_players: number | null;
-            prize_pool_finalized: boolean | null;
-          }>(
-            (cursor, want) => {
-              let query = supabase
-                .from('tournaments')
-                .select(
-                  'id, name, start_time, variant, tournament_type, current_players, min_players, max_players, prize_pool_finalized'
-                )
-                .eq('status', 'REGISTERING')
-                .eq('tournament_type', 'MTT')
-                .gt('max_players', 2)
-                .lte('start_time', dueBefore)
-                .order('id', { ascending: true })
-                .limit(want);
-              if (cursor) query = query.gt('id', cursor);
-              return query;
-            },
-            { label: 'GameServer.scheduledMttStarts', maxRows: 50_000 }
-          );
-          if (
-            !board.complete ||
-            board.rows.some((row) => typeof row?.id !== 'string' || !row.id.trim())
-          ) {
-            throw new Error('The scheduled MTT start board is incomplete');
-          }
-          const due = [...board.rows].sort(
-            (a, b) =>
-              Date.parse(String(a.start_time)) - Date.parse(String(b.start_time)) ||
-              a.id.localeCompare(b.id)
-          );
-          for (const tournament of due) {
-            if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) break;
-            if (
-              tournament.tournament_type !== 'MTT' ||
-              tournament.variant === 'spin' ||
-              tournament.variant === 'sng' ||
-              tournament.prize_pool_finalized === true
-            )
-              continue;
-            const startsAt = Date.parse(String(tournament.start_time));
-            const players = Number(tournament.current_players);
-            const maximum = Number(tournament.max_players);
-            const minimum = Number(tournament.min_players) || 3;
-            if (
-              !Number.isFinite(startsAt) ||
-              startsAt > Date.now() + TOURNAMENT_PRESEAT_LEAD_MS ||
-              !Number.isSafeInteger(players) ||
-              !Number.isSafeInteger(maximum) ||
-              !Number.isSafeInteger(minimum) ||
-              minimum < 2 ||
-              maximum <= 2 ||
-              players < minimum ||
-              minimum > maximum
-            )
-              continue;
-            const id = tournament.id;
-            if (
-              this.tournamentEngines.has(id) ||
-              this.tournamentManagerAdmissionOperations.has(id) ||
-              this.tournamentManagerAdmissionRetryTimers.has(id)
-            )
-              continue;
-            // Retained start/resume claims consume capacity until their actual
-            // operation settles. A hung claim never frees a fictitious slot.
-            if (this.tournamentManagerAdmissionOperations.size >= this.engineStartBudget) break;
-            this.launchDiscoveryJob(
-              this.ensureTournamentManagerAdmission(
-                id,
-                'start',
-                `Starting scheduled MTT: ${tournament.name} (${players} players)`,
-                generation
-              ),
-              'GameServer.scheduled_mtt_start_failed',
-              { tournamentId: id }
-            );
-          }
-        }
-      } catch (error) {
-        reportError(error, 'GameServer.scheduled_mtt_start_read_failed');
-      }
-      await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
-    }
-  }
-
   /**
    * ── SEAT-FIRST FAST START (Dan 2026-08-21, verbatim: "THE WHEEL STARTS
    * SPINNING THE MOMENT THE 3RD PLAYER PAYS FOR HIS SEAT") ──────────────────
@@ -8496,15 +8585,7 @@ export class GameServer {
     }
     if (!replaced) return false;
     if (!this.running) {
-      try {
-        await replacement.stop();
-      } catch (error) {
-        // Shutdown can win while the incumbent is draining. Its replacement
-        // is now the retained map owner: a failed stop must not hide it from
-        // the remaining ownership checks unless physical release is proven.
-        if (!replacement.hasReleasedProcessOwnership()) throw error;
-        reportError(error, 'GameServer.shutdown_replacement_cleanup_failed', { tableId });
-      }
+      await replacement.stop().catch(() => undefined);
       unregisterOwnedTournamentTableEngine(
         this.tableEngines,
         this.tournamentOwnedTables,

@@ -1,0 +1,2990 @@
+{
+  "functions": [
+    {
+      "signature": "public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)",
+      "before": {
+        "acl": null,
+        "arguments": "p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text",
+        "body_md5": "62d45973bcb98f09f9abd868a7062f71",
+        "cost": 100,
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_bbj_move_between_banks(p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_amt numeric := round(COALESCE(p_amount, 0), 2);\n  v_pool public.bbj_pools%ROWTYPE; v_have numeric; v_prior public.ca_bbj_bucket_moves%ROWTYPE;\nBEGIN\n  IF NOT (current_user IN ('postgres', 'supabase_admin') OR COALESCE(auth.role(), '') = 'service_role') THEN\n    RAISE EXCEPTION 'fn_bbj_move_between_banks is service only' USING ERRCODE = '42501';\n  END IF;\n  IF p_from_bank NOT IN ('main', 'backup', 'promo') OR p_to_bank NOT IN ('main', 'backup', 'promo') OR p_from_bank = p_to_bank THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'banks_must_be_two_of_main_backup_promo');\n  END IF;\n  IF v_amt <= 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'amount_must_be_positive');\n  END IF;\n  IF length(btrim(COALESCE(p_reason, ''))) < 10 OR COALESCE(btrim(p_op_id), '') = '' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'a_bank_move_needs_a_reason_and_an_op_id');\n  END IF;\n  SELECT * INTO v_pool FROM public.bbj_pools WHERE id = p_pool_id FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'pool_not_found');\n  END IF;\n  SELECT * INTO v_prior FROM public.ca_bbj_bucket_moves WHERE op_id = p_op_id;\n  IF FOUND THEN\n    RETURN jsonb_build_object('ok', true, 'replayed', true, 'move_id', v_prior.id, 'amount', v_prior.amount);\n  END IF;\n  v_have := CASE p_from_bank WHEN 'main' THEN v_pool.main_balance WHEN 'backup' THEN v_pool.backup_balance ELSE v_pool.promo_balance END;\n  v_have := v_have-public.fn_bbj_parked_reserve(p_pool_id,p_from_bank);\n  IF COALESCE(v_have, 0) < v_amt THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'source_bank_cannot_cover_it', 'available', COALESCE(v_have, 0), 'requested', v_amt);\n  END IF;\n  -- Declared as bbj_pool -> bbj_pool: the chips change bank, not account. The\n  -- autoledger writes one leg per bucket column with its label, which is what\n  -- the per-bank reconcile reads.\n  PERFORM public.fn_ca_declare_ledger('adjustment', 'bbj_pool', p_pool_id, NULL, NULL, NULL);\n  UPDATE public.bbj_pools\n     SET main_balance   = main_balance   + CASE WHEN p_to_bank = 'main'   THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'main'   THEN v_amt ELSE 0 END,\n         backup_balance = backup_balance + CASE WHEN p_to_bank = 'backup' THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'backup' THEN v_amt ELSE 0 END,\n         promo_balance  = promo_balance  + CASE WHEN p_to_bank = 'promo'  THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'promo'  THEN v_amt ELSE 0 END,\n         updated_at = now()\n   WHERE id = p_pool_id;\n  PERFORM set_config('app.ledger_category', '', true);\n  PERFORM set_config('app.ledger_counterparty', '', true);\n  PERFORM set_config('app.ledger_counterparty_entity', '', true);\n  INSERT INTO public.ca_bbj_bucket_moves (pool_id, from_bank, to_bank, amount, reason, op_id, performed_by)\n  VALUES (p_pool_id, p_from_bank, p_to_bank, v_amt, btrim(p_reason), p_op_id, auth.uid())\n  RETURNING * INTO v_prior;\n  RETURN jsonb_build_object('ok', true, 'replayed', false, 'move_id', v_prior.id, 'amount', v_amt,\n                            'from_bank', p_from_bank, 'to_bank', p_to_bank);\nEND;\n$function$\n",
+        "definition_md5": "304bc1850ecdb931bd17e85deeb63fda",
+        "identity_arguments": "p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text",
+        "kind": "f",
+        "language": "plpgsql",
+        "leakproof": false,
+        "owner": "postgres",
+        "parallel": "u",
+        "result": "jsonb",
+        "returns_set": false,
+        "rows": 0,
+        "security_definer": true,
+        "settings": [
+          "search_path=public"
+        ],
+        "strict": false,
+        "volatility": "v"
+      },
+      "after": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text",
+        "body_md5": "6245589e22253ce79c0a46d54442e927",
+        "cost": 100,
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_bbj_move_between_banks(p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_amt numeric := round(COALESCE(p_amount, 0), 2);\n  v_pool public.bbj_pools%ROWTYPE; v_have numeric; v_prior public.ca_bbj_bucket_moves%ROWTYPE;\nBEGIN\n  IF NOT (current_user IN ('postgres', 'supabase_admin') OR COALESCE(auth.role(), '') = 'service_role') THEN\n    RAISE EXCEPTION 'fn_bbj_move_between_banks is service only' USING ERRCODE = '42501';\n  END IF;\n  IF p_from_bank NOT IN ('main', 'backup', 'promo') OR p_to_bank NOT IN ('main', 'backup', 'promo') OR p_from_bank = p_to_bank THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'banks_must_be_two_of_main_backup_promo');\n  END IF;\n  IF v_amt <= 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'amount_must_be_positive');\n  END IF;\n  IF length(btrim(COALESCE(p_reason, ''))) < 10 OR COALESCE(btrim(p_op_id), '') = '' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'a_bank_move_needs_a_reason_and_an_op_id');\n  END IF;\n  SELECT * INTO v_pool FROM public.bbj_pools WHERE id = p_pool_id FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'pool_not_found');\n  END IF;\n  SELECT * INTO v_prior FROM public.ca_bbj_bucket_moves WHERE op_id = p_op_id;\n  IF FOUND THEN\n    IF v_prior.pool_id IS DISTINCT FROM p_pool_id\n       OR v_prior.from_bank IS DISTINCT FROM p_from_bank\n       OR v_prior.to_bank IS DISTINCT FROM p_to_bank\n       OR v_prior.amount IS DISTINCT FROM v_amt THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'op_id_payload_mismatch');\n    END IF;\n    RETURN jsonb_build_object('ok', true, 'replayed', true, 'move_id', v_prior.id, 'amount', v_prior.amount);\n  END IF;\n  v_have := CASE p_from_bank WHEN 'main' THEN v_pool.main_balance WHEN 'backup' THEN v_pool.backup_balance ELSE v_pool.promo_balance END;\n  v_have := v_have-public.fn_bbj_parked_reserve(p_pool_id,p_from_bank);\n  IF COALESCE(v_have, 0) < v_amt THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'source_bank_cannot_cover_it', 'available', COALESCE(v_have, 0), 'requested', v_amt);\n  END IF;\n  -- Declared as bbj_pool -> bbj_pool: the chips change bank, not account. The\n  -- autoledger writes one leg per bucket column with its label, which is what\n  -- the per-bank reconcile reads.\n  PERFORM public.fn_ca_declare_ledger('adjustment', 'bbj_pool', p_pool_id, NULL, NULL, NULL);\n  UPDATE public.bbj_pools\n     SET main_balance   = main_balance   + CASE WHEN p_to_bank = 'main'   THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'main'   THEN v_amt ELSE 0 END,\n         backup_balance = backup_balance + CASE WHEN p_to_bank = 'backup' THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'backup' THEN v_amt ELSE 0 END,\n         promo_balance  = promo_balance  + CASE WHEN p_to_bank = 'promo'  THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'promo'  THEN v_amt ELSE 0 END,\n         updated_at = now()\n   WHERE id = p_pool_id;\n  PERFORM set_config('app.ledger_category', '', true);\n  PERFORM set_config('app.ledger_counterparty', '', true);\n  PERFORM set_config('app.ledger_counterparty_entity', '', true);\n  INSERT INTO public.ca_bbj_bucket_moves (pool_id, from_bank, to_bank, amount, reason, op_id, performed_by)\n  VALUES (p_pool_id, p_from_bank, p_to_bank, v_amt, btrim(p_reason), p_op_id, auth.uid())\n  RETURNING * INTO v_prior;\n  RETURN jsonb_build_object('ok', true, 'replayed', false, 'move_id', v_prior.id, 'amount', v_amt,\n                            'from_bank', p_from_bank, 'to_bank', p_to_bank);\nEND;\n$function$\n",
+        "definition_md5": "65c1a06d2c42a348eadbcc259918a5a9",
+        "identity_arguments": "p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text",
+        "kind": "f",
+        "language": "plpgsql",
+        "leakproof": false,
+        "owner": "postgres",
+        "parallel": "u",
+        "result": "jsonb",
+        "returns_set": false,
+        "rows": 0,
+        "security_definer": true,
+        "settings": [
+          "search_path=public"
+        ],
+        "strict": false,
+        "volatility": "v"
+      },
+      "statements": [
+        "REVOKE ALL ON FUNCTION public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text) FROM PUBLIC;",
+        "GRANT EXECUTE ON FUNCTION public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text) TO service_role;",
+        "SET LOCAL lock_timeout = '1000ms';\nSET LOCAL statement_timeout = '15000ms';\n-- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.\n-- Run in the migration runner's transaction, under exclusive function-DDL ownership.\n-- No business function is invoked. Existing object ownership/ACL must be preserved.\nDO $install$\nDECLARE\n  v_oid oid;\n  v_definition text;\n  v_owner text;\n  v_acl aclitem[];\n  v_config text[];\n  v_security boolean;\n  v_before constant text := $before$CREATE OR REPLACE FUNCTION public.fn_bbj_move_between_banks(p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_amt numeric := round(COALESCE(p_amount, 0), 2);\n  v_pool public.bbj_pools%ROWTYPE; v_have numeric; v_prior public.ca_bbj_bucket_moves%ROWTYPE;\nBEGIN\n  IF NOT (current_user IN ('postgres', 'supabase_admin') OR COALESCE(auth.role(), '') = 'service_role') THEN\n    RAISE EXCEPTION 'fn_bbj_move_between_banks is service only' USING ERRCODE = '42501';\n  END IF;\n  IF p_from_bank NOT IN ('main', 'backup', 'promo') OR p_to_bank NOT IN ('main', 'backup', 'promo') OR p_from_bank = p_to_bank THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'banks_must_be_two_of_main_backup_promo');\n  END IF;\n  IF v_amt <= 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'amount_must_be_positive');\n  END IF;\n  IF length(btrim(COALESCE(p_reason, ''))) < 10 OR COALESCE(btrim(p_op_id), '') = '' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'a_bank_move_needs_a_reason_and_an_op_id');\n  END IF;\n  SELECT * INTO v_pool FROM public.bbj_pools WHERE id = p_pool_id FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'pool_not_found');\n  END IF;\n  SELECT * INTO v_prior FROM public.ca_bbj_bucket_moves WHERE op_id = p_op_id;\n  IF FOUND THEN\n    RETURN jsonb_build_object('ok', true, 'replayed', true, 'move_id', v_prior.id, 'amount', v_prior.amount);\n  END IF;\n  v_have := CASE p_from_bank WHEN 'main' THEN v_pool.main_balance WHEN 'backup' THEN v_pool.backup_balance ELSE v_pool.promo_balance END;\n  v_have := v_have-public.fn_bbj_parked_reserve(p_pool_id,p_from_bank);\n  IF COALESCE(v_have, 0) < v_amt THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'source_bank_cannot_cover_it', 'available', COALESCE(v_have, 0), 'requested', v_amt);\n  END IF;\n  -- Declared as bbj_pool -> bbj_pool: the chips change bank, not account. The\n  -- autoledger writes one leg per bucket column with its label, which is what\n  -- the per-bank reconcile reads.\n  PERFORM public.fn_ca_declare_ledger('adjustment', 'bbj_pool', p_pool_id, NULL, NULL, NULL);\n  UPDATE public.bbj_pools\n     SET main_balance   = main_balance   + CASE WHEN p_to_bank = 'main'   THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'main'   THEN v_amt ELSE 0 END,\n         backup_balance = backup_balance + CASE WHEN p_to_bank = 'backup' THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'backup' THEN v_amt ELSE 0 END,\n         promo_balance  = promo_balance  + CASE WHEN p_to_bank = 'promo'  THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'promo'  THEN v_amt ELSE 0 END,\n         updated_at = now()\n   WHERE id = p_pool_id;\n  PERFORM set_config('app.ledger_category', '', true);\n  PERFORM set_config('app.ledger_counterparty', '', true);\n  PERFORM set_config('app.ledger_counterparty_entity', '', true);\n  INSERT INTO public.ca_bbj_bucket_moves (pool_id, from_bank, to_bank, amount, reason, op_id, performed_by)\n  VALUES (p_pool_id, p_from_bank, p_to_bank, v_amt, btrim(p_reason), p_op_id, auth.uid())\n  RETURNING * INTO v_prior;\n  RETURN jsonb_build_object('ok', true, 'replayed', false, 'move_id', v_prior.id, 'amount', v_amt,\n                            'from_bank', p_from_bank, 'to_bank', p_to_bank);\nEND;\n$function$\n$before$;\n  v_candidate constant text := $candidate$CREATE OR REPLACE FUNCTION public.fn_bbj_move_between_banks(p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_amt numeric := round(COALESCE(p_amount, 0), 2);\n  v_pool public.bbj_pools%ROWTYPE; v_have numeric; v_prior public.ca_bbj_bucket_moves%ROWTYPE;\nBEGIN\n  IF NOT (current_user IN ('postgres', 'supabase_admin') OR COALESCE(auth.role(), '') = 'service_role') THEN\n    RAISE EXCEPTION 'fn_bbj_move_between_banks is service only' USING ERRCODE = '42501';\n  END IF;\n  IF p_from_bank NOT IN ('main', 'backup', 'promo') OR p_to_bank NOT IN ('main', 'backup', 'promo') OR p_from_bank = p_to_bank THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'banks_must_be_two_of_main_backup_promo');\n  END IF;\n  IF v_amt <= 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'amount_must_be_positive');\n  END IF;\n  IF length(btrim(COALESCE(p_reason, ''))) < 10 OR COALESCE(btrim(p_op_id), '') = '' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'a_bank_move_needs_a_reason_and_an_op_id');\n  END IF;\n  SELECT * INTO v_pool FROM public.bbj_pools WHERE id = p_pool_id FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'pool_not_found');\n  END IF;\n  SELECT * INTO v_prior FROM public.ca_bbj_bucket_moves WHERE op_id = p_op_id;\n  IF FOUND THEN\n    IF v_prior.pool_id IS DISTINCT FROM p_pool_id\n       OR v_prior.from_bank IS DISTINCT FROM p_from_bank\n       OR v_prior.to_bank IS DISTINCT FROM p_to_bank\n       OR v_prior.amount IS DISTINCT FROM v_amt THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'op_id_payload_mismatch');\n    END IF;\n    RETURN jsonb_build_object('ok', true, 'replayed', true, 'move_id', v_prior.id, 'amount', v_prior.amount);\n  END IF;\n  v_have := CASE p_from_bank WHEN 'main' THEN v_pool.main_balance WHEN 'backup' THEN v_pool.backup_balance ELSE v_pool.promo_balance END;\n  v_have := v_have-public.fn_bbj_parked_reserve(p_pool_id,p_from_bank);\n  IF COALESCE(v_have, 0) < v_amt THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'source_bank_cannot_cover_it', 'available', COALESCE(v_have, 0), 'requested', v_amt);\n  END IF;\n  -- Declared as bbj_pool -> bbj_pool: the chips change bank, not account. The\n  -- autoledger writes one leg per bucket column with its label, which is what\n  -- the per-bank reconcile reads.\n  PERFORM public.fn_ca_declare_ledger('adjustment', 'bbj_pool', p_pool_id, NULL, NULL, NULL);\n  UPDATE public.bbj_pools\n     SET main_balance   = main_balance   + CASE WHEN p_to_bank = 'main'   THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'main'   THEN v_amt ELSE 0 END,\n         backup_balance = backup_balance + CASE WHEN p_to_bank = 'backup' THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'backup' THEN v_amt ELSE 0 END,\n         promo_balance  = promo_balance  + CASE WHEN p_to_bank = 'promo'  THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'promo'  THEN v_amt ELSE 0 END,\n         updated_at = now()\n   WHERE id = p_pool_id;\n  PERFORM set_config('app.ledger_category', '', true);\n  PERFORM set_config('app.ledger_counterparty', '', true);\n  PERFORM set_config('app.ledger_counterparty_entity', '', true);\n  INSERT INTO public.ca_bbj_bucket_moves (pool_id, from_bank, to_bank, amount, reason, op_id, performed_by)\n  VALUES (p_pool_id, p_from_bank, p_to_bank, v_amt, btrim(p_reason), p_op_id, auth.uid())\n  RETURNING * INTO v_prior;\n  RETURN jsonb_build_object('ok', true, 'replayed', false, 'move_id', v_prior.id, 'amount', v_amt,\n                            'from_bank', p_from_bank, 'to_bank', p_to_bank);\nEND;\n$function$\n$candidate$;\nBEGIN\n  -- Cooperating installers serialize here; this does not fence arbitrary DDL.\n  PERFORM pg_advisory_xact_lock(hashtextextended('FWP02:public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)', 0));\n  v_oid := to_regprocedure('public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)');\n  IF v_oid IS NULL THEN\n    RAISE EXCEPTION 'FWP02 drift: expected existing function';\n  END IF;\n  SELECT pg_get_functiondef(p.oid), pg_get_userbyid(p.proowner), p.proacl, p.proconfig, p.prosecdef\n    INTO v_definition, v_owner, v_acl, v_config, v_security\n    FROM pg_proc p WHERE p.oid = v_oid;\n  IF v_owner IS DISTINCT FROM 'postgres'\n     OR v_acl IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'::aclitem[]\n     OR v_config IS DISTINCT FROM ARRAY['search_path=public']::text[]\n     OR v_security IS DISTINCT FROM true THEN\n    RAISE EXCEPTION 'FWP02 drift: owner/ACL/settings/security differ';\n  END IF;\n  IF v_definition IS NOT DISTINCT FROM v_candidate THEN\n    RETURN; -- Exact already-installed candidate: no replacement or ACL change.\n  END IF;\n  IF v_definition IS DISTINCT FROM v_before THEN\n    RAISE EXCEPTION 'FWP02 drift: function definition differs';\n  END IF;\n  EXECUTE v_candidate;\n  IF to_regprocedure('public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)')::oid IS DISTINCT FROM v_oid THEN\n    RAISE EXCEPTION 'FWP02 postcondition: function identity changed';\n  END IF;\n  SELECT pg_get_functiondef(p.oid), pg_get_userbyid(p.proowner), p.proacl, p.proconfig, p.prosecdef\n    INTO v_definition, v_owner, v_acl, v_config, v_security\n    FROM pg_proc p WHERE p.oid = v_oid;\n  IF v_definition IS DISTINCT FROM v_candidate\n     OR v_owner IS DISTINCT FROM 'postgres'\n     OR v_acl IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'::aclitem[]\n     OR v_config IS DISTINCT FROM ARRAY['search_path=public']::text[]\n     OR v_security IS DISTINCT FROM true THEN\n    RAISE EXCEPTION 'FWP02 postcondition: replacement or metadata differs';\n  END IF;\nEND;\n$install$;\n"
+      ],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": [
+          "p_pool_id",
+          "p_from_bank",
+          "p_to_bank",
+          "p_amount",
+          "p_reason",
+          "p_op_id"
+        ],
+        "probin": null,
+        "proconfig": [
+          "search_path=public"
+        ],
+        "procost": 100,
+        "proisstrict": false,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "fn_bbj_move_between_banks",
+        "pronargdefaults": 0,
+        "pronargs": 6,
+        "proparallel": "u",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": true,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    },
+    {
+      "signature": "public.fn_bbj_parked_reserve(uuid,text)",
+      "before": {
+        "acl": null,
+        "arguments": "p_pool_id uuid, p_bank text",
+        "body_md5": "e8c1e147a4549c45a3064b5c2d8cd036",
+        "cost": 100,
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_bbj_parked_reserve(p_pool_id uuid, p_bank text)\n RETURNS numeric\n LANGUAGE sql\n SET search_path TO 'public'\nAS $function$\n  -- A parked refund remains in this bank but is already owed, not spendable.\n  -- Financial callers must hold bbj_pools FOR UPDATE before reading it.\n  SELECT COALESCE(sum(u.amount),0) FROM public.bbj_unclaimed_shares u\n  JOIN public.bbj_payouts p ON p.id=u.payout_id\n  WHERE u.pool_id=p_pool_id AND u.paid_at IS NULL\n    AND (CASE WHEN p.kind='mini' THEN 'backup' ELSE 'main' END)=p_bank;\n$function$\n",
+        "definition_md5": "0422448da8762dedc060b3e1ddc9857d",
+        "identity_arguments": "p_pool_id uuid, p_bank text",
+        "kind": "f",
+        "language": "sql",
+        "leakproof": false,
+        "owner": "postgres",
+        "parallel": "u",
+        "result": "numeric",
+        "returns_set": false,
+        "rows": 0,
+        "security_definer": false,
+        "settings": [
+          "search_path=public"
+        ],
+        "strict": false,
+        "volatility": "v"
+      },
+      "after": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_pool_id uuid, p_bank text",
+        "body_md5": "e8c1e147a4549c45a3064b5c2d8cd036",
+        "cost": 100,
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_bbj_parked_reserve(p_pool_id uuid, p_bank text)\n RETURNS numeric\n LANGUAGE sql\n SET search_path TO 'public'\nAS $function$\n  -- A parked refund remains in this bank but is already owed, not spendable.\n  -- Financial callers must hold bbj_pools FOR UPDATE before reading it.\n  SELECT COALESCE(sum(u.amount),0) FROM public.bbj_unclaimed_shares u\n  JOIN public.bbj_payouts p ON p.id=u.payout_id\n  WHERE u.pool_id=p_pool_id AND u.paid_at IS NULL\n    AND (CASE WHEN p.kind='mini' THEN 'backup' ELSE 'main' END)=p_bank;\n$function$\n",
+        "definition_md5": "0422448da8762dedc060b3e1ddc9857d",
+        "identity_arguments": "p_pool_id uuid, p_bank text",
+        "kind": "f",
+        "language": "sql",
+        "leakproof": false,
+        "owner": "postgres",
+        "parallel": "u",
+        "result": "numeric",
+        "returns_set": false,
+        "rows": 0,
+        "security_definer": false,
+        "settings": [
+          "search_path=public"
+        ],
+        "strict": false,
+        "volatility": "v"
+      },
+      "statements": [
+        "REVOKE ALL ON FUNCTION public.fn_bbj_parked_reserve(uuid,text) FROM PUBLIC;",
+        "GRANT EXECUTE ON FUNCTION public.fn_bbj_parked_reserve(uuid,text) TO service_role;"
+      ],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": [
+          "p_pool_id",
+          "p_bank"
+        ],
+        "probin": null,
+        "proconfig": [
+          "search_path=public"
+        ],
+        "procost": 100,
+        "proisstrict": false,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "fn_bbj_parked_reserve",
+        "pronargdefaults": 0,
+        "pronargs": 2,
+        "proparallel": "u",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": false,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    },
+    {
+      "signature": "public.fn_log_jackpot_payout_without_hand()",
+      "before": {
+        "acl": null,
+        "body_md5": "ad6aca0f391fd3f9b0afc94fb8aa56ac",
+        "cost": 100,
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_log_jackpot_payout_without_hand()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF NEW.hand_id IS NULL THEN\n    INSERT INTO public.bbj_hand_evidence_log (kind, payout_id, table_id, hand_number, detail)\n    VALUES ('payout_without_hand', NEW.id, NEW.table_id, NEW.hand_number,\n            jsonb_build_object('total_amount', NEW.total_amount,\n                               'note', 'hand_history row was not found when the payout was written'));\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+        "kind": "f",
+        "language": "plpgsql",
+        "leakproof": false,
+        "owner": "postgres",
+        "parallel": "u",
+        "result": "trigger",
+        "returns_set": false,
+        "rows": 0,
+        "security_definer": true,
+        "settings": [
+          "search_path=public"
+        ],
+        "strict": false,
+        "volatility": "v",
+        "arguments": "",
+        "identity_arguments": "",
+        "definition_md5": "4a68a5f2c9c75a3e9ff7551bec0e22d9"
+      },
+      "after": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "body_md5": "ad6aca0f391fd3f9b0afc94fb8aa56ac",
+        "cost": 100,
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_log_jackpot_payout_without_hand()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF NEW.hand_id IS NULL THEN\n    INSERT INTO public.bbj_hand_evidence_log (kind, payout_id, table_id, hand_number, detail)\n    VALUES ('payout_without_hand', NEW.id, NEW.table_id, NEW.hand_number,\n            jsonb_build_object('total_amount', NEW.total_amount,\n                               'note', 'hand_history row was not found when the payout was written'));\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+        "kind": "f",
+        "language": "plpgsql",
+        "leakproof": false,
+        "owner": "postgres",
+        "parallel": "u",
+        "result": "trigger",
+        "returns_set": false,
+        "rows": 0,
+        "security_definer": true,
+        "settings": [
+          "search_path=public"
+        ],
+        "strict": false,
+        "volatility": "v",
+        "arguments": "",
+        "identity_arguments": "",
+        "definition_md5": "4a68a5f2c9c75a3e9ff7551bec0e22d9"
+      },
+      "statements": [
+        "REVOKE ALL ON FUNCTION public.fn_log_jackpot_payout_without_hand() FROM PUBLIC;",
+        "GRANT EXECUTE ON FUNCTION public.fn_log_jackpot_payout_without_hand() TO service_role;"
+      ],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": null,
+        "probin": null,
+        "proconfig": [
+          "search_path=public"
+        ],
+        "procost": 100,
+        "proisstrict": false,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "fn_log_jackpot_payout_without_hand",
+        "pronargdefaults": 0,
+        "pronargs": 0,
+        "proparallel": "u",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": true,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    },
+    {
+      "signature": "public.fn_bbj_ledger_delete_guard()",
+      "before": {
+        "acl": null,
+        "body_md5": "6bc2058752433fc729fbd1d9331c1d0d",
+        "cost": 100,
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_bbj_ledger_delete_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  INSERT INTO public.bbj_ledger_deletions (source_table, row_data)\n  VALUES (TG_TABLE_NAME, to_jsonb(OLD));\n  -- One alert per statement would flood on a cascade; dedupe to one per table per hour.\n  IF NOT EXISTS (\n    SELECT 1 FROM public.financial_alerts\n     WHERE source = 'bbj_ledger_delete_guard'\n       AND context->>'table' = TG_TABLE_NAME\n       AND created_at > now() - interval '1 hour') THEN\n    INSERT INTO public.financial_alerts (severity, source, message, context)\n    VALUES ('critical', 'bbj_ledger_delete_guard',\n      'A BBJ ledger row was deleted. The 2026-08 drift incident was exactly this. Review bbj_ledger_deletions.',\n      jsonb_build_object('table', TG_TABLE_NAME, 'role', current_user,\n                         'app', current_setting('application_name', true)));\n  END IF;\n  RETURN OLD;\nEND $function$\n",
+        "kind": "f",
+        "language": "plpgsql",
+        "leakproof": false,
+        "owner": "postgres",
+        "parallel": "u",
+        "result": "trigger",
+        "returns_set": false,
+        "rows": 0,
+        "security_definer": true,
+        "settings": [
+          "search_path=public"
+        ],
+        "strict": false,
+        "volatility": "v",
+        "arguments": "",
+        "identity_arguments": "",
+        "definition_md5": "dfb9effe2ffc304da21d61a66431f4bb"
+      },
+      "after": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "body_md5": "6bc2058752433fc729fbd1d9331c1d0d",
+        "cost": 100,
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_bbj_ledger_delete_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  INSERT INTO public.bbj_ledger_deletions (source_table, row_data)\n  VALUES (TG_TABLE_NAME, to_jsonb(OLD));\n  -- One alert per statement would flood on a cascade; dedupe to one per table per hour.\n  IF NOT EXISTS (\n    SELECT 1 FROM public.financial_alerts\n     WHERE source = 'bbj_ledger_delete_guard'\n       AND context->>'table' = TG_TABLE_NAME\n       AND created_at > now() - interval '1 hour') THEN\n    INSERT INTO public.financial_alerts (severity, source, message, context)\n    VALUES ('critical', 'bbj_ledger_delete_guard',\n      'A BBJ ledger row was deleted. The 2026-08 drift incident was exactly this. Review bbj_ledger_deletions.',\n      jsonb_build_object('table', TG_TABLE_NAME, 'role', current_user,\n                         'app', current_setting('application_name', true)));\n  END IF;\n  RETURN OLD;\nEND $function$\n",
+        "kind": "f",
+        "language": "plpgsql",
+        "leakproof": false,
+        "owner": "postgres",
+        "parallel": "u",
+        "result": "trigger",
+        "returns_set": false,
+        "rows": 0,
+        "security_definer": true,
+        "settings": [
+          "search_path=public"
+        ],
+        "strict": false,
+        "volatility": "v",
+        "arguments": "",
+        "identity_arguments": "",
+        "definition_md5": "dfb9effe2ffc304da21d61a66431f4bb"
+      },
+      "statements": [
+        "REVOKE ALL ON FUNCTION public.fn_bbj_ledger_delete_guard() FROM PUBLIC;",
+        "GRANT EXECUTE ON FUNCTION public.fn_bbj_ledger_delete_guard() TO service_role;"
+      ],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": null,
+        "probin": null,
+        "proconfig": [
+          "search_path=public"
+        ],
+        "procost": 100,
+        "proisstrict": false,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "fn_bbj_ledger_delete_guard",
+        "pronargdefaults": 0,
+        "pronargs": 0,
+        "proparallel": "u",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": true,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    }
+  ],
+  "builtins": [
+    {
+      "signature": "pg_catalog.\"RI_FKey_check_ins\"()",
+      "before": {
+        "body_md5": "0202d6016df4e8a81b0062a40c6023ec",
+        "definition_md5": "1d61f37aa5d841868619bc5213e05cb7",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_check_ins\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_check_ins$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "after": {
+        "body_md5": "0202d6016df4e8a81b0062a40c6023ec",
+        "definition_md5": "1d61f37aa5d841868619bc5213e05cb7",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_check_ins\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_check_ins$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "statements": [],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": null,
+        "probin": null,
+        "proconfig": null,
+        "procost": 1,
+        "proisstrict": true,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "RI_FKey_check_ins",
+        "pronargdefaults": 0,
+        "pronargs": 0,
+        "proparallel": "s",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": false,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    },
+    {
+      "signature": "pg_catalog.\"RI_FKey_check_upd\"()",
+      "before": {
+        "body_md5": "b95e5133ec61e5d6ef06f767aa556993",
+        "definition_md5": "91f3ff61ee7527b0688ce1a1f11db752",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_check_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_check_upd$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "after": {
+        "body_md5": "b95e5133ec61e5d6ef06f767aa556993",
+        "definition_md5": "91f3ff61ee7527b0688ce1a1f11db752",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_check_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_check_upd$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "statements": [],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": null,
+        "probin": null,
+        "proconfig": null,
+        "procost": 1,
+        "proisstrict": true,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "RI_FKey_check_upd",
+        "pronargdefaults": 0,
+        "pronargs": 0,
+        "proparallel": "s",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": false,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    },
+    {
+      "signature": "pg_catalog.\"RI_FKey_cascade_del\"()",
+      "before": {
+        "body_md5": "2f31bc6a0634a61665919631336df3a0",
+        "definition_md5": "370af44ecc509ef17eb22b658ab8a6cb",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_cascade_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_cascade_del$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "after": {
+        "body_md5": "2f31bc6a0634a61665919631336df3a0",
+        "definition_md5": "370af44ecc509ef17eb22b658ab8a6cb",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_cascade_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_cascade_del$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "statements": [],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": null,
+        "probin": null,
+        "proconfig": null,
+        "procost": 1,
+        "proisstrict": true,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "RI_FKey_cascade_del",
+        "pronargdefaults": 0,
+        "pronargs": 0,
+        "proparallel": "s",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": false,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    },
+    {
+      "signature": "pg_catalog.\"RI_FKey_restrict_del\"()",
+      "before": {
+        "body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+        "definition_md5": "253aa1f96333ac2ce5f05cd227965091",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "after": {
+        "body_md5": "a3d1e4f68dfaaa4bd6744a649d9ed11d",
+        "definition_md5": "253aa1f96333ac2ce5f05cd227965091",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_restrict_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_restrict_del$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "statements": [],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": null,
+        "probin": null,
+        "proconfig": null,
+        "procost": 1,
+        "proisstrict": true,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "RI_FKey_restrict_del",
+        "pronargdefaults": 0,
+        "pronargs": 0,
+        "proparallel": "s",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": false,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    },
+    {
+      "signature": "pg_catalog.\"RI_FKey_noaction_upd\"()",
+      "before": {
+        "body_md5": "5909814be8c209a36e3f00dad2047ec7",
+        "definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "after": {
+        "body_md5": "5909814be8c209a36e3f00dad2047ec7",
+        "definition_md5": "dae4248018b89ad39b9bd38c0eaa5a54",
+        "definition": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+        "owner": "postgres",
+        "acl": null,
+        "settings": null,
+        "security_definer": false,
+        "volatility": "v",
+        "identity_arguments": "",
+        "arguments": "",
+        "result": "trigger",
+        "language": "internal",
+        "strict": true,
+        "leakproof": false,
+        "parallel": "s",
+        "cost": 1,
+        "rows": 0,
+        "kind": "f",
+        "returns_set": false
+      },
+      "statements": [],
+      "raw_fixed": {
+        "proargdefaults": null,
+        "proargmodes": null,
+        "proargnames": null,
+        "probin": null,
+        "proconfig": null,
+        "procost": 1,
+        "proisstrict": true,
+        "prokind": "f",
+        "proleakproof": false,
+        "proname": "RI_FKey_noaction_upd",
+        "pronargdefaults": 0,
+        "pronargs": 0,
+        "proparallel": "s",
+        "proretset": false,
+        "prorows": 0,
+        "prosecdef": false,
+        "prosqlbody": null,
+        "prosupport": "-",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v"
+      }
+    }
+  ],
+  "tables": [
+    {
+      "relation": "public.ca_bbj_bucket_moves",
+      "before": {
+        "acl": null,
+        "columns": [
+          {
+            "acl": null,
+            "default": "nextval('ca_bbj_bucket_moves_id_seq'::regclass)",
+            "generated": "",
+            "identity": "",
+            "name": "id",
+            "notnull": true,
+            "type": "bigint"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "pool_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "from_bank",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "to_bank",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "amount",
+            "notnull": true,
+            "type": "numeric"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "reason",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "op_id",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "performed_by",
+            "notnull": false,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": "CURRENT_USER",
+            "generated": "",
+            "identity": "",
+            "name": "db_role",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": "now()",
+            "generated": "",
+            "identity": "",
+            "name": "created_at",
+            "notnull": true,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "constraints": [
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2))))",
+            "definition_pretty": "CHECK (amount > 0::numeric AND amount = round(amount, 2))",
+            "name": "ca_bbj_bucket_moves_amount_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((from_bank <> to_bank))",
+            "definition_pretty": "CHECK (from_bank <> to_bank)",
+            "name": "ca_bbj_bucket_moves_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((from_bank = ANY (ARRAY['main'::text, 'backup'::text, 'promo'::text])))",
+            "definition_pretty": "CHECK (from_bank = ANY (ARRAY['main'::text, 'backup'::text, 'promo'::text]))",
+            "name": "ca_bbj_bucket_moves_from_bank_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "UNIQUE (op_id)",
+            "definition_pretty": "UNIQUE (op_id)",
+            "name": "ca_bbj_bucket_moves_op_id_key",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)",
+            "name": "ca_bbj_bucket_moves_pkey",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((length(btrim(reason)) >= 10))",
+            "definition_pretty": "CHECK (length(btrim(reason)) >= 10)",
+            "name": "ca_bbj_bucket_moves_reason_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((to_bank = ANY (ARRAY['main'::text, 'backup'::text, 'promo'::text])))",
+            "definition_pretty": "CHECK (to_bank = ANY (ARRAY['main'::text, 'backup'::text, 'promo'::text]))",
+            "name": "ca_bbj_bucket_moves_to_bank_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))",
+            "definition_pretty": "CHECK (amount IS NULL OR amount = round(amount, 2))",
+            "name": "chk_amount_is_two_decimal_places",
+            "validated": true
+          }
+        ],
+        "force_rls": false,
+        "indexes": [
+          {
+            "definition": "CREATE UNIQUE INDEX ca_bbj_bucket_moves_pkey ON public.ca_bbj_bucket_moves USING btree (id)",
+            "name": "ca_bbj_bucket_moves_pkey",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE UNIQUE INDEX ca_bbj_bucket_moves_op_id_key ON public.ca_bbj_bucket_moves USING btree (op_id)",
+            "name": "ca_bbj_bucket_moves_op_id_key",
+            "ready": true,
+            "valid": true
+          }
+        ],
+        "owner": "postgres",
+        "policies": [],
+        "relkind": "r",
+        "reloptions": null,
+        "rls": true,
+        "triggers": [],
+        "view_definition": null
+      },
+      "after": {
+        "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+        "columns": [
+          {
+            "acl": null,
+            "default": "nextval('ca_bbj_bucket_moves_id_seq'::regclass)",
+            "generated": "",
+            "identity": "",
+            "name": "id",
+            "notnull": true,
+            "type": "bigint"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "pool_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "from_bank",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "to_bank",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "amount",
+            "notnull": true,
+            "type": "numeric"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "reason",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "op_id",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "performed_by",
+            "notnull": false,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": "CURRENT_USER",
+            "generated": "",
+            "identity": "",
+            "name": "db_role",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": "now()",
+            "generated": "",
+            "identity": "",
+            "name": "created_at",
+            "notnull": true,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "constraints": [
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2))))",
+            "definition_pretty": "CHECK (amount > 0::numeric AND amount = round(amount, 2))",
+            "name": "ca_bbj_bucket_moves_amount_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((from_bank <> to_bank))",
+            "definition_pretty": "CHECK (from_bank <> to_bank)",
+            "name": "ca_bbj_bucket_moves_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((from_bank = ANY (ARRAY['main'::text, 'backup'::text, 'promo'::text])))",
+            "definition_pretty": "CHECK (from_bank = ANY (ARRAY['main'::text, 'backup'::text, 'promo'::text]))",
+            "name": "ca_bbj_bucket_moves_from_bank_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "UNIQUE (op_id)",
+            "definition_pretty": "UNIQUE (op_id)",
+            "name": "ca_bbj_bucket_moves_op_id_key",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)",
+            "name": "ca_bbj_bucket_moves_pkey",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((length(btrim(reason)) >= 10))",
+            "definition_pretty": "CHECK (length(btrim(reason)) >= 10)",
+            "name": "ca_bbj_bucket_moves_reason_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((to_bank = ANY (ARRAY['main'::text, 'backup'::text, 'promo'::text])))",
+            "definition_pretty": "CHECK (to_bank = ANY (ARRAY['main'::text, 'backup'::text, 'promo'::text]))",
+            "name": "ca_bbj_bucket_moves_to_bank_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))",
+            "definition_pretty": "CHECK (amount IS NULL OR amount = round(amount, 2))",
+            "name": "chk_amount_is_two_decimal_places",
+            "validated": true
+          }
+        ],
+        "force_rls": false,
+        "indexes": [
+          {
+            "definition": "CREATE UNIQUE INDEX ca_bbj_bucket_moves_pkey ON public.ca_bbj_bucket_moves USING btree (id)",
+            "name": "ca_bbj_bucket_moves_pkey",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE UNIQUE INDEX ca_bbj_bucket_moves_op_id_key ON public.ca_bbj_bucket_moves USING btree (op_id)",
+            "name": "ca_bbj_bucket_moves_op_id_key",
+            "ready": true,
+            "valid": true
+          }
+        ],
+        "owner": "postgres",
+        "policies": [],
+        "relkind": "r",
+        "reloptions": null,
+        "rls": true,
+        "triggers": [],
+        "view_definition": null
+      },
+      "statements": [
+        "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ca_bbj_bucket_moves TO postgres;",
+        "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ca_bbj_bucket_moves TO service_role;"
+      ],
+      "authority": "Exact captured full metadata; historical effective ACL NULL from complete constructor."
+    },
+    {
+      "relation": "public.bbj_payouts",
+      "before": {
+        "acl": null,
+        "columns": [
+          {
+            "acl": null,
+            "default": "gen_random_uuid()",
+            "generated": "",
+            "identity": "",
+            "name": "id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "pool_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "hand_id",
+            "notnull": false,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "table_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "hand_number",
+            "notnull": false,
+            "type": "bigint"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "winner_user_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "loser_user_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "total_amount",
+            "notnull": true,
+            "type": "numeric(20,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "winner_share",
+            "notnull": true,
+            "type": "numeric(20,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "loser_share",
+            "notnull": true,
+            "type": "numeric(20,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "table_share",
+            "notnull": true,
+            "type": "numeric(20,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "table_player_count",
+            "notnull": true,
+            "type": "integer"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "metadata",
+            "notnull": false,
+            "type": "jsonb"
+          },
+          {
+            "acl": null,
+            "default": "now()",
+            "generated": "",
+            "identity": "",
+            "name": "created_at",
+            "notnull": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "acl": null,
+            "default": "'main'::text",
+            "generated": "",
+            "identity": "",
+            "name": "kind",
+            "notnull": true,
+            "type": "text"
+          }
+        ],
+        "constraints": [
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((kind = ANY (ARRAY['main'::text, 'mini'::text])))",
+            "definition_pretty": "CHECK (kind = ANY (ARRAY['main'::text, 'mini'::text]))",
+            "name": "bbj_payouts_kind_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)",
+            "name": "bbj_payouts_pkey",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "FOREIGN KEY (pool_id) REFERENCES bbj_pools(id) ON DELETE RESTRICT",
+            "definition_pretty": "FOREIGN KEY (pool_id) REFERENCES bbj_pools(id) ON DELETE RESTRICT",
+            "name": "bbj_payouts_pool_id_fkey",
+            "validated": true
+          }
+        ],
+        "force_rls": false,
+        "indexes": [
+          {
+            "definition": "CREATE UNIQUE INDEX bbj_payouts_pool_table_hand_uidx ON public.bbj_payouts USING btree (pool_id, table_id, hand_number)",
+            "name": "bbj_payouts_pool_table_hand_uidx",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE UNIQUE INDEX bbj_payouts_pkey ON public.bbj_payouts USING btree (id)",
+            "name": "bbj_payouts_pkey",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE INDEX idx_bbj_payouts_table_hand ON public.bbj_payouts USING btree (table_id, hand_number)",
+            "name": "idx_bbj_payouts_table_hand",
+            "ready": true,
+            "valid": true
+          }
+        ],
+        "owner": "postgres",
+        "policies": [
+          {
+            "check": null,
+            "command": "r",
+            "name": "bbj_payouts_admin_only",
+            "permissive": true,
+            "roles": [
+              "authenticated"
+            ],
+            "using": "fn_is_platform_admin()"
+          }
+        ],
+        "relkind": "r",
+        "reloptions": null,
+        "rls": true,
+        "triggers": [
+          {
+            "definition": "CREATE TRIGGER trg_bbj_payouts_delete_guard BEFORE DELETE ON public.bbj_payouts FOR EACH ROW EXECUTE FUNCTION fn_bbj_ledger_delete_guard()",
+            "enabled": "O",
+            "name": "trg_bbj_payouts_delete_guard"
+          },
+          {
+            "definition": "CREATE TRIGGER trg_log_jackpot_payout_without_hand AFTER INSERT ON public.bbj_payouts FOR EACH ROW EXECUTE FUNCTION fn_log_jackpot_payout_without_hand()",
+            "enabled": "O",
+            "name": "trg_log_jackpot_payout_without_hand"
+          }
+        ],
+        "view_definition": null
+      },
+      "after": {
+        "acl": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+        "columns": [
+          {
+            "acl": null,
+            "default": "gen_random_uuid()",
+            "generated": "",
+            "identity": "",
+            "name": "id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "pool_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "hand_id",
+            "notnull": false,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "table_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "hand_number",
+            "notnull": false,
+            "type": "bigint"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "winner_user_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "loser_user_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "total_amount",
+            "notnull": true,
+            "type": "numeric(20,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "winner_share",
+            "notnull": true,
+            "type": "numeric(20,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "loser_share",
+            "notnull": true,
+            "type": "numeric(20,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "table_share",
+            "notnull": true,
+            "type": "numeric(20,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "table_player_count",
+            "notnull": true,
+            "type": "integer"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "metadata",
+            "notnull": false,
+            "type": "jsonb"
+          },
+          {
+            "acl": null,
+            "default": "now()",
+            "generated": "",
+            "identity": "",
+            "name": "created_at",
+            "notnull": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "acl": null,
+            "default": "'main'::text",
+            "generated": "",
+            "identity": "",
+            "name": "kind",
+            "notnull": true,
+            "type": "text"
+          }
+        ],
+        "constraints": [
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((kind = ANY (ARRAY['main'::text, 'mini'::text])))",
+            "definition_pretty": "CHECK (kind = ANY (ARRAY['main'::text, 'mini'::text]))",
+            "name": "bbj_payouts_kind_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)",
+            "name": "bbj_payouts_pkey",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "FOREIGN KEY (pool_id) REFERENCES bbj_pools(id) ON DELETE RESTRICT",
+            "definition_pretty": "FOREIGN KEY (pool_id) REFERENCES bbj_pools(id) ON DELETE RESTRICT",
+            "name": "bbj_payouts_pool_id_fkey",
+            "validated": true
+          }
+        ],
+        "force_rls": false,
+        "indexes": [
+          {
+            "definition": "CREATE UNIQUE INDEX bbj_payouts_pool_table_hand_uidx ON public.bbj_payouts USING btree (pool_id, table_id, hand_number)",
+            "name": "bbj_payouts_pool_table_hand_uidx",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE UNIQUE INDEX bbj_payouts_pkey ON public.bbj_payouts USING btree (id)",
+            "name": "bbj_payouts_pkey",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE INDEX idx_bbj_payouts_table_hand ON public.bbj_payouts USING btree (table_id, hand_number)",
+            "name": "idx_bbj_payouts_table_hand",
+            "ready": true,
+            "valid": true
+          }
+        ],
+        "owner": "postgres",
+        "policies": [
+          {
+            "check": null,
+            "command": "r",
+            "name": "bbj_payouts_admin_only",
+            "permissive": true,
+            "roles": [
+              "authenticated"
+            ],
+            "using": "fn_is_platform_admin()"
+          }
+        ],
+        "relkind": "r",
+        "reloptions": null,
+        "rls": true,
+        "triggers": [
+          {
+            "definition": "CREATE TRIGGER trg_bbj_payouts_delete_guard BEFORE DELETE ON public.bbj_payouts FOR EACH ROW EXECUTE FUNCTION fn_bbj_ledger_delete_guard()",
+            "enabled": "O",
+            "name": "trg_bbj_payouts_delete_guard"
+          },
+          {
+            "definition": "CREATE TRIGGER trg_log_jackpot_payout_without_hand AFTER INSERT ON public.bbj_payouts FOR EACH ROW EXECUTE FUNCTION fn_log_jackpot_payout_without_hand()",
+            "enabled": "O",
+            "name": "trg_log_jackpot_payout_without_hand"
+          }
+        ],
+        "view_definition": null
+      },
+      "statements": [
+        "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_payouts TO postgres;",
+        "GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO anon;",
+        "GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO authenticated;",
+        "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_payouts TO service_role;"
+      ],
+      "authority": "Exact captured full metadata; historical effective ACL NULL from complete constructor."
+    },
+    {
+      "relation": "public.bbj_unclaimed_shares",
+      "before": {
+        "acl": null,
+        "columns": [
+          {
+            "acl": null,
+            "default": "gen_random_uuid()",
+            "generated": "",
+            "identity": "",
+            "name": "id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "payout_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "pool_id",
+            "notnull": false,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "table_id",
+            "notnull": false,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "user_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "amount",
+            "notnull": true,
+            "type": "numeric(14,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "reason",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": "now()",
+            "generated": "",
+            "identity": "",
+            "name": "created_at",
+            "notnull": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "paid_at",
+            "notnull": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "paid_note",
+            "notnull": false,
+            "type": "text"
+          }
+        ],
+        "constraints": [
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((amount > (0)::numeric))",
+            "definition_pretty": "CHECK (amount > 0::numeric)",
+            "name": "bbj_unclaimed_shares_amount_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "FOREIGN KEY (payout_id) REFERENCES bbj_payouts(id) ON DELETE CASCADE",
+            "definition_pretty": "FOREIGN KEY (payout_id) REFERENCES bbj_payouts(id) ON DELETE CASCADE",
+            "name": "bbj_unclaimed_shares_payout_id_fkey",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)",
+            "name": "bbj_unclaimed_shares_pkey",
+            "validated": true
+          }
+        ],
+        "force_rls": false,
+        "indexes": [
+          {
+            "definition": "CREATE INDEX idx_bbj_unclaimed_shares_payout_id_fk ON public.bbj_unclaimed_shares USING btree (payout_id)",
+            "name": "idx_bbj_unclaimed_shares_payout_id_fk",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE UNIQUE INDEX bbj_unclaimed_shares_pkey ON public.bbj_unclaimed_shares USING btree (id)",
+            "name": "bbj_unclaimed_shares_pkey",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE UNIQUE INDEX uq_bbj_unclaimed_open ON public.bbj_unclaimed_shares USING btree (payout_id, user_id) WHERE (paid_at IS NULL)",
+            "name": "uq_bbj_unclaimed_open",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE INDEX idx_bbj_unclaimed_user ON public.bbj_unclaimed_shares USING btree (user_id) WHERE (paid_at IS NULL)",
+            "name": "idx_bbj_unclaimed_user",
+            "ready": true,
+            "valid": true
+          }
+        ],
+        "owner": "postgres",
+        "policies": [
+          {
+            "check": null,
+            "command": "r",
+            "name": "bbj_unclaimed_self_select",
+            "permissive": true,
+            "roles": [
+              "authenticated"
+            ],
+            "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())"
+          }
+        ],
+        "relkind": "r",
+        "reloptions": null,
+        "rls": true,
+        "triggers": [],
+        "view_definition": null
+      },
+      "after": {
+        "acl": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}",
+        "columns": [
+          {
+            "acl": null,
+            "default": "gen_random_uuid()",
+            "generated": "",
+            "identity": "",
+            "name": "id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "payout_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "pool_id",
+            "notnull": false,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "table_id",
+            "notnull": false,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "user_id",
+            "notnull": true,
+            "type": "uuid"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "amount",
+            "notnull": true,
+            "type": "numeric(14,2)"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "reason",
+            "notnull": true,
+            "type": "text"
+          },
+          {
+            "acl": null,
+            "default": "now()",
+            "generated": "",
+            "identity": "",
+            "name": "created_at",
+            "notnull": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "paid_at",
+            "notnull": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "acl": null,
+            "default": null,
+            "generated": "",
+            "identity": "",
+            "name": "paid_note",
+            "notnull": false,
+            "type": "text"
+          }
+        ],
+        "constraints": [
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "CHECK ((amount > (0)::numeric))",
+            "definition_pretty": "CHECK (amount > 0::numeric)",
+            "name": "bbj_unclaimed_shares_amount_check",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "FOREIGN KEY (payout_id) REFERENCES bbj_payouts(id) ON DELETE CASCADE",
+            "definition_pretty": "FOREIGN KEY (payout_id) REFERENCES bbj_payouts(id) ON DELETE CASCADE",
+            "name": "bbj_unclaimed_shares_payout_id_fkey",
+            "validated": true
+          },
+          {
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)",
+            "name": "bbj_unclaimed_shares_pkey",
+            "validated": true
+          }
+        ],
+        "force_rls": false,
+        "indexes": [
+          {
+            "definition": "CREATE INDEX idx_bbj_unclaimed_shares_payout_id_fk ON public.bbj_unclaimed_shares USING btree (payout_id)",
+            "name": "idx_bbj_unclaimed_shares_payout_id_fk",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE UNIQUE INDEX bbj_unclaimed_shares_pkey ON public.bbj_unclaimed_shares USING btree (id)",
+            "name": "bbj_unclaimed_shares_pkey",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE UNIQUE INDEX uq_bbj_unclaimed_open ON public.bbj_unclaimed_shares USING btree (payout_id, user_id) WHERE (paid_at IS NULL)",
+            "name": "uq_bbj_unclaimed_open",
+            "ready": true,
+            "valid": true
+          },
+          {
+            "definition": "CREATE INDEX idx_bbj_unclaimed_user ON public.bbj_unclaimed_shares USING btree (user_id) WHERE (paid_at IS NULL)",
+            "name": "idx_bbj_unclaimed_user",
+            "ready": true,
+            "valid": true
+          }
+        ],
+        "owner": "postgres",
+        "policies": [
+          {
+            "check": null,
+            "command": "r",
+            "name": "bbj_unclaimed_self_select",
+            "permissive": true,
+            "roles": [
+              "authenticated"
+            ],
+            "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())"
+          }
+        ],
+        "relkind": "r",
+        "reloptions": null,
+        "rls": true,
+        "triggers": [],
+        "view_definition": null
+      },
+      "statements": [
+        "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO postgres;",
+        "GRANT SELECT, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO anon;",
+        "GRANT SELECT, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO authenticated;",
+        "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO service_role;"
+      ],
+      "authority": "Exact captured full metadata; historical effective ACL NULL from complete constructor."
+    },
+    {
+      "relation": "public.bbj_hand_evidence_log",
+      "before": {
+        "owner": "postgres",
+        "rls": true,
+        "force_rls": false,
+        "acl": null,
+        "relkind": "r",
+        "reloptions": null,
+        "view_definition": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "bigint",
+            "notnull": true,
+            "default": "nextval('bbj_hand_evidence_log_id_seq'::regclass)",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "at",
+            "type": "timestamp with time zone",
+            "notnull": true,
+            "default": "now()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "kind",
+            "type": "text",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "payout_id",
+            "type": "uuid",
+            "notnull": false,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "hand_id",
+            "type": "uuid",
+            "notnull": false,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "table_id",
+            "type": "uuid",
+            "notnull": false,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "hand_number",
+            "type": "bigint",
+            "notnull": false,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "db_role",
+            "type": "text",
+            "notnull": true,
+            "default": "CURRENT_USER",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "application",
+            "type": "text",
+            "notnull": true,
+            "default": "COALESCE(current_setting('application_name'::text, true), ''::text)",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "detail",
+            "type": "jsonb",
+            "notnull": true,
+            "default": "'{}'::jsonb",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          }
+        ],
+        "constraints": [
+          {
+            "name": "bbj_hand_evidence_log_pkey",
+            "validated": true,
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "bbj_hand_evidence_log_pkey",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE UNIQUE INDEX bbj_hand_evidence_log_pkey ON public.bbj_hand_evidence_log USING btree (id)"
+          }
+        ],
+        "triggers": [],
+        "policies": []
+      },
+      "after": {
+        "owner": "postgres",
+        "rls": true,
+        "force_rls": false,
+        "acl": null,
+        "relkind": "r",
+        "reloptions": null,
+        "view_definition": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "bigint",
+            "notnull": true,
+            "default": "nextval('bbj_hand_evidence_log_id_seq'::regclass)",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "at",
+            "type": "timestamp with time zone",
+            "notnull": true,
+            "default": "now()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "kind",
+            "type": "text",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "payout_id",
+            "type": "uuid",
+            "notnull": false,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "hand_id",
+            "type": "uuid",
+            "notnull": false,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "table_id",
+            "type": "uuid",
+            "notnull": false,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "hand_number",
+            "type": "bigint",
+            "notnull": false,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "db_role",
+            "type": "text",
+            "notnull": true,
+            "default": "CURRENT_USER",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "application",
+            "type": "text",
+            "notnull": true,
+            "default": "COALESCE(current_setting('application_name'::text, true), ''::text)",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "detail",
+            "type": "jsonb",
+            "notnull": true,
+            "default": "'{}'::jsonb",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          }
+        ],
+        "constraints": [
+          {
+            "name": "bbj_hand_evidence_log_pkey",
+            "validated": true,
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "bbj_hand_evidence_log_pkey",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE UNIQUE INDEX bbj_hand_evidence_log_pkey ON public.bbj_hand_evidence_log USING btree (id)"
+          }
+        ],
+        "triggers": [],
+        "policies": []
+      },
+      "statements": [],
+      "authority": "Complete historical sections plus later constructor negative grant/DDL audit; no current capture exists for this cold table."
+    },
+    {
+      "relation": "public.bbj_ledger_deletions",
+      "before": {
+        "owner": "postgres",
+        "rls": true,
+        "force_rls": false,
+        "acl": null,
+        "relkind": "r",
+        "reloptions": null,
+        "view_definition": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "notnull": true,
+            "default": "gen_random_uuid()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "source_table",
+            "type": "text",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "row_data",
+            "type": "jsonb",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "deleted_by_role",
+            "type": "text",
+            "notnull": true,
+            "default": "CURRENT_USER",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "application_name",
+            "type": "text",
+            "notnull": true,
+            "default": "current_setting('application_name'::text, true)",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "deleted_at",
+            "type": "timestamp with time zone",
+            "notnull": true,
+            "default": "now()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          }
+        ],
+        "constraints": [
+          {
+            "name": "bbj_ledger_deletions_pkey",
+            "validated": true,
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "bbj_ledger_deletions_pkey",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE UNIQUE INDEX bbj_ledger_deletions_pkey ON public.bbj_ledger_deletions USING btree (id)"
+          }
+        ],
+        "triggers": [],
+        "policies": []
+      },
+      "after": {
+        "owner": "postgres",
+        "rls": true,
+        "force_rls": false,
+        "acl": null,
+        "relkind": "r",
+        "reloptions": null,
+        "view_definition": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "notnull": true,
+            "default": "gen_random_uuid()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "source_table",
+            "type": "text",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "row_data",
+            "type": "jsonb",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "deleted_by_role",
+            "type": "text",
+            "notnull": true,
+            "default": "CURRENT_USER",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "application_name",
+            "type": "text",
+            "notnull": true,
+            "default": "current_setting('application_name'::text, true)",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "deleted_at",
+            "type": "timestamp with time zone",
+            "notnull": true,
+            "default": "now()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          }
+        ],
+        "constraints": [
+          {
+            "name": "bbj_ledger_deletions_pkey",
+            "validated": true,
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "bbj_ledger_deletions_pkey",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE UNIQUE INDEX bbj_ledger_deletions_pkey ON public.bbj_ledger_deletions USING btree (id)"
+          }
+        ],
+        "triggers": [],
+        "policies": []
+      },
+      "statements": [],
+      "authority": "Complete historical sections plus later constructor negative grant/DDL audit; no current capture exists for this cold table."
+    },
+    {
+      "relation": "public.bbj_payout_recipients",
+      "before": {
+        "owner": "postgres",
+        "rls": true,
+        "force_rls": false,
+        "acl": null,
+        "relkind": "r",
+        "reloptions": null,
+        "view_definition": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "notnull": true,
+            "default": "gen_random_uuid()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "payout_id",
+            "type": "uuid",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "user_id",
+            "type": "uuid",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "amount",
+            "type": "numeric(20,2)",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "notnull": true,
+            "default": "now()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          }
+        ],
+        "constraints": [
+          {
+            "name": "bbj_payout_recipients_pkey",
+            "validated": true,
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)"
+          },
+          {
+            "name": "bbj_payout_recipients_payout_id_fkey",
+            "validated": true,
+            "deferrable": false,
+            "deferred": false,
+            "definition": "FOREIGN KEY (payout_id) REFERENCES bbj_payouts(id) ON DELETE CASCADE",
+            "definition_pretty": "FOREIGN KEY (payout_id) REFERENCES bbj_payouts(id) ON DELETE CASCADE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "bbj_payout_recipients_pkey",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE UNIQUE INDEX bbj_payout_recipients_pkey ON public.bbj_payout_recipients USING btree (id)"
+          },
+          {
+            "name": "idx_bbj_payout_recipients_payout",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE INDEX idx_bbj_payout_recipients_payout ON public.bbj_payout_recipients USING btree (payout_id)"
+          },
+          {
+            "name": "idx_bbj_payout_recipients_user",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE INDEX idx_bbj_payout_recipients_user ON public.bbj_payout_recipients USING btree (user_id)"
+          },
+          {
+            "name": "uq_bbj_payout_recipients_payout_user",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE UNIQUE INDEX uq_bbj_payout_recipients_payout_user ON public.bbj_payout_recipients USING btree (payout_id, user_id)"
+          }
+        ],
+        "triggers": [
+          {
+            "name": "trg_bbj_recipients_delete_guard",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_bbj_recipients_delete_guard BEFORE DELETE ON public.bbj_payout_recipients FOR EACH ROW EXECUTE FUNCTION fn_bbj_ledger_delete_guard()"
+          }
+        ],
+        "policies": [
+          {
+            "name": "bbj_payout_recipients_self_select",
+            "command": "r",
+            "permissive": true,
+            "roles": [
+              "authenticated"
+            ],
+            "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())",
+            "check": null
+          }
+        ]
+      },
+      "after": {
+        "owner": "postgres",
+        "rls": true,
+        "force_rls": false,
+        "acl": null,
+        "relkind": "r",
+        "reloptions": null,
+        "view_definition": null,
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "notnull": true,
+            "default": "gen_random_uuid()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "payout_id",
+            "type": "uuid",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "user_id",
+            "type": "uuid",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "amount",
+            "type": "numeric(20,2)",
+            "notnull": true,
+            "default": null,
+            "identity": "",
+            "generated": "",
+            "acl": null
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "notnull": true,
+            "default": "now()",
+            "identity": "",
+            "generated": "",
+            "acl": null
+          }
+        ],
+        "constraints": [
+          {
+            "name": "bbj_payout_recipients_pkey",
+            "validated": true,
+            "deferrable": false,
+            "deferred": false,
+            "definition": "PRIMARY KEY (id)",
+            "definition_pretty": "PRIMARY KEY (id)"
+          },
+          {
+            "name": "bbj_payout_recipients_payout_id_fkey",
+            "validated": true,
+            "deferrable": false,
+            "deferred": false,
+            "definition": "FOREIGN KEY (payout_id) REFERENCES bbj_payouts(id) ON DELETE CASCADE",
+            "definition_pretty": "FOREIGN KEY (payout_id) REFERENCES bbj_payouts(id) ON DELETE CASCADE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "bbj_payout_recipients_pkey",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE UNIQUE INDEX bbj_payout_recipients_pkey ON public.bbj_payout_recipients USING btree (id)"
+          },
+          {
+            "name": "idx_bbj_payout_recipients_payout",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE INDEX idx_bbj_payout_recipients_payout ON public.bbj_payout_recipients USING btree (payout_id)"
+          },
+          {
+            "name": "idx_bbj_payout_recipients_user",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE INDEX idx_bbj_payout_recipients_user ON public.bbj_payout_recipients USING btree (user_id)"
+          },
+          {
+            "name": "uq_bbj_payout_recipients_payout_user",
+            "valid": true,
+            "ready": true,
+            "definition": "CREATE UNIQUE INDEX uq_bbj_payout_recipients_payout_user ON public.bbj_payout_recipients USING btree (payout_id, user_id)"
+          }
+        ],
+        "triggers": [
+          {
+            "name": "trg_bbj_recipients_delete_guard",
+            "enabled": "O",
+            "definition": "CREATE TRIGGER trg_bbj_recipients_delete_guard BEFORE DELETE ON public.bbj_payout_recipients FOR EACH ROW EXECUTE FUNCTION fn_bbj_ledger_delete_guard()"
+          }
+        ],
+        "policies": [
+          {
+            "name": "bbj_payout_recipients_self_select",
+            "command": "r",
+            "permissive": true,
+            "roles": [
+              "authenticated"
+            ],
+            "using": "((user_id = ( SELECT auth.uid() AS uid)) OR fn_is_platform_admin())",
+            "check": null
+          }
+        ]
+      },
+      "statements": [],
+      "authority": "Complete historical sections plus later constructor negative grant/DDL audit; no current capture exists for this cold table."
+    }
+  ],
+  "sequences": [
+    {
+      "name": "public.ca_bbj_bucket_moves_id_seq",
+      "before": {
+        "name": "public.ca_bbj_bucket_moves_id_seq",
+        "owner": "postgres",
+        "acl": null,
+        "relkind": "S",
+        "persistence": "p",
+        "replident": "n",
+        "reloptions": null,
+        "type": "bigint",
+        "start": "1",
+        "minimum": "1",
+        "maximum": "9223372036854775807",
+        "increment": "1",
+        "cache": "1",
+        "cycle": false,
+        "owned_by": [
+          {
+            "relation": "public.ca_bbj_bucket_moves",
+            "column": "id",
+            "deptype": "a"
+          }
+        ]
+      },
+      "after": {
+        "name": "public.ca_bbj_bucket_moves_id_seq",
+        "owner": "postgres",
+        "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+        "relkind": "S",
+        "persistence": "p",
+        "replident": "n",
+        "reloptions": null,
+        "type": "bigint",
+        "start": "1",
+        "minimum": "1",
+        "maximum": "9223372036854775807",
+        "increment": "1",
+        "cache": "1",
+        "cycle": false,
+        "owned_by": [
+          {
+            "relation": "public.ca_bbj_bucket_moves",
+            "column": "id",
+            "deptype": "a"
+          }
+        ]
+      },
+      "statements": [
+        "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO postgres;",
+        "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO anon;",
+        "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO authenticated;",
+        "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO service_role;"
+      ]
+    },
+    {
+      "name": "public.bbj_hand_evidence_log_id_seq",
+      "before": {
+        "name": "public.bbj_hand_evidence_log_id_seq",
+        "owner": "postgres",
+        "acl": null,
+        "relkind": "S",
+        "persistence": "p",
+        "replident": "n",
+        "reloptions": null,
+        "type": "bigint",
+        "start": "1",
+        "minimum": "1",
+        "maximum": "9223372036854775807",
+        "increment": "1",
+        "cache": "1",
+        "cycle": false,
+        "owned_by": [
+          {
+            "relation": "public.bbj_hand_evidence_log",
+            "column": "id",
+            "deptype": "a"
+          }
+        ]
+      },
+      "after": {
+        "name": "public.bbj_hand_evidence_log_id_seq",
+        "owner": "postgres",
+        "acl": null,
+        "relkind": "S",
+        "persistence": "p",
+        "replident": "n",
+        "reloptions": null,
+        "type": "bigint",
+        "start": "1",
+        "minimum": "1",
+        "maximum": "9223372036854775807",
+        "increment": "1",
+        "cache": "1",
+        "cycle": false,
+        "owned_by": [
+          {
+            "relation": "public.bbj_hand_evidence_log",
+            "column": "id",
+            "deptype": "a"
+          }
+        ]
+      },
+      "statements": []
+    }
+  ],
+  "foreign_keys": [
+    {
+      "name": "bbj_payouts_pool_id_fkey",
+      "child": "public.bbj_payouts",
+      "parent": "public.bbj_pools",
+      "columns": [
+        "pool_id"
+      ],
+      "references": [
+        "id"
+      ],
+      "match": "s",
+      "update": "a",
+      "delete": "r",
+      "validated": true,
+      "deferrable": false,
+      "deferred": false,
+      "local": true,
+      "inheritance_count": 0,
+      "noinherit": true,
+      "parent_constraint": "0",
+      "equality_operators": [
+        "pg_catalog.=(uuid,uuid)"
+      ]
+    },
+    {
+      "name": "bbj_unclaimed_shares_payout_id_fkey",
+      "child": "public.bbj_unclaimed_shares",
+      "parent": "public.bbj_payouts",
+      "columns": [
+        "payout_id"
+      ],
+      "references": [
+        "id"
+      ],
+      "match": "s",
+      "update": "a",
+      "delete": "c",
+      "validated": true,
+      "deferrable": false,
+      "deferred": false,
+      "local": true,
+      "inheritance_count": 0,
+      "noinherit": true,
+      "parent_constraint": "0",
+      "equality_operators": [
+        "pg_catalog.=(uuid,uuid)"
+      ]
+    },
+    {
+      "name": "bbj_payout_recipients_payout_id_fkey",
+      "child": "public.bbj_payout_recipients",
+      "parent": "public.bbj_payouts",
+      "columns": [
+        "payout_id"
+      ],
+      "references": [
+        "id"
+      ],
+      "match": "s",
+      "update": "a",
+      "delete": "c",
+      "validated": true,
+      "deferrable": false,
+      "deferred": false,
+      "local": true,
+      "inheritance_count": 0,
+      "noinherit": true,
+      "parent_constraint": "0",
+      "equality_operators": [
+        "pg_catalog.=(uuid,uuid)"
+      ]
+    }
+  ],
+  "ri_triggers": [
+    {
+      "constraint": "bbj_payouts_pool_id_fkey",
+      "child": "public.bbj_payouts",
+      "parent": "public.bbj_pools",
+      "relation": "public.bbj_payouts",
+      "other_relation": "public.bbj_pools",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_check_ins",
+      "type": 5,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_payouts_pool_id_fkey",
+      "child": "public.bbj_payouts",
+      "parent": "public.bbj_pools",
+      "relation": "public.bbj_payouts",
+      "other_relation": "public.bbj_pools",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_check_upd",
+      "type": 17,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_payouts_pool_id_fkey",
+      "child": "public.bbj_payouts",
+      "parent": "public.bbj_pools",
+      "relation": "public.bbj_pools",
+      "other_relation": "public.bbj_payouts",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_restrict_del",
+      "type": 9,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_payouts_pool_id_fkey",
+      "child": "public.bbj_payouts",
+      "parent": "public.bbj_pools",
+      "relation": "public.bbj_pools",
+      "other_relation": "public.bbj_payouts",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_noaction_upd",
+      "type": 17,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_unclaimed_shares_payout_id_fkey",
+      "child": "public.bbj_unclaimed_shares",
+      "parent": "public.bbj_payouts",
+      "relation": "public.bbj_unclaimed_shares",
+      "other_relation": "public.bbj_payouts",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_check_ins",
+      "type": 5,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_unclaimed_shares_payout_id_fkey",
+      "child": "public.bbj_unclaimed_shares",
+      "parent": "public.bbj_payouts",
+      "relation": "public.bbj_unclaimed_shares",
+      "other_relation": "public.bbj_payouts",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_check_upd",
+      "type": 17,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_unclaimed_shares_payout_id_fkey",
+      "child": "public.bbj_unclaimed_shares",
+      "parent": "public.bbj_payouts",
+      "relation": "public.bbj_payouts",
+      "other_relation": "public.bbj_unclaimed_shares",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_cascade_del",
+      "type": 9,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_unclaimed_shares_payout_id_fkey",
+      "child": "public.bbj_unclaimed_shares",
+      "parent": "public.bbj_payouts",
+      "relation": "public.bbj_payouts",
+      "other_relation": "public.bbj_unclaimed_shares",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_noaction_upd",
+      "type": 17,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_payout_recipients_payout_id_fkey",
+      "child": "public.bbj_payout_recipients",
+      "parent": "public.bbj_payouts",
+      "relation": "public.bbj_payout_recipients",
+      "other_relation": "public.bbj_payouts",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_check_ins",
+      "type": 5,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_payout_recipients_payout_id_fkey",
+      "child": "public.bbj_payout_recipients",
+      "parent": "public.bbj_payouts",
+      "relation": "public.bbj_payout_recipients",
+      "other_relation": "public.bbj_payouts",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_check_upd",
+      "type": 17,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_payout_recipients_payout_id_fkey",
+      "child": "public.bbj_payout_recipients",
+      "parent": "public.bbj_payouts",
+      "relation": "public.bbj_payouts",
+      "other_relation": "public.bbj_payout_recipients",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_cascade_del",
+      "type": 9,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    },
+    {
+      "constraint": "bbj_payout_recipients_payout_id_fkey",
+      "child": "public.bbj_payout_recipients",
+      "parent": "public.bbj_payouts",
+      "relation": "public.bbj_payouts",
+      "other_relation": "public.bbj_payout_recipients",
+      "function_schema": "pg_catalog",
+      "function_name": "RI_FKey_noaction_upd",
+      "type": 17,
+      "enabled": "O",
+      "internal": true,
+      "deferrable": false,
+      "deferred": false,
+      "args": "",
+      "columns": [],
+      "nargs": 0,
+      "qual": null,
+      "parent_trigger": "0",
+      "old_table": null,
+      "new_table": null,
+      "index_matches_constraint": true
+    }
+  ],
+  "constructor": [
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/00-roles.sql",
+      "sha256": "b8b52a6640879a763e5c6b9c5d070e9268e2af68b59f0ab1c495ddc964720991"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "sha256": "83eaf66eb3c7e7110740b4cedeb3c6c5c445a905b9c70d3b882113ce127b250f"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/15-current-prerequisites.sql",
+      "sha256": "b9f89372969b79ac171c5474e89b62439d4515ac277617e5eac267a10e41bd8b"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/30-current-functions.sql",
+      "sha256": "470bb118cb13c7fde17e94284dd7173cf924ce2b75551c418a0cfb3a7dfd6343"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/20-current-schema.sql",
+      "sha256": "db7ef71d882176788c28f81ba81cb7fe0e363cf2425730cbcda702900b2d81d2"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/40-replay-candidate.sql",
+      "sha256": "fe609f6502fec2183a7dadf4126828e2df957aff1f2958a4ca797d393d4645e6"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/50-current-attachments-acl.sql",
+      "sha256": "cff67c65cee3ef4d517f44b67f48a42744ecf6603f4819d70c4799a0fe596b7a"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0010/registry-overlay.sql",
+      "sha256": "cf0b5af86142257bfbffe598471a52f1a0c6914bb44ccb0799039296f8bf14b3"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/90-historical-event-triggers.sql",
+      "sha256": "8faafdde98338cd6ec7a1d99c07090d98ecb4552bdf49d72e842e652ae190d04"
+    }
+  ],
+  "derivation_notes": [
+    "No captured OID is portable. RI names are generated; identity is both relation endpoints plus original constraint name, function and trigger type.",
+    "Builtin owner postgres derives from original initdb -U postgres. Current Supabase bootstrap owner supabase_admin is retained only as capture evidence.",
+    "Bigint limit is original default sequence type and NO MAXVALUE, kept as exact text; rounded recovered number is not an expectation.",
+    "Cold models are source-derived PostgreSQL17 deparse/DDL expectations, not newly observed catalogs. Runtime must refuse any discrepancy; no expectation refresh permitted."
+  ]
+}

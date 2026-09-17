@@ -6,6 +6,7 @@ import {
   createHorseExecutionWitness,
   retireHorseExecutionWitness,
   settleHorseExecutionWitness,
+  type HorseAcceptedAction,
 } from './HorseExecutionWitness.js';
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
 import { horsePolicyOwnership } from './HorsePolicyRegistry.js';
@@ -16,6 +17,7 @@ const input = {
   requestId: 1,
   fence: 'turn',
   decisionTimeMs: 1000,
+  player: { seat: 1 },
   gameState: { gameVariant: 'plo4', gameMode: 'cash', stage: 'flop', boardCount: 2 },
 } as unknown as LiveHorseDecisionSnapshot;
 const make = (
@@ -29,7 +31,11 @@ const make = (
     governorScale: 1,
   });
 
-const accepted = (action: ActionType, amount: number | null, intended = true) => [
+const accepted = (
+  action: ActionType,
+  amount: number | null,
+  intended = true
+): HorseAcceptedAction[] => [
   { record: { seat: 1, action, amount: amount ?? 0, stage: 'flop' as const }, intended },
 ];
 
@@ -39,6 +45,86 @@ beforeEach(() => {
 });
 
 describe('private execution witness', () => {
+  it.each([10, 20])(
+    'reconciles a sized call against its selected amount, not just its name (%s)',
+    (amount) => {
+      const witness = make({ action: 'call', amount: 10, thinkTime: 1 });
+      settleHorseExecutionWitness(witness, {
+        applied: true,
+        acceptedActions: accepted('call', amount),
+      });
+      expect(witness.executionStatus).toBe(amount === 10 ? 'intended' : 'coerced');
+      expect(witness.executedAmount).toBe(amount);
+    }
+  );
+
+  it.each([100.3, 100.31])('binds all-in intent to the original street total (%s)', (amount) => {
+    const snapshot = { ...input, player: { ...input.player, stack: 100.1, bet: 0.2 } };
+    const witness = createHorseExecutionWitness(
+      snapshot as never,
+      { action: 'all_in', thinkTime: 1 },
+      { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
+    snapshot.player.stack = 999;
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: accepted('all_in', amount),
+    });
+    expect(witness.executionStatus).toBe(amount === 100.3 ? 'intended' : 'coerced');
+    expect(witness.executedAmount).toBe(amount);
+  });
+
+  it.each(['call', 'all_in'] as const)(
+    'leaves an unsized %s amount unverified without its original canonical price',
+    (action) => {
+      const witness = make({ action, thinkTime: 1 });
+      settleHorseExecutionWitness(witness, {
+        applied: true,
+        acceptedActions: accepted(action, 20),
+      });
+      expect(witness.executionStatus).toBe('unverified');
+      expect(witness.retirementReason).toBe('accepted_amount_unverifiable');
+      expect(witness.acceptedActions[0].record.amount).toBe(20);
+    }
+  );
+  it.each([
+    { seat: 2, stage: 'flop' as const },
+    { seat: 1, stage: 'turn' as const },
+  ])('does not certify a matching wager from the wrong execution context %j', (over) => {
+    const witness = make();
+    const records = accepted('bet', 20);
+    records[0] = { ...records[0], record: { ...records[0].record, ...over } };
+    settleHorseExecutionWitness(witness, { applied: true, acceptedActions: records });
+    expect(witness.executionStatus).toBe('unverified');
+    expect(witness.retirementReason).toBe('accepted_context_mismatch');
+    expect(witness.executedAction).toBeNull();
+    expect(witness.acceptedActions[0].record).toMatchObject(over);
+    settleHorseExecutionWitness(witness, { applied: true, acceptedActions: accepted('bet', 20) });
+    expect(drainFires()).toEqual([
+      { feature: 'phase15_execution_unverified', fires: 1 },
+      { feature: 'phase15_fast_execution_unverified', fires: 1 },
+    ]);
+  });
+  it('does not certify execution when a malformed fallback snapshot omitted the actor', () => {
+    const snapshot = { ...input, player: undefined } as unknown as LiveHorseDecisionSnapshot;
+    const witness = createHorseExecutionWitness(
+      snapshot,
+      { action: 'check', thinkTime: 0 },
+      {
+        requestId: 1,
+        lane: 'worker_fallback',
+        computeMs: 0,
+        governorScale: 1,
+      }
+    );
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: accepted('check', null),
+    });
+    expect(witness.identity.heroSeat).toBeNull();
+    expect(witness.executionStatus).toBe('unverified');
+    expect(witness.retirementReason).toBe('accepted_context_mismatch');
+  });
   it('copies immutable policy ownership independently of the returned decision', () => {
     const decision: HorseDecision = { action: 'check', thinkTime: 0 };
     decision.policyOwnership = horsePolicyOwnership('plo4', decision, false);
@@ -129,7 +215,15 @@ describe('private execution witness', () => {
   });
 
   it('does not mislabel an unsized call when the executor supplies its canonical price', () => {
-    const witness = make({ action: 'call', thinkTime: 1 });
+    const witness = createHorseExecutionWitness(
+      {
+        ...input,
+        player: { ...input.player, stack: 20 },
+        gameState: { ...input.gameState, toCall: 50 },
+      } as never,
+      { action: 'call', thinkTime: 1 },
+      { requestId: 1, lane: 'fast', computeMs: 1, governorScale: 1 }
+    );
     settleHorseExecutionWitness(witness, {
       applied: true,
       acceptedActions: accepted('call', 20),

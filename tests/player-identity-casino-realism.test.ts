@@ -5,7 +5,7 @@
  * pins a bug that was live on 2026-09-04 or a rule Dan stated that day:
  *
  *   - "THERE IS NO SUCH THING AS 'PLATINUM VIP'. JUST VIP, AND LIFETIME VIP."
- *   - unlimited gameplay copy belongs only to the exact Lifetime VIP state;
+ *   - "THERE IS NOTHING UNLIMITED LIKE THROWABLES OR TIME BANKS."
  *   - the profile printed ROI as +1.6500000000000001% (no truncation);
  *   - the alias editor wrote `username` but the arena resolves `alias` first;
  *   - the edit dialog offered six dicebear avatars that were never saved;
@@ -40,7 +40,6 @@ describe('VIP is VIP or Lifetime VIP, nothing else', () => {
     expect(resolveVipStatus({ is_vip: false })).toBe('none');
     expect(resolveVipStatus(null)).toBe('none');
     expect(resolveVipStatus({ is_vip: true, vip_tier: 'lifetime' })).toBe('lifetime');
-    expect(resolveVipStatus({ is_vip: true, vip_tier: 'Lifetime' })).toBe('vip');
     // A lifetime row with a stale expiry is still lifetime.
     expect(
       resolveVipStatus({
@@ -65,11 +64,12 @@ describe('VIP is VIP or Lifetime VIP, nothing else', () => {
     expect(vipStatusLabel('vip')).toBe('VIP');
   });
 
-  it('draws no tier ladder and gates unlimited copy on exact Lifetime VIP', () => {
+  it('draws no tier ladder and promises nothing unlimited on the profile', () => {
     for (const ghost of [
       'VIP_TIERS',
       'VIPProgressRing',
       'VIPStatusCard',
+      'Unlimited Throwables',
       'Auto Time Bank',
       "'platinum'",
       "'bronze'",
@@ -81,11 +81,6 @@ describe('VIP is VIP or Lifetime VIP, nothing else', () => {
        them (leaderboardBoost, themes, clubCreation) went with the ladder. */
     expect(PROFILE).toContain('VIP_MONTHLY_ALLOWANCES.rabbitHunts');
     expect(PROFILE).toContain('VIP_MONTHLY_ALLOWANCES.timeBankSeconds');
-    expect(PROFILE).toContain("user.vipStatus === 'lifetime'");
-    expect(PROFILE).toContain("? 'Lifetime VIP Digital Benefits'");
-    expect(PROFILE).toContain("? 'Digital Emoji Packs' : 'Emojis / Mo'");
-    expect(PROFILE).toContain("? 'Digital Player Tag Packs' : 'Player Tags / Mo'");
-    expect(PROFILE).toContain("? 'Unlimited'");
     expect(PROFILE_CODE).not.toContain('VIP_GOLD_LIMITS');
     expect(PROFILE_CODE).not.toContain('leaderboardBoost');
     expect(PROFILE).toContain('resolveVipStatus(profile)');

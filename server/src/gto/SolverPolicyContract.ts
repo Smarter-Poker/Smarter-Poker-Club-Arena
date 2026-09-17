@@ -455,7 +455,10 @@ export function solverPolicyKeyMissingDimensions(key: SolverPolicyDecisionKey): 
     key.holding.length !== holdingCount[key.variant]
   )
     missing.push('holding');
-  const cards = [...(key?.board || []), ...(key?.holding || [])];
+  const cards = [
+    ...(Array.isArray(key?.board) ? key.board : []),
+    ...(Array.isArray(key?.holding) ? key.holding : []),
+  ];
   if (new Set(cards).size !== cards.length) missing.push('cardUniqueness');
   if (
     key?.publicActionHistory?.complete !== true ||
@@ -918,6 +921,11 @@ export function validateSolverPolicyAnswer(value: unknown): { valid: boolean; er
     if (value.kind !== 'unavailable' && value.actions.length === 0) errors.push('actions.empty');
     value.actions.forEach((action, index) => validateAction(action, errors, index));
   }
+  // Relational checks below dereference action fields and decision-key vectors.
+  // Reject malformed JSON at the shape boundary before using those values;
+  // a bad external artifact must produce a validation result, never crash its
+  // consumer or bypass the loader's last-known-good replacement contract.
+  if (errors.length > 0) return { valid: false, errors: [...new Set(errors)] };
   const actionIds = new Set<string>(
     (Array.isArray(value.actions) ? value.actions : []).map((entry: any) => entry?.id)
   );

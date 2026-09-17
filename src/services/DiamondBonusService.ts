@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { bonusTotal, type BonusBudget } from '../utils/bonusGameBudget';
 import { validSpinAmount, PLINKO_DIAMONDS_PER_DROP } from '../utils/bonusGameBudget';
 import { parseChoiceRound } from './DiamondChoiceService';
+import { validateCrashSettlement } from '../utils/crashReceipt';
 
 export type BonusGame = 'plinko' | 'crash' | 'crossing' | 'mines';
 export class BonusRefusal extends Error {}
@@ -11,6 +12,8 @@ export interface BonusStart {
   game: BonusGame;
   budget: BonusBudget;
   commitId: string;
+  /** Absent only on a pending request saved by an older client. */
+  serverSeedHash?: string;
   seed: string;
   mode?: string;
   tableVersion?: number;
@@ -52,6 +55,11 @@ export function parsePlinkoBonus(value: unknown): PlinkoBonus {
   const id = (v: unknown) =>
     typeof v === 'string' &&
     /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(v);
+  const slotForPath = (bits: number) => {
+    let slot = 0;
+    for (let row = 0; row < 16; row++) slot += (bits >> row) & 1;
+    return slot;
+  };
   if (
     !v ||
     v.ok !== true ||
@@ -99,6 +107,7 @@ export function parsePlinkoBonus(value: unknown): PlinkoBonus {
         !Number.isInteger(ball.slot) ||
         ball.slot < 0 ||
         ball.slot > 16 ||
+        ball.slot !== slotForPath(ball.path_bits) ||
         ball.multiplier_cents !== v.multipliers_cents[ball.slot] ||
         !cents(ball.payout_chips)
     ) ||
@@ -121,6 +130,18 @@ export const DiamondBonusService = {
     )
       throw new BonusRefusal('Choose 25 To 2,500 Diamonds');
     if (!userId) throw new BonusRefusal('Sign In To Play');
+    const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    if (typeof input.seed !== 'string' || !input.seed.trim().length || input.seed.length > 64)
+      throw new BonusRefusal('Enter A Seed With 1 To 64 Characters');
+    if (
+      !uuid.test(input.clubId) ||
+      !uuid.test(input.commitId) ||
+      !['plinko', 'crash', 'crossing', 'mines'].includes(input.game) ||
+      !PLINKO_DIAMONDS_PER_DROP.includes(input.budget.denomination as 1) ||
+      bonusTotal(input.budget) % input.budget.denomination !== 0 ||
+      (input.serverSeedHash !== undefined && !/^[a-f0-9]{64}$/.test(input.serverSeedHash))
+    )
+      throw new BonusRefusal('The Bonus Settings Could Not Be Verified');
     rememberBonus(userId, input);
     const { data, error } = await supabase.rpc(
       'fn_diamond_bonus_start' as never,
@@ -170,8 +191,16 @@ export const DiamondBonusService = {
       { p_club_id: clubId, p_game: game } as never
     );
     if (error) throw error;
-    const value = data as { ok: boolean; result: unknown };
+    const value = data as { ok: boolean; result: Record<string, unknown> | null };
     if (value?.ok !== true) throw new Error('Your Bonus Could Not Be Checked');
+    if (
+      value.result !== null &&
+      (!value.result ||
+        value.result.ok !== true ||
+        value.result.club_id !== clubId ||
+        value.result.game !== game)
+    )
+      throw new Error('Your Saved Bonus Does Not Match This Game');
     return value.result;
   },
 };
@@ -187,6 +216,7 @@ export function validateBonusReceipt(input: BonusStart, raw: Record<string, unkn
     throw new Error('The Bonus Receipt Could Not Be Verified');
   };
   const b = raw.bonus as PlinkoBonus['bonus'] | undefined;
+  const fairness = raw.fairness as Record<string, unknown> | undefined;
   if (
     raw.ok !== true ||
     raw.game !== input.game ||
@@ -195,7 +225,11 @@ export function validateBonusReceipt(input: BonusStart, raw: Record<string, unkn
     b?.base_diamonds !== input.budget.base ||
     b?.added_diamonds !== (input.budget.doubled ? input.budget.base : 0) ||
     b?.total_diamonds !== bonusTotal(input.budget) ||
-    raw.bet_diamonds !== bonusTotal(input.budget)
+    raw.bet_diamonds !== bonusTotal(input.budget) ||
+    (input.serverSeedHash !== undefined &&
+      (!/^[a-f0-9]{64}$/.test(input.serverSeedHash) ||
+        (input.game === 'crash' ? fairness?.server_seed_hash : raw.server_seed_hash) !==
+          input.serverSeedHash))
   )
     fail();
   if (input.game === 'plinko') {
@@ -218,7 +252,6 @@ export function validateBonusReceipt(input: BonusStart, raw: Record<string, unkn
       fail();
   } else {
     const f = raw.fairness as Record<string, unknown> | undefined;
-    const o = raw.outcome as Record<string, unknown> | null;
     if (
       !id(raw.round_id) ||
       !id(raw.host_id) ||
@@ -247,33 +280,7 @@ export function validateBonusReceipt(input: BonusStart, raw: Record<string, unkn
       raw.auto_cashout_cents !== (input.autoCashoutCents ?? null)
     )
       fail();
-    if (raw.status === 'open') {
-      if (
-        o !== null ||
-        f?.server_seed !== undefined ||
-        f?.roll !== undefined ||
-        !Number.isSafeInteger(raw.multiplier_now_cents)
-      )
-        fail();
-    } else if (
-      !o ||
-      o.status !== raw.status ||
-      !finite(o.payout_chips) ||
-      o.payout_chips < 0 ||
-      Math.abs(o.payout_chips * 100 - Math.round(o.payout_chips * 100)) > 1e-8 ||
-      !finite(o.crash_cents) ||
-      o.crash_cents < 100 ||
-      typeof f?.server_seed !== 'string' ||
-      !/^[a-f0-9]{64}$/.test(f.server_seed) ||
-      !Number.isSafeInteger(f.roll) ||
-      Number(f.roll) < 0 ||
-      Number(f.roll) >= 281474976710656 ||
-      (raw.status === 'crashed' && o.payout_chips !== 0) ||
-      (raw.status === 'cashed' &&
-        (!Number.isSafeInteger(o.cashout_cents) ||
-          Number(o.cashout_cents) < 101 ||
-          Number(o.cashout_cents) > Math.min(Number(raw.cap_cents), o.crash_cents)))
-    )
-      fail();
+    // Start, replay and cashout must agree before a saved wager can be cleared.
+    validateCrashSettlement(raw, raw.round_id as string);
   }
 }

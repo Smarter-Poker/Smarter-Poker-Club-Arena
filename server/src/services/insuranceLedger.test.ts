@@ -16,7 +16,7 @@
  *   3. a definitive failure reports with the PLAYER ID in the context string —
  *      the original shipped a broken template literal ('...paramspl') that
  *      dropped it
- *   4. a definitive failure raises a DURABLE financial alert, because Sentry
+ *   4. a definitive failure raises a DURABLE financial alert, because error reporting
  *      does not survive as a reconcilable database row
  *   5. the function is TOTAL: it never rejects, whatever the transport does
  */
@@ -56,9 +56,6 @@ vi.mock('@supabase/supabase-js', () => ({
 vi.mock('./errorReporter.js', () => ({
   reportError: (...args: unknown[]) => mockReportError(...args),
   reportWarning: vi.fn(),
-  initSentry: vi.fn(),
-  flushSentry: vi.fn(),
-  setServerContext: vi.fn(),
 }));
 
 // supabase.ts reaches for this with a dynamic import inside the failure branch

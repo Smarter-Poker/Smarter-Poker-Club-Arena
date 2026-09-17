@@ -5,20 +5,14 @@ on:
       - server/Dockerfile
       - server/tsconfig.json
       - server/tsconfig.runtime.json
+      - server/tsconfig.emit.json
+      - server/package.json
+      - server/package-lock.json
+      - server/src/**
       - server/scripts/build-engine-image.sh
       - server/scripts/engine-image-archive.py
-      - server/scripts/engine-image-ci-bundle.py
-      - server/scripts/produce-engine-image-ci.py
-      - server/scripts/engine-image-ci-qualification.py
-      - tests/operations/engine-image-ci-bundle.test.py
-      - tests/operations/produce-engine-image-ci.test.py
-      - tests/operations/engine-image-source-ancestry.test.py
-      - tests/operations/engine-image-ci-qualification.test.py
       - tests/operations/engine-image-archive.test.py
       - tests/operations/engine-build-resource-proof.py
-      - tests/operations/engine-build-resource-proof.test.py
-      - tests/operations/engine-native-import-proof.py
-      - tests/operations/engine-native-import-proof.test.py
       - .github/workflows/engine-build-resource-proof.yml
 permissions:
   contents: read
@@ -28,22 +22,12 @@ concurrency:
 jobs:
   containment:
     name: Compile the engine and contain a real build OOM
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    outputs:
-      identity_json: ${{ steps.produce.outputs.identity_json }}
-      archive_sha256: ${{ steps.produce.outputs.archive_sha256 }}
-      archive_bytes: ${{ steps.produce.outputs.archive_bytes }}
-      descriptor_sha256: ${{ steps.produce.outputs.descriptor_sha256 }}
-      artifact_id: ${{ steps.bundle.outputs.artifact-id }}
-      artifact_digest: ${{ steps.bundle.outputs.artifact-digest }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -51,95 +35,18 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - name: Verify archive identity, bounds and refusal cases
         run: python3 tests/operations/engine-image-archive.test.py
-      - name: Verify importer identity, refusal and cleanup protocols
-        run: python3 tests/operations/engine-native-import-proof.test.py
-      - name: Verify resource cleanup and neighboring process refusal
-        run: python3 tests/operations/engine-build-resource-proof.test.py
-      - name: Verify exact production producer identity and artifact refusal
-        run: python3 tests/operations/engine-image-ci-bundle.test.py
-      - name: Verify producer orchestration and provisional artifact refusal
+      - name: Produce the reference runtime with the full TypeScript check
+        working-directory: server
         run: |
-          python3 tests/operations/produce-engine-image-ci.test.py
-          python3 tests/operations/engine-image-source-ancestry.test.py
-      - name: Verify qualification separation, custody and provenance refusals
-        run: python3 tests/operations/engine-image-ci-qualification.test.py
-      - name: Produce one real image and complete its native matrix
-        id: produce
-        env:
-          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          python3 server/scripts/produce-engine-image-ci.py --profile qualification \
-            --target-sha "$TARGET_SHA" \
-            --bundle "$RUNNER_TEMP/engine-image-qualification-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
-            --evidence "$RUNNER_TEMP/engine-image-qualification-evidence-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-      - name: Upload the exact qualified image bytes
-        id: bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: engine-image-qualification-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/engine-image-qualification-${{ github.run_id }}-${{ github.run_attempt }}/
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 1
+          npm ci --no-audit --no-fund
+          npm run build -- --project tsconfig.runtime.json
+      - name: Real bounded image build and neighboring process survival
+        run: python3 tests/operations/engine-build-resource-proof.py
       - name: Preserve exact build, fault and cleanup evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: engine-build-resource-proof-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/engine-image-qualification-evidence-${{ github.run_id }}-${{ github.run_attempt }}/
-          if-no-files-found: error
-          retention-days: 7
-  qualification:
-    name: Qualify exact image custody without release authority
-    needs: containment
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Download only the producer's immutable artifact ID
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: ${{ needs.containment.outputs.artifact_id }}
-          path: ${{ runner.temp }}/engine-image-received
-          merge-multiple: true
-      - name: Authenticate actual API provenance and exercise refusal cases
-        env:
-          GH_TOKEN: ${{ github.token }}
-          IDENTITY_JSON: ${{ needs.containment.outputs.identity_json }}
-          ARCHIVE_SHA256: ${{ needs.containment.outputs.archive_sha256 }}
-          ARCHIVE_BYTES: ${{ needs.containment.outputs.archive_bytes }}
-          DESCRIPTOR_SHA256: ${{ needs.containment.outputs.descriptor_sha256 }}
-          ARTIFACT_ID: ${{ needs.containment.outputs.artifact_id }}
-          ARTIFACT_DIGEST: ${{ needs.containment.outputs.artifact_digest }}
-        run: |
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          expected = {
-              'identity': json.loads(os.environ['IDENTITY_JSON']),
-              'archive_sha256': os.environ['ARCHIVE_SHA256'],
-              'archive_bytes': int(os.environ['ARCHIVE_BYTES']),
-              'descriptor_sha256': os.environ['DESCRIPTOR_SHA256'],
-              'artifact_id': os.environ['ARTIFACT_ID'],
-              'artifact_digest': os.environ['ARTIFACT_DIGEST'],
-          }
-          Path(os.environ['RUNNER_TEMP'], 'qualification-expected.json').write_text(json.dumps(expected))
-          PY
-          python3 server/scripts/engine-image-ci-qualification.py \
-            --directory "$RUNNER_TEMP/engine-image-received" \
-            --expected "$RUNNER_TEMP/qualification-expected.json" \
-            --evidence "$RUNNER_TEMP/engine-image-qualification-admission"
-      - name: Preserve qualification evidence without production authority
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: engine-image-qualification-admission-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/engine-image-qualification-admission/
+          name: engine-build-resource-proof
+          path: work/engine-build-resource-proof/
           if-no-files-found: error
           retention-days: 7

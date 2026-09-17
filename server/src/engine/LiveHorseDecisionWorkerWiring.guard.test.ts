@@ -72,11 +72,20 @@ describe('live horse decisions stay outside the table event loop', () => {
     expect(workerRuntime).toContain('this.deps.captureDecisionEffects(() =>');
     expect(workerRuntime).toContain('decision: captured.value');
     expect(workerRuntime).toContain(
-      "effects: captured.value.policyFallback === 'brain_exception' ? [] : captured.effects"
+      'horseReferenceWagerWasRetained(captured.value) ? captured.effects : []'
     );
-    expect(workerRuntime).toContain('this.deps.applyDecisionEffects(request.effects)');
+    const commit = sliceMethod(workerRuntime, '  private executeEffectCommit(');
+    // The later IPC request may only select the exact batch this worker issued;
+    // it cannot supply replacement plan records or apply a duplicate twice.
+    expect(commit).toContain('const issued = this.issuedPlanBatches.get(key)');
+    expect(commit).toContain('horsePlanBatchBindingKey(request.planBinding) !== issued.bindingKey');
+    expect(commit).toContain('horseDecisionEffectsKey(request.effects) !== issued.effectsKey');
+    expect(commit).toContain("if (issued.state !== 'applied')");
+    expect(commit).toContain('this.deps.applyDecisionEffects(issued.effects)');
+    expect(commit).not.toContain('this.deps.applyDecisionEffects(request.effects)');
     expect(schedule).toContain('worker.runWithDispatchBarrier(() =>');
     expect(schedule).toContain('intendedApplied = applied');
+    expect(schedule).toMatch(/intendedApplied\s*&&\s*exactWagerAccepted\s*&&/);
     expect(schedule).toContain('fastResult.effects.length > 0');
     expect(schedule).toContain("action === 'bet' || action === 'raise'");
     expect(schedule).toContain('.commitDecisionEffects(');

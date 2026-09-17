@@ -16,10 +16,14 @@ cannot veto or interrupt the existing action. The witness and the six existing
 policy receipts use the accepted action when this record is available.
 
 A witness preserves intended, coerced, fallback and not-executed outcomes.
-Accepted-without-record and multiple accepted records remain explicitly
+Accepted-without-record, actor/street mismatch and multiple accepted records remain explicitly
 unverified; a boolean alone never certifies the action. A recorded action is
 not erased merely because a later callback threw. The existing finite telemetry
 counters publish execution status and lane, without request identifiers.
+
+Version2 binds the original Horse seat as well as its street. A mismatching
+controller record is retained without inferring execution; see the
+[decision-read consistency audit](./horse-decision-read-consistency-2026-09-14.md).
 
 ## Boundaries
 

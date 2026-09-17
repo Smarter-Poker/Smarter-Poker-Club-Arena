@@ -1,5 +1,0 @@
-{
-  "_owner": "operational-alert-routing/video-library-inventory-counts",
-  "_comment": "Applied through Supabase on 2026-09-14 and read back at 05:04 UTC: complete 1917-row inventory and service-only execution confirmed.",
-  "functions": ["fn_video_library_scrape_inventory"]
-}

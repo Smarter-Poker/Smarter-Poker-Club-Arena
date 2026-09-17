@@ -119,17 +119,6 @@ export function arenaGameCardActionsForEntry(
     };
   }
   const full = entry.capacity > 0 && entry.players >= entry.capacity;
-  /* The whole board's door is shut (Diamond Phase 8): the event is listed,
-     its Details still open, and the primary says what is true. */
-  if (ctx.registrationClosedLabel && !running) {
-    return {
-      primaryLabel: ctx.registrationClosedLabel,
-      primaryTone: 'neutral',
-      primaryDisabled: true,
-      secondaryLabel: 'Details',
-      onSecondary: () => ctx.onViewTable?.(entry),
-    };
-  }
   const registrationClosed = running || full;
   return {
     primaryLabel: registrationClosed

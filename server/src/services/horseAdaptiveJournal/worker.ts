@@ -13,6 +13,7 @@ try {
   // Loading/parsing public batches and service transport stays in this
   // dedicated thread. No source payload or service credential crosses IPC.
   const { processAdaptiveJournalWork } = await import('../HorseAdaptiveJournalWork.js');
+  const { processHorseCommittedPotAudit } = await import('../HorseCommittedPotAudit.js');
   const { processJournaledOpponentModels } = await import('../HorseJournaledOpponentModels.js');
   const { pruneAdaptiveJournal } = await import('../HorseAdaptiveJournalRetention.js');
   const { readLearningQueueHealth } = await import('../HorseLearningQueueHealth.js');
@@ -25,6 +26,7 @@ try {
     await runJournalLoop(stop.signal, {
       processWork: processAdaptiveJournalWork,
       processModels: processJournaledOpponentModels,
+      processCommitments: processHorseCommittedPotAudit,
       processCapture: processObservationCapture,
       discover: discoverObservationRequests,
       prune: pruneAdaptiveJournal,

@@ -139,9 +139,13 @@ const REGISTER = {
     why: 'Fact rows are written for humans everywhere, and for horses at NIT tables - so the VPIP rule and the evidence it is judged on cover the same seats (fixed 2026-08-27; before that the rule could not bite a horse at all). Not switched on for horses platform-wide because that is ~1.3M rows a day, which is the same storage decision as retention and is Dan\'s to make.',
   },
   'server/src/engine/ServerTableEngineRunout.ts': {
-    allowed: 2,
+    allowed: 3,
     kind: 'IDENTIFICATION',
-    why: 'Horse-ONLY paths, where the negation SELECTS horses rather than excluding them: scheduling a horse\'s pineapple discard, and its insurance response. Both hand a horse a feature it would otherwise sit out of, which is the opposite of an exclusion.',
+    why: [
+      'Two Horse input-device paths select horses: scheduling a horse\'s pineapple discard and its insurance response. Both hand a horse a feature it would otherwise sit out of.',
+      'The third predicate, in pineappleDiscardJournalContext, identifies the matching seated Horse before attaching private Horse decision/execution evidence. A human forced-runout discard still uses the same request and controller commit with null Horse journal context; observePineappleDiscardAcceptance then skips only Horse attribution, not the discard. This prevents human actions from being mislabeled as Horse evidence and changes no player entitlement or outcome.',
+      'PineappleDiscardJournalContext.test.ts retains the actual-controller mixed Horse/human forced-runout case (both discard, only the Horse gets a private receipt) and the human-context preparation control.',
+    ].join('\n'),
   },
   'server/src/services/HorseHandReview.ts': {
     allowed: 2,

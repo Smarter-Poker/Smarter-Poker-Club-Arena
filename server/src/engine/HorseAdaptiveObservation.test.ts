@@ -323,6 +323,20 @@ describe('qualified adaptive observations', () => {
     expect(() => qualifyAdaptiveHand(h, NOW)).not.toThrow();
     expect(qualifyAdaptiveHand(h, NOW).observations).toEqual([]);
   });
+
+  it.each([undefined, null, 0, 2, 1.5])(
+    'rejects persisted actor-seat disagreement and excludes the dependent public line (%s)',
+    (seat) => {
+      const h = clone(hand({}, true));
+      // Keep the previously bound hand/session identity: read-side validation
+      // must not treat it as proof that the action still matches its node.
+      Object.assign(first(h), { seat });
+      const result = qualifyAdaptiveHand(h, NOW);
+      expect(result.observations).toEqual([]);
+      expect(result.rejected.unavailable_public_node).toBe(1);
+      expect(result.rejected.unavailable_public_line).toBeGreaterThan(0);
+    }
+  );
   it.each([
     undefined,
     null,

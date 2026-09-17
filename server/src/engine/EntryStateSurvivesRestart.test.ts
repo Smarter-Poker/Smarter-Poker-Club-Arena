@@ -89,7 +89,10 @@ describe('the entry hold is written down', () => {
     // historical row for a player who left and came back, and the restore
     // would then hold somebody the engine never held.
     const body = sliceMethod(BASE, 'protected persistEntryHold(');
-    expect(body).toMatch(/\.eq\('table_id', this\.tableId\)/);
+    expect(body).toMatch(/const tableId = this\.tableId;/);
+    expect(body).toMatch(/\.eq\('table_id', tableId\)/);
+    expect(body).toMatch(/\.eq\('id', seatId\)/);
+    expect(body).toMatch(/\.eq\('occupancy_id', occupancyId\)/);
     expect(body).toMatch(/\.eq\('user_id', userId\)/);
     expect(body).toMatch(/\.is\('left_at', null\)/);
   });

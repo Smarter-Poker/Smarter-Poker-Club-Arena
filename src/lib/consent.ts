@@ -3,17 +3,9 @@
  *  CONSENT — whether product analytics may run, on each target
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Store readiness, phase 3 (audit tier 0): "Gate analytics behind consent,
- * and stop shipping email to Sentry ... Apple's Privacy Nutrition Labels
- * cannot be answered truthfully as things stand."
+ * Local error diagnostics use the existing console and require no external
+ * reporting provider.
  *
- * Two kinds of telemetry, treated differently:
- *
- *   - Crash and error reporting (Sentry) runs without a prompt, on every
- *     target, because a table that stops dealing has to be seen. It carries
- *     the user id and username and NEVER the email (SentryInit.ts), and in
- *     the app it records no session replay. It is named in the privacy
- *     policy.
  *   - Product analytics (PostHog: autocapture, funnels) is opt-in INSIDE THE
  *     APP: nothing is loaded and nothing is captured until the player says
  *     yes (ConsentPrompt, or the Settings toggle). On the web nothing

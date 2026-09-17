@@ -52,6 +52,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const navigate = useNavigate();
   const [uuid, setUuid] = useState<string | null>(null);
   const [state, setState] = useState<ChoiceState | null>(null);
+  const [quotedEntry, setQuotedEntry] = useState<string | null>(null);
   const [round, setRound] = useState<ChoiceRound | null>(null);
   const [mode, setMode] = useState(game === 'mines' ? '5' : 'steady');
   const [budget, setBudget] = useBonusBudget(clubId, game);
@@ -75,9 +76,11 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const load = useCallback(
     async (id: string) => {
       const g = ++generation.current;
+      setQuotedEntry(null);
       const next = await DiamondChoiceService.state(id, game, mode, bet);
       if (!mounted.current || generation.current !== g) return;
       setState(next);
+      setQuotedEntry(`${id}:${game}:${mode}:${bet}`);
       setWaitSeconds(next.seconds_until_next);
       if (next.open_round) {
         setRound(next.open_round);
@@ -160,7 +163,9 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
     if (
       value?.ok !== true ||
       typeof value.commit_id !== 'string' ||
-      typeof value.server_seed_hash !== 'string'
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value.commit_id) ||
+      typeof value.server_seed_hash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(value.server_seed_hash)
     )
       throw new Error(value?.error ?? 'The Game Ticket Could Not Be Loaded');
     const next = { id: value.commit_id, hash: value.server_seed_hash };
@@ -191,6 +196,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           await DiamondBonusService.start(heldStart.current, user?.id ?? '')
         );
         if (!mounted.current) return;
+        currentRound.current = recovered;
         setRound(recovered);
         heldStart.current = null;
         uncertainTicket.current = null;
@@ -216,9 +222,30 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       if (mounted.current) setBusy(false);
     }
   };
+  const blocked =
+    !validSpinAmount(budget.base) ||
+    quotedEntry !== `${uuid}:${game}:${mode}:${bet}` ||
+    !state?.available ||
+    state.frozen ||
+    !state.is_member ||
+    state.max_steps < 1 ||
+    state.rounds_today >= state.daily_limit ||
+    waitSeconds > 0 ||
+    state.diamonds < bet;
   const start = async () => {
-    if (!uuid || !ticket || !state || busyRef.current || uncertain) return;
+    if (
+      !uuid ||
+      !ticket ||
+      !state ||
+      busyRef.current ||
+      uncertain ||
+      round?.status === 'open' ||
+      blocked
+    )
+      return;
     busyRef.current = true;
+    generation.current++;
+    setQuotedEntry(null);
     setBusy(true);
     setError(null);
     setVerified(null);
@@ -229,6 +256,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       mode,
       budget,
       commitId: ticket.id,
+      serverSeedHash: ticket.hash,
       seed,
       maxSteps: state.max_steps,
     };
@@ -241,6 +269,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             mode,
             budget,
             commitId: ticket.id,
+            serverSeedHash: ticket.hash,
             seed,
             maxSteps: state.max_steps,
           },
@@ -248,6 +277,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
         )
       );
       if (!mounted.current) return;
+      currentRound.current = next;
       setRound(next);
       heldStart.current = null;
       setTicket(null);
@@ -273,12 +303,15 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
   const act = async (action: 'pick' | 'cashout', cell: number | null) => {
     if (!uuid || !round || round.status !== 'open' || busyRef.current || uncertain) return;
     busyRef.current = true;
+    generation.current++;
+    setQuotedEntry(null);
     setBusy(true);
     setError(null);
     setVerified(null);
     try {
-      const next = await DiamondChoiceService.act(round.id, action, cell, round.picked.length);
+      const next = await DiamondChoiceService.act(round, action, cell);
       if (!mounted.current) return;
+      currentRound.current = next;
       setRound(next);
       triggerHaptic(next.status === 'lost' ? 'heavy' : 'light');
       await load(uuid);
@@ -304,15 +337,6 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       : null;
   const roadMultiplier = roadEnd !== null && roadEnd > 0 ? ladder[roadEnd - 1] : 0;
   const payableRoadEnd = Math.min(roadEnd ?? 0, round?.max_steps ?? 0);
-  const blocked =
-    !validSpinAmount(budget.base) ||
-    !state?.available ||
-    state.frozen ||
-    !state.is_member ||
-    state.max_steps < 1 ||
-    state.rounds_today >= state.daily_limit ||
-    waitSeconds > 0 ||
-    state.diamonds < bet;
   const status = uncertain
     ? 'Check Round'
     : busy
@@ -446,15 +470,17 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
                   : 'Cross The Next Street Or Book The Win.'
                 : !state
                   ? 'Loading Your Game'
-                  : blocked
-                    ? state.diamonds < bet
-                      ? 'Not Enough Diamonds For This Bet'
-                      : !state.is_member
-                        ? 'Join The Club To Play'
-                        : !state.available
-                          ? 'This Game Is Not Open Here Yet'
-                          : 'This Bet Is Not Available Right Now'
-                    : `${compactChips(bet)} Diamonds To Play. ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
+                  : quotedEntry !== `${uuid}:${game}:${mode}:${bet}`
+                    ? 'Checking Your Entry'
+                    : blocked
+                      ? state.diamonds < bet
+                        ? 'Not Enough Diamonds For This Bet'
+                        : !state.is_member
+                          ? 'Join The Club To Play'
+                          : !state.available
+                            ? 'This Game Is Not Open Here Yet'
+                            : 'This Bet Is Not Available Right Now'
+                      : `${compactChips(bet)} Diamonds To Play. ${state.max_steps} ${game === 'mines' ? 'Safe Picks' : 'Streets'} In This Round.`}
             </p>
           )}
         </div>
@@ -505,10 +531,12 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
             onClick={async () => {
               try {
                 const result = await verifyChoiceRound(round);
-                if (mounted.current) setVerified(result);
+                if (mounted.current && !busyRef.current && currentRound.current?.id === round.id)
+                  setVerified(result);
               } catch (e) {
                 reportError(e, 'DiamondChoicePage.verify');
-                if (mounted.current) setVerified(false);
+                if (mounted.current && !busyRef.current && currentRound.current?.id === round.id)
+                  setVerified(false);
               }
             }}
           >

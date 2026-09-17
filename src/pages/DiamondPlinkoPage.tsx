@@ -37,6 +37,7 @@ function DiamondPlinkoGame() {
   const navigate = useNavigate();
   const [uuid, setUuid] = useState<string | null>(null);
   const [state, setState] = useState<GameState | null>(null);
+  const [quotedAmount, setQuotedAmount] = useState<number | null>(null);
   const [budget, setBudget] = useBonusBudget(clubId, 'plinko');
   const [tableVersion, setTableVersion] = useState(2);
   const [ticket, setTicket] = useState<{ id: string; hash: string } | null>(null);
@@ -64,6 +65,7 @@ function DiamondPlinkoGame() {
       : (table?.multipliers_cents ?? result?.multipliers_cents ?? []);
   const blocked =
     !validSpinAmount(budget.base) ||
+    quotedAmount !== total ||
     !state?.available ||
     state.frozen ||
     !state.player?.is_member ||
@@ -77,16 +79,22 @@ function DiamondPlinkoGame() {
 
   const newTicket = useCallback(async () => {
     const next = await DiamondGamesService.commit('plinko');
-    if (!next.ok || !/^[a-f0-9]{64}$/.test(next.server_seed_hash))
+    if (
+      !next.ok ||
+      !/^[a-f0-9]{64}$/.test(next.server_seed_hash) ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(next.commit_id)
+    )
       throw new Error(next.error ?? 'The Ticket Could Not Be Loaded');
     if (live.current) setTicket({ id: next.commit_id, hash: next.server_seed_hash });
   }, []);
   const load = useCallback(
     async (id: string, amount: number) => {
       const g = ++generation.current;
+      setQuotedAmount(null);
       const next = await DiamondGamesService.getState(id, 'plinko', amount);
       if (live.current && g === generation.current) {
         setState(next);
+        setQuotedAmount(amount);
         setWaitSeconds(next.player?.seconds_until_next ?? 0);
       }
     },
@@ -150,6 +158,8 @@ function DiamondPlinkoGame() {
   const play = async () => {
     if (!uuid || !ticket || busyRef.current || blocked || animating || uncertain) return;
     busyRef.current = true;
+    generation.current++;
+    setQuotedAmount(null);
     setBusy(true);
     setError(null);
     setVerified(null);
@@ -158,6 +168,7 @@ function DiamondPlinkoGame() {
       game: 'plinko' as const,
       budget: { ...budget },
       commitId: ticket.id,
+      serverSeedHash: ticket.hash,
       seed,
       tableVersion: table!.version,
     };
@@ -187,9 +198,12 @@ function DiamondPlinkoGame() {
         const next = parsePlinkoBonus(
           await DiamondBonusService.start(held.current, user?.id ?? '')
         );
-        if (live.current) accept(next, false);
+        if (!live.current) return;
+        accept(next, false);
       }
+      if (!live.current) return;
       await load(uuid, validSpinAmount(budget.base) ? total : 100);
+      if (!live.current) return;
       if (!ticket || uncertain) await newTicket();
       if (live.current) setError(null);
     } catch (e) {
@@ -223,6 +237,7 @@ function DiamondPlinkoGame() {
     try {
       let matches = (await sha256Hex(result.server_seed)) === result.server_seed_hash;
       for (const ball of result.drops) {
+        if (!live.current) return;
         const hash = await hmacSha256Hex(
           result.server_seed,
           `${result.client_seed}:${result.nonce}:drop:${ball.index}`

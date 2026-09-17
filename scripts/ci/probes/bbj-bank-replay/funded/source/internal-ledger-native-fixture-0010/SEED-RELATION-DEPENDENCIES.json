@@ -1,0 +1,45 @@
+{
+  "required_names": [
+    "auth.users",
+    "public.ca_cert_accounts",
+    "public.ca_chip_store_coverage",
+    "public.ca_diamond_balance_audit",
+    "public.ca_diamond_incidents",
+    "public.ca_diamond_rule_modes",
+    "public.ca_financial_epochs",
+    "public.ca_ledger_write_failures",
+    "public.ca_mint_ledger",
+    "public.ca_mint_policy",
+    "public.ca_op_claims",
+    "public.ca_payout_freeze",
+    "public.ca_treasury_baseline",
+    "public.chip_ledger",
+    "public.chip_ledger_idem",
+    "public.chip_transactions",
+    "public.club_level_thresholds",
+    "public.club_members",
+    "public.clubs",
+    "public.daily_challenge_dashboard_revisions",
+    "public.diamond_transactions",
+    "public.diamond_wallets",
+    "public.profiles",
+    "public.signup_errors",
+    "public.user_daily_streaks",
+    "public.user_diamond_balance",
+    "public.user_diamonds",
+    "public.users",
+    "public.wallets"
+  ],
+  "scope": "Actual signup/opening and chosen player-wallet writer core plus reached signup mirrors/audit relations. Presence checks add no current-schema identity claim for archive-only objects.",
+  "residuals": [
+    {
+      "name": "public.ca_ledger_maintenance_kinds",
+      "disposition": "Not reached by selected path: append-only trigger is UPDATE/DELETE on journals; seed and bank send only INSERT them and set no maintenance reason."
+    },
+    {
+      "name": "realtime.messages dated partition",
+      "disposition": "Actual warning-only derivative delivery failure observed in0009; no added partition or delivery claim."
+    }
+  ],
+  "conservative_locator_limit": "QUALIFIED-RELATION-LOCATORS includes potential non-firing trigger bodies and function-call false positives; it is not executed coverage."
+}

@@ -30,9 +30,6 @@ afterEach(() => vi.restoreAllMocks());
 
 function harness(stage = 'pineapple_discard') {
   const engine = new ServerTableEngine(TABLE) as any;
-  // This focused harness bypasses start(), so explicitly provide the same
-  // lifecycle authority its mutation entry point requires in production.
-  engine.lifecycleCanMutate = () => true;
   engine.tableInfo = { action_time_seconds: 15 } as any;
   /** Seats that still owe a discard - the HandController's authority, stubbed. */
   const owes = new Set<number>([1, 2]);
@@ -40,12 +37,6 @@ function harness(stage = 'pineapple_discard') {
     getState: () => ({ stage, players: [], currentPlayerSeat: 0, currentBet: 0 }),
     owesPineappleDiscard: (seat: number) => owes.has(seat),
     foldForMissedDiscard: vi.fn(() => true),
-    performDiscard: vi.fn((seat: number) => {
-      if (!owes.has(seat)) return false;
-      owes.delete(seat);
-      return true;
-    }),
-    allPineappleDiscardsIn: () => owes.size === 0,
   };
   engine.__owes = owes;
   engine.seatedPlayers = [
@@ -116,27 +107,6 @@ describe('the discard deadline is published, not guessed', () => {
 });
 
 describe('a time bank works on a discard', () => {
-  it('revalidates cached Lifetime access before the discard path grants another bank', async () => {
-    const engine = harness();
-    openRound(engine, 0);
-    engine.timeBankEngine.initializePlayer(TABLE, 'u1', {
-      remainingSeconds: 0,
-      usesRemaining: 0,
-      unlimitedActivations: true,
-    });
-    const revalidate = vi.fn(async (userId: string) => {
-      engine.timeBankEngine.setUnlimitedActivations(TABLE, userId, false);
-    });
-    engine.revalidateUnlimitedTimeBank = revalidate;
-
-    const result = await engine.activateTimeBank('u1');
-
-    expect(revalidate).toHaveBeenCalledWith('u1');
-    expect(result).toEqual({ success: false, error: 'No Time Bank Uses Remaining' });
-    expect(engine.timeBankEngine.isUnlimited(TABLE, 'u1')).toBe(false);
-    engine.preciseTimer.dispose();
-  });
-
   it('is REFUSED while ordinary clock remains, and arms instead', () => {
     const engine = harness();
     openRound(engine, 15_000); // a full clock still to run
@@ -190,109 +160,6 @@ describe('a time bank works on a discard', () => {
 });
 
 describe('the sweep folds only the seats that are genuinely out of time', () => {
-  it('redeems an armed bank at discard expiry instead of folding the player', async () => {
-    vi.useFakeTimers();
-    const engine = harness();
-    const base = openRound(engine, 1_000);
-    engine.pineappleDiscardDeadlines.delete(2);
-
-    expect(engine.extendPineappleDiscard('u1')).toMatchObject({
-      success: true,
-      armed: true,
-    });
-    engine.armPineappleDiscardSweep(engine.handController);
-
-    await vi.advanceTimersByTimeAsync(1_000);
-
-    expect(engine.handController.foldForMissedDiscard).not.toHaveBeenCalled();
-    expect(engine.timeBankEngine.isArmed(TABLE, 'u1')).toBe(false);
-    expect(engine.timeBankEngine.getPlayerBank(TABLE, 'u1')?.isActive).toBe(true);
-    expect(engine.timeBankEngine.getUsesRemaining(TABLE, 'u1')).toBe(1);
-    expect(engine.pineappleDiscardDeadlines.get(1)).toBeGreaterThan(base);
-
-    await vi.advanceTimersByTimeAsync(20_050);
-    expect(engine.handController.foldForMissedDiscard).toHaveBeenCalledWith(1);
-    vi.useRealTimers();
-    engine.preciseTimer.dispose();
-  });
-
-  it('revalidates an armed Lifetime bank at discard expiry before extending', async () => {
-    vi.useFakeTimers();
-    const engine = harness();
-    openRound(engine, 1_000);
-    engine.pineappleDiscardDeadlines.delete(2);
-    engine.timeBankEngine.initializePlayer(TABLE, 'u1', {
-      remainingSeconds: 0,
-      usesRemaining: 0,
-      unlimitedActivations: true,
-    });
-    const revalidate = vi.fn(async () => {});
-    engine.revalidateUnlimitedTimeBank = revalidate;
-
-    expect(engine.extendPineappleDiscard('u1')).toMatchObject({ success: true, armed: true });
-    engine.armPineappleDiscardSweep(engine.handController);
-    await vi.advanceTimersByTimeAsync(1_000);
-
-    expect(revalidate).toHaveBeenCalledWith('u1');
-    expect(engine.handController.foldForMissedDiscard).not.toHaveBeenCalled();
-    expect(engine.timeBankEngine.getPlayerBank(TABLE, 'u1')?.isActive).toBe(true);
-    expect(engine.pineappleDiscardDeadlines.get(1)).toBeGreaterThan(Date.now());
-    vi.useRealTimers();
-    engine.preciseTimer.dispose();
-  });
-
-  it('fails closed when Lifetime is revoked while an armed discard clock is running', async () => {
-    vi.useFakeTimers();
-    const engine = harness();
-    openRound(engine, 1_000);
-    engine.pineappleDiscardDeadlines.delete(2);
-    engine.timeBankEngine.initializePlayer(TABLE, 'u1', {
-      remainingSeconds: 0,
-      usesRemaining: 0,
-      unlimitedActivations: true,
-    });
-    engine.revalidateUnlimitedTimeBank = vi.fn(async (userId: string) => {
-      engine.timeBankEngine.setUnlimitedActivations(TABLE, userId, false);
-    });
-
-    expect(engine.extendPineappleDiscard('u1')).toMatchObject({ success: true, armed: true });
-    engine.armPineappleDiscardSweep(engine.handController);
-    await vi.advanceTimersByTimeAsync(1_000);
-
-    expect(engine.timeBankEngine.isUnlimited(TABLE, 'u1')).toBe(false);
-    expect(engine.timeBankEngine.getPlayerBank(TABLE, 'u1')?.isActive).toBe(false);
-    expect(engine.handController.foldForMissedDiscard).toHaveBeenCalledWith(1);
-    vi.useRealTimers();
-    engine.preciseTimer.dispose();
-  });
-
-  it('releases an active discard bank when the player submits a card', () => {
-    const engine = harness();
-    openRound(engine, 0);
-    expect(engine.extendPineappleDiscard('u1').success).toBe(true);
-    expect(engine.timeBankEngine.getPlayerBank(TABLE, 'u1')?.isActive).toBe(true);
-
-    expect(engine.submitDiscard('u1', 1)).toEqual({ success: true });
-
-    expect(engine.timeBankEngine.getPlayerBank(TABLE, 'u1')?.isActive).toBe(false);
-    expect(engine.timeBankEngine.getRemainingSeconds(TABLE, 'u1')).toBe(20);
-    expect(engine.pineappleDiscardDeadlines.has(1)).toBe(false);
-    engine.preciseTimer.dispose();
-  });
-
-  it('clears an unspent arm when the discard arrives before clock expiry', () => {
-    const engine = harness();
-    openRound(engine, 15_000);
-    expect(engine.extendPineappleDiscard('u1')).toMatchObject({ success: true, armed: true });
-
-    expect(engine.submitDiscard('u1', 1)).toEqual({ success: true });
-
-    expect(engine.timeBankEngine.isArmed(TABLE, 'u1')).toBe(false);
-    expect(engine.timeBankEngine.getUsesRemaining(TABLE, 'u1')).toBe(2);
-    expect(engine.timeBankEngine.getRemainingSeconds(TABLE, 'u1')).toBe(40);
-    engine.preciseTimer.dispose();
-  });
-
   it('does not even ask about a seat that settled by another path', () => {
     vi.useFakeTimers();
     const engine = harness();

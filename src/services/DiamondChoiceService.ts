@@ -196,14 +196,36 @@ export const DiamondChoiceService = {
       })
     );
   },
-  async act(id: string, action: 'pick' | 'cashout', cell: number | null, expectedStep: number) {
-    return parseChoiceRound(
+  async act(round: ChoiceRound, action: 'pick' | 'cashout', cell: number | null) {
+    const next = parseChoiceRound(
       await rpc('fn_choice_act', {
-        p_round_id: id,
+        p_round_id: round.id,
         p_action: action,
         p_cell: cell,
-        p_expected_step: expectedStep,
+        p_expected_step: round.picked.length,
       })
     );
+    const immutable = [
+      'id',
+      'game',
+      'club_id',
+      'mode',
+      'bet_diamonds',
+      'bet_chips',
+      'diamonds_per_chip',
+      'max_steps',
+      'commit_id',
+      'server_seed_hash',
+      'client_seed',
+      'nonce',
+    ] as const;
+    if (
+      immutable.some((field) => next[field] !== round[field]) ||
+      next.prizes.some((prize, index) => prize !== round.prizes[index]) ||
+      next.picked.length < round.picked.length ||
+      round.picked.some((cell, index) => next.picked[index] !== cell)
+    )
+      throw new Error('The Result Does Not Match Your Saved Round');
+    return next;
   },
 };

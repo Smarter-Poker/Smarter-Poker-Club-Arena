@@ -1,3 +1,4 @@
+import { horsePhase6AttributionIsValid } from '../HorsePhase6Attribution.js';
 import type { HorseDecision } from '../../types.js';
 import { HORSE_POLICY_ORDER, type HorsePolicyAction } from '../HorsePolicyGraph.js';
 import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
@@ -90,7 +91,13 @@ export function horseDecisionReceiptIsValid(
     (!['check', 'fold'].includes(value.action as string) ||
       value.amount !== undefined ||
       value.policyGraph !== undefined ||
-      value.policyOwnership !== undefined)
+      value.policyOwnership !== undefined ||
+      value.tournamentPreflopAttribution !== undefined)
+  )
+    return false;
+  if (
+    value.tournamentPreflopAttribution !== undefined &&
+    !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)
   )
     return false;
   if (!horsePolicyOwnershipMatches(value as unknown as HorseDecision)) return false;

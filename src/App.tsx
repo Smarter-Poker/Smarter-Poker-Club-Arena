@@ -20,7 +20,6 @@ import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
-import { addBreadcrumb } from './core/SentryInit';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
@@ -86,6 +85,8 @@ const TournamentStartingTicker = lazyWithRetry(
 // Pages (lazy loaded for performance)
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'));
 const HomePage = lazyWithRetry(() => import('./pages/HomePage'));
+// Public landing for signed-out visitors and crawlers at the arena root.
+const PokerArenaLandingPage = lazyWithRetry(() => import('./pages/PokerArenaLandingPage'));
 
 const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
 const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
@@ -104,12 +105,7 @@ const TournamentResultsPage = lazyWithRetry(
 );
 const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
-// Keep the complete Daily Challenges presentation graph behind its route.
-// Auth/loading/crash paint is deliberately owned by the lazy route module so
-// players who never open Challenges do not pay for its artwork or instruments.
-const DailyChallengesRoute = lazyWithRetry(
-  () => import('./components/challenges/DailyChallengesRoute')
-);
+const DailyChallengesPage = lazyWithRetry(() => import('./pages/DailyChallengesPage'));
 const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
 const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
@@ -298,6 +294,7 @@ import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
 import RouterBridge from './components/common/RouterBridge';
+import RouteSeo from './components/seo/RouteSeo';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
 function ClubFooterMount({ clubId }: { clubId?: string }) {
@@ -653,6 +650,9 @@ function FullApp() {
             {/* Hands navigate() to src/lib/routerBridge for deep links and
                 plugin listeners (native). Renders nothing. */}
             <RouterBridge />
+            {/* Per-route title, description, canonical, robots and JSON-LD.
+                Public routes are listed in src/lib/seo.ts; all else is noindex. */}
+            <RouteSeo />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)
@@ -710,11 +710,24 @@ function FullApp() {
                     PROTECTED ROUTES (Auth Required)
                 ═══════════════════════════════════════════════════════════════ */}
 
-              {/* HomePage - Standalone without Shell, requires auth */}
+              {/* HomePage - Standalone without Shell, requires auth.
+                  WEB: signed-out visitors (and Googlebot) get the public
+                  landing page instead of a redirect to login (src/lib/seo.ts).
+                  NATIVE: there is nothing to index inside the app shell and
+                  the in-app AuthPage is the front door, so the guard keeps
+                  routing to it. */}
               <Route
                 path="/"
                 element={
-                  <AuthGuard>
+                  <AuthGuard
+                    publicFallback={
+                      IS_NATIVE_BUILD ? undefined : (
+                        <RouteErrorBoundary>
+                          <PokerArenaLandingPage />
+                        </RouteErrorBoundary>
+                      )
+                    }
+                  >
                     <RouteErrorBoundary>
                       <HomePage />
                     </RouteErrorBoundary>
@@ -1119,7 +1132,16 @@ function FullApp() {
                 />
 
                 {/* User */}
-                <Route path="challenges/:cycle?" element={<DailyChallengesRoute />} />
+                <Route
+                  path="challenges/:cycle?"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Daily Challenges">
+                        <DailyChallengesPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="profile"
                   element={
@@ -1273,14 +1295,14 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* Help Center is public (no AuthGuard), like the legal
+                    pages: the FAQ is the page search engines should find. */}
                 <Route
                   path="help"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Help">
-                        <HelpPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="Help">
+                      <HelpPage />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route

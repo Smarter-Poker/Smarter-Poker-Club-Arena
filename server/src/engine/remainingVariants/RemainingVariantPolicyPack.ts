@@ -6,7 +6,7 @@ import { maxSeatsForVariant } from '../../config/tableSeating.js';
 export type RemainingPolicyVariant = 'short_deck' | 'pineapple' | 'flh' | 'flo8';
 export const REMAINING_VARIANT_PACKS = Object.freeze({
   short_deck: Object.freeze({
-    version: 'short-deck-round1-v1',
+    version: 'short-deck-round1-v2',
     holes: 2,
     deck: 36,
     splitLow: false,
@@ -27,7 +27,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     multiway: 0.018,
   }),
   pineapple: Object.freeze({
-    version: 'crazy-pineapple-round1-v1',
+    version: 'crazy-pineapple-round1-v2',
     holes: 3,
     deck: 52,
     splitLow: false,
@@ -48,7 +48,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     multiway: 0.02,
   }),
   flh: Object.freeze({
-    version: 'fixed-limit-holdem-round1-v2',
+    version: 'fixed-limit-holdem-round1-v3',
     holes: 2,
     deck: 52,
     splitLow: false,
@@ -69,7 +69,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     multiway: 0.008,
   }),
   flo8: Object.freeze({
-    version: 'fixed-limit-omaha8-round1-v2',
+    version: 'fixed-limit-omaha8-round1-v3',
     holes: 4,
     deck: 52,
     splitLow: true,

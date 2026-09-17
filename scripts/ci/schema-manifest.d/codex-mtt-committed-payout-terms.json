@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex/ca-mtt-release-20260916",
+  "_comment": "Existing public.fn_tournament_payout_terms_committed_v1(uuid) verified by read-only production catalog on 2026-09-17 at 05:08 UTC: postgres owner, SECURITY DEFINER, stable, search_path public,pg_temp, postgres-only EXECUTE; prosrc MD5 5c31fe20d25154e0c70a976b38bb88c3 and definition MD5 918c62cbcc182d43a6a27edeb2c1c107. Matches the already-installed committed-payout migration. Source metadata only; no SQL reinstallation or R46 activation.",
+  "functions": ["fn_tournament_payout_terms_committed_v1"]
+}

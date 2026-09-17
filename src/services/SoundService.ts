@@ -2870,40 +2870,6 @@ class SoundService {
     haptic.medium();
   }
 
-  /**
-   * ═══════════════════════════════════════════════════════════════════════════
-   *  RAIL ALERT — the ticker raised something worth looking up for
-   * ═══════════════════════════════════════════════════════════════════════════
-   *
-   * Added 2026-09-14 for the Club Arena ticker, and deliberately UNLIKE every
-   * other cue in this file, because it is the only one that does not come from
-   * the felt. Every `play*` above means something happened to YOUR hand, YOUR
-   * chips or YOUR turn. This one means a strip at the top of the screen has an
-   * announcement on it.
-   *
-   * So it is built to be ignorable:
-   *
-   *   `ui` priority (rank 10) - the lowest thing that still has a rank, so a
-   *     fold, an all in or a pot sweep landing in the same 50ms frame wins and
-   *     this is dropped. A notification must never talk over the table.
-   *   quiet and low - a rising fourth around G4-C5 at about a quarter of the
-   *     turn bell's gain. It should read as "something appeared", never as
-   *     "it is on you", which is the one confusion that would actually cost a
-   *     player money.
-   *   no haptic - a buzz in the pocket for an announcement strip is too much.
-   *
-   * The caller decides WHEN, and it is strict about it: see tickerChime.ts,
-   * which plays this for overlay guarantees only, once per announcement, and
-   * never for the first strip a tab shows.
-   */
-  playRailAlert() {
-    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
-    // G4 -> C5. A fourth, not a fifth: the fifth is playBuyInConfirm and this
-    // is not a confirmation of anything the player did.
-    this.playTone(392.0, 0.18, 0.06, 'triangle', 0);
-    this.playTone(523.25, 0.26, 0.05, 'triangle', 0.09);
-  }
-
   // ─── Cleanup ─────────────────────────────────────────────────────────
 
   destroy() {

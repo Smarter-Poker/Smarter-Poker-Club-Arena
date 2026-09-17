@@ -1030,21 +1030,7 @@ const COL_ACTIONS: ColumnDef = {
             Details
           </button>
         )}
-        {/* The whole board's door is shut (Diamond Phase 8): say so rather
-            than offer a Register the server refuses. A registered player still
-            reads Registered. */}
-        {ctx.onRegister && !closedToEntry && ctx.registrationClosedLabel && !registered && (
-          <button
-            type="button"
-            className="lt-act"
-            data-act="closed"
-            disabled
-            aria-label={`${e.name}: ${ctx.registrationClosedLabel}`}
-          >
-            {ctx.registrationClosedLabel}
-          </button>
-        )}
-        {ctx.onRegister && !closedToEntry && !(ctx.registrationClosedLabel && !registered) && (
+        {ctx.onRegister && !closedToEntry && (
           <button
             type="button"
             className={`lt-act ${registered ? 'lt-act--done' : 'lt-act--primary'}`}

@@ -6,8 +6,6 @@ import { build, type Plugin } from 'vite';
 
 const directories: string[] = [];
 beforeEach(() => {
-  vi.stubEnv('CA_SENTRY_UPLOAD', '');
-  vi.stubEnv('SENTRY_AUTH_TOKEN', '');
   vi.stubEnv('VITE_NATIVE', '');
   vi.stubEnv('NODE_ENV', 'production');
 });

@@ -1,0 +1,731 @@
+{
+  "schema": "bbj-source-derived-ddl-audit-v1",
+  "helpers": [
+    {
+      "identity": "extensions.grant_pg_graphql_access()",
+      "source": "\nbegin\n    if not exists (\n        select 1\n        from pg_catalog.pg_event_trigger_ddl_commands() ev\n        join pg_catalog.pg_extension e on ev.objid = e.oid\n        where e.extname = 'pg_graphql'\n    ) then\n        return;\n    end if;\n\n    drop function if exists graphql_public.graphql;\n    create or replace function graphql_public.graphql(\n        \"operationName\" text default null,\n        query text default null,\n        variables jsonb default null,\n        extensions jsonb default null\n    )\n        returns jsonb\n        language sql\n    as $$\n        select graphql.resolve(\n            query := query,\n            variables := coalesce(variables, '{}'),\n            \"operationName\" := \"operationName\",\n            extensions := extensions\n        );\n    $$;\n\n    -- Attach the wrapper to the extension so DROP EXTENSION cascades to it,\n    -- which in turn triggers set_graphql_placeholder to reinstall the \"not enabled\" stub.\n    alter extension pg_graphql add function graphql_public.graphql(text, text, jsonb, jsonb);\n\n    grant usage on schema graphql to postgres, anon, authenticated, service_role;\n    grant execute on function graphql.resolve to postgres, anon, authenticated, service_role;\n    grant usage on schema graphql to postgres with grant option;\n    grant usage on schema graphql_public to postgres with grant option;\nend;\n",
+      "owner": "postgres",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=\"\""
+      ],
+      "security_definer": false,
+      "result": "event_trigger",
+      "nargs": 0,
+      "kind": "f",
+      "volatility": "v",
+      "parallel": "u",
+      "strict": false,
+      "leakproof": false
+    },
+    {
+      "identity": "extensions.pgrst_ddl_watch()",
+      "source": "\nDECLARE\n  cmd record;\nBEGIN\n  FOR cmd IN SELECT * FROM pg_event_trigger_ddl_commands()\n  LOOP\n    IF cmd.command_tag IN (\n      'CREATE SCHEMA', 'ALTER SCHEMA'\n    , 'CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO', 'ALTER TABLE'\n    , 'CREATE FOREIGN TABLE', 'ALTER FOREIGN TABLE'\n    , 'CREATE VIEW', 'ALTER VIEW'\n    , 'CREATE MATERIALIZED VIEW', 'ALTER MATERIALIZED VIEW'\n    , 'CREATE FUNCTION', 'ALTER FUNCTION'\n    , 'CREATE TRIGGER'\n    , 'CREATE TYPE', 'ALTER TYPE'\n    , 'CREATE RULE'\n    , 'COMMENT'\n    )\n    -- don't notify in case of CREATE TEMP table or other objects created on pg_temp\n    AND cmd.schema_name is distinct from 'pg_temp'\n    THEN\n      NOTIFY pgrst, 'reload schema';\n    END IF;\n  END LOOP;\nEND; ",
+      "owner": "postgres",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=\"\""
+      ],
+      "security_definer": false,
+      "result": "event_trigger",
+      "nargs": 0,
+      "kind": "f",
+      "volatility": "v",
+      "parallel": "u",
+      "strict": false,
+      "leakproof": false
+    },
+    {
+      "identity": "public.ca_log_ddl_event()",
+      "source": "\nDECLARE cmd record;\nBEGIN\n  FOR cmd IN SELECT * FROM pg_event_trigger_ddl_commands()\n  LOOP\n    IF cmd.schema_name = 'pg_temp' OR cmd.object_identity LIKE 'pg_temp.%' THEN\n      CONTINUE;\n    END IF;\n    INSERT INTO public.ca_ddl_events\n      (command_tag, object_type, object_identity, schema_name,\n       triggers_pgrst_reload, application_name, query_snippet)\n    VALUES\n      (cmd.command_tag, cmd.object_type, cmd.object_identity, cmd.schema_name,\n       cmd.command_tag IN (\n         'CREATE SCHEMA','ALTER SCHEMA','CREATE TABLE','CREATE TABLE AS',\n         'SELECT INTO','ALTER TABLE','CREATE FOREIGN TABLE',\n         'ALTER FOREIGN TABLE','CREATE VIEW','ALTER VIEW',\n         'CREATE MATERIALIZED VIEW','ALTER MATERIALIZED VIEW',\n         'CREATE FUNCTION','ALTER FUNCTION','CREATE TRIGGER','CREATE TYPE',\n         'ALTER TYPE','CREATE RULE','COMMENT'\n       ) AND cmd.schema_name IS DISTINCT FROM 'pg_temp',\n       current_setting('application_name', true),\n       left(current_query(), 300));\n  END LOOP;\nEXCEPTION WHEN OTHERS THEN\n  NULL;\nEND;\n",
+      "owner": "postgres",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=public, pg_catalog"
+      ],
+      "security_definer": true,
+      "result": "event_trigger",
+      "nargs": 0,
+      "kind": "f",
+      "volatility": "v",
+      "parallel": "u",
+      "strict": false,
+      "leakproof": false
+    },
+    {
+      "identity": "public.fn_autorevoke_privileged_anon()",
+      "source": "\nDECLARE\n  obj          record;\n  lk           record;\n  v_name       text;\n  v_sig        text;\n  v_secdef     boolean;\n  v_src        text;\n  v_behaves    boolean;\n  v_named      boolean;\n  v_saw_grant  boolean := false;\nBEGIN\n  IF COALESCE(current_setting('app.allow_privileged_anon_grant', true), 'off') = 'on' THEN\n    RETURN;\n  END IF;\n\n  FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands() LOOP\n\n    -- GRANT rows carry no objid/object_identity at all (probe-verified):\n    --   [tag=GRANT | object_type=FUNCTION | objid=NULL | ident=NULL]\n    -- so the granted function cannot be identified here. Flag a lock sweep.\n    IF obj.command_tag = 'GRANT' THEN\n      IF upper(COALESCE(obj.object_type, '')) = 'FUNCTION' THEN\n        v_saw_grant := true;\n      END IF;\n      CONTINUE;\n    END IF;\n\n    IF lower(COALESCE(obj.object_type, '')) <> 'function' THEN\n      CONTINUE;\n    END IF;\n\n    SELECT p.proname,\n           format('public.%I(%s)', p.proname,\n                  COALESCE((SELECT string_agg(format_type(t.typ, NULL), ', ' ORDER BY t.ord)\n                              FROM unnest(p.proargtypes) WITH ORDINALITY AS t(typ, ord)), '')),\n           p.prosecdef,\n           p.prosrc\n      INTO v_name, v_sig, v_secdef, v_src\n      FROM pg_proc p\n      JOIN pg_namespace n ON n.oid = p.pronamespace\n     WHERE p.oid = obj.objid\n       AND n.nspname = 'public';\n\n    IF v_name IS NULL\n       OR v_name IN ('fn_autorevoke_privileged_anon', 'fn_audit_privileged_grants') THEN\n      CONTINUE;\n    END IF;\n\n    -- ARM 1 - NAME. Unchanged except the prefix arm now tolerates an `fn_`\n    -- prefix: `fn_credit_stalled_seat_first_stacks` defeated the anchored\n    -- version on 2026-08-23 despite crediting stacks.\n    v_named := v_name !~ '^st_' AND (\n         v_name ~* '(mint_|_mint|chip|wallet|promo|cashout|diamond|rake|bounty|settle|payout|clawback|purchase|treasury|jackpot|bbj)'\n      OR v_name ~* '^(fn_)?(credit|debit|transfer|distribute|deduct|atomic|admin)_'\n      OR v_name ~* '(promote_member|transfer_club_ownership|remove_player)'\n    );\n\n    -- ARM 2 - BEHAVIOUR. The rule economy_invariants() actually asserts:\n    -- SECURITY DEFINER (so RLS does not apply) + writes + never consults\n    -- auth.uid() (so it cannot tell who is asking). Such a function must not\n    -- be reachable without a session, whatever it is called. This is the arm\n    -- that would have caught all six of today's.\n    v_behaves := COALESCE(v_secdef, false)\n             AND v_src ~* '\\m(insert|update|delete)\\M'\n             AND v_src !~* 'auth\\.uid\\(\\)';\n\n    IF v_named OR v_behaves THEN\n      BEGIN\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj.object_identity);\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon',   obj.object_identity);\n\n        INSERT INTO public.privileged_function_lock (function_signature, security_definer, reason)\n        VALUES (v_sig,\n                COALESCE(v_secdef, false),\n                'Auto-locked by trg_autorevoke_privileged_anon on ' || obj.command_tag\n                 || CASE WHEN v_behaves AND NOT v_named\n                         THEN ' (behavioural: definer + writes + no auth.uid())'\n                         WHEN v_behaves THEN ' (name + behavioural)'\n                         ELSE ' (name)' END || '.')\n        ON CONFLICT (function_signature) DO NOTHING;\n\n        RAISE NOTICE '[autorevoke] stripped PUBLIC/anon EXECUTE from % (tag %, named=%, behaviour=%)',\n          obj.object_identity, obj.command_tag, v_named, v_behaves;\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING '[autorevoke] could not revoke on %: %', obj.object_identity, SQLERRM;\n      END;\n    END IF;\n  END LOOP;\n\n  IF v_saw_grant THEN\n    FOR lk IN\n      SELECT l.function_signature, to_regprocedure(l.function_signature) AS rp\n        FROM public.privileged_function_lock l\n       WHERE to_regprocedure(l.function_signature) IS NOT NULL\n         AND ( has_function_privilege('anon',   to_regprocedure(l.function_signature)::oid, 'EXECUTE')\n            OR has_function_privilege('public', to_regprocedure(l.function_signature)::oid, 'EXECUTE') )\n    LOOP\n      BEGIN\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', lk.function_signature);\n        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon',   lk.function_signature);\n        RAISE NOTICE '[autorevoke] GRANT sweep re-revoked anon/PUBLIC on %', lk.function_signature;\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING '[autorevoke] GRANT sweep could not revoke on %: %', lk.function_signature, SQLERRM;\n      END;\n    END LOOP;\n  END IF;\nEND;\n",
+      "owner": "postgres",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=public, pg_catalog"
+      ],
+      "security_definer": true,
+      "result": "event_trigger",
+      "nargs": 0,
+      "kind": "f",
+      "volatility": "v",
+      "parallel": "u",
+      "strict": false,
+      "leakproof": false
+    },
+    {
+      "identity": "public.fn_reject_retired_solver_option_rpc_ddl()",
+      "source": "\nDECLARE\n    v_command record;\n    v_schema text;\n    v_name text;\nBEGIN\n    FOR v_command IN SELECT * FROM pg_event_trigger_ddl_commands()\n    LOOP\n        IF lower(coalesce(v_command.object_type, '')) <> 'function' THEN\n            CONTINUE;\n        END IF;\n\n        v_schema := NULL;\n        v_name := NULL;\n        SELECT n.nspname, p.proname\n        INTO v_schema, v_name\n        FROM pg_proc p\n        JOIN pg_namespace n ON n.oid = p.pronamespace\n        WHERE p.oid = v_command.objid;\n\n        IF v_schema = 'public'\n           AND v_name IN (\n               'fn_pio_options_from_solver',\n               'fn_chart_options_from_memory'\n           ) THEN\n            RAISE EXCEPTION USING\n                ERRCODE = '55000',\n                MESSAGE = format(\n                    'retired solver option RPC recreation blocked: public.%I',\n                    v_name\n                ),\n                HINT = 'A reviewed forward migration must remove the tombstone guard before intentionally reusing this name.';\n        END IF;\n    END LOOP;\nEND;\n",
+      "owner": "postgres",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=pg_catalog, public"
+      ],
+      "security_definer": true,
+      "result": "event_trigger",
+      "nargs": 0,
+      "kind": "f",
+      "volatility": "v",
+      "parallel": "u",
+      "strict": false,
+      "leakproof": false
+    },
+    {
+      "identity": "public.xp_ban_guard_fn()",
+      "source": "\nDECLARE\n  r      record;\n  v_schema text;\n  v_table  text;\n  v_col    text;\n  v_col_pat  text := '(^xp$|_xp$|^xp_|_xp_|^reputation_xp$|^total_xp$|^xp_total$|^xp_earned$|^xp_reward$|^bonus_xp_|^social_xp$)';\n  v_fn_pat   text := '(award_xp|add_xp|gain_xp|xp_award|xp_grant|grant_xp|social_xp|reputation_xp|xp_total|xp_log)';\nBEGIN\n  FOR r IN\n    SELECT object_type, object_identity, schema_name\n      FROM pg_event_trigger_ddl_commands()\n     WHERE schema_name = 'public'\n  LOOP\n    -- Block tables whose NAME itself is XP-shaped\n    IF r.object_type = 'table'\n       AND split_part(r.object_identity, '.', 2) ~* v_col_pat THEN\n      RAISE EXCEPTION 'XP_BAN: table \"%\" violates zero-XP policy.', r.object_identity\n        USING HINT = 'DROP EVENT TRIGGER xp_ban_guard if policy changed.';\n    END IF;\n\n    -- For any CREATE/ALTER TABLE, scan columns for XP names\n    IF r.object_type = 'table' THEN\n      v_schema := split_part(r.object_identity, '.', 1);\n      v_table  := split_part(r.object_identity, '.', 2);\n      FOR v_col IN\n        SELECT column_name FROM information_schema.columns\n         WHERE table_schema = v_schema AND table_name = v_table\n      LOOP\n        IF v_col ~* v_col_pat THEN\n          RAISE EXCEPTION 'XP_BAN: column \"%.%\" violates zero-XP policy.',\n                          r.object_identity, v_col\n            USING HINT = 'DROP EVENT TRIGGER xp_ban_guard if policy changed.';\n        END IF;\n      END LOOP;\n    END IF;\n\n    -- Block function signatures containing XP-shaped substrings\n    -- (regex is substring-match now, not word-bounded - catches\n    --  disguise patterns like \"fake_award_xp_handler\")\n    IF r.object_type = 'function'\n       AND split_part(r.object_identity, '(', 1) ~* v_fn_pat THEN\n      RAISE EXCEPTION 'XP_BAN: function \"%\" violates zero-XP policy.', r.object_identity\n        USING HINT = 'DROP EVENT TRIGGER xp_ban_guard if policy changed.';\n    END IF;\n  END LOOP;\nEND;\n",
+      "owner": "postgres",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=public"
+      ],
+      "security_definer": false,
+      "result": "event_trigger",
+      "nargs": 0,
+      "kind": "f",
+      "volatility": "v",
+      "parallel": "u",
+      "strict": false,
+      "leakproof": false
+    }
+  ],
+  "helper_provenance": [
+    {
+      "identity": "public.ca_log_ddl_event()",
+      "source_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "start_line": 12513,
+      "ddl_sha256": "faff2509c7c18c4e1ea07e3aa3b366e3df221cd0ecb26a312d4117e92a4b37d5"
+    },
+    {
+      "identity": "public.fn_autorevoke_privileged_anon()",
+      "source_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "start_line": 33031,
+      "ddl_sha256": "df752d84660ca3dd941d88b864ddb8d09703281f2bd631a4c04b5f1c3a4cdfff"
+    },
+    {
+      "identity": "extensions.grant_pg_graphql_access()",
+      "source_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "start_line": 727,
+      "ddl_sha256": "5a02098da6aba0e961af4eb525269ec2210945d0fdcac6d801d0971ed6240dcc"
+    },
+    {
+      "identity": "extensions.pgrst_ddl_watch()",
+      "source_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "start_line": 845,
+      "ddl_sha256": "910bde86340fa05affffc2059e70cfd247f2cfc2f8fd0d1dea7f00dee6493f7c"
+    },
+    {
+      "identity": "public.fn_reject_retired_solver_option_rpc_ddl()",
+      "source_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "start_line": 124497,
+      "ddl_sha256": "ac1112b896b569a862ea80999e7df8320893606e58cf333c62694df6d3fa344c"
+    },
+    {
+      "identity": "public.xp_ban_guard_fn()",
+      "source_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+      "start_line": 203074,
+      "ddl_sha256": "f80ca922873c4a4501f10aab4cba48aca5434beb2c6771f3d1dca4acab55547b"
+    }
+  ],
+  "tables": {
+    "public.ca_ddl_events": {
+      "owner": "postgres",
+      "acl": null,
+      "kind": "r",
+      "rls": true,
+      "forced": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "notnull": true,
+          "identity": "a",
+          "default": null
+        },
+        {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "identity": "",
+          "default": "now()"
+        },
+        {
+          "name": "command_tag",
+          "type": "text",
+          "notnull": true,
+          "identity": "",
+          "default": null
+        },
+        {
+          "name": "object_type",
+          "type": "text",
+          "notnull": false,
+          "identity": "",
+          "default": null
+        },
+        {
+          "name": "object_identity",
+          "type": "text",
+          "notnull": false,
+          "identity": "",
+          "default": null
+        },
+        {
+          "name": "schema_name",
+          "type": "text",
+          "notnull": false,
+          "identity": "",
+          "default": null
+        },
+        {
+          "name": "triggers_pgrst_reload",
+          "type": "boolean",
+          "notnull": true,
+          "identity": "",
+          "default": "false"
+        },
+        {
+          "name": "role_name",
+          "type": "text",
+          "notnull": true,
+          "identity": "",
+          "default": "CURRENT_USER"
+        },
+        {
+          "name": "application_name",
+          "type": "text",
+          "notnull": false,
+          "identity": "",
+          "default": null
+        },
+        {
+          "name": "query_snippet",
+          "type": "text",
+          "notnull": false,
+          "identity": "",
+          "default": null
+        }
+      ],
+      "triggers": [],
+      "rules": [],
+      "policies": [],
+      "constraints": [
+        {
+          "name": "ca_ddl_events_pkey",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ca_ddl_events_pkey",
+          "definition": "CREATE UNIQUE INDEX ca_ddl_events_pkey ON public.ca_ddl_events USING btree (id)"
+        },
+        {
+          "name": "idx_ca_ddl_events_occurred",
+          "definition": "CREATE INDEX idx_ca_ddl_events_occurred ON public.ca_ddl_events USING btree (occurred_at DESC)"
+        },
+        {
+          "name": "idx_ca_ddl_events_reload",
+          "definition": "CREATE INDEX idx_ca_ddl_events_reload ON public.ca_ddl_events USING btree (occurred_at DESC) WHERE triggers_pgrst_reload"
+        }
+      ]
+    },
+    "public.privileged_function_lock": {
+      "owner": "postgres",
+      "acl": null,
+      "kind": "r",
+      "rls": true,
+      "forced": false,
+      "columns": [
+        {
+          "name": "function_signature",
+          "type": "text",
+          "notnull": true,
+          "identity": "",
+          "default": null
+        },
+        {
+          "name": "security_definer",
+          "type": "boolean",
+          "notnull": true,
+          "identity": "",
+          "default": "false"
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "notnull": true,
+          "identity": "",
+          "default": null
+        },
+        {
+          "name": "locked_at",
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "identity": "",
+          "default": "now()"
+        }
+      ],
+      "triggers": [],
+      "rules": [],
+      "policies": [],
+      "constraints": [
+        {
+          "name": "privileged_function_lock_pkey",
+          "definition": "PRIMARY KEY (function_signature)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "privileged_function_lock_pkey",
+          "definition": "CREATE UNIQUE INDEX privileged_function_lock_pkey ON public.privileged_function_lock USING btree (function_signature)"
+        }
+      ]
+    }
+  },
+  "sequence": {
+    "name": "public.ca_ddl_events_id_seq",
+    "owner": "postgres",
+    "acl": null,
+    "relkind": "S",
+    "persistence": "p",
+    "replident": "n",
+    "reloptions": null,
+    "type": "bigint",
+    "start": "1",
+    "minimum": "1",
+    "maximum": "9223372036854775807",
+    "increment": "1",
+    "cache": "1",
+    "cycle": false,
+    "owned_by": [
+      {
+        "relation": "public.ca_ddl_events",
+        "column": "id",
+        "deptype": "i"
+      }
+    ]
+  },
+  "dispatches": [
+    {
+      "sql": "REVOKE ALL ON FUNCTION public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text) FROM PUBLIC;",
+      "sha256": "f159e0b8a13beb391098fd4c419103cea7f9b7076b926a30e6d31e3b19ab26bf",
+      "events": [
+        {
+          "command_tag": "REVOKE",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "REVOKE ALL ON FUNCTION public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text) FROM PUBLIC;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT EXECUTE ON FUNCTION public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text) TO service_role;",
+      "sha256": "15d9eb8ec6be0772090dd1e23cdb4dba4c35204cb9b92246262c009efb042422",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT EXECUTE ON FUNCTION public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text) TO service_role;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "SET LOCAL lock_timeout = '1000ms';\nSET LOCAL statement_timeout = '15000ms';\n-- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.\n-- Run in the migration runner's transaction, under exclusive function-DDL ownership.\n-- No business function is invoked. Existing object ownership/ACL must be preserved.\nDO $install$\nDECLARE\n  v_oid oid;\n  v_definition text;\n  v_owner text;\n  v_acl aclitem[];\n  v_config text[];\n  v_security boolean;\n  v_before constant text := $before$CREATE OR REPLACE FUNCTION public.fn_bbj_move_between_banks(p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_amt numeric := round(COALESCE(p_amount, 0), 2);\n  v_pool public.bbj_pools%ROWTYPE; v_have numeric; v_prior public.ca_bbj_bucket_moves%ROWTYPE;\nBEGIN\n  IF NOT (current_user IN ('postgres', 'supabase_admin') OR COALESCE(auth.role(), '') = 'service_role') THEN\n    RAISE EXCEPTION 'fn_bbj_move_between_banks is service only' USING ERRCODE = '42501';\n  END IF;\n  IF p_from_bank NOT IN ('main', 'backup', 'promo') OR p_to_bank NOT IN ('main', 'backup', 'promo') OR p_from_bank = p_to_bank THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'banks_must_be_two_of_main_backup_promo');\n  END IF;\n  IF v_amt <= 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'amount_must_be_positive');\n  END IF;\n  IF length(btrim(COALESCE(p_reason, ''))) < 10 OR COALESCE(btrim(p_op_id), '') = '' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'a_bank_move_needs_a_reason_and_an_op_id');\n  END IF;\n  SELECT * INTO v_pool FROM public.bbj_pools WHERE id = p_pool_id FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'pool_not_found');\n  END IF;\n  SELECT * INTO v_prior FROM public.ca_bbj_bucket_moves WHERE op_id = p_op_id;\n  IF FOUND THEN\n    RETURN jsonb_build_object('ok', true, 'replayed', true, 'move_id', v_prior.id, 'amount', v_prior.amount);\n  END IF;\n  v_have := CASE p_from_bank WHEN 'main' THEN v_pool.main_balance WHEN 'backup' THEN v_pool.backup_balance ELSE v_pool.promo_balance END;\n  v_have := v_have-public.fn_bbj_parked_reserve(p_pool_id,p_from_bank);\n  IF COALESCE(v_have, 0) < v_amt THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'source_bank_cannot_cover_it', 'available', COALESCE(v_have, 0), 'requested', v_amt);\n  END IF;\n  -- Declared as bbj_pool -> bbj_pool: the chips change bank, not account. The\n  -- autoledger writes one leg per bucket column with its label, which is what\n  -- the per-bank reconcile reads.\n  PERFORM public.fn_ca_declare_ledger('adjustment', 'bbj_pool', p_pool_id, NULL, NULL, NULL);\n  UPDATE public.bbj_pools\n     SET main_balance   = main_balance   + CASE WHEN p_to_bank = 'main'   THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'main'   THEN v_amt ELSE 0 END,\n         backup_balance = backup_balance + CASE WHEN p_to_bank = 'backup' THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'backup' THEN v_amt ELSE 0 END,\n         promo_balance  = promo_balance  + CASE WHEN p_to_bank = 'promo'  THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'promo'  THEN v_amt ELSE 0 END,\n         updated_at = now()\n   WHERE id = p_pool_id;\n  PERFORM set_config('app.ledger_category', '', true);\n  PERFORM set_config('app.ledger_counterparty', '', true);\n  PERFORM set_config('app.ledger_counterparty_entity', '', true);\n  INSERT INTO public.ca_bbj_bucket_moves (pool_id, from_bank, to_bank, amount, reason, op_id, performed_by)\n  VALUES (p_pool_id, p_from_bank, p_to_bank, v_amt, btrim(p_reason), p_op_id, auth.uid())\n  RETURNING * INTO v_prior;\n  RETURN jsonb_build_object('ok', true, 'replayed', false, 'move_id', v_prior.id, 'amount', v_amt,\n                            'from_bank', p_from_bank, 'to_bank', p_to_bank);\nEND;\n$function$\n$before$;\n  v_candidate constant text := $candidate$CREATE OR REPLACE FUNCTION public.fn_bbj_move_between_banks(p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_amt numeric := round(COALESCE(p_amount, 0), 2);\n  v_pool public.bbj_pools%ROWTYPE; v_have numeric; v_prior public.ca_bbj_bucket_moves%ROWTYPE;\nBEGIN\n  IF NOT (current_user IN ('postgres', 'supabase_admin') OR COALESCE(auth.role(), '') = 'service_role') THEN\n    RAISE EXCEPTION 'fn_bbj_move_between_banks is service only' USING ERRCODE = '42501';\n  END IF;\n  IF p_from_bank NOT IN ('main', 'backup', 'promo') OR p_to_bank NOT IN ('main', 'backup', 'promo') OR p_from_bank = p_to_bank THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'banks_must_be_two_of_main_backup_promo');\n  END IF;\n  IF v_amt <= 0 THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'amount_must_be_positive');\n  END IF;\n  IF length(btrim(COALESCE(p_reason, ''))) < 10 OR COALESCE(btrim(p_op_id), '') = '' THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'a_bank_move_needs_a_reason_and_an_op_id');\n  END IF;\n  SELECT * INTO v_pool FROM public.bbj_pools WHERE id = p_pool_id FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'pool_not_found');\n  END IF;\n  SELECT * INTO v_prior FROM public.ca_bbj_bucket_moves WHERE op_id = p_op_id;\n  IF FOUND THEN\n    IF v_prior.pool_id IS DISTINCT FROM p_pool_id\n       OR v_prior.from_bank IS DISTINCT FROM p_from_bank\n       OR v_prior.to_bank IS DISTINCT FROM p_to_bank\n       OR v_prior.amount IS DISTINCT FROM v_amt THEN\n      RETURN jsonb_build_object('ok', false, 'reason', 'op_id_payload_mismatch');\n    END IF;\n    RETURN jsonb_build_object('ok', true, 'replayed', true, 'move_id', v_prior.id, 'amount', v_prior.amount);\n  END IF;\n  v_have := CASE p_from_bank WHEN 'main' THEN v_pool.main_balance WHEN 'backup' THEN v_pool.backup_balance ELSE v_pool.promo_balance END;\n  v_have := v_have-public.fn_bbj_parked_reserve(p_pool_id,p_from_bank);\n  IF COALESCE(v_have, 0) < v_amt THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'source_bank_cannot_cover_it', 'available', COALESCE(v_have, 0), 'requested', v_amt);\n  END IF;\n  -- Declared as bbj_pool -> bbj_pool: the chips change bank, not account. The\n  -- autoledger writes one leg per bucket column with its label, which is what\n  -- the per-bank reconcile reads.\n  PERFORM public.fn_ca_declare_ledger('adjustment', 'bbj_pool', p_pool_id, NULL, NULL, NULL);\n  UPDATE public.bbj_pools\n     SET main_balance   = main_balance   + CASE WHEN p_to_bank = 'main'   THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'main'   THEN v_amt ELSE 0 END,\n         backup_balance = backup_balance + CASE WHEN p_to_bank = 'backup' THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'backup' THEN v_amt ELSE 0 END,\n         promo_balance  = promo_balance  + CASE WHEN p_to_bank = 'promo'  THEN v_amt ELSE 0 END - CASE WHEN p_from_bank = 'promo'  THEN v_amt ELSE 0 END,\n         updated_at = now()\n   WHERE id = p_pool_id;\n  PERFORM set_config('app.ledger_category', '', true);\n  PERFORM set_config('app.ledger_counterparty', '', true);\n  PERFORM set_config('app.ledger_counterparty_entity', '', true);\n  INSERT INTO public.ca_bbj_bucket_moves (pool_id, from_bank, to_bank, amount, reason, op_id, performed_by)\n  VALUES (p_pool_id, p_from_bank, p_to_bank, v_amt, btrim(p_reason), p_op_id, auth.uid())\n  RETURNING * INTO v_prior;\n  RETURN jsonb_build_object('ok', true, 'replayed', false, 'move_id', v_prior.id, 'amount', v_amt,\n                            'from_bank', p_from_bank, 'to_bank', p_to_bank);\nEND;\n$function$\n$candidate$;\nBEGIN\n  -- Cooperating installers serialize here; this does not fence arbitrary DDL.\n  PERFORM pg_advisory_xact_lock(hashtextextended('FWP02:public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)', 0));\n  v_oid := to_regprocedure('public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)');\n  IF v_oid IS NULL THEN\n    RAISE EXCEPTION 'FWP02 drift: expected existing function';\n  END IF;\n  SELECT pg_get_functiondef(p.oid), pg_get_userbyid(p.proowner), p.proacl, p.proconfig, p.prosecdef\n    INTO v_definition, v_owner, v_acl, v_config, v_security\n    FROM pg_proc p WHERE p.oid = v_oid;\n  IF v_owner IS DISTINCT FROM 'postgres'\n     OR v_acl IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'::aclitem[]\n     OR v_config IS DISTINCT FROM ARRAY['search_path=public']::text[]\n     OR v_security IS DISTINCT FROM true THEN\n    RAISE EXCEPTION 'FWP02 drift: owner/ACL/settings/security differ';\n  END IF;\n  IF v_definition IS NOT DISTINCT FROM v_candidate THEN\n    RETURN; -- Exact already-installed candidate: no replacement or ACL change.\n  END IF;\n  IF v_definition IS DISTINCT FROM v_before THEN\n    RAISE EXCEPTION 'FWP02 drift: function definition differs';\n  END IF;\n  EXECUTE v_candidate;\n  IF to_regprocedure('public.fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)')::oid IS DISTINCT FROM v_oid THEN\n    RAISE EXCEPTION 'FWP02 postcondition: function identity changed';\n  END IF;\n  SELECT pg_get_functiondef(p.oid), pg_get_userbyid(p.proowner), p.proacl, p.proconfig, p.prosecdef\n    INTO v_definition, v_owner, v_acl, v_config, v_security\n    FROM pg_proc p WHERE p.oid = v_oid;\n  IF v_definition IS DISTINCT FROM v_candidate\n     OR v_owner IS DISTINCT FROM 'postgres'\n     OR v_acl IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'::aclitem[]\n     OR v_config IS DISTINCT FROM ARRAY['search_path=public']::text[]\n     OR v_security IS DISTINCT FROM true THEN\n    RAISE EXCEPTION 'FWP02 postcondition: replacement or metadata differs';\n  END IF;\nEND;\n$install$;\n",
+      "sha256": "c70c4ee46dab55852206cfa31cc3adcfe721cd2746a79c436cc555fb66ddb6d4",
+      "events": [
+        {
+          "command_tag": "CREATE FUNCTION",
+          "object_type": "function",
+          "object_identity": "public.fn_bbj_move_between_banks(pg_catalog.uuid,pg_catalog.text,pg_catalog.text,numeric,pg_catalog.text,pg_catalog.text)",
+          "schema_name": "public",
+          "triggers_pgrst_reload": true,
+          "query_snippets": [
+            "\n-- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.\n-- Run in the migration runner's transaction, under exclusive function-DDL ownership.\n-- No business function is invoked. Existing object ownership/ACL must be preserved.\nDO $install$\nDECLARE\n  v_oid oid;\n  v_definit",
+            "-- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.\n-- Run in the migration runner's transaction, under exclusive function-DDL ownership.\n-- No business function is invoked. Existing object ownership/ACL must be preserved.\nDO $install$\nDECLARE\n  v_oid oid;\n  v_definiti"
+          ]
+        },
+        {
+          "command_tag": "REVOKE",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "\n-- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.\n-- Run in the migration runner's transaction, under exclusive function-DDL ownership.\n-- No business function is invoked. Existing object ownership/ACL must be preserved.\nDO $install$\nDECLARE\n  v_oid oid;\n  v_definit",
+            "-- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.\n-- Run in the migration runner's transaction, under exclusive function-DDL ownership.\n-- No business function is invoked. Existing object ownership/ACL must be preserved.\nDO $install$\nDECLARE\n  v_oid oid;\n  v_definiti"
+          ]
+        },
+        {
+          "command_tag": "REVOKE",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "\n-- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.\n-- Run in the migration runner's transaction, under exclusive function-DDL ownership.\n-- No business function is invoked. Existing object ownership/ACL must be preserved.\nDO $install$\nDECLARE\n  v_oid oid;\n  v_definit",
+            "-- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.\n-- Run in the migration runner's transaction, under exclusive function-DDL ownership.\n-- No business function is invoked. Existing object ownership/ACL must be preserved.\nDO $install$\nDECLARE\n  v_oid oid;\n  v_definiti"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "REVOKE ALL ON FUNCTION public.fn_bbj_parked_reserve(uuid,text) FROM PUBLIC;",
+      "sha256": "ae07f28f2441d7e4127d248a0db5183a9a4336fcdce3ec03922b532bcb2428cd",
+      "events": [
+        {
+          "command_tag": "REVOKE",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "REVOKE ALL ON FUNCTION public.fn_bbj_parked_reserve(uuid,text) FROM PUBLIC;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT EXECUTE ON FUNCTION public.fn_bbj_parked_reserve(uuid,text) TO service_role;",
+      "sha256": "12ace3201495caa9f4d517f5f003cbfe8078b7bc7791c9c5123cbe90b2cfc4b7",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT EXECUTE ON FUNCTION public.fn_bbj_parked_reserve(uuid,text) TO service_role;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "REVOKE ALL ON FUNCTION public.fn_log_jackpot_payout_without_hand() FROM PUBLIC;",
+      "sha256": "f489d9864b6c056dcf80c2f0576dc0ce52746d9a488b2c96afa7156cfce49457",
+      "events": [
+        {
+          "command_tag": "REVOKE",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "REVOKE ALL ON FUNCTION public.fn_log_jackpot_payout_without_hand() FROM PUBLIC;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT EXECUTE ON FUNCTION public.fn_log_jackpot_payout_without_hand() TO service_role;",
+      "sha256": "c0a007e97eae35f002f002935800da8bdd88e1072df4a11798e6a90bacca4ea7",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT EXECUTE ON FUNCTION public.fn_log_jackpot_payout_without_hand() TO service_role;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "REVOKE ALL ON FUNCTION public.fn_bbj_ledger_delete_guard() FROM PUBLIC;",
+      "sha256": "6a35bf5f4a2200b67a8dda5bf75e1b1aa192824c0ef332a35a98b9aea98daa86",
+      "events": [
+        {
+          "command_tag": "REVOKE",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "REVOKE ALL ON FUNCTION public.fn_bbj_ledger_delete_guard() FROM PUBLIC;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT EXECUTE ON FUNCTION public.fn_bbj_ledger_delete_guard() TO service_role;",
+      "sha256": "56b71a8e46cbc4c1a3f56a48c1c433aa916645d171b23754d2dd80cb88806247",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "FUNCTION",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT EXECUTE ON FUNCTION public.fn_bbj_ledger_delete_guard() TO service_role;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ca_bbj_bucket_moves TO postgres;",
+      "sha256": "e2d0de605592068db954351ca771a84e741c89d371f3363f63647e7a5625b6d6",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ca_bbj_bucket_moves TO postgres;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ca_bbj_bucket_moves TO service_role;",
+      "sha256": "6de5c7f3f0c7d583784b8325da6eed8e829de3dcbcfbf4f047d61904ba8d3764",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.ca_bbj_bucket_moves TO service_role;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_payouts TO postgres;",
+      "sha256": "68cd3077e261f57ec7b3408f52cdb9c93f6241e0c9ead6c535bc8613d5cfdc4a",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_payouts TO postgres;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO anon;",
+      "sha256": "3fa325ea27cd4a830a8bd6e247b827eab65ecee7733a8c86d1611eb707512cc3",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO anon;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO authenticated;",
+      "sha256": "ea00cf3c417745dc69747dd3f8bd219fb89a3f702cbcb16521e7d3438f581a08",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT SELECT, MAINTAIN ON TABLE public.bbj_payouts TO authenticated;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_payouts TO service_role;",
+      "sha256": "8999537fcadee4e4bcf5fc6e4639d6db6dd1d1fffd9caad3e5c23b020e24dffb",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_payouts TO service_role;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO postgres;",
+      "sha256": "0178def4afb4c2a4d6b472d9aac28e59954aa9affdea7b545b5c6444c25d7ae3",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO postgres;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT SELECT, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO anon;",
+      "sha256": "3f516c7d0fe89d93ddd12a28f123b0208b07161fa8e13432cb9459f9dd745e9f",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT SELECT, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO anon;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT SELECT, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO authenticated;",
+      "sha256": "7e25c92b9486113213b850d1d9d1101a78107841112f9ff2fe8c111fb7f64b7c",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT SELECT, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO authenticated;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO service_role;",
+      "sha256": "539f6797de01b54e15b4c0a2eb47fed4192e453eb4ba378e44b77ba0fea7cf74",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "TABLE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN ON TABLE public.bbj_unclaimed_shares TO service_role;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO postgres;",
+      "sha256": "de041dfb36c6a0422edf445563d70cbf1e4d2df08740cbf8bdcfb7e2b850f1d2",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "SEQUENCE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO postgres;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO anon;",
+      "sha256": "b11259c1c1426570904c2254560a1b4c0562c8f5ab9e59e7629eabf315167027",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "SEQUENCE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO anon;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO authenticated;",
+      "sha256": "b337783503c8e8447fc16c141b1868b459733851b6b8b4d4347bf6498dfcbdbd",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "SEQUENCE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO authenticated;"
+          ]
+        }
+      ]
+    },
+    {
+      "sql": "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO service_role;",
+      "sha256": "1550f9a5d2d5ffbe5e7201b0c5df8132a23604dc7fe90598fafac30e31b8137a",
+      "events": [
+        {
+          "command_tag": "GRANT",
+          "object_type": "SEQUENCE",
+          "object_identity": null,
+          "schema_name": null,
+          "triggers_pgrst_reload": false,
+          "query_snippets": [
+            "GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.ca_bbj_bucket_moves_id_seq TO service_role;"
+          ]
+        }
+      ]
+    }
+  ],
+  "move_lock": {
+    "function_signature": "public.fn_bbj_move_between_banks(uuid, text, text, numeric, text, text)",
+    "security_definer": true,
+    "reason": "Auto-locked by trg_autorevoke_privileged_anon on CREATE FUNCTION (name)."
+  },
+  "source_basis": {
+    "schema_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/10-historical-schema.sql",
+    "schema_sha256": "83eaf66eb3c7e7110740b4cedeb3c6c5c445a905b9c70d3b882113ce127b250f",
+    "event_trigger_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/internal-ledger-native-fixture-0006/build/90-historical-event-triggers.sql",
+    "event_trigger_sha256": "8faafdde98338cd6ec7a1d99c07090d98ecb4552bdf49d72e842e652ae190d04",
+    "postgresql_release": "17.11",
+    "postgresql_identity_source": "postgresql-source/objectaddress.c:4813 and regproc.c:361 force qualification and comma-only separators; format_type.c:242 preserves special SQL spelling numeric. Lock registry separately uses source format_type and comma-space."
+  },
+  "required_runtime_qualification": "Actual protected original Psql, nested event-trigger dispatch, query-buffer representation and complete before/after/failure captures; not run"
+}

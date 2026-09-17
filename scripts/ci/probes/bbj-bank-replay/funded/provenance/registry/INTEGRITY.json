@@ -1,0 +1,117 @@
+{
+  "packet": "internal-ledger-native-fixture-0010",
+  "sealed_at": "2026-09-14T00:37:57.231774+00:00",
+  "source_only": true,
+  "files": [
+    {
+      "path": "FIXTURE-INPUTS.json",
+      "sha256": "59639f605e26249d127198f2240d3ea01b1bcadb0aef7237357a83c4f46eef48",
+      "bytes": 6712
+    },
+    {
+      "path": "HANDOFF.json",
+      "sha256": "543aa38a455d02d5be4b3956d1817b4ae1b099d1b487544ec489d6182def70dc",
+      "bytes": 4585
+    },
+    {
+      "path": "LOCAL-STATUS.json",
+      "sha256": "7fd410b83119ca17ddf348eff620ad98eb2f648cd2455a9da3d20ff1e9971515",
+      "bytes": 468
+    },
+    {
+      "path": "PREDECESSOR-ATTEMPT.json",
+      "sha256": "630889870f4a631e3a6de990babb62ca969d13139b0ebc20cfb31511003c7e5e",
+      "bytes": 2825
+    },
+    {
+      "path": "QUALIFIED-RELATION-LOCATORS.json",
+      "sha256": "a633efc2d7e1586504d1b07320518d08eb37ea23978013f431a0bc1b2637fcd0",
+      "bytes": 15258
+    },
+    {
+      "path": "REGISTRY-CATALOG-CAPTURE.json",
+      "sha256": "8e54f32e7d559f4a6e4aa4640c12a0961605274c1268de8dc61eff4de05b796e",
+      "bytes": 4343
+    },
+    {
+      "path": "REGISTRY-CATALOG-QUERY.sql",
+      "sha256": "d133ad74b09d2d2a0a344529cad047920156638023462eddc09e6476e36cb9fe",
+      "bytes": 1817
+    },
+    {
+      "path": "REGISTRY-CATALOG-RAW.json",
+      "sha256": "31bdb40520594cfb33471afa6d6368e1a6b90ba2bf476efe2966a2491e84e2f4",
+      "bytes": 2792
+    },
+    {
+      "path": "REGISTRY-EXPECTED.json",
+      "sha256": "6da171811c3ff9c9c27e4c20577a77412efaeed06d43b7efe931c3df17c38199",
+      "bytes": 9247
+    },
+    {
+      "path": "REGISTRY-SOURCE-PROVENANCE.json",
+      "sha256": "e37b55faa297a726dd809b8f31715f54d36288527b122b82f0a1f7c73aac42b7",
+      "bytes": 684
+    },
+    {
+      "path": "REVIEW.md",
+      "sha256": "b01232345413d670d6394580a5043e6d382a9659ad00d63d4f3f2eddda78b6ca",
+      "bytes": 5179
+    },
+    {
+      "path": "RUN-INSTRUCTIONS.md",
+      "sha256": "1b46dc7a36e71fc68d1cbe4ce571a542dd08b8f08ff4880484f935e77c424fec",
+      "bytes": 1694
+    },
+    {
+      "path": "SEED-RELATION-DEPENDENCIES.json",
+      "sha256": "bb0e85705520e21b0df7c056f501329f0a86c9da69f4bf6b2d290f19fd18a7b7",
+      "bytes": 1740
+    },
+    {
+      "path": "SOURCE-CHECKS.json",
+      "sha256": "e82dc4d1bb9b3635920b7e0e3213dcf85517fab39656e8b10c70832ad6e71dc5",
+      "bytes": 13764
+    },
+    {
+      "path": "SOURCE-DELTA.patch",
+      "sha256": "47029a1cf1b3777dd65afc26e4e7e01f7211c65112cc6b158811ef0153b13e97",
+      "bytes": 4929
+    },
+    {
+      "path": "SOURCE-MANIFEST.json",
+      "sha256": "38eaf5a3582fe658cd721fdd1c34e54e0f204b8a247759b9a00e964efb14c3ef",
+      "bytes": 2642
+    },
+    {
+      "path": "build_registry.py",
+      "sha256": "c9e23ef4e06658481a209d6e92cdd814c1c6821f9347eedc98589c20ce467e66",
+      "bytes": 4227
+    },
+    {
+      "path": "check_source.py",
+      "sha256": "fc31ef34a2a5dd13ae9dc4416deb258359661fcb0e3b361621471f1646dff204",
+      "bytes": 6718
+    },
+    {
+      "path": "registry-authoritative-slice.sql",
+      "sha256": "9a79278c77f371c9fbeddfddd5fe3c164963784dc0fa793a79aa3ec64db9b060",
+      "bytes": 4376
+    },
+    {
+      "path": "registry-overlay.sql",
+      "sha256": "cf0b5af86142257bfbffe598471a52f1a0c6914bb44ccb0799039296f8bf14b3",
+      "bytes": 6906
+    },
+    {
+      "path": "registry_preflight.py",
+      "sha256": "97b37c5a0b1da2f47582b4bdd7a371a8f7e8c4ba7f9724814ebe38d192108dbd",
+      "bytes": 2629
+    },
+    {
+      "path": "run_fixture.py",
+      "sha256": "1fe64550818a4ee7a8999622bcc2b07e02f114bf9a49223c60235d8cf52b021b",
+      "bytes": 22278
+    }
+  ]
+}

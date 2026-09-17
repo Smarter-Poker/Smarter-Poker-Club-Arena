@@ -1,382 +1,338 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   ADD PLAYER - on the spade console (#ClubArenaConsole)
-
-   The chassis, its inks and its type come from SpadeConsole.css. This sheet
-   places the console on the backdrop, switches off the global popup chassis
-   (metallic-popups.css paints a rounded shell on anything whose class contains
-   `_modal_` and a recessed well on every input inside one, both with
-   !important), and prints the body as rows on the black glass.
-
-   WHAT WAS DELETED. A rounded sheet with a shadow; a header bar with a square
-   close button; two rounded tab pills; a filled, bordered search well with a
-   square go button; a 40px round avatar disc per result; a bordered result
-   card; a rounded "+ Add" lozenge; a gradient Generate button; and a boxed
-   code display with its own border.
-
-   The two inputs are GROOVES cut in the glass - the same cut as
-   `.rules-textarea` on the Club Rules page: no fill, no rim, a black line with
-   a light lip above and below. Every action is a lit word. No border-radius on
-   a card, tile, pill, avatar or button, no gradient, no box-shadow on a box,
-   no :hover.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  PLAYER INVITE MODAL — Premium Dark Theme CSS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
 .overlay {
   position: fixed;
-  inset: 0;
-  z-index: 1000;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
+  z-index: 1000;
+  padding: 20px;
 }
 
-/* Doubled class (0,2,0) so it outranks the popup chassis' :where() rule, which
-   is specificity 0,0,0 and !important. Every longhand that rule sets is
-   restated; a `background` shorthand alone leaves its border and radius
-   clipping the art. */
-.modal.modal {
-  width: min(100%, 460px);
-  max-height: 100%;
-  overflow: visible auto;
-  padding: 0 !important;
-  border: 0 !important;
-  border-top: 0 !important;
-  border-radius: 0 !important;
-  outline: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
+.modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
+  border: 1px solid rgba(251, 191, 36, 0.15);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px) saturate(1.05);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
 }
 
-/* ── The two modes: lit words, never two drawn tabs ───────────────────── */
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
 
+.header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: white;
+}
+
+.closeBtn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* Tabs */
 .tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: stretch;
+  display: flex;
+  padding: 16px 24px;
+  gap: 12px;
 }
 
 .tab {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  padding: 2cqw 0.4cqw;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font-family: inherit;
-  font-size: 3cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  flex: 1;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
   cursor: pointer;
-  touch-action: manipulation;
+  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
-.tabOn {
-  color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+.tab.active {
+  background: rgba(251, 191, 36, 0.15);
+  border-color: #fbbf24;
+  color: #fbbf24;
 }
 
-.tab:active,
-.searchGo:active:not(:disabled),
-.addWord:active:not(:disabled),
-.generateWord:active:not(:disabled),
-.copyWord:active,
-.closeWord:active {
-  filter: brightness(1.25);
-  transform: none;
-}
-
-.tab:focus-visible,
-.searchGo:focus-visible,
-.addWord:focus-visible,
-.generateWord:focus-visible,
-.copyWord:focus-visible,
-.closeWord:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1cqw;
-}
-
-/* ── What just happened, on its own engraved line ─────────────────────── */
-
+/* Message */
 .message {
-  padding: 2.4cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  font:
-    600 3.1cqw/1.45 Inter,
-    system-ui,
-    sans-serif;
+  margin: 0 24px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: center;
 }
 
-/* ── Search: a groove cut in the glass, and a lit word ────────────────── */
+.message.success {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
 
+.message.error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* Search Section */
 .searchSection {
+  padding: 16px 24px;
   display: flex;
   flex-direction: column;
-}
-
-.searchBar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2cqw;
-  align-items: center;
-}
-
-.searchInput {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  margin: 0;
-  padding: 2.4cqw 1cqw !important;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-bottom: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 9%),
-    0 1px 0 rgb(255 255 255 / 9%) !important;
-  color: #e6e9ee !important;
-  -webkit-text-fill-color: #e6e9ee;
-  font:
-    500 3.6cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
-  caret-color: #5bb8ff;
-  outline: none;
-}
-
-.searchInput::placeholder {
-  color: #6b7784;
-  -webkit-text-fill-color: #6b7784;
-}
-
-.searchInput:focus-visible {
-  outline: 0.6cqw solid #8fd4ff !important;
-  outline-offset: -0.6cqw;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 9%),
-    0 1px 0 rgb(255 255 255 / 9%) !important;
-}
-
-.searchGo,
-.addWord,
-.generateWord,
-.copyWord,
-.closeWord {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  font-family: inherit;
-  font-weight: 800;
-  text-transform: uppercase;
-  cursor: pointer;
-  touch-action: manipulation;
-  white-space: nowrap;
-}
-
-.searchGo {
-  padding: 2cqw 2cqw;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 3cqw;
-  letter-spacing: 0.14em;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
-}
-
-.searchGo:disabled,
-.addWord:disabled,
-.generateWord:disabled {
-  color: #3a424d;
-  -webkit-text-fill-color: #3a424d;
-  cursor: not-allowed;
-}
-
-/* ── One player, one engraved row ─────────────────────────────────────── */
-
-.results {
-  display: flex;
-  flex-direction: column;
-}
-
-.noResults {
-  padding: 6cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.resultRow {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: center;
-  padding: 2cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-/* The face is the picture, not a disc drawn around it: no ring, no radius. */
-.playerFace {
-  display: grid;
-  place-items: center;
-  width: 9cqw;
-  height: 9cqw;
+  gap: 16px;
   overflow: hidden;
 }
 
-.playerFaceImg {
+.searchBar {
+  display: flex;
+  gap: 12px;
+}
+
+.searchBar input {
+  flex: 1;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: white;
+  font-size: 16px; /* was 15px; under 16px makes iOS zoom the page on focus */
+}
+
+.searchBar input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.searchBar button {
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  border: none;
+  border-radius: 10px;
+  color: #1a1a2e;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+.searchBar button:disabled {
+  opacity: 0.5;
+}
+
+/* Results */
+.results {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+}
+
+.noResults {
+  padding: 32px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.resultCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.playerAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.playerAvatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.playerInitial {
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 4.4cqw;
-  font-weight: 800;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+.playerAvatar span {
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
 }
 
 .playerInfo {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.4cqw;
-  min-width: 0;
+  gap: 2px;
 }
 
 .playerName {
-  overflow: hidden;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 600;
+  color: white;
+  font-size: 14px;
 }
 
 .playerUsername {
-  overflow: hidden;
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 2.7cqw/1.3 Inter,
-    system-ui,
-    sans-serif;
-  text-overflow: ellipsis;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-  white-space: nowrap;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
 }
 
-.addWord {
-  padding: 2cqw 1.5cqw;
-  color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  font-size: 3cqw;
-  letter-spacing: 0.14em;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+.addBtn {
+  padding: 8px 16px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid #10b981;
+  border-radius: 8px;
+  color: #10b981;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-/* ── The shareable link ───────────────────────────────────────────────── */
+.addBtn:disabled {
+  opacity: 0.5;
+}
 
+/* Invite Section */
 .inviteSection {
+  padding: 16px 24px 24px;
   display: flex;
   flex-direction: column;
+  gap: 20px;
 }
 
-.generateWord {
-  padding: 3cqw 0.5cqw;
-  border-top: 1px solid #000 !important;
-  color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  font-size: 3.4cqw;
-  letter-spacing: 0.16em;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+.inviteForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inviteForm label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.inviteForm input {
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: white;
+  font-size: 16px; /* was 15px; under 16px makes iOS zoom the page on focus */
+}
+
+.inviteForm input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+}
+
+.generateBtn {
+  padding: 14px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  border: none;
+  border-radius: 10px;
+  color: #1a1a2e;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+.generateBtn:disabled {
+  opacity: 0.7;
 }
 
 .codeDisplay {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2cqw;
+  display: flex;
   align-items: center;
-  padding: 2.4cqw 1cqw;
-  border-top: 1px solid #000;
-  border-bottom: 1px solid #000;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 9%),
-    0 1px 0 rgb(255 255 255 / 9%);
+  gap: 12px;
+  padding: 16px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.15);
 }
 
 .code {
-  min-width: 0;
-  overflow: hidden;
-  color: #e6e9ee;
-  -webkit-text-fill-color: #e6e9ee;
-  font:
-    500 2.8cqw/1.4 Inter,
-    system-ui,
-    sans-serif;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1;
+  font-size: 24px;
+  font-weight: 700;
+  color: #fbbf24;
+  font-family: monospace;
+  letter-spacing: 2px;
 }
 
-.copyWord {
-  padding: 2cqw 1.5cqw;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 3cqw;
-  letter-spacing: 0.14em;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+.codeDisplay button {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
 }
 
 .inviteInfo {
   display: flex;
   flex-direction: column;
-  gap: 1.4cqw;
-  padding: 3cqw 0.5cqw 0;
+  gap: 8px;
 }
 
-/* ── The one action for the whole sheet ───────────────────────────────── */
-
-.close {
-  display: flex;
-  justify-content: center;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.closeWord {
-  padding: 2.4cqw 6cqw;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 3.4cqw;
-  letter-spacing: 0.16em;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+.inviteInfo p {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
 }

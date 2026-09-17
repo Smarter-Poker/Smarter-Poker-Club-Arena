@@ -224,9 +224,9 @@ function ToastContainer({
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastIdRef = useRef(0);
-  // Originals already sent to Sentry, with the time they were sent. A retrying
+  // Originals already sent to error reporting, with the time they were sent. A retrying
   // caller (heartbeat, poll loop) throws the same error every few seconds; the
-  // toast dedupes on screen, so the Sentry report dedupes here to match.
+  // toast dedupes on screen, so the error reporting report dedupes here to match.
   const reportedRef = useRef<Map<string, number>>(new Map());
 
   /**
@@ -283,7 +283,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
         text = safeErrorMessage(original);
         if (wasSanitized(original, text)) {
-          // The player is spared the detail; Sentry is not. Diagnostics survive.
+          // The player is spared the detail; error reporting is not. Diagnostics survive.
           const now = Date.now();
           const lastSeen = reportedRef.current.get(original);
           if (lastSeen === undefined || now - lastSeen > 30_000) {

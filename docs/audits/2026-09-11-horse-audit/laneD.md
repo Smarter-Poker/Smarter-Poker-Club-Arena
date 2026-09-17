@@ -23,21 +23,20 @@ regions I touched was re-read against the edited source (listed under "tests"). 
 
 **(1) The 97 stuck REGISTERING tournaments are two populations, neither "no free horses".**
 93 at 13:55 (97 at 13:26): 92 seat-first + 1 MTT.
-
 - 40 rows (39 seat-first + "Breakfast Turbo" f370585d) were DEALT on 2026-09-08 12:49-14:53 UTC and never
   left REGISTERING: hands in `hand_history`, entrants `eliminated`, tables `running`, `prize_pool_finalized =
-true`, `started_at NULL`, `updated_at` BEFORE their first hand, no launch receipt, no lease. The engine that
+  true`, `started_at NULL`, `updated_at` BEFORE their first hand, no launch receipt, no lease. The engine that
   dealt them stopped at :53 before the RUNNING commit (today's launch commits RUNNING before any dealer is
   admitted; no such row exists after 09-08 14:53 - measured by hour). Every other REGISTERING row (293) reads
   `prize_pool_finalized = false`. 2,164.60 chips of finalized pools unpaid: 17 heads-ups and 11 spins are
   DECIDED (one player with chips), 11 spins have two live stacks, the MTT has one 0-chip and one 430,255-chip
-  entrant. What discoverTournaments did with each, every pass: "past start, current*players < min_players"
+  entrant. What discoverTournaments did with each, every pass: "past start, current_players < min_players"
   -> `topUpWithHorses(id, max_players)`; the fast lane did the same on the 1/2 and 2/3 ones every backoff.
   Both doors refuse (the seat RPC answers `tournament_full` because a finalized seat-first row counts every
   entry it sold, busted or not; the registration insert meets the trigger "registration is closed because
   tournament ... prize pool is finalized"). Cost in the 60-minute log: 330 fill passes ending
   `rpc_other_noop=3` = 1,796 locked `fn_seat_horse_in_seat_first_game` calls, 1,169 locked
-  `fn_register_horse_for_tournament` calls (5 passes at x229-240 on Breakfast Turbo), 298 `seat_first_human*
+  `fn_register_horse_for_tournament` calls (5 passes at x229-240 on Breakfast Turbo), 298 `seat_first_human_
   waiting` alarms naming the wrong cause. Each of those calls queues on the platform-wide seat-acquisition
   lock every hand settlement holds. FIXED (findings 1, 2); the rows themselves need the finish path
   (finding 3, migration).
@@ -47,7 +46,7 @@ true`, `started_at NULL`, `updated_at` BEFORE their first hand, no launch receip
   33%/50%; 138 of the 149 read "held" in the current bucket (my JS reproduction of `seatFirstHeldEmpty` over
   the live ids; random uuids give 32.4%/50.2%, so the hash is fine - it is the lifetimes).
 - pickFreeHorses finding nobody: 0 `holding N back for the cash room` lines, 0 `registerHorses found no
-candidates` lines in the hour. 267 of 1,000 horses carry load 0 right now. Not the cause.
+  candidates` lines in the hour. 267 of 1,000 horses carry load 0 right now. Not the cause.
 
 **(2) The horse registration budget.** `pickFreeHorses` decides "free" by: the four-game load map
 (live seats at non-closed tables, cash and tournament, + bookings in ANNOUNCED/REGISTERING within the
@@ -110,7 +109,6 @@ cached count moved (the human core does the same, but expects the RUNNING case -
 ## Findings (fixed unless marked)
 
 ### 1. P1 FIXED - a REGISTERING row whose prize pool is finalized was ramped and filled for ever
-
 `TournamentRecurringService.ts` `topUpWithHorses` (~L5359 tRow read) and `GameServer.ts`
 `discoverTournaments` (~L5193 ramp / past-start) + `discoverSeatFirstStarts` (~L7190 fill gate).
 Evidence: (1) above - 40 rows, 2,965 locked RPCs and 298 alarms in the hour, 100% refused by both doors;
@@ -124,14 +122,12 @@ gate (launch-receipt adoption) - and reports once (`GameServer.registering_with_
 sections 1.1-1.4.
 
 ### 2. P2 FIXED - `rpc_other_noop` never said which answer the RPC gave (10.86)
-
 `topUpWithHorses` seating loop. 330 passes at `rpc_other_noop=3` in the hour and nothing on the platform
 could say why (it was `tournament_full`; the RPC has nine other `ok:false` reasons). Change: reasons tallied
 per pass and printed on one extra line after the precheck line (`the seat RPC answered ok:false - reason
 xN`). The precheck line and the tally/metrics are unchanged. Pinned: new test 1.3.
 
 ### 3. P0 (money) NOT FIXED IN CODE - the 40 dealt-but-REGISTERING rows need the finish path: MIGRATION FILE
-
 `_audit/laneD-migrations/resume_the_games_dealt_on_0908_that_never_left_registering.sql`. No lane resumes a
 REGISTERING row and no sweep finishes one; 10.9 path: the outcome is read from rows (above); nobody is paid
 by the file; nothing is taken back; the DO block asserts every row's pre-state and ends with a RAISE for the
@@ -148,7 +144,6 @@ load against those horses (fn_concurrent_game_load clause 1: table not closed, t
 COMPLETING/COMPLETED/CANCELLED).
 
 ### 4. P1 FIXED - the held-empty hold outlived a fillable board ten to one; 94% of the seat-first board was empty
-
 `TournamentRecurringService.ts` `topUpWithHorses` held-empty gate (~L5495). Evidence: 149 of 158 open
 seat-first boards empty and every one past its window; 138 of 149 held in the current bucket and 137 of 149
 held in their creation bucket (script over the live ids with the file's own hash); a not-held board lives
@@ -163,7 +158,6 @@ seedOpenSeatTable's roll are unchanged, so a held board still opens with nobody 
 new test section 2 (held + window open -> 0 and no pick; held + window closed -> fills; not held -> fills).
 
 ### 5. P1 FIXED - Deep Stack Society boards never opened with a horse
-
 `seedOpenSeatTable` (~L4384): `const isHouseBoard = tournament.club_id === this.houseOwner.clubId;
 opening = isHouseBoard && !held ? seats-1 : 0`. The pool has been club-scoped since 09-01
 (`pickFreeHorses(opening, false, tournament.id)` -> `clubMemberIdsForTournament`), and the 09-03 changelog
@@ -173,17 +167,15 @@ finding 4). Change: the house condition is dropped; a club with no horse members
 the pool is empty. Pinned: new test section 3; `seatFirstCountSync.test.ts` pins on the body still hold.
 
 ### 6. P1 FIXED - the ramp queue rotated by hour alone, so one horse took 34 bookings in an hour
-
 `registerHorses` (~L6104): `(hour * 7919) % pool.length` for every tournament ramped that hour. Evidence:
 (3) above - 312e2301 x41 (34 in one hour, 28 events), 4bb5f4b5 x21, 27 horses >= 9; every booking a real
 buy-in from one wallet. Change: `rampQueueRotation(tournamentId, hourUTC, poolLength)` (exported, pure:
-mix32 of horseHash(id) ^ hour\*7919, mod length) for both the ticket and the wallet queue; the hourly
+mix32 of horseHash(id) ^ hour*7919, mod length) for both the ticket and the wallet queue; the hourly
 movement is kept. Pinned: new test section 4 (200 events in one hour -> > 100 distinct starts; stable within
 an hour; moves across hours; never out of range) + source. `HorseTournamentBankroll.test.ts` partition/slice
 pins unchanged.
 
 ### 7. P2 FIXED - the fast lane alarmed "CANNOT FILL" on boards the walk had just filled
-
 `GameServer.ts` `topUpPartialSeatFirst`: `shortfall = seats - paid` used this lane's read; the top-up read
 fresh seats, found the walk's fill, returned 0. Evidence: 64 of 103 alarmed boards in the hour show
 `seat-first-precheck ... seated=3` seconds before the alarm and `Starting...` right after (e.g. ffc36683,
@@ -192,7 +184,6 @@ once; a full board clears its misses and raises nothing; an unreadable re-read k
 test 1.5.
 
 ### 8. P2 FIXED - the MTT bankroll gate read a wallet the database never debits
-
 `registerHorses` bankroll block (~L6017). It read `club_members` at `tournaments.club_id`; for a union event
 that is the union's own house row (fade0000). `atomic_deduct_wallet_and_log` -> `fn_tournament_club_for_user`
 (read from pg_proc) charges one of the horse's wallets at the union's MEMBER clubs (`union_clubs`; the host
@@ -207,7 +198,6 @@ Fail-open shape unchanged (`if (rollPage.complete)`, `roll === undefined -> true
 correct rather than accidental now. Pinned: new test section 5.
 
 ### 9. P2 FIXED - the picker's booking horizon (30 min) disagreed with the trigger's (60 min)
-
 `REGISTRATION_LOAD_HORIZON_MS = 30 * 60_000` vs `fn_concurrent_game_load` clause (2) "from ONE HOUR before"
 and `HorseGameLoad.BOOKING_COUNTS_WITHIN_MS = 60 min` (lane A verified the fleet's mirror). Evidence: SQL
 reproducing both counts over 1,000 horses: 21 horses read pickable by the engine and at four in the
@@ -216,30 +206,27 @@ in the hour. Change: `REGISTRATION_LOAD_HORIZON_MS = BOOKING_COUNTS_WITHIN_MS` (
 `HorseConcurrency.test.ts` updated in the same edit (was `toBe(30 * 60_000)`).
 
 ### 10. P1 NOT FIXED IN CODE (DB) - horses cannot late-register; a finalized pool is an exception, not a reason: MIGRATION FILE
-
 `_audit/laneD-migrations/horse_door_admits_late_registration_and_names_a_finalized_pool.sql`. Evidence:
-pg*proc text (5) above; log: `HorseOverlayGuard ... Morning Free Buy (NLH) wanted 9..24 more and added NONE`
+pg_proc text (5) above; log: `HorseOverlayGuard ... Morning Free Buy (NLH) wanted 9..24 more and added NONE`
 every 2 minutes with `Horse registration: 0 seated, skipped - registration_closed x9..x24` beside it - the
 event is RUNNING with late registration open, humans may enter, horses may not (10.5). The migration
 rewrites `fn_register_horse_for_tournament_before_maintenance_gate` to the human core's status test
 (finalized -> `registration_closed` as a reason; RUNNING admitted while `fn_tournament_late_registration_open`),
 the human core's cached-count expectation, and the human core's late seat (`fn_seat_late_registrant`,
-55000 abort so an unseatable entrant is not charged); adds `fn_register_horse_for_tournament_before_atomic*
-lifecycle_gate`(one`fn_ensure_late_registration_capacity`repair + retry,`late_registration`wake) and
+55000 abort so an unseatable entrant is not charged); adds `fn_register_horse_for_tournament_before_atomic_
+lifecycle_gate` (one `fn_ensure_late_registration_capacity` repair + retry, `late_registration` wake) and
 routes the terminal gate through it. Every other line is byte-identical to production. Not mirrored: the
-human door's`seat_first_variant` refusal (needs an internal flag on every horse signature; the engine never
+human door's `seat_first_variant` refusal (needs an internal flag on every horse signature; the engine never
 registers a horse into a seat-first game). HorseOverlayGuard's "every candidate is outside its activity
 window or at the four-table cap" line is a misdiagnosis of this (not any lane's file): it should print
 registerHorses' failure summary; resolves itself once the door admits late registration.
 
 ### 11. P3 NOT FIXED IN CODE (DB) - a reused seat row is handed to a horse sat out: MIGRATION FILE
-
 `_audit/laneD-migrations/horse_seat_first_seat_is_not_sat_out_on_reuse.sql`. fn_take_seat_and_buy_in
 revives a vacated row with `is_sitting_out = false`; fn_seat_horse_in_seat_first_game does not. 0 live
 occurrences (measured: every seat-first seat, REGISTERING or RUNNING, reads false). One line.
 
 ### 12. P2 FIXED - the discovery walk's REGISTERING read was unbounded (1,000-row silent cap)
-
 `GameServer.discoverTournaments` first read. 335 REGISTERING today, 353 after a thaw, growing with every
 activated club board; the 1,001st row would never start, ramp or fill and nothing would say so. Change:
 `fetchAllRows` keyset on id (`GameServer.registeringBoard`), incomplete -> the existing
@@ -247,7 +234,6 @@ activated club board; the 1,001st row would never start, ramp or fill and nothin
 topUpPass }` count, the readAt/read/retain order and the `error: registeringErr` pin are preserved.
 
 ### 13. P3 NOTED - the past-start MTT top-up has no per-call step
-
 `topUpWithHorses` -> `registerHorses(id, max_players - live)`: sequential locked RPCs, unbounded per call
 (the ramp caps itself at 6 per 45 s pre-start for exactly the lock-convoy reason). Breakfast Turbo took
 229-240 calls per pass (2+ minutes of the settlement lane) before finding 1; a healthy 500-seat DSS event
@@ -256,25 +242,21 @@ and Dan's "fill to a FULL FIELD" is the written rule; a per-call step (e.g. 4 x 
 top-up re-runs every 45 s) is a pacing decision I did not take. Left, documented.
 
 ### 14. P3 NOTED - the engine's seat load counts seats at tables of COMPLETING/COMPLETED tournaments
-
 `horseLoadMap` clause (a) excludes closed tables only; `fn_concurrent_game_load` (2026-09-10) also excludes
 tables whose tournament is COMPLETING/COMPLETED/CANCELLED. Engine stricter by 1 seat today (measured).
 Mirroring needs a nested embed tables -> tournaments whose FK name I did not verify (the PGRST201 lesson);
 left.
 
 ### 15. P3 NOTED - `readSeatFirstPaidSeats` and the fast lane's board read are unpaged
-
 `.in('tournament_id', ids)` over every REGISTERING seat-first row (158 today; ~675-id URL ceiling), then
 `table_seats .in('table_id', ...)` capped at 1,000 rows. Fine at 3x today's board; the fast lane is
 deliberately "three cheap reads". Left, documented.
 
 ### 16. VERIFIED (question 2) - the tournament budget does not starve the cash floor today
-
 Numbers in (2). pickFreeHorses' cash-room reserve is 0 (325 seated vs 258 wanted); registerHorses has no
 reserve at all (asymmetry noted, moot at reserve 0); 159 cash-lane and 54 both-lane horses idle.
 
 ### 17. VERIFIED (question 3) - the ramp is not outrunning completion
-
 Numbers in (3): starts 5,355 / ends 5,435 per day; far bookings bounded by the curve; the concentration
 was finding 6.
 
@@ -355,13 +337,13 @@ was finding 6.
   after `proveTournamentLaunchSetup` (status still REGISTERING, roster, seats, stacks, funding entitlements
   for spins) and before any dealer - the 09-08 shape cannot recur from this path (measured: none after
   09-08 14:53).
-- tournament/\*: the only horse branches are the add-on and rebuy input devices (10.5-sanctioned); seating
+- tournament/*: the only horse branches are the add-on and rebuy input devices (10.5-sanctioned); seating
   and stack credit have no horse branch.
 - DB: `fn_enforce_booking_game_cap` and `fn_enforce_four_table_limit` take the same per-account advisory
   lock, refuse at 4, count identically for horses and humans, no `is_horse`; `fn_enforce_tournament_capacity`
   counts every entry on a seat-first board (busted or not) and live entrants on an MTT;
   `fn_tournament_entry_cap_reached` = GREATEST(cached, entries) >= cap; `fn_ca_lock_tournament_seat_
-acquisition` admits ANNOUNCED/REGISTERING/RUNNING.
+  acquisition` admits ANNOUNCED/REGISTERING/RUNNING.
 - `fn_seat_horse_in_seat_first_game`: primary table by the same election the engine uses; already_seated
   before the free-seat search; registers only a new entrant; `seat_taken` on the unique violation; count
   synced in the same transaction.

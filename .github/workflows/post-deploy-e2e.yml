@@ -43,8 +43,6 @@ on:
     # refuses any workflow_run listener whose name no workflow carries.
     workflows: ['Publish Club Arena']
     types: [completed]
-  schedule:
-    - cron: '35 6 * * *'
   repository_dispatch:
     types: [run-post-deploy-e2e]
 
@@ -69,9 +67,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
-          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || '' }}
-          SOURCE_RUN_STATUS: ${{ github.event.workflow_run.status || '' }}
-          SOURCE_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
           ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
         run: |
           set -euo pipefail
@@ -83,40 +78,23 @@ jobs:
             exit 0
           fi
           echo 'engine_trigger_sha=' >> "$GITHUB_OUTPUT"
-          if [ "$EVENT_NAME" = schedule ]; then
-            echo 'should_run=true' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           [ "$EVENT_NAME" = workflow_run ] \
             || { echo "::error::Unsupported production certification event: $EVENT_NAME"; exit 1; }
           [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] \
             || { echo '::error::The source workflow run id is malformed.'; exit 1; }
-          [[ "$SOURCE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] \
-            || { echo '::error::The source workflow run attempt is malformed.'; exit 1; }
           JOBS_JSON="$(mktemp)"
           trap 'rm -f -- "$JOBS_JSON"' EXIT
           timeout 30s gh api \
-            "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/attempts/$SOURCE_RUN_ATTEMPT/jobs?per_page=100" \
+            "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/jobs?filter=latest&per_page=100" \
             > "$JOBS_JSON"
           node - "$JOBS_JSON" "$GITHUB_OUTPUT" <<'NODE'
           const fs = require('node:fs');
           const [file, output] = process.argv.slice(2);
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
           if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
-          if (!Number.isInteger(payload.total_count) || payload.total_count !== payload.jobs.length) {
-            throw new Error('The source jobs response is incomplete.');
-          }
-          // GitHub can cancel a superseded pending publisher before creating
-          // any jobs. That exact attempt published nothing and needs no E2E.
-          if (process.env.SOURCE_RUN_STATUS === 'completed' &&
-              process.env.SOURCE_RUN_CONCLUSION === 'cancelled' && payload.total_count === 0) {
-            console.log('Publisher cancelled before any job started; no publication to certify.');
-            fs.appendFileSync(output, 'should_run=false\n');
-            process.exit(0);
-          }
           const jobs = payload.jobs.filter((entry) => entry?.name === 'publish-to-origin');
           if (jobs.length !== 1) {
-            throw new Error(`Expected one publish-to-origin job for this attempt, received ${jobs.length}.`);
+            throw new Error(`Expected one latest publish-to-origin job, received ${jobs.length}.`);
           }
           const origin = jobs[0];
           const verdicts = (origin.steps ?? []).filter(
@@ -157,8 +135,7 @@ jobs:
     # A verified publish and a safe forward stand-down both certify the live
     # player route. A failed/skipped origin job makes the gate red, never green
     # without executing the browser suite. Optional downstream failures cannot
-    # hide a successful web release. Only a cancelled attempt with zero jobs
-    # stands down without browser execution, because it published nothing.
+    # hide a successful web release.
     if: needs.publication-gate.outputs.should_run == 'true'
     name: Specs that need a real deployed page
     # This trusted workflow can receive production database credentials. Run it
@@ -568,7 +545,6 @@ jobs:
             tests/e2e/mobile-input-zoom.spec.ts \
             tests/e2e/mobile-chrome-occlusion.spec.ts \
             tests/e2e/showdown-beats.spec.ts \
-            tests/e2e/live-css-loader.spec.ts \
             tests/e2e/card-squeeze-visual-regression.spec.ts \
             tests/e2e/card-squeeze-mobile.spec.ts \
             tests/e2e/river-squeeze-interactive.spec.ts \

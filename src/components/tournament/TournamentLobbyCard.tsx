@@ -1,31 +1,12 @@
+import {
+  tournamentEntryWindow,
+  type TournamentEntryWindowRow,
+} from '../../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY CARD — Tournament Registration Display
  * Shows tournament info with registration countdown and join button
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * THE CONSOLE (#ClubArenaConsole, 2026-09-08). The card was a rounded sheet
- * with a strip of coloured badge pills, a six-cell info GRID, a second strip of
- * feature pills, a gradient progress bar and a gradient button. Dan, on exactly
- * that shape: "I'M NOT A BIG FAN OF THESE CARDS. I DON'T LIKE THE 4 BOXES ...
- * I'D MUCH RATHER SEE THEM LOOK MORE LIKE [the plain console]."
- *
- * So it is Dan's approved spade master now: the format is the eyebrow, the
- * event name is engraved in the header well, the state (Open / Late Reg /
- * Running / Full) sits in the well's painted pill slot, every figure prints as
- * a row on the black glass - label in the master's lit blue on the left, value
- * in silver on the right, an engraved rule between rows - and the two actions
- * are the plates painted into the foot. Nothing is drawn: no badge pills, no
- * grid cells, no progress bar, no gradient button.
- *
- * THE FOOT PAINTS BOTH PLATES OR NEITHER, so this card always offers two: the
- * contextual action (Register / Take A Seat / Watch / Open Tournament) on the
- * blue glass, and Details on the steel - which is what tapping the card itself
- * has always done, now said out loud.
- *
- * Every behaviour is unchanged: the registration check and its three states,
- * the countdowns, the seat-first branch, the watch intent in the URL and the
- * useAppNavigate routing that keeps a seated player inside their lobby tab.
  */
 
 import { useState, useEffect, memo } from 'react';
@@ -42,11 +23,15 @@ import { reportError } from '../../utils/errorReporter';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money } from '../../utils/buyIn';
-import { compactChips } from '../../utils/format';
+import {
+  describeMttStructure,
+  describeStoredMttStructure,
+  mttClockDescription,
+  type MttStructureDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 import { chipsCompact } from './details/types';
-import { SpadeConsole, type ConsoleInk, type PlateButtonProps } from '../console/SpadeConsole';
 
-interface Tournament {
+interface Tournament extends TournamentEntryWindowRow {
   id: string;
   name: string;
   type: 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -58,6 +43,7 @@ interface Tournament {
   startsAt?: string;
   status: 'registering' | 'running' | 'finished' | 'cancelled';
   blindStructure: string;
+  structureFacts?: MttStructureDescription;
   gameType?: string;
   startingChips?: number;
   lateRegMins?: number;
@@ -78,10 +64,10 @@ interface Tournament {
   rebuyAllowed?: boolean;
   addonAllowed?: boolean;
   spinMultiplier?: number;
-  started_at?: string;
-  late_reg_mins?: number;
-  late_reg_levels?: number;
-  current_level?: number;
+  started_at?: string | null;
+  late_reg_mins?: number | null;
+  late_reg_levels?: number | null;
+  current_level?: number | null;
   addon_levels?: number;
   is_reentry?: boolean;
 }
@@ -122,7 +108,7 @@ export function isStartingSoon(msToStart: number | null): boolean {
 }
 
 export interface LateRegState {
-  /** Registration is still open (or believed open). */
+  /** The projected entry window is open; the server decides actual eligibility. */
   active: boolean;
   /** What to print after "Late Reg:". Empty when there is no window at all. */
   label: string;
@@ -141,8 +127,8 @@ export interface LateRegState {
  *     window, forever, so the countdown never counted down and never closed.
  *
  * The units are kept apart here and neither is ever invented from the other:
- * when the input needed to measure the window is missing, this says "Open"
- * rather than printing a number nobody supplied.
+ * when the input needed to measure the window is missing, this says
+ * "Unavailable" and does not offer a speculative registration.
  */
 export function lateRegState(opts: {
   levels: number;
@@ -150,11 +136,18 @@ export function lateRegState(opts: {
   currentLevel?: number | null;
   startedAtMs?: number | null;
   nowMs: number;
+  finalized?: boolean | null;
 }): LateRegState {
   const { levels, minutes, currentLevel, startedAtMs, nowMs } = opts;
+  if (
+    opts.finalized === true ||
+    [levels, minutes, currentLevel ?? 0].some((v) => !Number.isSafeInteger(v) || v < 0)
+  ) {
+    return { active: false, label: 'Closed' };
+  }
 
   if (levels > 0) {
-    if (currentLevel == null) return { active: true, label: 'Open' };
+    if (currentLevel == null) return { active: false, label: 'Unavailable' };
     if (currentLevel >= levels) return { active: false, label: 'Closed' };
     const left = levels - currentLevel;
     return { active: true, label: `${left} Lvl${left !== 1 ? 's' : ''} Left` };
@@ -162,7 +155,7 @@ export function lateRegState(opts: {
 
   if (minutes > 0) {
     if (startedAtMs == null || !Number.isFinite(startedAtMs)) {
-      return { active: true, label: 'Open' };
+      return { active: false, label: 'Unavailable' };
     }
     const msLeft = startedAtMs + minutes * 60_000 - nowMs;
     if (msLeft <= 0) return { active: false, label: 'Closed' };
@@ -228,8 +221,12 @@ function TournamentLobbyCardInner({
   }, [tournament.id, tournament.startsAt, knownRegistration]);
 
   // See lateRegState() above for why these two are not one variable.
-  const lateRegLevels = tournament.late_reg_levels ?? 0;
-  const lateRegMinutes = tournament.late_reg_mins ?? tournament.lateRegMins ?? 0;
+  const entryWindow = tournamentEntryWindow({
+    ...tournament,
+    late_reg_mins: tournament.late_reg_mins ?? tournament.lateRegMins,
+  });
+  const lateRegLevels = entryWindow.mode === 'levels' ? entryWindow.cap : 0;
+  const lateRegMinutes = entryWindow.mode === 'minutes' ? entryWindow.minutes : 0;
   const hasLateReg = lateRegLevels > 0 || lateRegMinutes > 0;
 
   useEffect(() => {
@@ -245,6 +242,8 @@ function TournamentLobbyCardInner({
     tournament.late_reg_levels,
     tournament.late_reg_mins,
     tournament.lateRegMins,
+    tournament.rebuy_levels,
+    tournament.prize_pool_finalized,
     tournament.current_level,
     tournament.started_at,
   ]);
@@ -299,7 +298,7 @@ function TournamentLobbyCardInner({
   };
 
   const updateLateRegCountdown = () => {
-    const startedAt = tournament.started_at ?? tournament.startsAt;
+    const startedAt = tournament.started_at;
     const startedMs = startedAt ? new Date(startedAt).getTime() : null;
     const next = lateRegState({
       levels: lateRegLevels,
@@ -307,6 +306,7 @@ function TournamentLobbyCardInner({
       currentLevel: tournament.current_level,
       startedAtMs: startedMs,
       nowMs: Date.now(),
+      finalized: tournament.prize_pool_finalized,
     });
     setLateRegActive(next.active);
     setLateRegCountdown(next.label);
@@ -355,87 +355,67 @@ function TournamentLobbyCardInner({
   const getTypeLabel = (type: string): string => {
     switch (type) {
       case 'sng':
-        return 'Heads Up';
+        return 'HEADS UP';
       case 'mtt':
         return 'MTT';
       case 'satellite':
         return 'Satellite';
       case 'spin':
-        return 'Spin And Go';
+        return 'SPIN & GO';
       case 'bounty':
-        return 'Bounty';
+        return 'BOUNTY';
       case 'pko':
         return 'PKO';
       case 'mystery':
-        return 'Mystery';
+        return 'MYSTERY';
       default:
         return type.toUpperCase();
     }
   };
 
-  /** The master's own inks. No hexes on this surface (Dan: house colours only). */
-  const getStatusInk = (status: string): ConsoleInk => {
+  const getStatusColor = (status: string): string => {
     switch (status) {
       case 'registering':
-        return 'green';
+        return '#10b981'; // Green
       case 'running':
-        return 'blue';
+        return '#0a5dc2'; // Amber
+      case 'finished':
+        return '#6b7280'; // Gray
       case 'cancelled':
-        return 'red';
+        return '#ef4444'; // Red
       default:
-        return 'muted';
+        return '#6b7280';
     }
   };
 
   const getStatusLabel = (status: string): string => {
     switch (status) {
       case 'registering':
-        return 'Open';
+        return 'Registering';
       case 'running':
-        return 'Running';
+        return 'In Progress';
       case 'finished':
-        return 'Done';
+        return 'Completed';
       case 'cancelled':
-        return 'Off';
+        return 'Cancelled';
       default:
         return status;
     }
   };
 
-  const getSpeedTier = (tournament: Tournament): string | null => {
-    // Get blind duration from blind_duration field or infer from blindStructure
-    let blindDuration = tournament.blindDuration;
-
-    if (!blindDuration && tournament.blindStructure) {
-      // Try to parse blindStructure if it's a JSON string
-      try {
-        let structure = tournament.blindStructure;
-        if (typeof structure === 'string') {
-          // Only attempt JSON.parse if it looks like JSON (starts with [ or {)
-          const trimmed = structure.trim();
-          if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-            structure = JSON.parse(trimmed);
-          } else {
-            return null; // Not parseable JSON — skip silently
-          }
+  const structureFacts =
+    tournament.structureFacts ??
+    (tournament.blindDuration !== undefined
+      ? {
+          ...describeMttStructure(
+            [{ durationMinutes: tournament.blindDuration, bigBlind: 0, isBreak: false }],
+            tournament.startingChips ?? 0
+          ),
+          // A legacy opening-clock prop does not describe every later level.
+          minimumMinutes: null,
+          maximumMinutes: null,
         }
-        if (Array.isArray(structure) && structure.length > 0) {
-          blindDuration = structure[0].durationMinutes || structure[0].duration_minutes;
-        }
-      } catch (e) {
-        reportError(e, 'TournamentLobbyCard.getSpeedTier');
-        // If parsing fails, return no badge (non-critical)
-        return null;
-      }
-    }
-
-    if (!blindDuration) return null;
-
-    if (blindDuration <= 3) return 'Hyper';
-    if (blindDuration <= 5) return 'Turbo';
-    if (blindDuration <= 10) return null; // Regular - no tag needed
-    return 'Deep Stack';
-  };
+      : describeStoredMttStructure(tournament.blindStructure, tournament.startingChips));
 
   const isCountdownCritical = isStartingSoon(msToStart);
 
@@ -465,185 +445,79 @@ function TournamentLobbyCardInner({
      isSeatFirstFormat on the server and isSeatFirstTournament in the lobby. */
   const isSeatFirstCard =
     tournament.type === 'spin' || (tournament.maxPlayers > 0 && tournament.maxPlayers <= 2);
-
-  const speedTier = getSpeedTier(tournament);
-  const tags: string[] = [];
-  if (tournament.isPinned) tags.push('Pinned');
-  if (tournament.isNew) tags.push('New');
-  if (tournament.isVipOnly) tags.push('VIP');
-  if (tournament.isAllInOrFold) tags.push('All In Or Fold');
-  if (speedTier) tags.push(speedTier);
-  if (isFreezout(tournament)) tags.push('Freezeout');
-  if (tournament.isBounty && !tournament.isPko && !tournament.isMysteryBounty) {
-    tags.push(tournament.bountyAmount ? `Bounty ${money(tournament.bountyAmount)}` : 'Bounty');
-  }
-  if (tournament.isPko) tags.push('PKO');
-  if (tournament.isMysteryBounty) tags.push('Mystery Bounty');
-  if (tournament.isMultiDay) tags.push('Multi-Day');
-  if (tournament.isRebuy) tags.push('Rebuy');
-
-  /* THE PILL SLOT. One short word for the state a player is deciding on. */
-  const pill =
-    tournament.status === 'running' && hasLateReg && lateRegActive
-      ? 'Late Reg'
-      : tournament.status === 'registering' && isFull
-        ? 'Full'
-        : getStatusLabel(tournament.status);
-  const pillInk: ConsoleInk =
-    tournament.status === 'running' && hasLateReg && lateRegActive
-      ? 'gold'
-      : tournament.status === 'registering' && isFull
-        ? 'red'
-        : getStatusInk(tournament.status);
-
-  /**
-   * THE ACTION, on the blue glass. One branch per state, exactly the branches
-   * this card has always had - only their chrome changed.
-   */
-  let primary: PlateButtonProps;
-  if (tournament.status === 'registering' && regCheckFailed) {
-    // We could not ask whether this player is already in. Offering
-    // "Register" here risks a duplicate paid entry; offering "Registered"
-    // risks hiding the only way in. Say what is actually true.
-    primary = { label: 'Entry Status Unavailable', ink: 'muted', disabled: true };
-  } else if (tournament.status === 'registering' && isSeatFirstCard) {
-    /* A SEAT-FIRST GAME IS NOT REGISTERED, IT IS SAT AT (2026-09-03).
-       Every row this card renders on a target's Satellites tab used to be
-       a registerable MTT. The satellite heads-ups added today are two-seat
-       games, and a two-seat game is entered by taking a seat at its table:
-       fn_register_for_tournament refuses it outright with
-       `seat_first_variant` ("This game is entered by taking a seat at its
-       table"). Offering Register there is a button that cannot ever
-       succeed - the same dead end lobbyEntries.isSeatFirstTournament was
-       written to prevent on the main board, which this tab never learned.
-
-       Seats are the test, as everywhere else: two or fewer, or a Spin. */
-    primary = {
-      label: `Take A Seat (${money(tournament.buyIn)})`,
-      ink: 'white',
-      onClick: (e) => {
-        e.stopPropagation();
-        navigate(`/tournaments/${tournament.id}?seat=1`);
-      },
-    };
-  } else if (tournament.status === 'registering' && isRegistered) {
-    primary = {
-      label: 'Registered - Unregister?',
-      ink: 'red',
-      onClick: (e) => {
-        e.stopPropagation();
-        handleUnregister();
-      },
-    };
-  } else if (tournament.status === 'registering') {
-    primary = {
-      label: registering
-        ? 'Registering...'
-        : isFull
-          ? 'Tournament Full'
-          : `Register (${money(tournament.buyIn)})`,
-      ink: isFull ? 'muted' : 'white',
-      disabled: registering || isFull,
-      onClick: (e) => {
-        e.stopPropagation();
-        handleRegister();
-      },
-    };
-  } else if (tournament.status === 'running') {
-    /* Dan 2026-08-25 (binding): "when I click on a tournament that's
-       RUNNING I should be able to click a button and watch."
-       This branch was gated on `isRegistered`, so a running tournament you
-       were not in rendered NO action at all — the card was a dead end for
-       exactly the player who wants to watch. Everyone gets a button now;
-       only its wording differs, because "open the tournament you are
-       playing" and "watch someone else's" are different intents. Both land
-       on the tournament screen, whose footer carries WATCH straight to the
-       featured table. */
-    primary = {
-      label: isRegistered ? 'Open Tournament' : 'Watch',
-      ink: 'white',
-      onClick: (e) => {
-        e.stopPropagation();
-        /* 2026-08-25, second audit: both labels navigated to the
-           details page, so a button that says "Watch" dropped the player
-           on a screen where they still had to find the real WATCH
-           button. This card has only a tournament id — it cannot know
-           which table is featured without a query per card — so it hands
-           the intent along in the URL and the details page acts on it
-           the moment its featured table resolves. */
-        navigate(
-          isRegistered ? `/tournaments/${tournament.id}` : `/tournaments/${tournament.id}?watch=1`
-        );
-      },
-    };
-  } else {
-    primary = { label: getStatusLabel(tournament.status), ink: 'muted', disabled: true };
-  }
+  const fillPct = hasMaxPlayers
+    ? Math.min(100, Math.max(0, (tournament.registeredPlayers / tournament.maxPlayers) * 100))
+    : 0;
 
   return (
-    <SpadeConsole
-      as="div"
-      className={styles.card}
-      eyebrow={getTypeLabel(tournament.type)}
-      /* The name, and only the name. Prefixing the guarantee pushed the title
-         past the header well and truncated it ("5K GTD SUNDAY DEEPSTAC"); the
-         guarantee already prints, in gold, on the PRIZE POOL row below. */
-      title={formatGameTitle(tournament.name)}
-      pill={pill}
-      pillInk={pillInk}
+    <div
+      className={`${styles.card} ${tournament.isPinned ? styles.pinnedCard : ''}`}
       onClick={() => navigate(`/tournaments/${tournament.id}`)}
       style={{
         cursor: 'pointer',
         opacity: mounted ? 1 : 0,
         transform: mounted ? 'translateY(0)' : 'translateY(8px)',
-        transition:
-          'opacity 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-      }}
-      plates={{
-        secondary: {
-          label: 'Details',
-          onClick: (e) => {
-            e.stopPropagation();
-            navigate(`/tournaments/${tournament.id}`);
-          },
-        },
-        primary,
+        transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
       }}
     >
-      {tags.length > 0 && (
-        <p className={styles.tags}>
-          {tags.map((tag) => (
-            <span key={tag} className={`${styles.tag} sc-label sc-ink--blue`}>
-              {tag}
+      {/* Header */}
+      <div className={styles.header}>
+        {tournament.isPinned && <span className={styles.pinnedBadge}>PINNED</span>}
+        {tournament.isNew && <span className={styles.newBadge}>NEW</span>}
+        {tournament.isVipOnly && <span className={styles.vipBadge}>VIP</span>}
+        {tournament.isAllInOrFold && <span className={styles.aofBadge}>AoF</span>}
+        <span className={styles.type}>{getTypeLabel(tournament.type)}</span>
+        <span className={styles.status} style={{ color: getStatusColor(tournament.status) }}>
+          {getStatusLabel(tournament.status)}
+        </span>
+        {(() => {
+          const speedTier =
+            structureFacts.speed === 'hyper_turbo'
+              ? { tier: structureFacts.speedLabel, color: '#ef4444' }
+              : structureFacts.speed === 'turbo'
+                ? { tier: structureFacts.speedLabel, color: '#1877f2' }
+                : structureFacts.speed === 'slow'
+                  ? { tier: structureFacts.speedLabel, color: '#0ea5e9' }
+                  : null;
+          return speedTier ? (
+            <span className={styles.speedBadge} style={{ backgroundColor: speedTier.color }}>
+              {speedTier.tier}
             </span>
-          ))}
-        </p>
-      )}
+          ) : null;
+        })()}
+        {isFreezout(tournament) && <span className={styles.freezeoutTag}>Freezeout</span>}
+      </div>
 
-      <div className={styles.rows}>
-        <div className={styles.row}>
-          <span className="sc-label sc-ink--blue">Buy-In</span>
-          {/* Whole chips only (Dan 2026-08-20), and EXACT: this is the figure
-              the server charges, so it is never abbreviated. */}
-          <span className={`${styles.value} sc-ink--silver`}>{money(tournament.buyIn)}</span>
+      {/* Title */}
+      <h3 className={styles.title}>
+        {tournament.guaranteedPrize && tournament.guaranteedPrize > 0
+          ? `${chipsCompact(tournament.guaranteedPrize)} GTD `
+          : ''}
+        {formatGameTitle(tournament.name)}
+      </h3>
+
+      {/* Info Grid */}
+      <div className={styles.info}>
+        <div className={styles.infoItem}>
+          <span className={styles.infoLabel}>Buy-In</span>
+          {/* Whole chips only (Dan 2026-08-20) - never a decimal buy-in. */}
+          <span className={styles.infoValue}>{money(tournament.buyIn)}</span>
         </div>
-
-        <div className={styles.row}>
-          <span className="sc-label sc-ink--blue">Prize Pool</span>
-          <span className={`${styles.value} sc-ink--silver`}>
+        <div className={styles.infoItem}>
+          <span className={styles.infoLabel}>Prize Pool</span>
+          <span className={styles.infoValue}>
             {(() => {
               const gtd = tournament.guaranteedPrize || 0;
               const displayPool =
                 gtd > 0 ? Math.max(tournament.prizePool, gtd) : tournament.prizePool;
-              return compactChips(displayPool);
+              return money(displayPool);
             })()}
             {tournament.guaranteedPrize && tournament.guaranteedPrize > 0 && (
-              <span className={`${styles.gtd} sc-ink--gold`}>GTD</span>
+              <span className={styles.gtdBadge}>GTD</span>
             )}
           </span>
         </div>
-
-        <div className={styles.row}>
+        <div className={styles.infoItem}>
           {/* ENTRIES, NOT PLAYERS (2026-08-25). This number comes from
               tournaments.current_players, which is a REGISTRATION counter: it
               is incremented on entry and is never decremented on an
@@ -651,24 +525,24 @@ function TournamentLobbyCardInner({
               people actually sitting down. Labelling it "Players" presented a
               registration total as live seat truth. The seat truth lives in
               tournament_players and is what TournamentInfoPanel reads. */}
-          <span className="sc-label sc-ink--blue">Entries</span>
-          <span className={`${styles.value} sc-ink--silver`}>
+          <span className={styles.infoLabel}>Entries</span>
+          <span className={styles.infoValue}>
             {tournament.registeredPlayers.toLocaleString()}
             {hasMaxPlayers ? `/${tournament.maxPlayers.toLocaleString()}` : ''}
           </span>
         </div>
-
-        <div className={styles.row}>
-          <span className="sc-label sc-ink--blue">Starting Chips</span>
-          <span className={`${styles.value} sc-ink--silver`}>
-            {tournament.startingChips ? compactChips(tournament.startingChips) : '-'}
+        <div className={styles.infoItem}>
+          <span className={styles.infoLabel}>Starting Chips</span>
+          <span className={styles.infoValue}>
+            {tournament.startingChips ? tournament.startingChips.toLocaleString() : '-'}
+            {structureFacts.startingDepthBB !== null &&
+              ` · ${structureFacts.startingDepthBB.toLocaleString(undefined, { maximumFractionDigits: 2 })} BB`}
           </span>
         </div>
-
         {tournament.gameType && (
-          <div className={styles.row}>
-            <span className="sc-label sc-ink--blue">Game</span>
-            <span className={`${styles.value} sc-ink--silver`}>
+          <div className={styles.infoItem}>
+            <span className={styles.infoLabel}>Game</span>
+            <span className={styles.infoValue}>
               {(
                 {
                   NLH: 'NLH',
@@ -686,54 +560,174 @@ function TournamentLobbyCardInner({
             </span>
           </div>
         )}
-
-        <div className={styles.row}>
-          <span className="sc-label sc-ink--blue">Structure</span>
-          <span className={`${styles.value} sc-ink--silver`}>{tournament.blindStructure}</span>
+        <div className={styles.infoItem}>
+          <span className={styles.infoLabel}>Structure</span>
+          <span className={styles.infoValue}>{structureFacts.speedLabel ?? 'Unconfirmed'}</span>
         </div>
-
-        {hasLateReg && (
-          <div className={styles.row}>
-            <span className="sc-label sc-ink--blue">Late Reg</span>
-            <span
-              className={`${styles.value} ${
-                tournament.status === 'running' && !lateRegActive ? 'sc-ink--muted' : 'sc-ink--gold'
-              }`}
-            >
-              {tournament.status === 'running'
-                ? lateRegActive
-                  ? lateRegCountdown || 'Open'
-                  : 'Closed'
-                : lateRegLevels > 0
-                  ? `Through Lvl ${lateRegLevels}`
-                  : `${lateRegMinutes} Min`}
-            </span>
-          </div>
-        )}
-
-        {tournament.startsAt && tournament.status === 'registering' && countdown && (
-          <div className={styles.row}>
-            <span className="sc-label sc-ink--blue">Starts In</span>
-            <span
-              className={`${styles.value} ${isCountdownCritical ? 'sc-ink--red' : 'sc-ink--silver'}`}
-            >
-              {countdown}
-            </span>
-          </div>
-        )}
-
-        <div className={styles.row}>
-          <span className="sc-label sc-ink--blue">Seats</span>
-          <span className={`${styles.value} sc-ink--silver`}>
-            {hasMaxPlayers
-              ? isFull
-                ? 'Tournament Full'
-                : `${spotsRemaining.toLocaleString()} Spots Remaining`
-              : 'Open Entry'}
-          </span>
+        <div className={styles.infoItem}>
+          <span className={styles.infoLabel}>Levels</span>
+          <span className={styles.infoValue}>{mttClockDescription(structureFacts)}</span>
         </div>
       </div>
-    </SpadeConsole>
+
+      {/* Feature Tags */}
+      {(hasLateReg ||
+        tournament.isRebuy ||
+        tournament.isBounty ||
+        tournament.isPko ||
+        tournament.isMysteryBounty ||
+        tournament.isMultiDay) && (
+        <div className={styles.featureTags}>
+          {tournament.isBounty && !tournament.isPko && !tournament.isMysteryBounty && (
+            <span className={`${styles.featureTag} ${styles.bountyTag}`}>
+              Bounty {tournament.bountyAmount ? tournament.bountyAmount : ''}
+            </span>
+          )}
+          {tournament.isPko && <span className={`${styles.featureTag} ${styles.pkoTag}`}>PKO</span>}
+          {tournament.isMysteryBounty && (
+            <span className={`${styles.featureTag} ${styles.mysteryTag}`}>Mystery Bounty</span>
+          )}
+          {tournament.isMultiDay && (
+            <span className={`${styles.featureTag} ${styles.multiDayTag}`}>Multi-Day</span>
+          )}
+          {tournament.status === 'running' && hasLateReg ? (
+            <span
+              className={`${styles.featureTag} ${styles.lateRegTag} ${!lateRegActive ? styles.lateRegClosed : ''} ${!lateRegActive ? styles.criticalWarning : ''}`}
+            >
+              Late Reg: {lateRegActive ? lateRegCountdown || 'Open' : 'Closed'}
+            </span>
+          ) : (
+            tournament.status === 'registering' &&
+            hasLateReg && (
+              <span className={styles.featureTag}>
+                {lateRegLevels > 0
+                  ? `Late Reg Through Lvl ${lateRegLevels}`
+                  : `Late Reg ${lateRegMinutes} Min`}
+              </span>
+            )
+          )}
+          {tournament.isRebuy && <span className={styles.featureTag}>Rebuy</span>}
+        </div>
+      )}
+
+      {/* Countdown */}
+      {tournament.startsAt && tournament.status === 'registering' && (
+        <div className={`${styles.countdown} ${isCountdownCritical ? styles.critical : ''}`}>
+          <span className={styles.countdownLabel}>Starts In</span>
+          <span className={styles.countdownValue}>{countdown}</span>
+        </div>
+      )}
+
+      {/* Progress Bar — only show for capped tournaments (SNG/Spin) */}
+      {hasMaxPlayers ? (
+        <>
+          <div className={styles.progressBar}>
+            <div className={styles.progressFill} style={{ width: `${fillPct}%` }} />
+          </div>
+          <span className={styles.spotsLabel}>
+            {isFull ? 'Tournament Full' : `${spotsRemaining.toLocaleString()} Spots Remaining`}
+          </span>
+        </>
+      ) : (
+        <span className={styles.spotsLabel}>
+          {tournament.registeredPlayers.toLocaleString()} Registered - Open Entry
+        </span>
+      )}
+
+      {/* Action Button */}
+      <div className={styles.actions}>
+        {tournament.status === 'registering' && regCheckFailed ? (
+          // We could not ask whether this player is already in. Offering
+          // "Register" here risks a duplicate paid entry; offering "Registered"
+          // risks hiding the only way in. Say what is actually true.
+          <button className={styles.registerBtn} disabled>
+            Entry Status Unavailable
+          </button>
+        ) : null}
+        {/* A SEAT-FIRST GAME IS NOT REGISTERED, IT IS SAT AT (2026-09-03).
+            Every row this card renders on a target's Satellites tab used to be
+            a registerable MTT. The satellite heads-ups added today are two-seat
+            games, and a two-seat game is entered by taking a seat at its table:
+            fn_register_for_tournament refuses it outright with
+            `seat_first_variant` ("This game is entered by taking a seat at its
+            table"). Offering Register there is a button that cannot ever
+            succeed - the same dead end lobbyEntries.isSeatFirstTournament was
+            written to prevent on the main board, which this tab never learned.
+
+            Seats are the test, as everywhere else: two or fewer, or a Spin. */}
+        {tournament.status === 'registering' && isSeatFirstCard && (
+          <button
+            className={styles.registerBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/tournaments/${tournament.id}?seat=1`);
+            }}
+          >
+            Take A Seat ({money(tournament.buyIn)})
+          </button>
+        )}
+        {tournament.status === 'registering' &&
+          !isSeatFirstCard &&
+          !regCheckFailed &&
+          (isRegistered ? (
+            <button
+              className={styles.unregisterBtn}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUnregister();
+              }}
+            >
+              Registered - Unregister?
+            </button>
+          ) : (
+            <button
+              className={styles.registerBtn}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRegister();
+              }}
+              disabled={registering || isFull}
+            >
+              {registering
+                ? 'Registering...'
+                : isFull
+                  ? 'Tournament Full'
+                  : `Register (${money(tournament.buyIn)})`}
+            </button>
+          ))}
+        {/* Dan 2026-08-25 (binding): "when I click on a tournament that's
+            RUNNING I should be able to click a button and watch."
+            This branch was gated on `isRegistered`, so a running tournament you
+            were not in rendered NO action at all — the card was a dead end for
+            exactly the player who wants to watch. Everyone gets a button now;
+            only its wording differs, because "open the tournament you are
+            playing" and "watch someone else's" are different intents. Both land
+            on the tournament screen, whose footer carries WATCH straight to the
+            featured table. */}
+        {tournament.status === 'running' && (
+          <button
+            className={styles.playBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              /* 2026-08-25, second audit: both labels navigated to the
+                 details page, so a button that says "Watch" dropped the player
+                 on a screen where they still had to find the real WATCH
+                 button. This card has only a tournament id — it cannot know
+                 which table is featured without a query per card — so it hands
+                 the intent along in the URL and the details page acts on it
+                 the moment its featured table resolves. */
+              navigate(
+                isRegistered
+                  ? `/tournaments/${tournament.id}`
+                  : `/tournaments/${tournament.id}?watch=1`
+              );
+            }}
+          >
+            {isRegistered ? 'Open Tournament' : 'Watch'}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 export default memo(TournamentLobbyCardInner);

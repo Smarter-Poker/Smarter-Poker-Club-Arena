@@ -242,8 +242,26 @@ export const FinancialCronService = {
       return unknown();
     }
 
-    // Invoice generation belongs to the server weekly close. A browser only reads
-    // the resulting obligations; it cannot run billing for every club.
+    // Generate this week's credit invoices BEFORE checking for overdue ones. This is the
+    // reliable trigger for the credit-invoice subsystem: fn_generate_all_credit_invoices
+    // anchors period_end to the week boundary and is idempotent per (agent, week), so
+    // running it on the 6h suspension cadence converges to exactly one invoice per agent
+    // per week. Agents with debt therefore always have a current invoice to view/pay in
+    // the portal, and this suspension check then acts on genuinely overdue ones.
+    // (For a fully autonomous server-side trigger independent of an admin session, see the
+    // Open Claw cron handoff — this client cadence covers the common case.)
+    try {
+      const { error: genErr } = await supabase.rpc('fn_generate_all_credit_invoices');
+      if (!current()) return unknown();
+      if (genErr) {
+        unavailable = true;
+        reportError(genErr, 'FinancialCronService.generateCreditInvoices');
+      }
+    } catch (e) {
+      if (!current()) return unknown();
+      unavailable = true;
+      reportError(e, 'FinancialCronService.generateCreditInvoices.exception');
+    }
 
     let agentsChecked = 0;
     let agentsSuspended = 0;

@@ -26,6 +26,56 @@ afterEach(async () => {
 });
 const ready = (c: Child) => c.emit('message', { type: 'READY' });
 describe('journal worker lifecycle owner', () => {
+  it('counts commitment flags separately and never exposes private audit data', () => {
+    service.start();
+    ready(children[0]);
+    children[0].emit('message', { type: 'CYCLE_STARTED' });
+    children[0].emit('message', {
+      type: 'CYCLE_COMPLETED',
+      work: 'skipped',
+      retention: 'skipped',
+      commitment: {
+        status: 'pass_complete',
+        scannedHands: 5,
+        horseHands: 8,
+        flaggedHorseHands: 3,
+        unknownHorseHands: 2,
+        handGaps: 1,
+        privateCards: ['As'],
+        horseId: 'private',
+      },
+    });
+    expect(service.status()).toMatchObject({
+      completed: 0,
+      modelsRecorded: 0,
+      commitmentHandsScanned: 5,
+      commitmentHandsFlagged: 3,
+      commitmentHandsUnknown: 2,
+      commitmentPasses: 1,
+      lastCommitmentStatus: 'pass_complete',
+    });
+    expect(JSON.stringify(service.status())).not.toContain('private');
+  });
+  it('refuses a malformed commitment result before counting completion', () => {
+    service.start();
+    ready(children[0]);
+    children[0].emit('message', { type: 'CYCLE_STARTED' });
+    children[0].emit('message', {
+      type: 'CYCLE_COMPLETED',
+      work: 'skipped',
+      retention: 'skipped',
+      commitment: {
+        status: 'recorded',
+        scannedHands: NaN,
+        horseHands: 8,
+        flaggedHorseHands: 3,
+        unknownHorseHands: 2,
+        handGaps: 1,
+      },
+    });
+    expect(service.status().cycles).toBe(0);
+    expect(service.status().phase).not.toBe('ready');
+  });
   it('keeps discovery separate from capture and journal completions and strips malformed discovery data', () => {
     service.start();
     ready(children[0]);

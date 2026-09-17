@@ -55,7 +55,7 @@ describe('every paid tap has an in-flight latch', () => {
     const src = read('components/table/EmojiPicker.tsx');
     expect(src).toContain('busyRef');
     expect(src).toMatch(/if \(busyRef\.current\) return;/);
-    expect(src).toContain('disabled={purchasingForActiveUser}');
+    expect(src).toContain('disabled={purchasing}');
   });
 
   it('PlayerNotesPanel latches the paid tag purchase', () => {
@@ -76,10 +76,7 @@ describe('every paid tap has an in-flight latch', () => {
     const confirmAt = src.indexOf('const handleAssetPurchase');
     expect(confirmAt).toBeGreaterThan(-1);
     // The busy check must appear inside the handler, before the purchase.
-    const body = src.slice(
-      confirmAt,
-      src.indexOf("supabase.rpc('fn_purchase_feature_v2'", confirmAt)
-    );
+    const body = src.slice(confirmAt, src.indexOf("supabase.rpc('fn_purchase_feature'", confirmAt));
     expect(body).toContain('purchaseBusyRef.current');
   });
 });

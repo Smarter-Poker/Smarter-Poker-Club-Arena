@@ -1,3 +1,4 @@
+import { tournamentEntryWindowOpen } from '../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * CLUB HOME PAGE — Premium-Style Club Dashboard
@@ -344,6 +345,8 @@ interface TournamentData {
    */
   late_reg_mins?: number | null;
   late_reg_levels?: number | null;
+  rebuy_levels?: number | null;
+  prize_pool_finalized?: boolean | null;
   started_at?: string | null;
   current_level?: number | null;
   variant?: string | null;
@@ -678,10 +681,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* Undefined for every chip club, so their cards are untouched. */
   const arenaSeatsClosedLabel =
     isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
-  /* Diamond Phase 8: the arena's tournaments have their own switch, read from
-     the same server entitlement, and the same label while it is off. */
-  const arenaRegistrationClosedLabel =
-    isAutomaticArena && arenaAccess?.tournamentsEnabled !== true ? 'Not Open Yet' : undefined;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -2793,7 +2792,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -3280,21 +3279,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     const stillEnterable = (t: TournamentData) => {
       const status = String(t.status).toUpperCase();
-      if (['REGISTERING', 'LATE_REG', 'LATE_REGISTRATION', 'STARTING_SOON'].includes(status))
-        return true;
-      if (status === 'RUNNING') {
-        const levels = Number(t.late_reg_levels ?? 0);
-        // 0-BASED (2026-08-23): current_level indexes blind_structure, so
-        // "through level N" is indices 0..N-1 and N is the cutoff. `<=` kept
-        // a closed tournament listed as enterable for one whole level after
-        // the engine finalized its prize pool, so the lobby offered a seat the
-        // RPC would refuse. Matches TournamentManagerBase.isLateRegClosed.
-        if (levels > 0) return Number(t.current_level ?? 0) < levels;
-        const mins = Number(t.late_reg_mins ?? 0);
-        if (mins > 0 && t.started_at) {
-          return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
-        }
-      }
+      if (['ANNOUNCED', 'REGISTERING', 'STARTING_SOON'].includes(status)) return true;
+      if (['RUNNING', 'LATE_REG', 'LATE_REGISTRATION'].includes(status))
+        return tournamentEntryWindowOpen(t, Date.now());
       return false;
     };
 
@@ -4219,7 +4206,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          buy-in door refuses every seat until it opens. Say so on the card
          rather than offering a Join that the server will reject. */
       seatsClosedLabel: arenaSeatsClosedLabel,
-      registrationClosedLabel: arenaRegistrationClosedLabel,
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */
@@ -5642,7 +5628,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
           seatsClosedLabel={arenaSeatsClosedLabel}
-          registrationClosedLabel={arenaRegistrationClosedLabel}
           onWaitlistToggle={handleLobbyWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}

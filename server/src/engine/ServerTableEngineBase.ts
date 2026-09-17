@@ -9,7 +9,6 @@
  */
 
 import { HandController } from './HandController.js';
-import { SettlementAwait } from '../observability/SettlementAwait.js';
 import type { HandSeatGeneration } from './handSeatGeneration.js';
 import { playerActionContext } from './PlayerActionContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
@@ -74,12 +73,18 @@ import {
   pendingSeatMoves,
   seatMoveCancelledNotice,
   seatMoveNotice,
+  SeatMoveBatchError,
   type PendingSeatMove,
+  type SeatMoveOutcome,
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
-import { claimMovedPresence, depositMovedPresence } from './SeatMovePresence.js';
+import { claimMovedPresence, depositMovedPresence, hasMovedPresence } from './SeatMovePresence.js';
+import {
+  readCashMoveArrivals,
+  type CashMoveArrival,
+} from '../services/supabase/cashMovePresence.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
   SeatPlayer,
@@ -100,10 +105,10 @@ import {
   type TurnFSMState,
 } from './StateMachine.js';
 import { headsUpButtonSeat } from './headsUpButton.js';
+import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
-import { assertDiamondTable } from '../domain/DiamondCashBoundary.js';
-import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';
+import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
 
 export type EngineLeaseAuthority =
   | {
@@ -149,31 +154,6 @@ let leaseMonotonicNow: () => number = () => performance.now();
 /** Test seam for a timer callback delayed beyond its monotonic authority. */
 export function _setEngineLeaseMonotonicNowForTests(now?: () => number): void {
   leaseMonotonicNow = now ?? (() => performance.now());
-}
-
-interface TimeBankAllowance {
-  extraSeconds: number;
-  /** Undefined means the legacy v1 RPC did not report this entitlement. */
-  unlimitedActivations?: boolean;
-}
-
-async function awaitTimeBankRpc<T>(operation: PromiseLike<T>, timeoutMs?: number): Promise<T> {
-  if (!timeoutMs || timeoutMs <= 0) return Promise.resolve(operation);
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      Promise.resolve(operation),
-      new Promise<T>((_resolve, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('Time Bank Entitlement Revalidation Timed Out')),
-          timeoutMs
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 export abstract class ServerTableEngineBase {
@@ -1036,102 +1016,22 @@ export abstract class ServerTableEngineBase {
       for (const [seat, at] of [...this.pineappleDiscardDeadlines]) {
         if (at > now) continue; // this seat bought itself more time
         this.pineappleDiscardDeadlines.delete(seat);
-        /* An early press ARMS a bank; it does not spend it. The ordinary turn
-           clock redeems that intent at expiry through onPrimaryTimerExpired,
-           and the simultaneous discard round must do the same. Removing the
-           deadline before the bounded Lifetime revalidation also lets a real
-           discard land while the read is in flight; the resolver re-checks the
-           HandController before it can extend or fold anything. */
-        void this.resolvePineappleDiscardExpiry(seat, at, controllerRef).catch((err: unknown) => {
-          reportError(
-            err,
-            'ServerTableEngine.' + this.tableId + '.pineapple_discard_expiry_resolution',
-            { seat }
-          );
-        });
+        try {
+          // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
+          // auto-discard the last card - a random discard the player never
+          // chose, which then kept playing for them.
+          this.handController.foldForMissedDiscard(seat);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
+            seat,
+          });
+          // Keep going — one bad seat must not strand the whole table.
+        }
       }
       this.markProgress();
       // Seats with an extended deadline are still owed their round.
       this.armPineappleDiscardSweep(controllerRef);
     }, wait);
-  }
-
-  /**
-   * Resolve one expired discard clock. An armed Time Bank gets the same exact
-   * 20-second activation used on an ordinary turn; otherwise the missed
-   * discard folds. Lifetime is revalidated before another unlimited use is
-   * manufactured, and every identity/stage check is repeated after that await.
-   */
-  private async resolvePineappleDiscardExpiry(
-    seat: number,
-    expiredAt: number,
-    controllerRef: unknown
-  ): Promise<void> {
-    const controller = this.handController;
-    if (!controller || controller !== controllerRef) return;
-    if (controller.getState().stage !== 'pineapple_discard') return;
-    if (!controller.owesPineappleDiscard(seat)) return;
-
-    const player = this.seatedPlayers.find((candidate) => candidate.seat_number === seat);
-    const userId = player?.user_id;
-    if (userId && this.timeBankEngine.isArmed(this.tableId, userId)) {
-      if (this.timeBankEngine.isUnlimited(this.tableId, userId)) {
-        try {
-          await this.revalidateUnlimitedTimeBank(userId);
-        } catch (err) {
-          // A failed entitlement read cannot leave the round suspended behind
-          // a cached Lifetime flag. Fall back to the player's real finite pool.
-          this.timeBankEngine.setUnlimitedActivations(this.tableId, userId, false);
-          reportError(
-            err,
-            'ServerTableEngine.' + this.tableId + '.pineapple_timebank_revalidation_failed',
-            { seat }
-          );
-        }
-      }
-
-      const currentController = this.handController;
-      if (!currentController || currentController !== controllerRef) return;
-      if (currentController.getState().stage !== 'pineapple_discard') return;
-      if (!currentController.owesPineappleDiscard(seat)) return;
-      // A replacement round/extension may have installed a newer deadline
-      // while Lifetime was being revalidated. Never overwrite it.
-      const replacementDeadline = this.pineappleDiscardDeadlines.get(seat);
-      if (replacementDeadline !== undefined && replacementDeadline !== expiredAt) return;
-
-      const activated = this.timeBankEngine.onPrimaryTimerExpired(this.tableId, userId, () => {});
-      if (activated) {
-        const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
-        const seconds = Math.max(0, bank?.currentUseSeconds ?? 0);
-        if (seconds > 0) {
-          const extended = Date.now() + seconds * 1000;
-          this.pineappleDiscardDeadlines.set(seat, extended);
-          this.markProgress();
-          this.armPineappleDiscardSweep(controllerRef);
-          this.broadcastCurrentState();
-          return;
-        }
-      }
-    }
-
-    const currentController = this.handController;
-    if (!currentController || currentController !== controllerRef) return;
-    if (currentController.getState().stage !== 'pineapple_discard') return;
-    if (!currentController.owesPineappleDiscard(seat)) return;
-    try {
-      // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
-      // auto-discard the last card - a random discard the player never chose,
-      // which then kept playing for them.
-      currentController.foldForMissedDiscard(seat);
-    } catch (err) {
-      reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
-        seat,
-      });
-      // One bad seat must not strand the whole table.
-    }
-    this.markProgress();
-    this.armPineappleDiscardSweep(controllerRef);
-    this.broadcastCurrentState();
   }
 
   /**
@@ -1210,12 +1110,7 @@ export abstract class ServerTableEngineBase {
       0,
       before - this.timeBankEngine.getRemainingSeconds(this.tableId, userId)
     );
-    const activeBank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
-    const seconds = activeBank?.unlimitedActivations
-      ? activeBank.currentUseSeconds
-      : granted > 0
-        ? granted
-        : before;
+    const seconds = granted > 0 ? granted : before;
     const extended = Date.now() + seconds * 1000;
     this.pineappleDiscardDeadlines.set(seat, extended);
     this.armPineappleDiscardSweep(this.handController);
@@ -1319,8 +1214,6 @@ export abstract class ServerTableEngineBase {
     handName?: string;
     /** HI-LO: the low half's entry (2026-09-04). */
     low?: boolean;
-    /** Per-pot slices of this share, main pot first (2026-09-13). */
-    pots?: Array<{ index: number; amount: number }>;
   }> = [];
   /**
    * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
@@ -1460,9 +1353,7 @@ export abstract class ServerTableEngineBase {
    *
    * `eligible` is who was dealt into that hand: a spectator cannot buy a look
    * at a hand they were never part of, and `revealed` makes a paid reveal
-   * repeatable for the buyer without charging them twice. The settlement layer
-   * derives one durable request UUID from the table, hand, and player identity,
-   * so retries and replacement engine instances reuse the same receipt key.
+   * repeatable for the buyer without charging them twice.
    */
   protected rabbitHuntOffers: Map<
     number,
@@ -1713,7 +1604,6 @@ export abstract class ServerTableEngineBase {
   // rather than by the next hand. See trackSettlementInFlight().
   protected settlementInFlight: Set<Promise<void>> = new Set();
   private settlementStartedAtMs: number | null = null;
-  private settlementAwaitObserver?: SettlementAwait;
 
   /**
    * The one dealing-loop generation owned by this engine instance.
@@ -1853,12 +1743,7 @@ export abstract class ServerTableEngineBase {
    */
   protected timeBankMeta: Map<
     string,
-    {
-      initialSeconds: number;
-      baseSeconds: number;
-      dbConsumedSeconds: number;
-      unlimitedActivations?: boolean;
-    }
+    { initialSeconds: number; baseSeconds: number; dbConsumedSeconds: number }
   > = new Map();
   /**
    * Free time-bank seconds every player starts a session with, before any VIP
@@ -1946,7 +1831,7 @@ export abstract class ServerTableEngineBase {
       // dealing-integrity failures. A verifier that fires but will not say what
       // it found cannot be triaged, so in practice it was ignored.
       //
-      // The Sentry fingerprint is now per violation TYPE rather than one bucket
+      // The error reporting fingerprint is now per violation TYPE rather than one bucket
       // for everything, so a rare DUPLICATE_CARD cannot stay buried under
       // thousands of routine events. It is also greppable per class:
       //   grep 'STATE INTEGRITY' | grep CHIP_CONSERVATION
@@ -2757,8 +2642,9 @@ export abstract class ServerTableEngineBase {
         }
         const idsBeforeSweep = new Set(this.seatedPlayers.map((p) => p.user_id));
         try {
-          this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+          const nextRoster = await loadSeatedPlayers(this.tableId);
           if (!this.lifecycleCanMutate()) return;
+          for (const userId of this.adoptSeatRoster(nextRoster)) idsBeforeSweep.delete(userId);
         } catch (err) {
           // This is a POLL. It already runs every 5s, so a failed sweep costs
           // one sweep — while letting it escape aborted start() entirely and
@@ -2775,11 +2661,10 @@ export abstract class ServerTableEngineBase {
         // did not - so the second chair that takes a feeder live, or the seat
         // that opens on a waiting Main 1, reached the controller at the next
         // pass instead of inside a second. Same wake, same debounce.
-        if (
-          !firstWaitSweep &&
-          (this.seatedPlayers.length !== idsBeforeSweep.size ||
-            this.seatedPlayers.some((p) => !idsBeforeSweep.has(p.user_id)))
-        ) {
+        const rosterChanged =
+          this.seatedPlayers.length !== idsBeforeSweep.size ||
+          this.seatedPlayers.some((p) => !idsBeforeSweep.has(p.user_id));
+        if (!firstWaitSweep && rosterChanged) {
           this.wakeClusterGame('seat_change');
         }
         firstWaitSweep = false;
@@ -2795,7 +2680,12 @@ export abstract class ServerTableEngineBase {
         }
         // BEFORE the sit-out restore, always: registering a player first would
         // block the adoption (restoreFsmStates never clobbers a live entry).
-        this.adoptMovedPresence();
+        if (!(await this.adoptMovedPresence())) {
+          if (!this.lifecycleCanMutate()) return;
+          await this.sleep(5000);
+          continue;
+        }
+        if (!this.lifecycleCanMutate()) return;
         this.restoreSitOutsFromSeats();
         // Dan 2026-08-30: and the cash entry holds, for the same reason the
         // sit-out restore is here rather than only in the dealing loop — a
@@ -2847,10 +2737,11 @@ export abstract class ServerTableEngineBase {
         // 180 seconds. Stamp only after the fresh read and awaited wait work:
         // a rejected read or hung sweep must still age into recovery.
         this.markProgress();
+        const pollMs = this.nextWaitForPlayersPollMs(rosterChanged);
         console.log(
-          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()})`
+          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()}) next look in ${Math.round(pollMs / 1000)}s`
         );
-        await this.sleep(5000);
+        await this.waitForPlayersPause(pollMs);
       }
 
       if (!this.lifecycleCanMutate()) return;
@@ -2930,7 +2821,7 @@ export abstract class ServerTableEngineBase {
     const dealingLoopAtFence = this.dealingLoopPromise;
     const settlementsAtFence = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
     if (this.postHandTasksPromise) settlementsAtFence.push(this.postHandTasksPromise);
-    settlementsAtFence.push(...this.tournamentMoveOperations);
+    settlementsAtFence.push(...this.tournamentMoveOperations, ...this.readContinuationTasks);
 
     // Publish the terminal fence synchronously. Any start/restart attempt in
     // the same turn observes it before teardown reaches its first await.
@@ -2940,6 +2831,8 @@ export abstract class ServerTableEngineBase {
     this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
     this.notifyBoundaryPauseWaiters();
+    // A backed-off wait-for-players pause ends now, so the loop sees the fence.
+    this.waitForPlayersWake?.();
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
 
@@ -2954,6 +2847,7 @@ export abstract class ServerTableEngineBase {
       ...(this.settlementInFlight ?? new Set<Promise<void>>()),
       ...(this.postHandTasksPromise ? [this.postHandTasksPromise] : []),
       ...this.tournamentMoveOperations,
+      ...this.readContinuationTasks,
     ]
   ): Promise<void> {
     const failures: unknown[] = [];
@@ -2988,7 +2882,8 @@ export abstract class ServerTableEngineBase {
     while (
       (this.settlementInFlight?.size ?? 0) > 0 ||
       this.postHandTasksPromise ||
-      this.tournamentMoveOperations.size > 0
+      this.tournamentMoveOperations.size > 0 ||
+      this.readContinuationTasks.size > 0
     ) {
       const settlements = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
       const postHandTasks = this.postHandTasksPromise;
@@ -2996,6 +2891,7 @@ export abstract class ServerTableEngineBase {
       for (const settlement of settlements) await joinOwnedWriter(settlement);
       await joinOwnedWriter(postHandTasks);
       for (const tournamentMove of tournamentMoves) await joinOwnedWriter(tournamentMove);
+      for (const read of [...this.readContinuationTasks]) await joinOwnedWriter(read);
       if (this.postHandTasksPromise === postHandTasks) this.postHandTasksPromise = null;
     }
     if (this.dealingLoopPromise === dealingLoopAtFence) this.dealingLoopPromise = null;
@@ -3342,7 +3238,7 @@ export abstract class ServerTableEngineBase {
          transaction, so the partner's own engine never runs an executor and
          this is its only chance to hand its player's presence over. Harmless
          for a move that never lands: an unclaimed deposit expires. */
-      this.depositPresenceForMove(m.player_id, m.to_table_id);
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
       if (m.announced_at == null) fresh.push(m.move_id);
       if (this.announcedSeatMoves.has(m.move_id)) continue;
       this.announcedSeatMoves.add(m.move_id);
@@ -3453,7 +3349,30 @@ export abstract class ServerTableEngineBase {
     if (!this.lifecycleCanMutate()) return [];
     if (pending === null) return [];
     this.reconcileSeatMoveHolds(pending);
-    const { done, held, refused } = await executePendingSeatMoves(this.tableId, opts, pending);
+    // Stage the hand-boundary state BEFORE the transaction. The destination
+    // may observe its committed seat before this RPC response returns, including
+    // idle moves that never passed through a hand-start announcement.
+    for (const m of pending) {
+      if (opts.announcedOnly && m.announced_at == null) continue;
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
+    }
+    let outcome: SeatMoveOutcome;
+    let incomplete: SeatMoveBatchError | null = null;
+    try {
+      outcome = await executePendingSeatMoves(
+        this.tableId,
+        {
+          ...opts,
+          shouldContinue: () => this.lifecycleCanMutate(),
+        },
+        pending
+      );
+    } catch (error) {
+      if (!(error instanceof SeatMoveBatchError)) throw error;
+      outcome = error.outcome;
+      incomplete = error;
+    }
+    const { done, held, refused } = outcome;
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     if (!this.lifecycleCanMutate()) return [];
@@ -3488,7 +3407,7 @@ export abstract class ServerTableEngineBase {
       // A held side is still seated HERE and will be moved by the other
       // table's transaction: refresh its deposit while this engine still has
       // its presence to give.
-      this.depositPresenceForMove(h.player_id, h.to_table_id);
+      this.depositPresenceForMove(h.player_id, h.to_table_id, h.move_id, h.source_occupancy_id);
       if (this.heldForSwap.has(h.player_id)) continue;
       this.heldForSwap.add(h.player_id);
       this.hub?.emitEvent(this.tableId, {
@@ -3512,7 +3431,7 @@ export abstract class ServerTableEngineBase {
          immediately before this engine forgets them, so the destination
          adopts what they were half a second ago rather than what they were at
          the start of the hand. */
-      this.depositPresenceForMove(m.player_id, m.to_table_id);
+      this.depositPresenceForMove(m.player_id, m.to_table_id, m.move_id, m.source_occupancy_id);
       this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
@@ -3573,6 +3492,9 @@ export abstract class ServerTableEngineBase {
       // The game's seats changed at two tables at once; one wake covers both.
       this.wakeClusterGame('seat_move');
     }
+    // Keep the original failure visible after reflecting only confirmed outcomes.
+    // The uncertain move and every unattempted move remain outside this cleanup.
+    if (incomplete) throw incomplete;
     return movedIds;
   }
 
@@ -3588,13 +3510,23 @@ export abstract class ServerTableEngineBase {
    * registers them the ordinary way, which is what happened before any of
    * this existed.
    */
-  protected depositPresenceForMove(playerId: string, toTableId: string): void {
+  protected depositPresenceForMove(
+    playerId: string,
+    toTableId: string,
+    moveId: string,
+    sourceOccupancyId: string
+  ): void {
     if (!playerId || !toTableId || toTableId === this.tableId) return;
+    if (!moveId || !sourceOccupancyId) return;
+    const seated = this.seatedPlayers.find((p) => p.user_id === playerId);
+    if (!seated || seated.occupancy_id !== sourceOccupancyId) return;
     const fsm = this.disconnectEngine.getFsmState(this.tableId, playerId);
     if (!fsm) return;
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, playerId);
     const meta = this.timeBankMeta.get(playerId);
     depositMovedPresence(playerId, toTableId, {
+      moveId,
+      sourceOccupancyId,
       fsm,
       fromTableId: this.tableId,
       timeBank: bank
@@ -3604,7 +3536,6 @@ export abstract class ServerTableEngineBase {
             initialSeconds: meta?.initialSeconds ?? bank.remainingSeconds,
             baseSeconds: meta?.baseSeconds ?? this.timeBankBaseSeconds,
             dbConsumedSeconds: meta?.dbConsumedSeconds ?? 0,
-            unlimitedActivations: bank.unlimitedActivations || meta?.unlimitedActivations === true,
           }
         : null,
     });
@@ -3629,9 +3560,46 @@ export abstract class ServerTableEngineBase {
    * seeding is guarded on `!getPlayerBank(...)`, so a bank adopted now is the
    * one the player keeps and the free refill never happens for a mover.
    */
-  protected adoptMovedPresence(): void {
-    for (const p of this.seatedPlayers) {
-      const carried = claimMovedPresence(p.user_id, this.tableId);
+  protected async adoptMovedPresence(): Promise<boolean> {
+    if (!this.lifecycleCanMutate()) return false;
+    const candidates = this.seatedPlayers
+      .filter((p) => hasMovedPresence(p.user_id, this.tableId))
+      .map((p) => ({ userId: p.user_id, occupancyId: p.occupancy_id }));
+    if (candidates.length === 0) return true;
+    let arrivals: CashMoveArrival[];
+    try {
+      arrivals = await readCashMoveArrivals(
+        this.tableId,
+        candidates.map((p) => p.occupancyId ?? '')
+      );
+    } catch (error) {
+      reportError(error, 'ServerTableEngine.seat_move_arrival_unreadable', {
+        tableId: this.tableId,
+      });
+      return false;
+    }
+    if (!this.lifecycleCanMutate()) return false;
+    for (const arrival of arrivals) {
+      if (
+        !candidates.some(
+          (candidate) =>
+            candidate.userId === arrival.player_id &&
+            candidate.occupancyId === arrival.destination_occupancy_id
+        )
+      )
+        continue;
+      const p = this.seatedPlayers.find(
+        (seat) =>
+          seat.user_id === arrival.player_id &&
+          seat.occupancy_id === arrival.destination_occupancy_id
+      );
+      if (!p) continue;
+      const carried = claimMovedPresence(p.user_id, this.tableId, {
+        moveId: arrival.move_id,
+        fromTableId: arrival.from_table_id,
+        sourceOccupancyId: arrival.source_occupancy_id,
+        destinationOccupancyId: arrival.destination_occupancy_id,
+      });
       if (!carried) continue;
       const restored = this.disconnectEngine.restoreFsmStates(this.tableId, {
         [p.user_id]: carried.fsm,
@@ -3640,13 +3608,11 @@ export abstract class ServerTableEngineBase {
         this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
           remainingSeconds: carried.timeBank.remainingSeconds,
           usesRemaining: carried.timeBank.usesRemaining,
-          unlimitedActivations: carried.timeBank.unlimitedActivations,
         });
         this.timeBankMeta.set(p.user_id, {
           initialSeconds: carried.timeBank.initialSeconds,
           baseSeconds: carried.timeBank.baseSeconds,
           dbConsumedSeconds: carried.timeBank.dbConsumedSeconds,
-          ...(carried.timeBank.unlimitedActivations ? { unlimitedActivations: true } : {}),
         });
       }
       console.log(
@@ -3655,6 +3621,40 @@ export abstract class ServerTableEngineBase {
           (restored ? '' : ' (a live observation already won)')
       );
     }
+    return true;
+  }
+
+  /** Retire departed/replaced cash stays; return only replacements for arrival detection. */
+  protected adoptSeatRoster(nextRoster: SeatedPlayer[]): string[] {
+    if (!this.lifecycleCanMutate()) return [];
+    const previous = new Map(this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id]));
+    this.seatedPlayers = nextRoster;
+    if (this.isTournamentTable()) return [];
+    const replaced: string[] = [];
+    for (const [userId, occupancyId] of previous) {
+      const current = nextRoster.find((p) => p.user_id === userId);
+      if (current && current.occupancy_id === occupancyId) continue;
+      if (current) replaced.push(userId);
+      this.knownPlayerIds.delete(userId);
+      this.waitingForBB.delete(userId);
+      this.postingBBToEnter.delete(userId);
+      this.postBBWhenClear.delete(userId);
+      this.pendingPostToEnter.delete(userId);
+      this.mustPostBB.delete(userId);
+      this.returningFromSitout.delete(userId);
+      this.heldForSwap.delete(userId);
+      this.dealtInUserIds.delete(userId);
+      this.pendingSitOut.delete(userId);
+      this.leaveHeldByClock.delete(userId);
+      this.horseRebuys.delete(userId);
+      this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+      this.timeBankEngine.removePlayer(this.tableId, userId);
+      this.timeBankMeta.delete(userId);
+      this.straddleEngine.removePlayer(this.tableId, userId);
+      this.preActionEngine.removePlayer(this.tableId, userId);
+      this.chipContinuity.forget(userId);
+    }
+    return replaced;
   }
 
   /** Last time the empty-cluster-table check read the row. See below. */
@@ -3694,15 +3694,7 @@ export abstract class ServerTableEngineBase {
       console.log(
         `[ServerTableEngine:${this.tableId}] cluster table is ${row.lifecycle ?? row.status} and empty - stopping the engine`
       );
-      // This also runs inside dealingLoop(), which stop() must join before
-      // releasing ownership. Publish its synchronous fence, then let this
-      // caller return so the captured loop can finish. The cached teardown
-      // promise still owns every writer and remains joinable by the map owner.
-      void this.stop().catch((error) =>
-        reportError(error, 'ServerTableEngine.cluster_closed_stop_failed', {
-          tableId: this.tableId,
-        })
-      );
+      await this.stop();
     }
   }
 
@@ -3951,6 +3943,25 @@ export abstract class ServerTableEngineBase {
     return this.loopPhase + '+' + Math.round(this.msSinceLoopPhase() / 1000) + 's';
   }
 
+  /** Physical read continuations, separate from financial/canonical writers.
+   * A deadline may reject its caller, but cannot release this ownership. */
+  private readonly readContinuationTasks = new Set<Promise<void>>();
+  protected runOwnedReadContinuation(work: () => Promise<void>): Promise<void> {
+    let settle!: () => void;
+    const physical = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.readContinuationTasks.add(physical);
+    return (async () => {
+      try {
+        await work();
+      } finally {
+        this.readContinuationTasks.delete(physical);
+        settle();
+      }
+    })();
+  }
+
   /**
    * Await `work`, but never for longer than `budgetMs`.
    *
@@ -4030,6 +4041,7 @@ export abstract class ServerTableEngineBase {
     this.clearEngineLeaseExpiryTimer();
     this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
+    this.waitForPlayersWake?.();
     this.settleReady(false);
     this.heartbeatActive = false;
     this.clearHandSafetyTimer();
@@ -4122,20 +4134,6 @@ export abstract class ServerTableEngineBase {
    */
   hasSettlementInFlight(): boolean {
     return (this.settlementInFlight?.size ?? 0) > 0;
-  }
-
-  protected observeSettlementAwait<T>(
-    stage: string,
-    generation: number,
-    handNumber: number,
-    operation: (progress: (detail: string) => void) => Promise<T>
-  ): Promise<T> {
-    const observer = (this.settlementAwaitObserver ??= new SettlementAwait());
-    return observer.observe(stage, generation, handNumber, operation);
-  }
-
-  settlementAwaits() {
-    return this.settlementAwaitObserver?.snapshot() ?? [];
   }
 
   /** Continuous age of the owned settlement; null after completion. */
@@ -4536,6 +4534,10 @@ export abstract class ServerTableEngineBase {
     this.tournamentMovePauseOwners.add(ownerId);
     this.holdBeforeNextHand = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+    // A quiet source may be sleeping for its next roster read. Wake that
+    // existing loop so it reaches the physical pause gate within this probe;
+    // only the gate and drained writers below can authorize the move.
+    this.wakeWaitingForPlayers();
     this.notifyBoundaryPauseWaiters();
 
     const deadline = Date.now() + Math.max(0, maxWaitMs);
@@ -4988,7 +4990,7 @@ export abstract class ServerTableEngineBase {
     // Bible V8 §3.1: Table FSM — running → paused. GUARDED: the FSM has no
     // waiting → paused edge, and this gate is now reachable from the idle
     // branches where the table sits in 'waiting'. An unguarded transition
-    // logged a false "Invalid transition" to Sentry on every idle park.
+    // logged a false "Invalid transition" to error reporting on every idle park.
     if (this.tableFSM.state === 'running') {
       this.tableFSM.transition('paused');
     }
@@ -5222,62 +5224,16 @@ export abstract class ServerTableEngineBase {
    * session base. Fail-open to base-only: an allowance outage must never
    * block dealing.
    */
-  protected async fetchTimeBankExtras(
-    userIds: string[],
-    timeoutMs?: number
-  ): Promise<Map<string, TimeBankAllowance>> {
-    const extras = new Map<string, TimeBankAllowance>();
+  protected async fetchTimeBankExtras(userIds: string[]): Promise<Map<string, number>> {
+    const extras = new Map<string, number>();
     if (userIds.length === 0) return extras;
-    const deadline = timeoutMs && timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
-    const remainingTimeout = () =>
-      deadline === undefined ? undefined : Math.max(1, deadline - Date.now());
     try {
-      const { data, error } = await awaitTimeBankRpc(
-        supabase.rpc('fn_time_bank_allowance_v2', {
-          p_user_ids: userIds,
-        }),
-        remainingTimeout()
-      );
-      if (!error) {
-        for (const row of (data as Array<{
-          user_id: string;
-          is_lifetime?: boolean;
-          unlimited_activations?: boolean;
-          extra_seconds: number;
-        }>) ?? []) {
-          extras.set(row.user_id, {
-            extraSeconds: Math.max(0, Number(row.extra_seconds) || 0),
-            unlimitedActivations: row.is_lifetime === true && row.unlimited_activations === true,
-          });
-        }
-        return extras;
-      }
-
-      const code = String((error as { code?: string }).code ?? '');
-      const message = String(error.message ?? '');
-      const v2Unavailable =
-        code === 'PGRST202' ||
-        code === '42883' ||
-        /fn_time_bank_allowance_v2[\s\S]*(not found|does not exist|schema cache)/i.test(message) ||
-        /(not found|does not exist|schema cache)[\s\S]*fn_time_bank_allowance_v2/i.test(message);
-      if (!v2Unavailable) {
-        throw Object.assign(new Error(message || 'Time Bank Allowance V2 Failed'), { code });
-      }
-
-      // Rolling deployment compatibility. V1 has no Lifetime entitlement, so
-      // it supplies only the finite allowance until V2 is present.
-      const legacy = await awaitTimeBankRpc(
-        supabase.rpc('fn_time_bank_allowance', {
-          p_user_ids: userIds,
-        }),
-        remainingTimeout()
-      );
-      if (legacy.error) throw new Error(legacy.error.message);
-      for (const row of (legacy.data as Array<{ user_id: string; extra_seconds: number }>) ?? []) {
-        extras.set(row.user_id, {
-          extraSeconds: Math.max(0, Number(row.extra_seconds) || 0),
-          unlimitedActivations: undefined,
-        });
+      const { data, error } = await supabase.rpc('fn_time_bank_allowance', {
+        p_user_ids: userIds,
+      });
+      if (error) throw new Error(error.message);
+      for (const row of (data as Array<{ user_id: string; extra_seconds: number }>) ?? []) {
+        extras.set(row.user_id, Math.max(0, Number(row.extra_seconds) || 0));
       }
     } catch (err) {
       reportError(err, 'TimeBank.allowance_fetch_failed');
@@ -5301,40 +5257,28 @@ export abstract class ServerTableEngineBase {
     }
     try {
       const meta = this.timeBankMeta.get(event.playerId);
-      const unlimited =
-        event.unlimitedActivations === true ||
-        meta?.unlimitedActivations === true ||
-        this.timeBankEngine.isUnlimited(this.tableId, event.playerId);
-      if (unlimited) {
-        const secondsUsed = Math.max(0, Number(event.secondsUsed) || 0);
-        if (secondsUsed > 0) this.consumeTimeBankSeconds(event.playerId, secondsUsed);
-        return;
-      }
       if (!meta) return;
       const remaining = this.timeBankEngine.getRemainingSeconds(this.tableId, event.playerId);
       const usedTotal = Math.max(0, meta.initialSeconds - remaining);
       const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
       if (owed <= 0) return;
       meta.dbConsumedSeconds += owed;
-      this.consumeTimeBankSeconds(event.playerId, owed);
+      // Promise.resolve() so this is a real Promise with a .catch(), not the
+      // PromiseLike the query builder returns. The enclosing try/catch below
+      // covers only the SYNCHRONOUS part of this statement — see the note on
+      // recordRecoveryEvent() for why the rejection path matters.
+      void Promise.resolve(
+        supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
+      )
+        .then(({ error }) => {
+          if (error) console.warn('[TimeBank] consume failed:', error.message);
+        })
+        .catch((err: unknown) => {
+          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
+        });
     } catch {
       /* accounting must never break gameplay */
     }
-  }
-
-  /** Best-effort ledger/audit write. Gameplay never waits for this call. */
-  private consumeTimeBankSeconds(userId: string, seconds: number): void {
-    // Promise.resolve() converts the Supabase PromiseLike into a real Promise
-    // so transport rejections cannot become unhandled rejections.
-    void Promise.resolve(
-      supabase.rpc('fn_consume_time_bank', { p_user_id: userId, p_seconds: seconds })
-    )
-      .then(({ error }) => {
-        if (error) console.warn('[TimeBank] consume failed:', error.message);
-      })
-      .catch((err: unknown) => {
-        console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-      });
   }
 
   /**
@@ -5343,52 +5287,22 @@ export abstract class ServerTableEngineBase {
    * in-memory bank to base-residue + fresh DB extras so the purchase is
    * usable without re-seating. Returns false if nothing could be refreshed.
    */
-  protected async refreshTimeBankFromDb(
-    userId: string,
-    options?: { timeoutMs?: number; requireExplicitUnlimitedState?: boolean }
-  ): Promise<boolean> {
+  protected async refreshTimeBankFromDb(userId: string): Promise<boolean> {
     const meta = this.timeBankMeta.get(userId);
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
     if (!meta || !bank || bank.isActive) return false;
-    const extras = await this.fetchTimeBankExtras([userId], options?.timeoutMs);
+    const extras = await this.fetchTimeBankExtras([userId]);
     if (!extras.has(userId)) return false;
     const usedTotal = Math.max(0, meta.initialSeconds - bank.remainingSeconds);
     const baseLeft = Math.max(0, meta.baseSeconds - Math.min(usedTotal, meta.baseSeconds));
-    const allowance = extras.get(userId);
-    if (!allowance) return false;
-    const newRemaining = baseLeft + allowance.extraSeconds;
-    const unlimitedActivations = options?.requireExplicitUnlimitedState
-      ? allowance.unlimitedActivations === true
-      : allowance.unlimitedActivations;
-    if (!this.timeBankEngine.rebase(this.tableId, userId, newRemaining, unlimitedActivations)) {
-      return false;
-    }
+    const newRemaining = baseLeft + (extras.get(userId) ?? 0);
+    if (!this.timeBankEngine.rebase(this.tableId, userId, newRemaining)) return false;
     this.timeBankMeta.set(userId, {
       initialSeconds: newRemaining,
       baseSeconds: baseLeft,
       dbConsumedSeconds: 0,
-      ...(unlimitedActivations === true ? { unlimitedActivations: true } : {}),
     });
     return true;
-  }
-
-  /**
-   * Lifetime is revalidated before every cached unlimited activation. A failed
-   * or timed-out read removes only the unlimited flag; any real finite base or
-   * purchased balance remains available under the ordinary rules.
-   */
-  protected async revalidateUnlimitedTimeBank(userId: string): Promise<void> {
-    if (!this.timeBankEngine.isUnlimited(this.tableId, userId)) return;
-
-    const refreshed = await this.refreshTimeBankFromDb(userId, {
-      timeoutMs: 1_500,
-      requireExplicitUnlimitedState: true,
-    });
-    if (refreshed) return;
-
-    this.timeBankEngine.setUnlimitedActivations(this.tableId, userId, false);
-    const meta = this.timeBankMeta.get(userId);
-    if (meta) delete meta.unlimitedActivations;
   }
 
   /**
@@ -6072,9 +5986,7 @@ export abstract class ServerTableEngineBase {
          recorded rather than silently swallowed. */
       if (tableRow && this.tableInfo && (this.tableInfo as any).arena?.asset === 'diamonds') {
         try {
-          // The boundary of the table's own kind: a tournament table is held
-          // to the tournament boundary, a cash table to the cash one.
-          assertDiamondTable(tableRow as unknown as Record<string, unknown>);
+          assertDiamondCashTable(tableRow as unknown as Record<string, unknown>);
         } catch (error) {
           console.error(
             `[refreshRakeConfig] Diamond table ${this.tableId} rules changed to something the ` +
@@ -6199,6 +6111,72 @@ export abstract class ServerTableEngineBase {
 
   protected sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * THE QUIET TOURNAMENT TABLE BACKS OFF (2026-09-16).
+   *
+   * The wait-for-players loop above read `table_seats` every five seconds for
+   * every table below its deal minimum, for as long as it stayed there. On a
+   * tournament table that is where a decided event's last player sits until
+   * the event is finished, and on 2026-09-16 there were 2,069 of them: 18,205
+   * of the 22,018 database requests the engine made in one 45-second sample
+   * were this one read, 128 of 128 connections in the process's HTTPS pool
+   * were busy with 250 to 720 requests queued behind them, a one-row read
+   * measured 350 to 1,400 ms from inside the process, the elimination sweeps
+   * that would have finished those events waited in that same queue, and the
+   * event-loop delay sat at 274 ms. The poll that waits for a table to fill
+   * was the reason the platform could not finish the events that would have
+   * emptied it.
+   *
+   * A cash table keeps its five seconds: anyone may sit down from the lobby
+   * at any moment. A tournament table's roster changes only when its manager
+   * moves someone in, seats a late registrant, or closes it, so an unchanged
+   * roster doubles the pause each look (5, 10, 20, 40, then 60 seconds), any
+   * change resets it, and `wakeWaitingForPlayers` lets the manager end a
+   * pause the instant it has seated someone. The cap stays far below the
+   * 180-second zombie rebuild, and `markProgress()` still runs every look.
+   */
+  static readonly WAIT_FOR_PLAYERS_POLL_MS = 5_000;
+  static readonly WAIT_FOR_PLAYERS_MAX_POLL_MS = 60_000;
+  private waitForPlayersPollMs = ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS;
+  private waitForPlayersWake: (() => void) | null = null;
+
+  /** The pause before the next roster read; grows only on a tournament table whose roster did not change. */
+  protected nextWaitForPlayersPollMs(rosterChanged: boolean): number {
+    const base = ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS;
+    if (!this.isTournamentTable() || rosterChanged) {
+      this.waitForPlayersPollMs = base;
+      return base;
+    }
+    const current = this.waitForPlayersPollMs;
+    this.waitForPlayersPollMs = Math.min(
+      current * 2,
+      ServerTableEngineBase.WAIT_FOR_PLAYERS_MAX_POLL_MS
+    );
+    return current;
+  }
+
+  /** The wait loop's pause: this engine's sleep, which a seat arrival or a stop ends early. */
+  protected waitForPlayersPause(ms: number): Promise<void> {
+    let wake!: () => void;
+    const woken = new Promise<void>((resolve) => {
+      wake = resolve;
+    });
+    this.waitForPlayersWake = wake;
+    return Promise.race([this.sleep(ms), woken]).finally(() => {
+      if (this.waitForPlayersWake === wake) this.waitForPlayersWake = null;
+    });
+  }
+
+  /**
+   * Someone was seated here by a path this engine's own reads did not see (a
+   * tournament move, a late registration): look now, and look every five
+   * seconds again until the roster settles.
+   */
+  wakeWaitingForPlayers(): void {
+    this.waitForPlayersPollMs = ServerTableEngineBase.WAIT_FOR_PLAYERS_POLL_MS;
+    this.waitForPlayersWake?.();
   }
 
   // ═════════════════════════════════════════════════════════════════════════════
@@ -6920,10 +6898,23 @@ export abstract class ServerTableEngineBase {
     state: { hold: 'waiting' | 'posting' | null; agreed?: boolean }
   ): void {
     if (this.isTournamentTable()) return;
-    // Capture the stay when the decision is made. A queued write can start
-    // after this user leaves and returns to the same table.
-    const occupancyId = this.seatedPlayers.find((p) => p.user_id === userId)?.occupancy_id;
-    if (!occupancyId) return;
+    // Bind before joining the queue: a later roster/table is not this target.
+    const tableId = this.tableId;
+    const matches = this.seatedPlayers.filter((seat) => seat.user_id === userId);
+    const seatId = matches[0]?.seat_id;
+    const occupancyId = matches[0]?.occupancy_id;
+    if (
+      matches.length !== 1 ||
+      typeof seatId !== 'string' ||
+      seatId.length === 0 ||
+      typeof occupancyId !== 'string' ||
+      occupancyId.length === 0
+    ) {
+      console.warn(
+        `[ServerTableEngine:${tableId}] entry hold write skipped for ${userId.slice(0, 8)}: original seat occupancy unavailable or ambiguous`
+      );
+      return;
+    }
     const patch: Record<string, unknown> = { entry_hold: state.hold };
     if (state.agreed !== undefined) patch.entry_post_agreed = state.agreed;
     /* Promise.resolve() around the builder, deliberately. A PostgREST query
@@ -6939,16 +6930,17 @@ export abstract class ServerTableEngineBase {
           supabase
             .from('table_seats')
             .update(patch)
-            .eq('table_id', this.tableId)
-            .eq('user_id', userId)
+            .eq('table_id', tableId)
+            .eq('id', seatId)
             .eq('occupancy_id', occupancyId)
+            .eq('user_id', userId)
             .is('left_at', null)
         )
       )
       .then(({ error }) => {
         if (error) {
           console.warn(
-            `[ServerTableEngine:${this.tableId}] entry hold write failed for ${userId.slice(0, 8)}: ${error.message}`
+            `[ServerTableEngine:${tableId}] entry hold write failed for ${userId.slice(0, 8)}: ${error.message}`
           );
         }
       })
@@ -6959,7 +6951,7 @@ export abstract class ServerTableEngineBase {
       // lost write costs only restart fidelity.
       .catch((err: unknown) => {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] entry hold write threw for ${userId.slice(0, 8)}:`,
+          `[ServerTableEngine:${tableId}] entry hold write threw for ${userId.slice(0, 8)}:`,
           err
         );
       })

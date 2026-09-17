@@ -256,11 +256,10 @@ export function diagnoseAndNudge(
   // human to read; it simply no longer moves a dial on its own.
   void bb100;
 
-  // ── V18 (2026-08-26): LEAK TAGS DRIVE THE DIALS ─────────────────────────
-  // The 20bb review system tags every big loss with WHAT went wrong. A horse
-  // that keeps producing the same tag has a personality problem the
-  // frequency benchmarks cannot see: the tags are hand-level verdicts on
-  // exact settlement data. Small steps, same clamps, honest reasons.
+  // Historical review tags propose bounded diagnostic dials. Exact settlement
+  // results are not counterfactual action EV: a tagged win/loss does not prove
+  // a mistake. runSelfTune's observational adapter preserves the real profile
+  // and records these proposals with causal_permission=0.
   if (leaks) {
     const n = (k: string): number => leaks[k] ?? 0;
     const stackoffs =

@@ -1,200 +1,467 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   WAIT LIST MODAL - on the shark console (#ClubArenaConsole, 2026-09-14)
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 📋 WAIT LIST MODAL — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
-   The frame is painted (SpadeConsole family="shark"); this sheet draws nothing
-   that looks like a control. It owns the scrim, the centring, and the rows on
-   the glass: label in lit blue on the left, value in silver on the right, an
-   engraved rule between rows instead of a drawn divider. The one thing drawn
-   is the avatar mask, which is content, not chrome. No :hover.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
-.wl-overlay {
+.waitlist-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
   display: flex;
-  flex-direction: column;
-  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: rgb(2 4 7 / 88%);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  animation: fadeIn 0.2s ease;
 }
 
-.wl-dialog {
-  container-type: inline-size;
-  width: min(100%, 560px);
-  margin: auto;
-  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
-/* ── Rows on the glass ────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MODAL
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
-.wl-rows {
-  display: flex;
-  flex-direction: column;
+.waitlist-modal {
+  width: 95%;
+  max-width: 400px;
+  background: linear-gradient(180deg, rgba(28, 33, 40, 0.95) 0%, rgba(22, 27, 34, 0.98) 100%);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: waitlistSlideUp 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  overflow: hidden;
 }
 
-.wl-row {
+@keyframes waitlistSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.waitlist-modal__header {
   display: flex;
-  align-items: baseline;
   justify-content: space-between;
-  gap: 3cqw;
-  padding: 2.2cqw 0;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  align-items: center;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.wl-row:first-child {
-  border-top: 0;
-  box-shadow: none;
-}
-
-.wl-row__value {
-  font-size: 4.4cqw;
+.waitlist-modal__title {
+  font-size: 1rem;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  color: #e4e6eb;
 }
 
-/* ── The queue ────────────────────────────────────────────────────────── */
+.waitlist-modal__close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 8px;
+  color: #8b949e;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
 
-.wl-queue {
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABLE INFO
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.waitlist-modal__table-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.waitlist-modal__table-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #e4e6eb;
+}
+
+.waitlist-modal__table-blinds {
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--sp-warn);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   POSITION CARD
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.waitlist-modal__position {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(24, 119, 242, 0.15) 0%, rgba(24, 119, 242, 0.05) 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.waitlist-modal__position-number {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: #1877f2;
+  background: rgba(24, 119, 242, 0.15);
+  border: 2px solid #1877f2;
+  border-radius: 12px;
+  box-shadow: 0 0 16px rgba(24, 119, 242, 0.15);
+  text-shadow: 0 0 12px rgba(24, 119, 242, 0.3);
+}
+
+.waitlist-modal__position-info {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  padding-top: 2cqw;
+  gap: 4px;
 }
 
-.wl-queue__head,
-.wl-player {
+.waitlist-modal__position-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #e4e6eb;
+}
+
+.waitlist-modal__position-eta {
+  font-size: 0.8125rem;
+  color: #8b949e;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   QUEUE LIST
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.waitlist-modal__queue {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.waitlist-modal__queue-header {
   display: grid;
-  /* The first column holds the POSITION label at rest, so it is sized to
-     that word, not to the numbers under it. */
-  grid-template-columns: minmax(19cqw, auto) 1fr auto;
+  grid-template-columns: 60px 1fr 80px;
+  gap: 12px;
+  padding: 10px 20px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6e7681;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.waitlist-modal__queue-body {
+  padding: 8px 0;
+}
+
+.waitlist-modal__empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #6e7681;
+}
+
+.waitlist-modal__player {
+  display: grid;
+  grid-template-columns: 60px 1fr 80px;
+  gap: 12px;
   align-items: center;
-  gap: 2.5cqw;
+  padding: 10px 20px;
+  transition: background 0.15s ease;
 }
 
-.wl-queue__head {
-  padding: 1cqw 0 2cqw;
+.waitlist-modal__player--me {
+  background: rgba(24, 119, 242, 0.1);
 }
 
-.wl-queue__right {
-  text-align: right;
+.waitlist-modal__player-position {
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #8b949e;
 }
 
-.wl-queue__empty {
-  padding: 3cqw 0 2cqw;
+.waitlist-modal__player--me .waitlist-modal__player-position {
+  color: #1877f2;
 }
 
-.wl-player {
-  padding: 2cqw 0;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
-}
-
-.wl-player--me .wl-player__name {
-  color: #f4f7fb;
-}
-
-.wl-player__position {
-  font-size: 3.6cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.wl-player__who {
+.waitlist-modal__player-info {
   display: flex;
   align-items: center;
-  gap: 2.4cqw;
-  min-width: 0;
+  gap: 10px;
 }
 
-/* Content, not chrome: the player's picture, masked round. */
-.wl-player__avatar {
-  flex: 0 0 auto;
-  width: 8cqw;
-  height: 8cqw;
+.waitlist-modal__player-avatar {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(24, 119, 242, 0.2);
   border-radius: 50%;
   overflow: hidden;
-  display: grid;
-  place-items: center;
-  background: #000;
-  color: #9aa5b3;
-  font-size: 3.4cqw;
-  font-weight: 700;
 }
 
-.wl-player__avatar img {
+.waitlist-modal__player-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
 
-.wl-player__name {
-  font-size: 3.7cqw;
+.waitlist-modal__player-avatar span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1877f2;
+}
+
+.waitlist-modal__player-name {
+  font-size: 0.875rem;
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #e4e6eb;
 }
 
-.wl-player__wait {
-  font-size: 3.3cqw;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.waitlist-modal__player-wait {
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: #6e7681;
   text-align: right;
 }
 
-/* ── The lit word: a second action printed on the glass, no plate ─────── */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   AUTO-SEAT TOGGLE
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
-.wl-word {
-  align-self: center;
-  margin: 0;
-  padding: 1.5cqw 3cqw;
-  border: 0;
-  background: none;
-  font:
-    800 3.4cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.waitlist-modal__auto-seat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   cursor: pointer;
 }
 
-.wl-word:active {
-  filter: brightness(1.3);
+.waitlist-modal__auto-seat input {
+  display: none;
 }
 
-.wl-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.4cqw;
+.waitlist-modal__toggle-slider {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 11px;
+  transition: all 0.2s ease;
 }
 
-.wl-confirm {
+.waitlist-modal__toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.waitlist-modal__auto-seat input:checked + .waitlist-modal__toggle-slider {
+  background: #3fb950;
+}
+
+.waitlist-modal__auto-seat input:checked + .waitlist-modal__toggle-slider::after {
+  left: 20px;
+}
+
+.waitlist-modal__toggle-label {
+  font-size: 0.875rem;
+  color: #e4e6eb;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACTIONS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.waitlist-modal__actions {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.waitlist-modal__leave-btn {
+  padding: 12px 24px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  background: rgba(248, 81, 73, 0.15);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  border-radius: 10px;
+  color: #f85149;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.waitlist-modal__close-btn {
+  padding: 12px 32px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #e4e6eb;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+/* Confirm Dialog */
+.waitlist-modal__confirm {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2cqw;
-  padding: 3cqw 0 1cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  gap: 12px;
+  width: 100%;
 }
 
-/* The dialog chassis in metallic-popups.css must not repaint the lit word. */
-[role='dialog'] .wl-word.wl-word,
-[aria-modal='true'] .wl-word.wl-word {
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  transform: none !important;
-  color: inherit !important;
+.waitlist-modal__confirm span {
+  font-size: 0.875rem;
+  color: #e4e6eb;
+}
+
+.waitlist-modal__confirm-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.waitlist-modal__confirm-no {
+  padding: 10px 20px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 8px;
+  color: #8b949e;
+  cursor: pointer;
+}
+
+.waitlist-modal__confirm-yes {
+  padding: 10px 20px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: #f85149;
+  border: none;
+  border-radius: 8px;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile touch targets
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .waitlist-modal {
+    width: 96%;
+  }
+
+  .waitlist-modal__header {
+    padding: 12px 16px;
+  }
+
+  .waitlist-modal__close {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .waitlist-modal__table-info {
+    padding: 10px 16px;
+  }
+
+  .waitlist-modal__position {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .waitlist-modal__position-number {
+    width: 50px;
+    height: 50px;
+    font-size: 1.25rem;
+  }
+
+  .waitlist-modal__queue-header {
+    padding: 8px 16px;
+  }
+
+  .waitlist-modal__player {
+    padding: 8px 16px;
+  }
+
+  .waitlist-modal__auto-seat {
+    min-height: 44px;
+    padding: 12px 16px;
+  }
+
+  .waitlist-modal__actions {
+    padding: 12px 16px;
+  }
+
+  .waitlist-modal__leave-btn,
+  .waitlist-modal__close-btn {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .waitlist-modal__confirm-no,
+  .waitlist-modal__confirm-yes {
+    min-height: 44px;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }

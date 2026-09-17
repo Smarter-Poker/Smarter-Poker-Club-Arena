@@ -117,6 +117,8 @@ function DiamondCrashGame() {
 
   const [clubUuid, setClubUuid] = useState<string | null>(null);
   const [state, setState] = useState<GameState | null>(null);
+  const [quotedAmount, setQuotedAmount] = useState<number | null>(null);
+  const stateGeneration = useRef(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [commit, setCommit] = useState<{ id: string; hash: string } | null>(null);
@@ -144,6 +146,8 @@ function DiamondCrashGame() {
   const autoRunRef = useRef<AutoRun | null>(null);
   autoRunRef.current = autoRun;
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollGeneration = useRef(0);
+  const lastFinishedRound = useRef<string | null>(null);
   const busyRef = useRef(false);
   const roundRef = useRef<CrashRound | null>(null);
   roundRef.current = round;
@@ -152,9 +156,13 @@ function DiamondCrashGame() {
 
   const loadState = useCallback(
     async (uuid: string) => {
-      const next = await DiamondGamesService.getState(uuid, 'crash', bonusTotal(budgetRef.current));
-      if (!live()) return next;
+      const generation = ++stateGeneration.current;
+      setQuotedAmount(null);
+      const amount = bonusTotal(budgetRef.current);
+      const next = await DiamondGamesService.getState(uuid, 'crash', amount);
+      if (!live() || generation !== stateGeneration.current) return next;
       setState(next);
+      setQuotedAmount(amount);
       setWaitSeconds(next.player?.seconds_until_next ?? 0);
       return next;
     },
@@ -164,7 +172,15 @@ function DiamondCrashGame() {
   const freshCommit = useCallback(async () => {
     const c = await DiamondGamesService.commit('crash');
     if (!live()) return;
-    setCommit(c.ok ? { id: c.commit_id, hash: c.server_seed_hash } : null);
+    if (
+      !c.ok ||
+      !/^[a-f0-9]{64}$/.test(c.server_seed_hash) ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(c.commit_id)
+    ) {
+      setCommit(null);
+      throw new Error('The Game Ticket Could Not Be Loaded');
+    }
+    setCommit({ id: c.commit_id, hash: c.server_seed_hash });
   }, [live]);
 
   const loadHistory = useCallback(
@@ -180,6 +196,7 @@ function DiamondCrashGame() {
   );
 
   const stopPolling = useCallback(() => {
+    pollGeneration.current++;
     if (pollRef.current) {
       clearTimeout(pollRef.current);
       pollRef.current = null;
@@ -189,7 +206,10 @@ function DiamondCrashGame() {
   /** A settled round: stop the clock, show the outcome, refresh everything. */
   const finish = useCallback(
     (settled: CrashRound) => {
+      if (!live() || lastFinishedRound.current === settled.round_id) return;
+      lastFinishedRound.current = settled.round_id;
       stopPolling();
+      roundRef.current = settled;
       setRound(settled);
       const cashed = settled.status === 'cashed';
       setPhase(cashed ? 'cashed' : 'crashed');
@@ -215,25 +235,33 @@ function DiamondCrashGame() {
       /* The commit this round used is spent. Clear it before asking for the
          next, so nothing (the runner included) can press Start on a dead ticket. */
       setCommit(null);
-      void freshCommit();
+      void freshCommit().catch((error) => reportError(error, 'DiamondCrashPage.nextTicket'));
     },
-    [stopPolling, toast, clubUuid, loadState, loadHistory, freshCommit, refreshFloor]
+    [live, stopPolling, toast, clubUuid, loadState, loadHistory, freshCommit, refreshFloor]
   );
 
   /** Adopt an open round (fresh or resumed) and start asking the server about it. */
   const adopt = useCallback(
     (open: CrashRound) => {
+      roundRef.current = open;
       setRound(open);
       setPhase('open');
       setStartedAtLocal(performance.now() - open.elapsed_ms);
       setLiveCents(open.multiplier_now_cents ?? 100);
       stopPolling();
+      const generation = pollGeneration.current;
+      const current = () =>
+        live() &&
+        pollGeneration.current === generation &&
+        roundRef.current?.round_id === open.round_id &&
+        roundRef.current.status === 'open';
       const tick = async () => {
-        const current = roundRef.current;
-        if (!current || current.round_id !== open.round_id) return;
+        if (!current()) return;
         try {
-          const next = await DiamondGamesService.crashSettle(open.round_id, false);
-          if (!live()) return;
+          const next = await DiamondGamesService.crashSettle(open.round_id, false, open);
+          if (!current()) return;
+          if (next.ok && next.round_id !== open.round_id)
+            throw new Error('The Crash Response Belongs To A Different Round');
           if (next.ok && next.status !== 'open') {
             finish(next);
             return;
@@ -244,7 +272,7 @@ function DiamondCrashGame() {
         } catch (err) {
           reportError(err, 'DiamondCrashPage.tick');
         }
-        pollRef.current = setTimeout(tick, POLL_MS);
+        if (current()) pollRef.current = setTimeout(tick, POLL_MS);
       };
       pollRef.current = setTimeout(tick, POLL_MS);
     },
@@ -296,7 +324,7 @@ function DiamondCrashGame() {
   const cfg = state?.config;
   const player = state?.player;
   const bets = useMemo(() => state?.bets ?? [], [state]);
-  const betOption = useMemo(() => bets.find((b) => b.bet_diamonds === bet) ?? bets[0], [bets, bet]);
+  const betOption = useMemo(() => bets.find((b) => b.bet_diamonds === bet), [bets, bet]);
   const rate = cfg?.diamonds_per_chip ?? 100;
   const capCents = betOption?.cap_cents ?? cfg?.max_multiplier_cents ?? 100000;
   const growthK = cfg?.growth_k ?? 0.12;
@@ -333,9 +361,14 @@ function DiamondCrashGame() {
     clubUuid &&
     commit &&
     validSpinAmount(budget.base) &&
+    quotedAmount === bet &&
+    state?.available &&
+    player?.is_member &&
+    betOption?.playable &&
     !uncertain &&
     !open &&
     !starting &&
+    !cashing &&
     !blocker &&
     waitSeconds <= 0
   );
@@ -372,6 +405,7 @@ function DiamondCrashGame() {
     if (
       !clubUuid ||
       !commit ||
+      !canStart ||
       busyRef.current ||
       open ||
       uncertain ||
@@ -379,6 +413,8 @@ function DiamondCrashGame() {
     )
       return;
     busyRef.current = true;
+    stateGeneration.current++;
+    setQuotedAmount(null);
     setStarting(true);
     setVerdict(null);
     soundService.playSpinStart();
@@ -390,6 +426,7 @@ function DiamondCrashGame() {
         game: 'crash' as const,
         budget: { ...budget },
         commitId: commit.id,
+        serverSeedHash: commit.hash,
         seed,
         autoCashoutCents: autoTarget,
       };
@@ -430,6 +467,7 @@ function DiamondCrashGame() {
     clubUuid,
     user?.id,
     commit,
+    canStart,
     open,
     clientSeed,
     budget,
@@ -495,7 +533,7 @@ function DiamondCrashGame() {
   useEffect(() => {
     const verdict = autoRunVerdict(
       autoRun,
-      { busy: open || starting, blocker, ready: canStart },
+      { busy: open || starting || cashing, blocker, ready: canStart },
       AUTO_PAUSE_MS
     );
     if (verdict.kind === 'wait') return;
@@ -511,20 +549,23 @@ function DiamondCrashGame() {
     }
     const t = setTimeout(() => void handleStart(), verdict.delayMs);
     return () => clearTimeout(t);
-  }, [autoRun, open, starting, blocker, canStart, handleStart, toast]);
+  }, [autoRun, open, starting, cashing, blocker, canStart, handleStart, toast]);
 
   const handleCashOut = useCallback(async () => {
     const current = roundRef.current;
-    if (!current || phase !== 'open' || cashing) return;
+    if (!current || current.status !== 'open' || phase !== 'open' || busyRef.current) return;
+    busyRef.current = true;
     setCashing(true);
     triggerHaptic('heavy');
     try {
-      const next = await DiamondGamesService.crashSettle(current.round_id, true);
+      const next = await DiamondGamesService.crashSettle(current.round_id, true, current);
       if (!live()) return;
       if (!next.ok) {
         toast.error(next.error || 'The Cash Out Was Refused');
         return;
       }
+      if (next.round_id !== current.round_id)
+        throw new Error('The Crash Response Belongs To A Different Round');
       if (next.status === 'open') {
         toast.info('The Round Is Waiting Out The Maintenance Break');
         return;
@@ -532,11 +573,12 @@ function DiamondCrashGame() {
       finish(next);
     } catch (err) {
       reportError(err, 'DiamondCrashPage.cashout');
-      if (live()) toast.error('The Cash Out Did Not Reach The Server. Trying Again');
+      if (live()) toast.error('The Cash Out Could Not Be Confirmed. Checking Your Round');
     } finally {
+      busyRef.current = false;
       if (live()) setCashing(false);
     }
-  }, [phase, cashing, live, toast, finish]);
+  }, [phase, live, toast, finish]);
 
   const handleVerify = useCallback(
     async (r: CrashRound) => {
@@ -570,13 +612,14 @@ function DiamondCrashGame() {
             prize === r.outcome.payout_chips &&
             r.outcome.cashout_cents <= Math.min(r.cap_cents, r.fairness.crash_cents);
         } else if (r.status === 'crashed') v.fair = v.fair && r.outcome?.payout_chips === 0;
-        if (!live()) return;
+        if (!live() || busyRef.current || roundRef.current?.round_id !== r.round_id) return;
         setVerdict(v);
         if (v.fair) toast.success('This Round Verifies');
         else toast.warning('This Round Did Not Verify. Please Report It');
       } catch (err) {
         reportError(err, 'DiamondCrashPage.verify');
-        if (live()) toast.error('The Check Could Not Run In This Browser');
+        if (live() && !busyRef.current && roundRef.current?.round_id === r.round_id)
+          toast.error('The Check Could Not Run In This Browser');
       } finally {
         if (live()) setVerifying(false);
       }
@@ -654,7 +697,7 @@ function DiamondCrashGame() {
           budget={budget}
           onChange={setBudget}
           diamonds={player?.spendable ?? null}
-          disabled={starting || running || uncertain}
+          disabled={starting || cashing || running || uncertain}
           clubId={routeClubId ?? ''}
         />
       )}
@@ -756,11 +799,13 @@ function DiamondCrashGame() {
                     : `Crashed At ${multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}. Nothing Paid`
                   : blocker
                     ? blocker
-                    : autoSize
-                      ? autoTarget
-                        ? `Auto Play Runs ${autoSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
-                        : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
-                      : `Up To ${multiplierLabel(capCents)} On This Bet. Set Your Entry Above. Tap Auto To Change Your Target.`}
+                    : quotedAmount !== bet
+                      ? 'Checking Your Entry'
+                      : autoSize
+                        ? autoTarget
+                          ? `Auto Play Runs ${autoSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
+                          : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
+                        : `Up To ${multiplierLabel(capCents)} On This Bet. Set Your Entry Above. Tap Auto To Change Your Target.`}
               {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
             {settledRound?.status === 'cashed' ? (

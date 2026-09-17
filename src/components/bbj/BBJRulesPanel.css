@@ -1,195 +1,133 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   BBJ RULES PANEL - on the spade console (#ClubArenaConsole)
-
-   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
-   spade master (components/console/SpadeConsole.css): the live pool sits
-   in the painted pill slot, the three pages are lit words on the glass, and
-   each table prints between engraved rules - headings in lit blue caps,
-   the game or tier in silver, the money in silver, the rest muted. Nothing
-   is drawn: no tab bar, no box, no corner. Sizes are cqw against the
-   console. No :hover (tests/no-hover-effects.law.test.ts).
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* BBJ rules / payout panel — mobile-first (2026-08-18) */
 
 .bbj-rules {
-  --bbjr-rule: 1px solid #000;
-  --bbjr-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
-  --sc-max: 640px;
+  margin: 0 1rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
 }
-
-/* ── The pages: lit words on the glass ──────────────────────────────────── */
 
 .bbj-rules__tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 2cqw;
-  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .bbj-rules__tab {
-  appearance: none;
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 1;
+  /* 44px min touch target — the global rule */
   min-height: 44px;
-  margin: 0;
-  padding: 1.6cqw 0;
-  border: 0;
+  padding: 0 12px;
   background: transparent;
-  color: #9aa5b3;
-  font:
-    800 2.9cqw/1 'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
-  touch-action: manipulation;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .bbj-rules__tab.is-active {
-  color: #f4f7fb;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  color: #d5dae2;
+  box-shadow: inset 0 -2px 0 #d5dae2;
 }
-
-.bbj-rules__tab:active {
-  filter: brightness(1.25);
-}
-
-.bbj-rules__tab:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.4cqw;
-}
-
-/* ── The page: printed on the glass under an engraved rule ──────────────── */
 
 .bbj-rules__body {
-  display: grid;
-  gap: 2.4cqw;
-  padding-top: 2.4cqw;
-  border-top: var(--bbjr-rule);
-  box-shadow: var(--bbjr-rule-lit);
-}
-
-.bbj-rules__body:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.4cqw;
+  padding: 12px;
 }
 
 .bbj-rules__table {
   width: 100%;
-  /* club-engine.css turns every table into a nowrap scroll box on a phone;
-     on the glass the rows wrap and fit the frame instead. */
-  display: table;
-  overflow: visible;
-  white-space: normal;
   border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  table-layout: fixed;
 }
 
 .bbj-rules__table th {
-  padding: 1.4cqw 2cqw 1.4cqw 0;
-  color: #45adff;
-  font-size: 2.7cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
   text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
-  white-space: nowrap;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
-}
-
-.bbj-rules__table th:last-child,
-.bbj-rules__table td:last-child {
-  padding-right: 0;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 4px 6px;
+  font-weight: 700;
 }
 
 .bbj-rules__table td {
-  padding: 1.8cqw 2cqw 1.8cqw 0;
-  border-top: var(--bbjr-rule);
-  box-shadow: var(--bbjr-rule-lit);
-  color: #e4e7ec;
-  font-size: 3.2cqw;
-  font-weight: 600;
-  vertical-align: middle;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.bbj-rules__table td:first-child {
-  font-weight: 800;
+  padding: 7px 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .bbj-rules__table tr.is-ineligible td {
-  color: #9aa5b3;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
 }
 
 .bbj-rules__tier {
   display: block;
-  color: #e4e7ec;
-  font-size: 3.4cqw;
-  font-weight: 800;
-  white-space: nowrap;
+  font-weight: 700;
+  color: #fff;
 }
 
 .bbj-rules__blinds {
   display: block;
-  margin-top: 0.4cqw;
-  color: #9aa5b3;
-  font-size: 2.7cqw;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .bbj-rules__pct {
   font-weight: 800;
-  white-space: nowrap;
+  color: #d5dae2;
+  font-variant-numeric: tabular-nums;
 }
 
 .bbj-rules__money {
-  font-weight: 800;
-  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: #d5dae2;
+  font-weight: 700;
 }
 
 .bbj-rules__money-sub {
   display: block;
-  margin-top: 0.4cqw;
-  color: #9aa5b3;
-  font-size: 2.6cqw;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .bbj-rules__note {
-  margin: 0;
-  color: #d7dee7;
-  font:
-    500 3.4cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .bbj-rules__list {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
 }
 
-.bbj-rules__list li {
-  padding: 1.8cqw 0;
-  border-top: var(--bbjr-rule);
-  box-shadow: var(--bbjr-rule-lit);
-  color: #d7dee7;
-  font:
-    500 3.2cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+/* Embedded inside another surface (the BBJ modal) — no double chrome */
+/* "You are here" row marking (2026-08-18) */
+.bbj-rules__table tr.is-current td {
+  background: rgba(213, 218, 226, 0.09);
+  box-shadow: inset 2px 0 0 #d5dae2;
+}
+
+.bbj-rules__here {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #d5dae2;
+  color: #1a1400;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+  white-space: nowrap;
 }

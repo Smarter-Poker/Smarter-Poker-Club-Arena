@@ -1,6 +1,7 @@
 import {
   chmodSync,
   existsSync,
+  linkSync,
   mkdtempSync,
   mkdirSync,
   realpathSync,
@@ -8,6 +9,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -305,6 +307,8 @@ esac
     expect(runSeal(['get', 'desired-legacy-unlabelled']).stdout).toBe('true');
   });
 
+  // Thirteen subprocess operations share this fixture; use the same aggregate
+  // allowance as the other multi-process cases below. Production deadlines stay intact.
   it('executes candidates with restart=no and desired recovery with restart=always', () => {
     expect(
       runSeal([
@@ -329,7 +333,9 @@ esac
     expect(prepared.status).toBe(0);
 
     const runLog = join(sandbox, 'docker-runs.log');
+    const mutationLog = join(sandbox, 'docker-mutations.log');
     writeFileSync(runLog, '');
+    writeFileSync(mutationLog, '');
     writeFileSync(
       join(bin, 'docker'),
       `#!/usr/bin/env bash
@@ -351,7 +357,12 @@ if [ "$1" = image ] && [ "$2" = inspect ]; then
   fi
   exit 0
 fi
-if [ "$1" = container ] && [ "$2" = inspect ]; then exit 1; fi
+if [ "$1" = container ] && [ "$2" = inspect ]; then exit 0; fi
+case "$1" in
+  stop|rm|run) printf '%s\\n' "$1" >> "$FAKE_DOCKER_MUTATION_LOG" ;;
+esac
+if [ "$1" = stop ] || [ "$1" = rm ]; then exit 0; fi
+if [ "$1" = logs ]; then printf 'synthetic outgoing engine log\\n'; exit 0; fi
 if [ "$1" = run ]; then
   shift
   printf '%s\\n' "$*" >> "$FAKE_DOCKER_RUN_LOG"
@@ -374,10 +385,15 @@ exit 1
       ENGINE_RELEASE_SEAL: sealScript,
       ENV_FILE: envFile,
       FAKE_DOCKER_RUN_LOG: runLog,
+      FAKE_DOCKER_MUTATION_LOG: mutationLog,
       LOCK_FILE: join(sandbox, 'engine-up.lock'),
       LOG_DIR: join(sandbox, 'logs'),
       ENGINE_ALERT_JOURNAL_HOST_DIR: join(sandbox, 'engine-alerts'),
+      ENGINE_HORSE_JOURNAL_HOST_DIR: join(sandbox, 'horse-decisions'),
     };
+    const horseDirectory = common.ENGINE_HORSE_JOURNAL_HOST_DIR;
+    const horseMount = `--mount type=bind,source=${horseDirectory},target=/var/lib/club-arena/horse-decisions`;
+    const horseEnvironment = '--env HORSE_DECISION_JOURNAL_DIR=/var/lib/club-arena/horse-decisions';
 
     const candidate = spawnSync(
       'bash',
@@ -395,23 +411,84 @@ exit 1
     );
     expect(candidate.status, candidate.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart no');
-    expect(readFileSync(runLog, 'utf8')).toContain('--stop-timeout 45');
     expect(readFileSync(runLog, 'utf8')).toContain(
       `--mount type=bind,source=${join(sandbox, 'engine-alerts')},target=/var/lib/club-arena/engine-alerts`
     );
+    expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
+    expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
+    expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
+    expect(statSync(horseDirectory).mode & 0o777).toBe(0o700);
+    expect(readdirSync(horseDirectory)).toEqual([]);
+
+    // This opaque sentinel checks run-spec preservation only. Actual SQLite
+    // reopen/replay is covered by HorseDecisionJournal.test.ts.
+    const retainedPath = join(horseDirectory, 'horse-decisions.sqlite');
+    const retainedBytes = Buffer.from('retained private decision evidence\n');
+    writeFileSync(retainedPath, retainedBytes, { mode: 0o600 });
 
     writeFileSync(runLog, '');
+    writeFileSync(mutationLog, '');
     const desired = spawnSync('bash', [engineUp], {
       encoding: 'utf8',
       env: { ...common, IMAGE: 'desired-ref' },
     });
     expect(desired.status, desired.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart always');
-    expect(readFileSync(runLog, 'utf8')).toContain('--stop-timeout 45');
     expect(readFileSync(runLog, 'utf8')).toContain(
       'ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts'
     );
-  });
+    expect(readFileSync(runLog, 'utf8')).toContain(horseMount);
+    expect(readFileSync(runLog, 'utf8')).toContain(horseEnvironment);
+    expect(readFileSync(mutationLog, 'utf8')).toBe('stop\nrm\nrun\n');
+    expect(readFileSync(retainedPath)).toEqual(retainedBytes);
+    expect(readdirSync(horseDirectory)).toEqual(['horse-decisions.sqlite']);
+
+    const linkedDirectory = join(sandbox, 'linked-horse-directory');
+    symlinkSync(horseDirectory, linkedDirectory);
+    const sharedDirectory = join(sandbox, 'shared-horse-directory');
+    mkdirSync(sharedDirectory, { mode: 0o755 });
+    chmodSync(sharedDirectory, 0o755);
+    const unsafeDirectories = [
+      'linked-file',
+      'hard-linked-file',
+      'shared-file',
+      'directory-file',
+    ].map((name) => {
+      const directory = join(sandbox, name);
+      mkdirSync(directory, { mode: 0o700 });
+      const file = join(directory, 'horse-decisions.sqlite');
+      if (name === 'linked-file') symlinkSync(retainedPath, file);
+      else if (name === 'hard-linked-file') {
+        const external = join(sandbox, 'hard-linked-sentinel');
+        writeFileSync(external, retainedBytes, { mode: 0o600 });
+        linkSync(external, file);
+      } else if (name === 'shared-file') {
+        writeFileSync(file, retainedBytes, { mode: 0o644 });
+        chmodSync(file, 0o644);
+      } else mkdirSync(file, { mode: 0o700 });
+      return directory;
+    });
+    for (const directory of [
+      'relative-horse-directory',
+      join(sandbox, 'comma,horse-directory'),
+      linkedDirectory,
+      `${linkedDirectory}/`,
+      sharedDirectory,
+      ...unsafeDirectories,
+    ]) {
+      writeFileSync(runLog, '');
+      writeFileSync(mutationLog, '');
+      const refused = spawnSync('bash', [engineUp], {
+        encoding: 'utf8',
+        env: { ...common, IMAGE: 'desired-ref', ENGINE_HORSE_JOURNAL_HOST_DIR: directory },
+      });
+      expect(refused.status, `${directory}: ${refused.stderr}`).not.toBe(0);
+      expect(refused.stderr).toContain('Horse journal');
+      expect(readFileSync(mutationLog, 'utf8')).toBe('');
+      expect(readFileSync(runLog, 'utf8')).toBe('');
+      expect(readFileSync(retainedPath)).toEqual(retainedBytes);
+    }
+  }, 15_000);
 
   it('requires journal-capable images to use durable storage without breaking legacy recovery', () => {
     const proof = spawnSync(
@@ -2141,13 +2218,13 @@ if [ "$1" = buildx ]; then
   if [ "$2" = stop ]; then printf 'stop\\n' >> "$STATE_DIR/builder-stops"; exit 0; fi
 fi
 if [ "$1" = inspect ]; then
-  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 939524096 939524096 100000 100000 no'
+  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 671088640 671088640 100000 100000 no'
   exit 0
 fi
 if [ "$1" = exec ]; then
   case "$4" in
-    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-939524096}" ;;
-    */memory.peak) printf '922746880\\n' ;;
+    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-671088640}" ;;
+    */memory.peak) printf '654311424\\n' ;;
     */memory.swap.max) printf '0\\n' ;;
     */cpu.max) printf '100000 100000\\n' ;;
     /etc/buildkit/buildkitd.toml)
@@ -2165,7 +2242,7 @@ if [ "$1" = buildx ] && [ "$2" = build ]; then
   printf '%s\\n' "$PWD" > "$STATE_DIR/context-path"
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --builder) [ "$2" = club-arena-engine-bounded-v2 ]; shift 2 ;;
+      --builder) [ "$2" = club-arena-engine-bounded-v3 ]; shift 2 ;;
       --load) shift ;;
       --progress) [ "$2" = plain ]; shift 2 ;;
       --build-arg) printf '%s' "$2" > "$STATE_DIR/build-arg"; shift 2 ;;
@@ -2242,7 +2319,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         ...isolatedEnv,
         PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
         FAKE_DOCKER_STATE_DIR: dockerState,
-        FAKE_AVAILABLE_KIB: '1179648',
+        FAKE_AVAILABLE_KIB: '917504',
         ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
         ENGINE_BUILD_LOCK_FILE: join(sandbox, 'engine-build.lock'),
       };
@@ -2305,12 +2382,12 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
         {
           encoding: 'utf8',
-          env: { ...env, FAKE_AVAILABLE_KIB: '1179647' },
+          env: { ...env, FAKE_AVAILABLE_KIB: '917503' },
         }
       );
       expect(noHeadroom.status).toBe(1);
       expect(noHeadroom.stderr).toContain('insufficient memory headroom');
-      expect(noHeadroom.stderr).toContain('available=1179647KiB, required=1179648KiB');
+      expect(noHeadroom.stderr).toContain('available=917503KiB, required=917504KiB');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
       expect(readdirSync(contextRoot)).toEqual([]);
       const wrongDriver = spawnSync(

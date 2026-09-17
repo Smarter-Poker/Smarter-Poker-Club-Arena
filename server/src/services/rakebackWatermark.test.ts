@@ -30,7 +30,7 @@
  *   6. the two other daemons sharing daemon_state are untouched
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 type Op = [string, unknown[]];
 interface Recorded {
@@ -45,6 +45,7 @@ interface RakeRow {
   rake_amount: number;
   hand_id: string | null;
   is_tournament: boolean;
+  tournament_id?: string | null;
   player_contributions: Record<string, number> | null;
 }
 
@@ -53,8 +54,6 @@ interface Scenario {
   stateReadFails?: boolean;
   fetchError?: { message: string } | null;
   dataset?: RakeRow[];
-  ledger?: Array<{ id: string; hand_id: string; player_id: string; weighted_rake_credit: number }>;
-  ledgerError?: { message: string };
 }
 
 // vi.hoisted: supabase.ts calls reportError at module scope when the service
@@ -136,10 +135,9 @@ function row(n: number, at: number): RakeRow {
     club_id: 'fade0000-0000-0000-0000-000000000001',
     rake_amount: 1,
     hand_id: null,
-    is_tournament: false,
-    // Empty on purpose: this suite is about WHICH rows are read, not what is
-    // done with them, so every row falls through to the no-eligible-credits
-    // path that still advances the cursor.
+    is_tournament: true,
+    // Paging-only scenarios use tournament rows owned by terminal settlement.
+    // Positive cash sources are exercised below and always require v3 proof.
     player_contributions: {},
   };
 }
@@ -239,13 +237,6 @@ function install(s: Scenario) {
       if (rec.table === 'rake_records') {
         if (s.fetchError) return { data: null, error: s.fetchError };
         return { data: applyCursor(dataset, rec), error: null };
-      }
-      if (rec.table === 'rake_attributions') {
-        const after = rec.ops.find(([n, a]) => n === 'gt' && a[0] === 'id')?.[1][1];
-        return {
-          data: (s.ledger ?? []).filter((r) => !after || r.id > String(after)),
-          error: s.ledgerError ?? null,
-        };
       }
       return { data: [], error: null };
     },
@@ -538,22 +529,47 @@ describe('RakebackSettlerService - AUDIT M6 resume cursor', () => {
   });
 });
 
-describe('rakeback attribution failures retain the source page', () => {
-  const creditedRow = () => ({
-    ...row(1, 200),
-    hand_id: uid(77),
+describe('canonical cash source receipts retain the source page until confirmed', () => {
+  const creditedRow = (n = 1): RakeRow => ({
+    ...row(n, 100 + n),
+    is_tournament: false,
+    hand_id: uid(10000 + n),
     player_contributions: { [uid(42)]: 10 },
   });
   const run = (settler = new RakebackSettlerService()) =>
     (settler as unknown as { _runSettlementInner(): Promise<string> })._runSettlementInner();
-  const success = (name: string, args: { p_items?: unknown[] }) => ({
-    data:
-      name === 'fn_rakeback_recompute_periods'
-        ? { written: 1 }
-        : { ok: args.p_items?.length ?? 0, failed: 0, first_error: null },
+  const receipt = (id = uid(1)) => ({
+    receipt_version: 3,
+    receipt_id: uid(900),
+    rake_record_id: id,
+    earned_at: ts(101),
+    hand_id: uid(10001),
+    status: 'accrued',
+    recorded: true,
+    attempt: 1,
+    source_fingerprint: 'a'.repeat(32),
+    reason: null,
+    credits: [
+      {
+        player_id: uid(42),
+        club_id: uid(55),
+        rake_credit: 1,
+        period_start: '2026-08-03',
+        period_end: '2026-08-09',
+      },
+    ],
+  });
+  const success = (ids = [uid(1)]) => ({
+    data: {
+      receipt_version: 3,
+      ok: ids.length,
+      failed: 0,
+      blocked: 0,
+      first_error: null,
+      receipts: ids.map((id) => receipt(id)),
+    },
     error: null,
   });
-
   beforeEach(() => {
     recorded.length = 0;
     mockFrom.mockClear();
@@ -562,117 +578,215 @@ describe('rakeback attribution failures retain the source page', () => {
     install({
       settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
       dataset: [creditedRow()],
-      ledger: [{ id: uid(100), hand_id: uid(77), player_id: uid(42), weighted_rake_credit: 1 }],
     });
-    mockRpc.mockImplementation(async (name, args) => success(name, args));
+    mockRpc.mockResolvedValue(success());
   });
 
-  it.each(['missing', 'partial', 'failed'])(
-    'holds the cursor and makes no financial call for %s ledger evidence',
-    async (kind) => {
-      install({
-        settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
-        dataset: [creditedRow()],
-        ledger:
-          kind === 'partial'
-            ? [{ id: uid(100), hand_id: uid(77), player_id: uid(42), weighted_rake_credit: 0.5 }]
-            : [],
-        ledgerError: kind === 'failed' ? { message: 'timeout' } : undefined,
-      });
-      expect(await run()).toBe('halted');
-      expect(mockRpc).not.toHaveBeenCalled();
-      expect(settlerUpserts()).toHaveLength(0);
-      expect(
-        mockReportError.mock.calls.some(
-          (call) => call[1] === 'RakebackSettler.ledger_incomplete_holds_cursor'
-        )
-      ).toBe(true);
-    }
-  );
-
-  for (const rpc of ['fn_credit_agent_commissions_batch', 'fn_apply_rakeback_player_stats_batch']) {
-    it.each([
-      ['transport failure', { data: null, error: { message: 'lost response' } }],
-      [
-        'partial failure',
-        { data: { ok: 0, failed: 1, first_error: 'credit failed' }, error: null },
-      ],
-      ['absent receipt', { data: null, error: null }],
-      ['missing counters', { data: {}, error: null }],
-      ['negative counter', { data: { ok: 1, failed: -1 }, error: null }],
-      ['string counter', { data: { ok: '1', failed: 0 }, error: null }],
-      ['fractional counter', { data: { ok: 0.5, failed: 0 }, error: null }],
-      ['excess count', { data: { ok: 2, failed: 0 }, error: null }],
-      [
-        'multiple receipts',
-        {
-          data: [
-            { ok: 1, failed: 0 },
-            { ok: 1, failed: 0 },
+  it.each([
+    ['transport failure', { data: null, error: { message: 'lost response' } }],
+    ['legacy unversioned no-op', { data: { ok: 1, failed: 0, first_error: null }, error: null }],
+    ['legacy version', { data: { ...success().data, receipt_version: 1 }, error: null }],
+    ['missing receipt', { data: null, error: null }],
+    ['partial acknowledgement', { data: { ...success().data, receipts: [] }, error: null }],
+    ['wrong source', success([uid(2)])],
+    ['duplicate source', success([uid(1), uid(1)])],
+    [
+      'unrecorded source',
+      { data: { ...success().data, receipts: [{ ...receipt(), recorded: false }] }, error: null },
+    ],
+    [
+      'durable refusal',
+      {
+        data: {
+          ...success().data,
+          ok: 0,
+          failed: 1,
+          blocked: 1,
+          first_error: 'source requires reconciliation',
+          receipts: [
+            {
+              ...receipt(),
+              status: 'blocked',
+              reason: 'source requires reconciliation',
+              credits: [],
+            },
           ],
-          error: null,
+        },
+        error: null,
+      },
+    ],
+  ])('holds cash work on %s and never invokes legacy writers', async (_label, response) => {
+    mockRpc.mockResolvedValue(response);
+    expect(await run()).toBe('halted');
+    expect(settlerUpserts()).toHaveLength(0);
+    expect(mockRpc.mock.calls.map((call) => call[0])).toEqual([
+      'fn_credit_agent_commissions_batch',
+    ]);
+    expect(
+      mockReportError.mock.calls.some(
+        (call) => call[1] === 'RakebackSettler.attribution_failures_hold_cursor'
+      )
+    ).toBe(true);
+  });
+
+  it('sends only exact source identities and advances after v3 without legacy stats or period writes', async () => {
+    expect(await run()).toBe('idle');
+    expect(mockRpc.mock.calls).toEqual([
+      [
+        'fn_credit_agent_commissions_batch',
+        {
+          p_items: [{ source_type: 'cash_rake_record', source_id: uid(1) }],
         },
       ],
-      ['error body', { data: { ok: 1, failed: 0, error: 'rejected' }, error: null }],
-    ])('%s from ' + rpc + ' does not advance', async (_label, response) => {
-      mockRpc.mockImplementation(async (name, args) =>
-        name === rpc ? response : success(name, args)
-      );
-      expect(await run()).toBe('halted');
-      expect(settlerUpserts()).toHaveLength(0);
-      expect(
-        mockReportError.mock.calls.some(
-          (call) => call[1] === 'RakebackSettler.attribution_failures_hold_cursor'
-        )
-      ).toBe(true);
-    });
+    ]);
+    expect(recorded.some((r) => r.table === 'rake_attributions')).toBe(false);
+    expect(settlerUpserts()).toHaveLength(1);
+    expect(upsertPayload(settlerUpserts()[0]).high_water_mark_id).toBe(uid(1));
+  });
 
-    it('retries the same source after a lost ' + rpc + ' response', async () => {
-      let attempts = 0;
-      mockRpc.mockImplementation(async (name, args) => {
-        if (name === rpc && attempts++ === 0)
-          return { data: null, error: { message: 'lost response after commit' } };
-        return success(name, args);
-      });
-      const settler = new RakebackSettlerService();
-      expect(await run(settler)).toBe('halted');
-      expect(settlerUpserts()).toHaveLength(0);
-      expect(await run(settler)).toBe('idle');
-      const calls = mockRpc.mock.calls.filter((call) => call[0] === rpc);
-      expect(calls).toHaveLength(2);
-      expect(calls[0][1]).toEqual(calls[1][1]);
-      expect(settlerUpserts()).toHaveLength(1);
-      expect(upsertPayload(settlerUpserts()[0]).high_water_mark_id).toBe(uid(1));
+  it('does not hide a positive cash source with missing player-contribution metadata', async () => {
+    install({
+      settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
+      dataset: [{ ...creditedRow(), player_contributions: null }],
     });
-  }
+    expect(await run()).toBe('idle');
+    expect(rakeFetches()[0].ops.some(([name]) => name === 'not')).toBe(false);
+    expect(mockRpc.mock.calls[0][1]).toEqual({
+      p_items: [{ source_type: 'cash_rake_record', source_id: uid(1) }],
+    });
+  });
 
-  it('requires commission acknowledgements to cover every submitted item', async () => {
-    mockRpc.mockImplementation(async (name, args) =>
-      name === 'fn_credit_agent_commissions_batch'
-        ? { data: { ok: 0, failed: 0 }, error: null }
-        : success(name, args)
+  it('leaves both tournament markers to terminal settlement while processing a mixed page', async () => {
+    install({
+      settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
+      dataset: [
+        creditedRow(),
+        { ...creditedRow(2), is_tournament: true },
+        { ...creditedRow(3), tournament_id: uid(77) },
+      ],
+    });
+    expect(await run()).toBe('idle');
+    expect(mockRpc.mock.calls).toEqual([
+      [
+        'fn_credit_agent_commissions_batch',
+        {
+          p_items: [{ source_type: 'cash_rake_record', source_id: uid(1) }],
+        },
+      ],
+    ]);
+    expect(upsertPayload(settlerUpserts()[0]).high_water_mark_id).toBe(uid(3));
+  });
+
+  it('holds the same source across a delayed old response and accepts its later canonical receipt', async () => {
+    let release!: (value: unknown) => void;
+    mockRpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    const settler = new RakebackSettlerService();
+    const pending = run(settler);
+    await vi.waitFor(() => expect(mockRpc).toHaveBeenCalledOnce());
+    release({ data: { ok: 1, failed: 0, first_error: null }, error: null });
+    expect(await pending).toBe('halted');
+    expect(settlerUpserts()).toHaveLength(0);
+    expect(await run(settler)).toBe('idle');
+    expect(mockRpc.mock.calls[0]).toEqual(mockRpc.mock.calls[1]);
+    expect(mockRpc.mock.calls.map((call) => call[0])).toEqual([
+      'fn_credit_agent_commissions_batch',
+      'fn_credit_agent_commissions_batch',
+    ]);
+  });
+
+  it('replays exact source IDs after a lost response without calling legacy downstream writers', async () => {
+    mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'lost response after commit' } });
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('halted');
+    expect(await run(settler)).toBe('idle');
+    expect(mockRpc.mock.calls[0]).toEqual(mockRpc.mock.calls[1]);
+    expect(settlerUpserts()).toHaveLength(1);
+  });
+
+  it('joins an admitted canonical RPC before stop resolves and refuses new work after stop', async () => {
+    let release!: (value: unknown) => void;
+    mockRpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    const settler = new RakebackSettlerService();
+    // Unrelated existing weekly/observer work is outside this cash source test.
+    // The public launch, actual source read/dispatch/receipt and stop are real.
+    for (const method of [
+      'runUnionWeeklyRakeback',
+      'runRakebackDrain',
+      'runWeeklyFinancialClose',
+      'runTournamentSentinel',
+      'runUnionTreasurySentinel',
+      'runUnionGovernanceSentinel',
+      'runUnionRakeRollupCatchup',
+      'runUnionEcoRecord',
+      'runTournamentChipConservation',
+    ] as const)
+      vi.spyOn(settler as any, method).mockResolvedValue(undefined);
+    const running = settler.runSettlement();
+    await vi.waitFor(() => expect(mockRpc).toHaveBeenCalledOnce());
+    let stopped = false;
+    const stop = settler.stop();
+    void stop.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    await settler.runSettlement();
+    expect(mockRpc).toHaveBeenCalledOnce();
+    release(success());
+    await Promise.all([running, stop]);
+    expect(stopped).toBe(true);
+    expect(settlerUpserts()).toHaveLength(1);
+    await settler.runSettlement();
+    expect(mockRpc).toHaveBeenCalledOnce();
+  });
+
+  it('holds the page if a later chunk returns a legacy response across cutover', async () => {
+    const dataset = Array.from({ length: 151 }, (_, n) => creditedRow(n + 1));
+    install({ settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) }, dataset });
+    mockRpc.mockImplementation(async (_name, args) =>
+      args.p_items.length === 150
+        ? success(args.p_items.map((item: { source_id: string }) => item.source_id))
+        : { data: { ok: 1, failed: 0, first_error: null }, error: null }
     );
     expect(await run()).toBe('halted');
     expect(settlerUpserts()).toHaveLength(0);
-  });
-
-  it('accepts stats replay receipts that inserted zero rows', async () => {
-    mockRpc.mockImplementation(async (name, args) =>
-      name === 'fn_apply_rakeback_player_stats_batch'
-        ? { data: { ok: 0, failed: 0, first_error: null }, error: null }
-        : success(name, args)
-    );
-    expect(await run()).toBe('idle');
-    expect(settlerUpserts()).toHaveLength(1);
-  });
-
-  it('advances only after both attribution stages and period recompute succeed', async () => {
-    expect(await run()).toBe('idle');
     expect(mockRpc.mock.calls.map((call) => call[0])).toEqual([
       'fn_credit_agent_commissions_batch',
-      'fn_apply_rakeback_player_stats_batch',
-      'fn_rakeback_recompute_periods',
+      'fn_credit_agent_commissions_batch',
     ]);
-    expect(settlerUpserts()).toHaveLength(1);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('retains memory and durable cursor when the acknowledged checkpoint write fails', async () => {
+    // Compare retries at one controlled instant; preserve the full payload assertion.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-06T20:00:01.000Z'));
+    const respond = scenario.current.respond as (r: Recorded) => unknown;
+    let failed = false;
+    scenario.current.respond = (r: Recorded) => {
+      if (!failed && r.table === 'daemon_state' && r.ops.some(([name]) => name === 'upsert')) {
+        failed = true;
+        return { data: null, error: { message: 'checkpoint write unavailable' } };
+      }
+      return respond(r);
+    };
+    const settler = new RakebackSettlerService();
+    expect(await run(settler)).toBe('halted');
+    expect(await run(settler)).toBe('idle');
+    expect(mockRpc.mock.calls[0]).toEqual(mockRpc.mock.calls[1]);
+    expect(upsertPayload(settlerUpserts()[0])).toEqual(upsertPayload(settlerUpserts()[1]));
   });
 });

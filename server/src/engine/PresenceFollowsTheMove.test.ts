@@ -20,8 +20,8 @@ import { resolve } from 'node:path';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import {
-  claimMovedPresence,
-  depositMovedPresence,
+  claimMovedPresence as claimTransferPresence,
+  depositMovedPresence as depositTransferPresence,
   movedPresenceCount,
   resetMovedPresence,
   MOVED_PRESENCE_FRESH_MS,
@@ -30,6 +30,43 @@ import {
 const FEEDER = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const MAIN2 = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
 const PLAYER = 'cccccccc-3333-4333-8333-cccccccccccc';
+const MOVE = 'dddddddd-4444-4444-8444-dddddddddddd';
+const SOURCE_STAY = 'eeeeeeee-5555-4555-8555-eeeeeeeeeeee';
+const DESTINATION_STAY = 'ffffffff-6666-4666-8666-ffffffffffff';
+
+// These continuity cases all model this one confirmed transfer. Separate
+// arrival-scope tests exercise stale, absent and mismatched proof.
+function depositMovedPresence(
+  playerId: string,
+  tableId: string,
+  presence: Omit<Parameters<typeof depositTransferPresence>[2], 'moveId' | 'sourceOccupancyId'>,
+  nowMs?: number
+) {
+  depositTransferPresence(
+    playerId,
+    tableId,
+    {
+      ...presence,
+      moveId: MOVE,
+      sourceOccupancyId: SOURCE_STAY,
+    },
+    nowMs
+  );
+}
+
+function claimMovedPresence(playerId: string, tableId: string, nowMs?: number) {
+  return claimTransferPresence(
+    playerId,
+    tableId,
+    {
+      moveId: MOVE,
+      fromTableId: FEEDER,
+      sourceOccupancyId: SOURCE_STAY,
+      destinationOccupancyId: DESTINATION_STAY,
+    },
+    nowMs
+  );
+}
 
 const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8');
 
@@ -190,7 +227,6 @@ describe('the handoff itself', () => {
       timeBank: {
         remainingSeconds: 11,
         usesRemaining: 1,
-        unlimitedActivations: true,
         initialSeconds: 40,
         baseSeconds: 40,
         dbConsumedSeconds: 0,
@@ -199,7 +235,6 @@ describe('the handoff itself', () => {
     expect(claimMovedPresence(PLAYER, MAIN2)!.timeBank).toEqual({
       remainingSeconds: 11,
       usesRemaining: 1,
-      unlimitedActivations: true,
       initialSeconds: 40,
       baseSeconds: 40,
       dbConsumedSeconds: 0,
@@ -212,7 +247,7 @@ describe('the wiring, so the handoff cannot be left unplugged', () => {
   const DEALING = read('./ServerTableEngineDealing.ts');
 
   it('the source deposits before it forgets the player', () => {
-    const at = BASE.indexOf('this.depositPresenceForMove(m.player_id, m.to_table_id);');
+    const at = BASE.indexOf('this.depositPresenceForMove(m.player_id, m.to_table_id,');
     const forget = BASE.indexOf(
       'this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);'
     );
@@ -222,7 +257,7 @@ describe('the wiring, so the handoff cannot be left unplugged', () => {
 
   it('a swap side that never runs an executor still deposits, from the announce', () => {
     expect(BASE).toMatch(
-      /for \(const m of pending\) \{[\s\S]{0,700}?this\.depositPresenceForMove\(m\.player_id, m\.to_table_id\)/
+      /for \(const m of pending\) \{[\s\S]{0,700}?this\.depositPresenceForMove\(m\.player_id, m\.to_table_id,/
     );
   });
 
@@ -231,7 +266,7 @@ describe('the wiring, so the handoff cannot be left unplugged', () => {
     // restoreFsmStates refuses to clobber a live entry, so registering first
     // would throw away everything the move carried.
     for (const src of [BASE, DEALING]) {
-      const adoptAt = src.indexOf('this.adoptMovedPresence();');
+      const adoptAt = src.indexOf('await this.adoptMovedPresence()');
       const restoreAt = src.indexOf('this.restoreSitOutsFromSeats();');
       expect(adoptAt).toBeGreaterThan(0);
       expect(restoreAt).toBeGreaterThan(adoptAt);

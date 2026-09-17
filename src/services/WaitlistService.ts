@@ -62,20 +62,6 @@ export interface WaitlistEntry {
   joinedAt: string;
   /** Display name of the table, resolved by getUserWaitlists. '' when unresolved. */
   tableName: string;
-  /**
-   * The table's game and stakes, resolved by getUserWaitlists (2026-09-04).
-   * The My Waitlists page used to print "No Limit Hold'em" with an empty
-   * stakes string for every row because nothing read them; a PLO 2/5 queue
-   * was labelled as Hold'em. '' when unresolved.
-   */
-  tableVariant: string;
-  tableStakes: string;
-  /**
-   * The table's lobby row, resolved by getUserWaitlists (2026-09-04), so the
-   * My Waitlists page can draw the same premium card the lobby draws for
-   * this table. Null when unresolved.
-   */
-  table: WaitlistTableRow | null;
   /** Player display name, resolved by getTableWaitlist (Dan 2026-08-26: "your
    *  name needs to appear on the waiting list"). '' when unresolved. */
   displayName: string;
@@ -86,29 +72,6 @@ export interface WaitlistEntry {
    * to this; atomic_table_buyin enforces it.
    */
   holdExpiresAt: string | null;
-}
-
-/** The columns the lobby's card adapter reads off a cash table. */
-export interface WaitlistTableRow {
-  id: string;
-  name: string;
-  game_variant: string;
-  small_blind: number;
-  big_blind: number;
-  min_buy_in: number;
-  max_buy_in: number;
-  current_players: number;
-  max_players: number;
-  status: string;
-  club_id?: string | null;
-  settings?: unknown;
-  straddle_enabled?: boolean | null;
-  run_it_twice?: boolean | null;
-  insurance_enabled?: boolean | null;
-  bomb_pot_enabled?: boolean | null;
-  is_vip_only?: boolean | null;
-  is_featured?: boolean | null;
-  label_as_new?: boolean | null;
 }
 
 export interface WaitlistPosition {
@@ -131,14 +94,7 @@ function mapRow(
     notified_at: string | null;
     hold_expires_at?: string | null;
   },
-  extras?: {
-    position?: number;
-    tableName?: string;
-    displayName?: string;
-    tableVariant?: string;
-    tableStakes?: string;
-    table?: WaitlistTableRow | null;
-  }
+  extras?: { position?: number; tableName?: string; displayName?: string }
 ): WaitlistEntry {
   const status = (row.status as WaitlistStatus) ?? 'waiting';
   return {
@@ -151,9 +107,6 @@ function mapRow(
     position: extras?.position ?? (status === 'notified' ? 0 : 0),
     joinedAt: row.created_at,
     tableName: extras?.tableName ?? '',
-    tableVariant: extras?.tableVariant ?? '',
-    tableStakes: extras?.tableStakes ?? '',
-    table: extras?.table ?? null,
     displayName: extras?.displayName ?? '',
     // Only meaningful while the offer is live. Undefined (an older row, or a
     // select that did not ask for it) reads as null rather than as "expired",
@@ -487,34 +440,25 @@ export const WaitlistService = {
       rankById.set(p.id, r);
     }
 
-    // The tables themselves: name, game and stakes for the list, and the
-    // lobby row so the page can draw the table's own card.
-    const tableById = new Map<string, WaitlistTableRow>();
+    // Table display names.
+    const nameById = new Map<string, string>();
     const { data: tables, error: tablesErr } = await supabase
       .from('tables')
-      .select(
-        'id, name, game_variant, small_blind, big_blind, min_buy_in, max_buy_in, current_players, max_players, status, club_id, settings, straddle_enabled, run_it_twice, insurance_enabled, bomb_pot_enabled, is_vip_only, is_featured, label_as_new'
-      )
+      .select('id, name')
       .in('id', tableIds);
     if (tablesErr) {
       reportError(tablesErr, 'WaitlistService.getUserWaitlists.tables', { userId: uid });
     }
-    for (const t of (tables ?? []) as WaitlistTableRow[]) {
-      if (t?.id) tableById.set(t.id, t);
+    for (const t of (tables ?? []) as any[]) {
+      if (t?.id) nameById.set(t.id, t.name ?? '');
     }
 
-    return rows.map((r) => {
-      const t = tableById.get(r.table_id) ?? null;
-      const sb = Number(t?.small_blind) || 0;
-      const bb = Number(t?.big_blind) || 0;
-      return mapRow(r, {
+    return rows.map((r) =>
+      mapRow(r, {
         position: rankById.get(r.id) ?? (r.status === 'notified' ? 0 : 1),
-        tableName: t?.name || 'Table',
-        tableVariant: String(t?.game_variant ?? ''),
-        tableStakes: sb > 0 && bb > 0 ? `${sb}/${bb}` : '',
-        table: t,
-      });
-    });
+        tableName: nameById.get(r.table_id) || 'Table',
+      })
+    );
   },
 
   /**

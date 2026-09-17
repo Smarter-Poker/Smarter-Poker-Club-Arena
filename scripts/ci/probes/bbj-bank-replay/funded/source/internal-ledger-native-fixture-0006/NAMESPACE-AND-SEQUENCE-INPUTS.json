@@ -1,0 +1,156 @@
+[
+  {
+    "observed_at": "2026-09-13 20:02:05.300357+00",
+    "server_version": "17.6",
+    "kind": "sequences",
+    "objects": [
+      {
+        "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+        "max": "9223372036854775807",
+        "min": "1",
+        "name": "ca_guard_def_history_id_seq",
+        "type": "bigint",
+        "cache": "1",
+        "cycle": false,
+        "owner": "postgres",
+        "start": "1",
+        "schema": "public",
+        "increment": "1"
+      },
+      {
+        "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+        "max": "9223372036854775807",
+        "min": "1",
+        "name": "ca_account_snapshots_id_seq",
+        "type": "bigint",
+        "cache": "1",
+        "cycle": false,
+        "owner": "postgres",
+        "start": "1",
+        "schema": "public",
+        "increment": "1"
+      },
+      {
+        "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+        "max": "9223372036854775807",
+        "min": "1",
+        "name": "ca_currency_meter_id_seq",
+        "type": "bigint",
+        "cache": "1",
+        "cycle": false,
+        "owner": "postgres",
+        "start": "1",
+        "schema": "public",
+        "increment": "1"
+      },
+      {
+        "acl": "{postgres=rwU/postgres}",
+        "max": "9223372036854775807",
+        "min": "1",
+        "name": "f06_lifecycle_seq",
+        "type": "bigint",
+        "cache": "1",
+        "cycle": false,
+        "owner": "postgres",
+        "start": "1",
+        "schema": "smarter_private",
+        "increment": "1"
+      },
+      {
+        "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+        "max": "9223372036854775807",
+        "min": "1",
+        "name": "player_number_seq",
+        "type": "bigint",
+        "cache": "1",
+        "cycle": false,
+        "owner": "postgres",
+        "start": "1",
+        "schema": "public",
+        "increment": "1"
+      }
+    ]
+  },
+  {
+    "observed_at": "2026-09-13 20:02:05.300441+00",
+    "server_version": "17.6",
+    "kind": "schemas",
+    "objects": [
+      {
+        "acl": "{pg_database_owner=UC/pg_database_owner,=U/pg_database_owner,postgres=U/pg_database_owner,anon=U/pg_database_owner,authenticated=U/pg_database_owner,service_role=U/pg_database_owner}",
+        "name": "public",
+        "owner": "pg_database_owner"
+      },
+      {
+        "acl": "{postgres=UC/postgres,anon=U/postgres,authenticated=U/postgres,service_role=U/postgres,dashboard_user=UC/postgres}",
+        "name": "extensions",
+        "owner": "postgres"
+      },
+      {
+        "acl": "{supabase_admin=UC/supabase_admin,anon=U/supabase_admin,authenticated=U/supabase_admin,service_role=U/supabase_admin,supabase_auth_admin=UC/supabase_admin,dashboard_user=UC/supabase_admin,postgres=U/supabase_admin}",
+        "name": "auth",
+        "owner": "supabase_admin"
+      },
+      {
+        "acl": null,
+        "name": "supabase_migrations",
+        "owner": "postgres"
+      },
+      {
+        "acl": "{postgres=UC/postgres,anon=U/postgres,authenticated=U/postgres,service_role=U/postgres}",
+        "name": "smarter_private",
+        "owner": "postgres"
+      }
+    ]
+  },
+  {
+    "observed_at": "2026-09-13 20:02:05.300473+00",
+    "server_version": "17.6",
+    "kind": "extensions",
+    "objects": [
+      {
+        "name": "uuid-ossp",
+        "owner": "postgres",
+        "schema": "extensions",
+        "version": "1.1"
+      }
+    ]
+  },
+  {
+    "observed_at": "2026-09-13 20:02:05.300578+00",
+    "server_version": "17.6",
+    "kind": "default_table_columns",
+    "objects": [
+      {
+        "name": "tier_id",
+        "type": "text",
+        "notnull": true,
+        "relation": "public.bbj_mini_tiers"
+      },
+      {
+        "name": "amount",
+        "type": "numeric(14,2)",
+        "notnull": true,
+        "relation": "public.bbj_mini_tiers"
+      },
+      {
+        "name": "enabled",
+        "type": "boolean",
+        "notnull": true,
+        "relation": "public.bbj_mini_tiers"
+      },
+      {
+        "name": "note",
+        "type": "text",
+        "notnull": false,
+        "relation": "public.bbj_mini_tiers"
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "notnull": true,
+        "relation": "public.bbj_mini_tiers"
+      }
+    ]
+  }
+]

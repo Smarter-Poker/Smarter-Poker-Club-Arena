@@ -6,11 +6,11 @@
  * idempotent re-subscribe, per-table resync, unsubscribe, and close
  * tearing every subscription down.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const rpc = vi.hoisted(() => vi.fn());
 
-// Unit test: no network, no Sentry. The supabase client module initializes
-// @sentry/node at import time; mock it before importing the server class.
+// Unit test: no network, no error reporting. The supabase client module initializes
+// @error-reporting/node at import time; mock it before importing the server class.
 vi.mock('../services/supabase.js', () => ({
   supabase: {
     rpc,
@@ -605,6 +605,199 @@ describe('EngineWebSocketServer /ws/multi', () => {
     await flush();
     expect(ws.sent.length).toBe(before);
     expect(hub.subscribe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('EngineWebSocketServer subscription phase evidence', () => {
+  let clock: number;
+  let log: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    clock = 100;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    log = vi.spyOn(console, 'info').mockImplementation(() => {});
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  const records = () =>
+    vi
+      .mocked(console.info)
+      .mock.calls.filter(([label]) => label === '[EngineWS] mux subscription timing')
+      .map(([, record]) => JSON.parse(String(record)));
+
+  const allowed = {
+    allowed: true,
+    reason: 'club_member',
+    clubId: T2,
+    banned: false,
+    ipRestricted: false,
+  };
+
+  it('separates authority, conditional ensure and initial hub enqueue without exposing payloads', async () => {
+    let finish!: (value: typeof allowed) => void;
+    const { server, hub } = makeServer({
+      tableExists: () => false,
+      authorizeConnection: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      ensureTable: async () => {
+        clock += 60;
+        return true;
+      },
+    });
+    const socket = makeFakeWs();
+    const send = socket.send.bind(socket);
+    socket.send = (data: string) => {
+      clock += 5;
+      send(data);
+    };
+    hub.subscribe.mockImplementation((_table, sub) => {
+      clock += 20;
+      sub.send(JSON.stringify({ type: 'SNAPSHOT', tableId: T1, state: 'private-payload' }));
+      clock += 2;
+    });
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', '1.2.3.4');
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    expect(socket.sent).toEqual([]);
+    expect(records()).toEqual([]);
+    clock = 4100;
+    finish(allowed);
+    await flush();
+    expect(records()).toEqual([
+      {
+        attempt: 1,
+        startedAt: expect.any(Number),
+        outcome: 'subscribed',
+        authorityReturnedAtMs: 4000,
+        ensureStartedAtMs: 4000,
+        tableReadyAtMs: 4060,
+        ackQueuedAtMs: 4065,
+        firstHubFrameQueuedAtMs: 4090,
+        hubSubscribedAtMs: 4092,
+        totalMs: 4092,
+      },
+    ]);
+    const serialized = JSON.stringify(log.mock.calls);
+    for (const secret of [T1, T2, 'user-1', '1.2.3.4', 'private-payload']) {
+      expect(serialized).not.toContain(secret);
+    }
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(records()).toHaveLength(1);
+    expect(hub.subscribe).toHaveBeenCalledOnce();
+    expect(hub.resync).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a cancelled attempt distinct from its replacement and never grants the stale result', async () => {
+    let finishOld!: (value: typeof allowed) => void;
+    const authority = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishOld = resolve;
+          })
+      )
+      .mockResolvedValue(allowed);
+    const { server, hub } = makeServer({ authorizeConnection: authority });
+    const socket = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', null);
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    socket.emitMessage({ type: 'UNSUBSCRIBE', tableId: T1 });
+    clock = 120;
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    clock = 1600;
+    finishOld(allowed);
+    await flush();
+    expect(records().map((r) => [r.attempt, r.outcome])).toEqual([
+      [2, 'subscribed'],
+      [1, 'interrupted'],
+    ]);
+    expect(records()[1]).toMatchObject({
+      authorityReturnedAtMs: 1500,
+      tableReadyAtMs: null,
+      ackQueuedAtMs: null,
+      firstHubFrameQueuedAtMs: null,
+      totalMs: 1500,
+    });
+    expect(hub.subscribe).toHaveBeenCalledOnce();
+    expect(socket.sent.map((s) => JSON.parse(s).type)).toEqual(['SUBSCRIBED']);
+  });
+
+  it('records a failed ensure phase without logging its error text or acknowledging the table', async () => {
+    const { server, hub } = makeServer({
+      tableExists: () => false,
+      authorizeConnection: async () => {
+        clock += 30;
+        return allowed;
+      },
+      ensureTable: async () => {
+        clock += 90;
+        throw new Error('secret-backend-detail');
+      },
+    });
+    const socket = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', null);
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(records()[0]).toMatchObject({
+      outcome: 'error',
+      authorityReturnedAtMs: 30,
+      ensureStartedAtMs: 30,
+      tableReadyAtMs: null,
+      ackQueuedAtMs: null,
+      hubSubscribedAtMs: null,
+      totalMs: 120,
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('secret-backend-detail');
+    expect(hub.subscribe).not.toHaveBeenCalled();
+    expect(socket.sent.map((s) => JSON.parse(s).code)).toEqual(['SUB_FAILED']);
+  });
+
+  it('neither invents an initial frame nor lets a logger failure change a live subscription', async () => {
+    const { server, hub } = makeServer();
+    const socket = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', null);
+    log.mockImplementation(() => {
+      throw new Error('logger unavailable');
+    });
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(records()[0]).toMatchObject({
+      outcome: 'subscribed',
+      ensureStartedAtMs: null,
+      firstHubFrameQueuedAtMs: null,
+      ackQueuedAtMs: 0,
+      hubSubscribedAtMs: 0,
+    });
+    expect(socket.sent.map((s) => JSON.parse(s).type)).toEqual(['SUBSCRIBED']);
+    expect(hub.subscribe).toHaveBeenCalledOnce();
+    expect(hub.unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('records retirement during private replay without claiming a surviving subscription', async () => {
+    const socket = makeFakeWs();
+    const onConnect = vi.fn();
+    const { server, hub } = makeServer({
+      onResync: () => socket.emitClose(),
+      onConnect,
+    });
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', null);
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(records()).toHaveLength(1);
+    expect(records()[0]).toMatchObject({
+      outcome: 'interrupted',
+      ackQueuedAtMs: 0,
+      hubSubscribedAtMs: 0,
+    });
+    expect(hub.subscribe).toHaveBeenCalledOnce();
+    expect(hub.unsubscribe).toHaveBeenCalledOnce();
+    expect(onConnect).not.toHaveBeenCalled();
   });
 });
 

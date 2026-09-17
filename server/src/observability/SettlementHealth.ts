@@ -1,12 +1,10 @@
 /** Gameplay degradation is separate from process/routing readiness. */
-import type { SettlementAwaitObservation } from './SettlementAwait.js';
 export const SETTLEMENT_BLOCKED_MS = 30_000;
 
 export interface SettlementTableObservation {
   tableId: string;
   handCount: number;
   settlementAgeMs: number | null;
-  settlementAwaits?: SettlementAwaitObservation[];
 }
 
 export function settlementHealthSnapshot(tables: readonly SettlementTableObservation[]) {
@@ -22,7 +20,6 @@ export function settlementHealthSnapshot(tables: readonly SettlementTableObserva
       tableId: table.tableId,
       handCount: table.handCount,
       ageMs: table.settlementAgeMs!,
-      ...(table.settlementAwaits ? { awaits: table.settlementAwaits.slice(0, 8) } : {}),
     })),
   };
 }

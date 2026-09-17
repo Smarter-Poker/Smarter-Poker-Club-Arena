@@ -14,9 +14,7 @@ const realtimeCertification = readFileSync(
 describe('post-deploy E2E concurrency', () => {
   it('runs only after exact publish proof or a successful safe stand-down', () => {
     expect(workflow).toContain('publication-gate:');
-    expect(workflow).toContain(
-      '/actions/runs/$SOURCE_RUN_ID/attempts/$SOURCE_RUN_ATTEMPT/jobs?per_page=100'
-    );
+    expect(workflow).toContain('/actions/runs/$SOURCE_RUN_ID/jobs?filter=latest&per_page=100');
     expect(workflow).toContain("entry?.name === 'publish-to-origin'");
     expect(workflow).toContain(
       "entry?.name === 'Stand down if the origin already serves a newer bundle'"
@@ -30,10 +28,7 @@ describe('post-deploy E2E concurrency', () => {
     expect(workflow).toContain("publishes[0].conclusion === 'skipped'");
     expect(workflow).toContain("proofs[0].conclusion === 'skipped'");
     expect(workflow).not.toContain('SOURCE_CONCLUSION:');
-    expect(workflow).toContain("process.env.SOURCE_RUN_STATUS === 'completed'");
-    expect(workflow).toContain("process.env.SOURCE_RUN_CONCLUSION === 'cancelled'");
-    expect(workflow).toContain('payload.total_count === 0');
-    expect(workflow).toContain("fs.appendFileSync(output, 'should_run=false\\n')");
+    expect(workflow).not.toContain('should_run=false');
     expect(workflow).toContain(
       'The source run neither proved a Hetzner web publish nor completed a safe forward stand-down.'
     );

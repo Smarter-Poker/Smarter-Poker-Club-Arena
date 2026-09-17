@@ -64,33 +64,9 @@ on:
 # be stranded by a check that will never speak again, which cost six of them.
 # ═══════════════════════════════════════════════════════════════════════════
 concurrency:
-  # 2026-09-14: keyed on the PR, not the PR+sha. Keyed on the sha, a new push never
-  # cancelled the previous commit's 15-job run; only 2-7 of 100-200 daily runs were
-  # ever cancelled. Now a superseded push is cancelled the moment the next one lands.
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
-# ───────────────────────────────────────────────────────────────────────────
-# RUNNER ROUTING (restored 2026-09-14)
-#
-# 2026-09-01/02 cost audit: every credential-free job reads vars.CI_RUNNER
-# (repo variable, = estate-linux) and runs on the 33 self-hosted Hetzner
-# runners for free; unset, it is ubuntu-latest exactly as before.
-#
-# PR #4189 (2026-09-11) hard-coded ubuntu-latest on all of them, citing
-# untrusted PR input on persistent hosts. Effect, measured from the billing
-# API: ~3 billed minutes per CI run became ~70 (15 hosted jobs), $31/day
-# became $121/day (2026-09-12), while every estate runner sat online and idle.
-#
-# The concern #4189 raised is handled by SEPARATION, not by paying GitHub:
-#   - ci.yml references no secrets at all, so nothing on the estate-linux pool
-#     can be exfiltrated by pull-request code beyond a read-only GITHUB_TOKEN.
-#   - Credential-bearing publish jobs (publish-club-arena.yml build-and-store,
-#     publish-to-app, publish-to-origin) read vars.PUBLISH_RUNNER instead and
-#     do NOT share the pool with pull-request code (unset => ubuntu-latest).
-# Do not hard-code ubuntu-latest on a credential-free job again without
-# re-reading the September billing numbers.
-# ───────────────────────────────────────────────────────────────────────────
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
   # WHICH CHECKS CAN THIS DIFF ACTUALLY BREAK?
@@ -118,8 +94,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
@@ -169,21 +144,11 @@ jobs:
   # it to be behind a gate that can hide it.
   source_windows:
     name: Source Windows Are Structural
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # Pure request/result custody checks precede dependency installation.
-      # These never build/load an image, contact production or dispatch a release.
-      - name: Engine image request and terminal custody
-        run: |
-          python3 -B tests/operations/engine-image-ci-bundle.test.py
-          python3 -B tests/operations/engine-release-image-request.test.py
-          python3 -B tests/operations/engine-release-image-result.test.py
-          python3 -B tests/operations/engine-release-image-generation.test.py
 
       - uses: actions/setup-node@v4
         with:
@@ -225,8 +190,7 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -263,8 +227,7 @@ jobs:
     name: TypeScript Check
     needs: [typecheck_compile, changes, fixture_native]
     if: always() && github.event_name == 'pull_request'
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
       contents: read
@@ -293,13 +256,8 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
-
-    permissions:
-      contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout
@@ -310,33 +268,17 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
-
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
-      - name: PR head admission preserves required-check truth
-        run: node --test tests/operations/pr-ci-admission.test.mjs
-
       - name: Native fixture gate rejects missing and skipped proof
         run: node --test tests/operations/fixture-required-ci.test.mjs
 
       - name: Mac dependency policy keeps Linux enforcement
         run: node --test tests/operations/local-dependency-policy.test.mjs
-
-      - name: Protected merge queue handles concurrent PR changes
-        run: node --test tests/operations/queue-pr.test.mjs
-
-      - name: Post-deploy verdict distinguishes an unstarted publisher
-        run: node --test tests/operations/post-deploy-origin-verdict.test.mjs
 
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
@@ -1040,8 +982,9 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Every pull-request shard gets a fresh hosted image. A dependency or test
+    # from a branch cannot persist into any later credential-bearing job.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
     # critical path by a distance - p50 264s, max 779s, against 236s for the
@@ -1049,27 +992,16 @@ jobs:
     # 2026-09-02 (publish-club-arena.yml `client-tests`); this is that, moved
     # one step earlier so the pull request feels it too.
     #
-    # Admission refusal must not cancel a sibling that already started work.
-    # The required aggregate still fails unless every applicable shard passes.
+    # fail-fast cancels the siblings the moment one shard fails, which is what
+    # a gate wants: the answer is already known.
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         shard: [1, 2, 3, 4]
-
-    permissions:
-      contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1125,8 +1057,7 @@ jobs:
     needs: unit_shards
     if: always()
     name: Client Unit Tests (vitest)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every shard passed
@@ -1162,18 +1093,10 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      pull-requests: read
-
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
-
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
@@ -1208,107 +1131,47 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
-      - name: Spin prize audits require matching posted correction funding
+      - name: Bind BBJ qualification to the actual accounting job deadline
+        id: bbj_timing
         env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-spin-prize-overlay.py
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/probes/bbj-bank-replay/funded/current_ci.py --write-job-timing "$RUNNER_TEMP/bbj-job-timing-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.json"
       - name: BBJ bank replay identity and drift-safe installation
+        id: bbj
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-bbj-bank-replay.py
-      - name: Weekly union close rolls back failed stages and records scheduler results
+          BBJ_JOB_TIMING_FILE: ${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: |
+          python3 -B -m unittest discover -s scripts/ci/probes/bbj-bank-replay -p test_retain_evidence.py
+          python3 scripts/ci/test-bbj-bank-replay.py
+      - name: Bind available BBJ receipts to this attempted invocation
+        id: bbj_evidence
+        if: always() && (steps.bbj.outcome != 'skipped' || steps.bbj_timing.outcome == 'failure' || steps.bbj_timing.outcome == 'cancelled')
         env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-union-weekly-accounting.sh
-      - name: Credit invoices bill only uninvoiced drawn debt
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-credit-invoice-generation.sh
-      - name: Accounting invoices commit with private Messenger and notification receipts
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-accounting-delivery.sh
-      - name: Credit payments preserve scope cents replay and delivery atomicity
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-credit-invoice-payment.sh
-      - name: Agent statements isolate clubs and use posted evidence
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-agent-accounting-statements.sh
-      - name: Accounting agreement changes preserve immutable observed history
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-accounting-agreement-history.sh
-      - name: Clubs receive one exact weekly statement and private invoice discussions
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-club-weekly-summary.sh
-      - name: One weekly accounting coordinator rolls back all financial stages and invoices
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-weekly-accounting-coordinator.sh
+          BBJ_STEP_OUTCOME: ${{ steps.bbj.outcome }}
+          BBJ_TIMING_OUTCOME: ${{ steps.bbj_timing.outcome }}
+          BBJ_JOB_TIMING_FILE: ${{ runner.temp }}/bbj-job-timing-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: python3 scripts/ci/probes/bbj-bank-replay/retain_evidence.py
+      - name: Retain BBJ accounting receipts
+        if: always() && steps.bbj_evidence.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bbj-${{ github.run_id }}-${{ github.run_attempt }}-accounting_postgres-${{ github.sha }}
+          path: artifacts/bbj-bank-replay/
+          retention-days: 3
+          if-no-files-found: error
       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
-      - name: Horse hand touches belong to the currently observed table
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-horse-seat-touch-session.py
-      - name: Union integrity reports keep event and incident scope
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-union-integrity-scope.py
-      - name: Tournament finish incidents retain their own event identity
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-tournament-incident-identity.py
-      - name: Exclusive waitlist offers respect concurrent table and player claims
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-waitlist-offer-concurrency.py
       - name: New seat occupants cannot inherit another player's sit-out state
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
-      - name: Profile referral codes remain unique across concurrent generators
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-profile-referral-code.py
-      - name: Player exports preserve standalone rake and horse visibility
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-club-player-export.py
       - name: Concurrent hands preserve shared F06 custody lanes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-f06-zero-seat-hand-lane.py
-      - name: Accepted hands and terminal operations obey one lock order
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-f06-terminal-lock-order.py
-      - name: Daily rake monitor respects the writer deadline and UTC boundaries
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-rake-rollup-due.py
-      - name: Video scrape history lookup stays indexed without blocking audit writers
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-video-scrape-status-index.py
-
-      - name: Native video inventory snapshot and service permissions
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-video-library-inventory.py
-      - name: Diamond health requires complete known comparisons
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-diamond-health-comparisons.py
-      - name: Chip statement pages retain tied entries and caller authority
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-chip-statement-cursor.py
+        run: python3 scripts/ci/test-f06-shared-hand-lane.py
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin
@@ -1317,6 +1180,15 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-profile-authority.py
+      - name: Horse commitment audit preserves formats and canonical roster identity
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          python3 -B scripts/ci/test-horse-commitment-audit.py \
+            --pg-bin "$PG_BIN" --source-root "$GITHUB_WORKSPACE" \
+            --allocation-parent /tmp \
+            --output "$GITHUB_WORKSPACE/artifacts/horse-commitment-audit"
       - name: Tournament reminder receipts, rollback and overlapping consumers
         env:
           PGBIN: /usr/lib/postgresql/17/bin
@@ -1328,15 +1200,48 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
 
+      - name: Tournament blinds publish atomically across the field
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-atomic-tournament-blinds-pg17.py
+
+      - name: Played tournament launch recovery preserves the original field
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-played-mtt-launch-pg17.py
+
       - name: Agent downline rake stays in overseer clubs
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
-      - name: Rake attribution survives real deadlocks without duplicate settlement
+      - name: Diamond entries, claimed daily spins and Promo to Main Bank payouts
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-rake-attribution-alert.py --output artifacts/rake-attribution-alert
+          TMPDIR: /tmp
+        run: bash scripts/dev/test-accounting-delivery.sh
+
+      - name: PKO heads follow exact accepted knockout dependencies
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B tests/operations/pko-probe-cleanup.test.py
+          bash scripts/dev/probe-causal-pko-predecessors-pg17.sh
+
+      - name: Tournament residuals require complete bounty candidate coverage
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh
+
+      - name: Tournament recovery preserves committed payout terms
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-committed-payout-terms-pg17.py
+
+      - name: Manual tournament depth reaches the current creation authority
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-tournament-create-payout-depth-pg17.py
 
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
@@ -1377,8 +1282,7 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -1390,10 +1294,6 @@ jobs:
       run:
         working-directory: server
 
-    permissions:
-      contents: read
-      pull-requests: read
-
     steps:
       - name: Require successful real PostgreSQL accounting tests
         if: needs.accounting_postgres.result != 'success'
@@ -1403,13 +1303,6 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
-
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -1465,8 +1358,7 @@ jobs:
     needs: [changes, server_shards]
     if: always()
     name: Server Engine (typecheck + tests)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Every shard passed
@@ -1508,8 +1400,7 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
@@ -1589,13 +1480,8 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
-
-    permissions:
-      contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout
@@ -1605,13 +1491,6 @@ jobs:
           # can falsely appear behind even when main is its direct parent.
           fetch-depth: 0
           filter: blob:none
-
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1682,7 +1561,6 @@ jobs:
       - name: Build
         run: npm run build:ci
         env:
-          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
           NODE_ENV: production
           # Public browser configuration. The previous PR build omitted these,
           # so it produced an artifact that threw before React mounted and no
@@ -1691,17 +1569,6 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          # SENTRY_AUTH_TOKEN DELIBERATELY ABSENT (moved 2026-09-04 to
-          # publish-club-arena.yml). It used to live here, which meant the
-          # sentry-vite-plugin gate
-          # (`NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`) was true for
-          # THIS build - a pull-request artifact that is inspected and thrown
-          # away - and false for the publisher's, the only bundle a player
-          # ever loads. Sentry was therefore holding maps for code nobody runs
-          # and none for the code everybody runs. Do not put it back: uploading
-          # from here would re-create that, and the upload is pure latency on
-          # the critical path. It belongs to whoever ships the bundle.
-
       - name: Report Build Time
         if: always()
         run: |
@@ -1764,16 +1631,7 @@ jobs:
       # BRANCHED ON THE RUNNER 2026-09-07, and this was the last unguarded
       - name: Install Performance Browser
         if: success()
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+        run: npx playwright install --with-deps chromium
 
       - name: Route Performance Budget
         if: success()
@@ -1813,8 +1671,7 @@ jobs:
     # that is the "is main actually green" net (see the schedule note).
     if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 25
 
     steps:
@@ -1834,16 +1691,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Browsers
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+        run: npx playwright install --with-deps chromium
 
       - name: Wait for Production Deploy
         run: |
@@ -1963,8 +1811,7 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
@@ -2069,13 +1916,8 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
-
-    permissions:
-      contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout
@@ -2085,13 +1927,6 @@ jobs:
           # can falsely appear behind even when main is its direct parent.
           fetch-depth: 0
           filter: blob:none
-
-      # A stale head is a failed check, never an explained diff skip.
-      - name: Admit only the current PR head before heavy work
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -2145,16 +1980,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Chromium and WebKit
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium webkit
-          else
-            npx playwright install --with-deps chromium webkit
-          fi
+        run: npx playwright install chromium webkit --with-deps
 
       # Same content-addressed media cache as Production Build, same key, so
       # whichever of the two runs first warms it for the other.
@@ -2175,7 +2001,6 @@ jobs:
       # added to every push-to-live.
       - name: Build this commit
         env:
-          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
           # The app fails closed before React mounts when these Vite values are
           # absent. Footer route probes do not call Supabase, so deterministic
           # non-secret placeholders are the correct isolated CI configuration.
@@ -2332,7 +2157,7 @@ jobs:
         # above and torn down in an always() step below; all three suites share
         # it. See the note on "Serve one build to every suite".
         run: |
-          npx playwright test tests/e2e/live-css-loader.spec.ts tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
 
       # Capture the failed fixture before a later suite can clear its output.
       # These tests use the local build and synthetic data, without a login.

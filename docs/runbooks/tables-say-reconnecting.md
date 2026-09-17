@@ -232,7 +232,7 @@ look, not the platform.
 
 4403 is a club or union blacklist and is working as intended. 4400 means the
 client sent something malformed - a version skew or a hand-rolled client. 4500
-is the engine failing inside the upgrade; check the engine log and Sentry
+is the engine failing inside the upgrade; check the engine log
 (project `club-arena-engine`).
 
 ### 4901 - `mux_superseded`

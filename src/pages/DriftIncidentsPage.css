@@ -1,366 +1,708 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   DRIFT INCIDENTS - on the spade console (#ClubArenaConsole, 2026-09-09)
-
-   The console, its ink, its painted plates and its pill slot come from
-   SpadeConsole.css. This sheet only lays out the ops readout and the incident
-   queue on the black glass between the rails.
-
-   NOTHING HERE DRAWS A CONTROL. Gone with the markup that carried them: six
-   rounded stat tiles with their own fills, a four-tab rail of filled pills, a
-   card per incident with a coloured left border and a drop shadow, and
-   twenty-two capsule badges (severity, classification, status, ledger,
-   repair) each with a background, a border and a radius. The frame, the
-   plates, the pill and the chrome rule are painted in Dan's master; a status
-   here is lit type in the master's own ink, and a row is separated from the
-   row below by the engraved rule the master cuts - a black hairline with a
-   one-pixel highlight under it.
-
-   Sizes are cqw against the console (`.sc` sets container-type), so a 320px
-   phone and a 430px phone get the same picture. No :hover anywhere: phones do
-   not hover and a stuck hover state is a bug.
-
-   THE `dgp-` SECTION AT THE BOTTOM IS NOT PART OF THIS. DriftGatePanel is a
-   separate component that imports no stylesheet of its own and reads its
-   classes from here, so those rules are left exactly as they were.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   DRIFT INCIDENTS PAGE - Styles
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
 .drift-incidents-page {
-  background: #000;
-}
-
-/* One picture per card, and the pictures stack. */
-.drift-incidents-page .di-console {
+  max-width: 900px;
   margin: 0 auto;
+  padding: 24px 16px;
   width: 100%;
-  max-width: 560px;
+  box-sizing: border-box;
+  /* clip, not hidden - see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
+  min-height: 100vh;
+  min-height: 100dvh;
+  color: #e0e0e0;
 }
 
-/* ── Figures: label left in lit blue, value right in silver ───────────── */
-
-.di-facts {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-}
-
-.di-fact {
+/* ── Header ── */
+.di-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 3cqw;
-  padding: 1.8cqw 0;
-  min-width: 0;
-}
-
-/* The engraved rule the master uses between its own rows. Never a drawn
-   divider, never a border around the row - that would be a frame on a
-   frame. */
-.di-fact + .di-fact {
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.di-fact__label {
-  flex: 0 0 auto;
-  margin: 0;
-}
-
-.di-fact__value {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  font:
-    700 3.6cqw/1.35 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.03em;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-
-.di-fact__value--mono {
-  font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
-  letter-spacing: 0;
-}
-
-/* ── A lit word cut into the glass: every action on this page ─────────── */
-
-.di-word {
-  appearance: none;
-  justify-self: start;
-  margin: 0;
-  /* 44px minimum tap target on a phone. */
-  min-height: 44px;
-  padding: 1cqw 0;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.5cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.di-word:active {
-  filter: brightness(1.3);
-}
-
-.di-word:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.di-word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
-}
-
-/* ── The status rail: four lit words, no drawn tab ────────────────────── */
-
-.di-rail {
-  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 4cqw;
-  padding: 0.5cqw 0 1cqw;
 }
 
-.di-rail__word {
-  appearance: none;
+.di-header h2 {
   margin: 0;
-  min-height: 44px;
-  padding: 1cqw 1.5cqw;
-  border: 0;
-  background: transparent;
-  font:
-    800 3.2cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.di-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.di-syncing {
+  font-size: 0.7rem;
+  color: #10b981;
+  animation: animationsPulse 1.5s infinite;
+}
+
+.di-refresh-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a0a0a0;
+  padding: 8px 12px;
+  border-radius: 8px;
   cursor: pointer;
+  font-size: 1.1rem;
+  transition: all 0.2s;
+}
+
+.di-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Stat Cards ── */
+.di-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.di-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.di-stat-card.alert {
+  border-color: rgba(239, 68, 68, 0.25);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.12);
+}
+
+.di-stat-label {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.di-stat-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #10b981;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-stat-card.alert .di-stat-value {
+  color: #ef4444;
+}
+
+/* ── Filter Tabs ── */
+.di-filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.di-filter-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.di-filter-tab {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #a0a0a0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
   touch-action: manipulation;
 }
 
-.di-rail__word:active {
-  filter: brightness(1.3);
+.di-filter-tab.status-open.active {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
 }
 
-.di-rail__word:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
+.di-filter-tab.status-acknowledged.active {
+  background: rgba(234, 179, 8, 0.12);
+  color: #eab308;
+  border-color: rgba(234, 179, 8, 0.25);
 }
 
-/* ── The queue: one incident per row on the glass ─────────────────────── */
+.di-filter-tab.status-reconciling.active {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+  border-color: rgba(99, 102, 241, 0.25);
+}
 
+.di-filter-tab.status-resolved.active {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+/* ── Incident Cards ── */
 .di-list {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.di-row {
-  display: grid;
-  gap: 2cqw;
-  padding: 3.4cqw 0;
-  min-width: 0;
+.di-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.2s;
 }
 
-.di-row + .di-row {
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+.di-card.severity-critical {
+  border-left: 3px solid #ef4444;
 }
 
-.di-row__head {
-  appearance: none;
-  display: grid;
-  gap: 1.6cqw;
+.di-card.severity-warning {
+  border-left: 3px solid #eab308;
+}
+
+.di-card.severity-info {
+  border-left: 3px solid #818cf8;
+}
+
+.di-card.past-target {
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.12);
+}
+
+.di-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
   width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  margin: 0;
+  background: none;
+  border: none;
   padding: 0;
-  border: 0;
-  background: transparent;
+  margin: 0 0 10px 0;
+  cursor: pointer;
+  text-align: left;
   color: inherit;
   font: inherit;
-  text-align: left;
-  cursor: pointer;
-  touch-action: manipulation;
 }
 
-.di-row__head:active {
-  filter: brightness(1.2);
-}
-
-.di-row__head:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
-}
-
-.di-row__name {
-  font:
-    800 4.6cqw/1.2 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  overflow-wrap: anywhere;
-}
-
-/* Words in the master's own ink, not capsules. The old severity, class,
-   status, occurrence and ledger badges were five filled pills on one line. */
-.di-row__flags {
+.di-card-badges {
   display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 3cqw;
   min-width: 0;
 }
 
-.di-row__tail {
+.di-card-head-right {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 3cqw;
-  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.di-expand-caret {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.85rem;
+}
+
+.di-severity-badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.di-severity-badge.critical {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.di-severity-badge.warning {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.di-severity-badge.info {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+}
+
+.di-class-badge {
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d0d0d0;
+}
+
+.di-status-badge {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.di-status-badge.open {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.di-status-badge.acknowledged {
+  background: rgba(234, 179, 8, 0.12);
+  color: #eab308;
+}
+
+.di-status-badge.reconciling {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+}
+
+.di-status-badge.resolved {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.di-occurrences {
+  font-size: 0.72rem;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
 }
 
 .di-deadline {
-  font:
-    800 3.4cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums lining-nums;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #10b981;
+  white-space: nowrap;
 }
 
-.di-row__actions {
+.di-deadline.past {
+  color: #ef4444;
+  animation: animationsPulse 1.5s infinite;
+}
+
+.di-deadline.resolved {
+  color: #22c55e;
+}
+
+/* ── Amounts ── */
+.di-amounts {
   display: flex;
+  align-items: center;
+  gap: 16px;
   flex-wrap: wrap;
-  gap: 6cqw;
-  margin-top: 0.4cqw;
+  margin-bottom: 10px;
 }
 
-/* ── Expanded detail ──────────────────────────────────────────────────── */
+.di-amount-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 
+.di-amount-label {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.di-amount-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #d0d0d0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-amount-block.discrepancy .di-amount-value {
+  color: #ef4444;
+}
+
+.di-ledger-chip {
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.di-ledger-chip.balanced {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.di-ledger-chip.imbalanced {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+/* ── Context line ── */
+.di-context-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  margin-bottom: 10px;
+}
+
+.di-org {
+  color: #818cf8;
+  font-weight: 600;
+}
+
+.di-org.union {
+  color: #14b8a6;
+}
+
+.di-source {
+  color: #888;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-layer {
+  color: #888;
+}
+
+.di-detected {
+  color: #666;
+  margin-left: auto;
+}
+
+/* ── Expanded Detail ── */
 .di-detail {
-  display: grid;
-  gap: 3cqw;
-  padding-top: 1cqw;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+  margin-bottom: 12px;
 }
 
+.di-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.di-chip {
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #a0a0a0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-meta-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.di-meta-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.82rem;
+}
+
+.di-meta-label {
+  flex-shrink: 0;
+  width: 120px;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.di-meta-value {
+  color: #d0d0d0;
+  line-height: 1.4;
+}
+
+.di-meta-value.mono {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-meta-value.escalation {
+  color: #f59e0b;
+  font-weight: 700;
+}
+
+.di-repair-badge {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.di-repair-badge.pending {
+  background: rgba(255, 255, 255, 0.06);
+  color: #a0a0a0;
+}
+
+.di-repair-badge.running {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+}
+
+.di-repair-badge.repaired {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.di-repair-badge.manual_needed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.di-repair-badge.not_applicable {
+  background: rgba(255, 255, 255, 0.04);
+  color: #666;
+}
+
+/* ── Timeline ── */
 .di-timeline {
-  display: grid;
-  gap: 1.6cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.di-timeline-title {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .di-event {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 2.4cqw;
-  padding: 1.6cqw 0 0;
-  min-width: 0;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
 }
 
-.di-event + .di-event {
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+.di-event-glyph {
+  width: 14px;
+  text-align: center;
+  color: #818cf8;
+  flex-shrink: 0;
 }
 
-.di-event__kind {
-  flex: 0 0 auto;
+.di-event.kind-escalated .di-event-glyph {
+  color: #ef4444;
 }
 
-.di-event__time,
-.di-event__actor {
-  flex: 0 0 auto;
-  font:
-    600 2.9cqw/1.3 Inter,
-    system-ui,
-    sans-serif;
+.di-event.kind-resolved .di-event-glyph {
+  color: #22c55e;
 }
 
-.di-event__detail {
-  flex: 1 1 100%;
-  min-width: 0;
-  font:
-    500 3.2cqw/1.45 Inter,
-    system-ui,
-    sans-serif;
-  overflow-wrap: anywhere;
+.di-event.kind-repair_action .di-event-glyph {
+  color: #14b8a6;
+}
+
+.di-event-kind {
+  font-weight: 600;
+  color: #d0d0d0;
+}
+
+.di-event-time {
+  color: #666;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-event-actor {
+  color: #818cf8;
+}
+
+.di-event-detail {
+  color: #a0a0a0;
+  flex-basis: 100%;
+  padding-left: 22px;
+  line-height: 1.4;
 }
 
 .di-metadata summary {
-  min-height: 44px;
-  padding: 1cqw 0;
+  font-size: 0.8rem;
+  color: #888;
   cursor: pointer;
-  list-style: none;
+  padding: 4px 0;
 }
 
-.di-metadata summary:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
-}
-
-/* The one groove on this page: a raw jsonb blob cut into the glass, the same
-   cut the console's textareas use. */
 .di-metadata pre {
-  margin: 0;
-  padding: 2.6cqw 1cqw;
-  max-height: 60cqw;
-  overflow: auto;
-  border-top: 1px solid #000;
-  border-bottom: 1px solid #000;
-  background: transparent;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 9%),
-    0 1px 0 rgb(255 255 255 / 9%);
-  color: #cdd6e0;
-  font:
-    500 2.9cqw/1.5 'SF Mono',
-    ui-monospace,
-    Menlo,
-    Consolas,
-    monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #a0a0a0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 6px 0 0 0;
+  max-height: 200px;
 }
 
-.di-empty {
-  display: grid;
-  justify-items: center;
-  gap: 2.4cqw;
-  padding: 4cqw 3cqw 2cqw;
-  text-align: center;
+/* ── Actions ── */
+.di-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-/* ── Notification deep link: flash the row the push was about ──────────
-   The flash used to be a drawn blue ring (a 3px box-shadow around the card),
-   which is chrome the master does not paint. It is now the row's own type
-   lifting and settling three times over the same 1.2s x 3 it always ran for:
-   the cue still plays in full, it just no longer draws a control to do it. */
+.di-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.2s;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #a0a0a0;
+}
+
+.di-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.di-btn-ack {
+  border-color: rgba(234, 179, 8, 0.3);
+  background: rgba(234, 179, 8, 0.1);
+  color: #eab308;
+}
+
+.di-btn-reconcile {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(99, 102, 241, 0.1);
+  color: #818cf8;
+}
+
+.di-btn-resolve {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.di-btn-reopen {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* ── Empty & Loading States ── */
+.di-loading-state,
+.di-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #666;
+}
+
+.di-empty-icon {
+  font-size: 2rem;
+  margin-bottom: 12px;
+  opacity: 0.4;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE - Mobile (375px first)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .drift-incidents-page {
+    padding: 16px 12px;
+  }
+
+  .di-header h2 {
+    font-size: 1.2rem;
+  }
+
+  .di-refresh-btn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  .di-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .di-stat-value {
+    font-size: 1.15rem;
+  }
+
+  .di-filter-tab {
+    min-height: 44px;
+  }
+
+  .di-card {
+    padding: 12px;
+  }
+
+  .di-amounts {
+    gap: 12px;
+  }
+
+  .di-meta-label {
+    width: 100px;
+  }
+
+  .di-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+    flex: 1;
+  }
+}
+
+/* ── Notification deep link: flash the card the push was about ── */
 @keyframes di-deep-link-flash {
   0% {
-    filter: brightness(1.75);
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.9);
   }
-
   100% {
-    filter: brightness(1);
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0);
   }
 }
-
-.di-row.deep-linked {
+.di-card.deep-linked {
   animation: di-deep-link-flash 1.2s ease-out 3;
 }
 

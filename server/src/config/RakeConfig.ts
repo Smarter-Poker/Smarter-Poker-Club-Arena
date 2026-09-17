@@ -1235,18 +1235,7 @@ export type BBJMiniNearMissReason =
   | 'mini_not_enough_players'
   | 'mini_pot_too_small'
   | 'mini_double_board'
-  | 'mini_winner_not_quads'
-  /* BACK, AND THIS TIME IT MEANS SOMETHING (2026-09-12). It was removed as a
-     value with no reader: under the old family bar, "nobody cleared it" meant
-     an ordinary hand - two pair, a straight - and recording that would bury
-     the real near misses. Dan's ranked bars changed what the phrase covers.
-     On PLO5/FLO5 the bar is Quad Tens, so a loser BELOW it can be quad nines
-     beaten by quad aces: a monster that paid the mini yesterday and does not
-     today. That is the most interesting refusal the mini has, it is the only
-     way to measure what the new bar costs, and the panel already has a label
-     for it. It is emitted ONLY where a ranked bar exists AND the loser
-     actually holds quads - never for the ordinary hands it was deleted over. */
-  | 'mini_loser_below_bar';
+  | 'mini_winner_not_quads';
 
 export interface BBJMiniNearMissResult {
   nearMiss: boolean;
@@ -1322,37 +1311,13 @@ export function detectMiniBBJNearMiss(
   const bar =
     qualifying.miniBarLabel ?? (isHoldemFamily ? 'Aces Full or better' : 'Quads or better');
   if (!best) {
-    /* Nobody cleared the bar. Under the family default that is an ordinary
-       hand and recording it would bury the real near misses - which is why
-       `mini_loser_below_bar` was deleted as a value with no reader.
-
-       A RANKED BAR CHANGED THAT (Dan, 2026-09-12). Where the bar is a quad
-       RANK, the hand that just missed it is itself quads: on PLO5/FLO5 a
-       player can hold quad nines, lose to quad aces, and take nothing, when
-       the same hand paid the mini the day before. Silently dropping that makes
-       the cost of the new bar unmeasurable - nobody could say how many beats
-       it turned away, which is exactly the hole `bbj_near_misses` was built to
-       close for the main jackpot.
-
-       So: quads below a ranked bar IS a near miss, and nothing else here is.
-       An ordinary hand still returns `none`. */
-    const rankedBar = qualifying.miniMinQuadRank;
-    if (rankedBar != null) {
-      const bestQuads = losers
-        .filter((r) => r.handRanking === HAND_RANK.FOUR_OF_A_KIND && (r.kickers?.length ?? 0) >= 1)
-        .reduce<
-          (typeof losers)[number] | null
-        >((acc, r) => (acc === null || r.kickers[0] > acc.kickers[0] ? r : acc), null);
-      if (bestQuads) {
-        return {
-          nearMiss: true,
-          userId: bestQuads.userId,
-          handName: bestQuads.handName,
-          reason: 'mini_loser_below_bar',
-          message: `So close! ${bestQuads.handName} lost, but the Mini needs ${bar} in this game.`,
-        };
-      }
-    }
+    /* Nobody cleared the bar. That is not a near miss - it is an ordinary hand,
+       and recording it would bury the real ones.
+       This used to return `reason: 'mini_loser_below_bar'` "so the caller can
+       distinguish no-candidate from not-evaluated", and no caller ever did:
+       the one call site tests `nearMiss` alone and cannot tell it from the
+       four other reason-less refusals. A value with no reader is the thing
+       10.86 is about, so it is gone rather than left looking meaningful. */
     return none;
   }
 

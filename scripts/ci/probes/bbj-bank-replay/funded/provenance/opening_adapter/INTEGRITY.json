@@ -1,0 +1,124 @@
+{
+  "files": [
+    {
+      "path": "AUTHORIZATION-TEMPLATE.json",
+      "sha256": "671d62dd86d452e1828d101d72a89842e8f691e818d06bb0b5d73615e4cab11f"
+    },
+    {
+      "path": "CASE-DISPOSITIONS.json",
+      "sha256": "8c84b6280425d303760c6eb338848bc90bf9fa39a722ca6481646781a8987ed4"
+    },
+    {
+      "path": "COMBINED-COMMAND.sql",
+      "sha256": "b9ea8f516f71a34010d5b7883a7242ea87c14ab808babefa7fcc9cca420b8f4f"
+    },
+    {
+      "path": "COMPOSITION.json",
+      "sha256": "7802c965cdc81c929f55ba4a91e76b3f24b9773d9e60698f4fcdb8129e440704"
+    },
+    {
+      "path": "DELTA0120-case_module.py.patch",
+      "sha256": "969aa309bd7cb922e0827ff2c577989392ee39a6b9459b6b0b80c2e1eb9c1eca"
+    },
+    {
+      "path": "DELTA0120-run_integration.py.patch",
+      "sha256": "9d05ddd0cd7b15a5feeb339c7900f22e16c05773b9ea4dafe2ba613c2ff55a14"
+    },
+    {
+      "path": "DEPENDENCIES-QUERY.sql",
+      "sha256": "f261f2d7bb43482029e19fd7d8ab51819a039721741616cc4fceb210d599d948"
+    },
+    {
+      "path": "DERIVATION.json",
+      "sha256": "f47d7ba4bfece8d3e9939caa7938676ebfa162ae02dcd7b1d1fd78acfad50598"
+    },
+    {
+      "path": "EVENT-TRIGGERS-EXPECTED.json",
+      "sha256": "3d1d5702c0cf0699dbdf028e64fd1a8c54748ef727a0ddb24a6744f23908108e"
+    },
+    {
+      "path": "EXACT0120-PRESERVATION.json",
+      "sha256": "2e863bbc2c30c8e813e5a1e237aae4bfc81646c3280562717353cbce6c747e45"
+    },
+    {
+      "path": "FUNCTION-TRANSITIONS.json",
+      "sha256": "69702e8debe8748f57e2922933c41ebbc53f5a89b7a13be8cf11060799c21301"
+    },
+    {
+      "path": "HANDOFF.md",
+      "sha256": "71271625b54e7505ea860b634eaa7e8d3e5d5f9ea1489791387af9bf4932f698"
+    },
+    {
+      "path": "REBIND-CHECKS.json",
+      "sha256": "f95d6de22034cc67a4db0e5fd610c2483ddc275fe6191c638d72b5a2f5f6cf20"
+    },
+    {
+      "path": "RELATION-QUERY.sql",
+      "sha256": "cb049d4d08fb8a2cbb14ca906d8dbbc74b3ee6924294bb9e5c635cb817f4a2d8"
+    },
+    {
+      "path": "SOURCE-DERIVATION-PROOF.json",
+      "sha256": "f4dcb420342f5f296c941905ff77979e43ce5f9c89b63485c75e9aed920802b3"
+    },
+    {
+      "path": "SOURCE-PINS.json",
+      "sha256": "325512642a6e20fa4274885a8ed6c2f93b8333b4d6fdcf1b5d5c57fd69e16c01"
+    },
+    {
+      "path": "STATUS.json",
+      "sha256": "a195df0ad4cfc1716ba6abac35848dda290ccb37a8af7cd798c95277ca487a52"
+    },
+    {
+      "path": "TABLE-TRANSITIONS.json",
+      "sha256": "3d36f8b0586bde4203e21f41ac88ca43ab7e76c1b98f40d0de82f816100dbb4b"
+    },
+    {
+      "path": "VERIFICATION.json",
+      "sha256": "88f5031e258282ab64345f38804bd7f54fbe8abc0db74f30889ec073cb1ad175"
+    },
+    {
+      "path": "binding.py",
+      "sha256": "e908191ea1e24319d147c5d8a5dbdca8eda506746006c8bc4e85476e02a9ee57"
+    },
+    {
+      "path": "binding.py.patch",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "build_models.py",
+      "sha256": "3bc91e6dd846dae0338b75e7409729ea4f9acf1a1dcbf56741126be975a336e5"
+    },
+    {
+      "path": "case_module.py",
+      "sha256": "b75a11c2dc6491e0467f7ab6e0ceb1796660f059dcf457f0b466851f072e9e77"
+    },
+    {
+      "path": "case_module.py.patch",
+      "sha256": "c579d97886cfd3b9eaab63cb41c2c1453156d7609af8abe34a93b75f524f35c1"
+    },
+    {
+      "path": "catalog_queries.py",
+      "sha256": "6c19a430c6784dd5522cadaa3a25348b53ed1120d1edec6363fd92a0567766c2"
+    },
+    {
+      "path": "check_rebinding.py",
+      "sha256": "ec69b8354119655edafe59274f91baa7eae29b2d788586b56d8d164bc831f9bb"
+    },
+    {
+      "path": "normalization.py",
+      "sha256": "b67697002487de10024bc49d2b3730ddca60d408c608b4fa7c1323eddf80e0f3"
+    },
+    {
+      "path": "run_integration.py",
+      "sha256": "b312325140993b5cefe07485fd5765a930620e7bc9be4f84dd2ea4a491ec0bbc"
+    },
+    {
+      "path": "run_integration.py.patch",
+      "sha256": "28af3b9372dec2517d4aaaf8ea23675c36d2d3ae2259e1451220a221f267dab1"
+    },
+    {
+      "path": "verify.py",
+      "sha256": "d38aa43cade552a738ce55cd612ccfb9268b4969fe16594f129621f896b93f12"
+    }
+  ]
+}

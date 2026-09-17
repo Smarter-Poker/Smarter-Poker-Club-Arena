@@ -23,7 +23,6 @@ import {
   mysteryPoolCents,
   type MysteryBountyActivationInputs,
 } from './mysteryBountyActivation.js';
-import { CHIP_UNIT_CENTS } from './tournamentUnit.js';
 
 const base: MysteryBountyActivationInputs = {
   isMysteryBounty: true,
@@ -157,26 +156,26 @@ describe('mysteryPoolCents', () => {
   // TEST 18 — the split between the mystery half and the regular half, and
   // what happens when a club types two numbers that do not add up.
   it('takes the configured share of the bounty pool', () => {
-    expect(mysteryPoolCents(100_000, 50, 50, 0, CHIP_UNIT_CENTS)).toBe(50_000);
-    expect(mysteryPoolCents(100_000, 70, 30, 0, CHIP_UNIT_CENTS)).toBe(70_000);
-    expect(mysteryPoolCents(100_000, 100, 0, 0, CHIP_UNIT_CENTS)).toBe(100_000);
+    expect(mysteryPoolCents(100_000, 50, 50)).toBe(50_000);
+    expect(mysteryPoolCents(100_000, 70, 30)).toBe(70_000);
+    expect(mysteryPoolCents(100_000, 100, 0)).toBe(100_000);
   });
 
   it('normalises percentages that do not sum to 100 rather than overpaying', () => {
     // 60 and 60 is a 50/50 split, not an event that pays out 120% of its pool.
-    expect(mysteryPoolCents(100_000, 60, 60, 0, CHIP_UNIT_CENTS)).toBe(50_000);
+    expect(mysteryPoolCents(100_000, 60, 60)).toBe(50_000);
   });
 
   it('floors, so the odd cent stays in the regular half', () => {
     // The regular half is spent against a live exhaustion check; the mystery
     // half is committed to a fixed inventory and an extra cent there would
     // leave the event unable to reconcile.
-    expect(mysteryPoolCents(1001, 50, 50, 0, CHIP_UNIT_CENTS)).toBe(500);
+    expect(mysteryPoolCents(1001, 50, 50)).toBe(500);
   });
 
   it('returns nothing for an empty or nonsensical pool', () => {
-    expect(mysteryPoolCents(0, 50, 50, 0, CHIP_UNIT_CENTS)).toBe(0);
-    expect(mysteryPoolCents(-5, 50, 50, 0, CHIP_UNIT_CENTS)).toBe(0);
-    expect(mysteryPoolCents(100_000, 0, 0, 0, CHIP_UNIT_CENTS)).toBe(0);
+    expect(mysteryPoolCents(0, 50, 50)).toBe(0);
+    expect(mysteryPoolCents(-5, 50, 50)).toBe(0);
+    expect(mysteryPoolCents(100_000, 0, 0)).toBe(0);
   });
 });

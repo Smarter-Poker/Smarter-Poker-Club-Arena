@@ -17,6 +17,9 @@ case "$("$PGBIN/postgres" --version)" in
 esac
 test -x "$PGBIN/initdb"
 test -x "$PGBIN/psql"
+# Exercise the real join/cancel race in its own disposable database. This is
+# part of the existing accounting check, not a separate release workflow.
+PGBIN="$PGBIN" python3 "$repo/scripts/dev/probe-cash-game-admission-lock.py"
 # Homebrew may place support files inside the keg rather than the compiled path.
 departure_share="$("$PGBIN/pg_config" --sharedir)"
 if [[ ! -f "$departure_share/postgres.bki" && -f "$PGBIN/../share/postgresql/postgres.bki" ]]; then
@@ -298,6 +301,13 @@ done
 # additive migration, including its production baseline guard and grants.
 "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -f "$repo/supabase/migrations/20260914101745_cash_pending_moves_carry_original_occupancy.sql" >/dev/null
+
+# Source plan for protected execution: exercise the complete read-only arrival
+# migration with the actual retained transfer receipts, never a mocked proof.
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260916044342_cash_move_presence_reads_confirmed_arrivals.sql" >/dev/null
+done
 
 "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -f "$repo/scripts/dev/fixtures/departure-waitlist-functions.sql" >/dev/null

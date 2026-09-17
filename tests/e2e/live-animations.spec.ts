@@ -541,24 +541,20 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     ).toBeUndefined();
   });
 
-  test.describe('with reduced motion', () => {
-    // The inherited fixture loads the complete CSS bundle and mounts the table.
-    // Configure that context before setup so it does the work exactly once.
-    test.use({ contextOptions: { reducedMotion: 'reduce' } });
-
-    test('reduced motion is honoured — every animation collapses', async ({ page }) => {
-      expect(
-        await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
-      ).toBe(true);
-      const b = await beat(
-        page,
-        `$('cards').classList.add('seat__cards--dealing');
+  test('reduced motion is honoured — every animation collapses', async ({ browser }) => {
+    const ctx = await browser.newContext({ reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    await loadLiveCss(page);
+    await mountTable(page);
+    const b = await beat(
+      page,
+      `$('cards').classList.add('seat__cards--dealing');
        $('seat').classList.add('seat--winner','seat--winner-pop');`
-      );
-      for (const [name, ms] of Object.entries(b)) {
-        expect(ms, `${name} must be flattened under prefers-reduced-motion`).toBeLessThanOrEqual(1);
-      }
-    });
+    );
+    for (const [name, ms] of Object.entries(b)) {
+      expect(ms, `${name} must be flattened under prefers-reduced-motion`).toBeLessThanOrEqual(1);
+    }
+    await ctx.close();
   });
 });
 

@@ -76,6 +76,16 @@ describe('a workflow_run listener names a workflow that exists', () => {
     expect(listenedNames(read('post-deploy-e2e.yml'))).toEqual(['Publish Club Arena']);
   });
 
+  it('production certification requires a publication event', () => {
+    const workflow = read('post-deploy-e2e.yml');
+    const triggers = workflow.split(/^jobs:/m)[0];
+    expect(triggers).not.toMatch(/^  schedule:/m);
+    expect(triggers).toMatch(/^  repository_dispatch:/m);
+    expect(listenedNames(workflow)).toEqual(['Publish Club Arena']);
+    expect(workflow).not.toContain('if [ "$EVENT_NAME" = schedule ]');
+    expect(workflow).toContain('Unsupported production certification event');
+  });
+
   it('the parser sees a listener naming a dead workflow (mutant check)', () => {
     const fake =
       "name: X\non:\n  workflow_run:\n    workflows: ['Build for World Hub Sync']\n    types: [completed]\njobs:\n  a:\n    runs-on: x\n";

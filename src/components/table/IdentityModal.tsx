@@ -40,7 +40,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './IdentityModal.css';
 
 /** Matches the `maxLength` on the input and the column the alias is saved to. */
@@ -161,17 +160,10 @@ export function IdentityModal({
 
   if (!isOpen) return null;
 
-  /* ONE CONSOLE (#ClubArenaConsole): the spade master. The three rows -
-     the switch, the alias, and the name the felt will actually show - are
-     printed on the black glass between the rails with an engraved rule
-     between them; the switch is a lit word (ON in green, OFF muted), because
-     the art paints no toggle and nothing may be drawn. The two painted
-     plates in the foot are the dialog's controls: Cancel on steel, Save or
-     Done on the blue glass. */
   return createPortal(
     <div className="identity-modal-overlay" onClick={onClose} role="presentation">
       <div
-        className="idc"
+        className="identity-modal-content"
         ref={dialogRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
@@ -180,38 +172,31 @@ export function IdentityModal({
         aria-modal="true"
         aria-labelledby="identity-modal-title"
       >
-        <SpadeConsole
-          eyebrow="Table Identity"
-          title="Identity Settings"
-          titleId="identity-modal-title"
-          pill={useAlias ? 'Alias On' : 'Alias Off'}
-          pillInk={useAlias ? 'green' : 'muted'}
-          plates={{
-            secondary: { label: 'Cancel', ink: 'silver', onClick: onClose },
-            primary: { label: isDirty ? 'Save' : 'Done', ink: 'white', onClick: commit },
-          }}
-          className="idc__console"
-        >
-          <div className="idc__row">
-            <label htmlFor="identity-alias-toggle" className="sc-label sc-ink--blue">
-              Use Alias At Tables
-            </label>
+        <div className="identity-modal-header">
+          <h2 id="identity-modal-title">Identity Settings</h2>
+          <button className="identity-modal-close" onClick={onClose} aria-label="Close">
+            &times;
+          </button>
+        </div>
+        <div className="identity-modal-body">
+          <div className="identity-modal-row">
+            <label htmlFor="identity-alias-toggle">Use Alias At Tables</label>
             <button
               id="identity-alias-toggle"
               type="button"
               role="switch"
               aria-checked={useAlias}
               aria-label="Use Alias At Tables"
-              className={`idc-word ${useAlias ? 'sc-ink--green' : 'sc-ink--muted'}`}
+              className={`tsp-toggle ${useAlias ? 'tsp-toggle--on' : 'tsp-toggle--off'}`}
               onClick={onToggleAlias}
             >
-              {useAlias ? 'On' : 'Off'}
+              <span className="tsp-toggle__track">
+                <span className="tsp-toggle__thumb" />
+              </span>
             </button>
           </div>
-          <div className="idc__row">
-            <label htmlFor="identity-alias-input" className="sc-label sc-ink--blue">
-              Table Alias
-            </label>
+          <div className="identity-modal-row">
+            <label htmlFor="identity-alias-input">Table Alias</label>
             <input
               id="identity-alias-input"
               type="text"
@@ -233,16 +218,20 @@ export function IdentityModal({
 
           {/* THE ROW THAT EXPLAINS THE OTHER TWO. Without it, "alias on, alias
               empty" is a setting that looks applied and changes nothing. */}
-          <div className="idc__preview">
-            <span className="sc-label sc-ink--blue">You Appear At The Table As</span>
-            <span className="idc__preview-value sc-ink--silver">{shownName}</span>
+          <div className="identity-modal-preview">
+            <span className="identity-modal-preview__label">You Appear At The Table As</span>
+            <span className="identity-modal-preview__value">{shownName}</span>
             {aliasOnButEmpty && (
-              <span className="idc__preview-hint sc-ink--gold" role="status">
+              <span className="identity-modal-preview__hint" role="status">
                 Type An Alias Above, Or Your Usual Name Is Shown.
               </span>
             )}
           </div>
-        </SpadeConsole>
+
+          <button className="identity-save-btn" onClick={commit}>
+            {isDirty ? 'Save' : 'Done'}
+          </button>
+        </div>
       </div>
     </div>,
     document.body

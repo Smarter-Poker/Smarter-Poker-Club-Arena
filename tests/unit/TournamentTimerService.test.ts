@@ -74,6 +74,7 @@ vi.mock('../../src/services/TournamentService', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { tournamentTimerService } from '../../src/services/TournamentTimerService';
+import { masterBus } from '../../src/core/MasterBus';
 
 describe('TournamentTimerService', () => {
   beforeEach(() => {
@@ -233,6 +234,36 @@ describe('TournamentTimerService', () => {
 
     it('does not write the level index to the database', async () => {
       await tickOnce(3);
+      expect(levelsWritten()).toEqual([]);
+    });
+
+    it('does not announce unknown blinds and can observe the same level when they arrive', async () => {
+      mockGetTournament.mockResolvedValue(runningTournament);
+      mockGetCurrentLevelState.mockReturnValue({
+        levelIndex: 369,
+        currentLevel: null,
+        nextLevel: null,
+        timeRemainingSeconds: 200,
+      });
+      tournamentTimerService.startTimer('t-write');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(masterBus.emit).not.toHaveBeenCalled();
+      expect(await tournamentTimerService.getFullClockState('t-write')).toBeNull();
+
+      mockGetCurrentLevelState.mockReturnValue({
+        levelIndex: 369,
+        currentLevel: { smallBlind: 52_500, bigBlind: 105_000, ante: 0 },
+        nextLevel: null,
+        timeRemainingSeconds: 199,
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(masterBus.emit).toHaveBeenCalledWith('BLIND_LEVEL_CHANGE', {
+        tournamentId: 't-write',
+        level: 370,
+        smallBlind: 52_500,
+        bigBlind: 105_000,
+        ante: 0,
+      });
       expect(levelsWritten()).toEqual([]);
     });
   });

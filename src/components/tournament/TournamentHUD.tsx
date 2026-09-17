@@ -427,7 +427,7 @@ export function TournamentHUD({
           Blinds
         </span>
         <span style={{ fontSize: 15, fontWeight: 700 }}>
-          {isBreak ? '-' : `${fmtChips(cur?.smallBlind ?? 0)} / ${fmtChips(cur?.bigBlind ?? 0)}`}
+          {isBreak || !cur ? '-' : `${fmtChips(cur.smallBlind)} / ${fmtChips(cur.bigBlind)}`}
         </span>
         {!isBreak && (cur?.ante ?? 0) > 0 && (
           <span style={{ fontSize: 10, opacity: 0.7 }}>Ante {fmtChips(cur!.ante)}</span>

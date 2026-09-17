@@ -76,8 +76,7 @@ const chop = (amount: number, chipUnit?: number, dealerSeat = 0) =>
     chipUnit
   );
 
-const sum = (ws: { amount: number }[]) =>
-  Math.round(ws.reduce((s, w) => s + w.amount, 0) * 100) / 100;
+const sum = (ws: { amount: number }[]) => Math.round(ws.reduce((s, w) => s + w.amount, 0) * 100) / 100;
 
 describe('cash is unchanged - a chip is still two decimal places', () => {
   it('splits an odd cent to the cent, exactly as before', () => {
@@ -92,14 +91,8 @@ describe('cash is unchanged - a chip is still two decimal places', () => {
   });
 
   it('the default unit is a cent, so an unpassed chipUnit changes nothing', () => {
-    expect(
-      chop(9.59, undefined)
-        .map((w) => w.amount)
-        .sort()
-    ).toEqual(
-      chop(9.59, 0.01)
-        .map((w) => w.amount)
-        .sort()
+    expect(chop(9.59, undefined).map((w) => w.amount).sort()).toEqual(
+      chop(9.59, 0.01).map((w) => w.amount).sort()
     );
   });
 });

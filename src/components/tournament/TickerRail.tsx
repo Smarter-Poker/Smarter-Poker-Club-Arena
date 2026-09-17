@@ -20,6 +20,7 @@ import { useMemo, type CSSProperties, type ReactElement, type ReactNode } from '
 import {
   announcementFor,
   CLOCK_TOKEN,
+  countdown,
   FIELD_SEPARATOR,
   renderTickerItem,
   secondsLeft,
@@ -35,7 +36,6 @@ import {
   TONE_ACCENT,
 } from './tickerTheme';
 import { useTickerMarquee } from './useTickerMarquee';
-import { TickerClock } from './TickerClock';
 import './TournamentStartingTicker.css';
 
 /** Under this many seconds the clock itself goes accent and beats once a second. */
@@ -85,7 +85,8 @@ export interface TickerRailProps {
  * spacing is ordinary inline text again and the clock is still its own
  * stylable element. Nothing about the digits changed; the box around them did.
  */
-function itemNodes(entry: TickerItem, urgent: boolean): ReactNode[] {
+function itemNodes(entry: TickerItem, now: number, urgent: boolean): ReactNode[] {
+  const clock = typeof entry.deadlineMs === 'number' ? countdown(entry.deadlineMs - now) : '';
   const out: ReactNode[] = [];
   entry.parts.forEach((part, index) => {
     if (index > 0) {
@@ -98,15 +99,14 @@ function itemNodes(entry: TickerItem, urgent: boolean): ReactNode[] {
     const at = part.toLowerCase().indexOf(CLOCK_TOKEN);
     out.push(
       <span key={`p-${index}`} className="mtt-ticker__field">
-        {at === -1 || typeof entry.deadlineMs !== 'number' ? (
-          part.replace(/\{clock\}/gi, '')
+        {at === -1 || !clock ? (
+          part.replace(/\{clock\}/gi, clock)
         ) : (
           <>
             {part.slice(0, at)}
-            {/* Its own component, with its own second. The container used to
-                advance a clock in state and re-render this entire strip sixty
-                times a minute to change four characters. */}
-            <TickerClock deadlineMs={entry.deadlineMs} urgent={urgent} />
+            <span className={`mtt-ticker__clock${urgent ? ' mtt-ticker__clock--urgent' : ''}`}>
+              {clock}
+            </span>
             {part.slice(at + CLOCK_TOKEN.length)}
           </>
         )}
@@ -239,7 +239,7 @@ export function TickerRail({
                 {items.map((entry, index) => (
                   <span className="mtt-ticker__item" key={`${copy}-${entry.id}`}>
                     {index > 0 && <span className="mtt-ticker__pip" />}
-                    {itemNodes(entry, urgent && index === 0)}
+                    {itemNodes(entry, now, urgent && index === 0)}
                   </span>
                 ))}
               </span>

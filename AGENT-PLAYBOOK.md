@@ -1,3 +1,5 @@
+> **Current owner instruction (September 16):** Read [AGENTS.md](AGENTS.md) before this historical playbook. Task `01a0ab39-71ca-7821-825d-4943a0a6a0a3` retains sole integration and publication authority. Use the original GitHub/Vercel/Hetzner paths. After verified and reported restoration, that owner may deliver the six pending workstreams in the exact order recorded there. Retired local/custom pipelines and external error telemetry must not return. Historical autopilot, automatic-merge, watchdog and repair directions below are inactive. Preserve pending application work and use the configured credential store.
+
 # RULE 0 — "EM BARS" MEANS EM DASHES (—), NOT HAMBURGER BARS
 
 Dan, 2026-08-20: **"forbid the use of em bars anywhere."** He means the
@@ -499,20 +501,9 @@ node scripts/ci/pr-status.mjs            # the PR for your current branch
 node scripts/ci/pr-status.mjs 3163       # by number      --all for every open PR
 ```
 
-It names the failing **job** and **step** and distinguishes required-check
-conclusions from successful execution. Exit `0` means `GREEN` (every required
-job context reported success) or `CHECKS_ACCEPTED` (GitHub accepts the observed
-conclusions, but some required jobs were skipped or neutral). Neither state
-authorizes a merge or deployment. Exit `1` is red, `2` is an observed active run,
-`3` is unknown, and `4` is conflicting. **Use the exit code and JSON `state`;
-do not parse the prose.**
-
-JSON `requiredCheckStatus` reports `SATISFIED`, `UNSATISFIED`, `RUNNING`, or
-`UNKNOWN` from Actions observations. `requiredExecutionStatus` separately
-reports `SUCCESSFUL`, `NOT_PROVEN`, or `UNKNOWN`; `requiredProblems` retains
-all contexts lacking a completed success, including accepted skips. An absent
-terminal context remains unknown. A real required-job failure is red even
-while sibling jobs run. Other GitHub merge requirements remain separate.
+It names the failing **job** and **step**, says whether that check actually
+blocks the merge, and exits `0` green / `1` red / `2` running / `3` unknown /
+`4` conflicting. **Branch on the exit code; do not parse the prose.**
 
 **Do not reach past it for `gh` or for curl.** Three routes exist and two of
 them answer confidently and wrongly:

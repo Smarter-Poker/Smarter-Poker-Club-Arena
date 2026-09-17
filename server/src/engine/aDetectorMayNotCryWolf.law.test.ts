@@ -33,9 +33,7 @@ const MANAGER_BASE = read('../tournament/TournamentManagerBase.ts');
 
 /** The body of `catch (err) {` inside the post-commit obligations retry loop. */
 function obligationsRetryCatch(): string {
-  // Include the complete retry loop regardless of the observation wrapper
-  // around its awaited processor. The financial-alert prohibition is intact.
-  const start = SETTLEMENT.indexOf('while (!obligationsApplied && mayStillDrain())');
+  const start = SETTLEMENT.indexOf('const outcome = await processHandPostCommitObligations');
   expect(start, 'the post-commit obligations retry loop has moved').toBeGreaterThan(-1);
   const end = SETTLEMENT.indexOf('postCommitStateCanReflect = this.lifecycleCanMutate();', start);
   expect(end, 'the end of the obligations loop has moved').toBeGreaterThan(start);
@@ -54,7 +52,7 @@ describe('the obligations alarm belongs to the give-up, not to attempt 1', () =>
     expect(loop).not.toContain('raiseFinancialAlert');
   });
 
-  it('still reports every attempt to Sentry, so the transient stays visible', () => {
+  it('still reports every attempt to local diagnostics, so the transient stays visible', () => {
     expect(obligationsRetryCatch()).toMatch(
       /reportError\(\s*err,\s*'ServerTableEngine\.post_commit_obligations_pending'/
     );

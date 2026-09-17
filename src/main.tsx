@@ -50,7 +50,6 @@ import './styles/reducedMotion.css';
 import { initAntiGravity } from './core/AntiGravityBoot';
 import { initMasterBus } from './core/MasterBus';
 import { initIdentityDNA } from './core/IdentityDNA';
-import { initSentry } from './core/SentryInit';
 import { initWebVitals } from './core/WebVitals';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
@@ -109,8 +108,6 @@ window.addEventListener('unhandledrejection', (event) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  INSTANT RENDER — Boot runs in background, React paints IMMEDIATELY
 // ═══════════════════════════════════════════════════════════════════════════════
-// PHASE 0: Sentry + WebVitals (synchronous, fast)
-initSentry();
 initWebVitals();
 
 // PHASE 1: AntiGravity env-var check (synchronous — no network calls)

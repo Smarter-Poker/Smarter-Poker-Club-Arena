@@ -201,7 +201,7 @@ describe('fetchAllRows', () => {
 
   it('flags incomplete on a PERSISTENT page error instead of passing off a partial result', async () => {
     // The first version returned a bare T[] here — a short array
-    // indistinguishable from a complete one, behind a Sentry event nobody
+    // indistinguishable from a complete one, behind a error reporting event nobody
     // blocks on. That re-armed the exact failure it was written to fix.
     //
     // WAS: failed on call 2 only. Since 2026-09-02 a page is retried

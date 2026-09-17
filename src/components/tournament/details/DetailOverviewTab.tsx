@@ -57,7 +57,6 @@ import {
   ordinal,
   placePrize,
   resolvePayoutStructure,
-  tournamentRowUnitCents,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
 import { reportError } from '../../../utils/errorReporter';
@@ -551,11 +550,11 @@ export default function DetailOverviewTab({
           prizeValue: Number.isFinite(recorded)
             ? recorded
             : row && pool !== null
-              ? placePrize(pool, payoutStructure, row.place, tournamentRowUnitCents(tournament))
+              ? placePrize(pool, payoutStructure, row.place)
               : 0,
         };
       });
-  }, [isCompleted, entries, payoutStructure, prize.ladder, tournament]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder]);
 
   /**
    * The runners-up list under the podium.
@@ -842,7 +841,7 @@ export default function DetailOverviewTab({
               </div>
             ) : satError ? (
               /* There was no error branch at all: a failed fetch reported to
-                 Sentry and then rendered the empty state, telling the player
+                 error reporting and then rendered the empty state, telling the player
                  as a fact that this event has no satellites. */
               <div className="dov-band__note dov-band__note--error" role="alert">
                 <span>{satError}</span>

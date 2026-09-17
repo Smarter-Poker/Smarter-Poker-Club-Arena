@@ -35,7 +35,7 @@ const assetRoot = `${import.meta.env.BASE_URL}assets/club-buttons/game-cards/plo
 export const SPADE_PLO_CANVAS: LayeredCanvas = { width: 1177, height: 1337 };
 
 export const SPADE_PLO_ASSETS = {
-  chassis: `${assetRoot}/chassis-b0b05b302c99.png`,
+  chassis: `${assetRoot}/chassis.png`,
   reference: `${assetRoot}/source/approved-reference.png`,
 } as const;
 

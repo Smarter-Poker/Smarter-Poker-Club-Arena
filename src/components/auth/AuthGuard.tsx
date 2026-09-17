@@ -58,7 +58,6 @@ function wasRecentlyAuthenticated(): boolean {
 
 interface AuthGuardProps {
   children: ReactNode;
-  loadingFallback?: ReactNode;
   /**
    * Rendered INSTEAD of redirecting when there is no session. Used by the
    * arena root so a signed-out visitor (and Googlebot) gets the public
@@ -129,7 +128,7 @@ function isDefinitelyAuthenticated(): boolean {
   return false;
 }
 
-export function AuthGuard({ children, loadingFallback, publicFallback }: AuthGuardProps) {
+export function AuthGuard({ children, publicFallback }: AuthGuardProps) {
   // CRITICAL: Check ALL evidence sources synchronously on mount.
   // This prevents the loading flash on navigation between protected routes.
   const initiallyAuthenticated = isDefinitelyAuthenticated();
@@ -316,7 +315,6 @@ export function AuthGuard({ children, loadingFallback, publicFallback }: AuthGua
 
   // Show loading state
   if (isLoading) {
-    if (loadingFallback) return <>{loadingFallback}</>;
     return (
       <div
         style={{

@@ -1,23 +1,4 @@
-<!-- BEGIN CURRENT OWNER CATEGORY GUIDE 2026-09-16 -->
-# Current owner instructions — all agent vendors
-
-At task start or resume, and before claiming readiness, read the latest
-[/Users/smarter.poker/Documents/AGENTS.md](/Users/smarter.poker/Documents/AGENTS.md)
-and
-[/Users/smarter.poker/Documents/PIPELINE-PRE-SUBMISSION.md](/Users/smarter.poker/Documents/PIPELINE-PRE-SUBMISSION.md)
-before the older repository instructions below. This applies to Codex, Claude,
-Gemini, Antigravity and their delegated agents in every checkout or alias.
-The current owner policy takes precedence where older instructions conflict.
-
-Use only the guide's relevant change-category profile and existing verification
-path; do not rerun the whole historical blocker list. Preserve required checks
-and distinguish source review, tests, merge, publication and actual live proof.
-Before claiming ready after a new failure, retain its exact source/run evidence,
-repair its cause with the relevant regression, and update its existing shared
-row (add one only for a new cause). Coordinate with the shared guide's current
-writer; do not copy its registry into this repository or treat an unrun check
-as passed. Use its small readiness template in the existing PR or handoff.
-<!-- END CURRENT OWNER CATEGORY GUIDE 2026-09-16 -->
+> **Current owner instruction (September 16):** Read [AGENTS.md](AGENTS.md) before this historical playbook. Task `01a0ab39-71ca-7821-825d-4943a0a6a0a3` retains sole integration and publication authority. Use the original GitHub/Vercel/Hetzner paths. After verified and reported restoration, that owner may deliver the six pending workstreams in the exact order recorded there. Retired local/custom pipelines and external error telemetry must not return. Historical autopilot, automatic-merge, watchdog and repair directions below are inactive. Preserve pending application work and use the configured credential store.
 
 # Club Arena -- Agent Instructions
 
@@ -231,13 +212,10 @@ by accident:
    its own output, so a second pass re-encodes nothing; before 2026-09-04 a
    second pass re-encoded 90 files and lost quality every time.
 
-**Source maps go to Sentry and never to players.** `SENTRY_AUTH_TOKEN` belongs
-to `publish-club-arena.yml` and nowhere else. It used to sit in `ci.yml`, so
-the plugin uploaded maps for the pull-request bundle that gets thrown away,
-uploaded none for the bundle that ships, and - because
-`filesToDeleteAfterUpload` only runs on a successful upload - shipped 267 `.map`
-files (27MB) to players on every deploy. The publisher now strips them
-unconditionally and refuses to publish a survivor.
+**Source maps never go to players.** Both application targets disable maps.
+The publisher still strips maps unconditionally and refuses to publish a survivor.
+Error diagnostics use the existing console and durable financial-alert paths;
+no external error-telemetry SDK, upload token, or event budget is required.
 
 Full reasoning and every measurement:
 `docs/changelog/2026-09-04-push-to-live-under-six-minutes.md`.
@@ -437,14 +415,6 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - ALL game logic lives here: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
 - Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
-- Sentry: its OWN project `club-arena-engine` (since 2026-09-04) and an
-  SDK-side event budget (`server/src/services/sentryEventBudget.ts`, 10/min per
-  fingerprint, 60/min overall, dropped counts summarised every 10 min). An
-  engine loop burned the whole org quota in August and blinded every other
-  app for three weeks. Never point `SENTRY_DSN` back at the hub project, never
-  remove the budget from `beforeSend`, and do not raise its limits to make a
-  loop visible: the summary event already names it.
-  `docs/changelog/2026-09-04-engine-sentry-budget.md`.
 - The engine is ONE core and horse Monte Carlo was 90% of it (profiled
   2026-09-04). `server/src/engine/EquityLoadGovernor.ts` scales the sample
   when the event loop saturates; `/health.equityGovernor.scale < 1` means the
@@ -1552,56 +1522,6 @@ A pull request that adds a `fn_*_repair_*`, `fn_*_backpay_*`, `fn_*_redrive_*`,
 money is refused, and the refusal is not negotiable by explaining that the
 underlying bug is hard. If the underlying bug is hard, say so and stop - do not
 ship the plaster and call the defect handled.
-
----
-
-## 10.13 ONE DIAMOND IS ONE CENT, ONE CHIP IS ONE DOLLAR, AND THE RATE IS A ROW (Dan, 2026-09-07, BINDING)
-
-**Dan, verbatim: "1 diamond = 1 cent, 1 chip = 1 dollar. So adjust everything
-accordingly."**
-
-So 100 diamonds are one chip. That figure lives in exactly one place:
-`ca_bridge_rate` (id 1, `diamonds_per_chip`, history table written by trigger),
-read through `fn_ca_bridge_rate()`. Nothing else in this repo or this database
-may carry its own diamonds-to-chips number - not a constant in a function, not
-a literal in a component, not a "roughly 100" in a comment that later becomes
-code. Read the row.
-
-### Why it is written down
-
-Until 2026-09-07 the owner bridge `fn_mint_chips_from_diamonds` carried
-`v_chips := v_diamonds * 100` in its body - the rate inverted, ten thousand
-times the ruling. Owner-only, fired three times ever (3 diamonds became 300
-chips on 2026-08-21, inside the acknowledged baseline), corrected forward by
-migration `20260907233813` and nothing clawed back (10.9). A rate typed into a
-function is a rate nobody re-reads; a rate in a row is one the history table
-watches. The Diamond Wheel (`docs/changelog/2026-09-07-diamond-wheel.md`)
-prices every spin from that row and refuses a price that is not a whole
-multiple of it.
-
-### Rules
-
-1. **The rate is `fn_ca_bridge_rate()`.** Any new path that turns diamonds
-   into chips or chips into diamonds reads it, and any conversion that does not
-   land on whole cents is refused, never rounded in the player's favour or the
-   house's.
-2. **Changing the number is Dan's** (10.9: what future events owe is his). An
-   agent may read it, never `UPDATE` it.
-3. **Whole cents only.** A chip amount has two decimals; a diamond amount has
-   none. A path that produces a fractional diamond is a bug.
-4. **A closed-loop exception is a written one.** Player diamond-to-chip
-   conversion was revoked on 2026-08-19 and the Diamond Standard treats the
-   closed loop as a hard property (D5, DR16). The wheel reopens it with dice,
-   under the 20 percent edge and the never-pay-more-than-intake gate pinned by
-   `tests/the-wheel-never-pays-more-than-it-takes-in.law.test.ts`. On
-   2026-09-08 Dan ruled the wheel's open items were the agent's, not his
-   ("NOTHING IS MINE, THESE ARE ALL 100% YOURS"), and asked for two alternates:
-   Diamond Plinko and Diamond Crash (`20260908010241`, pinned by
-   `tests/the-games-never-pay-more-than-they-take-in.law.test.ts`). All three
-   are open on every host, purchased diamonds only, and named as the ONLY
-   exception in `docs/DIAMOND-ACCOUNTING-STANDARD.md` DR16a. Do not add a
-   fourth bridge on the strength of these three: a new game is a new DR16a
-   row, a new law test, and Dan's word.
 
 ---
 

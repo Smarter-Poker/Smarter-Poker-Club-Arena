@@ -49,7 +49,7 @@ const CHARGE_DOORS: Array<[string, string, string]> = [
   ['rabbit hunt', SETTLEMENT, 'fn_consume_rabbit_hunt_v2'],
   ['time banks', TABLE_PAGE, 'fn_purchase_time_banks_v2'],
   ['throwables', THROWABLES, 'fn_use_throwable_v2'],
-  ['skins and card decks', THEME, 'fn_purchase_feature_v2'],
+  ['skins and card decks', THEME, 'fn_purchase_feature'],
 ];
 
 describe('every side feature is reachable at a Diamond table', () => {

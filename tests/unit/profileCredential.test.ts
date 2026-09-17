@@ -240,8 +240,7 @@ describe('the P/L chart draws hand results, not wallet flow', () => {
   });
 
   it('achievement progress uses the client definitions /achievements uses', () => {
-    expect(PROFILE).toContain('achievementService.getUserAchievements(requestedUserId)');
-    expect(PROFILE).toContain('activeProfileUserIdRef.current !== requestedUserId');
+    expect(PROFILE).toContain('achievementService.getUserAchievements(authUser.id)');
     expect(PROFILE).not.toContain('achievement:training_achievement_definitions(');
     expect(PROFILE).not.toContain('max_progress:threshold');
   });

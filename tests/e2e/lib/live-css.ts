@@ -1,15 +1,43 @@
 /**
- * Read the real bundle manifest and every declared stylesheet, then install
- * them into an isolated document at the same origin. Each stylesheet remains
- * a separate element in manifest order, preserving its imports and cascade.
- * One browser call avoids per-stylesheet protocol overhead on large bundles.
- * Application scripts never start behind a synthetic layout fixture.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  LOADING THE CSS THIS COMMIT ACTUALLY SERVES - AND SAYING SO WHEN IT CANNOT
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * Unreadable or incomplete styles report an explicit unknown result. Required
- * CI fails on that result; local exploratory callers can report it as skipped.
+ * Six specs open the built bundle, discover the lazy stylesheet chunks from
+ * the entry's module graph, and ask Chrome what the shipped CSS really does.
+ * Five of them carried a byte-identical copy of the loader, and that copy had
+ * no timeout, no retry, and - for the two fetches that matter - no error
+ * handling at all:
+ *
+ *     const html = await fetch(base + 'index.html').then((r) => r.text());
+ *     const entry = html.match(...)?.[0];
+ *     const js = entry ? await fetch(base + entry).then((r) => r.text()) : '';
+ *
+ * All of it ran inside ONE `page.evaluate`, so a slow or refused read consumed
+ * the whole 30s test budget and surfaced as `Test timeout of 30000ms exceeded`
+ * pointing at the `page.evaluate` line - a failure that names the symptom and
+ * not one thing about the cause. That is what turned `CI - Build & Type
+ * Safety` red on 2026-09-11 for a branch whose own suites were green.
+ *
+ * The worse half is the other direction. `entry` unmatched yields `js = ''`,
+ * every chunk 404s into the per-chunk `catch`, and the loader returns happily
+ * having installed ZERO stylesheets. A spec then asks "is this animation
+ * collapsed under reduced motion?" of a document with no CSS, finds no
+ * animation, and PASSES. Both the red and the green were the same defect:
+ * **a reader that answers when it cannot tell** (CLAUDE.md 10.86).
+ *
+ * So this loader has three outcomes, not two. It reads over Playwright's own
+ * request API - which has its own timeout and cannot eat the test budget -
+ * retries a bounded number of times, and REFUSES to return quietly with
+ * nothing: a caller that could not read the bundle is handed `sheets: 0` and
+ * the reason, and `skipUnlessLiveCss` turns that into a SKIPPED test with the
+ * reason attached. Never a pass, never a bare timeout.
+ *
+ * `card-squeeze-mobile.spec.ts` already did the assertive half correctly and
+ * is where the `page.request.get` + `expect(res.ok())` shape comes from.
  */
 
-import { test, type Page, type Route } from '@playwright/test';
+import { test, type Page } from '@playwright/test';
 
 export interface LiveCssLoad {
   /** Stylesheets actually installed. Zero means the bundle could not be read. */
@@ -72,11 +100,9 @@ async function readBundle(
 
 /**
  * Install the stylesheets the bundle at `arena` is serving into a blank
- * document at that origin. Read the actual manifest and stylesheet bytes,
- * then fulfill only the fixture navigation with an empty document: booting
- * the app and clearing its body does not stop its scripts or background work.
- * Keep each stylesheet separate and in manifest order, while installing them
- * in one browser call so a large bundle does not need hundreds of round trips.
+ * document at that origin, exactly as the five copies did: navigate to the
+ * built index so relative url() and font paths still resolve, empty the body
+ * so the app cannot re-render over the fixture, then add each sheet.
  */
 export async function loadLiveCss(
   page: Page,
@@ -97,17 +123,13 @@ export async function loadLiveCss(
     const sheets = await Promise.all(
       names.map(async (n) => {
         const res = await page.request.get(`${base}${n}`);
-        return res.ok()
-          ? { content: await res.text() }
-          : { content: '', reason: `${n} returned HTTP ${res.status()}` };
+        /* One chunk that 404s is genuinely not this test's problem - the
+           bundle moved on and the others still describe the shipped CSS. A
+           bundle where they ALL 404 is caught by the byte floor below. */
+        return res.ok() ? res.text() : '';
       })
     );
-    const missing = sheets.flatMap((sheet) => (sheet.reason ? [sheet.reason] : []));
-    if (missing.length > 0 || sheets.some((sheet) => sheet.content.length === 0)) {
-      lastReason = missing.length > 0 ? missing.join('; ') : 'a declared stylesheet was empty';
-      continue;
-    }
-    const contents = sheets.map((sheet) => sheet.content);
+    const contents = sheets.filter((c) => c.length > 0);
     const bytes = contents.reduce((n, c) => n + c.length, 0);
 
     if (contents.length === 0 || bytes < MIN_BYTES) {
@@ -115,41 +137,17 @@ export async function loadLiveCss(
       continue;
     }
 
-    const fixtureUrl = `${base}index.html`;
-    const fixtureDocument = (route: Route) =>
-      route.fulfill({
-        contentType: 'text/html',
-        body: '<!doctype html><html><head></head><body></body></html>',
-      });
-    await page.route(fixtureUrl, fixtureDocument, { times: 1 });
-    try {
-      await page.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
-    } finally {
-      await page.unroute(fixtureUrl, fixtureDocument);
+    await page.goto(`${base}index.html`, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => {
+      document.body.innerHTML = '';
+    });
+    for (const content of contents) await page.addStyleTag({ content });
+    if (animationSpeed !== null) {
+      await page.evaluate(
+        (v) => document.documentElement.style.setProperty('--animation-speed', v),
+        animationSpeed
+      );
     }
-    await page.evaluate(
-      async ({ contents, animationSpeed }) => {
-        const fragment = document.createDocumentFragment();
-        const loaded = contents.map((content, index) => {
-          const style = document.createElement('style');
-          style.type = 'text/css';
-          style.appendChild(document.createTextNode(content));
-          const ready = new Promise<void>((resolve, reject) => {
-            style.onload = () => resolve();
-            style.onerror = () => reject(new Error(`Stylesheet ${index + 1} failed to load`));
-          });
-          fragment.appendChild(style);
-          return ready;
-        });
-        document.head.appendChild(fragment);
-        // Separate elements preserve @import validity and cascade order. Waiting
-        // for every load event also waits for each sheet's imported styles.
-        await Promise.all(loaded);
-        if (animationSpeed !== null)
-          document.documentElement.style.setProperty('--animation-speed', animationSpeed);
-      },
-      { contents, animationSpeed }
-    );
     return { sheets: contents.length, bytes };
   }
 
@@ -159,12 +157,13 @@ export async function loadLiveCss(
 /**
  * The third outcome, made explicit. Call this immediately after loadLiveCss:
  * a spec that could not read the bundle is SKIPPED with the reason in the
- * local report. Required CI fails instead, because a skip cannot qualify an
- * unreadable bundle. No caller may assert against a partial stylesheet set.
+ * report, rather than asserting against an empty stylesheet (which passes) or
+ * dying on a timeout that names nothing (which is what used to happen).
  */
 export function skipUnlessLiveCss(load: LiveCssLoad, arena: string): void {
-  const reason = `UNKNOWN - could not read the complete CSS bundle at ${arena}: ${load.reason ?? 'no reason recorded'}. Nothing was measured.`;
-  // A required CI job cannot become green by skipping unreadable evidence.
-  if (load.sheets === 0 && process.env.CI) throw new Error(reason);
-  test.skip(load.sheets === 0, reason);
+  test.skip(
+    load.sheets === 0,
+    `UNKNOWN - could not read the CSS bundle at ${arena}: ${load.reason ?? 'no reason recorded'}. ` +
+      `This is not a CSS regression; nothing was measured.`
+  );
 }

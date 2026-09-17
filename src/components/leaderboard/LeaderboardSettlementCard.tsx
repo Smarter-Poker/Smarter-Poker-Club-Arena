@@ -1,5 +1,4 @@
 import type { LeaderboardSettlementStatus } from '../../services/LeaderboardService';
-import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
 import './LeaderboardSettlementCard.css';
 
 interface LeaderboardSettlementCardProps {
@@ -44,17 +43,6 @@ const STATE_COPY = {
   },
 } as const;
 
-/* The word in the painted pill slot, in the master's own inks: a verified
-   payout is green, a delayed one red, the live round lit blue, the rest muted. */
-const STATE_INK: Record<LeaderboardSettlementStatus['state'], ConsoleInk> = {
-  not_published: 'muted',
-  disabled: 'muted',
-  open: 'blue',
-  pending: 'gold',
-  failed: 'red',
-  paid: 'green',
-};
-
 function formatUtcDate(value: string): string {
   const parsed = new Date(`${value}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -76,43 +64,25 @@ export function LeaderboardSettlementCard({
 }: LeaderboardSettlementCardProps) {
   if (loading && !status) {
     return (
-      <SpadeConsole
-        as="section"
-        className="lb-settlement-card is-loading"
-        eyebrow="Settlement Desk"
-        title="Reading The Settlement"
-        pill="Reading"
-        pillInk="muted"
-        foot="foot"
-        aria-label="Leaderboard Settlement"
-      >
+      <section className="lb-settlement-card is-loading" aria-label="Leaderboard Settlement">
         <span className="lb-settlement-skeleton wide" />
         <span className="lb-settlement-skeleton" />
-      </SpadeConsole>
+      </section>
     );
   }
 
   if (error && !status) {
     return (
-      <SpadeConsole
-        as="section"
-        className="lb-settlement-card is-error"
-        eyebrow="Settlement Desk"
-        title="Could Not Verify"
-        pill="Unverified"
-        pillInk="red"
-        foot="foot"
-        aria-label="Leaderboard Settlement"
-      >
-        <p className="sc-copy lb-settlement-body">
-          Settlement Status Could Not Be Verified. {error}
-        </p>
-        <div className="lb-settlement-actions">
-          <button type="button" className="lb-settlement-word sc-ink--white" onClick={onRetry}>
-            Retry Status
-          </button>
+      <section className="lb-settlement-card is-error" aria-label="Leaderboard Settlement">
+        <div>
+          <span className="lb-settlement-kicker">Settlement Desk</span>
+          <h2>Settlement Status Could Not Be Verified</h2>
+          <p>{error}</p>
         </div>
-      </SpadeConsole>
+        <button type="button" onClick={onRetry}>
+          Retry Status
+        </button>
+      </section>
     );
   }
 
@@ -121,28 +91,27 @@ export function LeaderboardSettlementCard({
   const copy = STATE_COPY[status.state];
   const ownReceipt = status.receipts.find((receipt) => receipt.user_id === currentUserId);
   const ownerMessage = status.can_manage ? status.failure?.owner_message : null;
-  const showRefresh = !!error;
-  const showReview = !!(status.can_manage && onReviewSetup && status.state !== 'paid');
 
   return (
-    <SpadeConsole
-      as="section"
+    <section
       className={`lb-settlement-card state-${status.state}`}
-      eyebrow="Settlement Desk"
-      title={copy.title}
-      pill={copy.label}
-      pillInk={STATE_INK[status.state]}
-      foot="foot"
       aria-label="Leaderboard Settlement"
       aria-live="polite"
     >
       <div className="lb-settlement-main">
-        <p className="sc-copy lb-settlement-body">{ownerMessage || copy.body}</p>
-        <span className="lb-settlement-window sc-ink--muted">
+        <div className="lb-settlement-heading">
+          <div>
+            <span className="lb-settlement-kicker">Settlement Desk</span>
+            <h2>{copy.title}</h2>
+          </div>
+          <span className="lb-settlement-state">{copy.label}</span>
+        </div>
+        <p>{ownerMessage || copy.body}</p>
+        <span className="lb-settlement-window">
           {formatUtcDate(status.period_start)} To {formatUtcDate(status.period_end)} · UTC
         </span>
         {status.state === 'failed' && status.failure && (
-          <span className="lb-settlement-retry sc-ink--red">
+          <span className="lb-settlement-retry">
             Attempt {status.failure.attempt_count.toLocaleString('en-US')} Recorded · Automatic
             Retry Active
           </span>
@@ -150,19 +119,15 @@ export function LeaderboardSettlementCard({
       </div>
 
       <dl className="lb-settlement-ledger">
-        <div className="lb-settlement-row">
-          <dt className="lb-settlement-dt sc-ink--blue">
-            {status.state === 'paid' ? 'Paid' : 'Prize Pool'}
-          </dt>
-          <dd className="lb-settlement-dd sc-ink--silver">
+        <div>
+          <dt>{status.state === 'paid' ? 'Paid' : 'Prize Pool'}</dt>
+          <dd>
             {(status.batch?.total_paid ?? status.planned_total).toLocaleString('en-US')} Chips
           </dd>
         </div>
-        <div className="lb-settlement-row">
-          <dt className="lb-settlement-dt sc-ink--blue">
-            {status.state === 'paid' ? 'Winners' : 'Program'}
-          </dt>
-          <dd className="lb-settlement-dd sc-ink--silver">
+        <div>
+          <dt>{status.state === 'paid' ? 'Winners' : 'Program'}</dt>
+          <dd>
             {status.state === 'paid'
               ? (status.batch?.winner_count ?? 0).toLocaleString('en-US')
               : status.program
@@ -171,44 +136,36 @@ export function LeaderboardSettlementCard({
           </dd>
         </div>
         {status.batch && (
-          <div className="lb-settlement-row">
-            <dt className="lb-settlement-dt sc-ink--blue">Funding</dt>
-            <dd className="lb-settlement-dd sc-ink--silver">Promo Only</dd>
+          <div>
+            <dt>Funding</dt>
+            <dd>Promo Only</dd>
           </div>
         )}
       </dl>
 
       {ownReceipt && (
         <div className="lb-settlement-receipt">
-          <span className="lb-settlement-receipt-label sc-ink--blue">Your Verified Receipt</span>
-          <strong className="lb-settlement-amount sc-ink--green">
-            {ownReceipt.payout_amount.toLocaleString('en-US')} Chips
-          </strong>
-          <small className="lb-settlement-ref sc-ink--muted">
+          <span>Your Verified Receipt</span>
+          <strong>{ownReceipt.payout_amount.toLocaleString('en-US')} Chips</strong>
+          <small>
             Rank {ownReceipt.rank} · Receipt {ownReceipt.id.slice(0, 8).toUpperCase()}
           </small>
         </div>
       )}
 
-      {(showRefresh || showReview) && (
-        <div className="lb-settlement-actions">
-          {showRefresh && (
-            <button type="button" className="lb-settlement-word sc-ink--white" onClick={onRetry}>
-              Refresh Status
-            </button>
-          )}
-          {showReview && (
-            <button
-              type="button"
-              className="lb-settlement-word sc-ink--white"
-              onClick={onReviewSetup}
-            >
-              Review Prize Setup
-            </button>
-          )}
-        </div>
-      )}
-    </SpadeConsole>
+      <div className="lb-settlement-actions">
+        {error && (
+          <button type="button" onClick={onRetry}>
+            Refresh Status
+          </button>
+        )}
+        {status.can_manage && onReviewSetup && status.state !== 'paid' && (
+          <button type="button" onClick={onReviewSetup}>
+            Review Prize Setup
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 

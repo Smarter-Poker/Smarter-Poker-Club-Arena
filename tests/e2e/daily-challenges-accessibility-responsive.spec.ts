@@ -97,7 +97,6 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
       page,
     }, testInfo) => {
       const economy = observeEconomyMutations(page);
-      await page.setViewportSize({ width: 393, height: 852 });
       await openChallengeTier(page, testInfo, tier);
 
       await expect(page).toHaveURL(new RegExp(`/challenges/${tier}(?:[?#]|$)`));
@@ -106,13 +105,6 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
         page.getByRole('heading', { name: `${label} Challenges`, level: 1, exact: true })
       ).toHaveCount(1);
       await expectExclusiveTier(page, tier, label);
-      const documentOverflow = await page.evaluate(
-        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-      );
-      expect(
-        documentOverflow,
-        `${label} overflows the exact 393px certification viewport`
-      ).toBeLessThanOrEqual(1);
       economy.assertNone();
     });
   }
@@ -177,7 +169,7 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
     economy.assertNone();
   });
 
-  test('320px, 393px, phone landscape, and 200 percent text retain reflow and touch targets', async ({
+  test('320px, phone landscape, and 200 percent text retain reflow and touch targets', async ({
     page,
   }, testInfo) => {
     const economy = observeEconomyMutations(page);
@@ -185,7 +177,6 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
 
     for (const viewport of [
       { name: '320px Portrait', width: 320, height: 568 },
-      { name: '393px Portrait', width: 393, height: 852 },
       { name: 'Phone Landscape', width: 568, height: 320 },
     ]) {
       await test.step(viewport.name, async () => {

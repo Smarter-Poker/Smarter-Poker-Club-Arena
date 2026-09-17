@@ -11,9 +11,8 @@ import { isThrowableEventId } from '../throwables/identity';
  * - Every item carries its own PHYSICS profile (flight path), IMPACT profile
  *   (what happens on landing), SOUND key (procedural Web Audio recipe in
  *   ThrowableSoundService), weight (screen shake), spin, and splat color.
- * - VIP: 500 free throws per month, then 1 Diamond each.
- * - Lifetime VIP: unlimited throws with no pack-credit or Diamond spend.
- *   Both paths are server-authoritative through fn_use_throwable_v2.
+ * - VIP: 500 free throws per month, then 1 Diamond each (server-authoritative
+ *   via fn_use_throwable — advisory-locked, pack-credit aware).
  *
  * Wire format is unchanged: `[THROW:<id>:<seat>]` broadcast over the engine
  * WebSocket chat channel. IDs match the storage filenames exactly
@@ -21,7 +20,6 @@ import { isThrowableEventId } from '../throwables/identity';
  */
 
 import { supabase } from '../lib/supabase';
-import { resolveVipStatus } from '../utils/vipStatus';
 import stillManifest from '../throwables/stills.generated.json';
 
 const premiumStills: Record<string, Record<string, string>> = stillManifest;
@@ -100,33 +98,12 @@ export interface ThrowEvent {
 
 export interface ThrowAllowance {
   isVip: boolean;
-  unlimited: boolean;
+  unlimited?: boolean;
   unavailable?: boolean;
   freeThrowsRemaining: number;
   /** Club-shop pack credits consumed before a diamond is charged. */
   packThrowsRemaining: number;
   diamondCost: number; // 0 if free throws available, otherwise 1
-}
-
-/** Convert database refusal codes into safe player-facing copy. */
-export function normalizeThrowableError(value: unknown): string {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ');
-  if (normalized.includes('insufficient') && normalized.includes('diamond')) {
-    return 'Insufficient Diamonds';
-  }
-  if (normalized.includes('authentication') || normalized.includes('not authenticated')) {
-    return 'Authentication Required';
-  }
-  if (normalized.includes('invalid throwable') || normalized.includes('not found')) {
-    return 'Throwable Not Found';
-  }
-  if (normalized.includes('wait') || normalized.includes('rate limit')) {
-    return 'Please Wait Before Sending Another Throwable';
-  }
-  return 'Could Not Send Reaction';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1255,7 +1232,9 @@ class ThrowableServiceClass {
     };
   }
 
-  /** Check the current server-backed throw entitlement. */
+  /**
+   * Check user's throw allowance (VIP gets 500 free/month)
+   */
   async getThrowAllowance(userId: string): Promise<ThrowAllowance> {
     try {
       const [profileResult, packResult] = await Promise.all([
@@ -1271,30 +1250,29 @@ class ThrowableServiceClass {
           .eq('feature', 'throwable'),
       ]);
       if (profileResult.error) throw profileResult.error;
+      if (packResult.error) throw packResult.error;
 
       const now = Date.now();
-      const profile = profileResult.data;
-      if (!profile) throw new Error('Profile unavailable');
-      const vipStatus = resolveVipStatus(profile);
-      if (vipStatus === 'lifetime') {
-        return {
-          isVip: true,
-          unlimited: true,
-          freeThrowsRemaining: 0,
-          packThrowsRemaining: 0,
-          diamondCost: 0,
-        };
-      }
-
-      // Lifetime exits before this check so an unrelated pack-ledger outage
-      // cannot downgrade an unlimited entitlement. Other members consume
-      // unexpired pack credits before any Diamond charge.
-      if (packResult.error) throw packResult.error;
       const packThrowsRemaining = (packResult.data || [])
         .filter((row) => !row.expires_at || Date.parse(row.expires_at) > now)
         .reduce((sum, row) => sum + Math.max(0, Number(row.uses_remaining) || 0), 0);
 
-      const isVip = vipStatus === 'vip';
+      const profile = profileResult.data;
+      if (!profile) throw new Error('Profile unavailable');
+      const isVip =
+        !!profile?.is_vip &&
+        (profile.vip_tier === 'lifetime' ||
+          !profile.vip_expires_at ||
+          Date.parse(profile.vip_expires_at) > now);
+      if (isVip && profile?.vip_tier === 'lifetime') {
+        return {
+          isVip: true,
+          unlimited: true,
+          freeThrowsRemaining: 0,
+          packThrowsRemaining,
+          diamondCost: 0,
+        };
+      }
 
       // Every member receives the calendar-month allowance; VIP raises it to 500.
       const monthStart = new Date();
@@ -1314,7 +1292,6 @@ class ThrowableServiceClass {
 
       return {
         isVip,
-        unlimited: false,
         freeThrowsRemaining: remaining,
         packThrowsRemaining,
         diamondCost: remaining > 0 || packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
@@ -1323,7 +1300,6 @@ class ThrowableServiceClass {
       return {
         unavailable: true,
         isVip: false,
-        unlimited: false,
         freeThrowsRemaining: 0,
         packThrowsRemaining: 0,
         diamondCost: DIAMOND_COST_PER_THROW,
@@ -1337,19 +1313,10 @@ class ThrowableServiceClass {
   async useThrowable(
     userId: string,
     throwableId: string
-  ): Promise<{
-    success: boolean;
-    error?: string;
-    requestId?: string;
-    idempotent?: boolean;
-    retrySameRequest?: boolean;
-  }> {
-    if (!userId) {
-      return { success: false, error: 'Authentication Required', retrySameRequest: false };
-    }
+  ): Promise<{ success: boolean; error?: string; requestId?: string }> {
     const throwable = THROWABLE_MAP.get(throwableId);
     if (!throwable) {
-      return { success: false, error: 'Throwable Not Found', retrySameRequest: false };
+      return { success: false, error: 'Throwable not found' };
     }
 
     try {
@@ -1371,25 +1338,18 @@ class ThrowableServiceClass {
       });
       if (!atomicErr && atomic && typeof (atomic as any).success === 'boolean') {
         this.finishUse(requestKey, requestId);
-        if ((atomic as any).success === true) {
-          return {
-            success: true,
-            requestId,
-            idempotent: (atomic as any).idempotent === true,
-          };
-        }
+        if ((atomic as any).success === true) return { success: true, requestId };
         return {
           success: false,
-          error: normalizeThrowableError((atomic as any).error),
-          retrySameRequest: false,
+          error: (atomic as any).error || 'Throw failed',
         };
       }
       // The legacy client-side fallback that used to live here is GONE.
       // (See 2026-08-17 session notes: fn_use_throwable is SECURITY DEFINER,
       // derives the user from auth.uid(), and is the only sanctioned path.)
-      return { success: false, error: 'Could Not Send Reaction', retrySameRequest: true };
+      return { success: false, error: 'Throw unavailable, please try again' };
     } catch {
-      return { success: false, error: 'Could Not Send Reaction', retrySameRequest: true };
+      return { success: false, error: 'Unexpected error' };
     }
   }
 

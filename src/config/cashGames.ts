@@ -174,7 +174,7 @@ export function templatePromiseLines(
     s.regular_ante === 'sb'
       ? 'One Small Blind From Each Dealt In Player'
       : s.regular_ante === 'bb'
-        ? 'One Big Blind, Paid By The Player In The Big Blind'
+        ? 'One Big Blind From Each Dealt In Player'
         : 'No Ante';
   const vpip =
     (s.vpip_floor ?? 0) > 0 ? `${s.vpip_floor}% Over ${s.vpip_window} Hands` : 'No VPIP Floor';

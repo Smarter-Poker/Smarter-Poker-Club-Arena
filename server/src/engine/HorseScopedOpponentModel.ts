@@ -37,15 +37,6 @@ export interface ScopedOpponentModelInput {
   readonly window: Readonly<{ fromMs: number; toMs: number; complete: boolean }>;
   readonly prior: Readonly<{ version: string; probabilities: Distribution }>;
 }
-/** A complete journal population is a different estimand from a complete
- * source window. Missing captures may bias it. It has no observing horse and
- * cannot authorize a policy for any horse, including the observed actor. */
-export type JournaledOpponentModelInput = Omit<
-  ScopedOpponentModelInput,
-  'observerKey' | 'window'
-> & {
-  readonly window: Readonly<{ fromMs: number; toMs: number; journalComplete: boolean }>;
-};
 export interface ScopedOpponentEstimate {
   readonly policyVersion: typeof SCOPED_MODEL_POLICY.version;
   readonly policyDigest: string;
@@ -118,28 +109,12 @@ const fingerprint = (o: QualifiedAdaptiveObservation) =>
 export function buildScopedOpponentModel(
   input: ScopedOpponentModelInput
 ): ScopedOpponentModelResult {
-  return fitScopedOpponentModel(input, false);
-}
-
-export function buildJournaledOpponentModel(input: JournaledOpponentModelInput) {
-  return Object.freeze({
-    population: 'journaled_qualified_observations' as const,
-    sourceCoverage: 'not_established' as const,
-    activationAuthorized: false as const,
-    model: fitScopedOpponentModel(input, true),
-  });
-}
-
-function fitScopedOpponentModel(
-  input: ScopedOpponentModelInput | JournaledOpponentModelInput,
-  journalOnly: boolean
-): ScopedOpponentModelResult {
   if (
     !input ||
     !Array.isArray(input.observations) ||
     !digestKey(input.scopeKey) ||
     !digestKey(input.opponentKey) ||
-    (!journalOnly && !digestKey((input as ScopedOpponentModelInput).observerKey)) ||
+    !digestKey(input.observerKey) ||
     !['human', 'horse_policy'].includes(input.cohort) ||
     !['training', 'holdout'].includes(input.partition) ||
     !input.window ||
@@ -148,9 +123,7 @@ function fitScopedOpponentModel(
     input.window.fromMs < 0 ||
     input.window.toMs <= input.window.fromMs ||
     input.window.toMs - input.window.fromMs > ADAPTIVE_OBSERVATION_HORIZON_MS ||
-    (journalOnly
-      ? typeof (input as JournaledOpponentModelInput).window.journalComplete !== 'boolean'
-      : typeof (input as ScopedOpponentModelInput).window.complete !== 'boolean') ||
+    typeof input.window.complete !== 'boolean' ||
     !input.prior ||
     typeof input.prior.version !== 'string' ||
     !/^[A-Za-z0-9_.:-]{1,128}$/.test(input.prior.version) ||
@@ -165,14 +138,8 @@ function fitScopedOpponentModel(
       1e-10
   )
     return unavailable('invalid_input');
-  if (
-    journalOnly
-      ? !(input as JournaledOpponentModelInput).window.journalComplete
-      : !(input as ScopedOpponentModelInput).window.complete
-  )
-    return unavailable('incomplete_window');
-  if (!journalOnly && input.opponentKey === (input as ScopedOpponentModelInput).observerKey)
-    return unavailable('self_observation');
+  if (!input.window.complete) return unavailable('incomplete_window');
+  if (input.opponentKey === input.observerKey) return unavailable('self_observation');
   if (input.observations.length > SCOPED_MODEL_POLICY.maxInputObservations)
     return unavailable('input_budget_exceeded');
   const unique = new Map<
@@ -307,7 +274,6 @@ function fitScopedOpponentModel(
       ? 'estimated'
       : 'insufficient_evidence';
   const identity = [
-    ...(journalOnly ? ['journaled-population-v1'] : []),
     SCOPED_MODEL_POLICY,
     input.scopeKey,
     input.opponentKey,

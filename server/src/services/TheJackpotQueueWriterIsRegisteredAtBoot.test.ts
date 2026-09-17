@@ -11,7 +11,7 @@
  * That is the whole failure mode this queue exists to prevent, one level up:
  * if the import chain into FeeReconciler is ever dropped, tree-shaken, or made
  * lazy, `bbjPayoutQueueWriter` stays null and a detected-but-unpayable jackpot
- * leaves NO durable record - only a Sentry alert, which is exactly the
+ * leaves NO durable record - only a error reporting alert, which is exactly the
  * "somebody has to notice by hand" state the 2026-09-04 audit was written
  * about. Every unit test in BBJPayoutIsPaidOrQueued installs its own stub
  * writer, so all of them pass with the real registration deleted.

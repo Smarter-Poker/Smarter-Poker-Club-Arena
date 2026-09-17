@@ -9,22 +9,6 @@
  * NOTE: acknowledging an incident does NOT hide it. Acted-on incidents are
  * pinned into the current filter view so the card visibly changes state in
  * place instead of vanishing.
- *
- * ── #ClubArenaConsole (2026-09-09) ────────────────────────────────────────
- * The page used to be a grid of six drawn stat tiles above a stack of
- * rounded, left-bordered incident cards, each carrying six drawn capsule
- * badges and four filled buttons. It is now printed on Dan's approved spade
- * master: two consoles - the ops readout, then the incident queue - with
- * every figure as a row on the black glass, label in the master's lit blue on
- * the left and value in engraved silver on the right, separated by the
- * engraved rule the master cuts between its own rows. Nothing is drawn.
- *
- * WHAT DID NOT CHANGE, AND MUST NOT: every RPC call, the 30s auto-refresh,
- * the 1s countdown ticker, the in-flight `loadingRef` guard, the `acting`
- * double-tap guard, the pin-on-action behaviour above, the notification deep
- * link (`id="di-<incident id>"` plus the `deep-linked` flash), and every
- * prompt string the resolve/reopen/comment flow puts in front of an operator.
- * This surface acts on real money; the actions it offers are byte-identical.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -40,8 +24,6 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
-import StandardContentLayout from '../components/layouts/StandardContentLayout';
-import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import './DriftIncidentsPage.css';
 
 const TWENTY_MINUTES_MS = 20 * 60 * 1000;
@@ -54,20 +36,13 @@ const STATUS_TABS: { key: IncidentStatus; label: string }[] = [
   { key: 'resolved', label: 'Resolved' },
 ];
 
-/* The timeline used to lead each event with a dingbat stuck on the left.
-   "ALL ICONS SHOULD FEEL ORGANIC, AND BUILT INTO THE FRAMES" - an emblem is
-   painted in the master or it is not there. The event already prints its own
-   name, so the kind now carries its meaning in the master's ink instead. */
-const EVENT_INK: Record<string, ConsoleInk> = {
-  escalated: 'red',
-  resolved: 'green',
-  repair_action: 'gold',
-};
-
-const SEVERITY_INK: Record<string, ConsoleInk> = {
-  critical: 'red',
-  warning: 'gold',
-  info: 'blue',
+const EVENT_GLYPHS: Record<string, string> = {
+  created: '●',
+  notified: '◌',
+  escalated: '▲',
+  repair_action: '↻',
+  comment: '✎',
+  resolved: '✓',
 };
 
 /** HIGH_HAND -> "High Hand" (KNOWN BUG PATTERN: format raw DB enums before display). */
@@ -78,16 +53,6 @@ function formatEnum(value: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/**
- * EXACT, NOT COMPACT, AND DELIBERATELY SO.
- *
- * `compactChips` is the rule for chip figures outside the felt, and it is the
- * rule here for counts. It is NOT the rule for these three: expected, actual
- * and the discrepancy between them are the sum an operator reconciles and
- * then corrects, so they are "the exact amount an operator is about to move".
- * Rounding 2,450.37 to 2.4K would hand somebody a range 100 chips wide and
- * call it a ledger. Untouched from the version this page shipped with.
- */
 function formatAmount(n: number | null | undefined): string {
   if (n === null || n === undefined) return '--';
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -285,39 +250,31 @@ export default function DriftIncidentsPage() {
     setActing(null);
   };
 
-  /* SAME ACTIONS, SAME ORDER, SAME LABELS. Only the dress changed: each one
-     is a lit word cut into the glass rather than a filled capsule, so the ink
-     replaces the old per-button class. The foot's two painted plates are not
-     used for these - a row carries up to four actions and the plates are a
-     pair. */
   const actionsFor = (
     i: DriftIncident
-  ): { action: IncidentAction; label: string; ink: ConsoleInk }[] => {
+  ): { action: IncidentAction; label: string; className: string }[] => {
     if (i.status === 'resolved') {
       return [
-        { action: 'reopen', label: 'Reopen', ink: 'gold' },
-        { action: 'comment', label: 'Comment', ink: 'blue' },
+        { action: 'reopen', label: 'Reopen', className: 'di-btn di-btn-reopen' },
+        { action: 'comment', label: 'Comment', className: 'di-btn di-btn-comment' },
       ];
     }
-    const list: { action: IncidentAction; label: string; ink: ConsoleInk }[] = [];
+    const list: { action: IncidentAction; label: string; className: string }[] = [];
     if (i.status === 'open') {
-      list.push({ action: 'acknowledge', label: 'Acknowledge', ink: 'blue' });
+      list.push({ action: 'acknowledge', label: 'Acknowledge', className: 'di-btn di-btn-ack' });
     }
     if (i.status !== 'reconciling') {
       list.push({
         action: 'reconciling',
         label: 'Mark Reconciling',
-        ink: 'gold',
+        className: 'di-btn di-btn-reconcile',
       });
     }
-    list.push({ action: 'comment', label: 'Comment', ink: 'blue' });
-    list.push({ action: 'resolve', label: 'Resolve', ink: 'green' });
+    list.push({ action: 'comment', label: 'Comment', className: 'di-btn di-btn-comment' });
+    list.push({ action: 'resolve', label: 'Resolve', className: 'di-btn di-btn-resolve' });
     return list;
   };
 
-  /* The 20-minute target reads as a countdown in the master's gold, red once
-     it is inside the last ten seconds or already past, green when the
-     incident closed. Same arithmetic as before, to the millisecond. */
   const renderDeadline = (i: DriftIncident) => {
     if (i.status === 'resolved') {
       const mins = i.resolved_at
@@ -327,7 +284,7 @@ export default function DriftIncidentsPage() {
           )
         : null;
       return (
-        <span className="di-deadline sc-ink--green">
+        <span className="di-deadline resolved">
           {mins === null ? 'Resolved' : `Resolved In ${formatMinutes(mins)}`}
         </span>
       );
@@ -342,9 +299,7 @@ export default function DriftIncidentsPage() {
     const ss = Math.floor((absMs % 60000) / 1000);
     const ssStr = (ss < 10 ? '0' : '') + ss;
     return (
-      <span
-        className={`di-deadline ${past || remainMs <= 10_000 ? 'sc-ink--red' : 'sc-ink--gold'}`}
-      >
+      <span className={`di-deadline ${past ? 'past' : ''}`}>
         {past ? `Past Target By ${mm}m ${ssStr}s` : `${mm}m ${ssStr}s Left`}
       </span>
     );
@@ -378,20 +333,16 @@ export default function DriftIncidentsPage() {
 
   const filteredIncidents = incidents.filter((i) => i.status === filter || pinned.has(i.id));
 
-  /* The same six readouts, unchanged in value and in order. They used to be a
-     grid of drawn tiles, each a rounded panel with its own fill and a red
-     variant; they are now rows on the glass, and "alert" is the value's ink
-     rather than a repainted box. */
-  const metricRows: { label: string; value: string; ink: ConsoleInk }[] = [
+  const statCards = [
     {
       label: 'Open Incidents',
       value: String(openCount),
-      ink: openCount > 0 ? 'red' : 'silver',
+      alert: openCount > 0,
     },
     {
       label: 'Past 20m Target',
       value: String(pastTargetCount),
-      ink: pastTargetCount > 0 ? 'red' : 'silver',
+      alert: pastTargetCount > 0,
     },
     {
       label: 'Worst Discrepancy',
@@ -400,378 +351,303 @@ export default function DriftIncidentsPage() {
             worst.currency ? ` ${worst.currency}` : ''
           }`
         : '--',
-      ink: worst !== null ? 'red' : 'silver',
+      alert: worst !== null,
     },
     {
       label: 'Avg Resolution Age',
       value: avgResolutionMins === null ? '--' : formatMinutes(avgResolutionMins),
-      ink: 'silver',
+      alert: false,
     },
     {
       label: 'Auto-Repairing',
       value: String(metrics.auto_repairing ?? 0),
-      ink: 'silver',
+      alert: false,
     },
     {
       label: 'Unclassified Flow Today',
       value: metrics.suspense_today === undefined ? '--' : formatAmount(metrics.suspense_today),
-      ink: (metrics.suspense_today ?? 0) > 0 ? 'red' : 'silver',
+      alert: (metrics.suspense_today ?? 0) > 0,
     },
   ];
 
   if (loading && incidents.length === 0) {
     return (
-      <StandardContentLayout className="drift-incidents-page">
-        <SpadeConsole
-          className="di-console"
-          aria-busy
-          eyebrow="Club Arena Ops"
-          title="Drift Incidents"
-          pill="Loading"
-          pillInk="muted"
-          foot="foot"
-        >
+      <div className="drift-incidents-page">
+        <div className="di-header">
+          <h2>Drift Incidents</h2>
+        </div>
+        <div className="di-loading-state">
           <PageSkeleton variant="financial" />
-          <p className="sc-copy sc-copy--center">Loading Incidents...</p>
-        </SpadeConsole>
-      </StandardContentLayout>
+          <p>Loading Incidents...</p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <StandardContentLayout className="drift-incidents-page">
-      {/* ── The ops readout: six figures as rows on the glass ─────────── */}
-      <SpadeConsole
-        className="di-console"
-        aria-busy={loading || undefined}
-        eyebrow="Club Arena Ops"
-        title="Drift Incidents"
-        pill={loading ? 'Syncing' : openCount > 0 ? `${openCount} Open` : 'Clear'}
-        pillInk={loading ? 'muted' : openCount > 0 ? 'red' : 'green'}
-        foot="foot"
-      >
-        <dl className="di-facts">
-          {metricRows.map((row) => (
-            <div key={row.label} className="di-fact">
-              <dt className="di-fact__label sc-label sc-ink--blue">{row.label}</dt>
-              <dd className={`di-fact__value sc-ink--${row.ink}`}>{row.value}</dd>
-            </div>
-          ))}
-        </dl>
-        {/* ONE ACTION, SO NO PLATES. The foot paints both plates or neither,
-            and a single lit refresh would leave the other painted and empty. */}
-        <button
-          type="button"
-          className="di-word sc-ink--blue"
-          onClick={() => loadIncidents()}
-          title="Refresh"
-          disabled={loading}
-        >
-          Refresh
-        </button>
-      </SpadeConsole>
+    <div className="drift-incidents-page">
+      {/* Header */}
+      <div className="di-header">
+        <h2>Drift Incidents</h2>
+        <div className="di-header-right">
+          {loading && incidents.length > 0 && <span className="di-syncing">Syncing...</span>}
+          <button
+            className="di-refresh-btn"
+            onClick={() => loadIncidents()}
+            title="Refresh"
+            disabled={loading}
+          >
+            ↻
+          </button>
+        </div>
+      </div>
 
-      {/* Burn-In Gate + Supply Trends + Balance As-Of (management only).
-          DriftGatePanel is its own component with its own markup and is not
-          part of this rebuild; it keeps the `dgp-` section of the stylesheet
-          below, untouched. */}
+      {/* Stat Cards */}
+      <div className="di-stats-grid">
+        {statCards.map((card) => (
+          <div key={card.label} className={`di-stat-card ${card.alert ? 'alert' : ''}`}>
+            <span className="di-stat-label">{card.label}</span>
+            <span className="di-stat-value">{card.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Burn-In Gate + Supply Trends + Balance As-Of (management only) */}
       <DriftGatePanel />
 
-      {/* ── The queue ─────────────────────────────────────────────────── */}
-      <SpadeConsole
-        className="di-console"
-        eyebrow={`${formatEnum(filter)} Queue`}
-        title="Incidents"
-        pill={String(filteredIncidents.length)}
-        pillInk={filteredIncidents.length === 0 ? 'muted' : 'blue'}
-        foot="foot"
-      >
-        {/* The four views are lit words cut into the glass. The master paints
-            no tab, so nothing here draws one. */}
-        <div className="di-rail" role="tablist" aria-label="Incident Status">
-          {STATUS_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={filter === tab.key}
-              className={`di-rail__word ${filter === tab.key ? 'sc-ink--silver' : 'sc-ink--muted'}`}
-              onClick={() => changeFilter(tab.key)}
-            >
-              {tab.label} ({countFor(tab.key)})
-            </button>
-          ))}
+      {/* Filter Tabs */}
+      <div className="di-filter-tabs">
+        {STATUS_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`di-filter-tab status-${tab.key} ${filter === tab.key ? 'active' : ''}`}
+            onClick={() => changeFilter(tab.key)}
+          >
+            {tab.label} ({countFor(tab.key)})
+          </button>
+        ))}
+      </div>
+
+      {/* Incident List */}
+      {filteredIncidents.length === 0 ? (
+        <div className="di-empty-state">
+          <span className="di-empty-icon">◉</span>
+          <p>No {formatEnum(filter)} Incidents</p>
         </div>
+      ) : (
+        <div className="di-list">
+          {filteredIncidents.map((incident) => {
+            const isExpanded = expanded.has(incident.id);
+            const refChips: { label: string; value: string }[] = [];
+            if (incident.table_id) refChips.push({ label: 'Table', value: incident.table_id });
+            if (incident.tournament_id)
+              refChips.push({ label: 'Tournament', value: incident.tournament_id });
+            if (incident.hand_id) refChips.push({ label: 'Hand', value: incident.hand_id });
+            if (incident.settlement_id)
+              refChips.push({ label: 'Settlement', value: incident.settlement_id });
 
-        {filteredIncidents.length === 0 ? (
-          <div className="di-empty">
-            <span className="sc-label sc-ink--green">All Clear</span>
-            <p className="sc-copy sc-copy--center">No {formatEnum(filter)} Incidents.</p>
-          </div>
-        ) : (
-          <ol className="di-list">
-            {filteredIncidents.map((incident) => {
-              const isExpanded = expanded.has(incident.id);
-              const refChips: { label: string; value: string }[] = [];
-              if (incident.table_id) refChips.push({ label: 'Table', value: incident.table_id });
-              if (incident.tournament_id)
-                refChips.push({ label: 'Tournament', value: incident.tournament_id });
-              if (incident.hand_id) refChips.push({ label: 'Hand', value: incident.hand_id });
-              if (incident.settlement_id)
-                refChips.push({ label: 'Settlement', value: incident.settlement_id });
-
-              return (
-                <li key={incident.id} id={`di-${incident.id}`} className="di-row">
-                  {/* Row head (click to expand) */}
-                  <button
-                    type="button"
-                    className="di-row__head"
-                    onClick={() => toggleExpanded(incident.id)}
-                    aria-expanded={isExpanded}
-                  >
-                    <span className="di-row__name sc-ink--silver">
-                      {formatEnum(incident.classification)}
+            return (
+              <div
+                key={incident.id}
+                id={`di-${incident.id}`}
+                className={`di-card severity-${incident.severity} ${
+                  incident.past_target && incident.status !== 'resolved' ? 'past-target' : ''
+                }`}
+              >
+                {/* Card head (click to expand) */}
+                <button
+                  type="button"
+                  className="di-card-head"
+                  onClick={() => toggleExpanded(incident.id)}
+                  aria-expanded={isExpanded}
+                >
+                  <div className="di-card-badges">
+                    <span className={`di-severity-badge ${incident.severity}`}>
+                      {incident.severity === 'critical' ? '●' : '◐'}{' '}
+                      {incident.severity.toUpperCase()}
                     </span>
-                    <span className="di-row__flags">
-                      <span
-                        className={`sc-label sc-ink--${SEVERITY_INK[incident.severity] ?? 'blue'}`}
-                      >
-                        {formatEnum(incident.severity)}
+                    <span className="di-class-badge">{formatEnum(incident.classification)}</span>
+                    <span className={`di-status-badge ${incident.status}`}>
+                      {formatEnum(incident.status)}
+                    </span>
+                    {incident.occurrences > 1 && (
+                      <span className="di-occurrences" title="Times This Drift Has Recurred">
+                        Seen {incident.occurrences.toLocaleString()} Times
                       </span>
-                      <span className="sc-label sc-ink--muted">{formatEnum(incident.status)}</span>
-                      {incident.occurrences > 1 && (
-                        <span
-                          className="sc-label sc-ink--muted"
-                          title="Times This Drift Has Recurred"
-                        >
-                          Seen {incident.occurrences.toLocaleString()} Times
-                        </span>
-                      )}
-                    </span>
-                    <span className="di-row__tail">
-                      {renderDeadline(incident)}
-                      <span className="sc-label sc-ink--blue">
-                        {isExpanded ? 'Hide' : 'Details'}
-                      </span>
-                    </span>
-                  </button>
+                    )}
+                  </div>
+                  <div className="di-card-head-right">
+                    {renderDeadline(incident)}
+                    <span className="di-expand-caret">{isExpanded ? '▾' : '▸'}</span>
+                  </div>
+                </button>
 
-                  {/* The three figures, always visible */}
-                  <dl className="di-facts">
-                    <div className="di-fact">
-                      <dt className="di-fact__label sc-label sc-ink--blue">Discrepancy</dt>
-                      <dd className="di-fact__value sc-ink--red">
-                        {formatAmount(incident.discrepancy_amount)}
-                        {incident.currency ? ` ${incident.currency}` : ''}
-                      </dd>
-                    </div>
-                    <div className="di-fact">
-                      <dt className="di-fact__label sc-label sc-ink--blue">Expected</dt>
-                      <dd className="di-fact__value sc-ink--silver">
-                        {formatAmount(incident.expected_amount)}
-                      </dd>
-                    </div>
-                    <div className="di-fact">
-                      <dt className="di-fact__label sc-label sc-ink--blue">Actual</dt>
-                      <dd className="di-fact__value sc-ink--silver">
-                        {formatAmount(incident.actual_amount)}
-                      </dd>
-                    </div>
-                    {incident.ledger_balanced !== null && (
-                      <div className="di-fact">
-                        <dt className="di-fact__label sc-label sc-ink--blue">Ledger</dt>
-                        <dd
-                          className={`di-fact__value ${
-                            incident.ledger_balanced ? 'sc-ink--green' : 'sc-ink--red'
-                          }`}
-                        >
-                          {incident.ledger_balanced ? 'Balanced' : 'Imbalanced'}
-                        </dd>
-                      </div>
-                    )}
-                    {incident.club_name && (
-                      <div className="di-fact">
-                        <dt className="di-fact__label sc-label sc-ink--blue">Club</dt>
-                        <dd className="di-fact__value sc-ink--silver">{incident.club_name}</dd>
-                      </div>
-                    )}
-                    {incident.union_name && (
-                      <div className="di-fact">
-                        <dt className="di-fact__label sc-label sc-ink--blue">Union</dt>
-                        <dd className="di-fact__value sc-ink--silver">{incident.union_name}</dd>
-                      </div>
-                    )}
-                    {incident.source && (
-                      <div className="di-fact">
-                        <dt className="di-fact__label sc-label sc-ink--blue">Source</dt>
-                        <dd className="di-fact__value sc-ink--silver">{incident.source}</dd>
-                      </div>
-                    )}
-                    {incident.layer && (
-                      <div className="di-fact">
-                        <dt className="di-fact__label sc-label sc-ink--blue">Layer</dt>
-                        <dd className="di-fact__value sc-ink--silver">
-                          {formatEnum(incident.layer)}
-                        </dd>
-                      </div>
-                    )}
-                    <div className="di-fact">
-                      <dt className="di-fact__label sc-label sc-ink--blue">Detected</dt>
-                      <dd className="di-fact__value sc-ink--silver">
-                        {new Date(incident.detected_at).toLocaleString()}
-                      </dd>
-                    </div>
-                  </dl>
+                {/* Amounts row (always visible) */}
+                <div className="di-amounts">
+                  <div className="di-amount-block discrepancy">
+                    <span className="di-amount-label">Discrepancy</span>
+                    <span className="di-amount-value">
+                      {formatAmount(incident.discrepancy_amount)}
+                      {incident.currency ? ` ${incident.currency}` : ''}
+                    </span>
+                  </div>
+                  <div className="di-amount-block">
+                    <span className="di-amount-label">Expected</span>
+                    <span className="di-amount-value">
+                      {formatAmount(incident.expected_amount)}
+                    </span>
+                  </div>
+                  <div className="di-amount-block">
+                    <span className="di-amount-label">Actual</span>
+                    <span className="di-amount-value">{formatAmount(incident.actual_amount)}</span>
+                  </div>
+                  {incident.ledger_balanced !== null && (
+                    <span
+                      className={`di-ledger-chip ${
+                        incident.ledger_balanced ? 'balanced' : 'imbalanced'
+                      }`}
+                    >
+                      {incident.ledger_balanced ? 'Ledger Balanced' : 'Ledger Imbalanced'}
+                    </span>
+                  )}
+                </div>
 
-                  {/* Expanded detail */}
-                  {isExpanded && (
-                    <div className="di-detail">
-                      <dl className="di-facts">
+                {/* Context line */}
+                <div className="di-context-line">
+                  {incident.club_name && <span className="di-org">{incident.club_name}</span>}
+                  {incident.union_name && (
+                    <span className="di-org union">{incident.union_name}</span>
+                  )}
+                  {incident.source && <span className="di-source">{incident.source}</span>}
+                  {incident.layer && <span className="di-layer">{formatEnum(incident.layer)}</span>}
+                  <span className="di-detected">
+                    Detected {new Date(incident.detected_at).toLocaleString()}
+                  </span>
+                </div>
+
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div className="di-detail">
+                    {refChips.length > 0 && (
+                      <div className="di-chips">
                         {refChips.map((chip) => (
-                          <div key={`${chip.label}-${chip.value}`} className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">{chip.label}</dt>
-                            <dd
-                              className="di-fact__value di-fact__value--mono sc-ink--silver"
-                              title={chip.value}
-                            >
-                              {shortId(chip.value)}
-                            </dd>
-                          </div>
+                          <span
+                            key={`${chip.label}-${chip.value}`}
+                            className="di-chip"
+                            title={chip.value}
+                          >
+                            {chip.label} {shortId(chip.value)}
+                          </span>
                         ))}
-                        {incident.suspected_cause && (
-                          <div className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">
-                              Suspected Cause
-                            </dt>
-                            <dd className="di-fact__value sc-ink--silver">
-                              {incident.suspected_cause}
-                            </dd>
-                          </div>
-                        )}
-                        {incident.auto_repair_status && (
-                          <div className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">Auto Repair</dt>
-                            <dd
-                              className={`di-fact__value ${
-                                incident.auto_repair_status === 'repaired'
-                                  ? 'sc-ink--green'
-                                  : incident.auto_repair_status === 'manual_needed'
-                                    ? 'sc-ink--red'
-                                    : 'sc-ink--gold'
-                              }`}
-                            >
-                              {formatEnum(incident.auto_repair_status)}
-                            </dd>
-                          </div>
-                        )}
-                        {incident.escalation_level !== null && incident.escalation_level > 0 && (
-                          <div className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">Escalation</dt>
-                            <dd className="di-fact__value sc-ink--red">
-                              Level {incident.escalation_level}
-                            </dd>
-                          </div>
-                        )}
-                        {incident.assigned_to && (
-                          <div className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">Assigned To</dt>
-                            <dd className="di-fact__value sc-ink--silver">
-                              {incident.assigned_to}
-                            </dd>
-                          </div>
-                        )}
-                        {incident.acknowledged_at && (
-                          <div className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">Acknowledged</dt>
-                            <dd className="di-fact__value sc-ink--silver">
-                              {new Date(incident.acknowledged_at).toLocaleString()}
-                              {incident.acknowledged_by ? ` By ${incident.acknowledged_by}` : ''}
-                            </dd>
-                          </div>
-                        )}
-                        {incident.root_cause && (
-                          <div className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">Root Cause</dt>
-                            <dd className="di-fact__value sc-ink--silver">{incident.root_cause}</dd>
-                          </div>
-                        )}
-                        {incident.correction_ref && (
-                          <div className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">Correction Ref</dt>
-                            <dd className="di-fact__value di-fact__value--mono sc-ink--silver">
-                              {incident.correction_ref}
-                            </dd>
-                          </div>
-                        )}
-                        {incident.resolution && (
-                          <div className="di-fact">
-                            <dt className="di-fact__label sc-label sc-ink--blue">Resolution</dt>
-                            <dd className="di-fact__value sc-ink--silver">{incident.resolution}</dd>
-                          </div>
-                        )}
-                      </dl>
+                      </div>
+                    )}
 
-                      {/* Event Timeline */}
-                      {incident.events.length > 0 && (
-                        <div className="di-timeline">
-                          <span className="sc-label sc-ink--blue">Event Timeline</span>
-                          {incident.events
-                            .slice()
-                            .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
-                            .map((ev, idx) => (
-                              <div key={`${ev.at}-${idx}`} className="di-event">
-                                <span
-                                  className={`di-event__kind sc-label sc-ink--${
-                                    EVENT_INK[ev.kind] ?? 'silver'
-                                  }`}
-                                >
-                                  {formatEnum(ev.kind)}
-                                </span>
-                                <span className="di-event__time sc-ink--muted">
-                                  {new Date(ev.at).toLocaleString()}
-                                </span>
-                                {ev.actor && (
-                                  <span className="di-event__actor sc-ink--muted">{ev.actor}</span>
-                                )}
-                                {ev.detail && (
-                                  <span className="di-event__detail sc-ink--muted">
-                                    {ev.detail}
-                                  </span>
-                                )}
-                              </div>
-                            ))}
+                    <div className="di-meta-grid">
+                      {incident.suspected_cause && (
+                        <div className="di-meta-row">
+                          <span className="di-meta-label">Suspected Cause</span>
+                          <span className="di-meta-value">{incident.suspected_cause}</span>
                         </div>
                       )}
-
-                      {incident.metadata && Object.keys(incident.metadata).length > 0 && (
-                        <details className="di-metadata">
-                          <summary className="sc-label sc-ink--blue">Metadata</summary>
-                          <pre>{JSON.stringify(incident.metadata, null, 2)}</pre>
-                        </details>
+                      {incident.auto_repair_status && (
+                        <div className="di-meta-row">
+                          <span className="di-meta-label">Auto Repair</span>
+                          <span className={`di-repair-badge ${incident.auto_repair_status}`}>
+                            {formatEnum(incident.auto_repair_status)}
+                          </span>
+                        </div>
+                      )}
+                      {incident.escalation_level !== null && incident.escalation_level > 0 && (
+                        <div className="di-meta-row">
+                          <span className="di-meta-label">Escalation</span>
+                          <span className="di-meta-value escalation">
+                            Level {incident.escalation_level}
+                          </span>
+                        </div>
+                      )}
+                      {incident.assigned_to && (
+                        <div className="di-meta-row">
+                          <span className="di-meta-label">Assigned To</span>
+                          <span className="di-meta-value">{incident.assigned_to}</span>
+                        </div>
+                      )}
+                      {incident.acknowledged_at && (
+                        <div className="di-meta-row">
+                          <span className="di-meta-label">Acknowledged</span>
+                          <span className="di-meta-value">
+                            {new Date(incident.acknowledged_at).toLocaleString()}
+                            {incident.acknowledged_by ? ` By ${incident.acknowledged_by}` : ''}
+                          </span>
+                        </div>
+                      )}
+                      {incident.root_cause && (
+                        <div className="di-meta-row">
+                          <span className="di-meta-label">Root Cause</span>
+                          <span className="di-meta-value">{incident.root_cause}</span>
+                        </div>
+                      )}
+                      {incident.correction_ref && (
+                        <div className="di-meta-row">
+                          <span className="di-meta-label">Correction Ref</span>
+                          <span className="di-meta-value mono">{incident.correction_ref}</span>
+                        </div>
+                      )}
+                      {incident.resolution && (
+                        <div className="di-meta-row">
+                          <span className="di-meta-label">Resolution</span>
+                          <span className="di-meta-value">{incident.resolution}</span>
+                        </div>
                       )}
                     </div>
-                  )}
 
-                  {/* Actions */}
-                  <div className="di-row__actions">
-                    {actionsFor(incident).map((btn) => (
-                      <button
-                        key={btn.action}
-                        type="button"
-                        className={`di-word sc-ink--${btn.ink}`}
-                        disabled={acting !== null}
-                        onClick={() => handleAction(incident, btn.action)}
-                      >
-                        {acting === `${incident.id}:${btn.action}` ? 'Working...' : btn.label}
-                      </button>
-                    ))}
+                    {/* Event Timeline */}
+                    {incident.events.length > 0 && (
+                      <div className="di-timeline">
+                        <span className="di-timeline-title">Event Timeline</span>
+                        {incident.events
+                          .slice()
+                          .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+                          .map((ev, idx) => (
+                            <div key={`${ev.at}-${idx}`} className={`di-event kind-${ev.kind}`}>
+                              <span className="di-event-glyph">{EVENT_GLYPHS[ev.kind] || '·'}</span>
+                              <span className="di-event-kind">{formatEnum(ev.kind)}</span>
+                              <span className="di-event-time">
+                                {new Date(ev.at).toLocaleString()}
+                              </span>
+                              {ev.actor && <span className="di-event-actor">{ev.actor}</span>}
+                              {ev.detail && <span className="di-event-detail">{ev.detail}</span>}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    {incident.metadata && Object.keys(incident.metadata).length > 0 && (
+                      <details className="di-metadata">
+                        <summary>Metadata</summary>
+                        <pre>{JSON.stringify(incident.metadata, null, 2)}</pre>
+                      </details>
+                    )}
                   </div>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </SpadeConsole>
-    </StandardContentLayout>
+                )}
+
+                {/* Actions */}
+                <div className="di-actions">
+                  {actionsFor(incident).map((btn) => (
+                    <button
+                      key={btn.action}
+                      className={btn.className}
+                      disabled={acting !== null}
+                      onClick={() => handleAction(incident, btn.action)}
+                    >
+                      {acting === `${incident.id}:${btn.action}` ? 'Working...' : btn.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

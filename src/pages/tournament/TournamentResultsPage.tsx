@@ -708,15 +708,17 @@ export default function TournamentResultsPage() {
     return `${pos}th`;
   };
 
-  /* MONEY IS FORMATTED FROM INTEGER CENTS, ON EVERY COLUMN OF EVERY ROW.
-     This was `Math.trunc(n * 100) / 100`, which drops a cent whenever `n * 100`
-     lands just below its integer - the production case `payoutMath.ts` records.
-     It mattered here because `formatCents` is used in the SAME ROW for the
-     mystery sub-line, and `bounty_winnings` INCLUDES that chest money: a player
-     whose bounty money was all chests could read 22.05 on the Mystery line and
-     22.04 in the Bounty column beside it. `formatCents` is the exact one
-     (integer cents, one division) and is now the only one. */
-  const formatAmount = (n: number) => formatCents(Math.round(n * 100));
+  const formatAmount = (n: number) => {
+    const truncated = Math.trunc(n * 100) / 100;
+    // Show decimals only if there are sub-unit fractions
+    if (truncated === Math.trunc(truncated)) {
+      return Math.trunc(truncated).toLocaleString('en-US');
+    }
+    return truncated.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
 
   const getVariantLabel = (t: CompletedTournament) => {
     if (t.is_xmtt) return 'XMTT';

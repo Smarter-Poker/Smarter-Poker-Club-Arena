@@ -265,10 +265,10 @@ groups:
             it and expect SpinDrawFairnessDrift to follow.
           runbook: https://monitor.smarter.poker/runbooks/spin-reserve-thin
 
-      # This is the population of partly filled, open, unstarted Spins.
-      # The view exposes wait age but does not filter on the fill deadline
-      # or booked draws. A population above five for twenty minutes does
-      # not establish each member's age or its eligibility for cancellation.
+      # A Spin sits open until three players sit down. A few waiting is the
+      # format working. A standing pile past the fill deadline means
+      # fn_spin_expire_unfilled is not clearing them and players' buy-ins
+      # are parked in games that will never run.
       - alert: SpinUnfilledBacklog
         expr: poker_spin_unfilled_waits > 5
         for: 20m
@@ -276,14 +276,11 @@ groups:
           severity: warning
           component: spin
         annotations:
-          summary: "{{ $value }} Spins remain open with a partially filled field"
+          summary: "{{ $value }} Spins are past their fill deadline and still open"
           description: |
-            v_spin_unfilled_waits counts REGISTERING or ANNOUNCED Spins
-            with no recorded start and between one live seat and one fewer
-            than capacity. It does not filter wait age, policy or booked draws.
-            Inspect each board's oldest_seat_at, spin_fill_policy, draw and
-            hand evidence, and the actual fn_spin_expire_unfilled result.
-            A drawn or played game requires its continuation or settlement
-            authority. This count alone proves neither that expiry is due
-            nor that the expiry timer failed.
+            v_spin_unfilled_waits counts Spins open past the point they
+            should have been expired and refunded. The engine runs
+            fn_spin_expire_unfilled on its own timer; a standing backlog
+            means it is not, and registered players' chips are held in games
+            that are not going to start.
           runbook: https://monitor.smarter.poker/runbooks/spin-unfilled-backlog

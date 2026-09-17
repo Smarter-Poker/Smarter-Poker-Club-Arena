@@ -195,7 +195,7 @@ const HAND_TRANSITIONS: StateTransition<HandFSMState>[] = [
   // AUDIT V2 (2026-07-23): HandController enters the discard phase right after
   // DEALING the flop and returns to 'flop' for the flop BETTING round. This
   // edge was missing, so every pineapple hand logged an
-  // "Invalid transition: pineapple_discard -> flop" FSM violation to Sentry.
+  // "Invalid transition: pineapple_discard -> flop" FSM violation to error reporting.
   { from: 'pineapple_discard', to: 'flop' },
   // Pineapple all-in runout can also complete straight from the discard phase.
   { from: 'pineapple_discard', to: 'showdown' },
@@ -389,29 +389,10 @@ export type RecoveryFSMState =
   | 'recovery_failed'
   | 'manual_intervention';
 
-// WHAT THIS TABLE ACTUALLY DRIVES, 2026-09-09. Only three of these states are
-// reachable in the running engine: StateVerifier.verify() walks
-// healthy -> desync_detected -> resync_required on a critical violation, and
-// back to healthy when the violations clear. NOTHING in the engine performs a
-// resync, so `resyncing`, `resync_complete`, `recovery_failed` and
-// `manual_intervention` are the Bible V8 §3.5 shape and not a live path - see
-// the note above the FSM operations in StateVerifier, which says so at the only
-// other place an agent would look. Do not read this table as a description of
-// what the engine does; it is what the engine may do if the resync path is
-// built.
 const RECOVERY_TRANSITIONS: StateTransition<RecoveryFSMState>[] = [
   { from: 'healthy', to: 'desync_detected' },
   { from: 'desync_detected', to: 'resync_required' },
   { from: 'desync_detected', to: 'healthy' }, // transient — resolved itself
-  // THE MISSING EDGE (2026-09-09). Without it `resync_required` was a dead end:
-  // verify() enters it on one CHIP_CONSERVATION violation and the only way out
-  // was beginResync(), which no production code calls. The table therefore
-  // stayed desynced for the life of the process even after the very next
-  // verification came back clean, and every later critical violation was
-  // swallowed by the `state === 'healthy'` guard on the entry transition - the
-  // detector went permanently deaf on the first thing it detected. A table
-  // whose violations have cleared is healthy, whoever cleared them.
-  { from: 'resync_required', to: 'healthy' },
   { from: 'resync_required', to: 'resyncing' },
   { from: 'resyncing', to: 'resync_complete' },
   { from: 'resyncing', to: 'recovery_failed' },

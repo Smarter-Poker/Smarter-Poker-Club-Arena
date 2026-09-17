@@ -1,0 +1,5 @@
+{
+  "_owner": "September 16 owner-authorized external error provider retirement",
+  "removedTables": ["sentry_error_log", "sentry_event_budget", "sentry_event_fingerprints"],
+  "removedFunctions": ["fn_sentry_budget_take"]
+}

@@ -30,7 +30,7 @@
  * a metric with no series, and it is why the counter below is a rate that must
  * keep moving rather than an error that must appear.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -154,11 +154,21 @@ describe('the loop that renews every lease cannot stop silently', () => {
        line of reportError and outside every try, so the catch handler written
        to keep the loop alive was itself able to end it - with no log line,
        because the thing that failed was the log line. */
-    const reporter = read('server/src/services/errorReporter.ts');
-    expect(flat(reporter)).toContain('try { // Always log to console');
-    expect(flat(reporter)).toContain('try { console.warn(`[${context}] ${message}`); } catch {');
-    expect(() => reportError(new Error('x'), 'law.test.reportError')).not.toThrow();
-    expect(() => reportWarning('x', 'law.test.reportWarning')).not.toThrow();
+    const errorWrite = vi.spyOn(console, 'error').mockImplementation(() => {
+      throw new Error('EPIPE');
+    });
+    const warningWrite = vi.spyOn(console, 'warn').mockImplementation(() => {
+      throw new Error('EAGAIN');
+    });
+    try {
+      expect(() => reportError(new Error('x'), 'law.test.reportError')).not.toThrow();
+      expect(() => reportWarning('x', 'law.test.reportWarning')).not.toThrow();
+      expect(errorWrite).toHaveBeenCalledOnce();
+      expect(warningWrite).toHaveBeenCalledOnce();
+    } finally {
+      errorWrite.mockRestore();
+      warningWrite.mockRestore();
+    }
 
     // And the callers do not rely on that alone: both report sites in the loop
     // and the one in its supervisor are themselves wrapped.

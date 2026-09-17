@@ -13,7 +13,7 @@
  *   - he bought seat 3 of "20 Chip Spin PLO4" at 07:33:41.366Z — the row is
  *     there, `tournament_players.registered_at`, and his stack was on the
  *     felt (280 chips) with the game still running WITHOUT him;
- *   - Sentry logged ZERO client events in that window.
+ *   - error reporting logged ZERO client events in that window.
  *
  * Nothing threw. So a deliberate code path decided to leave, and there is
  * exactly one that closes the tab and navigates to the lobby while logging

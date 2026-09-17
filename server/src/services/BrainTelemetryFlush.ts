@@ -1,19 +1,18 @@
 /**
  * BRAIN TELEMETRY FLUSH — every minute, the day's layer-fire counters land
- * atomically with private batch/source receipts. Retries retain the same
- * immutable ID and bytes, so an uncertain acknowledgement cannot double-add. See
+ * additively in horse_brain_telemetry (fn_brain_telemetry_add). A failed
+ * flush restores the batch; the additive upsert makes retries safe. See
  * engine/BrainTelemetry.ts for what is being counted and why.
  */
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
-import { HorseBrainTelemetryPublisher } from './HorseBrainTelemetryPublisher.js';
-import { resolveReleaseIdentity } from '../releaseIdentity.js';
 import {
   enableBrainTelemetry,
   drainFires,
+  restoreFires,
   drainDecisionLatency,
-  noteFire,
+  restoreDecisionLatency,
 } from '../engine/BrainTelemetry.js';
 
 const FLUSH_MS = 60_000;
@@ -22,23 +21,40 @@ let lifecycleGeneration = 0;
 let lifecycleActive = false;
 let stopOperation: Promise<void> | null = null;
 const inFlightFlushes = new Set<Promise<void>>();
-const publisher = new HorseBrainTelemetryPublisher({
-  capture: () => ({ fires: drainFires(), latency: drainDecisionLatency() }),
-  sourceRelease: () => resolveReleaseIdentity().releaseSha,
-  send: async (payload) =>
-    supabase
-      .rpc('fn_horse_brain_flush_receipt', { p_payload: payload })
-      .abortSignal(AbortSignal.timeout(5000)),
-});
 
 async function flush(generation: number): Promise<void> {
   if (!lifecycleActive || lifecycleGeneration !== generation) return;
-  if ((await publisher.flush()) === 'expired') {
-    noteFire('phase15_telemetry_batch_expired');
-    reportError(
-      new Error('Horse telemetry batch exceeded the retained receipt window'),
-      'BrainTelemetryFlush.expired'
-    );
+  const rows = drainFires();
+  const day = new Date().toISOString().slice(0, 10);
+
+  if (rows.length > 0) {
+    const { error } = await supabase.rpc('fn_brain_telemetry_add', {
+      p_day: day,
+      p_rows: rows,
+    });
+    if (error) {
+      reportError(new Error(error.message), 'BrainTelemetryFlush');
+      restoreFires(rows);
+    }
+  }
+
+  if (!lifecycleActive || lifecycleGeneration !== generation) return;
+
+  // Decision latency rides the same minute. Drained SEPARATELY and restored
+  // separately, so a failure on one does not silently discard the other —
+  // these are two different questions ("did the layer fire" and "how long did
+  // thinking take") and losing either to the other's outage would be a lie by
+  // omission in whichever survived.
+  const latency = drainDecisionLatency();
+  if (latency.length > 0) {
+    const { error: latErr } = await supabase.rpc('fn_horse_decision_latency_add', {
+      p_day: day,
+      p_rows: latency,
+    });
+    if (latErr) {
+      reportError(new Error(latErr.message), 'BrainTelemetryFlush.latency');
+      restoreDecisionLatency(latency);
+    }
   }
 }
 

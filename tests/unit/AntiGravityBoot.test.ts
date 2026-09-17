@@ -24,10 +24,6 @@ vi.mock('../../src/core/MasterBus', () => ({
   masterBus: { init: vi.fn(), emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
 
-vi.mock('../../src/core/SentryInit', () => ({
-  initSentry: vi.fn(),
-}));
-
 import { getBootStatus, isSystemOnline } from '../../src/core/AntiGravityBoot';
 
 describe('AntiGravityBoot', () => {

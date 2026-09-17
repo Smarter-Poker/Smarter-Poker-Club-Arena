@@ -341,7 +341,7 @@ class RealtimeChannelService {
    * route refuses a player JWT with 401 (server/src/router.ts). A browser has
    * no such key, so the four browser call sites that used to reach this
    * (rebuy, add-on, final table, level-up) were removed in the final sweep of
-   * 2026-09-08 - each was a guaranteed 401 reported to Sentry after a
+   * 2026-09-08 - each was a guaranteed 401 reported to error reporting after a
    * successful money action. Kept for a server-side caller that holds the key.
    */
   async broadcastTournamentEvent(

@@ -258,31 +258,22 @@ function objectMatches(clean, prefix, suffix = "") {
       (m.index === 0 || !/[a-z0-9_$\u0080-\uffff]/i.test(clean[m.index - 1])),
   );
 }
-// Explicit pg_temp objects belong to this migration's database session. They
-// cannot be present in a later live-schema snapshot, even when a helper is not
-// explicitly dropped. Keep manifestIdentity strict for all persistent schemas.
-function persistentMatches(clean, prefix, suffix = "") {
-  return objectMatches(clean, prefix, suffix).filter((m) => {
-    const parts = identifierParts(m[1]);
-    return parts.length !== 2 || parts[0] !== "pg_temp";
-  });
-}
 export function declaredObjects(sql) {
   const clean = executableSql(sql);
-  const fns = persistentMatches(
+  const fns = objectMatches(
     clean,
     "create\\s+(?:or\\s+replace\\s+)?function\\s+",
     "\\s*\\(",
   ).map((m) => manifestIdentity(m[1]));
-  const tables = persistentMatches(
+  const tables = objectMatches(
     clean,
     "create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?",
   ).map((m) => manifestIdentity(m[1]));
-  const views = persistentMatches(
+  const views = objectMatches(
     clean,
     "create\\s+(?:or\\s+replace\\s+)?(?:materialized\\s+)?view\\s+(?:if\\s+not\\s+exists\\s+)?",
   ).map((m) => manifestIdentity(m[1]));
-  const columns = persistentMatches(
+  const columns = objectMatches(
     clean,
     "alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?",
     `\\s+add\\s+(?:column\\s+)?(?:if\\s+not\\s+exists\\s+)?(${SQL_IDENTIFIER})`,
@@ -313,131 +304,22 @@ export function declaredObjects(sql) {
  * BACKFILLED marker on a file that was not backfilled. A gate whose only
  * escapes are dishonest is a gate somebody routes around.
  *
- * Strict parsing for a changed migration. The ordered lifecycle lookup below
- * decides whether a removal actually follows the declaration being checked. */
+ * Scoped to the branch's OWN migrations: dropping something an earlier commit
+ * created is not covered here and is still checked by everything else. */
 export function droppedObjects(sql) {
   const clean = executableSql(sql);
   return {
     fns: new Set(
-      persistentMatches(clean, "drop\\s+function\\s+(?:if\\s+exists\\s+)?").map(
+      objectMatches(clean, "drop\\s+function\\s+(?:if\\s+exists\\s+)?").map(
         (m) => manifestIdentity(m[1]),
       ),
     ),
     tables: new Set(
-      persistentMatches(
+      objectMatches(
         clean,
         "drop\\s+(?:materialized\\s+)?(?:table|view)\\s+(?:if\\s+exists\\s+)?",
       ).map((m) => manifestIdentity(m[1])),
     ),
-  };
-}
-
-/** Ordered lifecycle events are only used for a missing declaration. A later
- * migration may already be on main while its older predecessor arrives in this
- * branch. Its removal/rename must count, but a drop before a new CREATE must not.
- * Historical schemas outside the manifest's scope cannot match a scoped target;
- * changed migrations still pass the strict declaredObjects parser above. */
-function lifecycleEvents(sql) {
-  const clean = executableSql(sql);
-  const events = [];
-  const collect = (kind, prefix, suffix, removed, column = false) => {
-    for (const m of objectMatches(clean, prefix, suffix)) {
-      let identity;
-      try {
-        identity = manifestIdentity(m[1]);
-      } catch {
-        continue;
-      }
-      const name = column
-        ? JSON.stringify([identity, identifierParts(m[2])[0]])
-        : identity;
-      events.push({ kind, name, removed, index: m.index });
-    }
-  };
-  collect(
-    "fns",
-    "create\\s+(?:or\\s+replace\\s+)?function\\s+",
-    "\\s*\\(",
-    false,
-  );
-  collect("fns", "drop\\s+function\\s+(?:if\\s+exists\\s+)?", "", true);
-  collect(
-    "tables",
-    "create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?",
-    "",
-    false,
-  );
-  collect(
-    "tables",
-    "create\\s+(?:or\\s+replace\\s+)?(?:materialized\\s+)?view\\s+(?:if\\s+not\\s+exists\\s+)?",
-    "",
-    false,
-  );
-  collect(
-    "tables",
-    "drop\\s+(?:materialized\\s+)?(?:table|view)\\s+(?:if\\s+exists\\s+)?",
-    "",
-    true,
-  );
-  const alter = "alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?";
-  collect(
-    "columns",
-    alter,
-    `\\s+add\\s+(?:column\\s+)?(?:if\\s+not\\s+exists\\s+)?(${SQL_IDENTIFIER})`,
-    false,
-    true,
-  );
-  collect(
-    "columns",
-    alter,
-    `\\s+drop\\s+column\\s+(?:if\\s+exists\\s+)?(${SQL_IDENTIFIER})`,
-    true,
-    true,
-  );
-  for (const m of objectMatches(
-    clean,
-    alter,
-    `\\s+rename\\s+column\\s+(${SQL_IDENTIFIER})\\s+to\\s+(${SQL_IDENTIFIER})`,
-  )) {
-    let identity;
-    try {
-      identity = manifestIdentity(m[1]);
-    } catch {
-      continue;
-    }
-    for (const [i, removed] of [
-      [2, true],
-      [3, false],
-    ])
-      events.push({
-        kind: "columns",
-        name: JSON.stringify([identity, identifierParts(m[i])[0]]),
-        removed,
-        index: m.index,
-      });
-  }
-  return events.sort((a, b) => a.index - b.index);
-}
-
-function retirementLookup() {
-  const files = readdirSync(join(REPO, DIR))
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
-  const cache = new Map();
-  return (source, kind, name) => {
-    let removed = false;
-    for (const file of files) {
-      const path = DIR + file;
-      if (path < source) continue;
-      if (!cache.has(path))
-        cache.set(
-          path,
-          lifecycleEvents(readFileSync(join(REPO, path), "utf8")),
-        );
-      for (const event of cache.get(path))
-        if (event.kind === kind && event.name === name) removed = event.removed;
-    }
-    return removed;
   };
 }
 
@@ -493,14 +375,21 @@ function main() {
     return;
   }
 
-  const retiredLater = retirementLookup();
+  /* Everything this branch drops, across ALL its migrations, gathered before
+     the loop: the create and the drop are usually in different files, and the
+     file that creates is checked before the file that drops is even read. */
+  const branchDropped = { fns: new Set(), tables: new Set() };
+  for (const file of files) {
+    if (!existsSync(join(REPO, file))) continue;
+    const d = droppedObjects(readFileSync(join(REPO, file), "utf8"));
+    for (const f of d.fns) branchDropped.fns.add(f);
+    for (const t of d.tables) branchDropped.tables.add(t);
+  }
 
   const problems = [];
   for (const file of files) {
     if (!existsSync(join(REPO, file))) continue;
-    const sql = readFileSync(join(REPO, file), "utf8");
-    const now = declaredObjects(sql);
-    droppedObjects(sql); // Preserve strict schema validation for changed drops.
+    const now = declaredObjects(readFileSync(join(REPO, file), "utf8"));
 
     /* WHAT THIS BRANCH ACTUALLY ADDS (2026-08-22).
      *
@@ -526,11 +415,7 @@ function main() {
     const isNew = (kind, key) => !before || !before[kind].has(key);
 
     for (const fn of now.fns) {
-      if (
-        isNew("fns", fn) &&
-        !liveFns.has(fn) &&
-        !retiredLater(file, "fns", fn)
-      ) {
+      if (isNew("fns", fn) && !liveFns.has(fn) && !branchDropped.fns.has(fn)) {
         problems.push([file, "function", fn]);
       }
     }
@@ -538,7 +423,7 @@ function main() {
       if (
         isNew("tables", t) &&
         !liveTables.has(t) &&
-        !retiredLater(file, "tables", t)
+        !branchDropped.tables.has(t)
       ) {
         problems.push([file, "table/view", t]);
       }
@@ -549,10 +434,7 @@ function main() {
         // A column on a table the manifest does not know cannot be judged; the
         // table itself is either brand new above or genuinely absent.
         if (!liveColumns[t]) continue;
-        if (
-          !liveColumns[t].includes(c) &&
-          !retiredLater(file, "columns", JSON.stringify([t, c]))
-        )
+        if (!liveColumns[t].includes(c))
           problems.push([file, "column", `${t}.${c}`]);
       }
     }

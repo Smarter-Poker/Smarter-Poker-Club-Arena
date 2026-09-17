@@ -122,7 +122,7 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
       { context: 'Test', state: 'not_successful', conclusions: ['skipped'] },
     ]);
     expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
-      'UNKNOWN'
+      'RED'
     );
     expect(
       stateForChecks({
@@ -130,7 +130,7 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
         activeRuns: [{ name: 'Optional suite' }],
         requiredProblems: problems,
       })
-    ).toBe('RUNNING');
+    ).toBe('RED');
     expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: null })).toBe(
       'UNKNOWN'
     );

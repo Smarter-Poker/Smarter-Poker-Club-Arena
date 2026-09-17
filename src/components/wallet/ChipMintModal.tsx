@@ -26,27 +26,6 @@
  * The standalone mint credits clubs.chip_treasury, NOT clubs.chip_pool. Those
  * were two different accounts and the panel only ever showed the first, so
  * "mint inside your Club Bank" would have moved a figure nobody could see.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * THE CONSOLE (#ClubArenaConsole). This was a rounded dark card with a border
- * and a shadow, a boxed balance strip, a bordered destination panel, a filled
- * input well, five rounded quick-amount pills, a boxed preview and two rounded
- * action lozenges.
- *
- * It is now Dan's approved spade master: CHIP MINT is engraved in the header
- * well with the rate as its subtitle, every figure prints as a ROW on the
- * black glass (label in the master's lit blue, figure in engraved silver), the
- * amount is a GROOVE cut in the glass, the five quick amounts are lit words,
- * and CANCEL / MINT CHIPS are the two plates painted into the foot. When the
- * server has already said this club may not mint there is only one thing to
- * do, so the foot becomes the flat closing cap and CLOSE is a lit word - the
- * foot never paints a plate with nothing on it.
- *
- * NOT ONE MONEY PATH MOVED. The busyRef double-tap guard, the per-amount
- * idempotency key held across a failure, the Escape guard, the body-scroll
- * lock, the destination pre-flight, the unmount guard and every figure's exact
- * `fmt` formatting are all exactly as they were. Nothing here abbreviates: the
- * diamonds burned and the chips created are the amounts about to move.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -56,9 +35,8 @@ import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
-import { uuid } from '../../utils/uuid';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './ChipMintModal.css';
+import { uuid } from '../../utils/uuid';
 
 const CHIPS_PER_DIAMOND = 100; // 100 diamonds = 10,000 chips
 
@@ -179,11 +157,11 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       // raw postgres error. Resolve here, and while we are at it work out
       // whether this mint is even permitted so the panel can say where the
       // chips land (club pool vs union bank) or that the mint is revoked.
-      const uuidResolved = (await resolveClubUUID(clubId)) || clubId;
+      const uuid = (await resolveClubUUID(clubId)) || clubId;
       const { data: club } = await supabase
         .from('clubs')
         .select('id, name, union_id, owner_id')
-        .eq('id', uuidResolved)
+        .eq('id', uuid)
         .maybeSingle();
       if (!live) return;
       if (!club) {
@@ -205,7 +183,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
         const mayMint = union?.owner_id === user.id || Boolean(ua);
         setTarget(
           mayMint
-            ? { state: 'union', clubUuid: uuidResolved, label: `${union?.name || 'Union'} Bank` }
+            ? { state: 'union', clubUuid: uuid, label: `${union?.name || 'Union'} Bank` }
             : { state: 'revoked', label: union?.name || 'This Union' }
         );
         return;
@@ -215,7 +193,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       const { data: mem } = await supabase
         .from('club_members')
         .select('role')
-        .eq('club_id', uuidResolved)
+        .eq('club_id', uuid)
         .eq('user_id', user.id)
         .maybeSingle();
       if (!live) return;
@@ -223,7 +201,7 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       const mayMint = club.owner_id === user.id || ['owner', 'co_owner', 'admin'].includes(role);
       setTarget(
         mayMint
-          ? { state: 'club', clubUuid: uuidResolved, label: `${club.name || 'Club'} Bank` }
+          ? { state: 'club', clubUuid: uuid, label: `${club.name || 'Club'} Bank` }
           : { state: 'denied', label: 'Only A Club Owner Or Admin May Mint' }
       );
     })();
@@ -293,135 +271,90 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       onClick={() => !busy && onClose()}
     >
       <div className="cmm-panel" onClick={(e) => e.stopPropagation()}>
-        <SpadeConsole
-          as="div"
-          eyebrow="Club Bank"
-          title="Chip Mint"
-          subtitle="100 Diamonds = 10,000 Chips"
-          {...(canMintHere
-            ? {
-                plates: {
-                  secondary: {
-                    label: 'Cancel',
-                    onClick: onClose,
-                    disabled: busy,
-                    'aria-label': 'Cancel Chip Mint',
-                  },
-                  /* The blue glass carries the one thing this sheet exists to
-                     do, and it is the only control that burns a diamond. */
-                  primary: {
-                    label: busy ? 'Minting...' : 'Mint Chips',
-                    ink: 'white' as const,
-                    onClick: mint,
-                    disabled: !valid || busy,
-                  },
-                },
-              }
-            : { foot: 'foot' as const })}
-        >
-          <div className="cmm-rows">
-            <div className="cmm-row">
-              <span className="cmm-label sc-label sc-ink--blue">Your Diamonds</span>
-              <span className="cmm-value sc-ink--silver">
-                {balance === null ? '...' : fmt(balance)}
-              </span>
-            </div>
+        <div className="cmm-title">CHIP MINT</div>
+        <div className="cmm-rate">100 Diamonds = 10,000 Chips</div>
 
-            {/* Where the chips land — resolved before anything is spent. */}
-            {target.state === 'loading' && (
-              <div className="cmm-row">
-                <span className="cmm-label sc-label sc-ink--blue">Destination</span>
-                <span className="cmm-value sc-ink--muted">Checking Mint Rights...</span>
-              </div>
-            )}
-            {target.state === 'club' && (
-              <div className="cmm-row">
-                <span className="cmm-label sc-label sc-ink--blue">Minting Into</span>
-                <span className="cmm-value sc-ink--silver">{target.label}</span>
-              </div>
-            )}
-            {target.state === 'union' && (
-              <div className="cmm-row">
-                <span className="cmm-label sc-label sc-ink--blue">Minting Into</span>
-                <span className="cmm-value sc-ink--gold">{target.label}</span>
-              </div>
-            )}
-            {target.state === 'revoked' && (
-              <div className="cmm-blocked sc-ink--red" role="alert">
-                Chip Mint Is Revoked For Clubs Inside {target.label}. Chips Flow From The Union -
-                Mint From The Union Instead.
-              </div>
-            )}
-            {target.state === 'denied' && (
-              <div className="cmm-blocked sc-ink--red" role="alert">
-                {target.label}
-              </div>
-            )}
+        <div className="cmm-balance">
+          <span>Your Diamonds</span>
+          <strong>{balance === null ? '...' : fmt(balance)}</strong>
+        </div>
+
+        {/* Where the chips land — resolved before anything is spent. */}
+        {target.state === 'loading' && <div className="cmm-dest">Checking Mint Rights...</div>}
+        {target.state === 'club' && (
+          <div className="cmm-dest">
+            Minting Into <strong>{target.label}</strong>
           </div>
+        )}
+        {target.state === 'union' && (
+          <div className="cmm-dest cmm-dest--union">
+            Minting Into <strong>{target.label}</strong>
+          </div>
+        )}
+        {target.state === 'revoked' && (
+          <div className="cmm-dest cmm-dest--blocked">
+            Chip Mint Is Revoked For Clubs Inside {target.label}. Chips Flow From The Union - Mint
+            From The Union Instead.
+          </div>
+        )}
+        {target.state === 'denied' && (
+          <div className="cmm-dest cmm-dest--blocked">{target.label}</div>
+        )}
 
-          {canMintHere && (
-            <>
-              {/* The amount: a groove cut in the glass, no well and no rim. */}
-              <input
-                className="cmm-input"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                step={100}
-                value={diamonds}
-                onChange={(e) => setDiamondsAndResetKey(e.target.value)}
-                placeholder="Diamonds To Convert"
-                aria-label="Diamonds To Convert"
-                autoFocus
-              />
+        {canMintHere && (
+          <>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={100}
+              value={diamonds}
+              onChange={(e) => setDiamondsAndResetKey(e.target.value)}
+              placeholder="Diamonds To Convert"
+              aria-label="Diamonds To Convert"
+              autoFocus
+            />
 
-              <div className="cmm-quick">
-                {[100, 500, 1000, 10000].map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    className="cmm-quick-word"
-                    disabled={balance !== null && q > balance}
-                    onClick={() => setDiamondsAndResetKey(String(q))}
-                  >
-                    {fmt(q)}
-                  </button>
-                ))}
+            <div className="cmm-quick">
+              {[100, 500, 1000, 10000].map((q) => (
                 <button
-                  type="button"
-                  className="cmm-quick-word cmm-max"
-                  disabled={!balance}
-                  onClick={() => setDiamondsAndResetKey(String(balance ?? 0))}
+                  key={q}
+                  disabled={balance !== null && q > balance}
+                  onClick={() => setDiamondsAndResetKey(String(q))}
                 >
-                  MAX
+                  {fmt(q)}
                 </button>
-              </div>
-
-              <div className="cmm-rows">
-                <div className={`cmm-row ${valid ? '' : 'cmm-row-dim'}`}>
-                  <span className="cmm-label sc-label sc-ink--blue">You Receive</span>
-                  <span className="cmm-value sc-ink--green">{fmt(chips)} Chips</span>
-                </div>
-
-                {overBalance && (
-                  <div className="cmm-blocked sc-ink--red" role="alert">
-                    You Only Hold {fmt(balance ?? 0)} Diamonds.
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* The refusal states have one thing to do, so the foot stays the
-              flat cap and the action is a lit word on the glass. */}
-          {!canMintHere && (
-            <div className="cmm-close">
-              <button type="button" className="cmm-close-word" disabled={busy} onClick={onClose}>
-                Close
+              ))}
+              <button
+                className="cmm-max"
+                disabled={!balance}
+                onClick={() => setDiamondsAndResetKey(String(balance ?? 0))}
+              >
+                MAX
               </button>
             </div>
+
+            <div className={`cmm-preview ${valid ? '' : 'cmm-preview--dim'}`}>
+              <span>You Receive</span>
+              <strong>{fmt(chips)} Chips</strong>
+            </div>
+
+            {overBalance && (
+              <div className="cmm-warn">You Only Hold {fmt(balance ?? 0)} Diamonds.</div>
+            )}
+          </>
+        )}
+
+        <div className="cmm-actions">
+          <button disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
+          {canMintHere && (
+            <button className="cmm-confirm" disabled={!valid || busy} onClick={mint}>
+              {busy ? 'Minting...' : 'Mint Chips'}
+            </button>
           )}
-        </SpadeConsole>
+        </div>
       </div>
     </div>
   );

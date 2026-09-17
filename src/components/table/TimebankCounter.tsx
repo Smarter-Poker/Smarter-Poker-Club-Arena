@@ -46,8 +46,6 @@ interface TimebankCounterProps {
   onClick?: () => void;
   /** Optional: when true, widget renders in "low" state (warning tint). */
   low?: boolean;
-  /** Lifetime VIP has no finite balance and no purchase action. */
-  unlimited?: boolean;
   /**
    * Seconds one time bank adds to the clock. Engine default is 20.
    * The count is shown as a white number overlay on the icon image.
@@ -59,32 +57,9 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
   count,
   onClick,
   low,
-  unlimited = false,
   bankSeconds = 20,
 }) => {
   const timebankIcon = useButtonImage('icon-timebank');
-  const contents = (
-    <div className="tbc-img-wrap" aria-hidden="true">
-      <img src={timebankIcon} className="tbc-icon-img" alt="" draggable={false} />
-      <span className={`tbc-count-overlay${!unlimited && low ? ' tbc-count-overlay--low' : ''}`}>
-        {unlimited ? 'VIP' : count === null ? '-' : count}
-      </span>
-    </div>
-  );
-
-  if (unlimited) {
-    return (
-      <div
-        className="tbc-widget"
-        role="status"
-        aria-label="Unlimited Lifetime VIP Time Banks"
-        title="Unlimited Lifetime VIP Time Banks"
-      >
-        {contents}
-      </div>
-    );
-  }
-
   return (
     <button
       type="button"
@@ -108,7 +83,12 @@ export const TimebankCounter: React.FC<TimebankCounterProps> = ({
           than a fabricated number (it used to be seeded with a hard 4 and
           shown to a player holding 481). */}
       {/* Custom stopwatch icon with time-bank count overlaid in white bold text */}
-      {contents}
+      <div className="tbc-img-wrap" aria-hidden="true">
+        <img src={timebankIcon} className="tbc-icon-img" alt="" draggable={false} />
+        <span className={`tbc-count-overlay${low ? ' tbc-count-overlay--low' : ''}`}>
+          {count === null ? '-' : count}
+        </span>
+      </div>
     </button>
   );
 };

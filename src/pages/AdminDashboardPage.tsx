@@ -5,32 +5,6 @@
  *
  * Tabs (12): Health, Hierarchy, Settlements, History, Audit Trail,
  *   Branding, Recommendations, Announcements, Templates, Analytics, Mint, Settings
- *
- * ── #ClubArenaConsole (2026-09-09) ────────────────────────────────────────
- * The page's own frame - a bordered header bar with a gear glyph in the
- * title, a rounded ghost button and a twelve-pill scrolling tab rail - is on
- * Dan's approved spade master now: the title engraved in the header well, the
- * role in the painted pill slot, the twelve views as lit words cut into the
- * glass, and Lobby as a lit word beside them. The three bordered data tables
- * (commissions, audit trail, settlement history) are one row per record with
- * their fields stacked as label/value pairs, because six columns of audit
- * trail on a 393px phone scrolled sideways off the screen.
- *
- * THE `admin-*` VOCABULARY IS SHARED AND IS NOT REWRITTEN. Four other pages
- * import THIS stylesheet - AgentDashboardPage, admin/HouseAdsPage,
- * PlayerSessionsPage and UnionDashboardPage - so `.admin-card`, `.admin-btn`,
- * `.admin-badge`, `.admin-stat-card` and the rest keep their definitions
- * exactly as they were. What this page adds is a SCOPED section under
- * `.admin-console-page`, a root class only this page carries, which flattens
- * that chrome where it sits on the console glass and nowhere else.
- *
- * WHAT DID NOT CHANGE, AND MUST NOT: the club resolve and its "that club could
- * not be found" refusal, the role gate and both ACCESS DENIED messages, every
- * tab's queries and role visibility, the read-only commission ledger (it
- * offers no action claiming to settle a commission, and writes nothing to
- * agent_commissions), the bank-balance read that renders unknown as
- * unknown, and every figure on every tab. This page mints chips and changes
- * club settings; not one of those paths was touched.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -43,8 +17,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import ArenaLedger from '../components/admin/ArenaLedger';
 import AdminTableHeatmap from '../components/admin/AdminTableHeatmap';
-import StandardContentLayout from '../components/layouts/StandardContentLayout';
-import { SpadeConsole } from '../components/console/SpadeConsole';
 import './AdminDashboardPage.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -138,10 +110,7 @@ interface HierarchyMember {
   profiles?: { display_name?: string; username?: string } | null;
 }
 interface Recommendation {
-  /* No `icon` field. It carried a dingbat printed in front of the title -
-     an emblem stuck on top rather than painted in the master. The severity
-     is a lit word now, which is the same information said in the master's
-     own ink. */
+  icon: string;
   severity: 'info' | 'warning' | 'critical' | 'success';
   title: string;
   desc: string;
@@ -929,47 +898,46 @@ function SettlementsTab({ clubId }: { clubId: string }) {
 
       {(data.pendingCommissions || []).length === 0 ? (
         <div className="admin-empty-state">
-          <span className="sc-label sc-ink--muted">Nothing Recorded</span>
+          <span className="admin-empty-icon">→</span>
           <span>No Commissions Recorded This Period.</span>
         </div>
       ) : (
-        /* FIVE COLUMNS OF COMMISSION ON A 393px PHONE, GONE. One row per
-           commission with its fields stacked; every figure, every status
-           word and the read-only nature of this list are unchanged. */
-        <ol className="ac-list">
-          {(data.pendingCommissions || []).map((c) => (
-            <li key={c.id} className="ac-row">
-              <span className="ac-row__name sc-ink--silver ac-mono">
-                {c.user_id?.substring(0, 8)}...
-              </span>
-              <span className="ac-row__flags">
-                {c.settled_at ? (
-                  <span className="sc-label sc-ink--green">
-                    {c.settled_via === 'round2' ? 'Settled' : 'Claimed'}
-                  </span>
-                ) : (
-                  <span className="sc-label sc-ink--gold">Awaiting Claim</span>
-                )}
-              </span>
-              <dl className="ac-facts">
-                <div className="ac-fact">
-                  <dt className="ac-fact__label sc-label sc-ink--blue">Source</dt>
-                  <dd className="ac-fact__value sc-ink--silver">{c.source_type || 'Rake'}</dd>
-                </div>
-                <div className="ac-fact">
-                  <dt className="ac-fact__label sc-label sc-ink--blue">Rate</dt>
-                  <dd className="ac-fact__value sc-ink--silver">
+        <div className="admin-table-scroll">
+          <table className="admin-data-table">
+            <thead>
+              <tr>
+                <th>Agent User ID</th>
+                <th style={{ textAlign: 'right' }}>Source</th>
+                <th style={{ textAlign: 'center' }}>Rate</th>
+                <th style={{ textAlign: 'right' }}>Payout</th>
+                <th style={{ textAlign: 'center' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.pendingCommissions || []).map((c) => (
+                <tr key={c.id}>
+                  <td className="admin-mono">{c.user_id?.substring(0, 8)}...</td>
+                  <td style={{ textAlign: 'right' }}>{c.source_type || 'Rake'}</td>
+                  <td style={{ textAlign: 'center' }}>
                     {((c.commission_rate || 0) * 100).toFixed(1)}%
-                  </dd>
-                </div>
-                <div className="ac-fact">
-                  <dt className="ac-fact__label sc-label sc-ink--blue">Payout</dt>
-                  <dd className="ac-fact__value sc-ink--gold">{fmtChips(c.amount)}</dd>
-                </div>
-              </dl>
-            </li>
-          ))}
-        </ol>
+                  </td>
+                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#F7C52A' }}>
+                    {fmtChips(c.amount)}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {c.settled_at ? (
+                      <span className="admin-badge admin-badge-green">
+                        {c.settled_via === 'round2' ? 'Settled' : 'Claimed'}
+                      </span>
+                    ) : (
+                      <span className="admin-badge">Awaiting Claim</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -1180,7 +1148,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
             disabled={page === 1}
             className="admin-btn admin-btn-ghost admin-btn-sm"
           >
-            Prev
+            ◀ Prev
           </button>
           <span style={{ fontSize: '14px', fontWeight: 600 }}>
             {page} / {totalPages}
@@ -1190,44 +1158,54 @@ function AuditLogTab({ clubId }: { clubId: string }) {
             disabled={page >= totalPages}
             className="admin-btn admin-btn-ghost admin-btn-sm"
           >
-            Next
+            Next ▶
           </button>
         </div>
       </div>
 
-      {/* SIX COLUMNS OF AUDIT TRAIL ON A 393px PHONE, GONE. One row per entry
-          with its fields stacked. `typeColor` still decides the action's
-          colour, so a mint still reads as a mint. */}
-      <ol className="ac-list">
-        {logs.map((l) => (
-          <li key={l.id} className="ac-row">
-            <span className="ac-row__name" style={{ color: typeColor(l.action || '') }}>
-              {toTitleCase(l.action || '')}
-            </span>
-            <span className="ac-row__meta sc-ink--muted">{formatDate(l.created_at)}</span>
-            <dl className="ac-facts">
-              <div className="ac-fact">
-                <dt className="ac-fact__label sc-label sc-ink--blue">User</dt>
-                <dd className="ac-fact__value sc-ink--silver">{l.userName}</dd>
-              </div>
-              <div className="ac-fact">
-                <dt className="ac-fact__label sc-label sc-ink--blue">Target</dt>
-                <dd className="ac-fact__value sc-ink--silver">{l.targetUserName || '-'}</dd>
-              </div>
-              <div className="ac-fact">
-                <dt className="ac-fact__label sc-label sc-ink--blue">Amount</dt>
-                <dd className="ac-fact__value sc-ink--gold">
+      <div className="admin-table-scroll">
+        <table className="admin-data-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Action Type</th>
+              <th>User</th>
+              <th>Target</th>
+              <th style={{ textAlign: 'right' }}>Amount</th>
+              <th>IP Address</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.map((l) => (
+              <tr key={l.id}>
+                <td className="admin-text-secondary" style={{ fontSize: '12px' }}>
+                  {formatDate(l.created_at)}
+                </td>
+                <td style={{ color: typeColor(l.action || ''), fontWeight: 600 }}>
+                  {toTitleCase(l.action || '')}
+                </td>
+                <td style={{ fontWeight: 500 }}>{l.userName}</td>
+                <td className="admin-text-secondary">{l.targetUserName || '-'}</td>
+                <td
+                  style={{
+                    textAlign: 'right',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                  }}
+                >
                   {(l.details as any)?.amount != null ? fmtChips((l.details as any).amount) : '-'}
-                </dd>
-              </div>
-              <div className="ac-fact">
-                <dt className="ac-fact__label sc-label sc-ink--blue">IP Address</dt>
-                <dd className="ac-fact__value ac-mono sc-ink--muted">{l.ip_address || '-'}</dd>
-              </div>
-            </dl>
-          </li>
-        ))}
-      </ol>
+                </td>
+                <td
+                  className="admin-mono"
+                  style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}
+                >
+                  {l.ip_address || '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1411,7 +1389,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       {/* List */}
       {items.length === 0 ? (
         <div className="admin-empty-state">
-          <span className="sc-label sc-ink--muted">Nothing Posted</span>
+          <span className="admin-empty-icon">◉</span>
           <span>No Announcements Yet. Create One Above.</span>
         </div>
       ) : (
@@ -1554,7 +1532,7 @@ function SettingsTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">Club Settings</h3>
+      <h3 className="admin-card-title">⚙ Club Settings</h3>
       {msg && <div className="admin-success-banner">{msg}</div>}
       {err && <div className="admin-error-banner">{err}</div>}
       <div className="admin-card">
@@ -1677,7 +1655,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
         </div>
         {tree.length === 0 ? (
           <div className="admin-empty-state">
-            <span className="sc-label sc-ink--muted">No Hierarchy</span>
+            <span className="admin-empty-icon">▲</span>
             <span>No Agents In Hierarchy Yet.</span>
           </div>
         ) : (
@@ -1776,48 +1754,46 @@ function SettlementHistoryTab({ clubId }: { clubId: string }) {
       <h3 className="admin-card-title">Settlement History</h3>
       {periods.length === 0 ? (
         <div className="admin-empty-state">
-          <span className="sc-label sc-ink--muted">Nothing Settled</span>
+          <span className="admin-empty-icon">◆</span>
           <span>No Settlement Periods Yet.</span>
         </div>
       ) : (
-        /* One period per row, fields stacked. Same status words, same three
-           colours (open green, closed gold, anything else muted). */
-        <ol className="ac-list">
-          {periods.map((p: SettlementPeriod) => (
-            <li key={p.id} className="ac-row">
-              <span className="ac-row__name sc-ink--silver">Period {p.period_number || '-'}</span>
-              <span className="ac-row__flags">
-                <span
-                  className={`sc-label ${
-                    p.status === 'open'
-                      ? 'sc-ink--green'
-                      : p.status === 'closed'
-                        ? 'sc-ink--gold'
-                        : 'sc-ink--muted'
-                  }`}
-                >
-                  {p.status?.toUpperCase()}
-                </span>
-              </span>
-              <dl className="ac-facts">
-                <div className="ac-fact">
-                  <dt className="ac-fact__label sc-label sc-ink--blue">Started</dt>
-                  <dd className="ac-fact__value sc-ink--silver">{formatDate(p.start_at)}</dd>
-                </div>
-                <div className="ac-fact">
-                  <dt className="ac-fact__label sc-label sc-ink--blue">Ended</dt>
-                  <dd className="ac-fact__value sc-ink--silver">
+        <div className="admin-table-scroll">
+          <table className="admin-data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Ended</th>
+                <th>Volume</th>
+              </tr>
+            </thead>
+            <tbody>
+              {periods.map((p: SettlementPeriod) => (
+                <tr key={p.id}>
+                  <td style={{ fontWeight: 600 }}>{p.period_number || '-'}</td>
+                  <td>
+                    <span
+                      className={`admin-badge ${p.status === 'open' ? 'admin-badge-green' : p.status === 'closed' ? 'admin-badge-yellow' : ''}`}
+                    >
+                      {p.status?.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="admin-text-secondary" style={{ fontSize: '12px' }}>
+                    {formatDate(p.start_at)}
+                  </td>
+                  <td className="admin-text-secondary" style={{ fontSize: '12px' }}>
                     {p.end_at ? formatDate(p.end_at) : 'Active'}
-                  </dd>
-                </div>
-                <div className="ac-fact">
-                  <dt className="ac-fact__label sc-label sc-ink--blue">Volume</dt>
-                  <dd className="ac-fact__value sc-ink--gold">{fmtChips(p.total_volume || 0)}</dd>
-                </div>
-              </dl>
-            </li>
-          ))}
-        </ol>
+                  </td>
+                  <td style={{ fontWeight: 700, color: '#F7C52A' }}>
+                    {fmtChips(p.total_volume || 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -2040,6 +2016,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         });
         if (inactive.length > mems.length * 0.3) {
           recommendations.push({
+            icon: '◉',
             severity: 'warning',
             title: 'High Inactivity',
             desc: `${inactive.length} of ${mems.length} members inactive for 7+ days. Consider a re-engagement campaign.`,
@@ -2052,6 +2029,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         );
         if (tbls.length > 0 && activeTbls.length === 0) {
           recommendations.push({
+            icon: '▦',
             severity: 'critical',
             title: 'No Active Tables',
             desc: 'All tables are empty. Consider scheduling a game or sending notifications to your players.',
@@ -2064,6 +2042,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
            0. The length check is the one that was doing the work. */
         if (!anns || anns.length === 0) {
           recommendations.push({
+            icon: '◉',
             severity: 'info',
             title: 'No Announcements',
             desc: 'Keep your club engaged with regular announcements about upcoming games and events.',
@@ -2076,6 +2055,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         ).length;
         if (mems.length > 20 && agentCount === 0) {
           recommendations.push({
+            icon: '◈',
             severity: 'warning',
             title: 'No Agents',
             desc: 'Your club has 20+ members but no agents. Appoint agents to help manage and grow your club.',
@@ -2084,6 +2064,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
 
         if (recommendations.length === 0) {
           recommendations.push({
+            icon: '✓',
             severity: 'success',
             title: 'Looking Good!',
             desc: 'No critical recommendations at this time. Keep up the good work!',
@@ -2106,13 +2087,11 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
       </div>
     );
 
-  /* The same four severities, in the master's own inks rather than four hex
-     literals: critical red, warning gold, info blue, success green. */
-  const sevInk: Record<string, string> = {
-    critical: 'sc-ink--red',
-    warning: 'sc-ink--gold',
-    info: 'sc-ink--blue',
-    success: 'sc-ink--green',
+  const sevColors: Record<string, string> = {
+    critical: '#FA383E',
+    warning: '#F5A623',
+    info: '#4599FF',
+    success: '#31A24C',
   };
 
   return (
@@ -2120,9 +2099,14 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
       <h3 className="admin-card-title">Smart Recommendations</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {recs.map((r, i) => (
-          <div key={i} className="admin-card">
-            <div className={`sc-label ${sevInk[r.severity] || 'sc-ink--blue'}`}>{r.severity}</div>
-            <div style={{ fontSize: '14px', fontWeight: 700, margin: '4px 0' }}>{r.title}</div>
+          <div
+            key={i}
+            className="admin-card"
+            style={{ borderLeft: `3px solid ${sevColors[r.severity] || '#4599FF'}` }}
+          >
+            <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>
+              {r.icon} {r.title}
+            </div>
             <div className="admin-text-secondary" style={{ lineHeight: 1.5 }}>
               {r.desc}
             </div>
@@ -2206,7 +2190,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
       )}
       {templates.length === 0 ? (
         <div className="admin-empty-state">
-          <span className="sc-label sc-ink--muted">No Templates</span>
+          <span className="admin-empty-icon">▤</span>
           <span>No Table Templates Yet. Create Tables From The Lobby To Save Templates.</span>
         </div>
       ) : (
@@ -2261,7 +2245,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     }}
                     className="admin-btn admin-btn-success admin-btn-sm"
                   >
-                    Launch
+                    ▶ Launch
                   </button>
                   <button
                     onClick={async () => {
@@ -2737,43 +2721,40 @@ export default function AdminDashboardPage() {
 
   if (loading) {
     return (
-      <StandardContentLayout className="admin-console-page">
-        <SpadeConsole
-          className="admin-console"
-          aria-busy
-          eyebrow="Club Arena"
-          title="Admin And Operations"
-          pill="Loading"
-          pillInk="muted"
-          foot="foot"
-        >
+      <div className="admin-page">
+        <div className="admin-container">
           <div className="admin-skeleton" style={{ height: '48px', marginBottom: '16px' }} />
-          <div className="admin-skeleton" style={{ height: '220px' }} />
-        </SpadeConsole>
-      </StandardContentLayout>
+          <div style={{ display: 'flex', gap: '16px' }}>
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="admin-skeleton" style={{ height: '36px', flex: 1 }} />
+            ))}
+          </div>
+          <div className="admin-skeleton" style={{ height: '300px', marginTop: '16px' }} />
+        </div>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <StandardContentLayout className="admin-console-page">
-        <SpadeConsole
-          className="admin-console"
-          eyebrow="Club Arena"
-          title="Admin And Operations"
-          pill="Denied"
-          pillInk="red"
-          foot="foot"
-        >
-          <div className="ac-empty">
-            <span className="sc-label sc-ink--red">Access</span>
-            <p className="sc-copy sc-copy--center">{error}</p>
-            <button type="button" className="ac-word sc-ink--blue" onClick={() => navigate('/')}>
-              Back To Lobby
+      <div className="admin-page">
+        <div className="admin-container">
+          <div
+            className="admin-error-state"
+            style={{ background: 'rgba(250,56,62,0.1)', border: '1px solid #FA383E' }}
+          >
+            <div className="admin-error-icon">◈</div>
+            <div style={{ fontWeight: 700, fontSize: '16px', color: '#FA383E' }}>{error}</div>
+            <button
+              onClick={() => navigate('/')}
+              className="admin-btn admin-btn-primary"
+              style={{ marginTop: '16px' }}
+            >
+              ← Back To Lobby
             </button>
           </div>
-        </SpadeConsole>
-      </StandardContentLayout>
+        </div>
+      </div>
     );
   }
 
@@ -2782,61 +2763,115 @@ export default function AdminDashboardPage() {
   const isOwner = role === 'owner';
   const isAdmin = ['owner', 'co_owner', 'admin'].includes(role || '');
 
-  /* THE TWELVE TABS, IN THE SAME ORDER, BEHIND THE SAME ROLE GATES. They were
-     a scrolling rail of filled pills; they are lit words cut into the glass
-     now. The gear glyphs on the title and the Settings tab are gone: an
-     emblem is painted in the master or it is not there. */
-  const tabs: { key: AdminTab; label: string; show: boolean }[] = [
-    { key: 'dashboard', label: 'Health', show: true },
-    { key: 'hierarchy', label: 'Hierarchy', show: true },
-    { key: 'settlements', label: 'Settlements', show: isAdmin },
-    { key: 'history', label: 'History', show: isAdmin },
-    { key: 'audit', label: 'Audit', show: isAdmin },
-    { key: 'branding', label: 'Branding', show: isAdmin },
-    { key: 'recommendations', label: 'Recs', show: isAdmin },
-    { key: 'announcements', label: 'Announce', show: isAdmin },
-    { key: 'templates', label: 'Templates', show: isAdmin },
-    { key: 'analytics', label: 'Analytics', show: isAdmin },
-    { key: 'mint', label: 'Mint', show: isOwner },
-    { key: 'settings', label: 'Settings', show: isOwner },
-  ];
-
   return (
-    <StandardContentLayout className="admin-console-page">
-      {/* ── The head: the operations centre's own frame ───────────────── */}
-      <SpadeConsole
-        className="admin-console"
-        eyebrow="Club Arena"
-        title="Admin And Operations"
-        pill={role ? toTitleCase(role) : undefined}
-        pillInk="blue"
-        foot="foot"
-      >
-        <nav className="ac-rail" role="tablist" aria-label="Operations Views">
-          {tabs
-            .filter((t) => t.show)
-            .map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === t.key}
-                className={`ac-rail__word ${
-                  activeTab === t.key ? 'sc-ink--silver' : 'sc-ink--muted'
-                }`}
-                onClick={() => setActiveTab(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-        </nav>
-        {/* ONE ACTION, SO NO PLATES: the foot paints both or neither. */}
-        <button type="button" className="ac-word sc-ink--blue" onClick={() => navigate('/')}>
-          Lobby
-        </button>
-      </SpadeConsole>
-
+    <div className="admin-page">
       <div className="admin-container">
+        {/* Header */}
+        <div className="admin-page-header">
+          <div className="admin-page-title">⚙ Admin & Operations</div>
+          <div className="admin-header-actions">
+            <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
+              Lobby
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="admin-tabs">
+          <button
+            className={`admin-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setActiveTab('dashboard')}
+          >
+            Health
+          </button>
+          <button
+            className={`admin-tab ${activeTab === 'hierarchy' ? 'active' : ''}`}
+            onClick={() => setActiveTab('hierarchy')}
+          >
+            Hierarchy
+          </button>
+          {isAdmin && (
+            <button
+              className={`admin-tab ${activeTab === 'settlements' ? 'active' : ''}`}
+              onClick={() => setActiveTab('settlements')}
+            >
+              Settlements
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className={`admin-tab ${activeTab === 'history' ? 'active' : ''}`}
+              onClick={() => setActiveTab('history')}
+            >
+              History
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className={`admin-tab ${activeTab === 'audit' ? 'active' : ''}`}
+              onClick={() => setActiveTab('audit')}
+            >
+              Audit
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className={`admin-tab ${activeTab === 'branding' ? 'active' : ''}`}
+              onClick={() => setActiveTab('branding')}
+            >
+              Branding
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className={`admin-tab ${activeTab === 'recommendations' ? 'active' : ''}`}
+              onClick={() => setActiveTab('recommendations')}
+            >
+              Recs
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className={`admin-tab ${activeTab === 'announcements' ? 'active' : ''}`}
+              onClick={() => setActiveTab('announcements')}
+            >
+              Announce
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className={`admin-tab ${activeTab === 'templates' ? 'active' : ''}`}
+              onClick={() => setActiveTab('templates')}
+            >
+              Templates
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className={`admin-tab ${activeTab === 'analytics' ? 'active' : ''}`}
+              onClick={() => setActiveTab('analytics')}
+            >
+              Analytics
+            </button>
+          )}
+          {isOwner && (
+            <button
+              className={`admin-tab ${activeTab === 'mint' ? 'active' : ''}`}
+              onClick={() => setActiveTab('mint')}
+            >
+              Mint
+            </button>
+          )}
+          {isOwner && (
+            <button
+              className={`admin-tab ${activeTab === 'settings' ? 'active' : ''}`}
+              onClick={() => setActiveTab('settings')}
+            >
+              ⚙ Settings
+            </button>
+          )}
+        </div>
+
         {/* Tab Content */}
         {activeTab === 'dashboard' && <DashboardTab clubId={clubId} />}
         {activeTab === 'hierarchy' && <HierarchyTab clubId={clubId} />}
@@ -2878,6 +2913,6 @@ export default function AdminDashboardPage() {
         {activeTab === 'mint' && <MintChipsTab clubId={clubId} />}
         {activeTab === 'settings' && <SettingsTab clubId={clubId} />}
       </div>
-    </StandardContentLayout>
+    </div>
   );
 }

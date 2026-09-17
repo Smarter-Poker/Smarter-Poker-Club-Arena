@@ -36,7 +36,7 @@
  * row at all, because a plain Error's `message` is a writable own property and
  * the assignment worked.
  *
- * AND NOT ONE OF THE 2,844 REACHED SENTRY. The throw was on the line before
+ * AND NOT ONE OF THE 2,844 REACHED THE ERROR LOG. The throw was on the line before
  * `captureException`, so the IndexedDB failure - the actual defect - was
  * visible only as the reporter's complaint about itself. That is the damage
  * this law exists to prevent: a reporter that throws is a reporter that hides.
@@ -45,14 +45,6 @@
  * them threw where this now asserts a value.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-const captured: Error[] = [];
-vi.mock('../src/core/SentryInit', () => ({
-  captureException: (error: Error) => {
-    captured.push(error);
-  },
-  addBreadcrumb: () => {},
-}));
 
 import { reportError } from '../src/utils/errorReporter';
 import { OfflineQueueService } from '../src/services/OfflineQueueService';
@@ -93,7 +85,6 @@ let consoleError: ReturnType<typeof vi.spyOn>;
 let consoleWarn: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
-  captured.length = 0;
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
   consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -120,17 +111,17 @@ describe('the error reporter never throws out of a catch block', () => {
     expect(() => reportError(err, 'OfflineQueueBadge.check')).not.toThrow();
   });
 
-  it('still reaches Sentry with the DOMException - the 2,844 rows that did not', () => {
+  it('still reaches the local console with the DOMException - the 2,844 rows that did not', () => {
     reportError(idbFailure(), 'OfflineQueueBadge.check');
 
-    expect(captured).toHaveLength(1);
-    expect(captured[0].message).toBe(
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect((consoleError.mock.calls[0][1] as Error).message).toBe(
       "[OfflineQueueBadge.check] Failed to execute 'transaction' on 'IDBDatabase': " +
         'The database connection is closing.'
     );
-    // The reported copy keeps the original identity, so the Sentry issue is
+    // The reported copy keeps the original identity, so the the local console issue is
     // still the IndexedDB fault and not a generic Error.
-    expect(captured[0].name).toBe('InvalidStateError');
+    expect((consoleError.mock.calls[0][1] as Error).name).toBe('InvalidStateError');
   });
 
   it('leaves the caller’s error exactly as it found it', () => {
@@ -158,8 +149,10 @@ describe('the error reporter never throws out of a catch block', () => {
     });
 
     expect(() => reportError(hostile, 'WalletService.lockForBuyIn')).not.toThrow();
-    expect(captured).toHaveLength(1);
-    expect(captured[0].message).toContain('[WalletService.lockForBuyIn]');
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect((consoleError.mock.calls[0][1] as Error).message).toContain(
+      '[WalletService.lockForBuyIn]'
+    );
   });
 
   it.each([

@@ -9,8 +9,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 const rpc = vi.hoisted(() => vi.fn());
 
-// Unit test: no network, no Sentry. The supabase client module initializes
-// @sentry/node at import time; mock it before importing the server class.
+// Unit test: no network, no error reporting. The supabase client module initializes
+// @error-reporting/node at import time; mock it before importing the server class.
 vi.mock('../services/supabase.js', () => ({
   supabase: {
     rpc,

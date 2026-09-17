@@ -38,69 +38,14 @@ describe('tournamentEventBridge', () => {
 
   const names = () => emitted.calls.map(([n]) => n);
 
-  /**
-   * UPDATED 2026-09-09 - the pin moved to the new mechanism, and this is why.
-   *
-   * It used to assert `durationMinutes: 5` off the `tournament_break` event,
-   * which is the :55 LAST-HAND announcement. That event carries
-   * `breakEndsAt: null` on purpose: the engine REMOVED the end time from it on
-   * 2026-08-27 (TournamentManagerBase.ts:1494-1508) because clients counting
-   * down to :55 plus five minutes hit 0:00 up to two minutes before play
-   * resumed and then sat there under a full-screen opaque overlay.
-   *
-   * Forwarding the duration reconstructed that exact fabricated instant one
-   * layer down: both lobby consumers turn a bare duration into
-   * `Date.now() + minutes * 60_000` (TournamentClock.tsx:378-384,
-   * BlindsTab.tsx:210-213). A seed belongs to a countdown that has started, so
-   * the last-hand branch now forwards `phase` and no seed - and this test
-   * pins that, rather than pinning the number that produced the bug.
-   */
-  it('announces the last hand with a phase and NO invented countdown', () => {
+  it('turns a break broadcast into both spellings the components listen for', () => {
     const id = tid();
     relayTournamentEvent(id, {
       type: 'tournament_break',
-      payload: { level: 4, phase: 'last_hand', breakEndsAt: null, breakDurationMinutes: 5 },
-    });
-    expect(names()).toEqual(['TOURNAMENT_BREAK', 'BREAK_START']);
-    expect(emitted.calls[0][1]).toMatchObject({ tournamentId: id, phase: 'last_hand' });
-    expect(emitted.calls[0][1].durationMinutes).toBeUndefined();
-    expect(emitted.calls[0][1].breakEndsAt).toBeUndefined();
-  });
-
-  it('seeds the countdown once the break has actually started', () => {
-    const id = tid();
-    const endsAt = new Date(Date.now() + 5 * 60_000).toISOString();
-    relayTournamentEvent(id, {
-      type: 'tournament_break_started',
-      payload: { level: 4, phase: 'counting_down', breakEndsAt: endsAt, breakDurationMinutes: 5 },
-    });
-    expect(emitted.calls[0][1]).toMatchObject({
-      tournamentId: id,
-      phase: 'counting_down',
-      durationMinutes: 5,
-      breakEndsAt: endsAt,
-    });
-  });
-
-  /**
-   * A break event with no `phase` at all - an older engine, or a replayed
-   * broadcast. The TYPE still says which half it is, and the absence of an end
-   * time still means there is nothing to count down to.
-   */
-  it('infers the phase when the engine did not send one', () => {
-    const noPhase = tid();
-    relayTournamentEvent(noPhase, { type: 'tournament_break', payload: { level: 4 } });
-    expect(emitted.calls[0][1].phase).toBe('last_hand');
-    expect(emitted.calls[0][1].durationMinutes).toBeUndefined();
-
-    emitted.calls = [];
-    const started = tid();
-    relayTournamentEvent(started, {
-      type: 'tournament_break_started',
       payload: { level: 4, breakDurationMinutes: 5 },
     });
-    expect(emitted.calls[0][1].phase).toBe('counting_down');
-    expect(emitted.calls[0][1].durationMinutes).toBe(5);
+    expect(names()).toEqual(['TOURNAMENT_BREAK', 'BREAK_START']);
+    expect(emitted.calls[0][1]).toMatchObject({ tournamentId: id, durationMinutes: 5 });
   });
 
   it('derives the duration when only an end time is sent', () => {

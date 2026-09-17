@@ -1,4 +1,0 @@
-{
-  "_owner": "agent/cw-wallet2/feat/phase-5-diamonds-by-sink (2026-09-14). Applied as 20260914110559.",
-  "functions": ["fn_diamond_kind_bucket", "fn_diamond_flow_by_kind"]
-}

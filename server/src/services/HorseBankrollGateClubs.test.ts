@@ -184,7 +184,7 @@ describe('a horse plays inside its own club', () => {
  */
 describe('the seeding cycle is one round trip per floor, not per table', () => {
   it('prunes the waitlist ONCE, before the table loop', () => {
-    const pruneAt = SRC.indexOf('await this.pruneHorseWaitlist(horseIdSet, readIsCurrent);');
+    const pruneAt = SRC.indexOf('await this.pruneHorseWaitlist(horseIdSet);');
     // The seeding loop reads the ORDERED tables. Since the fleet policy landed
     // it reads them through `tablesToSeed`, which is `orderedTables` itself
     // unless the whole cycle is withheld, in which case it is empty and the

@@ -387,7 +387,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // { data: null, error }, never as a throw, so the catch below cannot see
         // it. Reading .data straight through turned a missing column grant on
         // profiles.arena_avatar_url into "the header orb shows the placeholder",
-        // with nothing in Sentry and nothing in the console, for every account.
+        // with nothing in error reporting and nothing in the console, for every account.
         // Surface each failure on its own; a broken avatar must not look like a
         // user who simply has none.
         if (profileResult.error) {

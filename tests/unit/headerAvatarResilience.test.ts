@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
  *
  *   1. supabase-js RESOLVES on a rejected request. A 403 arrives as
  *      { data: null, error }, never as a throw, so the store's try/catch never
- *      saw it and nothing reached Sentry or the console.
+ *      saw it and nothing reached error reporting or the console.
  *   2. Reading `.data?.avatar_url` straight through made "you are not allowed
  *      to read this" indistinguishable from "this player has no avatar".
  *   3. A failed read then WROTE that null into the store, so even a cached

@@ -123,12 +123,11 @@ export interface PausableTableEngine {
   /** Parked between hands, from EITHER loop - dealing or start-up wait. */
   isParkedBetweenHands(): boolean;
   /**
-   * No cards in the air: `handController === null`. This does not prove
-   * asynchronous settlement completion; the restart gate checks both signals.
+   * No cards in the air: `handController === null`, which the engine only
+   * sets AFTER the hand-complete listener has settled the pot. This is what
+   * the restart gate asks (PHASE 2, 2026-09-02) - see `unparkedTables`.
    */
   isBetweenHands(): boolean;
-  /** An accepted hand can still be writing after its controller or engine stops. */
-  hasSettlementInFlight(): boolean;
   isRunning(): boolean;
   /**
    * Cash or tournament. Optional: an engine that does not say is treated as
@@ -1492,22 +1491,12 @@ export class MaintenanceBreak {
             completeTableReconnectFreeze(tableId, reconnectFreezeStartedAt, this.now());
           }
           engine.resumeFromMaintenance();
-          /* COUNTED WHERE IT HAPPENED (2026-09-09). This increment sat OUTSIDE
-             the try, so a table that threw on the line above was still counted
-             as resumed - and `tablesResumed` is published on /health as the one
-             figure an operator reads at :00:05 to decide whether the fleet came
-             back. It could only ever equal `tables`, which made it a number
-             that agrees with itself and tells you nothing: a fleet where every
-             table threw reported a full recovery. The catch below still keeps
-             one bad table from stranding its wave; it just no longer claims
-             that table resumed. A shortfall between `tablesResumed` and
-             `tables` is now the signal, and the warning names which tables. */
-          progress.tablesResumed++;
         } catch (err) {
           // One table that refuses to resume must not strand the rest of its
           // wave, and never the waves behind it.
           console.warn(`[MaintenanceBreak] could not resume table ${tableId}`, err);
         }
+        progress.tablesResumed++;
       }
       progress.done = index + 1;
       if (progress.done === progress.total) progress.finishedAt = this.now();
@@ -1609,8 +1598,8 @@ export class MaintenanceBreak {
   }
 
   /**
-   * Tables that must not be restarted right now: a hand or settlement is in
-   * flight, or the engine cannot be inspected.
+   * Tables that must not be restarted right now: running, with a hand in
+   * flight.
    *
    * THIS TEST HAS BEEN WRONG THREE TIMES, and each time in a way the previous
    * fix's comment could not see. All three are worth keeping.
@@ -1639,30 +1628,23 @@ export class MaintenanceBreak {
    * cards in the air". `isBetweenHands()` is exactly that: handController is
    * null, which the engine sets only AFTER the hand-complete listener has
    * settled the pot (and on the void/abort paths, where there is nothing to
-   * settle). A table with no hand or settlement in flight can restart wherever
-   * its loop happens to be; a table WITH a hand holds the gate until it
-   * finishes, and `maintenancePaused` stops it starting another. This is
+   * settle). A table with no hand in flight loses nothing to a restart,
+   * wherever its loop happens to be; a table WITH one holds the gate until
+   * it finishes, and `maintenancePaused` stops it starting another. This is
    * also the predicate the mystery-bounty phase already trusts to move money
    * only between hands.
    *
-   * The hand controller and running flag do not close an asynchronous
-   * settlement. Count that owned work first, including on stopped engines.
-   * An unreadable engine also retains the gate until its owner can prove it
-   * safe or finish teardown and remove it.
+   * A stopped engine is not counted: it has no hand to protect.
    */
   private unparkedTables(): string[] {
     const out: string[] = [];
     for (const [tableId, engine] of this.deps.engines()) {
       try {
-        if (engine.hasSettlementInFlight() !== false) {
-          out.push(tableId);
-          continue;
-        }
         if (!engine.isRunning()) continue;
         if (!engine.isBetweenHands()) out.push(tableId);
       } catch {
-        // Reaper activity is not proof that this generation's writer ended.
-        out.push(tableId);
+        // Unreadable engines are not counted against the gate; an engine that
+        // throws on inspection is already being handled by the reapers.
       }
     }
     if (this.phase === 'counting_down' && out.length > this.peakUnparked) {

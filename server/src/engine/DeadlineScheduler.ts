@@ -471,7 +471,7 @@ export class DeadlineScheduler {
         top.callback();
       } catch (err) {
         // Scheduler stays up even on throwing callbacks. Route through
-        // reportError so Sentry captures it alongside the console log.
+        // reportError so error reporting captures it alongside the console log.
         reportError(err, 'DeadlineScheduler.callback_threw', {
           tableId: top.tableId,
           eventId: top.eventId,

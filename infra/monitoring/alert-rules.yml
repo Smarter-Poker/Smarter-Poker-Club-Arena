@@ -179,7 +179,7 @@ groups:
           component: cron
         annotations:
           summary: '{{ $value }} cron job(s) have logged success for 24h while skipping all their work'
-          description: "SELECT job_name, result FROM cron_execution_log WHERE status = 'success' AND result ? 'skipped' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering."
+          description: 'SELECT job_name, result FROM cron_execution_log WHERE status = ''success'' AND result ? ''skipped'' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering.'
           runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: OpenClawFleetLongSilence
@@ -280,7 +280,7 @@ groups:
         annotations:
           summary: 'Slot {{ $labels.slot }} is pinning {{ $value | humanize1024 }}B of WAL on disk'
           description: "Postgres cannot recycle WAL behind a slot's restart_lsn. This is the number that fills the volume, and it runs well ahead of the flush lag."
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       # The engine and the database disagreeing about the time silently breaks
       # every deadline, timer and retention window on the platform.
@@ -400,7 +400,7 @@ groups:
         annotations:
           summary: 'Realtime slot {{ $labels.slot }} is >256MB behind'
           description: 'Logical decoding is not keeping up with WAL. This compounds: a lagging slot reads WAL from disk rather than memory. Players see it as stale lobbies and late seat updates.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       - alert: ReplicationSlotCriticallyBehind
         expr: |
@@ -412,7 +412,7 @@ groups:
         annotations:
           summary: 'Realtime slot {{ $labels.slot }} is >1GB behind'
           description: 'At this point the slot is pinning WAL on disk and the instance is at risk of filling it. Do not restart the consumer blind - read the runbook.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       # An inactive slot advances not at all and pins every WAL segment behind
       # it. Guarded, because the engine's own restart inside the :55 break can
@@ -428,7 +428,7 @@ groups:
         annotations:
           summary: 'Replication slot {{ $labels.slot }} has no consumer'
           description: 'A slot with no consumer never advances and holds every WAL segment after it on disk.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       # The collector itself. A gauge that stopped being collected reads as a
       # perfectly healthy slot, which is the failure this whole family exists
@@ -444,7 +444,7 @@ groups:
         annotations:
           summary: 'Replication gauges are stale ({{ $value }}s)'
           description: 'fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
       # Zero slots is not a quiet database - this database has two logical
       # slots. Zero means the collector cannot see pg_replication_slots.
@@ -459,7 +459,7 @@ groups:
         annotations:
           summary: 'No replication slots visible'
           description: 'The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access.'
-          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
+          runbook: 'docs/runbooks/engine-and-realtime-diagnostics.md'
 
   # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
   # poker_act_to_broadcast_ms is the time from a player's action being
@@ -705,7 +705,7 @@ groups:
           component: hand-projection
         annotations:
           summary: 'Oldest unprojected hand has waited {{ $value | humanizeDuration }}'
-          description: 'hand_projection_outbox is not draining as fast as hands settle. Club and player stats, rake and BBJ bookings for those hands are late. Read poker_hand_projection_drain_results_total by result, drain age, deadline cuts and wakes on /metrics. Check the configured concurrency and pg_stat_activity for per-table projection lock waits; concurrency cannot release an already-stuck drain. Preserve the durable rows and identify the active await or actual refusal before changing the worker.'
+          description: 'hand_projection_outbox is not draining as fast as hands settle. Club and player stats, rake and BBJ bookings for those hands are late. Read poker_hand_projection_drain_results_total by result on /metrics: failed climbing means the RPC is refusing (engine logs HandProjection.*); projected flat with depth > 0 is the stall alert below. Raise HAND_PROJECTION_DRAIN_CONCURRENCY (default 4, max 16) only after reading pg_stat_activity for lock waits on hand-projection:<table>.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
       - alert: HandProjectionOutboxBacklogCritical
@@ -719,11 +719,11 @@ groups:
           component: hand-projection
         annotations:
           summary: 'Oldest unprojected hand has waited {{ $value | humanizeDuration }}'
-          description: 'Half an hour of hands have not reached club stats, player stats or their rake/BBJ bookings. The durable rows are safe; do not delete or hand-mark them. Find the reason in poker_hand_projection_drain_results_total{result="failed"} and Sentry HandProjection.rpc_failed / semantic_refusal before changing anything.'
+          description: 'Half an hour of hands have not reached club stats, player stats or their rake/BBJ bookings. The durable rows are safe; do not delete or hand-mark them. Find the reason in poker_hand_projection_drain_results_total{result="failed"} and engine logs for HandProjection.rpc_failed / semantic_refusal before changing anything.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
-      # Zero progress can mean an inactive worker, a still-pending drain,
-      # repeated refusals, or deferred dependencies. Counters distinguish them.
+      # Rows waiting and nothing projected for ten minutes is the worker not
+      # running at all (no leader boot, poll timer gone) or every RPC failing.
       - alert: HandProjectionDrainStalled
         expr: |
           poker_hand_projection_outbox_depth > 0
@@ -736,7 +736,7 @@ groups:
           component: hand-projection
         annotations:
           summary: 'The hand projection drain has projected nothing in ten minutes with rows waiting (poker_hand_projection_outbox_depth)'
-          description: 'Read drain age, drains started, deadline cuts, result counters and wake counters together. The safety poll deliberately waits while a drain owns the lane, so flat poll wakes can be the consequence of a pending drain. Rising failed or deferred results require their exact RPC or dependency evidence; zero progress alone does not prove RPC failure. Inspect the active await, transport and pg_stat_activity. Keep the durable rows and never release a still-live drain or manufacture completion.'
+          description: 'Check poker_hand_projection_wakes_total{source="poll"} is still climbing (the 5 s poll is the only cross-process wake while ENGINE_PG_LISTEN_URL is unset). If wakes climb and projected does not, every fn_project_hand_side_effects call is failing: read engine logs HandProjection.rpc_failed and pg_stat_activity.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
       - alert: HandProjectionMetricsBlind
@@ -749,7 +749,7 @@ groups:
           component: hand-projection
         annotations:
           summary: 'Outbox backlog gauges are stale ({{ $value }}s)'
-          description: 'HandOutboxMetrics has not refreshed in ten minutes (Sentry HandOutboxMetrics.refresh_failed). The backlog alerts above cannot fire while this is true, and unknown is what five hours of a 100k-row backlog looked like.'
+          description: 'HandOutboxMetrics has not refreshed in ten minutes (engine logs: HandOutboxMetrics.refresh_failed). The backlog alerts above cannot fire while this is true, and unknown is what five hours of a 100k-row backlog looked like.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
   # ── MONEY HEALTH (2026-09-04) ───────────────────────────────────────────
@@ -1142,110 +1142,6 @@ groups:
             seat gets the same engine - but the room is playing worse than it
             was built to). Capacity, not a bug.
 
-  # ── ENGINE MEMORY (2026-09-14) ─────────────────────────────────────────
-  # The engine runs on a 3819 MiB host and the release train builds the next
-  # image ON THAT HOST, refusing below 1179648 KiB available (1152 MiB:
-  # BUILD_MEMORY_BYTES/1024 + BUILD_RESERVE_KIB in
-  # server/scripts/build-engine-image.sh). Measured 2026-09-14 10:27 UTC:
-  #   - the engine process was 2097 MiB RSS at 92 minutes uptime (1640 MiB
-  #     at 60), with 663 MiB available; the box's other residents (dockerd,
-  #     prometheus, grafana, fail2ban, alertmanager, kernel) hold ~1060 MiB,
-  #     so a build fits only while the engine is under ~1600 MiB;
-  #   - 631 of the last 1438 minutes (44%) were below the build requirement,
-  #     and 11 of 14 overnight engine deploys were refused for it;
-  #   - 83 minutes of the last 24 hours were below 256 MiB available, the
-  #     floor at 04:08 UTC was 80 MiB, and on 2026-09-12 06:21:57 UTC the
-  #     kernel OOM-killed the engine outright (pid 1159833, no drain, every
-  #     table gone mid-hand);
-  #   - none of it was on /metrics: the engine published 1,134 lines and not
-  #     one said how much memory it used. poker_engine_process_rss_bytes and
-  #     its neighbours (server/src/observability/engineInstruments.ts) are
-  #     the fix for that; these rules read them.
-  # Main-isolate V8 usage, whole-process RSS and [heap] virtual extent are
-  # separate observations. Their correlation may guide an investigation but
-  # cannot attribute RSS to TLS, a thread or a particular native allocator.
-  # poker_engine_native_main_arena_bytes is virtual extent, not resident bytes.
-  #
-  # No maintenance-break guard on any of these: the break parks tables and
-  # does not change the process's weight, and the restart inside it LOWERS
-  # memory pressure rather than raising it.
-  - name: engine-memory
-    interval: 15s
-    rules:
-      # The host is about to pick the largest process and kill it, and the
-      # largest process is the engine. 256 MiB is above the 80 MiB floor
-      # actually reached and below the 1152 MiB the build needs, so a fire
-      # means "the next allocation burst reaches zero" (measured bursts:
-      # +111 MB in seven minutes during a tournament re-admission storm),
-      # not "a build might be refused". Two minutes, not ten: at burst rate
-      # ten minutes is the whole runway.
-      - alert: EngineHostNearOOM
-        expr: |
-          node_memory_MemAvailable_bytes{host="engine-01"} < 268435456
-        for: 2m
-        labels:
-          severity: critical
-          component: engine
-        annotations:
-          summary: 'engine-01 has {{ $value | humanize1024 }}B available - the host is at elevated OOM risk'
-          description: |
-            MemAvailable on the engine host has been under 256 MiB for two
-            minutes. On 2026-09-12 06:21:57 UTC this ended with the kernel
-            killing the engine process (no SIGTERM, no drainHands, every
-            table lost mid-hand). Read poker_engine_process_rss_bytes: if
-            the engine is the weight, compare whole-process RSS, main-isolate
-            V8 usage and worker activity. poker_engine_native_main_arena_bytes
-            is [heap] virtual extent, not resident memory or a TLS diagnosis.
-            Follow the maintenance-break runbook; OOM recovery has no drain.
-          runbook: 'docs/runbooks/engine-memory.md'
-
-      # The exact number the release train's on-host build refuses below.
-      # Thirty minutes because a build is refused at one instant and the
-      # deploy retries on the next engine-affecting merge; a dip that clears
-      # itself in twenty minutes costs one attempt, a plateau costs the day.
-      - alert: EngineBuildHeadroomLost
-        expr: |
-          node_memory_MemAvailable_bytes{host="engine-01"} < 1207959552
-        for: 30m
-        labels:
-          severity: warning
-          component: engine
-        annotations:
-          summary: 'engine-01 has {{ $value | humanize1024 }}B available - under the 1152 MiB the engine image build refuses below'
-          description: |
-            server/scripts/build-engine-image.sh needs 1179648 KiB free and
-            has had less for thirty minutes, so the next engine release will
-            be refused on this host (it was, 11 of 14 times on the night of
-            2026-09-13). If EngineProcessMemoryHigh is also firing the engine
-            is the weight; if it is not, look at what else is resident
-            (a stuck buildkit container, dockerd, page cache that will not
-            reclaim) before touching the engine.
-          runbook: 'docs/runbooks/engine-memory.md'
-
-      # The most the engine can weigh while a build still fits beside it,
-      # derived above (3819 total - ~1060 other residents - 1152 build).
-      # Fifteen minutes: a boot loads ~1,700 tables and legitimately passes
-      # 1 GiB in the first hour; this is for the plateau after that.
-      - alert: EngineProcessMemoryHigh
-        expr: |
-          poker_engine_process_rss_bytes > 1717986918
-        for: 15m
-        labels:
-          severity: warning
-          component: engine
-        annotations:
-          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the 1.6 GiB that leaves room for an image build'
-          description: |
-            The engine process has weighed more than 1.6 GiB for fifteen
-            minutes. Compare poker_engine_heap_used_bytes (V8) with
-            poker_engine_native_main_arena_bytes ([heap] virtual extent, not
-            RSS). The incident recorded a 400-800 MB main-isolate heap band
-            and a 378 to 501 MB heap-region change alongside connection churn.
-            This does not establish the native allocation cause. Thread and
-            external-memory growth require worker/libuv/V8 and Buffer/C++
-            ownership investigation; neither series alone identifies a leak.
-          runbook: 'docs/runbooks/engine-memory.md'
-
   # ── BOUNDED TOURNAMENT WORK LANES (2026-09-07) ────────────────────────
   # The old design opened one five-second elimination timer per tournament.
   # The replacement has four physical work slots and one process-wide queue.
@@ -1430,7 +1326,7 @@ groups:
           summary: 'Cluster controller released a stuck pass latch ({{ $value }} in 30 min)'
           description: |
             A pass was still open after CLUSTER_TICK_STALL_MS and was reported
-            as ClusterController.tick_stalled. Sentry has the stack. Every
+            as ClusterController.tick_stalled. The engine log has the stack. Every
             await inside a pass is supposed to be bounded (15 s client
             deadline, the wake never awaited); one that is not is a defect.
 
@@ -1449,7 +1345,7 @@ groups:
           summary: '{{ $value }} cluster tick errors in 15 min'
           description: |
             fn_cash_clusters_to_tick or fn_cash_cluster_tick is failing.
-            Sentry: ClusterController.worklist_failed / tick_rpc_failed /
+            Engine logs: ClusterController.worklist_failed / tick_rpc_failed /
             game_tick_error, with the game_id. A single game failing every
             pass reaches this in under a minute of passes; check that game's
             cash_cluster_events for the last thing it did.
@@ -1911,7 +1807,7 @@ groups:
 
       - alert: HorseDecisionFallbacks
         # The worker failed or expired a job and the seat took the legal
-        # check/fold. The path reported to Sentry only before this release, so
+        # check/fold. The path reported to external telemetry only before this release, so
         # the baseline is the worker's own expired-job count, which read 0 on
         # the live scrape. 5/min over 10 m is fifty seats folded blind.
         expr: sum(rate(poker_horse_decision_fallbacks_total[10m])) * 60 > 5

@@ -15,7 +15,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import StatsFactsService, { type DistributionRow } from '../../services/StatsFactsService';
 import { benchmark, type BenchmarkResult } from './statBenchmarks';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './BenchmarkPanel.css';
 
 type MetricKey = 'bb100' | 'vpip' | 'pfr' | 'three_bet' | 'win_rate';
@@ -122,16 +121,9 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
 
   if (loading) {
     return (
-      <SpadeConsole
-        className="bench-panel"
-        eyebrow="Benchmark"
-        title="How You Compare"
-        pill="Reading"
-        pillInk="muted"
-        foot="foot"
-      >
+      <div className="bench-panel">
         <div className="bench-skeleton" />
-      </SpadeConsole>
+      </div>
     );
   }
 
@@ -139,27 +131,17 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
   // from "nothing to compare". Say so, and offer the retry.
   if (readError) {
     return (
-      <SpadeConsole
-        className="bench-panel"
-        eyebrow="Benchmark"
-        title="How You Compare"
-        pill="Unread"
-        pillInk="red"
-        foot="foot"
-      >
-        <p className="sc-copy bench-sub" role="alert">
-          The Field Distribution Could Not Be Loaded.
-        </p>
-        <div className="bench-actions">
-          <button
-            type="button"
-            className="bench-word sc-ink--white"
-            onClick={() => setAttempt((n) => n + 1)}
-          >
-            Try Again
-          </button>
+      <div className="bench-panel">
+        <div className="bench-head">
+          <h3 className="bench-title">How You Compare</h3>
+          <p className="bench-sub" role="alert">
+            The Field Distribution Could Not Be Loaded.{' '}
+            <button type="button" className="hand-retry" onClick={() => setAttempt((n) => n + 1)}>
+              Try Again
+            </button>
+          </p>
         </div>
-      </SpadeConsole>
+      </div>
     );
   }
 
@@ -176,22 +158,18 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
   const thinHero = handsPlayed > 0 && handsPlayed < MIN_HERO_HANDS;
 
   return (
-    <SpadeConsole
-      className="bench-panel"
-      eyebrow="Benchmark"
-      title="How You Compare"
-      pill={sample > 0 ? `${sample.toLocaleString()} Players` : 'The Range'}
-      pillInk="blue"
-      foot="foot"
-    >
-      <p className="sc-copy bench-sub">
-        {sample > 0
-          ? `Measured Against ${sample.toLocaleString()} Players In The Field With 1,000 Or More Hands.`
-          : 'Measured Against The Range Winning Players Hold.'}
-      </p>
+    <div className="bench-panel">
+      <div className="bench-head">
+        <h3 className="bench-title">How You Compare</h3>
+        <p className="bench-sub">
+          {sample > 0
+            ? `Measured Against ${sample.toLocaleString()} Players In The Field With 1,000 Or More Hands.`
+            : 'Measured Against The Range Winning Players Hold.'}
+        </p>
+      </div>
 
       {thinHero && (
-        <p className="sc-copy bench-warn sc-ink--gold">
+        <p className="bench-warn">
           You Have {handsPlayed.toLocaleString()} Hands. Rate Stats Do Not Settle Down Until A Few
           Thousand, So Treat Everything Below As A First Impression Rather Than A Verdict.
         </p>
@@ -201,10 +179,8 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
         {results.map((r) => (
           <li key={r.def.metric} className="bench-item">
             <div className="bench-item-head">
-              <span className="bench-label sc-ink--blue">{r.def.label}</span>
-              {/* A RATE KEEPS ONE DECIMAL (Dan 2026-09-13): rounding 32.5% to
-                  33% misstates it. toFixed(1) stays. */}
-              <span className="bench-value sc-ink--silver">
+              <span className="bench-label">{r.def.label}</span>
+              <span className="bench-value">
                 {r.value.toFixed(1)}
                 {r.def.unit === 'bb/100' ? ' BB/100' : r.def.unit}
               </span>
@@ -223,23 +199,23 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
               )}
             </div>
             <Bar result={r} />
-            <p className="sc-copy bench-readout">{r.readout}</p>
+            <p className="bench-readout">{r.readout}</p>
           </li>
         ))}
       </ul>
 
       {days !== null && (
-        <p className="sc-copy bench-note sc-ink--muted">
+        <p className="bench-note">
           Your Figures Cover The Last {days} Days; The Field Is Measured Over Its Full History.
           Short Ranges Swing A Long Way, So A Wide Gap Here May Be The Range Rather Than Your Game.
         </p>
       )}
-      <p className="sc-copy bench-note sc-ink--muted">
+      <p className="bench-note">
         The Comparison Group Is Every Player In The Club Above The Hands Threshold, Which Is The
         Field You Actually Sit Down Against. It Is Not A Sample Of Human Players Only.
       </p>
       {results.some((r) => r.barPosition === null) && (
-        <p className="sc-copy bench-note sc-ink--muted">
+        <p className="bench-note">
           {results
             .filter((r) => r.barPosition === null)
             .map((r) => r.def.label)
@@ -249,6 +225,6 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
           Leaks, So Where The Club Happens To Sit Says Nothing About Where You Should Be.
         </p>
       )}
-    </SpadeConsole>
+    </div>
   );
 }

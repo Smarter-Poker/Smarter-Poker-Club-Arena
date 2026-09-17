@@ -46,8 +46,7 @@ export type DailyBonusTileKind =
   | 'time_bank'
   | 'mystery'
   | 'shield'
-  | 'boost'
-  | 'free_spin';
+  | 'boost';
 
 export interface DailyBonusGranted {
   kind: Exclude<DailyBonusTileKind, 'mystery'>;
@@ -65,10 +64,6 @@ export interface DailyBonusGranted {
   hours?: number;
   boost_id?: string;
   ends_at?: string;
-  /** Claimed tenth-day spin. This is a ticket, not spendable diamonds. */
-  ticket_id?: string;
-  entry_diamonds?: number;
-  funded_by?: 'mint';
 }
 
 /** What a claimed mystery tile turned out to be, lucky roll applied. */
@@ -169,9 +164,6 @@ export interface DailyBonusStatus {
   shield: DailyBonusShield;
   boost: DailyBonusBoost;
   streak_protected: boolean;
-  bonus_spin_every_days?: number;
-  bonus_spin_entry_diamonds?: number;
-  bonus_spins_held?: number;
 }
 
 export interface DailyBonusClaimResult {

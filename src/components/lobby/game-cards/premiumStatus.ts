@@ -30,12 +30,7 @@ const TONE: Record<ArenaGameStatus, PremiumStatusTone> = {
  * lobby label so a waitlist keeps its number ("Waitlist 2") and a paused
  * table says Paused.
  */
-export function premiumStatusBadge(
-  data: Pick<ArenaGameCardData, 'status' | 'statusLabel' | 'statusTone'>
-) {
-  if (data.statusTone) {
-    return { label: data.statusLabel, tone: data.statusTone } satisfies PremiumStatusBadge;
-  }
+export function premiumStatusBadge(data: Pick<ArenaGameCardData, 'status' | 'statusLabel'>) {
   const label =
     data.status === 'open'
       ? 'Empty'

@@ -575,20 +575,15 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   for (const level of sortedInvestments) {
     if (level === 0) continue;
     const contribution = level - previousLevel;
-    // Count matched contributions and collect rights in the original seat
-    // order in one pass. Pot amounts and level arithmetic stay unchanged.
-    let totalContributors = 0;
-    const eligiblePlayers: string[] = [];
-    for (const entry of allContributors) {
-      if (entry.investment < level) continue;
-      totalContributors++;
-      if (!entry.player.is_folded) eligiblePlayers.push(entry.player.user_id);
-    }
+    const totalContributors = allContributors.filter((entry) => entry.investment >= level).length;
+    const eligiblePlayers = allContributors.filter(
+      (entry) => !entry.player.is_folded && entry.investment >= level
+    );
 
     if (totalContributors > 0 && eligiblePlayers.length > 0) {
       pots.push({
         amount: contribution * totalContributors,
-        eligiblePlayers,
+        eligiblePlayers: eligiblePlayers.map((entry) => entry.player.user_id),
       });
     } else if (totalContributors > 0) {
       orphaned = Math.round((orphaned + contribution * totalContributors) * 100) / 100;
@@ -644,13 +639,7 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   const merged: Pot[] = [pots[0]];
   for (let i = 1; i < pots.length; i++) {
     const last = merged[merged.length - 1];
-    const next = pots[i];
-    // These are ordered arrays of player IDs. Compare those IDs directly,
-    // preserving order and boundaries without serializing every pot pair.
-    if (
-      last.eligiblePlayers.length === next.eligiblePlayers.length &&
-      last.eligiblePlayers.every((id, index) => id === next.eligiblePlayers[index])
-    ) {
+    if (JSON.stringify(last.eligiblePlayers) === JSON.stringify(pots[i].eligiblePlayers)) {
       last.amount += pots[i].amount;
     } else {
       merged.push(pots[i]);

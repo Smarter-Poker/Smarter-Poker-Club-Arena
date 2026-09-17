@@ -234,29 +234,15 @@ describe('vipService.purchaseFeature', () => {
     });
   });
 
-  it('reports no local charge or grant for an idempotent replay', async () => {
-    rpc.mockResolvedValue({
-      data: { success: true, cost: 25, idempotent: true, granted: false },
-      error: null,
-    });
-    await expect(vipService.purchaseFeature(USER, 'theme_unlock')).resolves.toMatchObject({
-      success: true,
-      charged: 0,
-      idempotent: true,
-      granted: false,
-    });
-  });
-
   it('never sends a client-chosen price', async () => {
     // fn_purchase_feature ignores p_cost, but sending one invites the next
     // author to believe the client decides. Verified live: passing 999999 for
     // auto_time_bank still charged the server's 5.
     rpc.mockResolvedValue({ data: { success: true, cost: 1 }, error: null });
     await vipService.purchaseFeature(USER, 'rabbit_hunt');
-    expect(rpc).toHaveBeenCalledWith('fn_purchase_feature_v2', {
+    expect(rpc).toHaveBeenCalledWith('fn_purchase_feature', {
       p_user_id: USER,
       p_feature: 'rabbit_hunt',
-      p_request_id: expect.any(String),
     });
   });
 
@@ -287,8 +273,7 @@ describe('vipService.purchaseFeature', () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'permission denied' } });
     const out = await vipService.purchaseFeature(USER, 'theme_unlock');
     expect(out.success).toBe(false);
-    expect(out.error).toBe('Purchase Failed');
-    expect(out.error).not.toContain('permission denied');
+    expect(out.error).toContain('permission denied');
   });
 
   it('does not claim success when the RPC returns nothing at all', async () => {

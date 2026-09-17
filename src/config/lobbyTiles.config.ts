@@ -15,22 +15,14 @@ export interface LobbyTile {
   alt: string;
   route: string | null; // null = custom handler
   shortcutKey: string; // keyboard shortcut
-  width?: number;
-  height?: number;
-  preserveNativeRatio?: boolean;
-  portalStatus?: string;
 }
 
 const LOBBY_TILES: LobbyTile[] = [
   {
-    img: `${BASE}images/tiles/daily-challenges-v9.webp`,
+    img: `${BASE}images/tiles/daily-challenges-v8.jpg`,
     alt: 'Daily Challenges',
     route: '/challenges',
     shortcutKey: '1',
-    width: 1024,
-    height: 1536,
-    preserveNativeRatio: true,
-    portalStatus: 'Open Challenge Vault',
   },
   {
     img: `${BASE}images/tiles/leaderboards-v8.jpg`,

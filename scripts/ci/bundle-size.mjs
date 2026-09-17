@@ -147,7 +147,7 @@ async function main() {
    *  Measured before raising it, so the growth is known to be growth:
    *    main                          2328kB gz / 388 files  (local build)
    *    same tree + table management  2355kB gz / 393 files  (local build)
-   *    ten heaviest chunks inspected: one copy each of react, sentry,
+   *    ten heaviest chunks inspected: one copy each of react, error reporting,
    *      supabase, motion and the chart runtime. No duplicated vendor, no
    *      library arriving twice.
    *
@@ -162,18 +162,8 @@ async function main() {
    *  intentional: enough that ordinary work is not blocked, little enough that
    *  this comment gets read again soon rather than never.
    */
-  // 2026-09-14: four requested Three.js games add one shared, lazy renderer.
-  // Paired builds with the same dependencies/config: main a00f5c5c measured
-  // 2527kB gz / 8963kB raw; Diamond Spins measured 2723kB gz / 9674kB raw.
-  // Source-map inspection found one copy of Three.js (129kB gz shared chunk)
-  // and unchanged single React, Supabase, Sentry, Motion and chart vendors.
-  // The remaining growth is the four game routes and their controls. The
-  // eager game-door imports were fixed first: initial load fell 311 -> 298kB
-  // gz, versus main's 296kB. No new source module enters first paint.
-  // This accounts for the new product surface with 77kB total headroom;
-  // initial-load limits and the entry-module gate remain unchanged.
-  const TOTAL_GZ_CEILING = 2800;
-  const TOTAL_RAW_CEILING = 10000;
+  const TOTAL_GZ_CEILING = 2600;
+  const TOTAL_RAW_CEILING = 9200;
 
   const biggest = all
     .map((f) => ({ name: path.basename(f), ...sizeOf(f) }))

@@ -79,7 +79,6 @@ import {
   ordinal,
   placePrize,
   resolvePayoutStructure,
-  tournamentRowUnitCents,
 } from './types';
 import MysteryBountyPanel from '../MysteryBountyPanel';
 import '../../../styles/tournament-lobby-3d.css';
@@ -297,7 +296,7 @@ export default function RewardsTab({
              reject. The old code destructured only `.data`, coalesced null to
              `[]`, set `loaded: true` and reported nothing -- so an RLS denial
              on a funded pool rendered "The Bounty Pool Is Not Funded Yet" as
-             fact, with no trace in Sentry. fetchAllRows throws on `error`, so
+             fact, with no trace in error reporting. fetchAllRows throws on `error`, so
              this branch now actually runs, and `failed` keeps the panel from
              making that claim. */
           setLedger({ liveHeads: [], claimedHeads: [], loaded: true, failed: true });
@@ -587,12 +586,7 @@ export default function RewardsTab({
               // first place is representative of the band.
               const prize =
                 placeLadderPool !== null && placeLadderPool > 0 && parsedPlaces
-                  ? placePrize(
-                      placeLadderPool,
-                      parsedPlaces,
-                      band.fromPlace,
-                      tournamentRowUnitCents(tournament)
-                    )
+                  ? placePrize(placeLadderPool, parsedPlaces, band.fromPlace)
                   : 0;
 
               return (

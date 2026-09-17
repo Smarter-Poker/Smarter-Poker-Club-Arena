@@ -1,43 +1,26 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   HAND HISTORY - on the spade console (#ClubArenaConsole)
-
-   The chassis, its inks and its two painted plates come from SpadeConsole.css.
-   This sheet keeps the GEOMETRY the two hand surfaces were given on
-   2026-08-27 - a right-hand drawer on desktop, a 75dvh sheet anchored to the
-   bottom on a phone, a backdrop under it to tap, and the safe-area inset paid
-   at the top so nothing lands under the clock - and it keeps every animation.
-   What it stops doing is painting: the drawer is transparent now, and the
-   spade master stands inside it.
-
-   WHAT WAS DELETED. A rounded dark drawer with a border and a drop shadow; a
-   grey header bar with two 32px square icon buttons; a five-up grid of stat
-   tiles, each a bordered rounded box; a filled, rounded search well; a card
-   per hand with its own border and fill; and two rounded buttons inside every
-   expanded hand. Every one of them drew a control the master paints, or drew a
-   tile where a row belongs.
-
-   Rows are separated by an engraved rule - a black line with a light lip, the
-   same cut the master's own chrome rules are made of. No border-radius on a
-   card, tile, pill or button, no gradient, no box-shadow on a box, no :hover.
-
-   EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6), at its full duration and
-   scaled by --animation-speed exactly as before: hhBackdropIn, hhSlideIn on
-   the desktop drawer, hhSlideUp on the phone sheet, hhDetailFadeIn when a hand
-   opens, and the per-row stagger the component drives inline.
-
-   THE ORDER OF THE LAST TWO MEDIA BLOCKS IS LOAD-BEARING. The app-mode floor
-   for `.hh-panel__header` must be the LAST rule in this file that pads that
-   element, or a later `padding` shorthand silently resets it and the top of
-   the sheet goes back under the clock. Pinned three ways by
-   tests/unit/handHistorySheets.test.tsx.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * Hand History Panel  #SMARTERCASINOREALISM
+ *
+ * The rail-side hand record: obsidian and gunmetal structure, machined chrome
+ * type, restrained broadcast blue for the live figure, brass only for what is
+ * yours. Rajdhani for the display figures, monospace for the eyebrows, Inter
+ * for body. No dashboard-style white cards; light mode is brushed-silver
+ * casino hardware with the same hierarchy.
+ *
+ * Tokens are declared on the panel itself, mirroring the cashier's block
+ * (CashierTradePage.module.css), because club-engine.css is the only global
+ * sheet in the table's import chain and its tokens are the OLD club set.
+ *
+ * No hover effects anywhere (tests/no-hover-effects.law.test.ts); focus-visible
+ * and active are the sanctioned states. Motion is scaled by
+ * --animation-speed and collapses under prefers-reduced-motion.
+ */
 
 .hh-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1190;
-  /* Black, not grey: the console floats on the same black as the felt. */
-  background: rgb(0 0 0 / 82%);
+  z-index: 499;
+  background: rgba(2, 4, 7, 0.62);
   animation: hhBackdropIn calc(0.2s * var(--animation-speed, 1)) ease;
 }
 
@@ -45,255 +28,236 @@
   from {
     opacity: 0;
   }
-
   to {
     opacity: 1;
   }
 }
 
-/* The drawer is the space the picture stands in, and paints nothing itself. */
 .hh-panel {
+  --hh-void: #030609;
+  --hh-black: #080d12;
+  --hh-panel: #0c1118;
+  --hh-panel-raised: #111823;
+  --hh-gunmetal: #26333d;
+  --hh-chrome: #dce8f0;
+  --hh-steel: #b9cad7;
+  --hh-blue: #3aa8ff;
+  --hh-blue-hot: #8ad2ff;
+  --hh-brass: #d6ad52;
+  --hh-muted: #8391a1;
+  --hh-up: #3fb950;
+  --hh-down: #ff6b6b;
+  --hh-line: rgba(185, 202, 215, 0.12);
+  --hh-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  --hh-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  --hh-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 1200;
+  width: min(420px, 92vw);
   display: flex;
   flex-direction: column;
-  width: min(420px, 100vw);
-  max-width: 100vw;
-  padding: 0 12px 12px !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  outline: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  overflow: hidden auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  animation: hhSlideIn calc(0.28s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 500;
+  color: var(--hh-chrome);
+  font-family: var(--hh-body);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(58, 168, 255, 0.08), transparent 26rem),
+    linear-gradient(180deg, var(--hh-black) 0%, var(--hh-void) 70%, #020304 100%);
+  border-left: 1px solid var(--hh-gunmetal);
+  box-shadow:
+    -16px 0 40px rgba(0, 0, 0, 0.55),
+    inset 1px 0 0 rgba(185, 202, 215, 0.1);
+  animation: hhSlideIn calc(0.28s * var(--animation-speed, 1))
+    var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 @keyframes hhSlideIn {
   from {
-    opacity: 0;
-    transform: translateX(6%);
+    transform: translateX(100%);
   }
-
   to {
-    opacity: 1;
     transform: translateX(0);
   }
 }
 
-.hh-panel:focus {
-  outline: none;
+/* Grab handle, visible only where the panel is a bottom sheet. */
+.hh-panel__grab {
+  display: none;
+  justify-content: center;
+  padding: 8px 0 2px;
+  flex-shrink: 0;
 }
 
-/* THE TOP OF THE SHEET. The strip between the crest and the phone's clock: it
-   carries the grab affordance and pays the safe-area inset. The global popup
-   chassis paints every `__header` that is a direct child of a dialog, so every
-   longhand it sets is switched off here - the frame is in the art. */
+.hh-panel__grab span {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(185, 202, 215, 0.28);
+}
+
+/* ── Header: machined plate ─────────────────────────────────────────────── */
 .hh-panel__header {
-  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--hh-gunmetal);
+  background: linear-gradient(180deg, rgba(185, 202, 215, 0.06), transparent 60%), var(--hh-panel);
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.14);
+}
+
+.hh-panel__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hh-panel__eyebrow {
+  font-family: var(--hh-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--hh-blue);
+}
+
+.hh-panel__title {
+  margin: 0;
+  font-family: var(--hh-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hh-chrome);
+}
+
+.hh-panel__header-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hh-panel__iconbtn {
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-top: 12px;
-  padding-bottom: 8px;
-  border: 0 !important;
-  border-bottom: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
+  border-radius: 4px;
+  border: 1px solid var(--hh-gunmetal);
+  background: linear-gradient(180deg, var(--hh-panel-raised), var(--hh-panel));
+  color: var(--hh-steel);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
 }
 
-.hh-panel__grab {
-  width: 36px;
-  height: 3px;
-  background: rgb(255 255 255 / 22%);
+.hh-panel__iconbtn:active {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
-.hh-console {
-  flex: 0 0 auto;
+.hh-panel__iconbtn:focus-visible {
+  outline: 2px solid var(--hh-blue);
+  outline-offset: 2px;
 }
 
-/* ── The strip, and what it counts ────────────────────────────────────── */
+.hh-panel__iconbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
+/* ── Stats strip: what it counts, said first ────────────────────────────── */
 .hh-panel__stats {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--hh-line);
+  background: rgba(8, 13, 18, 0.7);
 }
 
 .hh-panel__stats-scope {
-  padding: 0 0.5cqw 1.4cqw;
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font-size: 2.5cqw;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-family: var(--hh-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  color: var(--hh-muted);
+  margin-bottom: 8px;
 }
 
 .hh-panel__stats-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .hh-panel__stat {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3cqw;
-  align-items: baseline;
-  padding: 2cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--hh-line);
+  background: var(--hh-panel);
+  min-width: 0;
 }
 
 .hh-panel__stat-label {
-  min-width: 0;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 2.7cqw;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-family: var(--hh-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
-}
-
-.hh-panel__stat-value {
-  color: #e4e7ec;
-  -webkit-text-fill-color: #e4e7ec;
-  font-size: 3.5cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums lining-nums;
-  text-align: right;
-  text-shadow:
-    0 -0.12cqw 0 rgb(255 255 255 / 45%),
-    0 0.2cqw 0 #6d747c,
-    0 0.35cqw 0 #050607,
-    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
+  color: var(--hh-muted);
   white-space: nowrap;
 }
 
-/* The house green and the console's red. A signed figure is the one place a
-   colour carries meaning rather than dressing. */
+.hh-panel__stat-value {
+  font-family: var(--hh-display);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--hh-chrome);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hh-panel__stat-value--up {
-  color: #3fb950;
-  -webkit-text-fill-color: #3fb950;
-  text-shadow:
-    0 0 1cqw rgb(63 185 80 / 55%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  color: var(--hh-up);
 }
 
 .hh-panel__stat-value--down {
-  color: #ff5b6e;
-  -webkit-text-fill-color: #ff5b6e;
-  text-shadow:
-    0 0 1cqw rgb(240 40 73 / 80%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  color: var(--hh-down);
 }
 
 .hh-panel__stat-value--flat {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  color: var(--hh-steel);
 }
 
-/* ── The search: typed straight onto the glass ────────────────────────── */
-
-.hh-panel__search {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2cqw;
-  align-items: center;
-  padding: 1.6cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-/* The global dialog chassis wants a recessed, bordered well for every input;
-   every longhand it sets is restated here, because the frame is in the art. */
-.hh-panel__search-input {
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  color: #e4e7ec !important;
-  -webkit-text-fill-color: #e4e7ec;
-  font-family: inherit;
-  font-size: 3.1cqw;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-}
-
-.hh-panel__search-input::placeholder {
-  color: #4a5462;
-  -webkit-text-fill-color: #4a5462;
-}
-
-.hh-panel__search-input:focus-visible {
-  outline: 0.6cqw solid #8fd4ff !important;
-  outline-offset: 0.4cqw;
-  box-shadow: none !important;
-}
-
-.hh-panel__search-input::-webkit-search-cancel-button {
-  appearance: none;
-}
-
-.hh-panel__search-clear {
-  appearance: none;
-  min-height: 40px;
-  margin: 0;
-  padding: 0 1cqw;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-family: inherit;
-  font-size: 2.7cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.hh-panel__search-clear:active {
-  filter: brightness(1.25);
-  transform: none;
-}
-
-/* ── The list: one hand, one engraved row ─────────────────────────────── */
-
+/* ── The list ───────────────────────────────────────────────────────────── */
 .hh-panel__list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px calc(16px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  gap: 6px;
+}
+
+.hh-panel__empty {
+  padding: 48px 16px;
+  text-align: center;
+  font-family: var(--hh-display);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: var(--hh-muted);
 }
 
 .hh-panel__item {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(8px);
   transition:
     opacity calc(0.3s * var(--animation-speed, 1)) ease,
     transform calc(0.3s * var(--animation-speed, 1)) ease;
@@ -304,161 +268,112 @@
   transform: translateY(0);
 }
 
-.hh-panel__empty {
-  padding: 6cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 3.1cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
-  text-align: center;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+/* ── One hand ───────────────────────────────────────────────────────────── */
+.hh-entry {
+  border: 1px solid var(--hh-line);
+  border-radius: 4px;
+  background: var(--hh-panel);
+  overflow: hidden;
+}
+
+.hh-entry--expanded {
+  border-color: rgba(58, 168, 255, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(58, 168, 255, 0.12);
 }
 
 .hh-entry__summary {
-  appearance: none;
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-  gap: 2cqw;
-  align-items: baseline;
   width: 100%;
-  /* A row on a phone still has to be hittable. */
-  min-height: 44px;
-  margin: 0;
-  padding: 2.4cqw 0.5cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto 14px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
   color: inherit;
-  font: inherit;
   text-align: left;
   cursor: pointer;
-  touch-action: manipulation;
-}
-
-.hh-entry__summary:active {
-  filter: brightness(1.25);
-  transform: none;
+  font-family: inherit;
 }
 
 .hh-entry__summary:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1cqw;
-}
-
-/* A hand the viewer only watched is dimmer than one they were dealt into. */
-.hh-entry--observer .hh-entry__summary {
-  opacity: 0.68;
+  outline: 2px solid var(--hh-blue);
+  outline-offset: -2px;
 }
 
 .hh-entry__num {
-  color: #45adff;
-  -webkit-text-fill-color: #45adff;
-  font-size: 3cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums lining-nums;
-  text-shadow:
-    0 0 0.9cqw rgb(49 168 255 / 70%),
-    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
-  white-space: nowrap;
+  font-family: var(--hh-mono);
+  font-size: 11px;
+  color: var(--hh-blue);
+  letter-spacing: 0.04em;
 }
 
 .hh-entry__time {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font-size: 2.6cqw;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums lining-nums;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
-  white-space: nowrap;
+  font-family: var(--hh-mono);
+  font-size: 10px;
+  color: var(--hh-muted);
 }
 
 .hh-entry__pot {
-  min-width: 0;
-  overflow: hidden;
-  color: #e4e7ec;
-  -webkit-text-fill-color: #e4e7ec;
-  font-size: 2.9cqw;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums lining-nums;
-  text-overflow: ellipsis;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  font-size: 12px;
+  color: var(--hh-steel);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 .hh-entry__rake {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font-weight: 600;
+  color: var(--hh-muted);
 }
 
 .hh-entry__tags {
   display: flex;
-  gap: 2cqw;
-  align-items: baseline;
+  gap: 4px;
 }
 
-/* A tag is a lit word, never a pill. */
 .hh-entry__tag {
-  color: #ffd700;
-  -webkit-text-fill-color: #ffd700;
-  font-size: 2.3cqw;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-family: var(--hh-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  text-shadow:
-    0 0 1cqw rgb(255 215 0 / 70%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(58, 168, 255, 0.35);
+  color: var(--hh-blue-hot);
+  background: rgba(58, 168, 255, 0.1);
   white-space: nowrap;
 }
 
 .hh-entry__tag--quiet {
-  color: #4a5462;
-  -webkit-text-fill-color: #4a5462;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  border-color: var(--hh-line);
+  color: var(--hh-muted);
+  background: transparent;
 }
 
 .hh-entry__result {
-  font-size: 3.2cqw;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums lining-nums;
-  text-align: right;
+  font-family: var(--hh-display);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .hh-entry__result--up {
-  color: #3fb950;
-  -webkit-text-fill-color: #3fb950;
-  text-shadow:
-    0 0 1cqw rgb(63 185 80 / 55%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  color: var(--hh-up);
 }
 
 .hh-entry__result--down {
-  color: #ff5b6e;
-  -webkit-text-fill-color: #ff5b6e;
-  text-shadow:
-    0 0 1cqw rgb(240 40 73 / 80%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  color: var(--hh-down);
 }
 
 .hh-entry__result--flat {
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  color: var(--hh-steel);
 }
 
-/* The disclosure mark: a hairline stroke in the master's own ink. */
 .hh-entry__chevron {
-  display: inline-flex;
-  align-self: center;
-  color: #45adff;
+  display: flex;
+  color: var(--hh-muted);
   transition: transform calc(0.2s * var(--animation-speed, 1)) ease;
 }
 
@@ -467,121 +382,124 @@
 }
 
 .hh-entry__detail {
-  display: flex;
-  flex-direction: column;
-  gap: 2.4cqw;
-  padding: 1cqw 0 3cqw;
+  padding: 4px 8px 10px;
+  border-top: 1px solid var(--hh-line);
+  background: var(--hh-black);
   animation: hhDetailFadeIn calc(0.25s * var(--animation-speed, 1)) ease;
 }
 
 @keyframes hhDetailFadeIn {
   from {
     opacity: 0;
-    transform: translateY(-4px);
   }
-
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 .hh-entry__facts {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 2.4cqw;
+  display: flex;
+  gap: 8px;
   align-items: baseline;
-  padding: 1.8cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  padding: 6px 4px 8px;
+  font-size: 11px;
+  color: var(--hh-steel);
 }
 
 .hh-entry__facts-label {
-  color: #ffd700;
-  -webkit-text-fill-color: #ffd700;
-  font-size: 2.5cqw;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-family: var(--hh-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  text-shadow:
-    0 0 1cqw rgb(255 215 0 / 70%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
-  white-space: nowrap;
+  color: var(--hh-brass);
 }
 
 .hh-entry__facts-body {
   min-width: 0;
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font:
-    500 2.9cqw/1.4 Inter,
-    system-ui,
-    sans-serif;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  overflow-wrap: anywhere;
 }
 
-/* The two actions inside an open hand: lit words on the glass. */
 .hh-entry__actions-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: stretch;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 2px 0;
 }
 
 .hh-entry__btn {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  padding: 2cqw 0.5cqw;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  color: #9aa5b3;
-  -webkit-text-fill-color: #9aa5b3;
-  font-family: inherit;
-  font-size: 2.9cqw;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--hh-gunmetal);
+  background: linear-gradient(180deg, var(--hh-panel-raised), var(--hh-panel));
+  color: var(--hh-chrome);
+  font-family: var(--hh-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
   cursor: pointer;
-  touch-action: manipulation;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
 }
 
 .hh-entry__btn--primary {
-  color: #f4f7fb;
-  -webkit-text-fill-color: #f4f7fb;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  border-color: rgba(58, 168, 255, 0.6);
+  background: linear-gradient(180deg, #1f7fd6, #145ea3);
+  color: #f4f9ff;
 }
 
 .hh-entry__btn:active {
-  filter: brightness(1.25);
-  transform: none;
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 .hh-entry__btn:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1cqw;
+  outline: 2px solid var(--hh-blue);
+  outline-offset: 2px;
 }
 
-/* ── The phone sheet: 75dvh on the bottom, with a backdrop to tap ─────── */
+/* ── 375px first ────────────────────────────────────────────────────────── */
+@media (max-width: 380px) {
+  .hh-panel__stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 
+  .hh-entry__summary {
+    grid-template-columns: auto minmax(0, 1fr) auto 14px;
+  }
+
+  .hh-entry__time,
+  .hh-entry__tags {
+    display: none;
+  }
+}
+
+/* ── Phones: a 3/4-height bottom sheet, not a cramped drawer ────────────── */
 @media (max-width: 640px) {
   .hh-panel {
     top: auto;
+    left: 0;
     right: 0;
     bottom: 0;
-    left: 0;
     width: 100vw;
+    height: 75vh;
     height: 75dvh;
-    animation: hhSlideUp calc(0.28s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
+    border-left: none;
+    border-top: 1px solid var(--hh-gunmetal);
+    border-radius: 12px 12px 0 0;
+    box-shadow:
+      0 -12px 40px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(185, 202, 215, 0.12);
+    animation: hhSlideUp calc(0.28s * var(--animation-speed, 1))
+      var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   }
 
+  .hh-panel__grab {
+    display: flex;
+  }
+
+  /* Dan 2026-08-24, from an iPhone: "there is no padding at the top, so you
+     can't even X off the page." The header pays back the top inset, so the
+     close button is always reachable. */
   .hh-panel__header {
     padding-top: calc(12px + env(safe-area-inset-top, 0px));
   }
@@ -589,19 +507,70 @@
 
 @keyframes hhSlideUp {
   from {
-    opacity: 0;
-    transform: translateY(12%);
+    transform: translateY(100%);
   }
-
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }
 
+/* Multi-table only: the tab strip is a real element the drawer used to paint
+   over. --sp-tabbar-h is TableTabBar.css's published height. */
+@media (min-width: 641px) {
+  .multi-table-page .hh-panel {
+    top: var(--sp-tabbar-h, 0px);
+  }
+}
+
+/* ── Light mode: brushed-silver casino hardware, same hierarchy ─────────── */
+[data-theme='light'] .hh-backdrop {
+  background: rgba(20, 35, 50, 0.38);
+}
+
+[data-theme='light'] .hh-panel {
+  --hh-void: #d9e0e6;
+  --hh-black: #e6ebef;
+  --hh-panel: #f1f4f7;
+  --hh-panel-raised: #ffffff;
+  --hh-gunmetal: #aab8c3;
+  --hh-chrome: #0d161d;
+  --hh-steel: #3f5261;
+  --hh-blue: #146bb3;
+  --hh-blue-hot: #0f5a99;
+  --hh-brass: #8a6a24;
+  --hh-muted: #5f7181;
+  --hh-up: #4dc660;
+  --hh-down: #c0392b;
+  --hh-line: rgba(20, 35, 50, 0.14);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(20, 107, 179, 0.08), transparent 26rem),
+    linear-gradient(180deg, #eef2f5 0%, var(--hh-void) 100%);
+  box-shadow:
+    -16px 0 40px rgba(20, 35, 50, 0.18),
+    inset 1px 0 0 #fff;
+}
+
+[data-theme='light'] .hh-panel__header {
+  background: linear-gradient(180deg, #fff, var(--hh-panel));
+  box-shadow: inset 0 1px 0 #fff;
+}
+
+[data-theme='light'] .hh-panel__stats {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+[data-theme='light'] .hh-entry__tag {
+  background: rgba(20, 107, 179, 0.08);
+  border-color: rgba(20, 107, 179, 0.3);
+}
+
+[data-theme='light'] .hh-entry__btn--primary {
+  background: linear-gradient(180deg, #2a8ae0, #1b6cb5);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .hh-backdrop,
   .hh-panel,
+  .hh-backdrop,
   .hh-entry__detail {
     animation: none;
   }
@@ -611,21 +580,52 @@
     transition: none;
   }
 
-  /* The stagger's base state is opacity 0 and it relied on the transition to
-     arrive; without motion the rows must simply BE there. */
   .hh-panel__item {
     opacity: 1;
     transform: none;
   }
 }
 
-/* THE APP-MODE FLOOR, LAST IN THE FILE.
-   env(safe-area-inset-top) resolves to 0 in the installed app on some devices,
-   which silently deletes the phone rule above and puts the top of the sheet
-   under the clock. Equal specificity, so source order decides: nothing below
-   this line may pad `.hh-panel__header` again. */
+/* PWA GUARANTEE. In an installed app the page draws under the status bar and
+   on some devices env(safe-area-inset-top) resolves to 0, so the env() padding
+   above silently vanishes and the X goes back under the clock. The floor makes
+   that impossible.
+
+   LAST IN THE FILE ON PURPOSE: the header's own rule sets a `padding`
+   shorthand, and a shorthand RESETS padding-top. Equal specificity means
+   source order decides. Nothing that touches .hh-panel__header padding may be
+   added below this block. */
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .hh-panel__header {
     padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
   }
+}
+
+/* ── Find a hand (Phase 5, 2026-09-06) ──────────────────────────────────── */
+.hh-panel__search {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 8px;
+}
+
+.hh-panel__search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--hh-gunmetal, rgba(255, 255, 255, 0.16));
+  background: rgba(0, 0, 0, 0.32);
+  color: inherit;
+  font: inherit;
+}
+
+.hh-panel__search-clear {
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--hh-gunmetal, rgba(255, 255, 255, 0.16));
+  background: transparent;
+  color: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
 }

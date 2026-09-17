@@ -39,7 +39,6 @@
 import { describe, it, expect } from 'vitest';
 
 import { computePlacePrize } from './payoutMath.js';
-import { CHIP_UNIT_CENTS } from './tournamentUnit.js';
 
 /**
  * Every payout structure in production, by percentage, taken from the
@@ -115,7 +114,7 @@ describe('the paid places sum to the prize pool, exactly', () => {
       for (const pool of POOLS) {
         let sumCents = 0;
         for (let place = 1; place <= pcts.length; place++) {
-          sumCents += Math.round(computePlacePrize(pool, entries, place, CHIP_UNIT_CENTS) * 100);
+          sumCents += Math.round(computePlacePrize(pool, entries, place) * 100);
         }
         if (sumCents !== Math.round(pool * 100)) {
           offenders.push(`pool ${pool.toFixed(2)} paid ${(sumCents / 100).toFixed(2)}`);
@@ -137,7 +136,7 @@ describe('every place matches exact decimal arithmetic', () => {
       for (const pool of POOLS) {
         const ref = referenceCents(BigInt(Math.round(pool * 100)), pcts);
         for (let i = 0; i < pcts.length; i++) {
-          const got = Math.round(computePlacePrize(pool, entries, i + 1, CHIP_UNIT_CENTS) * 100);
+          const got = Math.round(computePlacePrize(pool, entries, i + 1) * 100);
           if (BigInt(got) !== ref[i]) {
             offenders.push(
               `pool ${pool.toFixed(2)} place ${i + 1}: got ${got} cents, exact is ${ref[i]}`
@@ -160,9 +159,9 @@ describe('the cases that actually went wrong in production', () => {
     // This is the exact event that overpaid by a cent twice a day. Place 8 is
     // 17.955 to the fraction; exact decimal rounds it UP, and the float
     // arithmetic that used to run here rounded it DOWN.
-    expect(computePlacePrize(513, NINE, 8, CHIP_UNIT_CENTS)).toBe(17.96);
+    expect(computePlacePrize(513, NINE, 8)).toBe(17.96);
     const total = [1, 2, 3, 4, 5, 6, 7, 8, 9].reduce(
-      (s, p) => s + Math.round(computePlacePrize(513, NINE, p, CHIP_UNIT_CENTS) * 100),
+      (s, p) => s + Math.round(computePlacePrize(513, NINE, p) * 100),
       0
     );
     expect(total).toBe(51300);
@@ -170,7 +169,7 @@ describe('the cases that actually went wrong in production', () => {
 
   it('483.00, the pool named in the 2026-08-20 fix, still pays 483.00', () => {
     const total = [1, 2, 3, 4, 5, 6, 7, 8, 9].reduce(
-      (s, p) => s + Math.round(computePlacePrize(483, NINE, p, CHIP_UNIT_CENTS) * 100),
+      (s, p) => s + Math.round(computePlacePrize(483, NINE, p) * 100),
       0
     );
     expect(total).toBe(48300);
@@ -180,7 +179,7 @@ describe('the cases that actually went wrong in production', () => {
     // Normalised proportionally rather than over-paying the top places.
     const odd = toEntries([50, 30, 15]); // 95%
     const total = [1, 2, 3].reduce(
-      (s, p) => s + Math.round(computePlacePrize(200, odd, p, CHIP_UNIT_CENTS) * 100),
+      (s, p) => s + Math.round(computePlacePrize(200, odd, p) * 100),
       0
     );
     expect(total).toBe(20000);
@@ -193,7 +192,7 @@ describe('the cases that actually went wrong in production', () => {
     // cents. Pricing one place in isolation used to clamp the LAST place at
     // zero and quietly pay out MORE than the pool.
     const paid = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((p) =>
-      Math.round(computePlacePrize(0.1, NINE, p, CHIP_UNIT_CENTS) * 100)
+      Math.round(computePlacePrize(0.1, NINE, p) * 100)
     );
     expect(paid.reduce((a, b) => a + b, 0)).toBe(10);
     expect(paid.every((c) => c >= 0)).toBe(true);
@@ -202,7 +201,7 @@ describe('the cases that actually went wrong in production', () => {
   it('never pays a negative place, even on a structure summing past 100', () => {
     const broken = toEntries([90, 80, 70]);
     for (const place of [1, 2, 3]) {
-      expect(computePlacePrize(100, broken, place, CHIP_UNIT_CENTS)).toBeGreaterThanOrEqual(0);
+      expect(computePlacePrize(100, broken, place)).toBeGreaterThanOrEqual(0);
     }
   });
 });

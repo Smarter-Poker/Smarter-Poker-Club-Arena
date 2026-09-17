@@ -79,7 +79,7 @@ describe('same-frame and cross-tab delivery', () => {
     expect(TABLE).toContain("useMasterBusSubscription('ENTITLEMENTS_CHANGED'");
     expect(THROWS).toContain("masterBus.subscribe('ENTITLEMENTS_CHANGED'");
     expect(THROW_SERVICE).toContain('packThrowsRemaining');
-    expect(EMOJIS).toContain("checkFeatureAccess(requestedUserId, 'emoji_pack')");
+    expect(EMOJIS).toContain("checkFeatureAccess(user.id, 'emoji_pack')");
     expect(EMOJIS).toContain("masterBus.subscribe('ENTITLEMENTS_CHANGED'");
     expect(VIP_PAGE).toContain("masterBus.emit('ENTITLEMENTS_CHANGED'");
   });

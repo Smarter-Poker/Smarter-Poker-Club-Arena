@@ -7,6 +7,7 @@ Git, fetch, object lookup, ancestry and all admission decisions execute for real
 """
 from pathlib import Path
 import os
+import json
 import shlex
 import shutil
 import subprocess
@@ -49,7 +50,7 @@ HOST_STAGE = 'export GIT_NO_REPLACE_OBJECTS=1\n' + textwrap.dedent(
 REAL_GIT = shutil.which('git')
 certification = CERTIFICATION_WORKFLOW.split(
     'name: Resolve the exact protected-main engine component', 1)[1].split(
-    '\n      - name: Setup Node 20', 1)[0]
+    '\n      - name:', 1)[0]
 CERTIFICATION_GATE = textwrap.dedent(certification.split('        run: |\n', 1)[1])
 if not REAL_GIT:
     raise RuntimeError('git is required for actual ancestry tests')
@@ -80,6 +81,9 @@ class ForwardAdmissionTests(unittest.TestCase):
         self.side = self.commit('server/side.txt', 'side')
         self.git('switch', '-q', 'main')
         self.git('remote', 'add', 'origin', str(self.repo))
+        helper = self.repo / 'scripts/ci/production-e2e-provenance.mjs'
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_bytes((ROOT / 'scripts/ci/production-e2e-provenance.mjs').read_bytes())
         self.high_water = self.directory / 'high-water'
         self.high_water.write_text(self.a + '\n')
         self.seal_calls = self.directory / 'seal-calls'
@@ -105,13 +109,17 @@ class ForwardAdmissionTests(unittest.TestCase):
         return self.git('rev-parse', 'HEAD')
 
     def harness(self, code, *, target=None, control=None, requested=None,
-                checkout=None, now=600, inside_break=False, fault=None, tail='', trigger=''):
+                checkout=None, now=600, inside_break=False, fault=None, tail='', trigger='', event=None, health=None):
         target = self.b if target is None else target
         control = self.main if control is None else control
         self.git('checkout', '-q', '--detach', checkout or control)
         env = dict(self.env)
         env.update(REPO_DIR=str(self.repo), SHA=target, TARGET_SHA=target,
                    ENGINE_TRIGGER_SHA=trigger,
+                   EVENT_NAME=event or ('repository_dispatch' if trigger else 'workflow_run'),
+                   GITHUB_RUN_ID='fixture',
+                   ENGINE_HEALTH_JSON=json.dumps(health if health is not None else
+                       {'releaseSha': self.b, 'running': True, 'liveness': 'ok'}),
                    REQUESTED_SHA=target if requested is None else requested,
                    CONTROL_SHA=control, RUN_KEY='123-1',
                    DEPLOY_NOT_AFTER_EPOCH='9000', DEADLINE='9000',
@@ -149,6 +157,7 @@ timeout() {{
   shift
   "$@"
 }}
+curl() {{ printf '%s\\n' "$ENGINE_HEALTH_JSON"; }}
 flock() {{ :; }}
 sleep() {{ :; }}
 die() {{ printf 'REFUSED:%s\\n' "$*" >&2; exit 1; }}
@@ -272,9 +281,9 @@ printf 'ADMITTED:%s\\n' "$SHA"
         self.accepted(self.harness(CERTIFICATION_GATE, trigger=self.b))
         self.assertEqual((self.directory / 'outputs').read_text(), 'sha=' + self.b + '\n')
 
-    def test_certification_without_engine_trigger_requires_latest_component(self):
+    def test_client_certification_uses_exact_healthy_serving_component(self):
         self.accepted(self.harness(CERTIFICATION_GATE))
-        self.assertEqual((self.directory / 'outputs').read_text(), 'sha=' + self.c + '\n')
+        self.assertEqual((self.directory / 'outputs').read_text(), 'sha=' + self.b + '\n')
 
     def test_certification_refuses_trigger_outside_protected_main(self):
         self.refused(self.harness(CERTIFICATION_GATE, trigger=self.side))
@@ -284,9 +293,18 @@ printf 'ADMITTED:%s\\n' "$SHA"
             with self.subTest(trigger=trigger):
                 self.refused(self.harness(CERTIFICATION_GATE, trigger=trigger))
 
-    def test_certification_refuses_failed_fetch_or_component_lookup(self):
+    def test_certification_refuses_failed_fetch_or_unhealthy_serving_component(self):
         self.refused(self.harness(CERTIFICATION_GATE, trigger=self.b, fault='fetch'))
-        self.refused(self.harness(CERTIFICATION_GATE, fault='log'))
+        for health in [{}, {'releaseSha': self.side, 'running': True, 'liveness': 'ok'},
+                       {'releaseSha': self.b, 'running': False, 'liveness': 'ok'},
+                       {'releaseSha': self.b, 'running': True, 'liveness': 'bad'}]:
+            with self.subTest(health=health):
+                self.refused(self.harness(CERTIFICATION_GATE, health=health))
+
+    def test_certification_refuses_missing_or_contradictory_engine_event(self):
+        self.refused(self.harness(CERTIFICATION_GATE, event='repository_dispatch'))
+        self.refused(self.harness(CERTIFICATION_GATE, event='workflow_run', trigger=self.b))
+        self.refused(self.harness(CERTIFICATION_GATE, event='push'))
 
 
 if __name__ == '__main__':

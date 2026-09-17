@@ -593,6 +593,64 @@ def cmd_get(args: argparse.Namespace) -> None:
         print(fields[args.field])
 
 
+def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
+    """Reserve one fixed announcement for this existing release transaction.
+
+    Failure receipts are written only after exact desired recovery. Unknown
+    outcomes never qualify. This adds no publisher, scheduler or v1 wire field.
+    """
+    target = valid_sha(args.sha)
+    run_id = str(args.run_id)
+    if not RUN_ID_RE.fullmatch(run_id):
+        die("recovery window run id is invalid")
+    with SealLock():
+        state = load_state()
+        git_is_ancestor(args.repo, target, "origin/main", "recovery target is not protected main")
+        git_is_ancestor(args.repo, state["highWaterSha"], target, "recovery target is superseded")
+        if state.get("pending") or state["desired"]["sha"] == target:
+            print("unavailable")
+            return
+        path = STATE_DIR / f"engine-recovery-window-{run_id}.json"
+        if path.exists():
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if (value.get("sha") != target or value.get("runId") != run_id
+                    or type(value.get("announcedAt")) is not int or value["announcedAt"] <= 0):
+                die("recovery window identity is corrupt or belongs to another target")
+            print(value["announcedAt"])
+            return
+
+        def ancestor(older: str, newer: str) -> bool:
+            result = subprocess.run(
+                ["git", "-C", args.repo, "merge-base", "--is-ancestor", older, newer],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                env={**os.environ, "GIT_NO_REPLACE_OBJECTS": "1"}, timeout=10,
+            )
+            if result.returncode not in (0, 1):
+                die("recovery failure ancestry is unreadable")
+            return result.returncode == 0
+
+        cause = "observed-missed-certificate" if args.missed_window else ""
+        if not cause:
+            for receipt in sorted(RESULT_DIR.glob("*.json"), reverse=True):
+                if not RUN_ID_RE.fullmatch(receipt.stem):
+                    continue
+                raw = json.loads(receipt.read_text(encoding="utf-8"))
+                if raw.get("result") != "failed":
+                    continue
+                failure = load_failure(receipt.stem)
+                failed_sha = failure["sha"]
+                if ancestor(failed_sha, target) and not ancestor(failed_sha, state["highWaterSha"]):
+                    cause = f"failed-release:{receipt.stem}"
+                    break
+        if not cause:
+            print("unavailable")
+            return
+        value = {"runId": run_id, "sha": target, "announcedAt": int(time.time() * 1000), "cause": cause}
+        write_json_atomic(path, value)
+        audit_once("recovery_window_reserved", state, f"recovery_window:{run_id}", window=value)
+        print(value["announcedAt"])
+
+
 def cmd_pending_owner(_args: argparse.Namespace) -> None:
     """Describe only pending ownership/lifecycle, never its authorization hash."""
     with SealLock():
@@ -1175,6 +1233,13 @@ def parser() -> argparse.ArgumentParser:
         ),
     )
     get.set_defaults(handler=cmd_get)
+
+    recovery_window = commands.add_parser("reserve-recovery-window")
+    recovery_window.add_argument("--sha", required=True)
+    recovery_window.add_argument("--run-id", required=True)
+    recovery_window.add_argument("--repo", required=True)
+    recovery_window.add_argument("--missed-window", action="store_true")
+    recovery_window.set_defaults(handler=cmd_reserve_recovery_window)
 
     pending_owner = commands.add_parser("pending-owner")
     pending_owner.set_defaults(handler=cmd_pending_owner)

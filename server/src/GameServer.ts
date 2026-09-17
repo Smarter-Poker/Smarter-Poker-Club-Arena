@@ -2248,7 +2248,17 @@ export class GameServer {
     this.maintenanceBreak.replay(tableId);
   }
 
+  requestMaintenanceRecoveryWindow(announcedAt: number) {
+    return this.maintenanceBreak.requestRecoveryWindow(announcedAt);
+  }
+
   private readonly maintenanceBreak = new MaintenanceBreak({
+    assertRecoveryWindowContract: bindToProcessRoot(async () => {
+      const { data, error } = await supabase.rpc('fn_engine_recovery_window_contract');
+      if (error || data !== 'engine-recovery-window-v1') {
+        throw new Error('maintenance_recovery_database_contract_unavailable');
+      }
+    }),
     engines: () => this.tableEngines.entries(),
     isRunning: () => this.running,
     emit: (tableId, payload) => tableStateHub.emitEvent(tableId, payload),

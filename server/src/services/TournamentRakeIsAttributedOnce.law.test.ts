@@ -16,9 +16,8 @@
  * 'tournament_fee' commission in the week of 2026-08-31. The database trigger
  * had the same shape for VIP (20260907214446).
  *
- * The law: this service submits only cash source identities to the canonical
- * authority and never applies a second set of stats. Tournament rows remain
- * owned by terminal settlement.
+ * The law: the per-row commission and player_stats paths in this service are
+ * for cash rows only. A tournament row is left to settlement.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -47,32 +46,19 @@ describe('tournament rake is attributed once, at settlement', () => {
     );
   });
 
-  it('excludes tournament rows before submitting canonical cash source identities', () => {
-    const gate = code.indexOf('.filter((row) => !isTournamentRakeRow(row))');
-    const identities = code.indexOf('const sourceIds = cashRows.map((row) => row.id)', gate);
-    const dispatch = code.indexOf("supabase.rpc('fn_credit_agent_commissions_batch'", identities);
-    expect(gate, 'canonical source dispatch has no tournament exclusion').toBeGreaterThan(-1);
-    expect(identities).toBeGreaterThan(gate);
-    expect(dispatch).toBeGreaterThan(identities);
-    expect(code).toContain(
-      "p_items: ids.map((id) => ({ source_type: 'cash_rake_record', source_id: id }))"
+  it('filters both tournament identities before the source batch is constructed', () => {
+    expect(code).toMatch(
+      /const cashRows = sourceRows\.filter\(\(row\) => !isTournamentRakeRow\(row\)\)/
     );
-    expect(code, "the 'tournament_fee' commission source is the second payment").not.toMatch(
-      /tournament_fee/
+    expect(code.indexOf('const cashRows')).toBeLessThan(
+      code.indexOf("source_type: 'cash_rake_record'")
     );
+    expect(code).not.toMatch(/tournament_fee/);
   });
-
-  it('never applies per-row player_stats for a tournament row', () => {
-    expect(code).not.toContain('fn_apply_rakeback_player_stats_batch');
-    expect(code).not.toContain('statsItems');
+  it('has no independent player-stats or commission calculation loop', () => {
+    expect(code).not.toMatch(/fn_apply_rakeback_player_stats_batch|statsItems|commissionItems/);
     expect(code).not.toMatch(/from\('player_stats'\)\.(?:upsert|insert|update)/);
-  });
-
-  it('leaves the rakeback basis to canonical source accounting without a second calculation', () => {
-    // This reader carries no player/amount override and cannot re-derive a
-    // tournament or cash earning basis. A verified source receipt is required.
-    expect(code).toContain('readCashSourceBatch(data, ids)');
-    expect(code).not.toContain('fn_rakeback_recompute_periods');
     expect(code).not.toContain('sharesForRakeRecord');
+    expect(code).toContain('readCashSourceBatch(data, ids)');
   });
 });

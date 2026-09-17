@@ -21,7 +21,10 @@ vi.mock('../src/stores/useWalletStore', () => ({
 vi.mock('../src/components/common/Toast', () => ({ useToast: () => mocks.toast }));
 vi.mock('../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: () => {} }));
 vi.mock('../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: () => {} }));
-vi.mock('../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
+vi.mock('../src/utils/clubIdResolver', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/utils/clubIdResolver')>()),
+  resolveClubUUID: async (id: string) => id,
+}));
 vi.mock('../src/utils/retryFetch', () => ({ retryFetch: (read: () => unknown) => read() }));
 vi.mock('../src/utils/clubQuickLink', () => ({
   CHIP_BALANCE_EVENTS: [],

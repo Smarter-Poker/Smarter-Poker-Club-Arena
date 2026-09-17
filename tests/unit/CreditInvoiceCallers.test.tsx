@@ -231,6 +231,21 @@ it('pending payment cannot publish or reload after agent replacement', async () 
   expect(bus.emit).not.toHaveBeenCalledWith('BALANCE_UPDATED', expect.anything());
   expect(m.queries.filter((q) => q.table === 'credit_invoices')).toHaveLength(2);
 });
+it('an uncertain payment retry retains the same operation identity', async () => {
+  const pay = vi
+    .spyOn(credit, 'processPayment')
+    .mockRejectedValue(new Error('Payment status uncertain'));
+  m.invoices.push(owed());
+  const Panel = (await import('../../src/components/agent/AgentInvoicesPanel')).default;
+  render(<Panel agentId="a" />);
+  const button = await screen.findByRole('button', { name: 'Pay Now' });
+  fireEvent.click(button);
+  await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() => expect(pay).toHaveBeenCalledTimes(2));
+  expect(pay.mock.calls[0][3]).toEqual(pay.mock.calls[1][3]);
+  expect(pay.mock.calls[0][3].operationId).toMatch(/^[a-f0-9-]{36}$/);
+});
 it('same identity refresh preserves pending debt read; signout fences it', async () => {
   const auth = (id: string | null) =>
     m.listeners.forEach((fn) => fn({ payload: { isAuthenticated: !!id, userId: id } }));

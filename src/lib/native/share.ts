@@ -8,18 +8,25 @@
 export async function nativeShareBlob(
   blob: Blob,
   filename: string,
-  title?: string
+  title?: string,
+  isCurrent?: () => boolean
 ): Promise<boolean> {
+  const check = () => {
+    if (isCurrent && isCurrent() !== true) throw new Error('export_account_or_view_changed');
+  };
+  check();
   const [{ Filesystem, Directory }, { Share }] = await Promise.all([
     import('@capacitor/filesystem'),
     import('@capacitor/share'),
   ]);
+  check();
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error);
     reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
     reader.readAsDataURL(blob);
   });
+  check();
   const safe = filename.replace(/[^A-Za-z0-9._-]+/g, '-');
   const written = await Filesystem.writeFile({
     path: `share/${safe}`,
@@ -27,6 +34,7 @@ export async function nativeShareBlob(
     directory: Directory.Cache,
     recursive: true,
   });
+  check();
   await Share.share({ title: title || safe, files: [written.uri] });
   return true;
 }

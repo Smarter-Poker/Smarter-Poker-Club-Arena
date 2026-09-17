@@ -308,13 +308,14 @@ describe('a restart mid-break does not resume play', () => {
   });
 
   it('clears a break that already expired while the engine was down', () => {
-    /* The UPDATE moved into clearPersistedBreak() in #801, so it is no longer
-       inside the sliced resume() body. Both halves are pinned: resume() must
-       call it, and it must be the write that clears both columns. */
-    expect(resumeFn).toMatch(/await this\.clearPersistedBreak\(\);/);
-    const clearFn = BASE.slice(
-      BASE.indexOf('protected async clearPersistedBreak'),
-      BASE.indexOf('protected async clearPersistedBreak') + 600
+    /* Expired adoption now uses the same acknowledged release as a live
+       deadline. Pin that caller chain and the atomic active-clock write. */
+    expect(resumeFn).toMatch(/await this\.resumeFromBreak\(\);/);
+    const releaseFn = sliceMethod(BASE, 'async resumeFromBreak()');
+    expect(releaseFn).toMatch(/await this\.clearPersistedBreak\(\);/);
+    const clearFn = sliceMethod(BASE, 'protected async clearPersistedBreak');
+    expect(clearFn).toMatch(
+      /on_break: false,\s*break_ends_at: null,\s*level_started_at: new Date\(clock\.startedAtMs\)\.toISOString\(\)/
     );
     expect(clearFn).toMatch(/on_break: false, break_ends_at: null/);
   });

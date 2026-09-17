@@ -529,6 +529,13 @@ export abstract class TournamentManagerBase {
    */
   protected breakCountdownStarted: boolean = false;
   private breakResumePersisting = false;
+  /** Retain the exact proposal if its database acknowledgement is lost. */
+  private pendingBreakResumeClock: {
+    lifecycle: TournamentLifecycleToken;
+    level: number;
+    startedAtMs: number;
+    durationMs: number;
+  } | null = null;
   private breakResumeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   // Hand-for-hand sync
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
@@ -550,16 +557,18 @@ export abstract class TournamentManagerBase {
    * How far ahead of the advertised `start_time` this start() ran, in ms, or 0
    * for a start at or past it. GameServer discovers a timed event
    * TOURNAMENT_PRESEAT_LEAD_MS early so the field is SEATED before the clock;
-   * this number is what stops the poker moving with it. Two consumers, both in
-   * start(): the `holdDealingUntil` deadline on every table, and the level
-   * clock, which is armed after this lead rather than at seating so level 1 is
-   * a full level of cards instead of a minute of waiting plus nine of poker.
+   * this number describes the launch lead. The immutable admitted timestamp
+   * holds every dealer and the first level clock, including after a break or
+   * manager replacement, so level 1 is a full level of cards rather than
+   * waiting time plus a shortened level of poker.
    *
    * Read it as "time the felt owes the clock", not as a state — nothing outside
    * start() branches on it, and it is 0 for every seat-first game and for every
    * event started late.
    */
   protected preStartLeadMs: number = 0;
+  /** One first-level wake, distinct from an already running level clock. */
+  private blindStartTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * ═════════════════════════════════════════════════════════════════════════
    *  THE SPIN REVEAL IS ANCHORED TO THE THIRD PAYMENT (2026-08-27)
@@ -953,6 +962,7 @@ export abstract class TournamentManagerBase {
 
   /** A replacement inherits every pause authority before it can deal. */
   private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
+    this.holdManagedTableUntilBookedStart(engine);
     if (this.addOnBreakActive && this.addOnBreakEndsAtMs > Date.now()) {
       // The absolute hold is independent of hand-for-hand's pause flag, so a
       // barrier resume cannot deal through an overlapping add-on break.
@@ -961,6 +971,7 @@ export abstract class TournamentManagerBase {
     if (this.onBreak) {
       engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
         beforeNextHand: true,
+        untilResumed: true,
       });
       return;
     }
@@ -1243,6 +1254,7 @@ export abstract class TournamentManagerBase {
   ): void {
     const lifecycle = this.lifecycleEpoch.current();
     const tableId = this.tableIdForManagedEngine(engine);
+    this.holdManagedTableUntilBookedStart(engine);
     const operation = engine.start().catch(async (error) => {
       reportError(error, errorContext, metadata);
       if (!lifecycle || !tableId || !this.lifecycleIsCurrent(lifecycle)) return;
@@ -1277,6 +1289,12 @@ export abstract class TournamentManagerBase {
         tableId,
       })
     );
+  }
+
+  /** The completed launch receipt survives dealer and manager replacement. */
+  private holdManagedTableUntilBookedStart(engine: ServerTableEngine): void {
+    const bookedStartMs = Date.parse(String(this.tournamentCache?.started_at ?? ''));
+    if (bookedStartMs > Date.now()) engine.holdDealingUntil(bookedStartMs);
   }
 
   /** Bind a delayed manager mutation to the exact lifecycle that scheduled it. */
@@ -1329,6 +1347,7 @@ export abstract class TournamentManagerBase {
     for (const timer of this.lifecycleIntervals) clearInterval(timer);
     this.lifecycleTimeouts.clear();
     this.lifecycleIntervals.clear();
+    this.blindStartTimer = null;
     this.breakResumeRetryTimer = null;
     this.pendingBlindTransition = null;
   }
@@ -1678,6 +1697,10 @@ export abstract class TournamentManagerBase {
    * Every entry into a break now goes through this.
    */
   protected suspendLevelClock(): void {
+    if (this.blindStartTimer) {
+      this.clearLifecycleTimeout(this.blindStartTimer);
+      this.blindStartTimer = null;
+    }
     /**
      * DEAD LEVEL CLOCK (2026-08-23). This measurement used to live entirely
      * inside `if (this.blindTimer)`, so a break that landed while no timer was
@@ -1983,11 +2006,73 @@ export abstract class TournamentManagerBase {
   }
 
   /**
-   * Clear the persisted break flags. Split out of resumeFromBreak because a
-   * tournament that ENDS on a break has to come off it too, and that path does
-   * not resume anything.
+   * Clear the persisted break flags together with any resumed active clock.
+   * A tournament that ends on a break clears only its flags and resumes nothing.
    */
   protected async clearPersistedBreak(): Promise<void> {
+    const lifecycle = this.running ? this.captureLifecycleToken() : null;
+    if (
+      this.pendingBreakResumeClock &&
+      (!lifecycle ||
+        !this.lifecycleIsCurrent(this.pendingBreakResumeClock.lifecycle) ||
+        this.blindClockTerminalCommitted)
+    )
+      this.pendingBreakResumeClock = null;
+    const structure = this.tournamentCache?.blind_structure || [];
+    if (
+      !this.pendingBreakResumeClock &&
+      lifecycle &&
+      !this.blindClockTerminalCommitted &&
+      !this.pendingBlindTransition &&
+      !this.addOnBreakActive &&
+      !(Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()) &&
+      structure.length > 0
+    ) {
+      const level = this.resolveBlindLevel(structure, this.currentLevel) || structure[0];
+      const durationMs = this.levelDurationMs(level);
+      const remainingMs =
+        this.savedBlindTimerRemaining > 0
+          ? Math.min(Math.max(1000, this.savedBlindTimerRemaining), durationMs)
+          : durationMs;
+      this.pendingBreakResumeClock = {
+        lifecycle,
+        level: this.currentLevel,
+        startedAtMs: Date.now() - (durationMs - remainingMs),
+        durationMs,
+      };
+    }
+    const clock = this.pendingBreakResumeClock;
+    if (clock) {
+      // One row version contains both the release and its credited clock. A
+      // cold reader must never observe on_break=false with the old anchor.
+      const { data, error } = await supabase
+        .from('tournaments')
+        .update({
+          on_break: false,
+          break_ends_at: null,
+          level_started_at: new Date(clock.startedAtMs).toISOString(),
+        })
+        .eq('id', this.tournamentId)
+        .eq('status', 'RUNNING')
+        .eq('current_level', clock.level)
+        .select('id,status,current_level,on_break,break_ends_at,level_started_at')
+        .maybeSingle();
+      if (error) throw error;
+      if (
+        !data ||
+        data.id !== this.tournamentId ||
+        data.status !== 'RUNNING' ||
+        data.current_level !== clock.level ||
+        data.on_break !== false ||
+        data.break_ends_at !== null ||
+        Date.parse(String(data.level_started_at ?? '')) !== clock.startedAtMs
+      ) {
+        throw new Error('Tournament break release did not acknowledge its exact level clock');
+      }
+      return;
+    }
+    // A stopped event, an outstanding blind publication, an add-on pause or
+    // a future booked start has no active level clock to credit here.
     const { error } = await supabase
       .from('tournaments')
       .update({ on_break: false, break_ends_at: null })
@@ -2110,6 +2195,8 @@ export abstract class TournamentManagerBase {
       this.breakResumePersisting = false;
     }
     if (lifecycle && !this.lifecycleIsCurrent(lifecycle)) return;
+    const resumedClock = this.pendingBreakResumeClock;
+    this.pendingBreakResumeClock = null;
     if (this.breakResumeRetryTimer) {
       this.clearLifecycleTimeout(this.breakResumeRetryTimer);
       this.breakResumeRetryTimer = null;
@@ -2158,12 +2245,10 @@ export abstract class TournamentManagerBase {
      * a level with one minute left returned from the break with ten. Across an
      * hourly break cadence that is how a level stops going up.
      *
-     * startBlindTimer already solves this: it clamps the override to the level
-     * duration and BACK-DATES blindTimerStartedAt by the difference, so the
-     * next pause measures the true remaining time. Routing through it also
-     * re-persists level_started_at, so a restart mid-level resumes correctly,
-     * and wraps advanceBlindLevel in the catch that keeps a throw from
-     * silently ending escalation.
+     * The durable release uses the same clamp and back-dated anchor as
+     * startBlindTimer, so the next pause measures the true remaining time.
+     * Arm directly from that acknowledged anchor; another detached write
+     * would expose an unpaused row with an obsolete clock to cold readers.
      *
      * Arming is unconditional. A zero here used to mean "no clock at all"
      * (see pauseForBreak); startBlindTimer with no override grants a fresh
@@ -2175,7 +2260,17 @@ export abstract class TournamentManagerBase {
       // Cleared before arming: a stale value from a previous level must never
       // be readable by a later break that cannot measure the clock.
       this.savedBlindTimerRemaining = 0;
-      this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
+      if (resumedClock) {
+        // Use the acknowledged anchor, including time spent awaiting its
+        // response. Do not write a later anchor and grant that time twice.
+        this.blindTimerStartedAt = resumedClock.startedAtMs;
+        this.scheduleBlindLevelWake(
+          blindStructure,
+          Math.max(1000, resumedClock.startedAtMs + resumedClock.durationMs - Date.now())
+        );
+      } else {
+        this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
+      }
     }
 
     // If add-on period was deferred due to break, trigger it now
@@ -4258,7 +4353,7 @@ export abstract class TournamentManagerBase {
        * arming its own longer hold a few lines below cannot be shortened by
        * this one, and this cannot be shortened by it.
        *
-       * `preStartLeadMs` is what the level clock reads at the bottom of start():
+       * The level clock uses this same absolute receipt timestamp after setup:
        * arming it here would spend the first minute of level 1 on an empty
        * felt, and a 10-minute level would be a 9-minute level for everybody.
        *
@@ -4557,15 +4652,9 @@ export abstract class TournamentManagerBase {
       // hand. Setup can extend that hold, and completion can consume it: use
       // the admitted absolute deadline after those awaits, never a fresh full
       // reveal delay. Other formats keep their advertised pre-seat lead.
-      const blindStartDelayMs =
-        spinFirstDealHoldUntil > 0
-          ? Math.max(0, spinFirstDealHoldUntil - Date.now())
-          : this.preStartLeadMs;
-      if (blindStartDelayMs > 0) {
-        const structure = tournament.blind_structure || [];
-        this.setLifecycleTimeout(() => {
-          this.startBlindTimer(structure);
-        }, blindStartDelayMs);
+      const blindStartAtMs = spinFirstDealHoldUntil > 0 ? spinFirstDealHoldUntil : launchStartMs;
+      if (blindStartAtMs > Date.now()) {
+        this.scheduleBlindClockStart(tournament.blind_structure || [], blindStartAtMs);
       } else {
         this.startBlindTimer(tournament.blind_structure || []);
       }
@@ -4660,6 +4749,9 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      // Restore the durable hold before admitting replacement dealers. Even
+      // an expired countdown remains paused until its release is acknowledged.
+      this.onBreak = tournament.on_break === true;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
       this.tournamentEntryCloseAnnounced = false;
@@ -4723,6 +4815,7 @@ export abstract class TournamentManagerBase {
             // every recovered engine before this generation is admitted.
             for (const [tableId, engine] of this.tableEngines) {
               if (engine.isRunning()) continue;
+              this.prepareManagedTableEngineForPlay(engine);
               this.admitManagedTableEngine(tableId, engine);
               this.startManagedTableEngine(
                 engine,
@@ -4772,6 +4865,7 @@ export abstract class TournamentManagerBase {
           engine.setHub(tableStateHub); // Phase 1.1 PR-2
           this.wireEliminationWake(engine);
           this.tableEngines.set(table.id, engine);
+          this.prepareManagedTableEngineForPlay(engine);
           this.admitManagedTableEngine(table.id, engine);
           this.startManagedTableEngine(
             engine,
@@ -4871,7 +4965,7 @@ export abstract class TournamentManagerBase {
             remainingMs = Math.max(1000, durationMs - elapsed);
           }
         }
-        if (tournament.on_break && breakEndsAt - Date.now() > 1000) {
+        if (tournament.on_break) {
           // Arming would rewrite level_started_at. A second restart during
           // this same break would then count against a different anchor.
           this.savedBlindTimerRemaining = remainingMs ?? durationMs;
@@ -4992,21 +5086,8 @@ export abstract class TournamentManagerBase {
           // The break already expired while we were down — clear the flag so
           // the lobby does not show a phantom break. This is also what heals
           // a row stranded by the two defects described above.
-          this.onBreak = false;
-          this.breakCountdownStarted = false;
-          await this.clearPersistedBreak();
+          await this.resumeFromBreak();
           this.assertLifecycleCurrent(lifecycle);
-          // Entry-window reconciliation can outlast the remaining break.
-          if (restoredLevelClockSuspended) {
-            if (this.addOnBreakActive) {
-              this.addOnBreakOwnsPause = true;
-              this.addOnBreakOwnsLevelClock = true;
-            } else {
-              const remaining = this.savedBlindTimerRemaining;
-              this.savedBlindTimerRemaining = 0;
-              this.startBlindTimer(tournament.blind_structure || [], remaining);
-            }
-          }
         }
       }
 
@@ -6275,9 +6356,37 @@ export abstract class TournamentManagerBase {
     }, delayMs);
   }
 
+  /** A waiting first level cannot spend time, persist an anchor or survive a newer arm. */
+  private scheduleBlindClockStart(blindStructure: any[], notBeforeMs: number): void {
+    if (this.blindStartTimer) this.clearLifecycleTimeout(this.blindStartTimer);
+    const timer = this.setLifecycleTimeout(
+      () => {
+        if (this.blindStartTimer !== timer) return;
+        this.blindStartTimer = null;
+        // The pause owner will arm the full first level when it releases play.
+        if (this.isOnBreak()) return;
+        this.startBlindTimer(blindStructure);
+      },
+      Math.max(0, notBeforeMs - Date.now())
+    );
+    this.blindStartTimer = timer;
+  }
+
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (this.blindClockTerminalCommitted) return;
     if (blindStructure.length === 0) return;
+    // RUNNING may mean prepared and seated before the immutable launch start.
+    // Break release and replacement managers must honor the same receipt as
+    // the first dealer. Waiting time never consumes the first blind level.
+    const bookedStartMs = Date.parse(String(this.tournamentCache?.started_at ?? ''));
+    if (bookedStartMs > Date.now()) {
+      this.scheduleBlindClockStart(blindStructure, bookedStartMs);
+      return;
+    }
+    if (this.blindStartTimer) {
+      this.clearLifecycleTimeout(this.blindStartTimer);
+      this.blindStartTimer = null;
+    }
     // Never leave two level clocks running for the same tournament. Callers
     // normally arrive with blindTimer already null (it has just fired, or
     // pauseForBreak cleared it), but a double-arm doubles the escalation rate
@@ -6345,6 +6454,10 @@ export abstract class TournamentManagerBase {
       this.blindClockTerminalCommitted
     )
       return;
+    if (Date.parse(String(this.tournamentCache?.started_at ?? '')) > Date.now()) {
+      this.startBlindTimer(blindStructure);
+      return;
+    }
     this.blindTransitionInFlight = true;
     let committed: { level: any; startedAt: number } | null = null;
     let deferredWakeMs: number | undefined;

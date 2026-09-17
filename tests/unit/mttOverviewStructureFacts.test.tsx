@@ -7,6 +7,35 @@ import type {
   TournamentTabProps,
 } from '../../src/components/tournament/details/types';
 
+const maintenance = vi.hoisted(() => ({
+  health: vi.fn(),
+  lobby: new Set<(value: unknown) => void>(),
+  status: new Set<(value: string) => void>(),
+}));
+vi.mock('../../src/services/GameServerAPI', () => ({ getServerStatus: maintenance.health }));
+vi.mock('../../src/services/EngineStateClient', () => ({
+  engineChannelClient: {
+    onStatusChange: (callback: (value: string) => void) => {
+      maintenance.status.add(callback);
+      return () => maintenance.status.delete(callback);
+    },
+  },
+}));
+vi.mock('../../src/services/RealtimeChannelService', () => ({
+  realtimeChannelService: {
+    subscribeToLobby: ({ onMaintenance }: { onMaintenance: (value: unknown) => void }) => {
+      maintenance.lobby.add(onMaintenance);
+      return () => maintenance.lobby.delete(onMaintenance);
+    },
+  },
+}));
+vi.mock('../../src/utils/serverClock', () => ({ serverNow: () => Date.now() }));
+beforeEach(() => {
+  maintenance.health.mockReset().mockResolvedValue(null);
+  maintenance.lobby.clear();
+  maintenance.status.clear();
+});
+
 vi.mock('../../src/components/tournament/details/useSatellites', () => ({
   useSatellites: () => ({
     cards: [],
@@ -171,6 +200,205 @@ describe('live tournament tabs share the committed blind amounts', () => {
       }
     );
   }
+
+  const flush = async () =>
+    act(async () => {
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    });
+  const emitMaintenance = (phase: string, extra = {}) =>
+    act(() => {
+      for (const listener of maintenance.lobby)
+        listener({
+          active: phase !== 'idle',
+          phase,
+          break_id: epoch - 60_000,
+          timestamp: Date.now(),
+          ...extra,
+        });
+    });
+  const blindClock = () => screen.getByText('Blinds Up').closest('.tl-stat')!;
+
+  it('keeps a recorded pause held across expiry and flag clear until its credited anchor arrives', async () => {
+    const initial = running(snapshot);
+    const paused: TournamentTabProps = {
+      ...initial,
+      tournament: {
+        ...initial.tournament,
+        on_break: true,
+        break_started_at: new Date(epoch).toISOString(),
+        break_ends_at: new Date(epoch + 60_000).toISOString(),
+      },
+    };
+    const rendered = render(<DetailOverviewTab {...paused} />);
+    await flush();
+    expect(screen.getByText('Expected Resume In')).toBeInTheDocument();
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('1:00');
+    expect(blindClock().textContent).toContain('Paused');
+    expect(rendered.container.querySelector('.dov-hero__meter')).toBeNull();
+    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(90_000);
+    });
+    expect(screen.getByText('Waiting For Resume')).toBeInTheDocument();
+    expect(screen.queryByText('Level 370 Ends In')).toBeNull();
+    const clearOnly = {
+      ...paused,
+      tournament: { ...paused.tournament, on_break: false, break_ends_at: null },
+    };
+    rendered.rerender(<DetailOverviewTab {...clearOnly} />);
+    expect(screen.getByText('Waiting For Resume')).toBeInTheDocument();
+    expect(blindClock().textContent).toContain('Paused');
+    rendered.rerender(
+      <DetailOverviewTab
+        {...clearOnly}
+        tournament={{
+          ...clearOnly.tournament,
+          level_started_at: new Date(epoch + 30_000).toISOString(),
+        }}
+      />
+    );
+    expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('6:59');
+  });
+
+  it.each([null, 'not-a-time', new Date(epoch - 1000).toISOString()])(
+    'does not release an event pause with an unknown or expired deadline: %s',
+    async (deadline) => {
+      const initial = running(snapshot);
+      render(
+        <DetailOverviewTab
+          {...initial}
+          tournament={{
+            ...initial.tournament,
+            on_break: true,
+            break_started_at: new Date(epoch).toISOString(),
+            break_ends_at: deadline,
+          }}
+        />
+      );
+      await flush();
+      expect(screen.getByText('Waiting For Resume')).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(blindClock().textContent).toContain('Paused');
+      expect(screen.queryByText('Level 370 Ends In')).toBeNull();
+    }
+  );
+
+  it('renders real maintenance hook phases without letting global release reopen an event pause', async () => {
+    const initial = running(snapshot);
+    const paused = {
+      ...initial,
+      tournament: {
+        ...initial.tournament,
+        on_break: true,
+        break_started_at: new Date(epoch).toISOString(),
+        break_ends_at: null,
+      },
+    };
+    const rendered = render(<DetailOverviewTab {...paused} />);
+    await flush();
+    emitMaintenance('last_hand');
+    expect(screen.getByText('Last Hand In Play')).toBeInTheDocument();
+    emitMaintenance('counting_down', { break_ends_at: epoch + 1000 });
+    expect(screen.getByText('Expected Resume In')).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1001);
+    });
+    expect(screen.getByText('Finalizing Maintenance')).toBeInTheDocument();
+    expect(maintenance.health).toHaveBeenCalledTimes(2);
+    emitMaintenance('resuming');
+    expect(screen.getByText('Resuming Tables')).toBeInTheDocument();
+    maintenance.health.mockResolvedValue({
+      maintenance: {
+        presentation: {
+          active: false,
+          phase: 'idle',
+          break_id: epoch - 60_000,
+          timestamp: Date.now(),
+        },
+      },
+    });
+    act(() => {
+      for (const listener of maintenance.status) listener('connected');
+    });
+    await flush();
+    expect(screen.getByText('Waiting For Resume')).toBeInTheDocument();
+    expect(blindClock().textContent).toContain('Paused');
+    expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+  });
+
+  it.each([null, 'invalid-anchor'])(
+    'accepts the first committed resumed clock after an unknown paused anchor: %s',
+    async (anchor) => {
+      const input = running(snapshot);
+      const paused = {
+        ...input,
+        tournament: { ...input.tournament, on_break: true, level_started_at: anchor },
+      };
+      const rendered = render(<DetailOverviewTab {...paused} />);
+      await flush();
+      expect(blindClock().textContent).toContain('Paused');
+      const clearOnly = { ...paused, tournament: { ...paused.tournament, on_break: false } };
+      rendered.rerender(<DetailOverviewTab {...clearOnly} />);
+      expect(blindClock().textContent).toContain('Paused');
+      rendered.rerender(
+        <DetailOverviewTab
+          {...clearOnly}
+          tournament={{
+            ...clearOnly.tournament,
+            level_started_at: new Date(epoch - 60_000).toISOString(),
+          }}
+        />
+      );
+      expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
+      expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
+      expect(rendered.container.querySelector('.dov-blind__value')?.textContent).toBe('53K / 105K');
+    }
+  );
+
+  it('does not carry a held clock into another tournament or completed results', async () => {
+    const input = running(snapshot);
+    const paused = { ...input, tournament: { ...input.tournament, on_break: true } };
+    const rendered = render(<DetailOverviewTab {...paused} />);
+    await flush();
+    expect(blindClock().textContent).toContain('Paused');
+    rendered.rerender(
+      <DetailOverviewTab
+        {...input}
+        tournament={{ ...input.tournament, id: 'another-event', on_break: false }}
+      />
+    );
+    expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('7:00');
+    rendered.rerender(<DetailOverviewTab {...paused} />);
+    expect(blindClock().textContent).toContain('Paused');
+    rendered.rerender(
+      <DetailOverviewTab {...paused} tournament={{ ...paused.tournament, status: 'COMPLETED' }} />
+    );
+    expect(screen.queryByText('Waiting For Resume')).toBeNull();
+    expect(screen.queryByText('Level 370 Clock Paused')).toBeNull();
+    expect(blindClock().textContent).toContain('-');
+  });
+
+  it('announces the global last hand without freezing a tournament that has not paused', async () => {
+    const rendered = render(<DetailOverviewTab {...running(snapshot)} />);
+    await flush();
+    emitMaintenance('last_hand');
+    expect(
+      screen.getByText('Maintenance Break Starting. Tables Are Finishing Their Current Hand.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Level 370 Ends In')).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(rendered.container.querySelector('.dov-hero__time')?.textContent).toBe('6:59');
+  });
 
   it('refreshes ranking BBs when a receipt changes without a level-index change', () => {
     const input = running(snapshot);

@@ -1,0 +1,50 @@
+{
+  "status": "source frozen for independent review; native/app checks, installation and live behavior UNRUN",
+  "base_commit": "c4f4fb0beefa5e609cc6521300db441bfa7931bf",
+  "policy": "Read current AGENT-HARDENING-STANDARD.md and AGENTS.md after parent instruction; correctness stays in explicit RPC/transaction, no repair scheduler.",
+  "captures": [
+    {
+      "file": "captured-credit-catalog.json",
+      "sha256": "e993129dcb12261ea7d5bd350f0546415814c17346fd27f51b1ba9efb14854bc"
+    },
+    {
+      "file": "captured-credit-catalog.query.sql",
+      "sha256": "69722b9d79bd5ff287b37cedf2a970838f5d43df0820ce71c276cebf135a7e42"
+    },
+    {
+      "file": "captured-credit-delegates.json",
+      "sha256": "5493881808c429f5188b4f4b92273f244e2c843fe4cbe2d02620455cae15fdf2"
+    },
+    {
+      "file": "captured-credit-delegates.query.sql",
+      "sha256": "76c475f8a23f23081629c458f7f6eae81aef1330e5830f0706976456f33bad91"
+    },
+    {
+      "file": "captured-payment-closure.json",
+      "sha256": "81f522c14e5435021ed4a7fc71c2030543669d7d90e755bf4d37aefc7bd77e49"
+    },
+    {
+      "file": "captured-payment-closure.query.sql",
+      "sha256": "252de5030cb7bf859835e85e399d05cb98bc4e5a6821cdb4dd911e6c471a9e4c"
+    }
+  ],
+  "guard_basis": "46 exact captured/staged functions; full retained agents and credit_assignments catalog facts composed with final36 agreement index/FK/trigger; bounded credit invoice/payment/wallet column/trigger/policy/access facts. No source-derived value is labelled an installed capture.",
+  "caller_successors": "Seven: role setter, assign-to-super, ensure-agent, all three callable wallet-send layers, and exact staged33 cashier transition. Every economic/delegate statement stays unchanged; only early existing agreement-mutex acquisition is added.",
+  "authority_fence": "Only new snapshot/apply lock club owner row and actual manager membership before waiting on target agent. Historical own lookup/retirement have no current-role/agent/audit dependency. New apply repeats current authority after nested document effects.",
+  "required_fixture_supplements": [
+    "Three captured nonunique agents indexes",
+    "Ten exact captured functions absent from original full baseline",
+    "Exact captured fn_ca_post_leg; other eleven14:41 closure definitions match retained full fixture"
+  ],
+  "proof_limits": [
+    "All database/application/native concurrency verification is UNRUN; no reproduction or before/after pass is claimed.",
+    "Two credit relation captures include full constraints/indexes; the separate three payment relation capture omits constraints/indexes.",
+    "One static public-callee layer and final36 literal callers were inspected; dynamic, external and deeper unknown callers are not exhaustively proven.",
+    "Postconditions verify new private shapes/access/keys/trigger topology and declared check counts; meaningful native fixtures must still exercise the actual check predicates and complete nested document/delivery transaction.",
+    "Root document/delivery/readers and component37 loader are separate owned source; no standalone fragment admits this change.",
+    "Original absolute-admin current-membership lifecycle policy remains unchanged; new reduction entrypoints enforce and retain their live authority locks.",
+    "No test/build/install/DDL/financial invocation, commit, push, source admission, publication or release was performed by this author."
+  ],
+  "isolation_contract": "New snapshot and operation/lookup/retirement lock entry require READ COMMITTED. Higher isolation refuses25000 credit_reduction_read_committed_required before mutable/evidence work; no absence/retirement inference.",
+  "postcondition_trigger_constraints": "22/5 ordinary constraints are checked separately from exact2/1 pg_constraint contype=t rows joined to the named actual constraint triggers."
+}

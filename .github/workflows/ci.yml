@@ -1134,7 +1134,12 @@ jobs:
           for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do
             if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
           done
-          if [[ -x /usr/lib/postgresql/17/bin/initdb && -x /usr/lib/postgresql/17/bin/pg_config && -f /usr/include/postgresql/17/server/postgres.h && "$pg_ci_build_tools_ready" == true ]]; then exit 0; fi
+          if [[ "$pg_ci_build_tools_ready" == true &&
+                -x /usr/lib/postgresql/17/bin/initdb &&
+                -x /usr/lib/postgresql/17/bin/pg_config &&
+                -f /usr/include/postgresql/17/server/postgres.h &&
+                -f /usr/share/postgresql/17/extension/pg_cron.control &&
+                -f /usr/lib/postgresql/17/lib/pg_cron.so ]]; then exit 0; fi
           # The hosted image also configures Chrome and Microsoft repositories.
           # An unrelated Chrome index hash mismatch blocked this accounting job.
           # Limit this installation to signed Ubuntu and PostgreSQL sources.
@@ -1154,7 +1159,7 @@ jobs:
             "$pg_ci_codename" > "$pg_ci_sources/pgdg.sources"
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
-          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-server-dev-17 build-essential bison flex perl bzip2 patch
+          sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron postgresql-server-dev-17 build-essential bison flex perl bzip2 patch
       - name: Build the matching native PostgreSQL isolation test tool
         id: pg17_isolation_tool
         timeout-minutes: 6
@@ -1200,6 +1205,90 @@ jobs:
           path: artifacts/bbj-bank-replay/
           retention-days: 3
           if-no-files-found: error
+      - name: Weekly union close rolls back failed stages and records scheduler results
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-union-weekly-accounting.sh
+      - name: Credit invoices bill only uninvoiced drawn debt
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-credit-invoice-generation.sh
+      - name: Accounting and Diamond entries commit exact invoices and private delivery receipts
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: /tmp
+        run: bash scripts/dev/test-accounting-delivery.sh
+      - name: Credit payments preserve scope cents replay and delivery atomicity
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-credit-invoice-payment.sh
+      - name: Agent statements isolate clubs and use posted evidence
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-agent-accounting-statements.sh
+      - name: Accounting agreement changes preserve immutable observed history
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-accounting-agreement-history.sh
+      - name: Clubs receive one exact weekly statement and private invoice discussions
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-club-weekly-summary.sh
+      - name: One weekly accounting coordinator rolls back all financial stages and invoices
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-weekly-accounting-coordinator.sh
+      - name: Full weekly accounting activation, rollback and concurrent authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/union-accounting-scratch
+          ACCOUNTING_TEST_OUTPUT_DIR: ${{ runner.temp }}/union-accounting-results
+          ACCOUNTING_ACTIVATION_DIR: ${{ runner.temp }}/union-accounting-activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ACCOUNTING_FIXTURE_PARENT" "$ACCOUNTING_TEST_OUTPUT_DIR"
+          python3 scripts/ci/build-weekly-accounting-activation.py --output-dir "$ACCOUNTING_ACTIVATION_DIR" \
+            2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/build.log"
+          bash scripts/dev/test-full-weekly-accounting-activation.sh \
+            2>&1 | tee "$ACCOUNTING_TEST_OUTPUT_DIR/full-weekly-accounting.log"
+      - name: Cash commissions retain every contributor and exact source identity
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cash-commission-sources.sh
+      - name: Cash source refusals remain durable without partial payments
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cash-source-refusals.sh
+      - name: Legacy cash callers share the canonical source authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-cash-source-compatibility.sh
+      - name: Tournament fees retain one authoritative earning and payment source
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-tournament-fee-sources.sh
+      - name: Weekly accounting documents preserve exact scope and concurrent issuance
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-scope-weekly-accounting.sh
+      - name: Union and standalone scopes share one weekly accounting authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-unified-weekly-accounting.sh
+      - name: Push health uses exact addressable counts and receipt confirmations
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-push-health-reader.sh
+      - name: Preserve weekly accounting qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: union-accounting-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/union-accounting-activation
+            ${{ runner.temp }}/union-accounting-results
+          retention-days: 7
       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1349,11 +1438,6 @@ jobs:
           path: artifacts/spin-expiry/
           retention-days: 7
           if-no-files-found: warn
-      - name: Diamond entries, claimed daily spins and Promo to Main Bank payouts
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-          TMPDIR: /tmp
-        run: bash scripts/dev/test-accounting-delivery.sh
 
       - name: PKO heads follow exact accepted knockout dependencies
         env:
@@ -1696,6 +1780,7 @@ jobs:
       - name: Build
         run: npm run build:ci
         env:
+          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
           NODE_ENV: production
           # Public browser configuration. The previous PR build omitted these,
           # so it produced an artifact that threw before React mounted and no
@@ -2154,6 +2239,7 @@ jobs:
       # added to every push-to-live.
       - name: Build this commit
         env:
+          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
           # The app fails closed before React mounts when these Vite values are
           # absent. Footer route probes do not call Supabase, so deterministic
           # non-secret placeholders are the correct isolated CI configuration.

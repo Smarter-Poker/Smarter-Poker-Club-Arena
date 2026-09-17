@@ -24,8 +24,8 @@ import { validateCashoutAmount } from '../utils/cashoutAmount';
  *
  * The legs are now SECURITY DEFINER RPCs that derive the actor from auth.uid()
  * and do the whole thing in one transaction: money, status, escrow release,
- * ledger row and the in-app notification. The browser adds only the PUSH, which
- * is the one part the database cannot send.
+ * ledger row and the in-app notification. The server owns the durable push
+ * outbox too; this client never sends a second notification.
  *
  * ── THE TEN MINUTE WINDOW IS NOT HERE ──────────────────────────────────────
  *
@@ -35,8 +35,8 @@ import { validateCashoutAmount } from '../utils/cashoutAmount';
  */
 
 import { supabase } from '../lib/supabase';
+import { getIdentityDNAStatus } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
-import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 // The file is PushNotificationService.ts. macOS resolves './push...' anyway and
@@ -48,11 +48,9 @@ import { reportError } from '../utils/errorReporter';
  * EXPORTED ON PURPOSE (2026-08-25). An op id minted INSIDE the service is fresh
  * on every call, which protects nothing: the retry a lost response provokes is a
  * SECOND call, and a second call used to carry a second op id and move the money
- * twice. Every money leg below now takes an optional `opId`, and the screens that
- * own the button hold one in a ref across a failure and clear it on success -
- * the same shape CashierTradePage already uses (see
- * tests/cashier-idempotency-keys.test.ts). The default keeps every existing
- * caller working; it just cannot protect a retry it never sees.
+ * twice. Cashout lifecycle calls require the caller's retained UUID at runtime.
+ * Their callers preserve uncertain operations in the durable operation store.
+ * The legacy send/claim/admin paths below retain their separate existing API.
  */
 export function newOpId(): string {
   try {
@@ -67,7 +65,7 @@ export function newOpId(): string {
   });
 }
 
-/** The shape every cashout RPC answers with. Refusals arrive as data, not throws. */
+/** Legacy send/claim/admin responses. Cashout lifecycle mutations require v2 receipts below. */
 interface CashoutRpcResult {
   success?: boolean;
   error?: string;
@@ -86,34 +84,212 @@ function unwrap(data: unknown): CashoutRpcResult | null {
   return (Array.isArray(data) ? data[0] : data) as CashoutRpcResult | null;
 }
 
-/**
- * RETIRED 2026-08-30 (#1498). This is now a no-op that the compiler will not
- * let anyone quietly re-point at a dead transport.
- *
- * The comment this replaces was right about the important part: the cash-out
- * RPCs already write an in-app notification INSIDE the money transaction --
- * fn_cashout_approve ('cashout_approved'), fn_cashout_release
- * ('cashout_cancelled' / 'cashout_denied'), fn_cashout_request
- * ('cashout_request_escrow'), fn_expire_stale_cashouts
- * ('cashout_expired_refund') -- and trg_mirror_notification_to_push_outbox
- * turns every one of those into a push. Cash-out notifications have been
- * working server-side the whole time.
- *
- * What this function added on top was a SECOND push over the same event, sent
- * from the browser through a transport that OneSignal's retirement on
- * 2026-08-19 had already killed. So it delivered nothing, and if it had been
- * repointed rather than removed it would have delivered everything twice.
- *
- * Kept as an empty shim rather than deleted so the three call sites below stay
- * readable as "the RPC notifies here" instead of losing the marker entirely.
- */
-async function pushQuietly(
-  _userId: string,
-  _title: string,
-  _message: string,
-  _url: string
-): Promise<void> {
-  // Intentionally empty. See above: the RPC already notified.
+/** Caller-owned view generation; captures the original account, club and intent. */
+export interface CashoutMutationIntent {
+  clubId: string;
+  amount: number;
+  playerId: string;
+  isCurrent: () => boolean;
+}
+
+type CashoutEventKind = 'hold' | 'approval' | 'cancellation' | 'decline';
+type JsonObject = Record<string, unknown>;
+interface CashoutContext extends CashoutMutationIntent {
+  actorId: string;
+  generation: number;
+  opId: string;
+  cashoutId?: string;
+  dispatched: boolean;
+}
+
+/** Keep the original operation identity on uncertain outcomes; never auto-resubmit. */
+export class CashoutOutcomeUnknownError extends Error {
+  readonly operationId: string;
+  readonly clubId: string;
+  readonly cashoutId?: string;
+  constructor(message: string, context: CashoutContext) {
+    super(message);
+    this.name = 'CashoutOutcomeUnknownError';
+    this.operationId = context.opId;
+    this.clubId = context.clubId;
+    this.cashoutId = context.cashoutId;
+  }
+}
+
+let cashoutAccount: string | null | undefined;
+let cashoutGeneration = 0;
+masterBus.subscribe('AUTH_STATE_CHANGED', event => {
+  const next = event.payload.isAuthenticated ? event.payload.userId : null;
+  if (next !== cashoutAccount) { cashoutAccount = next; cashoutGeneration += 1; }
+});
+function currentCashoutAccount(): string | null {
+  const identity = getIdentityDNAStatus();
+  const next = identity?.loaded && identity.authenticated ? identity.userId : null;
+  if (next !== cashoutAccount) { cashoutAccount = next; cashoutGeneration += 1; }
+  return next;
+}
+/** Capture the same account generation for non-React callers and every await. */
+export function captureCashoutAccountGuard(expectedActorId: string): () => boolean {
+  if (!uuidValue(expectedActorId) || currentCashoutAccount() !== expectedActorId) {
+    throw new Error('Sign In To The Account That Started This Cashout');
+  }
+  const generation = cashoutGeneration;
+  let valid = true;
+  return () => {
+    valid = valid && currentCashoutAccount() === expectedActorId && cashoutGeneration === generation;
+    return valid;
+  };
+}
+const uuidValue = (value: unknown): value is string => typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) &&
+  value !== '00000000-0000-0000-0000-000000000000';
+const objectValue = (value: unknown): value is JsonObject => value !== null && typeof value === 'object' && !Array.isArray(value);
+function timestampValue(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 64) return false;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts) return false;
+  const [year, month, day, hour, minute, second] = parts.slice(1).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1] &&
+    hour <= 23 && minute <= 59 && second <= 59 && Number.isFinite(Date.parse(value));
+}
+function receiptMoney(value: unknown, allowZero = false): number | null {
+  if (typeof value !== 'string' || value.length > 128 || !/^(0|[1-9]\d*)\.\d{2}$/.test(value)) return null;
+  const cents = BigInt(value.replace('.', ''));
+  if (cents > BigInt(Number.MAX_SAFE_INTEGER) || (!allowZero && cents === 0n)) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount.toFixed(2) === value &&
+    BigInt(Math.round(amount * 100)) === cents ? amount : null;
+}
+function assertCashoutCurrent(context: CashoutContext): void {
+  let current = false;
+  try { current = context.isCurrent() === true; } catch { /* A failed view fence refuses. */ }
+  if (currentCashoutAccount() !== context.actorId || cashoutGeneration !== context.generation || !current) {
+    throw new CashoutOutcomeUnknownError(context.dispatched
+      ? 'Cashout Account Or Club Changed. This Operation May Have Committed. Refresh Its Status In The Original Account Before Retrying The Same Operation.'
+      : 'Cashout Account Or Club Changed Before Dispatch. Refresh The Original Intent.', context);
+  }
+}
+function cashoutContext(actorId: string, intent: CashoutMutationIntent | undefined, opId: string | undefined, cashoutId?: string): CashoutContext {
+  if (!intent || typeof intent.isCurrent !== 'function' || !intent.clubId || !uuidValue(intent.playerId) ||
+      !uuidValue(actorId) || !uuidValue(opId) || (cashoutId !== undefined && !uuidValue(cashoutId))) {
+    throw new Error('Cashout Requires A Verified Account, Club, Amount, View Intent And Retained Operation ID');
+  }
+  const validation = validateCashoutAmount(typeof intent.amount === 'number' ? intent.amount : NaN);
+  if (!validation.ok) throw new Error(validation.error);
+  if (currentCashoutAccount() !== actorId) throw new Error('Sign In To The Account That Started This Cashout');
+  // PostgreSQL emits UUIDs in canonical lowercase. Normalize validated intent
+  // identities before role comparisons, dispatch and receipt matching so casing
+  // cannot turn a self-decline into a committed player cancellation.
+  const context = { ...intent, playerId: intent.playerId.toLowerCase(), actorId,
+    opId: opId.toLowerCase(), cashoutId: cashoutId?.toLowerCase(),
+    generation: cashoutGeneration, dispatched: false };
+  assertCashoutCurrent(context);
+  return context;
+}
+
+const CASHIER_SHARED_FIELDS = ['contract_version','event_id','invoice_id','cashout_id','escrow_id',
+  'source_transaction_id','source_ledger_id','club_id','player_id','assigned_agent_id','issuer_representative_id',
+  'actor_user_id','actor_role','event_kind','display_state','amount','occurred_at','issued_at','hold_event_id',
+  'hold_invoice_id','ledger_from_type','ledger_from_entity_id','ledger_to_type','ledger_to_entity_id',
+  'custody_movement_recorded','cashout_completed','refund_recorded'] as const;
+const EVENT_STATE = {
+  hold: ['pending', 'held'], approval: ['approved', 'approved'],
+  cancellation: ['cancelled', 'refunded'], decline: ['rejected', 'refunded'],
+} as const;
+
+function verifiedCashoutReceipt(data: unknown, context: CashoutContext, kind: CashoutEventKind, acceptedNote: string | null): CashoutRequest {
+  const refuse = (): never => { throw new CashoutOutcomeUnknownError(
+    'Cashout Receipt Was Not Confirmed. Refresh Its Status Before Retrying The Same Operation.', context); };
+  if (!objectValue(data) || data.success !== true || data.contract_version !== 1 || typeof data.replayed !== 'boolean' ||
+      !objectValue(data.cashier) || !objectValue(data.request)) return refuse();
+  const cashier = data.cashier;
+  if (CASHIER_SHARED_FIELDS.some(key => !Object.prototype.hasOwnProperty.call(data, key) ||
+      !Object.prototype.hasOwnProperty.call(cashier, key) || data[key] !== cashier[key])) return refuse();
+  const row = data.request;
+  for (const key of ['event_id','invoice_id','cashout_id','escrow_id','source_transaction_id','source_ledger_id',
+    'club_id','player_id','assigned_agent_id','issuer_representative_id','actor_user_id'] as const) {
+    if (!uuidValue(data[key])) return refuse();
+  }
+  if (data.actor_user_id !== context.actorId || data.club_id !== context.clubId || data.player_id !== context.playerId ||
+      data.op_id !== context.opId || data.accepted_note !== acceptedNote ||
+      (context.cashoutId !== undefined && data.cashout_id !== context.cashoutId) ||
+      data.event_kind !== kind || data.request_status !== EVENT_STATE[kind][0] || data.display_state !== EVENT_STATE[kind][1] ||
+      receiptMoney(data.amount) !== context.amount || !timestampValue(data.occurred_at) || !timestampValue(data.issued_at) ||
+      !['player','member','sub_agent','agent','super_agent','admin','co_owner','owner'].includes(String(data.actor_role)) ||
+      data.custody_movement_recorded !== true || data.cashout_completed !== (kind === 'approval') ||
+      data.refund_recorded !== (kind === 'cancellation' || kind === 'decline')) return refuse();
+  const playerAction = kind === 'hold' || kind === 'cancellation';
+  if (playerAction ? context.actorId !== context.playerId
+    : context.actorId === context.playerId || !['sub_agent','agent','super_agent','admin','co_owner','owner'].includes(String(data.actor_role))) return refuse();
+  const hold = kind === 'hold';
+  if (hold ? data.hold_event_id !== null || data.hold_invoice_id !== null
+    : !uuidValue(data.hold_event_id) || !uuidValue(data.hold_invoice_id) ||
+      data.hold_event_id === data.event_id || data.hold_invoice_id === data.invoice_id) return refuse();
+  if (data.ledger_from_type !== (hold ? 'player_wallet' : 'escrow') ||
+      data.ledger_from_entity_id !== (hold ? context.playerId : data.escrow_id) ||
+      data.ledger_to_type !== (hold ? 'escrow' : kind === 'approval' ? 'agent_wallet' : 'player_wallet') ||
+      data.ledger_to_entity_id !== (hold ? data.escrow_id : kind === 'approval' ? context.actorId : context.playerId)) return refuse();
+  if (kind === 'decline' ? data.actor_wallet_after !== null : receiptMoney(data.actor_wallet_after, true) === null) return refuse();
+  if (row.id !== data.cashout_id || row.club_id !== context.clubId || row.player_id !== context.playerId ||
+      row.agent_id !== data.assigned_agent_id || receiptMoney(row.amount) !== context.amount ||
+      !timestampValue(row.created_at) || !timestampValue(row.updated_at) ||
+      !['pending','approved','cancelled','rejected','expired'].includes(String(row.status)) ||
+      (!hold && row.status !== EVENT_STATE[kind][0]) || (hold && data.replayed === false && row.status !== 'pending') ||
+      (hold && data.occurred_at !== row.created_at)) return refuse();
+  for (const key of ['acknowledged_at','completed_at','cancelled_at'] as const) {
+    if (!Object.prototype.hasOwnProperty.call(row, key) || (row[key] !== null && !timestampValue(row[key]))) return refuse();
+  }
+  for (const key of ['player_note','agent_note'] as const) {
+    if (!Object.prototype.hasOwnProperty.call(row, key) || (row[key] !== null && typeof row[key] !== 'string')) return refuse();
+  }
+  // Match fn_cashier_operation_receipt's current request invariants, including
+  // terminal rows returned with a replayed historical hold receipt.
+  if ((!hold && row.updated_at !== data.occurred_at) ||
+      (row.status === 'pending' && row.updated_at !== row.created_at) ||
+      row.acknowledged_at !== (row.status === 'approved' || row.status === 'rejected' ? row.updated_at : null) ||
+      row.completed_at !== (row.status === 'approved' ? row.updated_at : null) ||
+      row.cancelled_at !== (['cancelled','rejected','expired'].includes(String(row.status)) ? row.updated_at : null) ||
+      (hold && row.player_note !== acceptedNote) ||
+      ((kind === 'approval' || kind === 'decline') && row.agent_note !== acceptedNote)) return refuse();
+  return { id: row.id as string, clubId: row.club_id as string, playerId: row.player_id as string,
+    agentId: row.agent_id as string, amount: context.amount, status: row.status as CashoutStatus,
+    createdAt: row.created_at, updatedAt: row.updated_at,
+    acknowledgedAt: (row.acknowledged_at as string | null) ?? undefined,
+    completedAt: (row.completed_at as string | null) ?? undefined,
+    cancelledAt: (row.cancelled_at as string | null) ?? undefined,
+    playerNote: (row.player_note as string | null) ?? undefined, agentNote: (row.agent_note as string | null) ?? undefined };
+}
+
+async function mutateCashout(context: CashoutContext, kind: CashoutEventKind, note?: string): Promise<CashoutRequest> {
+  if (note !== undefined && typeof note !== 'string') throw new Error('Cashout Note Must Be Text');
+  const normalizedNote = note?.trim() || null;
+  try { context.clubId = await resolveClubUUID(context.clubId); }
+  catch (error) { assertCashoutCurrent(context); throw error; }
+  assertCashoutCurrent(context);
+  if (!uuidValue(context.clubId)) throw new Error('Cashout Club Could Not Be Verified');
+  context.clubId = context.clubId.toLowerCase();
+  const rpc = kind === 'hold' ? 'fn_cashout_request_v2' : kind === 'approval' ? 'fn_cashout_approve_v2' : 'fn_cashout_release_v2';
+  context.dispatched = true;
+  let response: unknown;
+  try { response = await supabase.rpc(rpc, {
+    p_club_id: context.clubId, p_amount: context.amount.toFixed(2), p_expected_actor_id: context.actorId,
+    p_op_id: context.opId, p_note: normalizedNote,
+    ...(context.cashoutId ? { p_cashout_id: context.cashoutId } : {}),
+  }); } catch {
+    assertCashoutCurrent(context);
+    throw new CashoutOutcomeUnknownError('Cashout Response Was Lost. This Operation May Have Committed. Refresh Its Status Before Retrying The Same Operation.', context);
+  }
+  assertCashoutCurrent(context);
+  if (!objectValue(response)) throw new CashoutOutcomeUnknownError('Cashout Response Was Not Confirmed. Refresh Its Status Before Retrying The Same Operation.', context);
+  const { data, error } = response;
+  if (error) throw new CashoutOutcomeUnknownError(
+    'Cashout Could Not Be Confirmed. Refresh Its Status Before Retrying The Same Operation.', context);
+  if (objectValue(data) && data.success === false) throw new Error(typeof data.error === 'string' ? data.error : 'Cashout Was Refused');
+  const request = verifiedCashoutReceipt(data, context, kind, normalizedNote);
+  assertCashoutCurrent(context);
+  return request;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -148,7 +324,8 @@ export interface CashoutRequest {
   playerNote?: string;
   agentNote?: string;
   createdAt: string;
-  updatedAt: string;
+  /** Legacy queue rows do not expose update time; mutation receipts always do. */
+  updatedAt?: string;
   acknowledgedAt?: string;
   completedAt?: string;
   cancelledAt?: string;
@@ -169,224 +346,146 @@ export interface CashoutTransaction {
   notes?: string;
 }
 
+/** Validate the existing read APIs without upgrading their statuses to payer proof. */
+function readCashoutRow(value: unknown): CashoutRequest {
+  const refuse = (): never => { throw new Error('Cashout Row Could Not Be Verified'); };
+  if (!objectValue(value)) return refuse();
+  for (const key of ['id','club_id','player_id','agent_id'] as const) if (!uuidValue(value[key])) return refuse();
+  if (typeof value.amount !== 'number' && (typeof value.amount !== 'string' || value.amount.length > 128 ||
+      !/^(0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value.amount))) return refuse();
+  const amount = validateCashoutAmount(value.amount as number | string);
+  if (!amount.ok || !timestampValue(value.created_at) ||
+      !['pending','approved','completed','cancelled','rejected','expired'].includes(String(value.status))) return refuse();
+  for (const key of ['updated_at','acknowledged_at','completed_at','cancelled_at'] as const) {
+    if (value[key] != null && !timestampValue(value[key])) return refuse();
+  }
+  for (const key of ['player_note','agent_note','player_name','player_avatar'] as const) {
+    if (value[key] != null && typeof value[key] !== 'string') return refuse();
+  }
+  const player = objectValue(value.player) ? value.player : {};
+  const agent = objectValue(value.agent) ? value.agent : {};
+  return { id: value.id as string, clubId: value.club_id as string, playerId: value.player_id as string,
+    agentId: value.agent_id as string, amount: amount.amount, status: value.status as CashoutStatus,
+    createdAt: value.created_at, updatedAt: (value.updated_at as string | null | undefined) ?? undefined,
+    acknowledgedAt: (value.acknowledged_at as string | null | undefined) ?? undefined,
+    completedAt: (value.completed_at as string | null | undefined) ?? undefined,
+    cancelledAt: (value.cancelled_at as string | null | undefined) ?? undefined,
+    playerNote: (value.player_note as string | null | undefined) ?? undefined,
+    agentNote: (value.agent_note as string | null | undefined) ?? undefined,
+    playerName: (value.player_name as string | undefined) ?? (typeof player.display_name === 'string' ? player.display_name : undefined),
+    playerAvatar: (value.player_avatar as string | undefined) ?? (typeof player.avatar_url === 'string' ? player.avatar_url : undefined),
+    agentName: typeof agent.display_name === 'string' ? agent.display_name : undefined };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class CashoutServiceClass {
   /**
-   * Player: Request a cashout (locks chips in escrow)
+   * Requires the matching v2 database component, a retained operation key and
+   * the caller's account/club generation fence. No old success-only fallback.
+   * The server owns money, immutable documents and notification delivery.
    */
+  /** Exact past-operation lookup. Locks may be taken; no business records are written. */
+  async lookupCashoutOperation(
+    actorId: string, opId: string, intent: CashoutMutationIntent,
+    kind: CashoutEventKind, cashoutId?: string, note?: string
+  ): Promise<{ found: true; request: CashoutRequest } | { found: false }> {
+    const context = cashoutContext(actorId, intent, opId, cashoutId);
+    if (!['hold', 'approval', 'cancellation', 'decline'].includes(kind) ||
+        (kind === 'hold' ? cashoutId !== undefined : cashoutId === undefined) ||
+        ((kind === 'hold' || kind === 'cancellation') ? context.actorId !== context.playerId
+          : context.actorId === context.playerId) || (note !== undefined && typeof note !== 'string')) {
+      throw new Error('The Cashout Lookup Does Not Match Its Original Intent');
+    }
+    const acceptedNote = note?.trim() || null;
+    try { context.clubId = await resolveClubUUID(context.clubId); }
+    catch (error) { assertCashoutCurrent(context); throw error; }
+    assertCashoutCurrent(context);
+    if (!uuidValue(context.clubId)) throw new Error('Cashout Club Could Not Be Verified');
+    context.clubId = context.clubId.toLowerCase();
+    const action = kind === 'hold' ? 'hold' : kind === 'approval' ? 'approval' : 'release';
+    const refuse = (): never => { throw new CashoutOutcomeUnknownError(
+      'The Previous Cashout Outcome Could Not Be Verified. No New Cashout Was Sent. Check The Same Operation Again.', context); };
+    let response: unknown;
+    try { response = await supabase.rpc('fn_cashout_operation_receipt_v2', {
+      p_expected_actor_id: context.actorId, p_op_id: context.opId, p_action: action,
+      p_club_id: context.clubId, p_amount: context.amount.toFixed(2),
+      p_cashout_id: context.cashoutId ?? null, p_note: acceptedNote,
+    }); } catch { assertCashoutCurrent(context); return refuse(); }
+    assertCashoutCurrent(context);
+    if (!objectValue(response) || response.error || !objectValue(response.data)) return refuse();
+    const data = response.data;
+    const keys = ['contract_version', 'actor_user_id', 'op_id', 'action', 'club_id', 'amount',
+      'cashout_id', 'accepted_note', 'found', 'receipt'];
+    if (Object.keys(data).length !== keys.length || keys.some(key => !Object.prototype.hasOwnProperty.call(data, key)) ||
+        data.contract_version !== 1 || data.actor_user_id !== context.actorId || data.op_id !== context.opId ||
+        data.action !== action || data.club_id !== context.clubId || data.amount !== context.amount.toFixed(2) ||
+        data.cashout_id !== (context.cashoutId ?? null) || data.accepted_note !== acceptedNote) return refuse();
+    if (data.found === false && data.receipt === null) return { found: false };
+    if (data.found !== true || !objectValue(data.receipt) || data.receipt.replayed !== true) return refuse();
+    const request = verifiedCashoutReceipt(data.receipt, context, kind, acceptedNote);
+    assertCashoutCurrent(context);
+    return { found: true, request };
+  }
+
   async requestCashout(
-    playerId: string,
-    clubId: string,
-    amount: number,
-    note?: string,
-    opId?: string
-  ): Promise<CashoutRequest | null> {
+    playerId: string, clubId: string, amount: number, note?: string, opId?: string,
+    isCurrent?: () => boolean
+  ): Promise<CashoutRequest> {
     const validation = validateCashoutAmount(typeof amount === 'number' ? amount : NaN);
     if (!validation.ok) throw new Error(validation.error);
-
-    const resolvedClubId = await resolveClubUUID(clubId);
-
-    /**
-     * ONE CALL, ONE TRANSACTION. fn_cashout_request derives the player from
-     * auth.uid() (so `playerId` is a display argument, never an authority),
-     * locks the member row, refuses an overdraft or a second pending request,
-     * debits the balance, opens the request, writes the chip_escrow hold, the
-     * chip_transactions row AND the agent's in-app notification. The op_id
-     * makes a retry after a lost response report the original rather than
-     * escrowing the chips twice.
-     */
-    const { data, error } = await supabase.rpc('fn_cashout_request', {
-      p_club_id: resolvedClubId,
-      p_amount: amount,
-      p_note: note || null,
-      p_op_id: opId || newOpId(),
-    });
-    if (error) {
-      reportError(error, 'CashoutService.requestCashout');
-      throw new Error(error.message || 'Failed to request cashout');
-    }
-    const res = unwrap(data);
-    if (!res?.success) throw new Error(res?.error || 'Failed to request cashout');
-
-    const newCashoutId = res.cashout_id;
-    if (!newCashoutId) {
-      reportError(new Error('fn_cashout_request returned no id'), 'CashoutService.requestCashout');
-      throw new Error('Failed to request cashout: no id returned');
-    }
-
-    // The MESSAGE is already written (in the same transaction as the money, so
-    // it cannot exist for a cashout that did not happen). The PUSH is the half
-    // a database cannot send, and it is the half that reaches an agent who does
-    // not currently have the app open.
-    //
-    // NOT on a replay. `replayed: true` means this attempt found the original
-    // row rather than escrowing anything, so the agent's phone already buzzed
-    // for this exact request. Buzzing again would tell them a second cash out
-    // arrived when no second cash out exists.
-    if (!res.replayed) {
-      await pushQuietly(
-        res.agent_id || '',
-        'Cash Out Requested',
-        `${res.player_name || 'A Player'} Requested To Cash Out ${amount.toLocaleString()} Chips`,
-        '/hub/club-arena/agent'
-      );
-    }
-
-    const cashout = await this.getCashout(newCashoutId);
-
-    // Emit balance change so Cashier/Wallet pages refresh instantly
-    masterBus.emit('BALANCE_UPDATED', {
-      source: 'cashout_request',
-      userId: playerId,
-      amount: -amount,
-    });
-
-    // Emit CASHOUT_REQUESTED so admin dashboard refreshes in real-time
-    masterBus.emit('CASHOUT_REQUESTED', { clubId: resolvedClubId, amount, userId: playerId });
-
-    return cashout;
+    const context = cashoutContext(playerId, { clubId, amount, playerId,
+      isCurrent: isCurrent as () => boolean }, opId);
+    const request = await mutateCashout(context, 'hold', note);
+    assertCashoutCurrent(context);
+    // A replay may describe an original hold whose request has since closed.
+    // Return the verified current row; never fabricate a pending state.
+    masterBus.emit('BALANCE_UPDATED', { source: 'cashout_request', userId: playerId });
+    masterBus.emit('CASHOUT_REQUESTED', { clubId: context.clubId, amount, userId: playerId });
+    return request;
   }
 
-  /**
-   * Player: Cancel a pending cashout (returns chips from escrow)
-   *
-   * fn_cashout_release is the same money leg an agent's decline uses; which one
-   * it was is decided by whether auth.uid() is the player, and the ledger row
-   * says so ('cashout_cancelled' versus 'cashout_denied').
-   */
-  async cancelCashout(cashoutId: string, playerId: string, opId?: string): Promise<boolean> {
-    const { data, error } = await supabase.rpc('fn_cashout_release', {
-      p_cashout_id: cashoutId,
-      p_note: null,
-      p_op_id: opId || newOpId(),
-    });
-    if (error) {
-      reportError(error, 'CashoutService.cancelCashout');
-      throw new Error(error.message || 'Failed to cancel cashout');
-    }
-    const res = unwrap(data);
-    if (!res?.success) throw new Error(res?.error || 'Failed to cancel cashout');
-
-    masterBus.emit('BALANCE_UPDATED', { source: 'cashout_cancel', userId: playerId });
-    masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: res.club_id || '' });
-
+  async cancelCashout(
+    cashoutId: string, playerId: string, opId?: string, intent?: CashoutMutationIntent
+  ): Promise<boolean> {
+    const context = cashoutContext(playerId, intent, opId, cashoutId);
+    if (context.playerId !== playerId) throw new Error('Only The Original Player Can Cancel This Cashout');
+    await mutateCashout(context, 'cancellation');
+    assertCashoutCurrent(context);
+    masterBus.emit('BALANCE_UPDATED', { source: 'cashout_cancel', userId: context.playerId });
+    masterBus.emit('CASHOUT_CANCELLED', { cashoutId: context.cashoutId!, clubId: context.clubId });
     return true;
   }
 
-  /**
-   * Agent: Approve a cashout request.
-   *
-   * TERMINAL for the money. fn_cashout_approve locks the request, requires an
-   * unreleased chip_escrow row of the matching amount, credits the APPROVER'S
-   * agents.agent_wallet_balance (Dan: "Once approved the chips go into the
-   * agent's wallet"), releases the escrow, writes the ledger row and notifies
-   * the player, all in one transaction.
-   */
   async approveCashout(
-    cashoutId: string,
-    agentId: string,
-    note?: string,
-    opId?: string
+    cashoutId: string, agentId: string, note?: string, opId?: string, intent?: CashoutMutationIntent
   ): Promise<boolean> {
-    void agentId; // the server takes the approver from auth.uid(), never from here
-    const { data, error } = await supabase.rpc('fn_cashout_approve', {
-      p_cashout_id: cashoutId,
-      p_note: note || null,
-      p_op_id: opId || newOpId(),
-    });
-    if (error) {
-      reportError(error, 'CashoutService.approveCashout');
-      throw new Error(error.message || 'Failed to approve cashout');
-    }
-    const res = unwrap(data);
-    if (!res?.success) throw new Error(res?.error || 'Failed to approve cashout');
-
-    // A replay moved nothing; the player was already told. See requestCashout.
-    if (!res.replayed) {
-      await pushQuietly(
-        res.player_id || '',
-        'Cash Out Approved',
-        `Your Cash Out Of ${Number(res.amount || 0).toLocaleString()} Chips Was Approved`,
-        '/hub/club-arena/cashier'
-      );
-    }
-
-    masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: res.club_id || '' });
-    masterBus.emit('BALANCE_UPDATED', {
-      source: 'cashout_approved',
-      userId: res.player_id || '',
-      amount: -(res.amount || 0),
-    });
-
+    const context = cashoutContext(agentId, intent, opId, cashoutId);
+    if (context.playerId === agentId) throw new Error('You Cannot Approve Your Own Cashout');
+    await mutateCashout(context, 'approval', note);
+    assertCashoutCurrent(context);
+    masterBus.emit('CASHOUT_APPROVED', { cashoutId: context.cashoutId!, clubId: context.clubId });
+    // The player debit happened at hold time. This is a refresh, not a second debit.
+    masterBus.emit('BALANCE_UPDATED', { source: 'cashout_approved', userId: context.playerId });
     return true;
   }
 
-  /**
-   * @deprecated Approval is now atomic and terminal.
-   *
-   * The old flow was two steps: `fn_agent_approve_cashout` then
-   * `fn_complete_cashout`. Both were service_role-only, so neither ever ran from
-   * the browser. `fn_cashout_approve` replaced them: it releases the escrow into
-   * the approver's agent wallet and sets status='approved' in one locked
-   * transaction.
-   *
-   * Kept as a no-op so any remaining caller cannot double-apply the money leg.
-   * Callers should drop this call; `approveCashout` alone is sufficient.
-   */
-  async completeCashout(cashoutId: string, _agentId: string): Promise<boolean> {
-    void cashoutId;
-    void _agentId;
-    return true;
+  /** Retired: approval is the only terminal payer; no receipt can be inferred here. */
+  async completeCashout(_cashoutId: string, _agentId: string): Promise<boolean> {
+    throw new Error('Separate Cashout Completion Is Retired. Refresh The Canonical Approval Receipt.');
   }
 
-  /**
-   * Agent or club staff: decline a cashout. Same money leg as a player's own
-   * cancel, and the server decides which it was from auth.uid().
-   *
-   * The pre-flight `agentId` check that used to live here has gone: it read the
-   * row through RLS the caller may not have had, and it duplicated an
-   * authorisation the RPC performs under a row lock. Checking a permission in
-   * the one place that can also enforce it is the point.
-   */
   async rejectCashout(
-    cashoutId: string,
-    agentId: string,
-    reason?: string,
-    opId?: string
+    cashoutId: string, agentId: string, reason?: string, opId?: string, intent?: CashoutMutationIntent
   ): Promise<boolean> {
-    void agentId; // the server takes the actor from auth.uid()
-    const { data, error } = await supabase.rpc('fn_cashout_release', {
-      p_cashout_id: cashoutId,
-      p_note: reason || null,
-      p_op_id: opId || newOpId(),
-    });
-    if (error) {
-      reportError(error, 'CashoutService.rejectCashout');
-      throw new Error(error.message || 'Failed to reject cashout');
-    }
-    const res = unwrap(data);
-    if (!res?.success) throw new Error(res?.error || 'Failed to reject cashout');
-
-    // A replay moved nothing; the player was already told. See requestCashout.
-    if (!res.replayed) {
-      await pushQuietly(
-        res.player_id || '',
-        'Cash Out Declined',
-        `Your Cash Out Of ${Number(res.amount || 0).toLocaleString()} Chips Was Declined And The Chips Are Back In Your Wallet`,
-        '/hub/club-arena/cashier'
-      );
-    }
-
-    masterBus.emit('BALANCE_UPDATED', {
-      source: 'cashout_reject',
-      userId: res.player_id || '',
-      amount: res.amount || 0,
-    });
-    masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: res.club_id || '' });
-
+    const context = cashoutContext(agentId, intent, opId, cashoutId);
+    if (context.playerId === agentId) throw new Error('Use Player Cancellation For Your Own Cashout');
+    await mutateCashout(context, 'decline', reason);
+    assertCashoutCurrent(context);
+    masterBus.emit('BALANCE_UPDATED', { source: 'cashout_reject', userId: context.playerId });
+    masterBus.emit('CASHOUT_CANCELLED', { cashoutId: context.cashoutId!, clubId: context.clubId });
     return true;
   }
 
@@ -423,95 +522,61 @@ class CashoutServiceClass {
    * to you, plus anyone in your downline, plus everything in a club you run.
    */
   async getAgentPendingCashouts(agentId: string, clubId?: string): Promise<CashoutRequest[]> {
-    void agentId; // the server scopes on auth.uid()
-    const { data, error } = await supabase.rpc('fn_cashout_queue', {
-      p_club_id: clubId ? await resolveClubUUID(clubId) : null,
-      p_status: 'pending',
-    });
-
-    /**
-     * THROWS, and that is the fix (2026-08-25). This used to report the error
-     * and return `[]`, which AgentCashoutPanel renders as "No Pending Cashout
-     * Requests" - the queue failing to load and the queue being empty told the
-     * agent exactly the same thing. Worse, the panel already had a "Failed To
-     * Load Cashout Requests" state with a Retry button that no code path could
-     * ever reach. An agent must never be shown an empty worklist because a read
-     * failed; there is money waiting behind it.
-     */
+    const isCurrent = captureCashoutAccountGuard(agentId);
+    const check = () => { if (!isCurrent()) throw new Error('Cashout Account Changed While Reading. Refresh The Queue.'); };
+    const resolvedInput = clubId ? await resolveClubUUID(clubId) : null;
+    check();
+    if (clubId && !uuidValue(resolvedInput)) throw new Error('Cashout Club Could Not Be Verified');
+    const resolved = resolvedInput?.toLowerCase() ?? null;
+    const { data, error } = await supabase.rpc('fn_cashout_queue', { p_club_id: resolved, p_status: 'pending' });
+    check();
     if (error) {
       reportError(error, 'CashoutService.getAgentCashouts');
       throw new Error(error.message || 'Failed to load cashout requests');
     }
-
-    return ((data || []) as Array<Record<string, unknown>>).map((d) => ({
-      id: d.id as string,
-      clubId: d.club_id as string,
-      playerId: d.player_id as string,
-      playerName: (d.player_name as string) || undefined,
-      playerAvatar: (d.player_avatar as string) || undefined,
-      agentId: d.agent_id as string,
-      amount: Number(d.amount) || 0,
-      status: d.status as CashoutStatus,
-      playerNote: (d.player_note as string) || undefined,
-      agentNote: (d.agent_note as string) || undefined,
-      createdAt: d.created_at as string,
-      updatedAt: d.created_at as string,
-    }));
+    if (!Array.isArray(data)) throw new Error('Cashout Queue Could Not Be Verified');
+    const seen = new Set<string>();
+    return data.map(row => {
+      const request = readCashoutRow(row);
+      if ((resolved && request.clubId !== resolved) || request.status !== 'pending' || seen.has(request.id)) {
+        throw new Error('Cashout Queue Scope Could Not Be Verified');
+      }
+      seen.add(request.id);
+      return request;
+    });
   }
 
-  /**
-   * Get cashouts for a player
-   */
-  async getPlayerCashouts(playerId: string, clubId?: string): Promise<CashoutRequest[]> {
-    let query = supabase
-      .from('cashout_requests')
-      .select(
-        `
-                *,
-                player:player_id(display_name, avatar_url:arena_avatar_url),
-                agent:agent_id(display_name)
-            `
-      )
-      .eq('player_id', playerId)
-      .order('created_at', { ascending: false })
-      .limit(100);
-
-    if (clubId) {
-      query = query.eq('club_id', await resolveClubUUID(clubId));
-    }
-
-    const { data, error } = await query;
-
+  /** At most 100 scoped requests; statuses are not money movement receipts. */
+  async getPlayerCashouts(playerId: string, clubId?: string, status?: 'pending'): Promise<CashoutRequest[]> {
+    const isCurrent = captureCashoutAccountGuard(playerId);
+    const check = () => { if (!isCurrent()) throw new Error('Cashout Account Changed While Reading. Refresh The Queue.'); };
+    const resolvedInput = clubId ? await resolveClubUUID(clubId) : null;
+    check();
+    if (clubId && !uuidValue(resolvedInput)) throw new Error('Cashout Club Could Not Be Verified');
+    const resolved = resolvedInput?.toLowerCase() ?? null;
+    let query = supabase.from('cashout_requests').select(`
+      *, player:player_id(display_name, avatar_url:arena_avatar_url), agent:agent_id(display_name)
+    `).eq('player_id', playerId);
+    if (resolved) query = query.eq('club_id', resolved);
+    if (status !== undefined && status !== 'pending') throw new Error('Cashout Status Filter Could Not Be Verified');
+    if (status) query = query.eq('status', status);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
+    check();
     if (error) {
       reportError(error, 'CashoutService.getPlayerCashouts');
-      return [];
+      throw new Error(error.message || 'Failed to load cashout requests');
     }
-
-    return (data || []).map((d) => this.mapCashout(d));
-  }
-
-  /**
-   * POLICY (Dan, 2026-08-15, binding; narrowed 2026-08-25): an AGENT may NEVER
-   * remove chips from a downline player's BALANCE. The only way chips leave a
-   * player's balance toward an agent is a player-initiated cashout: the player
-   * requests, the chips are escrowed immediately, and on the agent's acceptance
-   * they move to the agent's wallet. A club owner, co owner or admin may remove
-   * chips at any time via `adminRemovePlayerChips` below.
-   *
-   * The ONE exception Dan added on 2026-08-25 is not a balance operation and so
-   * does not live here: an agent may undo a send THEY made, from the specific
-   * chip_transactions row that recorded it, for ten minutes. That is
-   * `claimBackSend` below, and fn_agent_wallet_claim_back refuses it by the
-   * clock. This method stays a flat refusal so the general power cannot be
-   * re-enabled by widening the specific one.
-   */
-  async canRemoveChips(
-    _agentId: string,
-    _playerId: string,
-    _clubId: string,
-    _amount: number
-  ): Promise<boolean> {
-    return false;
+    if (!Array.isArray(data)) throw new Error('Cashout History Could Not Be Verified');
+    const seen = new Set<string>();
+    return data.map(row => {
+      const request = readCashoutRow(row);
+      if (request.playerId !== playerId || (resolved && request.clubId !== resolved) ||
+          (status && request.status !== status) || seen.has(request.id)) {
+        throw new Error('Cashout History Scope Could Not Be Verified');
+      }
+      seen.add(request.id);
+      return request;
+    });
   }
 
   /**
@@ -683,61 +748,9 @@ class CashoutServiceClass {
     };
   }
 
-  /**
-   * Auto-expire stale pending cashouts: returns escrowed chips to the player.
-   * Call via cron/edge function on a schedule (e.g. every 6 hours).
-   *
-   * THIS USED TO THROW THE MOMENT IT DID ANY WORK (fixed 2026-08-25).
-   *
-   * `fn_expire_stale_cashouts` RETURNS INTEGER - the count of requests it
-   * expired. The repo migration that first created it (20260311_cashout_expiry)
-   * returned a TABLE, and this method still read the newer scalar as if it were
-   * that table: `for (const rec of data)` over a number is a TypeError, and
-   * `data.length` on a number is undefined. It only ever looked healthy because
-   * `0 || []` is `[]`, so a run that expired nothing returned a tidy zero and a
-   * run that expired anything crashed. The live signature was confirmed against
-   * production before this was changed.
-   *
-   * There are no per-player ids in a scalar, so one broadcast refresh is what
-   * this can honestly emit. Every screen that cares listens for BALANCE_UPDATED
-   * and refetches its own numbers.
-   *
-   * The retry is safe here and nowhere else in this file: the RPC selects only
-   * `status = 'pending'` rows and flips each to 'expired' in the same
-   * transaction, so a second attempt after a lost response finds nothing left to
-   * refund and returns 0. It carries no op id, which is why it must stay that
-   * self-limiting shape - see the server note in the audit report.
-   */
-  async expireStale(maxHours = 72): Promise<{ expired: number }> {
-    const { data, error } = await retryAsync(
-      () =>
-        // Round 18 fix: my Round 9 RPC param is p_ttl_hours, caller used p_max_hours.
-        supabase.rpc('fn_expire_stale_cashouts', {
-          p_ttl_hours: maxHours,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'CashoutService.expireStale');
-      return { expired: 0 };
-    }
-
-    // Defensive on shape, not on trust: a scalar today, a single-row table on an
-    // older database. Anything else counts as nothing rather than crashing a
-    // scheduled job.
-    const raw = Array.isArray(data) ? (data[0] as unknown) : (data as unknown);
-    const expired =
-      typeof raw === 'number'
-        ? raw
-        : Number((raw as { expired?: number } | null)?.expired ?? 0) || 0;
-
-    if (expired > 0) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'cashout_expired' });
-      console.debug(`[Cashout] Expired ${expired} stale cashouts and refunded the escrow`);
-    }
-
-    return { expired };
+  /** System expiry belongs to the service-only scheduler and its durable receipts. */
+  async expireStale(_maxHours = 72): Promise<{ expired: number }> {
+    throw new Error('Browser Cashout Expiry Is Retired. Only The Canonical Server Scheduler May Expire Holds.');
   }
 }
 

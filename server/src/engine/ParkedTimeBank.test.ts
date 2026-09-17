@@ -108,6 +108,80 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     expect(data.row.time_bank_snapshot.players[user].remainingSeconds).toBe(7);
     expect(data.row.engine_instance).toMatch(/:parked$/);
   });
+  it('checkpoints a table already physically parked when maintenance takes ownership', async () => {
+    const e = await saved();
+    e.running = true;
+    e.pauseAfterHand(300000, { untilResumed: true });
+    const parked = e.awaitPauseGate();
+    const existingGate = e.handForHandResolve;
+    try {
+      expect(existingGate).not.toBeNull();
+      e.pauseForMaintenance(300000);
+      expect(e.isMaintenanceStateDurable()).toBe(false);
+      await e.presenceSave;
+      expect(e.isMaintenanceStateDurable()).toBe(true);
+      expect(data.row.engine_instance).toMatch(/:parked$/);
+      expect(data.row.time_bank_snapshot.players[user]).toMatchObject({
+        occupancyId: stay,
+        remainingSeconds: 7,
+        usesRemaining: 1,
+        dbConsumedSeconds: 33,
+      });
+      expect(e.handForHandResolve).toBe(existingGate);
+      expect(e.handForHandPaused).toBe(true);
+      expect(data.rpc).not.toHaveBeenCalled();
+    } finally {
+      e.resumeFromMaintenance();
+      e.resumeDealing();
+      await parked;
+    }
+  });
+  it('does not replace the final bank checkpoint with a repeated maintenance announcement', async () => {
+    const e = await saved();
+    e.pauseForMaintenance(120000);
+    await e.presenceSave;
+    await e.persistPresenceForRestart('parked');
+    const finalSnapshot = data.row.time_bank_snapshot;
+    e.pauseForMaintenance(300000);
+    await e.presenceSave;
+    expect(e.pauseMaxWaitMs).toBe(300000);
+    expect(e.isMaintenanceStateDurable()).toBe(true);
+    expect(data.row.time_bank_snapshot).toEqual(finalSnapshot);
+    expect(data.row.engine_instance).toMatch(/:parked$/);
+  });
+  it.each([false, true])(
+    'keeps the existing pause fenced while its checkpoint waits (refused=%s)',
+    async (refused) => {
+      const e = await saved();
+      e.running = true;
+      e.pauseAfterHand(300000, { untilResumed: true });
+      const parked = e.awaitPauseGate();
+      const existingGate = e.handForHandResolve;
+      let release!: () => void;
+      data.beforeWrite = () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      if (refused) data.writeError = new Error('checkpoint refused');
+      try {
+        e.pauseForMaintenance(300000);
+        await Promise.resolve();
+        expect(e.isMaintenanceStateDurable()).toBe(false);
+        expect(e.handForHandResolve).toBe(existingGate);
+        release();
+        await e.presenceSave;
+        expect(e.isMaintenanceStateDurable()).toBe(!refused);
+        expect(e.handForHandResolve).toBe(existingGate);
+        expect(e.timeBankEngine.getPlayerBank(table, user).remainingSeconds).toBe(7);
+        expect(data.rpc).not.toHaveBeenCalled();
+      } finally {
+        release?.();
+        e.resumeFromMaintenance();
+        e.resumeDealing();
+        await parked;
+      }
+    }
+  );
   it('does not give the old bank to a new occupancy', async () => {
     await saved();
     const next = engine('dddddddd-dddd-4ddd-8ddd-dddddddddddd');

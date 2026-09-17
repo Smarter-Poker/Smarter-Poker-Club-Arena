@@ -411,6 +411,8 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
         step.name === 'Require successful real PostgreSQL accounting tests'
     );
     expect(gate.if).toBe("needs.accounting_postgres.result != 'success'");
+    // This refusal runs before checkout, so the job's server/ default is absent.
+    expect(gate['working-directory']).toBe('${{ github.workspace }}');
     expect(gate.run).toContain('exit 1');
     expect(ci.jobs.unit_shards.if).toContain("needs.changes.outputs.tests == 'true'");
     expect(

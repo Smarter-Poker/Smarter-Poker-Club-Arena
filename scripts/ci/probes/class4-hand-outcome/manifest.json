@@ -133,8 +133,8 @@
     },
     "resource_prepare": {
       "path": "scripts/ci/probes/class4-hand-outcome/resource-prepare.sql",
-      "bytes": 6968,
-      "sha256": "cf8653e29239c15f521e4649ae88f0ca724761999e2c519237c1f1163c0bb156"
+      "bytes": 7290,
+      "sha256": "3c86de3dc778f92e1be907b76d484920ebd9e667ce2908cf14849ae5594b481e"
     },
     "resource_measure": {
       "path": "scripts/ci/probes/class4-hand-outcome/resource-measure.sql",

@@ -1368,6 +1368,7 @@ jobs:
     steps:
       - name: Require successful real PostgreSQL accounting tests
         if: needs.accounting_postgres.result != 'success'
+        working-directory: ${{ github.workspace }}
         run: |
           echo "::error::The required isolated PostgreSQL accounting tests did not pass."
           exit 1

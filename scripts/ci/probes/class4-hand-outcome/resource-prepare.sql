@@ -18,10 +18,13 @@ END $$;
 \ir ../../../../supabase/components/class4-hand-outcome-evidence.sql
 SET LOCAL session_replication_role=replica;
 -- This owned empty fixture loads MD5 UUIDs across a 2.6M-row random B-tree.
--- Build only that unique index once after loading; all row expressions, other
--- constraints/indexes and durability settings stay unchanged. The exact unique
--- constraint and the existing full source/schema guard must pass before use.
+-- Build the UUID unique index and the 256-table composite primary key once
+-- after loading instead of maintaining both B-trees for each inserted row.
+-- The sequential hand-number unique index, all row expressions and durability
+-- settings stay unchanged. Both exact constraints and the existing full
+-- source/schema guard must pass before any measurement.
 ALTER TABLE public.hand_atomic_commits DROP CONSTRAINT hand_atomic_commits_hand_id_key;
+ALTER TABLE public.hand_atomic_commits DROP CONSTRAINT hand_atomic_commits_pkey;
 INSERT INTO public.hand_atomic_commits(table_id,hand_number,hand_id,payload_hash,stack_result,
  post_commit_payload,post_commit_request_hash,post_commit_payload_hash,post_commit_completed_at,post_commit_result)
 SELECT md5('class4-resource-table:'||(i%256))::uuid,8000000+i,md5('class4-resource-hand:'||i)::uuid,
@@ -34,6 +37,8 @@ SELECT md5('class4-resource-table:'||(i%256))::uuid,8000000+i,md5('class4-resour
 FROM generate_series(1,2600000) s(i);
 ALTER TABLE public.hand_atomic_commits
  ADD CONSTRAINT hand_atomic_commits_hand_id_key UNIQUE (hand_id);
+ALTER TABLE public.hand_atomic_commits
+ ADD CONSTRAINT hand_atomic_commits_pkey PRIMARY KEY (table_id, hand_number);
 -- Existing replay verifies every exact constraint/index and valid/ready state.
 \ir ../../../../supabase/components/class4-hand-outcome-evidence.sql
 -- Original aggregate history:42051 total -3363 unresolved =38688 resolved.

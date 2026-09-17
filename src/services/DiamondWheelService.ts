@@ -616,6 +616,9 @@ const DiamondWheelService = {
       throw new Error('Diamond Spins Availability Could Not Be Confirmed');
     if (!data.enabled) return this.getState(clubId);
     const state = normaliseState(data);
+    // The server deliberately omits a prize table until a host is configured.
+    // Keep that closed state visible without downgrading to another play route.
+    if (state.ok && !state.available && state.reason === 'not_configured') return state;
     if (
       state.min_entry !== 25 ||
       state.max_entry !== 2500 ||

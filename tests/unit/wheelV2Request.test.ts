@@ -119,6 +119,25 @@ describe('versioned wheel entry and recovery', () => {
     expect((await service.getStateV2(attempt.clubId)).contract_version).toBeUndefined();
     expect(rpc.mock.calls[1][0]).toBe('fn_wheel_state');
   });
+  it('keeps an unconfigured club explicitly closed without trying legacy play', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        ok: true,
+        contract_version: 2,
+        enabled: true,
+        available: false,
+        reason: 'not_configured',
+        club_id: attempt.clubId,
+      },
+      error: null,
+    });
+    await expect(service.getStateV2(attempt.clubId)).resolves.toMatchObject({
+      available: false,
+      reason: 'not_configured',
+      segments: [],
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
   it('refuses an empty or partial new prize table', async () => {
     const r = receipt();
     r.segments = r.segments.slice(1);

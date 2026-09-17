@@ -112,8 +112,14 @@ describe('the public arena is readable without JavaScript', () => {
       page: { ...page, path: '/', seo: { ...page.seo, canonicalPath: '/' } },
       css: '',
     });
-    expect(landing).toContain(
-      '<div id="root"><div id="prerender-landing" data-prerender="landing">'
+    // The landing is a sibling BEFORE #root, with #root hidden while it exists.
+    expect(landing).toContain('<div id="prerender-landing" data-prerender="landing">');
+    expect(landing).toMatch(/body:has\(#prerender-landing\) #root\{display:none\}/);
+    expect(landing.indexOf('id="prerender-landing"')).toBeLessThan(
+      landing.indexOf('<div id="root"></div>')
+    );
+    expect(readFileSync(join(ROOT, 'src/main.tsx'), 'utf8')).toMatch(
+      /releasePrerenderedLanding\(\)/
     );
     expect(landing).toContain('localStorage.getItem("smarter-poker-auth")');
     expect(landing).toContain(

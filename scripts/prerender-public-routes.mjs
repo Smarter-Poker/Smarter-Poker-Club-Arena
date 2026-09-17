@@ -92,8 +92,54 @@ export function jsonLdDocument(jsonLd) {
   return { '@context': 'https://schema.org', ...jsonLd };
 }
 
+
+/**
+ * THE FONTS ARE KNOWN AT FIRST PAINT (2026-09-17). fonts.css is loaded async
+ * (media=print swap trick), so the prerendered words painted in Georgia and
+ * system-ui and then jumped when Cinzel and Inter arrived: measured CLS 0.061
+ * on a phone, once for the prerender and once more for the React tree. The
+ * latin @font-face rules for the two families the public pages use are
+ * inlined into the prerendered head, and their two woff2 files are preloaded,
+ * so the first paint already uses the right metrics whenever the files arrive
+ * in time (they are small and fetched at high priority). Best effort: no
+ * fonts.css, no change.
+ */
+const PRERENDER_FONT_FAMILIES = ['Cinzel', 'Inter'];
+
+export function latinFontFaces(fontsCss) {
+  const faces = [];
+  const seen = new Set();
+  for (const m of fontsCss.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
+    const body = m[1];
+    const family = /font-family:\s*'?([^;']+)'?/.exec(body)?.[1]?.trim();
+    const range = /unicode-range:\s*([^;]+)/.exec(body)?.[1] || '';
+    const url = /url\(([^)]+)\)/.exec(body)?.[1];
+    if (!family || !url || !PRERENDER_FONT_FAMILIES.includes(family)) continue;
+    if (!/U\+0000-00FF/i.test(range)) continue;
+    faces.push({ family, url, rule: `@font-face{${body.replace(/\s+/g, ' ').trim()}}` });
+    seen.add(url);
+  }
+  return { rules: faces.map((f) => f.rule), urls: [...seen] };
+}
+
+function readLatinFonts() {
+  const dir = path.join(DIST, 'fonts');
+  if (!existsSync(dir)) return null;
+  const css = readdirSync(dir).find((f) => /^fonts-[a-f0-9]+\.css$/.test(f));
+  if (!css) return null;
+  return latinFontFaces(readFileSync(path.join(dir, css), 'utf8'));
+}
+
+export function fontHeadMarkup(fonts) {
+  if (!fonts || fonts.urls.length === 0) return '';
+  const preloads = fonts.urls
+    .map((u) => `  <link rel="preload" href="${escapeAttr(u)}" as="font" type="font/woff2" crossorigin />`)
+    .join('\n');
+  return `${preloads}\n  <style data-prerender="fonts">${fonts.rules.join('')}</style>\n`;
+}
+
 /** Build one route's HTML document from the shell and the rendered page. */
-export function composeDocument({ shell, page, css }) {
+export function composeDocument({ shell, page, css, fonts = null }) {
   const { seo, html: body, path: route } = page;
   const title = seo.title.includes('Smarter.Poker') ? seo.title : `${seo.title} | Smarter.Poker`;
   const canonical = `https://smarter.poker${WEB_BASE}${route === '/' ? '' : route}`;
@@ -125,18 +171,35 @@ export function composeDocument({ shell, page, css }) {
     'JSON-LD block',
   );
 
+  const fontMarkup = fontHeadMarkup(fonts);
+  if (fontMarkup) {
+    doc = doc.replace('</head>', `${fontMarkup}</head>`);
+  }
   if (css) {
     doc = doc.replace('</head>', `  <style data-prerender="css">${css}</style>\n</head>`);
   }
 
   const rootPattern = /<div id="root"><\/div>/;
   if (!rootPattern.test(doc)) throw new Error('prerender: shell index.html has no empty #root');
-  const content =
-    route === '/'
-      ? `<div id="prerender-landing" data-prerender="landing">${body}</div>` +
-        `<script>try{var l=location.pathname.replace(/\\/+$/,"");var s=window.localStorage.getItem(${JSON.stringify(SESSION_STORAGE_KEY)});if(s||(l!==${JSON.stringify(WEB_BASE)}&&l!=="")){var p=document.getElementById("prerender-landing");if(p)p.remove()}}catch(e){}</script>`
-      : `<div data-prerender="${escapeAttr(route)}">${body}</div>`;
-  doc = doc.replace(rootPattern, `<div id="root">${content}</div>`);
+  if (route === '/') {
+    // THE LANDING STAYS ON SCREEN UNTIL THE APP HAS DRAWN ITS OWN (2026-09-17).
+    // Inside #root the block was the first thing createRoot threw away, so a
+    // signed-out visitor saw the words, then a loading state, then the same
+    // words again: measured live, CLS 0.18 on a phone. The block now sits
+    // BEFORE #root as a sibling; #root is display:none while the block exists;
+    // the inline script removes the block before first paint for a signed-in
+    // player or a deep route; otherwise src/main.tsx removes it the moment the
+    // React tree has an h1 (the landing page or the lobby), so the swap is
+    // between two identical layouts. If the bundle never boots, the words stay.
+    const landing =
+      `<style data-prerender="landing">body:has(#prerender-landing) #root{display:none}</style>` +
+      `<div id="prerender-landing" data-prerender="landing">${body}</div>` +
+      `<script>try{var l=location.pathname.replace(/\\/+$/,"");var s=window.localStorage.getItem(${JSON.stringify(SESSION_STORAGE_KEY)});if(s||(l!==${JSON.stringify(WEB_BASE)}&&l!=="")){var p=document.getElementById("prerender-landing");if(p)p.remove()}}catch(e){}</script>` +
+      `<div id="root"></div>`;
+    doc = doc.replace(rootPattern, landing);
+  } else {
+    doc = doc.replace(rootPattern, `<div id="root"><div data-prerender="${escapeAttr(route)}">${body}</div></div>`);
+  }
   return doc;
 }
 
@@ -167,7 +230,10 @@ function outputPathFor(route) {
 export function verifyDocument(route, doc) {
   const problems = [];
   if (!/<h1[\s>]/i.test(doc)) problems.push('no <h1>');
-  const bodyStart = doc.indexOf('<div id="root">');
+  // The landing block sits before #root; every other route's markup is inside it.
+  const landingStart = doc.indexOf('<div id="prerender-landing"');
+  const rootStart = doc.indexOf('<div id="root">');
+  const bodyStart = landingStart === -1 ? rootStart : Math.min(landingStart, rootStart);
   const text = doc.slice(bodyStart).replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ');
   const words = text.split(/\s+/).filter(Boolean).length;
   if (words < 120) problems.push(`only ${words} words of readable text`);
@@ -187,16 +253,20 @@ async function main() {
   const shellPath = path.join(DIST, 'index.html');
   if (!existsSync(shellPath)) throw new Error(`prerender: ${shellPath} missing; run after vite build`);
   const shell = readFileSync(shellPath, 'utf8');
+  if (shell.includes('data-prerender=')) {
+    throw new Error('prerender: dist/index.html is already prerendered; run vite build first (this step is not idempotent by design)');
+  }
 
   buildPrerenderBundle();
   const entry = await import(pathToFileURL(path.join(PRERENDER_OUT, 'entry-server.mjs')).href);
   entry.assertPrerenderCoversPublicRoutes();
   const css = readPrerenderCss();
+  const fonts = readLatinFonts();
 
   const manifest = [];
   for (const route of entry.PRERENDER_PATHS) {
     const page = entry.renderPublicPage(route);
-    const doc = composeDocument({ shell, page, css });
+    const doc = composeDocument({ shell, page, css, fonts });
     const words = verifyDocument(route, doc);
     const out = outputPathFor(route);
     mkdirSync(path.dirname(out), { recursive: true });
@@ -208,7 +278,7 @@ async function main() {
     path.join(DIST, 'prerender-manifest.json'),
     JSON.stringify({ base: WEB_BASE, generatedFrom: 'src/prerender/entry-server.tsx', routes: manifest }, null, 2) + '\n',
   );
-  console.log(`[prerender] ${manifest.length} public routes prerendered; css inlined: ${(css.length / 1024).toFixed(1)} KB`);
+  console.log(`[prerender] ${manifest.length} public routes prerendered; css inlined: ${(css.length / 1024).toFixed(1)} KB; fonts preloaded: ${fonts ? fonts.urls.length : 0}`);
 }
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname;

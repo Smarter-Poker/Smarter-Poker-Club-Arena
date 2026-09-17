@@ -22,18 +22,36 @@ function retired(): never {
 }
 
 export const SettlementCronService = Object.freeze({
-  start(_config: CronConfig = {}): never { return retired(); },
-  async check(): Promise<never> { return retired(); },
-  async runCanaryCheck(): Promise<CanaryResult> { return retired(); },
+  start(_config: CronConfig = {}): never {
+    return retired();
+  },
+  async check(): Promise<never> {
+    return retired();
+  },
+  async runCanaryCheck(): Promise<CanaryResult> {
+    return retired();
+  },
   // No timer is owned here. Cleanup is safe during app disposal.
   stop(): void {},
   getStatus() {
-    return { state: 'browser_scheduler_retired' as const, isRunning: false as const,
-      lastCheckAt: null, nextCheckMs: null, nextSnapshotAt: null, nextPayoutAt: null };
+    return {
+      state: 'browser_scheduler_retired' as const,
+      isRunning: false as const,
+      lastCheckAt: null,
+      nextCheckMs: null,
+      nextSnapshotAt: null,
+      nextPayoutAt: null,
+    };
   },
-  getNextSundaySnapshot(): never { return retired(); },
-  getNextMondayPayout(): never { return retired(); },
-  formatCountdown(_target: Date): never { return retired(); },
+  getNextSundaySnapshot(): never {
+    return retired();
+  },
+  getNextMondayPayout(): never {
+    return retired();
+  },
+  formatCountdown(_target: Date): never {
+    return retired();
+  },
 });
 
 export default SettlementCronService;

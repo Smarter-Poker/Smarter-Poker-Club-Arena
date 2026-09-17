@@ -10,8 +10,17 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { CashoutReceiptChecks, useCashoutReceiptChecks } from '../wallet/CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../../hooks/useCashoutScope';
-import { runCashoutOperation, recoverCashoutOperation, captureCashoutStart, assertCashoutStartCurrent, type CashoutStart } from '../../services/CashoutOperation';
-import { usePreparedCashoutOperations, isCashoutStartCurrent } from '../../hooks/usePreparedCashoutOperations';
+import {
+  runCashoutOperation,
+  recoverCashoutOperation,
+  captureCashoutStart,
+  assertCashoutStartCurrent,
+  type CashoutStart,
+} from '../../services/CashoutOperation';
+import {
+  usePreparedCashoutOperations,
+  isCashoutStartCurrent,
+} from '../../hooks/usePreparedCashoutOperations';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
@@ -76,7 +85,10 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
     if (!user?.id || !isCurrent()) return;
     // Own realtime/balance events must not retire the accepted row while its
     // verified receipt is being acknowledged. Account/route fences stay live.
-    if (inFlightRef.current.size > 0) { queuedCashoutReload.current = true; return; }
+    if (inFlightRef.current.size > 0) {
+      queuedCashoutReload.current = true;
+      return;
+    }
     const generation = ++loadGeneration.current;
     const current = () => isCurrent() && generation === loadGeneration.current;
 
@@ -94,13 +106,22 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
       // Clear previous stagger timers
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = pending.map((_, i) =>
-        setTimeout(() => { if (current()) setVisibleItems((prev) => new Set(prev).add(i)); }, i * 60)
+        setTimeout(() => {
+          if (current()) setVisibleItems((prev) => new Set(prev).add(i));
+        }, i * 60)
       );
     } catch (err) {
       reportError(err, 'AgentCashoutPanel.Failed_to_load_cashouts');
-      if (current()) { rowsScope.current = isCurrent; setCashouts([]); setError(safeErrorMessage(err, 'Failed to load cashout requests')); }
+      if (current()) {
+        rowsScope.current = isCurrent;
+        setCashouts([]);
+        setError(safeErrorMessage(err, 'Failed to load cashout requests'));
+      }
     }
-    if (current()) { hasLoadedRef.current = true; setLoading(false); }
+    if (current()) {
+      hasLoadedRef.current = true;
+      setLoading(false);
+    }
   }, [user?.id, clubId, isMounted, isCurrent]);
 
   useEffect(() => {
@@ -176,18 +197,50 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
     };
   }, [loadCashouts, user?.id, clubId, isMounted]);
 
-  const decisions = usePreparedCashoutOperations(cashouts.flatMap(row => [
-    { key: `${row.id}:approve`, intent: { userId: user?.id ?? '', receiptViewCurrent: isCurrent, playerId: row.playerId,
-      clubId: row.clubId, targetId: row.id, kind: 'cashout_approve' as const, amount: row.amount } },
-    { key: `${row.id}:reject`, intent: { userId: user?.id ?? '', receiptViewCurrent: isCurrent, playerId: row.playerId,
-      clubId: row.clubId, targetId: row.id, kind: 'cashout_decline' as const,
-      amount: row.amount, note: 'Request declined' } },
-  ]), rowsCurrent.current, cashouts);
+  const decisions = usePreparedCashoutOperations(
+    cashouts.flatMap((row) => [
+      {
+        key: `${row.id}:approve`,
+        intent: {
+          userId: user?.id ?? '',
+          receiptViewCurrent: isCurrent,
+          playerId: row.playerId,
+          clubId: row.clubId,
+          targetId: row.id,
+          kind: 'cashout_approve' as const,
+          amount: row.amount,
+        },
+      },
+      {
+        key: `${row.id}:reject`,
+        intent: {
+          userId: user?.id ?? '',
+          receiptViewCurrent: isCurrent,
+          playerId: row.playerId,
+          clubId: row.clubId,
+          targetId: row.id,
+          kind: 'cashout_decline' as const,
+          amount: row.amount,
+          note: 'Request declined',
+        },
+      },
+    ]),
+    rowsCurrent.current,
+    cashouts
+  );
 
-  const receiptChecks = useCashoutReceiptChecks(isCurrent, () => { void loadCashouts(); onCashoutProcessed?.(); });
+  const receiptChecks = useCashoutReceiptChecks(isCurrent, () => {
+    void loadCashouts();
+    onCashoutProcessed?.();
+  });
 
-  const processCashout = async (cashout: CashoutRequest, action: 'approve' | 'reject', reason?: string) => {
-    if (!user?.id || !isCurrent() || !rowsCurrent.current?.() || cashout.status !== 'pending') return;
+  const processCashout = async (
+    cashout: CashoutRequest,
+    action: 'approve' | 'reject',
+    reason?: string
+  ) => {
+    if (!user?.id || !isCurrent() || !rowsCurrent.current?.() || cashout.status !== 'pending')
+      return;
     if (inFlightRef.current.has(cashout.id)) return;
     inFlightRef.current.add(cashout.id);
     setProcessing(cashout.id);
@@ -195,8 +248,12 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
     let start: CashoutStart | null = null;
     let checkingOutcome = false;
     try {
-      if (action === 'reject' && reason !== 'Request declined') throw new Error('Refresh To Verify This Cashout Decision');
-      const prepared = decisions.get(`${cashout.id}:${action}`, action === 'approve' ? 'cashout_approve' : 'cashout_decline');
+      if (action === 'reject' && reason !== 'Request declined')
+        throw new Error('Refresh To Verify This Cashout Decision');
+      const prepared = decisions.get(
+        `${cashout.id}:${action}`,
+        action === 'approve' ? 'cashout_approve' : 'cashout_decline'
+      );
       if (!prepared) throw new Error('Wait For This Cashout Request To Be Verified');
       start = captureCashoutStart(prepared);
       checkingOutcome = true;
@@ -215,9 +272,15 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
       void loadCashouts();
       onCashoutProcessed?.();
     } catch (err) {
-      if (checkingOutcome && start && isCurrent()) receiptChecks.retain(`${cashout.id}:${action}`,
-        cashout.amount, action === 'approve' ? 'Cashout Approval' : 'Cashout Decline', start);
-      if (isCurrent() && (!start || isCashoutStartCurrent(start))) setError(safeErrorMessage(err, 'Refresh To Check The Cashout Outcome'));
+      if (checkingOutcome && start && isCurrent())
+        receiptChecks.retain(
+          `${cashout.id}:${action}`,
+          cashout.amount,
+          action === 'approve' ? 'Cashout Approval' : 'Cashout Decline',
+          start
+        );
+      if (isCurrent() && (!start || isCashoutStartCurrent(start)))
+        setError(safeErrorMessage(err, 'Refresh To Check The Cashout Outcome'));
     } finally {
       inFlightRef.current.delete(cashout.id);
       if (isCurrent()) {
@@ -230,7 +293,8 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
     }
   };
   const handleApprove = (cashout: CashoutRequest) => processCashout(cashout, 'approve');
-  const handleReject = (cashout: CashoutRequest, reason?: string) => processCashout(cashout, 'reject', reason);
+  const handleReject = (cashout: CashoutRequest, reason?: string) =>
+    processCashout(cashout, 'reject', reason);
 
   if (loading || !rowsScope.current?.()) {
     return (
@@ -337,7 +401,7 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
 
   return (
     <div className="agent-cashout-panel">
-        <CashoutReceiptChecks checks={receiptChecks} />
+      <CashoutReceiptChecks checks={receiptChecks} />
       <div className="panel-header">
         <h3>Pending Cashouts</h3>
         <span className="count-badge">{cashouts.length}</span>
@@ -391,22 +455,28 @@ function AgentCashoutContent({ clubId, onCashoutProcessed }: AgentCashoutPanelPr
                 <button
                   className="action-btn approve"
                   onClick={() => handleApprove(cashout)}
-                  disabled={processing === cashout.id || !decisions.get(`${cashout.id}:approve`, 'cashout_approve')}
+                  disabled={
+                    processing === cashout.id ||
+                    !decisions.get(`${cashout.id}:approve`, 'cashout_approve')
+                  }
                 >
                   {processing === cashout.id ? 'Approving...' : 'Approve Cashout'}
                 </button>
                 <button
                   className="action-btn reject"
                   onClick={() => handleReject(cashout, 'Request declined')}
-                  disabled={processing === cashout.id || !decisions.get(`${cashout.id}:reject`, 'cashout_decline')}
+                  disabled={
+                    processing === cashout.id ||
+                    !decisions.get(`${cashout.id}:reject`, 'cashout_decline')
+                  }
                 >
                   {processing === cashout.id ? 'Working...' : 'Reject'}
                 </button>
               </div>
 
               <div className="escrow-notice">
-                Approval Transfers The Verified Hold Into Your Agent Wallet. Rejection Returns
-                The Verified Hold To The Player.
+                Approval Transfers The Verified Hold Into Your Agent Wallet. Rejection Returns The
+                Verified Hold To The Player.
               </div>
             </div>
           ))}

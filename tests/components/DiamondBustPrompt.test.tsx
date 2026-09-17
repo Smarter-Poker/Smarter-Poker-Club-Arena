@@ -78,6 +78,8 @@ describe('Diamond Spins bust invitation', () => {
       const { rerender } = render(<DiamondBustPrompt clubId="club-a" />);
       fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
       expect(write).toHaveBeenCalledWith('diamond-spins-bust:player-a:club-a', 'dismissed');
+      expect(write.mock.results[0].type).toBe('throw');
+      expect(storage.getItem('diamond-spins-bust:player-a:club-a')).toBeNull();
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       rerender(<DiamondBustPrompt clubId="club-a" />);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

@@ -29,7 +29,11 @@ import WeeklyScheduleEditor, {
   type WeeklyScheduleValue,
 } from '../tournament/WeeklyScheduleEditor';
 import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
-import { manualTournamentBlindPreset, type BlindLevel } from '../../config/blindStructures';
+import {
+  manualTournamentBlindPreset,
+  newTournamentPlayingLevels,
+  type BlindLevel,
+} from '../../config/blindStructures';
 import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { provisionalMttPayoutStructure } from '../../../server/src/tournament/mttPayoutDepth';
@@ -396,12 +400,14 @@ export default function CreateTournamentModal({
     if (format === 'spin') return SPIN_BLIND_STRUCTURE;
     if (!isSngOrSpin && mttPreset && mttPreset !== 'custom') {
       const values = manualMttCreationProfile(mttPreset);
-      return manualTournamentBlindPreset(values.blindStructure).map((level) =>
-        level.isBreak ? level : { ...level, durationMinutes: values.blindsUpMinutes }
+      return newTournamentPlayingLevels(manualTournamentBlindPreset(values.blindStructure)).map(
+        (level) => ({ ...level, durationMinutes: values.blindsUpMinutes })
       );
     }
     if (blindSpeed === 'custom') return customBlinds;
-    return BLIND_STRUCTURES[blindSpeed];
+    return isSngOrSpin
+      ? BLIND_STRUCTURES[blindSpeed]
+      : newTournamentPlayingLevels(BLIND_STRUCTURES[blindSpeed]);
   }, [blindSpeed, customBlinds, format, isSngOrSpin, mttPreset, showCustomBlinds]);
   const mttPresetSelection = showCustomBlinds
     ? 'custom'
@@ -1337,6 +1343,15 @@ export default function CreateTournamentModal({
               </div>
             )}
 
+            {!isSngOrSpin && (
+              <div className={styles.helperText} aria-label="Tournament Break Policy">
+                {synchronizedBreaks
+                  ? 'Synchronized Tournament Breaks Begin At :55 Each Hour After Hands Finish.'
+                  : 'No Scheduled Tournament Breaks. Custom Level Breaks Are Not Supported.'}{' '}
+                Platform Maintenance And Add-On Pauses Still Apply.
+              </div>
+            )}
+
             {(showCustomBlinds || customBlinds.length > 0) && (
               <fieldset
                 hidden={!showCustomBlinds}
@@ -1347,7 +1362,8 @@ export default function CreateTournamentModal({
                 <div className={styles.formGroup}>
                   <span className={styles.sectionLabel}>Blind Structure</span>
                   <span className={styles.helperText}>
-                    Levels Are Sent Exactly As Shown, Breaks Included.
+                    Playing Levels Are Sent Exactly As Shown. Breaks Follow The Tournament Break
+                    Policy.
                   </span>
                   <BlindStructureBuilder
                     onChange={setCustomBlinds}

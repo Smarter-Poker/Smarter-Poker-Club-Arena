@@ -7,7 +7,11 @@
  * without rendering the page. The mapping is where every silently-ignored
  * setting would come back, so it is the part worth pinning.
  */
-import { manualTournamentBlindPreset, SPIN_BLIND_STRUCTURE } from '../config/blindStructures';
+import {
+  manualTournamentBlindPreset,
+  newTournamentPlayingLevels,
+  SPIN_BLIND_STRUCTURE,
+} from '../config/blindStructures';
 import { SPIN_TIERS } from '../config/spinSpec';
 // Type-only: erased at compile time, so this module never boots the Supabase
 // client that TournamentService constructs at import.
@@ -149,15 +153,15 @@ export function buildTournamentConfig(
     : Math.min(maxPlayers, Math.max(2, Math.floor(Number(config.minPlayers) || 0) || 2));
 
   // Blind ramp from the shared presets, with the owner's level length applied
-  // to the playing levels. Break rows keep their own duration, and the blinds
-  // themselves are untouched — the service validates that they never decrease.
+  // to a new MTT playing-only draft. Legacy preset data is retained for stored
+  // schedules; the service validates that playable blinds never decrease.
   // 2026-08-22: hyper_turbo maps to the REAL hyperTurbo ramp now (2-minute
   // levels, steeper jumps) instead of silently aliasing to turbo.
   const preset = isSpins
     ? SPIN_BLIND_STRUCTURE
     : manualTournamentBlindPreset(config.blindStructure);
   const levelMinutes = Math.max(1, config.blindsUpMinutes);
-  const blindStructure = preset.map((lvl) =>
+  const blindStructure = (isSng ? preset : newTournamentPlayingLevels(preset)).map((lvl) =>
     lvl.isBreak ? lvl : { ...lvl, durationMinutes: levelMinutes }
   );
 

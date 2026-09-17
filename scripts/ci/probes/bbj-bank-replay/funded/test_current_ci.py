@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 import current_ci as ci
 from execution import finish_owned_teardown
+from custody import FundedSourceCustody
+from retained import RetainedModules
 
 
 class CurrentAccountingIdentityTests(unittest.TestCase):
@@ -33,6 +35,102 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
     def identity(self, environment=None, event=None, parents=None):
         return ci.identity(environment or self.env, event or self.event, self.commit,
                            [self.source, 'c'*40] if parents is None else parents, self.workspace)
+
+    def _run_audit_selection_boundary(self, bound, models, choice):
+        """Model only the real installer-to-planner connection; never execute SQL."""
+        supplement = bound.supplement
+        expected = dict(database='fixture_base', database_oid='123', system_identifier='456',
+                        data_directory='/modeled/data', socket_directory='/modeled/socket')
+        boundary = {**expected, 'role':'postgres', 'session_role':'postgres', 'superuser':True,
+                    'socket_only':True, 'replication_role':'origin', 'server_version':'17.11',
+                    'allow_privileged_anon_grant':None, 'users':0, 'clubs':0, 'legs':0, 'snapshots':0}
+        events = bound.custody.read_json('opening_adapter/EVENT-TRIGGERS-EXPECTED.json')
+        commands = []
+        class ReachedOriginalDispatch(RuntimeError):
+            pass
+        first = models['functions'][0]['statements'][0]
+        def sql(value):
+            commands.append(value)
+            if value == first:
+                raise ReachedOriginalDispatch('Modeled boundary; no DDL executed')
+        def one(query):
+            if query == supplement.Q.BOUNDARY_QUERY:
+                return copy.deepcopy(boundary)
+            if query == supplement.A.CONTEXT:
+                return {'modeled_context_only':True}
+            if query == supplement.CATALOG_QUERY:
+                return {'event_triggers':events, 'default_acl':[]}
+            if query == supplement.A.NO_NESTED_SWEEP:
+                return {'eligible_grant_sweep':0, 'graphql_oid_collision':0}
+            raise AssertionError('Unexpected modeled query')
+        case = SimpleNamespace(capture=lambda *args: {'raw':{x['relation']:[] for x in models['tables']}})
+        original_read = supplement.read
+        def read(path):
+            return models if Path(path).name == 'EXPECTED.json' else original_read(path)
+        log = {'expected_identity':expected}
+        with patch.object(supplement,'read',side_effect=read), \
+             patch.object(supplement,'verify_sources',return_value=bound.supplement_sources()), \
+             patch.object(supplement,'libraries',return_value=(None,None,None,None,None,case)), \
+             patch.object(supplement,'_collect',return_value={'passed':True,'backup_preimage_selection':choice}), \
+             patch.object(supplement.A,'capture'), patch.object(supplement.A,'validate_capture'):
+            try:
+                supplement.install(SimpleNamespace(sql=sql,one=one),log)
+            except Exception as error:
+                return log, commands, error, ReachedOriginalDispatch
+        self.fail('Modeled installer must stop before any real dispatch')
+
+    def test_complete_collector_preimage_reaches_original_audit_plan(self):
+        bound = RetainedModules(FundedSourceCustody(), None, ci.CASES[0])
+        models = bound.custody.read_json('supplement/EXPECTED.json')
+        # Real first hosted capture: four public functions, five checked RI
+        # builtins, six tables and two sequences. No captured run answers load.
+        choice = {'functions':['before']*4+['after']*5,
+                  'tables':['before']*3+['after']*3, 'sequences':['before','after']}
+        original = copy.deepcopy(choice)
+        log, commands, error, reached = self._run_audit_selection_boundary(bound,models,choice)
+        self.assertIsInstance(error,reached)
+        plan = log['audit_plan']
+        self.assertEqual((len(plan['dispatches']),len(plan['events'])),(23,25))
+        self.assertEqual(plan['dispatches'],[sql for kind in ('functions','tables','sequences')
+            for item,phase in zip(models[kind],choice[kind]) if phase == 'before' for sql in item['statements']])
+        self.assertEqual(choice,original)
+        self.assertEqual(log['commit_status'],'NOT_ATTEMPTED')
+        self.assertFalse(log['financial_helpers_invoked'])
+        self.assertFalse(log['seed_invoked'])
+        self.assertEqual(commands[-1],'ROLLBACK')
+        self.assertNotIn('COMMIT',commands)
+        # The same complete observation supports a strict source no-op.
+        noop = {kind:['after']*len(value) for kind,value in choice.items()}
+        self.assertEqual(bound.plan_complete_preimage(models,noop),
+                         {'dispatches':[],'events':[],'move_replaced':False})
+
+    def test_complete_preimage_binding_refuses_missing_or_changed_builtin_observations(self):
+        bound = RetainedModules(FundedSourceCustody(), None, ci.CASES[0])
+        models = bound.custody.read_json('supplement/EXPECTED.json')
+        choice = {'functions':['before']*4+['after']*5,
+                  'tables':['before']*3+['after']*3, 'sequences':['before','after']}
+        mutations = {
+            'missing builtin':lambda m,c:c['functions'].pop(),
+            'extra builtin':lambda m,c:c['functions'].append('after'),
+            'nonfinal builtin':lambda m,c:c['functions'].__setitem__(4,'before'),
+            'builtin ddl':lambda m,c:m['builtins'][0]['statements'].append('SELECT 1'),
+            'builtin metadata changed':lambda m,c:m['builtins'][0]['after'].__setitem__('owner','other'),
+            'missing table':lambda m,c:c['tables'].pop(),
+            'missing sequence':lambda m,c:c['sequences'].pop(),
+            'unknown public phase':lambda m,c:c['functions'].__setitem__(0,'unknown'),
+            'unknown category':lambda m,c:c.__setitem__('extra',[]),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                m,c = copy.deepcopy(models),copy.deepcopy(choice)
+                mutate(m,c)
+                log,commands,error,reached = self._run_audit_selection_boundary(bound,m,c)
+                self.assertNotIsInstance(error,reached)
+                self.assertIsInstance(error,(AssertionError,RuntimeError))
+                self.assertEqual(log['statements'],[])
+                self.assertEqual(log['commit_status'],'NOT_ATTEMPTED')
+                self.assertEqual(commands[-1],'ROLLBACK')
+                self.assertNotIn('COMMIT',commands)
 
     def test_real_checkout_and_current_pr_identity_are_both_recorded(self):
         result = self.identity()

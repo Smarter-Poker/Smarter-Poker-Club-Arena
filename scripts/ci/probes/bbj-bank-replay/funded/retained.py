@@ -1,7 +1,9 @@
 """Finite bindings for exact retained modules. SQL, case bodies and comparators stay unchanged.
 
-Only obsolete developer-path/import/admission functions are rebound. There is no
-external-path fallback, historical review override, or public execution entry point.
+Obsolete developer-path/import/admission functions are rebound. The complete
+metadata selection is also projected onto the original DDL planner after its
+immutable builtins are checked. There is no external-path fallback, historical
+review override, or public execution entry point.
 """
 from contextlib import contextmanager
 import hashlib
@@ -83,7 +85,10 @@ class RetainedModules:
         self.promo.read = lambda name: custody.read_json('backup/' + name)
         self.promo.sha = self.checked_sha
         self.promo.verify_authorization = lambda auth, driver, seed, opening: self.authorize('transfer', auth, driver, seed, opening)
-        self.supplement = self.load('supplement/supplemental.py')
+        self.supplement = self.load('supplement/supplemental.py', replacements=((
+            "log['audit_plan']=A.planned_events(models,choice)",
+            "log['audit_plan']=plan_complete_preimage(models,choice)"),))
+        self.supplement.plan_complete_preimage = self.plan_complete_preimage
         self.supplement.Q = self.load('supplement/queries.py')
         self.supplement.A = self.load('supplement/audit_contract.py')
         self.supplement.read = self.read_path
@@ -105,6 +110,27 @@ class RetainedModules:
             self.adapter.promo_module = lambda: self.promo
         self.adapter.supplemental_module = lambda: self.supplement
         self.group = group
+
+    def plan_complete_preimage(self, models, choice):
+        """Preserve the full collector contract and the original four-function planner.
+
+        The collector checks public functions followed by immutable RI builtins.
+        Only the public prefix can own supplemental DDL; missing, changed or
+        non-final builtin observations must never be silently sliced away.
+        """
+        require(type(choice) is dict and set(choice) == {'functions', 'tables', 'sequences'},
+                'Complete original preimage categories required')
+        for kind in ('functions', 'tables', 'sequences'):
+            expected = len(models[kind]) + (len(models['builtins']) if kind == 'functions' else 0)
+            require(type(choice[kind]) is list and len(choice[kind]) == expected,
+                    'Complete original ' + kind + ' preimage selection required')
+        public_count = len(models['functions'])
+        for item, phase in zip(models['builtins'], choice['functions'][public_count:]):
+            require(phase == 'after' and item['statements'] == [] and
+                    self.supplement.exact(item['before'], item['after']),
+                    'Original immutable builtin preimage changed')
+        planner_choice = {**choice, 'functions': choice['functions'][:public_count]}
+        return self.supplement.A.planned_events(models, planner_choice)
 
     def source_config(self):
         custody = self.custody

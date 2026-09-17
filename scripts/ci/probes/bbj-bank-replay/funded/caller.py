@@ -14,6 +14,8 @@ from checks import run_retained_regressions
 
 HERE = Path(__file__).resolve().parent
 IDENTITY_TESTS = {
+    'test_complete_collector_preimage_reaches_original_audit_plan',
+    'test_complete_preimage_binding_refuses_missing_or_changed_builtin_observations',
     'test_real_checkout_and_current_pr_identity_are_both_recorded',
     'test_wrong_route_and_missing_current_identity_are_refused',
     'test_fork_and_unrelated_parent_cannot_authorize_checkout',

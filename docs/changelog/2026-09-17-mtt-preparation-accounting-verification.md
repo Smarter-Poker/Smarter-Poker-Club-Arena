@@ -73,3 +73,8 @@ prize receipts match forty posted ledger credits totaling 692.70 chips; all64
 backing tables are closed, no live seats remain, and both escrows are zero.
 The inherited parent counter retains1 and is not used as proof of a live seat.
 Compatible engine publication and unlimited admission activation remain pending.
+
+The required applied-migration gate exposed a missing schema inventory fragment.
+A fresh production catalog read confirmed all 19 new helper names, the admission
+table and both tournament columns. Their scoped declaration now makes the same
+gate pass, without replaying migrations or changing native qualification inputs.

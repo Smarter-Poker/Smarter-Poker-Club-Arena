@@ -23,6 +23,7 @@ from mtt_isolation_results import validate_case_result, validate_format_lock_res
 from mtt_unlimited_fixture import compose, preparation_supplement_sql
 from mtt_format_qualification import qualification_sql
 from mtt_historical_freebuy_proof import qualify as qualify_historical_freebuy
+from mtt_break_authoring_native import authoring_inputs, run_authoring_native
 
 
 PREPARATION_CATALOG = "scripts/ci/fixtures/mtt-format-preparation/source-binding.json"
@@ -453,6 +454,7 @@ def run_preparation_races(execution, template, groups, binary):
 def run_cases(execution):
     root = execution.root
     catalog = preparation_inputs(execution)
+    execution.report["source_sha256"].update(authoring_inputs(root)[2])
     foundation = compose(root)
     supplement = preparation_supplement_sql(root, catalog["fixtures"])
     execution.report["source_sha256"].update(foundation["source_sha256"])
@@ -613,6 +615,11 @@ def run_cases(execution):
         elif stage["id"] == "seats":
             run_lock_cases(execution, template, catalog["locks"][2], binary)
     run_preparation_races(execution, template, catalog["preparation_races"], binary)
+    # The authoring RPCs must compose with every prepared authority, especially
+    # the governed creator and raw satellite target classifier from creation.
+    # Failures propagate through main() and its existing unconditional cleanup.
+    run_authoring_native(execution, root, foundation, prepared_template=template,
+                         preparation_sources=dict(execution.report["source_sha256"]))
     execution.discard(template)
     for relative, expected in execution.report["source_sha256"].items():
         if sha(root / relative) != expected:

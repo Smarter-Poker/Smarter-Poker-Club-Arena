@@ -72,17 +72,17 @@ const BASELINE = new Map<string, number>([
   ['src/services/AgentService.ts', 7],
   // 10 -> 8: union route/account authorization now reports both canonical
   // operator lookup failures instead of discarding them during a stale load.
-  ['src/pages/UnionDashboardPage.tsx', 8],
+  ['src/pages/UnionDashboardPage.tsx', 7],
   ['src/services/UnionService.ts', 11],
-  ['src/pages/AdminDashboardPage.tsx', 7],
+  ['src/pages/AdminDashboardPage.tsx', 6],
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
-  ['src/services/CreditService.ts', 5],
+  ['src/services/CreditService.ts', 4],
   // 5 -> 4: the legacy optimistic table delete and its unchecked reload were
   // removed when all operator closes moved behind fn_close_managed_game.
   ['src/pages/ClubDetailPage.tsx', 4],
   ['src/services/FriendSuggestionService.ts', 1],
-  ['src/services/CreditRequestService.ts', 4],
+  ['src/services/CreditRequestService.ts', 1],
   ['src/services/ChipFlowService.ts', 4],
   ['src/pages/HomePage.tsx', 1],
   /* 4 -> 2 on 2026-09-11: removing the promo-rain control took two discarded
@@ -100,12 +100,12 @@ const BASELINE = new Map<string, number>([
   ['src/components/agent/ChipTransferModal.tsx', 2],
   ['src/components/agent/AgentScoreCard.tsx', 4],
   ['src/services/VoiceSignalService.ts', 3],
-  ['src/services/FinancialCronService.ts', 2],
+  ['src/services/FinancialCronService.ts', 1],
   ['src/services/DisputeService.ts', 3],
   ['src/services/DiamondService.ts', 1],
   // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded
   // read it did on agent_commissions after calling execute_commission_payout.
-  ['src/services/CommissionService.ts', 2],
+  ['src/services/CommissionService.ts', 1],
   // TournamentResultsPage was cleared to 0 in round 10 (the deep-link work
   // touched the file, so its three reads were fixed under the ratchet's own
   // rule: shrink what you touch).
@@ -118,7 +118,7 @@ const BASELINE = new Map<string, number>([
   ['src/components/wallet/ChipMintModal.tsx', 3],
   // 3 -> 2 in phase 7: the sub-agent read that discarded its error is gone with
   // the dropped column it was reading, and its replacement binds the error.
-  ['src/components/agent/AgentCommissionDashboard.tsx', 2],
+  ['src/components/agent/AgentCommissionDashboard.tsx', 0],
   ['src/utils/settlementLock.ts', 2],
   ['src/stores/useHeaderDataStore.ts', 2],
   ['src/services/WalletService.ts', 2],
@@ -143,7 +143,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/UnionGamesPage.tsx', 2],
   ['src/pages/MultiTablePage.tsx', 1],
   ['src/pages/FlashPoolPage.tsx', 0],
-  ['src/pages/CreditAdminPanel.tsx', 1],
+  ['src/pages/CreditAdminPanel.tsx', 0],
   ['src/pages/ClubAnnouncementsPage.tsx', 1],
   ['src/components/tournament/TournamentStartingTicker.tsx', 0],
   ['src/components/social/OnlineFriendsPill.tsx', 2],

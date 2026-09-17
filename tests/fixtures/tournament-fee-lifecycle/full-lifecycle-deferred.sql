@@ -431,61 +431,51 @@ INSERT INTO public.table_seats(id,table_id,seat_number,user_id,stack,status,club
 SET LOCAL session_replication_role=origin;
 SELECT pg_temp.satellite_full_assert(public.fn_claim_tournament_finish('d3000000-0000-4000-8000-000000000002',
  'd1000000-0000-4000-8000-000000000002','native-full-target')->>'ok'='true','funded target obtains real terminal winner claim');
+-- This target has genuine funded entries but no observed historical agent
+-- agreements. Completion must roll back its preceding prize/lifecycle work;
+-- banked-but-unattributed is no longer an accepted positive-fee terminal state.
 CREATE TEMP TABLE target_retirement_before AS SELECT public.fn_ca_mint_supply('chips') AS supply,
  (SELECT chip_treasury FROM public.clubs WHERE id='d2000000-0000-4000-8000-000000000002') AS treasury;
-CREATE FUNCTION pg_temp.assert_target_earning_closed() RETURNS void LANGUAGE plpgsql AS $$BEGIN
- PERFORM pg_temp.satellite_full_assert(EXISTS(SELECT 1 FROM public.tournament_escrow WHERE tournament_id='d3000000-0000-4000-8000-000000000002'
-  AND prize_out=180 AND fee_out=20 AND prize_balance=0 AND fee_balance=0 AND bounty_balance=0 AND closed_at IS NOT NULL)
-  AND EXISTS(SELECT 1 FROM public.tournament_payouts WHERE tournament_id='d3000000-0000-4000-8000-000000000002'
-   AND user_id='d1000000-0000-4000-8000-000000000002' AND amount=180),
-  'real target terminal pays all180 prize chips and retires exact20 fees with zero custody remainder');
- PERFORM pg_temp.satellite_full_assert(EXISTS(SELECT 1 FROM public.accounting_tournament_fee_recognitions r JOIN public.chip_ledger l ON l.id=r.bank_journal_id
-  WHERE r.tournament_id='d3000000-0000-4000-8000-000000000002' AND r.status='banked_accrual_deferred' AND r.net_rake=20
-   AND l.amount=20 AND l.from_type='prize_liability' AND l.from_entity_id=r.tournament_id
-   AND l.to_type='chip_retirement' AND l.to_entity_id IS NULL AND l.category='burn'
-   AND l.club_id=r.bank_club_id AND l.created_at=r.recognized_at)
-  AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_recognized_sources WHERE tournament_id='d3000000-0000-4000-8000-000000000002') AND (SELECT count(*)=2 AND sum(rake_amount)=20 AND bool_and(source_manifest->>'capture_reason'='accounting_terms_not_observed') FROM public.accounting_tournament_fee_batches WHERE tournament_id='d3000000-0000-4000-8000-000000000002' AND status='legacy_unverified'),
-  'missing-history receipt binds exact20 retired fee chips and retains both source-gap manifests');
- PERFORM pg_temp.satellite_full_assert(NOT EXISTS(SELECT 1 FROM public.agent_commissions WHERE source_type='tournament_fee_accrual') AND NOT EXISTS(SELECT 1 FROM public.accounting_period_recompute_requests WHERE club_id='d2000000-0000-4000-8000-000000000002'),
-  'unobserved contracts post no commissions and claim no calculated weekly request');
-END$$;
-CREATE FUNCTION pg_temp.target_earning_final_fault() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN
- IF NEW.tournament_id='d3000000-0000-4000-8000-000000000002' THEN
-  PERFORM pg_temp.assert_target_earning_closed();RAISE EXCEPTION 'native target earning final fault' USING ERRCODE='ZX010';
- END IF;RETURN NEW;END$$;
-CREATE TRIGGER native_target_earning_final_fault AFTER INSERT ON public.tournament_terminal_settlements
- FOR EACH ROW EXECUTE FUNCTION pg_temp.target_earning_final_fault();
-DO $target_rollback$
-DECLARE before_state jsonb:=pg_temp.satellite_full_financial_state();refused boolean:=false;
+DO $target_attribution_refusal$
+DECLARE before_state jsonb:=pg_temp.satellite_full_financial_state();message text;attempt int;
 BEGIN
- BEGIN PERFORM public.fn_complete_tournament_terminal('d3000000-0000-4000-8000-000000000002','d1000000-0000-4000-8000-000000000002','places');
- EXCEPTION WHEN SQLSTATE 'ZX010' THEN refused:=true;END;
- PERFORM pg_temp.satellite_full_assert(refused AND before_state=pg_temp.satellite_full_financial_state(),
-  'late deferred target failure rolls back180 prize,20 bank and all incomplete-accounting evidence');
-END $target_rollback$;
-DROP TRIGGER native_target_earning_final_fault ON public.tournament_terminal_settlements;
-DO $target_complete$
-DECLARE receipt jsonb;replay jsonb;before_state jsonb;
-BEGIN
- receipt:=public.fn_complete_tournament_terminal('d3000000-0000-4000-8000-000000000002','d1000000-0000-4000-8000-000000000002','places');
- PERFORM pg_temp.assert_target_earning_closed();
- PERFORM pg_temp.satellite_full_assert(receipt->>'receipt_version'='2' AND receipt#>>'{rake,accounting,status}'='banked_accrual_deferred'
-  AND receipt#>>'{rake,accounting,payable}'='false','actual terminal receipt reports banked accounting deferred and payablefalse');
- before_state:=pg_temp.satellite_full_financial_state();
- replay:=public.fn_complete_tournament_terminal('d3000000-0000-4000-8000-000000000002','d1000000-0000-4000-8000-000000000002','places');
- PERFORM pg_temp.satellite_full_assert(receipt=replay AND before_state=pg_temp.satellite_full_financial_state(),
-  'deferred terminal retry creates no duplicate prize,bank or guessed commission');
- INSERT INTO satellite_full_probe_results(name,value) VALUES('target_terminal',receipt);
-END $target_complete$;
+ FOR attempt IN 1..2 LOOP
+  message:=NULL;
+  BEGIN
+   PERFORM public.fn_complete_tournament_terminal('d3000000-0000-4000-8000-000000000002',
+    'd1000000-0000-4000-8000-000000000002','places');
+  EXCEPTION WHEN SQLSTATE 'P0404' THEN message:=SQLERRM; END;
+  PERFORM pg_temp.satellite_full_assert(message=
+   'tournament d3000000-0000-4000-8000-000000000002 rake attribution incomplete: tournament_fee_sources_require_reconciliation',
+   'positive-fee source gap reaches the actual terminal authority refusal');
+  PERFORM pg_temp.satellite_full_assert(before_state=pg_temp.satellite_full_financial_state(),
+   'initial and explicit retry refusals preserve every public relation and observed capability');
+ END LOOP;
+ PERFORM pg_temp.satellite_full_assert(EXISTS(SELECT 1 FROM public.tournament_escrow
+  WHERE tournament_id='d3000000-0000-4000-8000-000000000002'
+   AND prize_balance=180 AND fee_balance=20 AND bounty_balance=0 AND closed_at IS NULL)
+  AND NOT EXISTS(SELECT 1 FROM public.tournament_payouts WHERE tournament_id='d3000000-0000-4000-8000-000000000002')
+  AND NOT EXISTS(SELECT 1 FROM public.tournament_rake_settlements WHERE tournament_id='d3000000-0000-4000-8000-000000000002')
+  AND NOT EXISTS(SELECT 1 FROM public.tournament_terminal_settlements WHERE tournament_id='d3000000-0000-4000-8000-000000000002')
+  AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_recognitions WHERE tournament_id='d3000000-0000-4000-8000-000000000002'),
+  'refused completion keeps all180 prize and20 fee chips in custody with no paid or completion receipt');
+ PERFORM pg_temp.satellite_full_assert((SELECT count(*)=2 AND sum(rake_amount)=20
+   AND bool_and(source_manifest->>'capture_reason'='accounting_terms_not_observed')
+   FROM public.accounting_tournament_fee_batches WHERE tournament_id='d3000000-0000-4000-8000-000000000002'
+    AND status='legacy_unverified')
+  AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_recognized_sources WHERE tournament_id='d3000000-0000-4000-8000-000000000002'),
+  'original missing-history manifests survive without fabricated recognition');
+ INSERT INTO satellite_full_probe_results(name,value) VALUES('target_terminal',
+  jsonb_build_object('completed',false,'refusal_sqlstate','P0404','refusal',message,'attempts',2));
+END $target_attribution_refusal$;
 SET CONSTRAINTS ALL IMMEDIATE;
-SELECT pg_temp.satellite_full_assert(public.fn_ca_mint_supply('chips')=(SELECT supply-20 FROM target_retirement_before)
+SELECT pg_temp.satellite_full_assert(public.fn_ca_mint_supply('chips')=(SELECT supply FROM target_retirement_before)
  AND (SELECT chip_treasury FROM public.clubs WHERE id='d2000000-0000-4000-8000-000000000002')
   IS NOT DISTINCT FROM (SELECT treasury FROM target_retirement_before)
- AND (SELECT count(*)=1 AND sum(m.amount)=20 FROM public.ca_mint_ledger m JOIN public.chip_ledger l ON l.id=m.chip_ledger_id
+ AND NOT EXISTS(SELECT 1 FROM public.ca_mint_ledger m JOIN public.chip_ledger l ON l.id=m.chip_ledger_id
   WHERE l.from_type='prize_liability' AND l.from_entity_id='d3000000-0000-4000-8000-000000000002'
-   AND l.to_type='chip_retirement' AND l.to_entity_id IS NULL AND m.action='burn' AND m.asset='chips'),
- 'original issuance trigger records exactly20 burned;180 prize transfers preserve supply and treasury receives no fee');
-
+   AND l.to_type='chip_retirement' AND m.action='burn' AND m.asset='chips'),
+ 'refused attribution changes neither issued supply nor treasury and records no fee retirement');
 
 SELECT 'SATELLITE_FULL_NATIVE_EVIDENCE='||jsonb_build_object(
  'target_terminal',(SELECT value FROM satellite_full_probe_results WHERE name='target_terminal'),'rpc','fn_settle_satellite_tournament','first_receipt',(SELECT value FROM satellite_full_probe_results WHERE name='first_settlement'),

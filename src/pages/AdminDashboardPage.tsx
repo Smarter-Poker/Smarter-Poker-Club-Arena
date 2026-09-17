@@ -394,8 +394,6 @@ function DashboardTab({ clubId }: { clubId: string }) {
       // Financial events: medium debounce (1500ms)
       masterBus.subscribeDebounced('CASHOUT_REQUESTED', load, 1500),
       masterBus.subscribeDebounced('CASHOUT_APPROVED', load, 1500),
-      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', load, 1500),
-      masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', load, 1500),
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', load, 1500),
       // High-frequency: longer debounce (2000ms) — fires on every hand
       masterBus.subscribeDebounced('BALANCE_UPDATED', load, 2000),
@@ -607,7 +605,11 @@ function DashboardTab({ clubId }: { clubId: string }) {
 // TAB 2: SETTLEMENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 function SettlementsTab({ clubId }: { clubId: string }) {
-  return <div className="admin-tab-content"><ClubWeeklyAccountingSummary clubId={clubId} /></div>;
+  return (
+    <div className="admin-tab-content">
+      <ClubWeeklyAccountingSummary clubId={clubId} />
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

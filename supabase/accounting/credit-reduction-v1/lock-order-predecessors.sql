@@ -910,7 +910,7 @@ $function$;
 CREATE FUNCTION public.fn_cashier_cashout_transition(p_action text,p_club_id uuid,p_cashout_id uuid,p_amount numeric,
  p_expected_actor_id uuid,p_op_id uuid,p_note text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=public,pg_temp AS $function$
-DECLARE actor uuid:=auth.uid();actual_role text;kind text;request_status text;release_type text;
+DECLARE actor uuid:=auth.uid();actual_role text;kind text;request_status text;v_release_type text;
  note text:=NULLIF(btrim(p_note),'');fingerprint jsonb;prior public.accounting_cashier_events%ROWTYPE;
  r public.cashout_requests%ROWTYPE;s public.chip_escrow%ROWTYPE;h public.accounting_cashier_events%ROWTYPE;
  e public.accounting_cashier_events%ROWTYPE;member public.club_members%ROWTYPE;agent public.agents%ROWTYPE;
@@ -996,7 +996,7 @@ BEGIN
    kind:=CASE p_action WHEN 'approval' THEN 'approval' ELSE 'decline' END;
   END IF;
   request_status:=CASE kind WHEN 'approval' THEN 'approved' WHEN 'cancellation' THEN 'cancelled' WHEN 'decline' THEN 'rejected' ELSE 'expired' END;
-  release_type:=CASE kind WHEN 'approval' THEN 'completed' ELSE request_status END;
+  v_release_type:=CASE kind WHEN 'approval' THEN 'completed' ELSE request_status END;
   IF kind='approval' THEN
    agent_row_id:=public.fn_ensure_agent_row(p_club_id,actor,actual_role);
    SELECT * INTO agent FROM public.agents WHERE id=agent_row_id AND club_id=p_club_id AND user_id=actor FOR UPDATE;
@@ -1041,7 +1041,7 @@ BEGIN
    VALUES(escrow_id,request_id,p_club_id,actor,p_amount,at_time) RETURNING * INTO s;
   IF NOT FOUND THEN RAISE EXCEPTION 'cashier_escrow_write_missing' USING ERRCODE='23514';END IF;
  ELSE
-  UPDATE public.chip_escrow SET released_at=at_time,release_type=fn_cashier_cashout_transition.release_type WHERE id=escrow_id RETURNING * INTO s;
+  UPDATE public.chip_escrow SET released_at=at_time,release_type=v_release_type WHERE id=escrow_id RETURNING * INTO s;
   IF NOT FOUND THEN RAISE EXCEPTION 'cashier_escrow_write_missing' USING ERRCODE='23514';END IF;
   UPDATE public.cashout_requests SET status=request_status,
    agent_note=CASE WHEN kind IN('approval','decline') THEN note ELSE agent_note END,

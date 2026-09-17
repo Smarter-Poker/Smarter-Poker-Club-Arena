@@ -1,5 +1,5 @@
 BEGIN;
-UPDATE tournaments SET status='COMPLETED',ended_at=now()-interval '1 hour' WHERE id IN(u(4000),u(4200));
+UPDATE tournaments SET status='COMPLETED',ended_at=now()-interval '1 hour' WHERE id=u(4000);
 UPDATE tournaments SET status='CANCELLED',ended_at=now()-interval '1 hour' WHERE id IN(u(4700),u(4800),u(4900));
 SELECT assert_true((fn_tournament_rake_settlement_check()->>'missing_count')::integer=0,'existing monitor accepts banked fees and proved zero cancellations without inventing unpaid money');
 UPDATE tournaments SET status='COMPLETED',ended_at=now()-interval '1 hour' WHERE id=u(4400);

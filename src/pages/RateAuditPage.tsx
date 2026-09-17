@@ -140,18 +140,6 @@ export default function RateAuditPage() {
     loadAuditData();
   }, [loadAuditData]);
 
-  // Bus listener: refresh when commission rates change
-  useEffect(() => {
-    const unsubCommission = masterBus.subscribeDebounced(
-      'COMMISSION_PAID',
-      () => loadAuditData(),
-      1000
-    );
-    return () => {
-      unsubCommission();
-    };
-  }, [loadAuditData]);
-
   // Real-time subscriptions on audit tables
   useEffect(() => {
     const channelKey = 'rate-audit-live';

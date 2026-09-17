@@ -148,6 +148,8 @@ const RETAINED: Record<string, string> = {
     'read by path: tests/promotion-assigns-the-rate.law.test.ts tests/theArenaIsAlwaysTheAlias.law.test.ts tests/unit/CompleteSetReadsDoNotTruncate.test.ts',
   'src/services/ChipFlowService.ts':
     'read by path: supabase/migrations/20260902130000_the_dead_pool_stops_taking_deposits.sql tests/cashier-ui-role-scoping.test.ts tests/config/roleScopedCashier.test.ts',
+  'src/services/SettlementCronService.ts':
+    'tested retired browser API: tests/unit/SettlementCronService.test.ts tests/unit/ServiceBootstrap.test.ts',
   'src/services/ClubMessagingPermissions.ts':
     'read by path: tests/promotion-assigns-the-rate.law.test.ts tests/unit/ClubMessagingPermissions.test.ts',
   'src/styles/design-system.css': 'documentation anchor: 47 live stylesheets cite it in comments',

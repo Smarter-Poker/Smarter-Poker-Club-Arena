@@ -4,13 +4,13 @@
   "historical_assertion_executions": 105,
   "tournament_component": {
     "path": "supabase/accounting/weekly-v3/components/20260914135530_tournament_fees_share_one_recorded_earning_authority.sql",
-    "sha256": "c1f3b86a25cb0e2e9d4e8b2ca503b10627b9228f03d1b834e3ebd28e7b0100cd",
+    "sha256": "ce7cd50b787bb884fce4d781a16c63645fd3646223e7547f1cd4719362ba1808",
     "sections": {
       "tournament-fee-receipts-draft.sql": "f28b58c128476c46e6c91b8603436378048b6fd89e8efa7461a72c874d66dfa3",
       "tournament-fee-producer-adapter-draft.sql": "aa4ed185484fce462dcbc7a4921ad5ac1131e7653cabfe3f4ba61d235721e811",
       "tournament-fee-recognition-draft.sql": "01a345699aaad313873de0aff75f08f4cd1ce33499f5fe62c3655abef5839b92",
-      "tournament-fee-terminal-common-draft.sql": "7f6b7c03960b1d6ec9ffed4204d3850c6b1c552b9e0fec3d85194a5b82078a5c",
-      "tournament-fee-settle-adapter-draft.sql": "ff33a62c475e3c5feff71b855b34904b72a646baa3f0a56ce21f865dacd0db61",
+      "tournament-fee-terminal-common-draft.sql": "b51ee2d9e08d47fa97e68ff87e848c7b0f0a4791025ec8107a46d148f2c4189e",
+      "tournament-fee-settle-adapter-draft.sql": "ad0fa36ce4f5cbd034273251f399e13d22470f8a1458c205a289c6e20e20e829",
       "tournament-fee-terminal-gates-draft.sql": "b3e4e902d6c38f5e058ffed245124a04c620d985d3183206835d2edac9afc7a8",
       "tournament-fee-satellite-gates-draft.sql": "864df770ee938e42716b764fd1370283cddf62a44ff6ef37c172184fa1029c17",
       "tournament-fee-cancellation-adapter-draft.sql": "f8d0af0dded367b00055d63118fa2a4e0a87bc81c5df358d6b88b88f143b1617",
@@ -29,15 +29,29 @@
     "tournament-fee-producer-native.sql": "b57503a359f1e765a27a48e2538b31151d5a2b05244832297362e19f069f2ef2",
     "tournament-fee-recognition-native.sql": "b7695dbd79a63fedf97c0c5395735715d947ca4ef8a9b11243a691843f370b78",
     "tournament-fee-settle-native-bootstrap.sql": "22728f001b4337f5a53658c85b1c163e1070055d36d8b3ff8aa4a93926f97659",
-    "tournament-fee-settle-native.sql": "87c5163f23b39cbc78f1b1c30cd650ab52197a8ff09d778f3209fc42326160f4",
-    "tournament-fee-terminal-extra-native.sql": "236a32632d1e2549593259cbc005bddd1db1964032e21f1826c0e92e97db00d0",
+    "tournament-fee-settle-native.sql": "f604e0fadc1ad8854724e24b2095487e1c9741f3d135673466aa7d18eef8b352",
+    "tournament-fee-terminal-extra-native.sql": "5878fa04b308cf7beb0f4b293a9d603c80c99d309d1314a58fefe0ea6f82eb57",
     "tournament-fee-monitor-native-bootstrap.sql": "6c8eb78c9a02f851c146db920107f6dcd65f137c2f643f6f997501ed3cafbe89",
-    "tournament-fee-monitor-native.sql": "47bc51b4c77ba754b45e8fefacadeb41f41b16f5f8185ac594a61d6b8d8e29da",
+    "tournament-fee-monitor-native.sql": "4c4cc9a5f5a5c00d9238a34e9d2e8735ce99b577638e2bf4abca35594bd30d83",
     "tournament-terminal-native-seed.sql": "44ca81f4ff50d430c911bfbe71a3ba571cc61b9f8d898d4e031a562f46bb488a",
     "tournament-terminal-native-schema.sql": "052eedcf236669ebe984a52b7d2d9aedbef3fad726f6ede7fa8ac7ec75e9d7b9",
     "tournament-terminal-native-support.sql": "5366a4f0ad2fe3d76973f59df053b1ecf1a05f121d08bfb4623c1fbf39015574",
     "terminal-marker-native.sql": "04159982bc88085dc6aec118c1c4a1d550c181a5e5aee7bee8af1767204ba6c6",
-    "tournament-terminal-native.sql": "7292eeaf4aaa17b74315b18ed53e9f6318117dd47ebd149dab6b660b6fab2da3",
+    "tournament-terminal-native.sql": "f0de77b557d7d15c313dea837b30fd12595f3f47d8e72b0ee0c8b9a1e5a982e5",
     "tournament-extra-native-compile-schema.sql": "0180a16f741b7c6d75e6b4b4ef4dffe142b1d10f27506ac606ec4af0b8d06778"
-  }
+  },
+  "expected_assertion_executions": 117,
+  "current_predecessor": {
+    "signature": "public.fn_settle_tournament_rake(uuid, text)",
+    "definition_md5": "46128439ae7a46e4fd8ea2889a7dddf8",
+    "source_md5": "a0bf6f75c5be429f3aa76ba218a2606b",
+    "metadata_path": "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.json",
+    "overlay_path": "tests/fixtures/tournament-fee-lifecycle/current-settlement-predecessor.sql",
+    "files": {
+      "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.json": "2a16360c3268ac1e7197110845096e1bc30ef20b75a53a7d9935b7207596cfd7",
+      "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.query.sql": "d6cbff7c7c9caecf2170b4312e057674c33a947e37f49eeaa67c429c2b20bd7f",
+      "tests/fixtures/tournament-fee-lifecycle/current-settlement-predecessor.sql": "5362494ea3001eb9c998a482a6f09d8343e8e809962c2e7c7de70ab12a1874a1"
+    }
+  },
+  "qualification_limits": "Current predecessor and semantic composition are source-reviewed only; updated native assertion expectation117 is authored, not executed. Historical105 retained separately. Full real-schema PG execution remains required."
 }

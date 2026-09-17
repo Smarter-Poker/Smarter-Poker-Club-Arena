@@ -1081,9 +1081,7 @@
         {
           "name": "chip_ledger_amount_check",
           "type": "c",
-          "columns": [
-            9
-          ],
+          "columns": [9],
           "validated": true,
           "deferrable": false,
           "definition": "CHECK (amount > 0::numeric)",
@@ -1094,9 +1092,7 @@
         {
           "name": "chip_ledger_category_check",
           "type": "c",
-          "columns": [
-            10
-          ],
+          "columns": [10],
           "validated": false,
           "deferrable": false,
           "definition": "CHECK (category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'rake'::text, 'commission'::text, 'transfer'::text, 'player_funding'::text, 'agent_funding'::text, 'mint'::text, 'burn'::text, 'legacy_seed_reconcile'::text, 'rakeback'::text, 'settlement'::text, 'tournament_buyin'::text, 'tournament_prize'::text, 'bounty'::text, 'adjustment'::text, 'refund'::text, 'addon'::text, 'rebuy'::text, 'table_cashout'::text, 'tournament_refund'::text, 'bbj_contribution'::text, 'bbj_payout'::text, 'promo'::text, 'promo_release'::text, 'promo_send'::text, 'credit_draw'::text, 'credit_repayment'::text, 'insurance'::text, 'spin_entry'::text, 'spin_prize'::text, 'overlay'::text, 'correction'::text, 'reversal'::text, 'escrow_hold'::text, 'escrow_release'::text, 'treasury_transfer'::text, 'horse_funding'::text, 'fee'::text, 'eco'::text, 'pnl_settlement'::text, 'union_send'::text, 'cashier_send'::text, 'cashier_claim_back'::text, 'ticket_issue'::text, 'ticket_redeem'::text, 'club_opening_allocation'::text, 'leaderboard_payout'::text, 'club_bank_send'::text, 'club_bank_claim'::text, 'agent_send'::text, 'agent_claim'::text, 'union_settlement'::text, 'wheel_prize'::text, 'plinko_prize'::text, 'crash_prize'::text, 'crossing_prize'::text, 'mines_prize'::text])) NOT VALID",
@@ -1107,9 +1103,7 @@
         {
           "name": "chip_ledger_exact_scale",
           "type": "c",
-          "columns": [
-            9
-          ],
+          "columns": [9],
           "validated": false,
           "deferrable": false,
           "definition": "CHECK (amount = round(amount, 2)) NOT VALID",
@@ -1120,9 +1114,7 @@
         {
           "name": "chip_ledger_from_type_check",
           "type": "c",
-          "columns": [
-            3
-          ],
+          "columns": [3],
           "validated": false,
           "deferrable": false,
           "definition": "CHECK (from_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text])) NOT VALID",
@@ -1133,9 +1125,7 @@
         {
           "name": "chip_ledger_no_diamond_category_check",
           "type": "c",
-          "columns": [
-            10
-          ],
+          "columns": [10],
           "validated": true,
           "deferrable": false,
           "definition": "CHECK (category !~* '^diamond'::text AND category !~* '_diamond'::text)",
@@ -1146,24 +1136,18 @@
         {
           "name": "chip_ledger_performed_by_fkey",
           "type": "f",
-          "columns": [
-            2
-          ],
+          "columns": [2],
           "validated": true,
           "deferrable": false,
           "definition": "FOREIGN KEY (performed_by) REFERENCES auth.users(id)",
-          "foreign_columns": [
-            2
-          ],
+          "foreign_columns": [2],
           "initially_deferred": false,
           "referenced_relation": "auth.users"
         },
         {
           "name": "chip_ledger_pkey",
           "type": "p",
-          "columns": [
-            1
-          ],
+          "columns": [1],
           "validated": true,
           "deferrable": false,
           "definition": "PRIMARY KEY (id)",
@@ -1174,9 +1158,7 @@
         {
           "name": "chip_ledger_positive_amount",
           "type": "c",
-          "columns": [
-            9
-          ],
+          "columns": [9],
           "validated": true,
           "deferrable": false,
           "definition": "CHECK (amount > 0::numeric)",
@@ -1187,9 +1169,7 @@
         {
           "name": "chip_ledger_status_check",
           "type": "c",
-          "columns": [
-            30
-          ],
+          "columns": [30],
           "validated": true,
           "deferrable": false,
           "definition": "CHECK (status = ANY (ARRAY['posted'::text, 'correction'::text, 'reversal'::text]))",
@@ -1200,9 +1180,7 @@
         {
           "name": "chip_ledger_to_type_check",
           "type": "c",
-          "columns": [
-            6
-          ],
+          "columns": [6],
           "validated": false,
           "deferrable": false,
           "definition": "CHECK (to_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text])) NOT VALID",
@@ -1213,9 +1191,7 @@
         {
           "name": "chk_post_from_balance_is_two_decimal_places",
           "type": "c",
-          "columns": [
-            27
-          ],
+          "columns": [27],
           "validated": true,
           "deferrable": false,
           "definition": "CHECK (post_from_balance IS NULL OR post_from_balance = round(post_from_balance, 2))",
@@ -1226,9 +1202,7 @@
         {
           "name": "chk_post_to_balance_is_two_decimal_places",
           "type": "c",
-          "columns": [
-            29
-          ],
+          "columns": [29],
           "validated": true,
           "deferrable": false,
           "definition": "CHECK (post_to_balance IS NULL OR post_to_balance = round(post_to_balance, 2))",
@@ -1239,9 +1213,7 @@
         {
           "name": "chk_pre_from_balance_is_two_decimal_places",
           "type": "c",
-          "columns": [
-            26
-          ],
+          "columns": [26],
           "validated": true,
           "deferrable": false,
           "definition": "CHECK (pre_from_balance IS NULL OR pre_from_balance = round(pre_from_balance, 2))",
@@ -1252,9 +1224,7 @@
         {
           "name": "chk_pre_to_balance_is_two_decimal_places",
           "type": "c",
-          "columns": [
-            28
-          ],
+          "columns": [28],
           "validated": true,
           "deferrable": false,
           "definition": "CHECK (pre_to_balance IS NULL OR pre_to_balance = round(pre_to_balance, 2))",
@@ -1265,10 +1235,7 @@
         {
           "name": "ck_whole_cents",
           "type": "c",
-          "columns": [
-            18,
-            9
-          ],
+          "columns": [18, 9],
           "validated": false,
           "deferrable": false,
           "definition": "CHECK (created_at < '2026-09-07 22:00:00+00'::timestamp with time zone OR amount = round(amount, 2)) NOT VALID",
@@ -1502,6 +1469,21 @@
         {
           "kind": "i",
           "live": true,
+          "name": "idx_chip_ledger_tournament_category",
+          "owner": "postgres",
+          "ready": true,
+          "valid": true,
+          "unique": false,
+          "primary": false,
+          "clustered": false,
+          "immediate": true,
+          "definition": "CREATE INDEX idx_chip_ledger_tournament_category ON public.chip_ledger USING btree (tournament_id, category) WHERE (tournament_id IS NOT NULL)",
+          "replica_identity": false,
+          "nulls_not_distinct": false
+        },
+        {
+          "kind": "i",
+          "live": true,
           "name": "ix_chip_ledger_settlement",
           "owner": "postgres",
           "ready": true,
@@ -1534,9 +1516,7 @@
         {
           "cmd": "SELECT",
           "qual": "((( SELECT auth.uid() AS uid) = performed_by) OR (( SELECT auth.uid() AS uid) = from_entity_id) OR (( SELECT auth.uid() AS uid) = to_entity_id))",
-          "roles": [
-            "public"
-          ],
+          "roles": ["public"],
           "tablename": "chip_ledger",
           "permissive": "PERMISSIVE",
           "policyname": "Users can view their own transactions",
@@ -1882,9 +1862,7 @@
         {
           "name": "chip_ledger_idem_pkey",
           "type": "p",
-          "columns": [
-            1
-          ],
+          "columns": [1],
           "validated": true,
           "deferrable": false,
           "definition": "PRIMARY KEY (idempotency_key)",
@@ -1967,19 +1945,13 @@
           }
         }
       },
-      "acl": [
-        "postgres=arwdDxtm/postgres",
-        "service_role=arwdDxtm/postgres"
-      ],
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
       "triggers": []
     }
   ],
   "incident_relations": [
     {
-      "acl": [
-        "postgres=arwdDxtm/postgres",
-        "service_role=arwdDxtm/postgres"
-      ],
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
       "oid": "18098067",
       "rls": true,
       "kind": "r",
@@ -3331,10 +3303,7 @@
       ]
     },
     {
-      "acl": [
-        "postgres=arwdDxtm/postgres",
-        "service_role=arwdDxtm/postgres"
-      ],
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
       "oid": "18098105",
       "rls": true,
       "kind": "r",
@@ -3634,10 +3603,7 @@
       ]
     },
     {
-      "acl": [
-        "postgres=arwdDxtm/postgres",
-        "service_role=arwdDxtm/postgres"
-      ],
+      "acl": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
       "oid": "18098125",
       "rls": true,
       "kind": "r",

@@ -19,6 +19,19 @@ GRANT USAGE,CREATE ON SCHEMA accounting_authority_permission_probe TO anon,authe
 CREATE FUNCTION accounting_authority_permission_probe.accept_insert()
 RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RETURN NEW;END$$;
 GRANT EXECUTE ON FUNCTION accounting_authority_permission_probe.accept_insert() TO anon,authenticated,service_role;
+CREATE FUNCTION accounting_authority_permission_probe.application_rows() RETURNS jsonb LANGUAGE plpgsql AS $snapshot$
+DECLARE r record;rows jsonb;result jsonb:='{}'::jsonb;
+BEGIN
+ FOR r IN SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname IN('public','auth','cron') AND c.relkind IN('r','p')
+  ORDER BY n.nspname,c.relname LOOP
+  EXECUTE format('SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),''[]''::jsonb) FROM %I.%I t',r.nspname,r.relname)
+   INTO rows;
+  result:=result||jsonb_build_object(format('%I.%I',r.nspname,r.relname),rows);
+ END LOOP;
+ RETURN result;
+END $snapshot$;
+REVOKE ALL ON FUNCTION accounting_authority_permission_probe.application_rows() FROM PUBLIC,anon,authenticated,service_role;
 
 DO $authority_regression$
 <<authority_regression>>
@@ -29,7 +42,7 @@ DECLARE
  source_id uuid;attribution_id uuid;hand_id uuid;period_id uuid;request_id uuid;
  result jsonb;before_rows jsonb;after_rows jsonb;
  client text;table_name text;target_column text;action record;target regclass;denials integer:=0;attempt integer;
- claims text;error_text text;credit numeric;
+ claims text;error_text text;credit numeric;stats_applied boolean;stats_payload jsonb;
 BEGIN
  IF current_user<>'postgres' OR session_user<>'postgres'
   OR current_setting('session_replication_role')<>'origin' THEN
@@ -114,8 +127,29 @@ BEGIN
   RAISE EXCEPTION 'canonical replay created another period or certificate, or lost acknowledgment';END IF;
  RAISE NOTICE 'permission proof: service canonical INSERT, UPDATE and replay retain exact period/certificate/request receipts';
 
- SELECT jsonb_build_object('periods',(SELECT jsonb_agg(to_jsonb(rp) ORDER BY rp.id) FROM public.rakeback_periods rp),
-  'payouts',(SELECT jsonb_agg(to_jsonb(pp) ORDER BY pp.id) FROM public.rakeback_period_payouts pp)) INTO before_rows;
+ -- The canonical cash/tournament writers still call this exact scalar helper.
+ -- Its real service invocation creates one marker/stat row with normal
+ -- triggers. A retry must preserve the original amount, never apply twice.
+ source_id:='d0160000-0000-0000-0000-000000000011';
+ EXECUTE 'SET LOCAL ROLE service_role';
+ stats_applied:=public.apply_rakeback_player_stats(source_id,player_id,club_id,1,10);
+ EXECUTE 'RESET ROLE';
+ IF stats_applied IS DISTINCT FROM true
+  OR (SELECT count(*) FROM public.rakeback_stats_applied a WHERE a.rake_record_id=source_id AND a.user_id=player_id AND a.hands=1 AND a.rake=10)<>1
+  OR (SELECT count(*) FROM public.player_stats s WHERE s.user_id=player_id AND s.club_id=authority_regression.club_id AND s.hands_played=1 AND s.total_rake=10)<>1 THEN
+  RAISE EXCEPTION 'unchanged scalar stats helper did not record the exact source once';END IF;
+ SET CONSTRAINTS ALL IMMEDIATE;
+ before_rows:=accounting_authority_permission_probe.application_rows();
+ EXECUTE 'SET LOCAL ROLE service_role';
+ stats_applied:=public.apply_rakeback_player_stats(source_id,player_id,club_id,99,999);
+ EXECUTE 'RESET ROLE';
+ SET CONSTRAINTS ALL IMMEDIATE;
+ IF stats_applied IS DISTINCT FROM false OR accounting_authority_permission_probe.application_rows() IS DISTINCT FROM before_rows THEN
+  RAISE EXCEPTION 'unchanged scalar duplicate modified the original statistics';END IF;
+ stats_payload:=jsonb_build_array(jsonb_build_object('rake_record_id',source_id,'user_id',player_id,
+  'club_id',club_id,'hands',99,'rake',999),jsonb_build_object('rake_record_id','d0160000-0000-0000-0000-000000000012',
+  'user_id',player_id,'club_id',club_id,'hands',1,'rake',5));
+ before_rows:=accounting_authority_permission_probe.application_rows();
  FOREACH client IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
   claims:=jsonb_build_object('role',client,'sub',player_id)::text;
   PERFORM set_config('request.jwt.claims',claims,true);
@@ -156,6 +190,7 @@ BEGIN
   END LOOP;
   FOR action IN SELECT * FROM (VALUES
    ('fn_rakeback_periods_bulk_upsert','SELECT public.fn_rakeback_periods_bulk_upsert(''[{"rakeback_amount":999999}]''::jsonb)'),
+   ('fn_apply_rakeback_player_stats_batch',format('SELECT public.fn_apply_rakeback_player_stats_batch(%L::jsonb)',stats_payload)),
    ('fn_create_settlement_period',format('SELECT public.fn_create_settlement_period(%L::uuid,%L::uuid,%L::date,%L::date)',club_id,player_id,starts,ends))
   ) x(function_name,sql_text) LOOP
    BEGIN
@@ -170,27 +205,39 @@ BEGIN
   END LOOP;
   EXECUTE 'RESET ROLE';
  END LOOP;
- IF denials<>48 THEN RAISE EXCEPTION 'expected 48 actual caller denials, observed %',denials;END IF;
+ IF denials<>51 THEN RAISE EXCEPTION 'expected 51 actual caller denials, observed %',denials;END IF;
+ SET CONSTRAINTS ALL IMMEDIATE;
+ IF accounting_authority_permission_probe.application_rows() IS DISTINCT FROM before_rows THEN
+  RAISE EXCEPTION 'denied actual-role callers changed application rows';END IF;
  BEGIN
   PERFORM public.fn_rakeback_periods_bulk_upsert('[{"rakeback_amount":999999}]'::jsonb);
   RAISE EXCEPTION 'owner could still call retired bulk writer';
  EXCEPTION WHEN SQLSTATE '55000' THEN
   IF SQLERRM<>'rakeback_period_bulk_upsert_retired' THEN RAISE;END IF;
  END;
+ BEGIN
+  PERFORM public.fn_apply_rakeback_player_stats_batch(stats_payload);
+  RAISE EXCEPTION 'owner could still call retired statistics batch';
+ EXCEPTION WHEN SQLSTATE '55000' THEN
+  IF SQLERRM<>'rakeback_player_stats_batch_retired' THEN RAISE;END IF;
+ END;
+ IF NOT EXISTS(SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_apply_rakeback_player_stats_batch' AND status='closed') THEN
+  RAISE EXCEPTION 'retired statistics batch still appears approved';END IF;
  IF NOT EXISTS(SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_rakeback_periods_bulk_upsert' AND status='closed') THEN
   RAISE EXCEPTION 'retired bulk writer still appears approved in the registry';END IF;
  IF md5(pg_get_functiondef('public.fn_create_settlement_period(uuid,uuid,date,date)'::regprocedure))<>'3ff2d628a4561939095d2c6c0181fba8'
-  OR md5(pg_get_functiondef('public.fn_rakeback_recompute_periods(uuid,date,date,uuid[])'::regprocedure))<>'dbeadf42b4143e11c6e7b76343fecf0a' THEN
+  OR md5(pg_get_functiondef('public.fn_rakeback_recompute_periods(uuid,date,date,uuid[])'::regprocedure))<>'dbeadf42b4143e11c6e7b76343fecf0a'
+  OR md5(pg_get_functiondef('public.apply_rakeback_player_stats(uuid,uuid,uuid,integer,numeric)'::regprocedure))<>'7f2b71a539db1b9c5cf6dbf6a489d40e' THEN
   RAISE EXCEPTION 'authority closure rewrote the factory or canonical request body';END IF;
- SELECT jsonb_build_object('periods',(SELECT jsonb_agg(to_jsonb(rp) ORDER BY rp.id) FROM public.rakeback_periods rp),
-  'payouts',(SELECT jsonb_agg(to_jsonb(pp) ORDER BY pp.id) FROM public.rakeback_period_payouts pp)) INTO after_rows;
- IF before_rows IS DISTINCT FROM after_rows THEN RAISE EXCEPTION 'denied callers changed period/payment rows';END IF;
+ SET CONSTRAINTS ALL IMMEDIATE;
+ after_rows:=accounting_authority_permission_probe.application_rows();
+ IF before_rows IS DISTINCT FROM after_rows THEN RAISE EXCEPTION 'denied callers changed application rows';END IF;
  IF NOT EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=authority_regression.club_id AND c.chip_treasury=0)
   OR NOT EXISTS(SELECT 1 FROM public.club_members m WHERE m.club_id=authority_regression.club_id AND m.user_id=player_id AND m.chip_balance=0)
   OR EXISTS(SELECT 1 FROM public.rakeback_period_payouts p WHERE p.club_id=authority_regression.club_id)
   OR EXISTS(SELECT 1 FROM public.chip_ledger l WHERE l.club_id=authority_regression.club_id)
   OR EXISTS(SELECT 1 FROM public.rakeback_periods p WHERE p.club_id=authority_regression.club_id AND (p.status<>'pending' OR p.paid_at IS NOT NULL)) THEN
   RAISE EXCEPTION 'permission fixture unexpectedly posted a payment';END IF;
- RAISE NOTICE 'permission proof: 48 actual client denials, owner bulk refusal, unchanged history, no payment';
+ RAISE NOTICE 'permission proof: 51 actual client denials, both owner bulk refusals, unchanged application rows, scalar stats once, no payment';
 END $authority_regression$;
 ROLLBACK;

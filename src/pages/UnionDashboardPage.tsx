@@ -732,22 +732,42 @@ export default function UnionDashboardPage() {
         .order('id', { ascending: false })
         .limit(12);
       if (!current()) return;
-      if (error || !Array.isArray(data) || data.length > 12) throw new Error('Rakeback History Is Unavailable');
+      if (error || !Array.isArray(data) || data.length > 12)
+        throw new Error('Rakeback History Is Unavailable');
       const ids = new Set<string>();
-      const rows = data.map(row => {
-        const amount = typeof row.total_rakeback === 'string' && row.total_rakeback.length <= 128
-          ? /^(0|[1-9]\d{0,29})(?:\.(\d+))?$/.exec(row.total_rakeback) : null;
-        if (!amount || /[1-9]/.test((amount[2] ?? '').slice(2)) || row.union_id !== authorizedUnionId ||
-          typeof row.id !== 'string' || !row.id || ids.has(row.id) ||
-          ![row.period_start, row.period_end, row.executed_at].every(value => typeof value === 'string' && Number.isFinite(Date.parse(value))) ||
-          Date.parse(row.period_start) >= Date.parse(row.period_end)) throw new Error('Rakeback History Could Not Be Verified');
+      const rows = data.map((row) => {
+        const amount =
+          typeof row.total_rakeback === 'string' && row.total_rakeback.length <= 128
+            ? /^(0|[1-9]\d{0,29})(?:\.(\d+))?$/.exec(row.total_rakeback)
+            : null;
+        if (
+          !amount ||
+          /[1-9]/.test((amount[2] ?? '').slice(2)) ||
+          row.union_id !== authorizedUnionId ||
+          typeof row.id !== 'string' ||
+          !row.id ||
+          ids.has(row.id) ||
+          ![row.period_start, row.period_end, row.executed_at].every(
+            (value) => typeof value === 'string' && Number.isFinite(Date.parse(value))
+          ) ||
+          Date.parse(row.period_start) >= Date.parse(row.period_end)
+        )
+          throw new Error('Rakeback History Could Not Be Verified');
         ids.add(row.id);
-        return { id: row.id, period_start: row.period_start, period_end: row.period_end, executed_at: row.executed_at,
-          total_rakeback: `${amount[1]}.${(amount[2] ?? '').padEnd(2, '0').slice(0, 2)}` };
+        return {
+          id: row.id,
+          period_start: row.period_start,
+          period_end: row.period_end,
+          executed_at: row.executed_at,
+          total_rakeback: `${amount[1]}.${(amount[2] ?? '').padEnd(2, '0').slice(0, 2)}`,
+        };
       });
       if (current()) setRakebackHistory(rows);
     } catch (error) {
-      if (current()) { setRakebackHistory([]); setRakebackReadError(true); }
+      if (current()) {
+        setRakebackHistory([]);
+        setRakebackReadError(true);
+      }
       reportError(error, 'UnionDashboardPage.loadRakebackHistory');
     } finally {
       if (current()) setRakebackLoading(false);
@@ -756,7 +776,9 @@ export default function UnionDashboardPage() {
 
   useEffect(() => {
     if (tab === 'treasury' && authorizedUnionId) void loadRakebackHistory();
-    return () => { ++rakebackRead.current; };
+    return () => {
+      ++rakebackRead.current;
+    };
   }, [tab, authorizedUnionId, loadRakebackHistory]);
 
   // ── Bus Listeners ──────────────────────────────────────────
@@ -772,7 +794,6 @@ export default function UnionDashboardPage() {
       masterBus.subscribeDebounced('TABLE_CREATED', refresh, 300),
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 300),
       masterBus.subscribeDebounced('CREDIT_UPDATED', refresh, 300),
-      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refresh, 300),
       // Level recompute: union level updates when member roles change
       masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', refresh, 300),
       // Union level changes (from PostgresSyncHooks when unions table is updated)
@@ -2488,46 +2509,64 @@ export default function UnionDashboardPage() {
                 </span>
                 <button
                   className="admin-action-btn"
-                  onClick={() => authorizedUnionId && navigate(`/unions/${authorizedUnionId}/settlement`)}
+                  onClick={() =>
+                    authorizedUnionId && navigate(`/unions/${authorizedUnionId}/settlement`)
+                  }
                   disabled={!authorizedUnionId}
                 >
                   View Accounting Status
                 </button>
               </div>
               <h4>Recorded Rakeback History · Latest Up To 12 Records</h4>
-              <button className="admin-action-btn" onClick={() => void loadRakebackHistory()}
-                disabled={!rakebackScope() || (rakebackVisible && rakebackLoading)}>Refresh History</button>
-              {rakebackVisible && rakebackLoading && <p role="status">Loading Recorded Rakeback History…</p>}
-              {(!rakebackVisible || rakebackReadError) && <p role="alert">Recorded Rakeback History Is Unavailable.</p>}
-              {rakebackVisible && !rakebackLoading && !rakebackReadError && rakebackHistory.length === 0 &&
-                <p>No Recorded Rakeback History Was Found For This Union.</p>}
-              {rakebackVisible && !rakebackLoading && !rakebackReadError && rakebackHistory.length > 0 && (
-                <div className="admin-table-scroll" style={{ marginBottom: '20px' }}>
-                  <table className="admin-data-table">
-                    <thead>
-                      <tr>
-                        <th>Period</th>
-                        <th>Total Rakeback</th>
-                        <th>Executed</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rakebackHistory.map((r) => (
-                        <tr key={r.id}>
-                          <td style={{ fontSize: '12px' }}>
-                            {new Date(r.period_start).toLocaleDateString()} -{' '}
-                            {new Date(r.period_end).toLocaleDateString()}
-                          </td>
-                          <td>{formatWeeklyChips(r.total_rakeback)}</td>
-                          <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {timeAgo(r.executed_at)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              <button
+                className="admin-action-btn"
+                onClick={() => void loadRakebackHistory()}
+                disabled={!rakebackScope() || (rakebackVisible && rakebackLoading)}
+              >
+                Refresh History
+              </button>
+              {rakebackVisible && rakebackLoading && (
+                <p role="status">Loading Recorded Rakeback History…</p>
               )}
+              {(!rakebackVisible || rakebackReadError) && (
+                <p role="alert">Recorded Rakeback History Is Unavailable.</p>
+              )}
+              {rakebackVisible &&
+                !rakebackLoading &&
+                !rakebackReadError &&
+                rakebackHistory.length === 0 && (
+                  <p>No Recorded Rakeback History Was Found For This Union.</p>
+                )}
+              {rakebackVisible &&
+                !rakebackLoading &&
+                !rakebackReadError &&
+                rakebackHistory.length > 0 && (
+                  <div className="admin-table-scroll" style={{ marginBottom: '20px' }}>
+                    <table className="admin-data-table">
+                      <thead>
+                        <tr>
+                          <th>Period</th>
+                          <th>Total Rakeback</th>
+                          <th>Executed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rakebackHistory.map((r) => (
+                          <tr key={r.id}>
+                            <td style={{ fontSize: '12px' }}>
+                              {new Date(r.period_start).toLocaleDateString()} -{' '}
+                              {new Date(r.period_end).toLocaleDateString()}
+                            </td>
+                            <td>{formatWeeklyChips(r.total_rakeback)}</td>
+                            <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              {timeAgo(r.executed_at)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
               {/* ── Weekly Player P&L Settlement (added 2026-08-19) ──
                 The club<->union square-up for player wins and losses. This is

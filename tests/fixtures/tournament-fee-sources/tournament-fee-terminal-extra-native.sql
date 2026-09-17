@@ -42,6 +42,6 @@ SELECT assert_sql_refuses('UPDATE union_wallet_transactions SET amount=99 WHERE 
 SELECT assert_sql_refuses('DELETE FROM accounting_tournament_fee_recognitions WHERE tournament_id=u(4700)','accounting_tournament_fee_receipt_is_immutable','terminal accounting receipt cannot be removed');
 SELECT assert_sql_refuses('SELECT fn_attribute_tournament_rake(u(4200))','tournament_fee_sources_require_reconciliation','legacy attribution RPC cannot mark deferred accounting complete');
 SELECT assert_true((fn_attribute_tournament_rake(u(4000))->>'already_attributed')::boolean AND (SELECT count(*)=3 FROM agent_commissions WHERE source_id IN(SELECT id FROM accounting_tournament_fee_sources WHERE tournament_id=u(4000))),'old attribution RPC only observes canonical source receipt');
-SELECT assert_true((fn_backpay_tournament_rake_attribution()->>'paid')::integer=0 AND (fn_repair_tournament_rake_attribution()->>'repaired')::integer=0 AND (SELECT attributed_at IS NULL FROM tournament_rake_settlements WHERE tournament_id=u(4200)),'old repair doors never stamp deferred liabilities paid or attributed');
+SELECT assert_true((fn_backpay_tournament_rake_attribution()->>'paid')::integer=0 AND (fn_repair_tournament_rake_attribution()->>'repaired')::integer=0 AND NOT EXISTS(SELECT 1 FROM tournament_rake_settlements WHERE tournament_id=u(4200)),'old repair doors cannot recreate a refused incomplete settlement');
 SELECT count(*) AS native_assertions FROM assertions;
 COMMIT;

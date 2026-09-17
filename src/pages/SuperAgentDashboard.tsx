@@ -37,11 +37,16 @@ export default function SuperAgentDashboard() {
   const { clubId } = useParams();
   const { user, isHydrating } = useAuthUser();
   if (isHydrating) return <PageSkeleton variant="dashboard" />;
-  if (!user?.id || !clubId) return <p>Sign in and select a club to open your agent dashboard.</p>;
+  if (!user?.id || !clubId) return <p>Sign In And Select A Club To Open Your Agent Dashboard.</p>;
   // A different account or route owns a different component and every pending
   // read/action belonging to the old surface loses permission to update it.
-  return <SuperAgentDashboardForScope key={JSON.stringify([user.id, clubId])}
-    userId={user.id} clubId={clubId} />;
+  return (
+    <SuperAgentDashboardForScope
+      key={JSON.stringify([user.id, clubId])}
+      userId={user.id}
+      clubId={clubId}
+    />
+  );
 }
 
 function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubId: string }) {
@@ -240,8 +245,12 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
       const [agents, club, membership] = await Promise.all([
         AgentService.getAgents(resolvedId),
         supabase.from('clubs').select('owner_id').eq('id', resolvedId).maybeSingle(),
-        supabase.from('club_members').select('role, status')
-          .eq('club_id', resolvedId).eq('user_id', userId).maybeSingle(),
+        supabase
+          .from('club_members')
+          .select('role, status')
+          .eq('club_id', resolvedId)
+          .eq('user_id', userId)
+          .maybeSingle(),
       ]);
       if (!current()) return;
       if (club.error) throw club.error;
@@ -268,12 +277,14 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
         // matches CreditService's shared creation route. A hierarchy ID is
         // never treated as an account or as approval authority.
         const approver = club.data.owner_id;
-        setCreditApproverUserId(typeof approver === 'string' && approver && approver !== userId
-          ? approver : undefined);
-        setCanReviewCredit(club.data.owner_id === userId || (
-          ['owner', 'co_owner', 'admin'].includes(membership.data?.role || '') &&
-          ['active', 'approved'].includes(membership.data?.status || '')
-        ));
+        setCreditApproverUserId(
+          typeof approver === 'string' && approver && approver !== userId ? approver : undefined
+        );
+        setCanReviewCredit(
+          club.data.owner_id === userId ||
+            (['owner', 'co_owner', 'admin'].includes(membership.data?.role || '') &&
+              ['active', 'approved'].includes(membership.data?.status || ''))
+        );
         setAgent(myAgent);
         setSubAgents(agents.filter((a) => a.parentAgentId === myAgent.id));
         setPlayers(myPlayers);

@@ -7,7 +7,7 @@ SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
 
 DO $preimage$
-DECLARE expected record;
+DECLARE expected record;actual_acl jsonb;
 BEGIN
  IF current_setting('server_version_num')::integer<170000 THEN
   RAISE EXCEPTION 'rakeback_write_authority_requires_postgresql_17';END IF;
@@ -21,6 +21,29 @@ BEGIN
    AND md5(pg_get_functiondef(p.oid))=expected.definition_md5) THEN
    RAISE EXCEPTION 'rakeback_write_authority_function_preimage_changed: %',expected.signature;
   END IF;
+ END LOOP;
+ -- Read-only production capture 2026-09-17: retire only the exact legacy
+ -- payload writer. Its scalar helper remains the canonical source writers'
+ -- dependency, with its definition and access unchanged.
+ FOR expected IN SELECT * FROM (VALUES
+  ('public.fn_apply_rakeback_player_stats_batch(jsonb)','ac2b4515198a0fe4bd327dfc030f506a'),
+  ('public.apply_rakeback_player_stats(uuid,uuid,uuid,integer,numeric)','7f2b71a539db1b9c5cf6dbf6a489d40e')
+ ) x(signature,definition_md5) LOOP
+  IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure(expected.signature)
+   AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef
+   AND p.proconfig=ARRAY['search_path=public']::text[]
+   AND md5(pg_get_functiondef(p.oid))=expected.definition_md5) THEN
+   RAISE EXCEPTION 'rakeback_write_authority_function_preimage_changed: %',expected.signature;END IF;
+  SELECT jsonb_agg(jsonb_build_array(pg_get_userbyid(a.grantor),
+    CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
+    a.privilege_type,a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type)
+   INTO actual_acl FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+   WHERE p.oid=to_regprocedure(expected.signature);
+  IF actual_acl IS DISTINCT FROM '[ ["postgres","postgres","EXECUTE",false], ["postgres","service_role","EXECUTE",false] ]'::jsonb
+   OR has_function_privilege('anon',expected.signature,'EXECUTE')
+   OR has_function_privilege('authenticated',expected.signature,'EXECUTE')
+   OR NOT has_function_privilege('service_role',expected.signature,'EXECUTE') THEN
+   RAISE EXCEPTION 'rakeback_write_authority_function_access_changed: %',expected.signature;END IF;
  END LOOP;
  -- Exact source from the preceding 160000 component. Its post-definition hash
  -- has not been measured by protected execution; do not invent one.
@@ -133,6 +156,25 @@ UPDATE public.ca_money_rpc_registry SET status='closed',
  notes='Closed by weekly-v3 161000: arbitrary JSON period upserts always refuse, including owner calls; all client EXECUTE revoked. Use the existing source-certified fn_rakeback_recompute_periods request authority.'
  WHERE proname='fn_rakeback_periods_bulk_upsert';
 
+-- A previously returned v1 commission count must never authorize this second
+-- statistics writer after activation. Revoke clients as for the period bulk
+-- writer; an accidental owner invocation also refuses before reading payload.
+-- This does NOT prove an already executing old function body has drained.
+-- Deployment first requires the canonical-only engine precursor and verified
+-- retirement of old engine work; a table lock cannot prove unstarted writes.
+INSERT INTO public.ca_money_rpc_registry(proname,status,notes) VALUES
+ ('fn_apply_rakeback_player_stats_batch','approved','Retire legacy caller-supplied player statistics batch; canonical source writers retain the unchanged scalar helper.')
+ON CONFLICT(proname) DO UPDATE SET status=EXCLUDED.status,notes=EXCLUDED.notes;
+CREATE OR REPLACE FUNCTION public.fn_apply_rakeback_player_stats_batch(p_items jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $function$
+BEGIN
+ RAISE EXCEPTION 'rakeback_player_stats_batch_retired' USING ERRCODE='55000';
+END $function$;
+REVOKE ALL ON FUNCTION public.fn_apply_rakeback_player_stats_batch(jsonb) FROM PUBLIC,anon,authenticated,service_role;
+UPDATE public.ca_money_rpc_registry SET status='closed',
+ notes='Closed by weekly-v3 161000: legacy payload statistics batch always refuses, including owner calls; all client EXECUTE revoked. Canonical cash and tournament source transactions use the unchanged scalar apply_rakeback_player_stats helper.'
+ WHERE proname='fn_apply_rakeback_player_stats_batch';
+
 DO $close_writes$
 DECLARE target regclass;columns_sql text;client text;privilege_name text;before_reads jsonb;after_reads jsonb;
 BEGIN
@@ -175,6 +217,7 @@ BEGIN
  END LOOP;
  FOREACH client IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
   IF has_function_privilege(client,'public.fn_rakeback_periods_bulk_upsert(jsonb)','EXECUTE')
+   OR has_function_privilege(client,'public.fn_apply_rakeback_player_stats_batch(jsonb)','EXECUTE')
    OR has_function_privilege(client,'public.fn_create_settlement_period(uuid,uuid,date,date)','EXECUTE') THEN
    RAISE EXCEPTION 'rakeback_write_authority_legacy_execute_remains: %',client;END IF;
  END LOOP;
@@ -182,5 +225,15 @@ BEGIN
   RAISE EXCEPTION 'rakeback_write_authority_canonical_request_access_missing';END IF;
  IF NOT EXISTS(SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_rakeback_periods_bulk_upsert' AND status='closed') THEN
   RAISE EXCEPTION 'rakeback_write_authority_bulk_registry_not_closed';END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_apply_rakeback_player_stats_batch' AND status='closed')
+  OR (SELECT p.prosrc FROM pg_proc p WHERE p.oid='public.fn_apply_rakeback_player_stats_batch(jsonb)'::regprocedure)
+   IS DISTINCT FROM $retired_source$
+BEGIN
+ RAISE EXCEPTION 'rakeback_player_stats_batch_retired' USING ERRCODE='55000';
+END $retired_source$ THEN
+  RAISE EXCEPTION 'rakeback_write_authority_stats_batch_not_retired';END IF;
+ IF md5(pg_get_functiondef('public.apply_rakeback_player_stats(uuid,uuid,uuid,integer,numeric)'::regprocedure))<>'7f2b71a539db1b9c5cf6dbf6a489d40e'
+  OR NOT has_function_privilege('service_role','public.apply_rakeback_player_stats(uuid,uuid,uuid,integer,numeric)','EXECUTE') THEN
+  RAISE EXCEPTION 'rakeback_write_authority_scalar_stats_changed';END IF;
 END $close_writes$;
 COMMIT;

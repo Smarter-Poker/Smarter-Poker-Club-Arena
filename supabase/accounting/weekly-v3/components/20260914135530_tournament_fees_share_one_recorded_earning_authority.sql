@@ -20,8 +20,12 @@ DO $tournament_preimages$ BEGIN
   RAISE EXCEPTION 'tournament_source_preimage_changed: %', 'public.fn_repair_tournament_rake_attribution(integer)' USING ERRCODE='55000'; END IF;
  IF to_regprocedure('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)') IS NULL OR md5(pg_get_functiondef(to_regprocedure('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)'))) IS DISTINCT FROM 'b36386009f2b3f568fc648efbccaf7b4' THEN
   RAISE EXCEPTION 'tournament_source_preimage_changed: %', 'public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)' USING ERRCODE='55000'; END IF;
- IF to_regprocedure('public.fn_settle_tournament_rake(uuid,text)') IS NULL OR md5(pg_get_functiondef(to_regprocedure('public.fn_settle_tournament_rake(uuid,text)'))) IS DISTINCT FROM '7cf1d81246d015b65d416ee6b3f96838' THEN
+ IF to_regprocedure('public.fn_settle_tournament_rake(uuid,text)') IS NULL OR md5(pg_get_functiondef(to_regprocedure('public.fn_settle_tournament_rake(uuid,text)'))) IS DISTINCT FROM '46128439ae7a46e4fd8ea2889a7dddf8' THEN
   RAISE EXCEPTION 'tournament_source_preimage_changed: %', 'public.fn_settle_tournament_rake(uuid,text)' USING ERRCODE='55000'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_settle_tournament_rake(uuid,text)')
+  AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef
+  AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}') THEN
+  RAISE EXCEPTION 'tournament_settlement_permissions_changed' USING ERRCODE='55000'; END IF;
  IF to_regprocedure('public.fn_tournament_finish_readiness(uuid,uuid)') IS NULL OR md5(pg_get_functiondef(to_regprocedure('public.fn_tournament_finish_readiness(uuid,uuid)'))) IS DISTINCT FROM '6361f556eac2ff2940e3f49f485176d0' THEN
   RAISE EXCEPTION 'tournament_source_preimage_changed: %', 'public.fn_tournament_finish_readiness(uuid,uuid)' USING ERRCODE='55000'; END IF;
  IF to_regprocedure('public.fn_tournament_rake_settlement_check(integer,integer)') IS NULL OR md5(pg_get_functiondef(to_regprocedure('public.fn_tournament_rake_settlement_check(integer,integer)'))) IS DISTINCT FROM '65dc8a03543053bec16f78b78c513b9b' THEN
@@ -652,6 +656,10 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$DECL
   RAISE EXCEPTION 'tournament_fee_source_invalid' USING ERRCODE='23514'; END IF;
  SELECT COALESCE(sum(rake_amount),0),md5(COALESCE(string_agg(public.fn_accounting_tournament_fee_fingerprint(r),':' ORDER BY id),'')) INTO net_fee,fp
   FROM public.rake_records r WHERE tournament_id=p_tournament_id AND is_tournament;
+ -- Historical deferred receipts stay readable; no new positive fee may use
+ -- deferral to commit banking without complete attribution. Zero-fee
+ -- cancellation evidence remains available to its existing authority.
+ IF net_fee>0 THEN RAISE EXCEPTION 'tournament_fee_positive_deferral_retired' USING ERRCODE='P0404'; END IF;
  proof:=public.fn_accounting_tournament_bank_proof(p_tournament_id,p_recognized_at,p_bank_club_id,p_union_id,net_fee,p_union_wallet_transaction_id,p_bank_journal_id);
  PERFORM pg_advisory_xact_lock(hashtextextended('accounting_tournament_recognition:'||p_tournament_id::text,0));
  SELECT * INTO prior FROM public.accounting_tournament_fee_recognitions WHERE tournament_id=p_tournament_id;
@@ -768,7 +776,9 @@ CREATE TRIGGER accounting_tournament_recognized_bank_immutable BEFORE UPDATE OR 
 -- END tournament-fee-terminal-common-draft.sql
 
 -- BEGIN tournament-fee-settle-adapter-draft.sql
--- DRAFT. Captured preimage md5 7cf1d81246d015b65d416ee6b3f96838; Diamond branch preserved verbatim.
+-- Current captured predecessor46128439ae7a46e4fd8ea2889a7dddf8. Preserve its
+-- complete-attribution transaction and replay rules through canonical sources;
+-- Diamond custody remains verbatim. Native current-predecessor overlay required.
 CREATE OR REPLACE FUNCTION public.fn_settle_tournament_rake(p_tournament_id uuid, p_source text DEFAULT 'engine'::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -779,7 +789,7 @@ AS $function$
 DECLARE
  v_t record;v_prior record;v_claimed int;v_plan jsonb;v_att jsonb;v_res jsonb;
  v_net numeric;v_union uuid;v_dest text;v_reason text;v_raw record;v_bank_id uuid;v_journal_id uuid;v_matches int;
- v_week_start timestamptz;v_week_end timestamptz;v_lock_key text;
+ v_week_start timestamptz;v_week_end timestamptz;v_lock_key text;v_attempt int:=0;
 BEGIN
  PERFORM public.fn_ca_lock_settlement_lane_global();
  SELECT t.id,t.status,t.club_id,t.union_id,t.is_private,t.name,t.current_players INTO v_t
@@ -792,8 +802,16 @@ BEGIN
  GET DIAGNOSTICS v_claimed=ROW_COUNT;
  IF v_claimed=0 THEN
   SELECT * INTO v_prior FROM public.tournament_rake_settlements WHERE tournament_id=p_tournament_id;
-  IF v_prior.settled_at IS NULL OR v_prior.destination='pending' THEN
-   RAISE EXCEPTION 'partial_tournament_fee_settlement_requires_reconciliation' USING ERRCODE='55000'; END IF;
+  -- Historical claims do not authorize another fee transfer or a success
+  -- claim unless their stored attribution actually completed.
+  IF v_prior.settled_at IS NULL OR v_prior.attributed_at IS NULL
+   OR v_prior.attributed_users IS NULL OR v_prior.attributed_users<0
+   OR v_prior.attribution_error IS NOT NULL
+   OR NULLIF(v_prior.destination,'') IS NULL OR v_prior.destination='pending' THEN
+   RETURN jsonb_build_object('ok',false,'already_settled',true,
+    'reason','settlement_attribution_incomplete','amount',v_prior.amount,
+    'destination',v_prior.destination,'settled_at',v_prior.settled_at,'attributed',false);
+  END IF;
   IF v_prior.amount>0 AND v_prior.union_id IS NULL AND NOT public.fn_poker_diamond_tournament(p_tournament_id)
    AND v_prior.destination IS DISTINCT FROM 'chip_retirement:'||v_prior.club_id::text THEN
    RAISE EXCEPTION 'tournament_fee_legacy_treasury_leg_requires_adjustment' USING ERRCODE='55000'; END IF;
@@ -801,8 +819,8 @@ BEGIN
   IF v_prior.amount>0 AND v_prior.union_id IS NULL AND NOT public.fn_poker_diamond_tournament(p_tournament_id) AND v_att IS NULL THEN
    RAISE EXCEPTION 'tournament_fee_disposition_receipt_missing' USING ERRCODE='55000'; END IF;
   RETURN jsonb_build_object('ok',true,'already_settled',true,'amount',v_prior.amount,'destination',v_prior.destination,
-    'settled_at',v_prior.settled_at,'attributed',v_prior.attributed_at IS NOT NULL,'attributed_users',v_prior.attributed_users,
-    'accounting',v_att);
+    'settled_at',v_prior.settled_at,'attributed',true,'attributed_users',v_prior.attributed_users,
+    'no_attribution_due',v_prior.amount=0,'accounting',v_att);
  END IF;
   -- DIAMOND PHASE 8: a Diamond event's fee sits in its custody rows, not in
   -- rake_records; it goes to the house, and then the emptied custody closes.
@@ -828,15 +846,22 @@ BEGIN
   AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_batches b WHERE b.rake_record_id=r.id) ORDER BY r.id LOOP
   PERFORM public.fn_stamp_accounting_tournament_fee(v_raw.id);
  END LOOP;
+ SELECT COALESCE(sum(r.rake_amount),0) INTO v_net FROM public.rake_records r WHERE r.tournament_id=p_tournament_id AND r.is_tournament;
+ IF v_net<0 OR v_net<>round(v_net,2) OR v_net::text IN('NaN','Infinity','-Infinity') THEN
+  RAISE EXCEPTION 'tournament_fee_net_invalid' USING ERRCODE='23514'; END IF;
  BEGIN
   v_plan:=public.fn_accounting_tournament_fee_net_plan(p_tournament_id);
  EXCEPTION WHEN SQLSTATE '55000' THEN
   IF SQLERRM NOT IN('tournament_fee_sources_require_reconciliation','accounting_terms_not_observed','accounting_terms_not_active','tournament_fee_not_captured_by_original_producer') THEN RAISE; END IF;
   v_reason:=SQLERRM;
+  -- A new positive fee cannot leave custody before its exact attribution is
+  -- available. Throw: direct callers must also roll back the inserted claim.
+  IF v_net>0 THEN
+   RAISE EXCEPTION 'tournament % rake attribution incomplete: %',p_tournament_id,v_reason USING ERRCODE='P0404';
+  END IF;
+  -- Exact zero owes no new attribution. Preserve the predecessor's zero-fee
+  -- completion without inventing a source, bank, commission or paid receipt.
  END;
- SELECT COALESCE(sum(r.rake_amount),0) INTO v_net FROM public.rake_records r WHERE r.tournament_id=p_tournament_id AND r.is_tournament;
- IF v_net<0 OR v_net<>round(v_net,2) OR v_net::text IN('NaN','Infinity','-Infinity') THEN
-  RAISE EXCEPTION 'tournament_fee_net_invalid' USING ERRCODE='23514'; END IF;
  v_union:=CASE WHEN v_reason IS NULL THEN NULLIF(v_plan->>'union_id','')::uuid
   WHEN v_t.is_private THEN NULL ELSE v_t.union_id END;
  PERFORM public.fn_lock_accounting_tournament_recognition_week(p_tournament_id,transaction_timestamp());
@@ -885,16 +910,31 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'tournament_fee_club_wallet_missing' USING ERRCODE='23514'; END IF;
  ELSE v_dest:='none'; END IF;
  IF v_reason IS NULL THEN
-  v_att:=public.fn_recognize_accounting_tournament_fees(p_tournament_id,transaction_timestamp(),v_t.club_id,v_bank_id,v_journal_id);
- ELSE
-  v_att:=public.fn_defer_accounting_tournament_fees(p_tournament_id,transaction_timestamp(),v_t.club_id,v_union,v_bank_id,v_journal_id,v_reason);
+  -- Preserve the installed bounded retry contract, now around the sole
+  -- canonical recognition writer. Exhaustion and permanent errors escape the
+  -- whole settlement; rolled-back attempts cannot retain partial attribution.
+  LOOP
+   v_attempt:=v_attempt+1;
+   BEGIN
+    v_att:=public.fn_recognize_accounting_tournament_fees(p_tournament_id,transaction_timestamp(),v_t.club_id,v_bank_id,v_journal_id);
+    EXIT;
+   EXCEPTION WHEN deadlock_detected OR lock_not_available THEN
+    IF v_attempt>=4 THEN RAISE; END IF;
+    PERFORM pg_sleep(CASE v_attempt WHEN 1 THEN 0.1 WHEN 2 THEN 0.3 ELSE 0.6 END);
+   END;
+  END LOOP;
+  IF v_att->>'status' IS DISTINCT FROM CASE WHEN v_net>0 THEN 'recognized' ELSE 'cancelled' END
+   OR (v_att->>'attributed_chips')::numeric IS DISTINCT FROM v_net
+   OR (v_net>0 AND COALESCE((v_att->>'attributed_users')::int,0)<1) THEN
+   RAISE EXCEPTION 'tournament % rake attribution incomplete: canonical source receipt',p_tournament_id USING ERRCODE='P0404';
+  END IF;
  END IF;
  UPDATE public.tournament_rake_settlements SET amount=v_net,union_id=v_union,destination=v_dest,settled_at=transaction_timestamp(),
-  attributed_at=CASE WHEN v_reason IS NULL THEN transaction_timestamp() ELSE NULL END,
-  attributed_users=COALESCE((v_att->>'attributed_users')::int,0),attribution_error=v_reason WHERE tournament_id=p_tournament_id;
- RETURN jsonb_build_object('ok',true,'amount',v_net,'destination',v_dest,'attributed',v_reason IS NULL,
-  'attributed_users',COALESCE((v_att->>'attributed_users')::int,0),
-  'accounting',public.fn_accounting_tournament_terminal_fee_receipt(p_tournament_id));
+  attributed_at=transaction_timestamp(),attributed_users=COALESCE((v_att->>'attributed_users')::int,0),
+  attribution_error=NULL WHERE tournament_id=p_tournament_id;
+ RETURN jsonb_build_object('ok',true,'amount',v_net,'destination',v_dest,'attributed',true,
+  'attributed_users',COALESCE((v_att->>'attributed_users')::int,0),'attribution_attempts',v_attempt,
+  'no_attribution_due',v_net=0,'accounting',public.fn_accounting_tournament_terminal_fee_receipt(p_tournament_id));
 END;
 $function$;
 

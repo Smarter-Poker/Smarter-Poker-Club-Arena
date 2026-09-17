@@ -71,9 +71,7 @@
       "owner": "postgres",
       "security_definer": false,
       "result": "trigger",
-      "normalized_config": [
-        "search_path=public"
-      ],
+      "normalized_config": ["search_path=public"],
       "grants": [
         {
           "role": "postgres",
@@ -96,11 +94,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "jsonb",
-      "normalized_config": [
-        "datestyle=iso,ymd",
-        "search_path=public",
-        "timezone=utc"
-      ],
+      "normalized_config": ["datestyle=iso,ymd", "search_path=public", "timezone=utc"],
       "grants": [
         {
           "role": "postgres",
@@ -111,9 +105,7 @@
       "basis": "literal component34 definition/retained ACL; unchanged35",
       "language": "plpgsql",
       "volatility": "v",
-      "argument_names": [
-        "p_document_id"
-      ],
+      "argument_names": ["p_document_id"],
       "argument_defaults": 0,
       "strict": false,
       "leakproof": false,
@@ -125,11 +117,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "jsonb",
-      "normalized_config": [
-        "datestyle=iso,ymd",
-        "search_path=public",
-        "timezone=utc"
-      ],
+      "normalized_config": ["datestyle=iso,ymd", "search_path=public", "timezone=utc"],
       "grants": [
         {
           "role": "postgres",
@@ -140,9 +128,7 @@
       "basis": "literal component34 definition/retained ACL; unchanged35",
       "language": "plpgsql",
       "volatility": "s",
-      "argument_names": [
-        "p_invoice_id"
-      ],
+      "argument_names": ["p_invoice_id"],
       "argument_defaults": 0,
       "strict": false,
       "leakproof": false,
@@ -154,11 +140,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "text",
-      "normalized_config": [
-        "datestyle=iso,ymd",
-        "search_path=public",
-        "timezone=utc"
-      ],
+      "normalized_config": ["datestyle=iso,ymd", "search_path=public", "timezone=utc"],
       "grants": [
         {
           "role": "postgres",
@@ -169,10 +151,7 @@
       "basis": "literal component34 definition/retained ACL; unchanged35",
       "language": "plpgsql",
       "volatility": "s",
-      "argument_names": [
-        "p_document_id",
-        "p_invoice_number"
-      ],
+      "argument_names": ["p_document_id", "p_invoice_number"],
       "argument_defaults": 0,
       "strict": false,
       "leakproof": false,
@@ -184,11 +163,7 @@
       "owner": "postgres",
       "security_definer": false,
       "result": "jsonb",
-      "normalized_config": [
-        "datestyle=iso,ymd",
-        "search_path=public",
-        "timezone=utc"
-      ],
+      "normalized_config": ["datestyle=iso,ymd", "search_path=public", "timezone=utc"],
       "grants": [
         {
           "role": "postgres",
@@ -199,9 +174,7 @@
       "basis": "literal component34 definition/retained ACL; unchanged35",
       "language": "sql",
       "volatility": "i",
-      "argument_names": [
-        "d"
-      ],
+      "argument_names": ["d"],
       "argument_defaults": 0,
       "strict": false,
       "leakproof": false,
@@ -213,11 +186,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "void",
-      "normalized_config": [
-        "datestyle=iso,ymd",
-        "search_path=public",
-        "timezone=utc"
-      ],
+      "normalized_config": ["datestyle=iso,ymd", "search_path=public", "timezone=utc"],
       "grants": [
         {
           "role": "postgres",
@@ -228,9 +197,7 @@
       "basis": "literal component34 definition/retained ACL; unchanged35",
       "language": "plpgsql",
       "volatility": "v",
-      "argument_names": [
-        "p_ledger_id"
-      ],
+      "argument_names": ["p_ledger_id"],
       "argument_defaults": 0,
       "strict": false,
       "leakproof": false,
@@ -242,9 +209,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "trigger",
-      "normalized_config": [
-        "search_path=public"
-      ],
+      "normalized_config": ["search_path=public"],
       "grants": [
         {
           "role": "postgres",
@@ -308,9 +273,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "trigger",
-      "normalized_config": [
-        "search_path=public"
-      ],
+      "normalized_config": ["search_path=public"],
       "grants": [
         {
           "role": "postgres",
@@ -333,9 +296,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "trigger",
-      "normalized_config": [
-        "search_path=public"
-      ],
+      "normalized_config": ["search_path=public"],
       "grants": [
         {
           "role": "postgres",
@@ -857,7 +818,7 @@
     },
     {
       "signature": "public.fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb)",
-      "full_definition_md5": "bd239239efefc237fd69f3217ceab367",
+      "full_definition_md5": "a6df5f2eef07aa3f606db79d93944590",
       "owner": "postgres",
       "grants": [
         {
@@ -871,7 +832,7 @@
           "privilege": "EXECUTE"
         }
       ],
-      "basis": "retained full fixture definition/access, matched original OID or signature"
+      "basis": "accepted production migration20260917024440, source6622531f15dc53dc532dcba4d7441f5907be06be62decca528baf8d94a235710; exact current metadata read20260917"
     },
     {
       "signature": "public.fn_ca_recovery_fee_cents(bigint,numeric,integer)",
@@ -1075,9 +1036,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "jsonb",
-      "normalized_config": [
-        "search_path=public"
-      ],
+      "normalized_config": ["search_path=public"],
       "grants": [
         {
           "role": "postgres",
@@ -1093,9 +1052,7 @@
       "basis": "literal component34 definition/retained ACL; unchanged35",
       "language": "plpgsql",
       "volatility": "v",
-      "argument_names": [
-        "p_invoice_id"
-      ],
+      "argument_names": ["p_invoice_id"],
       "argument_defaults": 0,
       "strict": false,
       "leakproof": false,
@@ -1140,9 +1097,7 @@
       "owner": "postgres",
       "security_definer": true,
       "result": "uuid",
-      "normalized_config": [
-        "search_path=public"
-      ],
+      "normalized_config": ["search_path=public"],
       "grants": [
         {
           "role": "postgres",
@@ -1158,9 +1113,7 @@
       "basis": "literal component34 definition/retained ACL; unchanged35",
       "language": "plpgsql",
       "volatility": "v",
-      "argument_names": [
-        "p_ledger_id"
-      ],
+      "argument_names": ["p_ledger_id"],
       "argument_defaults": 0,
       "strict": false,
       "leakproof": false,

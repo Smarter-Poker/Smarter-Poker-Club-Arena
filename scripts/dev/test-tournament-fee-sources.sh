@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Payload for approved protected execution. This is not a pipeline bypass.
-# Do not invoke while the protected local pipeline is unavailable.
+# Run through the assigned original provider check; this runner is not production activation.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 work="$root/tests/fixtures/tournament-fee-sources"
@@ -25,6 +25,23 @@ binding = json.loads((work / 'source-binding.json').read_text())
 def require_hash(body, expected, label):
     if hashlib.sha256(body).hexdigest() != expected:
         raise SystemExit('Unreviewed source drift: ' + label)
+# Bind the current installed predecessor separately from the unchanged
+# historical full-schema capture. The full runner loads this native overlay.
+predecessor = binding['current_predecessor']
+for name, expected in predecessor['files'].items():
+    require_hash((root / name).read_bytes(), expected, name)
+catalog = json.loads((root / predecessor['metadata_path']).read_text())
+functions = [f for f in catalog['functions'] if f['signature'] == predecessor['signature']]
+if len(functions) != 1:
+    raise SystemExit('Current tournament predecessor identity is ambiguous')
+current = functions[0]
+if (hashlib.md5(current['definition'].encode()).hexdigest() != predecessor['definition_md5']
+    or current['definition_md5'] != predecessor['definition_md5']
+    or current['source_md5'] != predecessor['source_md5']
+    or current['owner'] != 'postgres'
+    or current['acl'] != ['postgres=X/postgres', 'service_role=X/postgres']
+    or current['definition'].rstrip() + ';' not in (root / predecessor['overlay_path']).read_text()):
+    raise SystemExit('Current tournament predecessor capture/overlay disagrees')
 tournament = binding['tournament_component']
 raw = (root / tournament['path']).read_bytes()
 require_hash(raw, tournament['sha256'], tournament['path'])
@@ -80,7 +97,7 @@ started=1
 python3 - "$fixture/assertions.log" "$work/source-binding.json" <<'PY'
 from pathlib import Path
 import json, re, sys
-expected = json.loads(Path(sys.argv[2]).read_text())['historical_assertion_executions']
+expected = json.loads(Path(sys.argv[2]).read_text())['expected_assertion_executions']
 count = len(re.findall(r'NOTICE:\s+PASS: ', Path(sys.argv[1]).read_text()))
 if count != expected:
     raise SystemExit(f'Assertion execution count changed: expected {expected}, observed {count}')

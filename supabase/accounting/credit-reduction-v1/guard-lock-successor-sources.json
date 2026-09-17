@@ -9,20 +9,14 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": [
-      "search_path=public"
-    ],
+    "config": ["search_path=public"],
     "effective_execute": {
       "anon": false,
       "service_role": true,
       "authenticated": true
     },
     "signature": "public.fn_club_set_member_role(uuid,uuid,text,uuid,numeric,numeric,boolean,numeric)",
-    "acl": [
-      "authenticated=X/postgres",
-      "postgres=X/postgres",
-      "service_role=X/postgres"
-    ],
+    "acl": ["authenticated=X/postgres", "postgres=X/postgres", "service_role=X/postgres"],
     "basis": "lock-order-successor.sql; retained full function plus only early mutex",
     "source_md5": "d7a2c0aefc0fce74214735c89d24909c"
   },
@@ -36,20 +30,14 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": [
-      "search_path=public"
-    ],
+    "config": ["search_path=public"],
     "effective_execute": {
       "anon": false,
       "service_role": true,
       "authenticated": true
     },
     "signature": "public.fn_assign_agent_to_super_agent(uuid,uuid,uuid)",
-    "acl": [
-      "authenticated=X/postgres",
-      "postgres=X/postgres",
-      "service_role=X/postgres"
-    ],
+    "acl": ["authenticated=X/postgres", "postgres=X/postgres", "service_role=X/postgres"],
     "basis": "lock-order-successor.sql; retained full function plus only early mutex",
     "source_md5": "c1585a4464c3a32146cedddfe7c4a110"
   },
@@ -63,19 +51,14 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": [
-      "search_path=public, pg_temp"
-    ],
+    "config": ["search_path=public, pg_temp"],
     "effective_execute": {
       "anon": false,
       "service_role": true,
       "authenticated": false
     },
     "signature": "public.fn_ensure_agent_row(uuid,uuid,text)",
-    "acl": [
-      "postgres=X/postgres",
-      "service_role=X/postgres"
-    ],
+    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
     "basis": "lock-order-successor.sql; retained full function plus only early mutex",
     "source_md5": "c072f3ee43b341d5efbe077bcf3a6a9b"
   },
@@ -89,20 +72,14 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": [
-      "search_path=public, pg_temp"
-    ],
+    "config": ["search_path=public, pg_temp"],
     "effective_execute": {
       "anon": false,
       "service_role": true,
       "authenticated": true
     },
     "signature": "public.fn_agent_wallet_send(uuid,uuid,numeric,text,text,uuid)",
-    "acl": [
-      "authenticated=X/postgres",
-      "postgres=X/postgres",
-      "service_role=X/postgres"
-    ],
+    "acl": ["authenticated=X/postgres", "postgres=X/postgres", "service_role=X/postgres"],
     "basis": "lock-order-successor.sql; retained full function plus only early mutex",
     "source_md5": "7a357ba95a8ca4eb13f00f798233d8d4"
   },
@@ -116,19 +93,14 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": [
-      "search_path=public, pg_temp"
-    ],
+    "config": ["search_path=public, pg_temp"],
     "effective_execute": {
       "anon": false,
       "service_role": true,
       "authenticated": false
     },
     "signature": "public.fn_agent_wallet_send_phase2_core_20260831(uuid,uuid,numeric,text,text,uuid)",
-    "acl": [
-      "postgres=X/postgres",
-      "service_role=X/postgres"
-    ],
+    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
     "basis": "lock-order-successor.sql; retained full function plus only early mutex",
     "source_md5": "82cc66e55d9d3f2b3e87d08571ea8a15"
   },
@@ -142,19 +114,14 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": [
-      "search_path=public, pg_temp"
-    ],
+    "config": ["search_path=public, pg_temp"],
     "effective_execute": {
       "anon": false,
       "service_role": true,
       "authenticated": false
     },
     "signature": "public.fn_agent_wallet_send_core_20260830(uuid,uuid,numeric,text,text,uuid)",
-    "acl": [
-      "postgres=X/postgres",
-      "service_role=X/postgres"
-    ],
+    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
     "basis": "lock-order-successor.sql; retained full function plus only early mutex",
     "source_md5": "89019200238a7fe72b807d2a9b364e5a"
   },
@@ -169,18 +136,14 @@
     "leakproof": false,
     "volatility": "v",
     "parallel": "u",
-    "config": [
-      "search_path=public, pg_temp"
-    ],
-    "acl": [
-      "postgres=X/postgres"
-    ],
+    "config": ["search_path=public, pg_temp"],
+    "acl": ["postgres=X/postgres"],
     "effective_execute": {
       "anon": false,
       "authenticated": false,
       "service_role": false
     },
-    "source_md5": "435ba3ef6f23cba3720ebb7d7ca4a44e",
+    "source_md5": "742cb4ff0a304474e3761b27c13d7dbd",
     "basis": "lock-order-successor.sql; staged33 authority plus only early mutex and CREATE OR REPLACE header"
   }
 ]

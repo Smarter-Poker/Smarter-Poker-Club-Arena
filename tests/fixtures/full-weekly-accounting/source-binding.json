@@ -64,7 +64,7 @@
   ],
   "repository_fixtures": {
     "supabase/migrations/20260914132918_union_pnl_requires_full_funding_and_stable_failure_receipts.sql": "68c2d7a15a5e95f58014aa36c6429b8c7f3925063ea976890d909d033b11f8d3",
-    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-deferred.sql": "a7285a54785f221ff543d4d92516e5dbc2dedd04d33f550872ce6f7fa36c308e",
+    "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-deferred.sql": "45d8cfd5dd3f8e68c11b7c88418027e793258a3bd350436843b28d8334fd8404",
     "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-earning.sql": "8add7053211cd40ffc988cac51f2df02d0fcccd7b20f13dd32595e0ae16bb3d4",
     "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-normal.sql": "51e657212902648e48fdc5e79848958205f9efd90c1697f5bb4da5336e7783da",
     "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-satellite.sql": "5148799c56ef11876d00dcbecdd720bd20ec4c1e780e0aa593b1f5fdf29cd068",
@@ -86,8 +86,8 @@
     "tests/fixtures/accounting-alert-38644/source-evidence.json": "9e4370895e29b35b0ba2b635daad73e8031091813e230bb6a7a95b08d8cde0ed",
     "tests/fixtures/weekly-scheduler-fairness/pg-cron-prerequisites.sql": "e1776b8db57090594af5428093a1a18a3aae638ca24f333a87cb0d9cd04e125f",
     "tests/fixtures/weekly-scheduler-fairness/captured-weekly-jobs.json": "d8746b7fcc6adbf3d9c8a2579bdc6c11d97bdd156ba1b84767fcf2d748046e3a",
-    "tests/fixtures/rakeback-write-authority/README.md": "4e7a7ef80e2949f8bc7f42e666300f6f8ade8a93f9c5914020017c3349644469",
-    "tests/fixtures/rakeback-write-authority/regression.sql": "aa0d25318e0041d5063b9fd78665cf971258f7d02ece7e433488a6373be12556",
+    "tests/fixtures/rakeback-write-authority/README.md": "804c3d4513d993e5159bf4bd19a35e11ddca4aa3b6835ece94b057c1b76a7767",
+    "tests/fixtures/rakeback-write-authority/regression.sql": "a98c48bd99cd0c9d8ecc9e60864330d23fc54eaa75f8680cf15afc3054e5dd4e",
     "tests/fixtures/rakeback-history-privacy/README.md": "149b1f89da381b209175e4bec7afcb42cfd6d0c8992fb04c001ed85073bc3fb0",
     "tests/fixtures/rakeback-history-privacy/policy-preimage.json": "bbbaebf5f334eef74056b72fc1efd0dfcf9ca3f54776cc50f2497f6b6e5be22a",
     "tests/fixtures/rakeback-history-privacy/regression.sql": "2ad445a24c16bd3625cc54c84cc11c5661ae6b71ab2cb44b60817aa4b0edb098",
@@ -130,16 +130,16 @@
     "tests/fixtures/credit-request-authority/captured-preimages.sql": "1e2dad53a20cc0c80c0e4a6c71160e1a366bdead956d6303772dce7260aa99de",
     "tests/fixtures/credit-request-authority/regression.sql": "cfddf809c701bdc9b43c71392ba1d130fe9275489670bffabef94ecb38e9e86a",
     "tests/credit-admin-data.test.ts": "8a6fe6dda1b5de6951374741512b5cc573bc17d4df1f86b9f4039a4116e1de6c",
-    "tests/credit-admin-panel-scope.test.tsx": "0593b653444c0587ecacb8a14d8a527759271fc330744d29c95a4b36a74461ef",
-    "tests/credit-request-widget-scope.test.tsx": "8464368245fa4cfde49660f5d65986d7bcaafda70586dc3ac91ed586eabb8193",
+    "tests/credit-admin-panel-scope.test.tsx": "5aff5273de15a3d0b190318332a07cf2ee5f5ca02d5c5780bf6dca5fd3aac5cd",
+    "tests/credit-request-widget-scope.test.tsx": "4e21f293256137413732dc332123c62c557cfcb74a5b0c5505a4b06102daff90",
     "tests/super-agent-credit-routing.test.tsx": "2a4c622c1e0b2c6d0983289854abaee4f83848cd290ed9d0c9e56d2f5e67ae36",
     "tests/unit/CreditRequestAuthority.test.ts": "86a95a292ecefea07d394476a421328daaab3b19d24bf98814ea4efcfe2463b5",
     "tests/unit/CreditRequestLegacyCaller.test.ts": "ec6e38cf2fe8e38570f2142dcc735201de8c0a54aaf2e805a142ad01bbb6d25f",
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
     "tests/components/agent-cashout-scope.test.tsx": "3ad6e569d62e731fc9aa5948028867a8d32da4f7e0ff88c49d5f1a7e00b988ef",
-    "tests/unit/CashoutService.test.ts": "518b32d70d6f1de01ab5e16955f231e57ab23500895a958f51ef9661fb298f6f",
-    "tests/config/roleScopedCashier.test.ts": "4ba4fa9afc9de544d30c49a88efe5f35d47a3491b5f966bc0e180f30d5fa5bea",
-    "tests/cashout-escrow-flow.test.ts": "c1a6b5757f1bfd3cdb9536d8a06f0b95304d39b12a10af02f2b8c7b054e29716",
+    "tests/unit/CashoutService.test.ts": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469",
+    "tests/config/roleScopedCashier.test.ts": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa",
+    "tests/cashout-escrow-flow.test.ts": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19",
     "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "465c52037bd06a28de7c2d5e6c84b2dd82793003e5eace6195accd656dd0f0e9",
@@ -151,14 +151,14 @@
     "tests/unit/CashoutRequestModal.test.tsx": "509d14a65c7d1f6eea237e088f3d97ed0dfbad8c2faf2f97525862adab9744af",
     "tests/fixtures/cashier-document-authority/README.md": "8ac8d0c76bd91cb91f7d010ff4f1db316921bb6e523954b10bc1c00819b8fe43",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
-    "tests/unit/CashoutOperation.test.ts": "0e15fb5fa23de0370ab77d55fb08196fae635fdf3d0d4bcf0ffceaabe0af54cd",
+    "tests/unit/CashoutOperation.test.ts": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9",
     "tests/fixtures/correction-document-authority/README.md": "836d767a54efa8c0a1d21f940100c993ace55cc84053cf529db88ff0ec8d4054",
     "tests/fixtures/correction-document-authority/captured-dependencies.json": "a3f2ca823f8d17df8429aed4973a8258595b6ed4e5a2da8585dddac78795e3f5",
     "tests/fixtures/correction-document-authority/captured-preimages.sql": "cb9ace1e960450ac78fc2de96c785fe97856da1e8fcfd0a3244480d5bb08fa25",
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "653d63b32a9ab50fc414c5ece0017c8477b0ce9c32c41c132bd7bf6b89831c45",
+    "tests/cashier-weekly-statements.test.tsx": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947",
     "tests/helpers/clubWeeklyStatement.ts": "bed78178cbf349971916688f02bc386be3c64fec8630ad3782d02e7d78577023",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "0db656796982b819b9b2d8cbb6bfc555c850d44de18f628dc945416e7303ee3d",
     "tests/unit/FinancialExportService.test.ts": "608845083c38ae79097a7f3550f25ae8f5df698586f9277f4db6bf0d98c68721",
@@ -173,16 +173,16 @@
     "tests/components/ClubWeeklyAccountingSummary.test.tsx": "426d3402407e83bfd5e4aaa12e49c84bbdc69966e3f394628eb56c590c5c6392",
     "tests/unit/AccountingObservationService.test.ts": "508cc1b6314d92551cab3aef3669000c44d006465cee723a325baca425499600",
     "tests/unit/SettlementService.test.ts": "d2acf9bbf488b25610f524debe2873be3b7de976eb105d8f95aa86a513501ca3",
-    "tests/unit/useUnionStore.test.ts": "f71f632ccbaebdf41f5ed24b05f561c5afcab7fe72173bbea1111cabd8a623e5",
+    "tests/unit/useUnionStore.test.ts": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268",
     "tests/unit/anApprovalCanBeRetried.test.ts": "0b136b353272b3f70276d39a66148ef6780d801cb51da34dc6cad1ce65ff9490",
-    "tests/components/UnionAccountingRunStatus.test.tsx": "6d1b1a8e60feccc15a2c629621c0a16a2f64ee094f526907122807d8a9556458",
-    "tests/components/WeeklyAccountingWorkspace.test.tsx": "62c883e279e9bddf4543bc802c58f3c59bf891e61467e04c88537333af247b19",
+    "tests/components/UnionAccountingRunStatus.test.tsx": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9",
+    "tests/components/WeeklyAccountingWorkspace.test.tsx": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289",
     "tests/helpers/accountingObservation.ts": "38cfeb7e884520068b6963922a4d19c3aba392ead49ec8b87a85d491065fa454",
-    "tests/components/FinancialAlertsExport.test.tsx": "e147f0b4a75ca47699d276d54807ab68335f8aaf4c2760632937af59ad64f995",
+    "tests/components/FinancialAlertsExport.test.tsx": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421",
     "tests/components/cashier-cashout-generations.test.tsx": "7fc0edd742f55ba4451352131aad712974f5487748beec690fe7544981a39557",
-    "tests/components/cashout-own-event-acknowledgment.test.tsx": "7d7ede8910f02a8ddc6665d0de5922d719257275165f5d0b16f3b5a5c12a4969",
+    "tests/components/cashout-own-event-acknowledgment.test.tsx": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d",
     "tests/unit/FinancialAlertServiceRead.test.ts": "6fcb9cc035bcdd62a0538e1c5693ff563dd984ab2017cdd0ca8a43134d32c154",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "4b0f13d666551b0b1c6e41a6d72c9a50031f44e944c943d1894f2a76f3bc4d3f",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "ac707a0183b4ccd510fb28a49fe5286afdebb4503b66624308c993137c666d4e",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -201,8 +201,8 @@
     "tests/fixtures/correction-writer-authority/source-provenance.json": "e371bd283ded64a8b8c2ffcc22fbd83502b99e909354ecc2dbaea6200db697ec",
     "supabase/accounting/correction-writer-v1/captured-ledger-catalog.json": "c10ee920625aa982d9af361094dbc93e29075bc6162e091747dd1825c116bba8",
     "supabase/accounting/correction-writer-v1/captured-ledger-catalog.query.sql": "94eb5d4abf7e65c66e1f05ed142316e0ceb8e729dce0b75ff73013c0c6d1b42e",
-    "supabase/accounting/correction-writer-v1/guard-function-sources.json": "a828a6f6aba778138b27e4190bf444097779759ddadac355dffb3c7981e75f54",
-    "supabase/accounting/correction-writer-v1/guard-relation-sources.json": "2cdd5bc4fbf0475860e0325f59a6a12dd071e4d1af37ebe6bf5922a0b991ac04",
+    "supabase/accounting/correction-writer-v1/guard-function-sources.json": "40090dd6761b456aaa1a20d0947f95466e32d639f51aac5800069d0e2d1a5720",
+    "supabase/accounting/correction-writer-v1/guard-relation-sources.json": "a013327adac0f0eb590cfd16aa0d29c1b4276424c5c342e58d0092893e5b984d",
     "supabase/accounting/correction-writer-v1/owner-README.md": "9fadbeb75120b5e3ba2cc604bf02ac66b4444905ec11219a1636bd16ae75e83c",
     "supabase/accounting/correction-writer-v1/owner-SOURCE-CUSTODY.json": "1d7e5e5ff07522ca9b67ed6238772a6a25fdfb52297e6693d52516ba2dd0d666",
     "supabase/accounting/correction-writer-v1/owner-fixture.sql": "26f460362d5fba69998bedb1927d1ea69e668c5d36f6c056e484704687319fe9",
@@ -226,12 +226,12 @@
     "supabase/accounting/credit-reduction-v1/guard-function-sources.json": "0b970ad82c64f69713d3c857519e982d71c57bd03f3a6ecd30cd111fe8138268",
     "supabase/accounting/credit-reduction-v1/guard-incoming-fk-sources.json": "b587741d031d262c5506455345904ff86598e92d5eadab1ac218100c40adb003",
     "supabase/accounting/credit-reduction-v1/guard-installed-function-sources.json": "50c48c9cffed8a41fc85cd2e13bcacc0030ee7a3df818ba5f536f148830a0aea",
-    "supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json": "fb30ff4d06bda9670300c388d4ac41ddbbb21d9c4716d38a7ccb53448a57ea29",
+    "supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json": "b363feaa08d7d16731c2e650c6f7c685eda580d3d799c22036f4b0f782ffbf98",
     "supabase/accounting/credit-reduction-v1/guard-payment-relation-sources.json": "d32bbfafd0a77bc67b120f044fef4dbf9c2df19d0b052bc8265d6c05e846cfe6",
     "supabase/accounting/credit-reduction-v1/guard-relation-sources.json": "8d894b225c3d09d5fe127d0436c344953bc01bbdfd76aff4a4cee3243c97b8b1",
-    "supabase/accounting/credit-reduction-v1/lock-order-predecessors.sql": "d6eac16606f5116aac5b4179a2950b39cd743fa953b27dec81fb8101ca1f0812",
-    "supabase/accounting/credit-reduction-v1/lock-order-source-provenance.json": "265ae14df024f3dc1a65c7e2e76496201ffc98930b7dcac056182a71d5a3b84e",
-    "supabase/accounting/credit-reduction-v1/lock-order-successor.sql": "517dbfb8cec42899fe0be0a6929f7bc04af99b1a6c6e2c36873e6c3a452d14cd",
+    "supabase/accounting/credit-reduction-v1/lock-order-predecessors.sql": "f4a5f80fe4ae654599b9d3652d28a6690e77d679640850aa6ec83d452c52c8d1",
+    "supabase/accounting/credit-reduction-v1/lock-order-source-provenance.json": "66862178f2586d912055db6f82788bd1819fcd4420a4b454b48a5c42ab6a9e57",
+    "supabase/accounting/credit-reduction-v1/lock-order-successor.sql": "28b141a4011a72d796e9f12bed2e11e1ceab91a68763e45219b903af00717b3d",
     "supabase/accounting/credit-reduction-v1/payment-closure-guards.sql": "2ef2dfb44517148d8595f40ebbcf838d1d83465e24dbb9173dc7fe0b9c953298",
     "supabase/accounting/credit-reduction-v1/postcondition-guards.sql": "fe11e18fe27fdb0a4af76a6e1dad8a8c0d07cc3ffe30ddb1c61e6cec12de065c",
     "supabase/accounting/credit-reduction-v1/preimage-guards.sql": "b7b2155ee10bc0be34a854aeea9aa93674f22227437aaf6d2978012108741da7",
@@ -240,7 +240,7 @@
     "supabase/accounting/credit-reduction-v1/reader-preimages.json": "1cfc873db09036c1ea706bbd3d9bdc6bbe7bcc967d491399df0639e853872397",
     "supabase/accounting/credit-reduction-v1/reader-successor.sql": "86edde0b6b0a8feb4ba01c560330c3bb843476d907fc8dd23ca3681e2ba50958",
     "supabase/accounting/credit-reduction-v1/server-functions.sql": "169d0223890d38c288e4db97e38993c5eb0a04bd1f1d6a3ce85da07377ff4035",
-    "supabase/accounting/credit-reduction-v1/source-assembly.json": "5c02dc14f37f90373b1039086122bc4f1602adde188db96f77529faf78c630c4",
+    "supabase/accounting/credit-reduction-v1/source-assembly.json": "03e29d28b5115ffc68da91c82fd24d1f2e9060d9b488951c9a618a8866a7c692",
     "supabase/accounting/credit-reduction-v1/source-provenance.json": "26f038f7fd4a13fb726794e4c9047f92428ee2b7024f101e7a7453a157c66117",
     "tests/fixtures/credit-reduction-authority/accepted-authority-supplement.sql": "726877c5b14c1ac5a5eebf662c05022098e87877aa6fe4903036657e180d2e33",
     "tests/fixtures/credit-reduction-authority/audit-failure-regression.sql": "7e1e56537d5ec6d4717d9aa183e20f5b0295b86b2ae6ad72d86b4b4bae21c0f1",
@@ -264,15 +264,29 @@
     "tests/fixtures/credit-reduction-authority/roles-history-regression.sql": "22c5d5e1b5068f30041b401288a29a1e1cb1f74f31ee021bb6c7b59aa4948a3b",
     "tests/fixtures/credit-reduction-authority/seed.sql": "c82e83d41b15e112a3ff89c738fb60b8544754e78007907e0b77b8d97e9e3e21",
     "tests/unit/CreditReductionContract.test.ts": "e7ed93c4fdf3c483223dbafde7bba52e2a8dbafbf1e67c5fab9a4f46960c0ceb",
-    "tests/unit/CreditReductionOperation.test.ts": "ec7d0542a14f0703291dbe451ea669d1fd7b41e75a42d815111fab246599ae40",
-    "tests/components/CreditReductionControls.test.tsx": "22e6dee9559f95a141e6f2753482a741ff22114b7458b04bb3c92b4149395095",
+    "tests/unit/CreditReductionOperation.test.ts": "4790a4531cc9888bfdccd4c1aeda9def91efc68afa4c41839a37d64467063030",
+    "tests/components/CreditReductionControls.test.tsx": "21e6ace8f5a7901e5b6581b5acfc249b1fe79d3113b89a47c54628a45215299b",
     "tests/helpers/creditReductionReceipt.ts": "aeaf4885ffe48a2bba49e2f50d183c2a1c352dc5fd13de1f2d9b833bdb9a644d",
     "tests/fixtures/credit-reduction-authority/README.md": "305f95440f23f077ba1238127e4fdab399d60e6a388d47a28ee4e1c1de997d29",
     "tests/fixtures/credit-reduction-authority/captured-incoming-relations.json": "d834a69ec303a0579b3776e93f065fd7d074f1a211237196b3fa61cbf4c270a4",
     "tests/fixtures/credit-reduction-authority/captured-incoming-relations.query.sql": "849ac0deae7cb7e98deff8ab56dfc5a2cb09f6859694439bfc5b316ab4c91139",
     "tests/fixtures/credit-reduction-authority/incoming-relations-bootstrap.sql": "0fff9dab9b1e35dc9163cd9ed378bb2b7da540eb78fdd2236041462dc6f027c5",
     "supabase/migrations/20260914132929_cash_rakeback_reads_observed_earning_evidence.sql": "7211e67bdcb1671f23dee89840a936021bba921d1ad5fae02d17877f8c8e9f37",
-    "tests/fixtures/accounting-alert-38644/installed-period-basis.sql": "627c17d492550b59ebdd6ad2a9a9bb01c22aa4f2553a38d931fd69ccf8493430"
+    "tests/fixtures/accounting-alert-38644/installed-period-basis.sql": "627c17d492550b59ebdd6ad2a9a9bb01c22aa4f2553a38d931fd69ccf8493430",
+    "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.json": "2a16360c3268ac1e7197110845096e1bc30ef20b75a53a7d9935b7207596cfd7",
+    "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.query.sql": "d6cbff7c7c9caecf2170b4312e057674c33a947e37f49eeaa67c429c2b20bd7f",
+    "tests/fixtures/tournament-fee-lifecycle/current-settlement-predecessor.sql": "5362494ea3001eb9c998a482a6f09d8343e8e809962c2e7c7de70ab12a1874a1",
+    "tests/fixtures/union-provider-preimages-20260917/README.md": "4f4c97cc41da4ceab14a188576ead0acfeaef6d2763efab4f6c7a8018c3e3ccd",
+    "tests/fixtures/union-provider-preimages-20260917/alerts-and-ledger.sql": "be3106d8f0451b49fc6861bb2f7733f0d5d79ccbe0653fd96181e04ac6d6c527",
+    "tests/fixtures/union-provider-preimages-20260917/captured-authority.json": "7151693f43246b4b0a6a132665239d427c049ed3844d51acd1d581c018d71696",
+    "tests/fixtures/union-provider-preimages-20260917/owner-notification-coexistence.sql": "8e8bed52245d8b10ec0c21f5f422562acc03652ea5ef144e3eec1d556c25c08e",
+    "tests/fixtures/rakeback-write-authority/captured-stats-batch.sql": "88b3e4693e2cda60204d0aec5d8ae40da08a1eb435e97d4d5f330340e6456448",
+    "tests/fixtures/rakeback-write-authority/preactivation-regression.sql": "4111a06f2a59c9f2cd7e38536048b427d7bd56e69806b3df4b18b0f6148d95f5",
+    "tests/fixtures/rakeback-write-authority/transition-regression.sql": "1691c7f82dc45c663626c0fd80fe3c0eca30f240770c989c5ab6c5e4f97ae76c",
+    "tests/fixtures/rakeback-write-authority/stats-batch-catalog.json": "f4f4f0039d4752e4f2a38ee59f8a9b5f6d8de47e6f4c740a5ef41a518afdc25c",
+    "tests/fixtures/rakeback-write-authority/stats-batch-catalog.query.sql": "ea03e1abcd85b9e2f965a636913605cc48259bac06fff16e39333f50dc9f9f88",
+    "tests/fixtures/rakeback-write-authority/stats-batch-catalog.raw.txt": "73dbaecba66cc34f69afac6411c4a249dff21496176325a002e74dc6757f5082",
+    "tests/fixtures/rakeback-write-authority/precursor-predecessor-catalog.json": "86aed90d4a6ebe1c11c963ac0fa8640bce66cbefcdd671b321ab8310067b5483"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -509,11 +523,329 @@
       "credit-reduction-concurrency"
     ],
     "component_name": "20260915150000_credit_reductions_retain_exact_intent_and_private_records.sql",
-    "component_sha256": "4e9d5eeb5a8b349b643c5b4cdacf85d60cc009ab188146d6b25ab37d20449a22",
+    "component_sha256": "f169f26a394e52b04011a8bee26f45ca300b24dfd84441db10bdd2e40fd2aeb6",
     "assembly_path": "supabase/accounting/credit-reduction-v1/source-assembly.json",
     "privacy_prefix_components": 24,
     "qualification_only_baseline": "qualification-credit-baseline.sql",
     "execution": "UNRUN",
     "publication_hold": "No new source handoff, push or publication until explicit user readiness notification."
+  },
+  "provider_successor_binding": {
+    "base_commit": "9ec4981b4236eda8e29e09f8de36b5e9fa891b24",
+    "prior_binding_sha256": "06afbe55085007e4e5af93b75de2d98722f8bd7cfe4abde3a101fc978a1729d5",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-deferred.sql",
+        "previous_sha256": "a7285a54785f221ff543d4d92516e5dbc2dedd04d33f550872ce6f7fa36c308e",
+        "sha256": "45d8cfd5dd3f8e68c11b7c88418027e793258a3bd350436843b28d8334fd8404"
+      },
+      {
+        "path": "tests/credit-admin-panel-scope.test.tsx",
+        "previous_sha256": "0593b653444c0587ecacb8a14d8a527759271fc330744d29c95a4b36a74461ef",
+        "sha256": "5aff5273de15a3d0b190318332a07cf2ee5f5ca02d5c5780bf6dca5fd3aac5cd"
+      },
+      {
+        "path": "tests/credit-request-widget-scope.test.tsx",
+        "previous_sha256": "8464368245fa4cfde49660f5d65986d7bcaafda70586dc3ac91ed586eabb8193",
+        "sha256": "4e21f293256137413732dc332123c62c557cfcb74a5b0c5505a4b06102daff90"
+      },
+      {
+        "path": "tests/unit/CashoutService.test.ts",
+        "previous_sha256": "518b32d70d6f1de01ab5e16955f231e57ab23500895a958f51ef9661fb298f6f",
+        "sha256": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469"
+      },
+      {
+        "path": "tests/config/roleScopedCashier.test.ts",
+        "previous_sha256": "4ba4fa9afc9de544d30c49a88efe5f35d47a3491b5f966bc0e180f30d5fa5bea",
+        "sha256": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "c1a6b5757f1bfd3cdb9536d8a06f0b95304d39b12a10af02f2b8c7b054e29716",
+        "sha256": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19"
+      },
+      {
+        "path": "tests/unit/CashoutOperation.test.ts",
+        "previous_sha256": "0e15fb5fa23de0370ab77d55fb08196fae635fdf3d0d4bcf0ffceaabe0af54cd",
+        "sha256": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9"
+      },
+      {
+        "path": "tests/cashier-weekly-statements.test.tsx",
+        "previous_sha256": "653d63b32a9ab50fc414c5ece0017c8477b0ce9c32c41c132bd7bf6b89831c45",
+        "sha256": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947"
+      },
+      {
+        "path": "tests/unit/useUnionStore.test.ts",
+        "previous_sha256": "f71f632ccbaebdf41f5ed24b05f561c5afcab7fe72173bbea1111cabd8a623e5",
+        "sha256": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268"
+      },
+      {
+        "path": "tests/components/UnionAccountingRunStatus.test.tsx",
+        "previous_sha256": "6d1b1a8e60feccc15a2c629621c0a16a2f64ee094f526907122807d8a9556458",
+        "sha256": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9"
+      },
+      {
+        "path": "tests/components/WeeklyAccountingWorkspace.test.tsx",
+        "previous_sha256": "62c883e279e9bddf4543bc802c58f3c59bf891e61467e04c88537333af247b19",
+        "sha256": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289"
+      },
+      {
+        "path": "tests/components/FinancialAlertsExport.test.tsx",
+        "previous_sha256": "e147f0b4a75ca47699d276d54807ab68335f8aaf4c2760632937af59ad64f995",
+        "sha256": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421"
+      },
+      {
+        "path": "tests/components/cashout-own-event-acknowledgment.test.tsx",
+        "previous_sha256": "7d7ede8910f02a8ddc6665d0de5922d719257275165f5d0b16f3b5a5c12a4969",
+        "sha256": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "4b0f13d666551b0b1c6e41a6d72c9a50031f44e944c943d1894f2a76f3bc4d3f",
+        "sha256": "ac707a0183b4ccd510fb28a49fe5286afdebb4503b66624308c993137c666d4e"
+      },
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+        "previous_sha256": "a828a6f6aba778138b27e4190bf444097779759ddadac355dffb3c7981e75f54",
+        "sha256": "40090dd6761b456aaa1a20d0947f95466e32d639f51aac5800069d0e2d1a5720"
+      },
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-relation-sources.json",
+        "previous_sha256": "2cdd5bc4fbf0475860e0325f59a6a12dd071e4d1af37ebe6bf5922a0b991ac04",
+        "sha256": "a013327adac0f0eb590cfd16aa0d29c1b4276424c5c342e58d0092893e5b984d"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json",
+        "previous_sha256": "fb30ff4d06bda9670300c388d4ac41ddbbb21d9c4716d38a7ccb53448a57ea29",
+        "sha256": "b363feaa08d7d16731c2e650c6f7c685eda580d3d799c22036f4b0f782ffbf98"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-predecessors.sql",
+        "previous_sha256": "d6eac16606f5116aac5b4179a2950b39cd743fa953b27dec81fb8101ca1f0812",
+        "sha256": "f4a5f80fe4ae654599b9d3652d28a6690e77d679640850aa6ec83d452c52c8d1"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-source-provenance.json",
+        "previous_sha256": "265ae14df024f3dc1a65c7e2e76496201ffc98930b7dcac056182a71d5a3b84e",
+        "sha256": "66862178f2586d912055db6f82788bd1819fcd4420a4b454b48a5c42ab6a9e57"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-successor.sql",
+        "previous_sha256": "517dbfb8cec42899fe0be0a6929f7bc04af99b1a6c6e2c36873e6c3a452d14cd",
+        "sha256": "28b141a4011a72d796e9f12bed2e11e1ceab91a68763e45219b903af00717b3d"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/source-assembly.json",
+        "previous_sha256": "5c02dc14f37f90373b1039086122bc4f1602adde188db96f77529faf78c630c4",
+        "sha256": "03e29d28b5115ffc68da91c82fd24d1f2e9060d9b488951c9a618a8866a7c692"
+      },
+      {
+        "path": "tests/unit/CreditReductionOperation.test.ts",
+        "previous_sha256": "ec7d0542a14f0703291dbe451ea669d1fd7b41e75a42d815111fab246599ae40",
+        "sha256": "4790a4531cc9888bfdccd4c1aeda9def91efc68afa4c41839a37d64467063030"
+      },
+      {
+        "path": "tests/components/CreditReductionControls.test.tsx",
+        "previous_sha256": "22e6dee9559f95a141e6f2753482a741ff22114b7458b04bb3c92b4149395095",
+        "sha256": "21e6ace8f5a7901e5b6581b5acfc249b1fe79d3113b89a47c54628a45215299b"
+      }
+    ],
+    "added_repository_bindings": [
+      {
+        "path": "tests/fixtures/rakeback-write-authority/captured-stats-batch.sql",
+        "sha256": "88b3e4693e2cda60204d0aec5d8ae40da08a1eb435e97d4d5f330340e6456448"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/preactivation-regression.sql",
+        "sha256": "4111a06f2a59c9f2cd7e38536048b427d7bd56e69806b3df4b18b0f6148d95f5"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/precursor-predecessor-catalog.json",
+        "sha256": "86aed90d4a6ebe1c11c963ac0fa8640bce66cbefcdd671b321ab8310067b5483"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/stats-batch-catalog.json",
+        "sha256": "f4f4f0039d4752e4f2a38ee59f8a9b5f6d8de47e6f4c740a5ef41a518afdc25c"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/stats-batch-catalog.query.sql",
+        "sha256": "ea03e1abcd85b9e2f965a636913605cc48259bac06fff16e39333f50dc9f9f88"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/stats-batch-catalog.raw.txt",
+        "sha256": "73dbaecba66cc34f69afac6411c4a249dff21496176325a002e74dc6757f5082"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/transition-regression.sql",
+        "sha256": "1691c7f82dc45c663626c0fd80fe3c0eca30f240770c989c5ab6c5e4f97ae76c"
+      },
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.json",
+        "sha256": "2a16360c3268ac1e7197110845096e1bc30ef20b75a53a7d9935b7207596cfd7"
+      },
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/current-settlement-catalog.query.sql",
+        "sha256": "d6cbff7c7c9caecf2170b4312e057674c33a947e37f49eeaa67c429c2b20bd7f"
+      },
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/current-settlement-predecessor.sql",
+        "sha256": "5362494ea3001eb9c998a482a6f09d8343e8e809962c2e7c7de70ab12a1874a1"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/README.md",
+        "sha256": "4f4c97cc41da4ceab14a188576ead0acfeaef6d2763efab4f6c7a8018c3e3ccd"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/alerts-and-ledger.sql",
+        "sha256": "be3106d8f0451b49fc6861bb2f7733f0d5d79ccbe0653fd96181e04ac6d6c527"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/captured-authority.json",
+        "sha256": "7151693f43246b4b0a6a132665239d427c049ed3844d51acd1d581c018d71696"
+      },
+      {
+        "path": "tests/fixtures/union-provider-preimages-20260917/owner-notification-coexistence.sql",
+        "sha256": "8e8bed52245d8b10ec0c21f5f422562acc03652ea5ef144e3eec1d556c25c08e"
+      }
+    ],
+    "preserved_captured_files": 29,
+    "component_count": 37,
+    "runner_phases": 16,
+    "qualification": "Final native execution pending; first hosted predecessor failed first cashier approval. No installation or financial certification inferred.",
+    "authorization": "Independent original-provider delivery authorized September17; older holds below are historical only.",
+    "changed_retained_repository_bindings": [
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-function-sources.json",
+        "previous_sha256": "a828a6f6aba778138b27e4190bf444097779759ddadac355dffb3c7981e75f54",
+        "sha256": "40090dd6761b456aaa1a20d0947f95466e32d639f51aac5800069d0e2d1a5720"
+      },
+      {
+        "path": "supabase/accounting/correction-writer-v1/guard-relation-sources.json",
+        "previous_sha256": "2cdd5bc4fbf0475860e0325f59a6a12dd071e4d1af37ebe6bf5922a0b991ac04",
+        "sha256": "a013327adac0f0eb590cfd16aa0d29c1b4276424c5c342e58d0092893e5b984d"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/guard-lock-successor-sources.json",
+        "previous_sha256": "fb30ff4d06bda9670300c388d4ac41ddbbb21d9c4716d38a7ccb53448a57ea29",
+        "sha256": "b363feaa08d7d16731c2e650c6f7c685eda580d3d799c22036f4b0f782ffbf98"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-predecessors.sql",
+        "previous_sha256": "d6eac16606f5116aac5b4179a2950b39cd743fa953b27dec81fb8101ca1f0812",
+        "sha256": "f4a5f80fe4ae654599b9d3652d28a6690e77d679640850aa6ec83d452c52c8d1"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-source-provenance.json",
+        "previous_sha256": "265ae14df024f3dc1a65c7e2e76496201ffc98930b7dcac056182a71d5a3b84e",
+        "sha256": "66862178f2586d912055db6f82788bd1819fcd4420a4b454b48a5c42ab6a9e57"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/lock-order-successor.sql",
+        "previous_sha256": "517dbfb8cec42899fe0be0a6929f7bc04af99b1a6c6e2c36873e6c3a452d14cd",
+        "sha256": "28b141a4011a72d796e9f12bed2e11e1ceab91a68763e45219b903af00717b3d"
+      },
+      {
+        "path": "supabase/accounting/credit-reduction-v1/source-assembly.json",
+        "previous_sha256": "5c02dc14f37f90373b1039086122bc4f1602adde188db96f77529faf78c630c4",
+        "sha256": "03e29d28b5115ffc68da91c82fd24d1f2e9060d9b488951c9a618a8866a7c692"
+      },
+      {
+        "path": "tests/cashier-weekly-statements.test.tsx",
+        "previous_sha256": "653d63b32a9ab50fc414c5ece0017c8477b0ce9c32c41c132bd7bf6b89831c45",
+        "sha256": "3167bb5f18f5c91aa9b2f6c58cc877e7db2f43f600fb4c9c96967feb7d2e7947"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "c1a6b5757f1bfd3cdb9536d8a06f0b95304d39b12a10af02f2b8c7b054e29716",
+        "sha256": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19"
+      },
+      {
+        "path": "tests/components/CreditReductionControls.test.tsx",
+        "previous_sha256": "22e6dee9559f95a141e6f2753482a741ff22114b7458b04bb3c92b4149395095",
+        "sha256": "21e6ace8f5a7901e5b6581b5acfc249b1fe79d3113b89a47c54628a45215299b"
+      },
+      {
+        "path": "tests/components/FinancialAlertsExport.test.tsx",
+        "previous_sha256": "e147f0b4a75ca47699d276d54807ab68335f8aaf4c2760632937af59ad64f995",
+        "sha256": "f2338b7d2e32c7a4a771d997743a52f9c4fc73a75bb5d399de4be0e0fba2e421"
+      },
+      {
+        "path": "tests/components/UnionAccountingRunStatus.test.tsx",
+        "previous_sha256": "6d1b1a8e60feccc15a2c629621c0a16a2f64ee094f526907122807d8a9556458",
+        "sha256": "182307e73a0f0f09e44c20a88b3e8a5c40b67f070126514f01e5b5b3bd5f7aa9"
+      },
+      {
+        "path": "tests/components/WeeklyAccountingWorkspace.test.tsx",
+        "previous_sha256": "62c883e279e9bddf4543bc802c58f3c59bf891e61467e04c88537333af247b19",
+        "sha256": "c4f202839c25787b837e24a4f625f79769e1b08eb9e309da260612f614003289"
+      },
+      {
+        "path": "tests/components/cashout-own-event-acknowledgment.test.tsx",
+        "previous_sha256": "7d7ede8910f02a8ddc6665d0de5922d719257275165f5d0b16f3b5a5c12a4969",
+        "sha256": "1b809732202ab7ea469bf314d10fa859d0b267aa656f530c7910f5fc1ca9432d"
+      },
+      {
+        "path": "tests/config/roleScopedCashier.test.ts",
+        "previous_sha256": "4ba4fa9afc9de544d30c49a88efe5f35d47a3491b5f966bc0e180f30d5fa5bea",
+        "sha256": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa"
+      },
+      {
+        "path": "tests/credit-admin-panel-scope.test.tsx",
+        "previous_sha256": "0593b653444c0587ecacb8a14d8a527759271fc330744d29c95a4b36a74461ef",
+        "sha256": "5aff5273de15a3d0b190318332a07cf2ee5f5ca02d5c5780bf6dca5fd3aac5cd"
+      },
+      {
+        "path": "tests/credit-request-widget-scope.test.tsx",
+        "previous_sha256": "8464368245fa4cfde49660f5d65986d7bcaafda70586dc3ac91ed586eabb8193",
+        "sha256": "4e21f293256137413732dc332123c62c557cfcb74a5b0c5505a4b06102daff90"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/README.md",
+        "previous_sha256": "4e7a7ef80e2949f8bc7f42e666300f6f8ade8a93f9c5914020017c3349644469",
+        "sha256": "804c3d4513d993e5159bf4bd19a35e11ddca4aa3b6835ece94b057c1b76a7767"
+      },
+      {
+        "path": "tests/fixtures/rakeback-write-authority/regression.sql",
+        "previous_sha256": "aa0d25318e0041d5063b9fd78665cf971258f7d02ece7e433488a6373be12556",
+        "sha256": "a98c48bd99cd0c9d8ecc9e60864330d23fc54eaa75f8680cf15afc3054e5dd4e"
+      },
+      {
+        "path": "tests/fixtures/tournament-fee-lifecycle/full-lifecycle-deferred.sql",
+        "previous_sha256": "a7285a54785f221ff543d4d92516e5dbc2dedd04d33f550872ce6f7fa36c308e",
+        "sha256": "45d8cfd5dd3f8e68c11b7c88418027e793258a3bd350436843b28d8334fd8404"
+      },
+      {
+        "path": "tests/unit/CashoutOperation.test.ts",
+        "previous_sha256": "0e15fb5fa23de0370ab77d55fb08196fae635fdf3d0d4bcf0ffceaabe0af54cd",
+        "sha256": "9fd374a5b9cc0b5443aa863dfc56713ca93b90fcbd2ab5b9c9360c0b8f1f4fd9"
+      },
+      {
+        "path": "tests/unit/CashoutService.test.ts",
+        "previous_sha256": "518b32d70d6f1de01ab5e16955f231e57ab23500895a958f51ef9661fb298f6f",
+        "sha256": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469"
+      },
+      {
+        "path": "tests/unit/CreditReductionOperation.test.ts",
+        "previous_sha256": "ec7d0542a14f0703291dbe451ea669d1fd7b41e75a42d815111fab246599ae40",
+        "sha256": "4790a4531cc9888bfdccd4c1aeda9def91efc68afa4c41839a37d64467063030"
+      },
+      {
+        "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+        "previous_sha256": "4b0f13d666551b0b1c6e41a6d72c9a50031f44e944c943d1894f2a76f3bc4d3f",
+        "sha256": "ac707a0183b4ccd510fb28a49fe5286afdebb4503b66624308c993137c666d4e"
+      },
+      {
+        "path": "tests/unit/useUnionStore.test.ts",
+        "previous_sha256": "f71f632ccbaebdf41f5ed24b05f561c5afcab7fe72173bbea1111cabd8a623e5",
+        "sha256": "3b3f59aca73ce2c20fad59c82e23dfa9c4aaef4b22fdff9ab3295b379e593268"
+      }
+    ],
+    "statistics_retirement": {
+      "component": "20260914161000_pending_rakeback_writes_require_accounting_authority.sql",
+      "component_sha256": "977c153c9561566d0a1bcd5d6984536bd0fa239c3bf72b97aee124e8c24235c5",
+      "legacy_definition_md5": "ac2b4515198a0fe4bd327dfc030f506a",
+      "native_status": "UNRUN; original hosted full-catalog acceptance and rejection phases required",
+      "preactivation_session": "Actual old service batch reply retained across full candidate COMMIT; source-bound transition refuses later legacy statistics call."
+    }
   }
 }

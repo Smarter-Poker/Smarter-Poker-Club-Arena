@@ -133,7 +133,11 @@ psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -U postgres -h "$fixture/socket" -p
   -f "$credit_reduction/captured-ledger-dependency.sql" \
   -f "$credit_reduction/catalog-bootstrap.sql" \
   -f "$credit_reduction/incoming-relations-bootstrap.sql" \
-  -f "$root/tests/fixtures/weekly-scheduler-timing/captured-cron-prerequisites.sql" 2>&1 | tee "$fixture/baseline.log"
+  -f "$root/tests/fixtures/weekly-scheduler-timing/captured-cron-prerequisites.sql" \
+  -f "$lifecycle/current-settlement-predecessor.sql" \
+  -f "$root/tests/fixtures/union-provider-preimages-20260917/alerts-and-ledger.sql" \
+  -f "$root/tests/fixtures/union-provider-preimages-20260917/owner-notification-coexistence.sql" \
+  -f "$root/tests/fixtures/rakeback-write-authority/captured-stats-batch.sql" 2>&1 | tee "$fixture/baseline.log"
 # Actual extension-owned unrelated job: disabled launcher makes it inert.
 "${psql[@]}" -A -t -d "$fixture_db" -c "SELECT cron.schedule('fixture-full-activation-unrelated','17 * * * *','SELECT 1');" > "$fixture/cron-fixture.log"
 "${psql[@]}" -A -t -d "$fixture_db" -c 'SELECT jsonb_agg(to_jsonb(j) ORDER BY j.jobid) FROM cron.job j;' > "$fixture/cron-before.json"
@@ -302,11 +306,13 @@ else
 "${psql[@]}" -d "$fixture_db" \
   -f "$correction_writer/captured-store-policy.sql" \
   -f "$correction_writer/legacy-before-candidate.sql" \
+  -f "$root/tests/fixtures/rakeback-write-authority/preactivation-regression.sql" \
   -f "$candidate" \
+  -f "$root/tests/fixtures/rakeback-write-authority/transition-regression.sql" \
   -f "$correction_writer/legacy-replay-and-input-assertions.sql" \
   -f "$correction_writer/regression.sql" \
   -f "$correction_writer/owner-seeded-regression.sql" 2>&1 | tee "$fixture/activation.log"
-echo 'PASS: full candidate installed atomically and correction writer probes completed in the retained legacy session'
+echo 'PASS: full candidate installed atomically; legacy statistics retirement and correction probes completed in the retained legacy session'
 # Record accepted definitions/access after the explicit isolated legacy seed
 # and rolled-back correction probes, before the other synthetic financial
 # probes. Source hashes or rejected-state dumps cannot supply this receipt.

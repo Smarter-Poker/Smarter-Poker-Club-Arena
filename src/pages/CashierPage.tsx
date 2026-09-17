@@ -33,8 +33,18 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import type { CashoutRequest } from '../services/CashoutService';
 import { validateCashoutAmount } from '../utils/cashoutAmount';
 import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
-import { runCashoutOperation, recoverCashoutOperation, confirmCashoutOperation, captureCashoutStart, assertCashoutStartCurrent, type CashoutStart } from '../services/CashoutOperation';
-import { usePreparedCashoutOperations, isCashoutStartCurrent } from '../hooks/usePreparedCashoutOperations';
+import {
+  runCashoutOperation,
+  recoverCashoutOperation,
+  confirmCashoutOperation,
+  captureCashoutStart,
+  assertCashoutStartCurrent,
+  type CashoutStart,
+} from '../services/CashoutOperation';
+import {
+  usePreparedCashoutOperations,
+  isCashoutStartCurrent,
+} from '../hooks/usePreparedCashoutOperations';
 import { supabase } from '../lib/supabase';
 import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
@@ -237,13 +247,33 @@ function CashierContent() {
   const [action, setActionState] = useState<CashierAction>('send');
   const [amount, setAmountState] = useState('');
   const preparationAmount = validateCashoutAmount(amount);
-  const cashoutPreparations = usePreparedCashoutOperations(action === 'cashout' && !tableId &&
-    user?.id && clubId && preparationAmount.ok ? [{ key: 'request', intent: {
-      userId: user.id, playerId: user.id, clubId, targetId: user.id,
-      kind: 'cashout_request', amount: preparationAmount.amount,
-    } }] : [], isCashoutCurrent, null);
-  const setAmount = (value: string) => { cashoutPreparations.invalidate(); setAmountState(value); };
-  const setAction = (value: CashierAction) => { cashoutPreparations.invalidate(); setActionState(value); };
+  const cashoutPreparations = usePreparedCashoutOperations(
+    action === 'cashout' && !tableId && user?.id && clubId && preparationAmount.ok
+      ? [
+          {
+            key: 'request',
+            intent: {
+              userId: user.id,
+              playerId: user.id,
+              clubId,
+              targetId: user.id,
+              kind: 'cashout_request',
+              amount: preparationAmount.amount,
+            },
+          },
+        ]
+      : [],
+    isCashoutCurrent,
+    null
+  );
+  const setAmount = (value: string) => {
+    cashoutPreparations.invalidate();
+    setAmountState(value);
+  };
+  const setAction = (value: CashierAction) => {
+    cashoutPreparations.invalidate();
+    setActionState(value);
+  };
   const [isProcessing, setIsProcessing] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -274,8 +304,13 @@ function CashierContent() {
     type: 'success' | 'error' | 'info';
     text: string;
   } | null>(null);
-  const [cashoutConfirm, setCashoutConfirm] = useState<{ show: boolean; value: number; start?: CashoutStart<'cashout_request'> }>({ show: false, value: 0 });
-  const cashoutConfirmationVisible = cashoutConfirm.show && isCashoutStartCurrent(cashoutConfirm.start ?? null);
+  const [cashoutConfirm, setCashoutConfirm] = useState<{
+    show: boolean;
+    value: number;
+    start?: CashoutStart<'cashout_request'>;
+  }>({ show: false, value: 0 });
+  const cashoutConfirmationVisible =
+    cashoutConfirm.show && isCashoutStartCurrent(cashoutConfirm.start ?? null);
   const [showCashoutModal, setShowCashoutModal] = useState(false);
 
   // Send confirmation for high-value transfers (≥10K)
@@ -540,7 +575,10 @@ function CashierContent() {
         pendingCashoutScope.current = isCashoutCurrent;
         setPendingCashouts([]);
         setPendingCashoutError(true);
-        setMessage({ type: 'error', text: 'Pending Cashouts Could Not Be Verified. Refresh To Try Again.' });
+        setMessage({
+          type: 'error',
+          text: 'Pending Cashouts Could Not Be Verified. Refresh To Try Again.',
+        });
       }
     }
   }, [clubId, user?.id, isCashoutCurrent]);
@@ -1217,17 +1255,6 @@ function CashierContent() {
     { debounce: 1000 }
   );
 
-  useMasterBusSubscriptions(
-    ['SETTLEMENT_COMPLETED', 'COMMISSION_PAID'],
-    () => {
-      if (user?.id) {
-        loadBalances(user.id);
-        loadTransactions({ force: true });
-      }
-    },
-    { debounce: 500 }
-  );
-
   // Supabase Realtime channel for chip_transactions (cross-device sync)
   //
   // Registered with a FACTORY. Previously this called getOrCreateChannel and
@@ -1410,9 +1437,13 @@ function CashierContent() {
   );
 
   const showCashoutResult = (value: number, receipt: CashoutRequest) => {
-    setMessage({ type: 'success', text: receipt.status === 'pending'
-      ? `Cashout requested. ${value.toLocaleString()} chips are held for review. Your invoice is available in Messenger.`
-      : `This cashout is already ${receipt.status}. Check its invoice for details.` });
+    setMessage({
+      type: 'success',
+      text:
+        receipt.status === 'pending'
+          ? `Cashout requested. ${value.toLocaleString()} chips are held for review. Your invoice is available in Messenger.`
+          : `This cashout is already ${receipt.status}. Check its invoice for details.`,
+    });
     if (user?.id) void loadBalances(user.id);
     void loadPendingCashouts();
   };
@@ -1451,7 +1482,9 @@ function CashierContent() {
       const input = override?.value !== undefined ? String(override.value) : amount;
       const cashoutAmount = action === 'cashout' ? validateCashoutAmount(input) : null;
       const parsed = cashoutAmount
-        ? cashoutAmount.ok ? { ok: true as const, value: cashoutAmount.amount } : cashoutAmount
+        ? cashoutAmount.ok
+          ? { ok: true as const, value: cashoutAmount.amount }
+          : cashoutAmount
         : parseChipAmount(input);
       if (!parsed.ok) {
         setMessage({ type: 'error', text: parsed.error });
@@ -1462,11 +1495,13 @@ function CashierContent() {
       if (action === 'cashout' && !tableId) {
         const prepared = cashoutPreparations.get('request', 'cashout_request');
         if (!prepared || !preparationAmount.ok || preparationAmount.amount !== value) {
-          if (isCashoutCurrent()) setMessage({ type: 'error', text: 'Wait For This Cashout Request To Be Verified' });
+          if (isCashoutCurrent())
+            setMessage({ type: 'error', text: 'Wait For This Cashout Request To Be Verified' });
           return;
         }
-        try { cashoutStart = captureCashoutStart(prepared); }
-        catch (error) {
+        try {
+          cashoutStart = captureCashoutStart(prepared);
+        } catch (error) {
           if (isCashoutCurrent()) setMessage({ type: 'error', text: safeErrorMessage(error) });
           return;
         }
@@ -1491,7 +1526,8 @@ function CashierContent() {
             return;
           }
         } catch (error) {
-          if (isCashoutStartCurrent(cashoutStart)) setMessage({ type: 'error', text: safeErrorMessage(error) });
+          if (isCashoutStartCurrent(cashoutStart))
+            setMessage({ type: 'error', text: safeErrorMessage(error) });
           if (isCashoutCurrent()) setIsProcessing(false);
           return;
         }
@@ -1525,7 +1561,8 @@ function CashierContent() {
         } catch (e) {
           reportError(e, 'CashierPage');
           if (cashoutStart) {
-            if (isCashoutStartCurrent(cashoutStart)) setMessage({ type: 'error', text: safeErrorMessage(e) });
+            if (isCashoutStartCurrent(cashoutStart))
+              setMessage({ type: 'error', text: safeErrorMessage(e) });
             if (isCashoutCurrent()) setIsProcessing(false);
             return;
           }
@@ -1786,7 +1823,14 @@ function CashierContent() {
   // Process high-value cashout after ConfirmModal approval
   const processHighValueCashout = async (value: number) => {
     const start = cashoutConfirm.start;
-    if (!user?.id || !cashoutConfirm.show || value !== cashoutConfirm.value || !start || !isCashoutStartCurrent(start)) return;
+    if (
+      !user?.id ||
+      !cashoutConfirm.show ||
+      value !== cashoutConfirm.value ||
+      !start ||
+      !isCashoutStartCurrent(start)
+    )
+      return;
     // 2026-08-27: this path had no double-submit guard. setIsProcessing is
     // React state and applies after a render, so two taps on the confirm
     // modal inside one frame both reached the RPC (with, before today, two
@@ -2630,7 +2674,10 @@ function CashierContent() {
               <div className={styles.btnRow}>
                 <button
                   className={styles.btnGhost}
-                  onClick={() => { cashoutPreparations.invalidate(); setCashoutConfirm({ show: false, value: 0 }); }}
+                  onClick={() => {
+                    cashoutPreparations.invalidate();
+                    setCashoutConfirm({ show: false, value: 0 });
+                  }}
                   disabled={isProcessing}
                 >
                   CANCEL
@@ -2653,9 +2700,19 @@ function CashierContent() {
             </div>
           ) : (
             <div className={styles.cardBody}>
-              {action === 'cashout' && cashoutPreparations.error && <p role="status">{cashoutPreparations.error} <button onClick={cashoutPreparations.invalidate}>Refresh</button></p>}
+              {action === 'cashout' && cashoutPreparations.error && (
+                <p role="status">
+                  {cashoutPreparations.error}{' '}
+                  <button onClick={cashoutPreparations.invalidate}>Refresh</button>
+                </p>
+              )}
               {/* U-02 FIX: Show pending cashouts when on cashout tab */}
-              {action === 'cashout' && pendingCashoutScope.current?.() && pendingCashoutError && <p role="status">Pending Cashouts Are Unavailable. <button onClick={() => void loadPendingCashouts()}>Refresh</button></p>}
+              {action === 'cashout' && pendingCashoutScope.current?.() && pendingCashoutError && (
+                <p role="status">
+                  Pending Cashouts Are Unavailable.{' '}
+                  <button onClick={() => void loadPendingCashouts()}>Refresh</button>
+                </p>
+              )}
               {action === 'cashout' && visiblePendingCashouts.length > 0 && (
                 <div className={styles.pendingBox}>
                   <div className={styles.pendingTitle}>Pending Cashouts</div>
@@ -2753,8 +2810,14 @@ function CashierContent() {
                 // Called through a wrapper: passing the handler directly hands
                 // React's MouseEvent in as the override argument.
                 onClick={() => handleAction()}
-                disabled={isProcessing || cooldown > 0 || !amount ||
-                  (action === 'cashout' && !tableId && !cashoutPreparations.get('request', 'cashout_request'))}
+                disabled={
+                  isProcessing ||
+                  cooldown > 0 ||
+                  !amount ||
+                  (action === 'cashout' &&
+                    !tableId &&
+                    !cashoutPreparations.get('request', 'cashout_request'))
+                }
               >
                 {isProcessing ? (
                   <>

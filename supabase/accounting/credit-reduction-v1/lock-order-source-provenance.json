@@ -46,8 +46,8 @@
     {
       "signature": "public.fn_cashier_cashout_transition(text,uuid,uuid,numeric,uuid,uuid,text)",
       "staged_source": "supabase/accounting/weekly-v3/components/20260914164700_cashier_cashout_documents_share_the_existing_invoice_authority.sql",
-      "staged_body_md5": "c0982bd5ab5e376d4ba5d0ce312bd4e3",
-      "successor_body_md5": "435ba3ef6f23cba3720ebb7d7ca4a44e",
+      "staged_body_md5": "1e07ffe61af347db3f356afdb57e55c4",
+      "successor_body_md5": "742cb4ff0a304474e3761b27c13d7dbd",
       "only_body_delta": "\n  -- Serialize the existing agreement before any operation/hierarchy/row lock.\n  -- Nested callers reacquire the same transaction lock; no new money path.\n  IF p_club_id IS NOT NULL THEN\n    PERFORM pg_advisory_xact_lock(hashtextextended('agent-agreement:'||p_club_id::text,0));\n  END IF;\n",
       "header_delta": "CREATE FUNCTION becomes CREATE OR REPLACE FUNCTION to replace the exact existing staged function"
     }

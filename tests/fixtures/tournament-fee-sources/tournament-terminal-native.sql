@@ -5,10 +5,18 @@ INSERT INTO terminal_native_results VALUES(u(5000),fn_complete_tournament_termin
 SELECT assert_true(result->>'status'='COMPLETED' AND result->>'receipt_version'='2' AND result->'rake'->'accounting'->>'status'='recognized','actual terminal core returns version2 recognized fee with exact persisted receipt') FROM terminal_native_results WHERE tournament_id=u(5000);
 SELECT assert_true((SELECT status='closed' AND current_players=0 FROM tables WHERE id=u(5070)) AND (SELECT status='left' AND left_at IS NOT NULL FROM table_seats WHERE id=u(5071)),'actual terminal core releases seats and closes its table in same fee recognition transaction');
 SELECT assert_true(fn_complete_tournament_terminal_pre_seat_guard(u(5000),u(5011),'places')=(SELECT result FROM terminal_native_results WHERE tournament_id=u(5000)),'actual terminal retry returns exact stored recognition and lifecycle receipt');
-INSERT INTO terminal_native_results VALUES(u(5100),fn_complete_tournament_terminal_pre_seat_guard(u(5100),u(5111),'places'));
-SELECT assert_true(result->>'status'='COMPLETED' AND result->'rake'->>'attributed'='false' AND result->'rake'->'accounting'->>'status'='banked_accrual_deferred' AND result->'rake'->'attributed_at'='null'::jsonb,'actual terminal core completes custody with explicit deferred accounting instead of false attribution') FROM terminal_native_results WHERE tournament_id=u(5100);
-SELECT assert_true((SELECT accounting_state='banked_accrual_deferred' AND receipt_version=2 AND rake_attributed_at IS NULL FROM tournament_terminal_settlements WHERE tournament_id=u(5100)) AND (SELECT prize_balance=0 AND bounty_balance=0 AND fee_balance=0 AND closed_at IS NOT NULL FROM tournament_escrow WHERE tournament_id=u(5100)),'stored version2 deferred header and actual zero escrow agree');
-SELECT assert_sql_refuses('UPDATE tournament_terminal_settlements SET receipt_version=1 WHERE tournament_id=u(5100)','new row for relation "tournament_terminal_settlements" violates check constraint "terminal_receipt_version_matches_accounting_state"','version1 cannot masquerade as a deferred accounting receipt');
+SELECT assert_sql_refuses('SELECT fn_complete_tournament_terminal_pre_seat_guard(u(5100),u(5111),''places'')',
+ 'tournament '||u(5100)||' rake attribution incomplete: tournament_fee_sources_require_reconciliation',
+ 'actual terminal core refuses missing positive-fee attribution');
+SELECT assert_true((SELECT status='RUNNING' AND ended_at IS NULL FROM tournaments WHERE id=u(5100))
+ AND (SELECT prize_balance=0 AND bounty_balance=0 AND fee_balance=1 AND closed_at IS NULL FROM tournament_escrow WHERE tournament_id=u(5100))
+ AND NOT EXISTS(SELECT 1 FROM tournament_terminal_settlements WHERE tournament_id=u(5100))
+ AND NOT EXISTS(SELECT 1 FROM tournament_rake_settlements WHERE tournament_id=u(5100))
+ AND NOT EXISTS(SELECT 1 FROM accounting_tournament_fee_recognitions WHERE tournament_id=u(5100)),
+ 'incomplete terminal invocation preserves fee custody and publishes no terminal or accounting receipt');
+SELECT assert_sql_refuses('UPDATE tournament_terminal_settlements SET receipt_version=1 WHERE tournament_id=u(5000)',
+ 'new row for relation "tournament_terminal_settlements" violates check constraint "terminal_receipt_version_matches_accounting_state"',
+ 'version1 cannot masquerade as a canonical accounting receipt');
 CREATE FUNCTION fixture_terminal_header_failure() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN
  IF NEW.tournament_id=u(5200) THEN RAISE EXCEPTION 'fixture_terminal_header_failure';END IF;RETURN NEW;
 END$$;

@@ -15,17 +15,40 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import type { ChipTransaction } from '../types/database.types';
-import { CashoutReceiptChecks, useCashoutReceiptChecks } from '../components/wallet/CashoutReceiptChecks';
+import {
+  CashoutReceiptChecks,
+  useCashoutReceiptChecks,
+} from '../components/wallet/CashoutReceiptChecks';
 import { useCashoutScope, useCashoutScopeKey } from '../hooks/useCashoutScope';
-import { runCashoutOperation, recoverCashoutOperation, captureCashoutStart, assertCashoutStartCurrent, type CashoutStart } from '../services/CashoutOperation';
-import { usePreparedCashoutOperations, isCashoutStartCurrent } from '../hooks/usePreparedCashoutOperations';
+import {
+  runCashoutOperation,
+  recoverCashoutOperation,
+  captureCashoutStart,
+  assertCashoutStartCurrent,
+  type CashoutStart,
+} from '../services/CashoutOperation';
+import {
+  usePreparedCashoutOperations,
+  isCashoutStartCurrent,
+} from '../hooks/usePreparedCashoutOperations';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
-import { prepareCreditReduction, captureCreditReduction, assertCreditReductionCurrent, listPendingCreditReductions,
-  capturePendingCreditReduction, recoverCreditReduction, retireCreditReduction,
-  type PreparedCreditReduction, type PendingCreditReduction } from '../services/CreditReductionOperation';
-import { creditReductionAmount, type CreditReductionEnvelope } from '../lib/CreditReductionContract';
+import {
+  prepareCreditReduction,
+  captureCreditReduction,
+  assertCreditReductionCurrent,
+  listPendingCreditReductions,
+  capturePendingCreditReduction,
+  recoverCreditReduction,
+  retireCreditReduction,
+  type PreparedCreditReduction,
+  type PendingCreditReduction,
+} from '../services/CreditReductionOperation';
+import {
+  creditReductionAmount,
+  type CreditReductionEnvelope,
+} from '../lib/CreditReductionContract';
 import {
   assertChipAmount,
   runAgentWalletOperation,
@@ -168,7 +191,10 @@ function AgentDashboardContent() {
   const [creditNotes, setCreditNotes] = useState('');
   const creditInputEpoch = useRef(0);
   const [creditInputRevision, setCreditInputRevision] = useState(0);
-  const invalidateCreditInput = () => { creditInputEpoch.current += 1; setCreditInputRevision(creditInputEpoch.current); };
+  const invalidateCreditInput = () => {
+    creditInputEpoch.current += 1;
+    setCreditInputRevision(creditInputEpoch.current);
+  };
 
   // Agents list (for promo/credit selectors)
   const [agents, setAgents] = useState<DownlineMember[]>([]);
@@ -206,10 +232,14 @@ function AgentDashboardContent() {
       if (!isCurrent()) return;
       // Cashout events can arrive before the verified service receipt returns.
       // Keep that accepted row valid until acknowledgment, then refresh once.
-      if (cashoutInFlight.current || dashLoadingRef.current) { dashReloadRef.current = cId; return; }
+      if (cashoutInFlight.current || dashLoadingRef.current) {
+        dashReloadRef.current = cId;
+        return;
+      }
       dashLoadingRef.current = true;
       const cashoutGeneration = ++cashoutReadGeneration.current;
-      const cashoutReadCurrent = () => isCurrent() && cashoutReadGeneration.current === cashoutGeneration;
+      const cashoutReadCurrent = () =>
+        isCurrent() && cashoutReadGeneration.current === cashoutGeneration;
       cashoutRowsCurrent.current = null;
       setCashoutsAvailable(false);
       try {
@@ -314,7 +344,10 @@ function AgentDashboardContent() {
           { maxRetries: 2, isMountedRef: mountedRef }
         );
 
-        if (cashoutError) { cashoutRowsCurrent.current = null; throw cashoutError; }
+        if (cashoutError) {
+          cashoutRowsCurrent.current = null;
+          throw cashoutError;
+        }
 
         // Get commission history
         const { data: comms } = await retryFetch(
@@ -585,7 +618,6 @@ function AgentDashboardContent() {
       masterBus.subscribeDebounced('AGENT_UPDATED', filteredRefresh, 300),
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 300),
       masterBus.subscribeDebounced('CREDIT_UPDATED', filteredRefresh, 300),
-      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', filteredRefresh, 300),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, refreshDashboard]);
@@ -643,28 +675,65 @@ function AgentDashboardContent() {
   // ── Visibility Refresh — refresh on tab focus after 30s ──
   useVisibilityRefresh(() => loadDashboard(clubId));
 
-  const decisions = usePreparedCashoutOperations(pendingCashouts.flatMap(row => [
-    { key: `${row.id}:approve`, intent: { userId: user?.id ?? '', receiptViewCurrent: isCurrent, playerId: row.player_id,
-      clubId: row.club_id, targetId: row.id, kind: 'cashout_approve' as const, amount: row.amount } },
-    { key: `${row.id}:reject`, intent: { userId: user?.id ?? '', receiptViewCurrent: isCurrent, playerId: row.player_id,
-      clubId: row.club_id, targetId: row.id, kind: 'cashout_decline' as const,
-      amount: row.amount, note: 'Denied by agent' } },
-  ]), cashoutRowsCurrent.current, pendingCashouts);
+  const decisions = usePreparedCashoutOperations(
+    pendingCashouts.flatMap((row) => [
+      {
+        key: `${row.id}:approve`,
+        intent: {
+          userId: user?.id ?? '',
+          receiptViewCurrent: isCurrent,
+          playerId: row.player_id,
+          clubId: row.club_id,
+          targetId: row.id,
+          kind: 'cashout_approve' as const,
+          amount: row.amount,
+        },
+      },
+      {
+        key: `${row.id}:reject`,
+        intent: {
+          userId: user?.id ?? '',
+          receiptViewCurrent: isCurrent,
+          playerId: row.player_id,
+          clubId: row.club_id,
+          targetId: row.id,
+          kind: 'cashout_decline' as const,
+          amount: row.amount,
+          note: 'Denied by agent',
+        },
+      },
+    ]),
+    cashoutRowsCurrent.current,
+    pendingCashouts
+  );
 
-  const receiptChecks = useCashoutReceiptChecks(isCurrent, () => { void loadDashboard(clubId); });
+  const receiptChecks = useCashoutReceiptChecks(isCurrent, () => {
+    void loadDashboard(clubId);
+  });
 
   // Cashout decisions use a frozen scoped row and durable operation identity.
   const processCashout = async (cashoutId: string, action: 'approve' | 'reject') => {
-    if (!user?.id || !clubId || !isCurrent() || !cashoutRowsCurrent.current?.() || cashoutInFlight.current) return;
+    if (
+      !user?.id ||
+      !clubId ||
+      !isCurrent() ||
+      !cashoutRowsCurrent.current?.() ||
+      cashoutInFlight.current
+    )
+      return;
     const cashout = pendingCashouts.find((row) => row.id === cashoutId && row.status === 'pending');
     if (!cashout || cashout.club_id !== resolvedClubIdRef.current) {
-      setError('Refresh To Verify This Cashout Before Acting'); return;
+      setError('Refresh To Verify This Cashout Before Acting');
+      return;
     }
     cashoutInFlight.current = true;
     let start: CashoutStart | null = null;
     let checkingOutcome = false;
     try {
-      const prepared = decisions.get(`${cashout.id}:${action}`, action === 'approve' ? 'cashout_approve' : 'cashout_decline');
+      const prepared = decisions.get(
+        `${cashout.id}:${action}`,
+        action === 'approve' ? 'cashout_approve' : 'cashout_decline'
+      );
       if (!prepared) throw new Error('Wait For This Cashout Request To Be Verified');
       start = captureCashoutStart(prepared);
       setProcessing(true);
@@ -675,7 +744,10 @@ function AgentDashboardContent() {
       assertCashoutStartCurrent(start);
       if (!recovery.found) {
         const confirmed = await confirmDialog({
-          message: action === 'approve' ? 'Approve this cashout request?' : 'Decline and return this cashout’s chips?',
+          message:
+            action === 'approve'
+              ? 'Approve this cashout request?'
+              : 'Decline and return this cashout’s chips?',
           variant: 'danger',
         });
         if (!confirmed) return;
@@ -685,11 +757,20 @@ function AgentDashboardContent() {
         checkingOutcome = false;
       }
       assertCashoutStartCurrent(start);
-      setSuccess(action === 'approve' ? 'Cashout approved. Invoice recorded.' : 'Cashout declined. Chips returned to the player.');
+      setSuccess(
+        action === 'approve'
+          ? 'Cashout approved. Invoice recorded.'
+          : 'Cashout declined. Chips returned to the player.'
+      );
       void loadDashboard(clubId);
     } catch (err) {
-      if (checkingOutcome && start && isCurrent()) receiptChecks.retain(`${cashout.id}:${action}`,
-        cashout.amount, action === 'approve' ? 'Cashout Approval' : 'Cashout Decline', start);
+      if (checkingOutcome && start && isCurrent())
+        receiptChecks.retain(
+          `${cashout.id}:${action}`,
+          cashout.amount,
+          action === 'approve' ? 'Cashout Approval' : 'Cashout Decline',
+          start
+        );
       if (isCurrent() && (!start || isCashoutStartCurrent(start))) setError(safeErrorMessage(err));
     } finally {
       cashoutInFlight.current = false;
@@ -973,7 +1054,11 @@ function AgentDashboardContent() {
                         { key: 'joined', label: 'Joined' },
                       ]
                     );
-                  } else if (tab === 'cashouts' && cashoutsAvailable && pendingCashouts.length > 0) {
+                  } else if (
+                    tab === 'cashouts' &&
+                    cashoutsAvailable &&
+                    pendingCashouts.length > 0
+                  ) {
                     exportToCSV(pendingCashouts, 'agent_cashouts.csv', [
                       { key: 'player_id', label: 'Player ID' },
                       { key: 'amount', label: 'Amount' },
@@ -1100,9 +1185,11 @@ function AgentDashboardContent() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {cashoutsAvailable ? fmtChips(
-                    pendingCashouts.reduce((s: number, c: CashoutRequest) => s + c.amount, 0)
-                  ) : 'Unavailable'}
+                  {cashoutsAvailable
+                    ? fmtChips(
+                        pendingCashouts.reduce((s: number, c: CashoutRequest) => s + c.amount, 0)
+                      )
+                    : 'Unavailable'}
                 </div>
                 <div className="admin-stat-label">Cashout Amount</div>
               </div>
@@ -1343,14 +1430,18 @@ function AgentDashboardContent() {
                             <button
                               onClick={() => approveCashout(c.id)}
                               className="admin-btn admin-btn-success admin-btn-sm"
-                              disabled={processing || !decisions.get(`${c.id}:approve`, 'cashout_approve')}
+                              disabled={
+                                processing || !decisions.get(`${c.id}:approve`, 'cashout_approve')
+                              }
                             >
                               Approve
                             </button>
                             <button
                               onClick={() => denyCashout(c.id)}
                               className="admin-btn admin-btn-danger admin-btn-sm"
-                              disabled={processing || !decisions.get(`${c.id}:reject`, 'cashout_decline')}
+                              disabled={
+                                processing || !decisions.get(`${c.id}:reject`, 'cashout_decline')
+                              }
                             >
                               Deny
                             </button>
@@ -1372,9 +1463,11 @@ function AgentDashboardContent() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {cashoutsAvailable ? fmtChips(
-                    pendingCashouts.reduce((s: number, c: CashoutRequest) => s + c.amount, 0)
-                  ) : 'Unavailable'}
+                  {cashoutsAvailable
+                    ? fmtChips(
+                        pendingCashouts.reduce((s: number, c: CashoutRequest) => s + c.amount, 0)
+                      )
+                    : 'Unavailable'}
                 </div>
                 <div className="admin-stat-label">Total Amount</div>
               </div>
@@ -1690,7 +1783,10 @@ function AgentDashboardContent() {
                   <select
                     className="admin-input"
                     value={creditTarget}
-                    onChange={(e) => { invalidateCreditInput(); setCreditTarget(e.target.value); }}
+                    onChange={(e) => {
+                      invalidateCreditInput();
+                      setCreditTarget(e.target.value);
+                    }}
                   >
                     <option value="">Select Agent...</option>
                     {agents.map((a: DownlineMember) => (
@@ -1706,7 +1802,10 @@ function AgentDashboardContent() {
                   <select
                     className="admin-input"
                     value={creditAction}
-                    onChange={(e) => { invalidateCreditInput(); setCreditAction(e.target.value); }}
+                    onChange={(e) => {
+                      invalidateCreditInput();
+                      setCreditAction(e.target.value);
+                    }}
                   >
                     <option value="issue_credit">Set Credit Line To</option>
                     <option value="add_prepaid">Send Prepaid Chips</option>
@@ -1719,7 +1818,10 @@ function AgentDashboardContent() {
                     className="admin-input"
                     type="number"
                     value={creditAmount}
-                    onChange={(e) => { invalidateCreditInput(); setCreditAmount(e.target.value); }}
+                    onChange={(e) => {
+                      invalidateCreditInput();
+                      setCreditAmount(e.target.value);
+                    }}
                     placeholder="0"
                     min="1"
                   />
@@ -1729,28 +1831,41 @@ function AgentDashboardContent() {
                   <input
                     className="admin-input"
                     value={creditNotes}
-                    onChange={(e) => { invalidateCreditInput(); setCreditNotes(e.target.value); }}
+                    onChange={(e) => {
+                      invalidateCreditInput();
+                      setCreditNotes(e.target.value);
+                    }}
                     placeholder="Reason..."
                   />
                 </div>
-                {user?.id && clubId && <CreditReductionControls key={`${user.id}:${clubId}`}
-                  actorId={user.id} clubId={clubId} targetUserId={creditTarget} amount={creditAmount} note={creditNotes}
-                  enabled={creditAction === 'revoke_credit'} isCurrent={isCurrent} revision={creditInputRevision}
-                  getRevision={() => creditInputEpoch.current}
-                />}
-                {creditAction !== 'revoke_credit' && <button
-                  className="admin-btn admin-btn-primary"
-                  disabled={processing || !creditTarget || !creditAmount}
-                  style={{ marginTop: '4px' }}
-                  onClick={async () => {
-                    if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
-                    walletOperationInFlightRef.current = true;
-                    setProcessing(true);
-                    setError(null);
-                    try {
-                      const amt = Number(creditAmount);
-                      assertChipAmount(amt);
-                      /*
+                {user?.id && clubId && (
+                  <CreditReductionControls
+                    key={`${user.id}:${clubId}`}
+                    actorId={user.id}
+                    clubId={clubId}
+                    targetUserId={creditTarget}
+                    amount={creditAmount}
+                    note={creditNotes}
+                    enabled={creditAction === 'revoke_credit'}
+                    isCurrent={isCurrent}
+                    revision={creditInputRevision}
+                    getRevision={() => creditInputEpoch.current}
+                  />
+                )}
+                {creditAction !== 'revoke_credit' && (
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    disabled={processing || !creditTarget || !creditAmount}
+                    style={{ marginTop: '4px' }}
+                    onClick={async () => {
+                      if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
+                      walletOperationInFlightRef.current = true;
+                      setProcessing(true);
+                      setError(null);
+                      try {
+                        const amt = Number(creditAmount);
+                        assertChipAmount(amt);
+                        /*
                         ALL THREE OF THESE WERE WRONG, EACH IN ITS OWN WAY.
 
                         ISSUE CREDIT was the only one that could work, and it
@@ -1770,77 +1885,83 @@ function AgentDashboardContent() {
 
                         Credit reductions use the prepared operation controls below.
                       */
-                      const resolvedCreditClub = await resolveClubUUID(clubId || '');
-                      const note = creditNotes.trim() || undefined;
-                      if (creditAction === 'issue_credit') {
-                        await CreditService.setCreditLine(
-                          creditTarget,
-                          resolvedCreditClub,
-                          amt,
-                          false,
-                          note
-                        );
-                      } else if (creditAction === 'add_prepaid') {
-                        await runAgentWalletOperation(
-                          {
-                            userId: user.id,
-                            clubId: resolvedCreditClub,
-                            targetId: creditTarget,
-                            kind: 'agent_send',
-                            destination: 'agent_wallet',
-                            amount: amt,
-                          },
-                          async (operation) => {
-                            const { data, error: fundError } = await supabase.rpc(
-                              'fn_agent_wallet_send',
-                              {
-                                p_club_id: resolvedCreditClub,
-                                p_to_user_id: creditTarget,
-                                p_amount: amt,
-                                p_destination: 'agent_wallet',
-                                p_reason: note || 'Prepaid funding',
-                                p_op_id: operation.operationId,
-                              }
-                            );
-                            if (fundError) throw fundError;
-                            if (
-                              !confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')
-                            ) {
-                              throw new Error(
-                                data?.error || 'The Cashier Did Not Confirm That Funding'
+                        const resolvedCreditClub = await resolveClubUUID(clubId || '');
+                        const note = creditNotes.trim() || undefined;
+                        if (creditAction === 'issue_credit') {
+                          await CreditService.setCreditLine(
+                            creditTarget,
+                            resolvedCreditClub,
+                            amt,
+                            false,
+                            note
+                          );
+                        } else if (creditAction === 'add_prepaid') {
+                          await runAgentWalletOperation(
+                            {
+                              userId: user.id,
+                              clubId: resolvedCreditClub,
+                              targetId: creditTarget,
+                              kind: 'agent_send',
+                              destination: 'agent_wallet',
+                              amount: amt,
+                            },
+                            async (operation) => {
+                              const { data, error: fundError } = await supabase.rpc(
+                                'fn_agent_wallet_send',
+                                {
+                                  p_club_id: resolvedCreditClub,
+                                  p_to_user_id: creditTarget,
+                                  p_amount: amt,
+                                  p_destination: 'agent_wallet',
+                                  p_reason: note || 'Prepaid funding',
+                                  p_op_id: operation.operationId,
+                                }
                               );
+                              if (fundError) throw fundError;
+                              if (
+                                !confirmedAgentWalletReceipt(
+                                  data,
+                                  amt,
+                                  'agent_send',
+                                  'agent_wallet'
+                                )
+                              ) {
+                                throw new Error(
+                                  data?.error || 'The Cashier Did Not Confirm That Funding'
+                                );
+                              }
                             }
-                          }
-                        );
+                          );
+                        }
+                        const labels: Record<string, string> = {
+                          issue_credit: 'Credit line set to',
+                          add_prepaid: 'Prepaid balance sent',
+                        };
+                        setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
+                        masterBus.emit('CREDIT_UPDATED', {
+                          clubId: clubId || '',
+                          userId: creditTarget,
+                        });
+                        setCreditAmount('');
+                        setCreditNotes('');
+                        loadDashboard(clubId);
+                      } catch (err: unknown) {
+                        setError(safeErrorMessage(err));
+                      } finally {
+                        walletOperationInFlightRef.current = false;
+                        setProcessing(false);
                       }
-                      const labels: Record<string, string> = {
-                        issue_credit: 'Credit line set to',
-                        add_prepaid: 'Prepaid balance sent',
-                      };
-                      setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
-                      masterBus.emit('CREDIT_UPDATED', {
-                        clubId: clubId || '',
-                        userId: creditTarget,
-                      });
-                      setCreditAmount('');
-                      setCreditNotes('');
-                      loadDashboard(clubId);
-                    } catch (err: unknown) {
-                      setError(safeErrorMessage(err));
-                    } finally {
-                      walletOperationInFlightRef.current = false;
-                      setProcessing(false);
-                    }
-                  }}
-                >
-                  {processing
-                    ? 'Processing...'
-                    : creditAction === 'issue_credit'
-                      ? 'Set Credit Line'
-                      : creditAction === 'add_prepaid'
-                        ? 'Send Prepaid Chips'
-                        : 'Reduce Credit Line'}
-                </button>}
+                    }}
+                  >
+                    {processing
+                      ? 'Processing...'
+                      : creditAction === 'issue_credit'
+                        ? 'Set Credit Line'
+                        : creditAction === 'add_prepaid'
+                          ? 'Send Prepaid Chips'
+                          : 'Reduce Credit Line'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1890,45 +2011,93 @@ function AgentDashboardContent() {
   );
 }
 
-
 /** The reduction form owns its accepted intent; reload cards have receipt-only authority. */
 export function CreditReductionControls(props: {
-  actorId: string; clubId: string; targetUserId: string; amount: string; note: string; enabled: boolean;
-  isCurrent: () => boolean; revision: number; getRevision: () => number;
+  actorId: string;
+  clubId: string;
+  targetUserId: string;
+  amount: string;
+  note: string;
+  enabled: boolean;
+  isCurrent: () => boolean;
+  revision: number;
+  getRevision: () => number;
 }) {
-  const { actorId,clubId } = props;
-  const scope = useCashoutScope(actorId,clubId);
+  const { actorId, clubId } = props;
+  const scope = useCashoutScope(actorId, clubId);
   const live = useRef(true);
   const token = useRef<object | null>(null);
   const busy = useRef(false);
-  const [working,setWorking] = useState(false);
-  const [prepared,setPrepared] = useState<{ token:object; value:PreparedCreditReduction } | null>(null);
-  const [preparationError,setPreparationError] = useState<string | null>(null);
-  const [pendingRows,setPendingRows] = useState<{ scope:() => boolean; rows:PendingCreditReduction[] } | null>(null);
-  const [receipt,setReceipt] = useState<{ scope:() => boolean; value:Readonly<CreditReductionEnvelope> } | null>(null);
-  const [error,setError] = useState<string | null>(null);
-  const [refresh,setRefresh] = useState(0);
-  const inputKey = JSON.stringify([actorId,clubId,props.targetUserId,props.amount,props.note,props.enabled,props.revision,refresh]);
-  const input = useRef<{ key:string; token:object } | null>(null);
-  if (!input.current || input.current.key !== inputKey) input.current = { key:inputKey,token:{} };
+  const [working, setWorking] = useState(false);
+  const [prepared, setPrepared] = useState<{
+    token: object;
+    value: PreparedCreditReduction;
+  } | null>(null);
+  const [preparationError, setPreparationError] = useState<string | null>(null);
+  const [pendingRows, setPendingRows] = useState<{
+    scope: () => boolean;
+    rows: PendingCreditReduction[];
+  } | null>(null);
+  const [receipt, setReceipt] = useState<{
+    scope: () => boolean;
+    value: Readonly<CreditReductionEnvelope>;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const inputKey = JSON.stringify([
+    actorId,
+    clubId,
+    props.targetUserId,
+    props.amount,
+    props.note,
+    props.enabled,
+    props.revision,
+    refresh,
+  ]);
+  const input = useRef<{ key: string; token: object } | null>(null);
+  if (!input.current || input.current.key !== inputKey)
+    input.current = { key: inputKey, token: {} };
   token.current = input.current.token;
   const formToken = input.current.token;
-  useEffect(() => { live.current = true; return () => { live.current = false; token.current = null; }; },[]);
-  const receiptCurrent = useCallback(() => live.current && scope() && props.isCurrent(),[scope,props.isCurrent]);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+      token.current = null;
+    };
+  }, []);
+  const receiptCurrent = useCallback(
+    () => live.current && scope() && props.isCurrent(),
+    [scope, props.isCurrent]
+  );
   useEffect(() => {
     let active = true;
     setPendingRows(null);
-    void listPendingCreditReductions(actorId,clubId,receiptCurrent).then(rows => {
-      if (active && receiptCurrent()) setPendingRows({ scope:receiptCurrent,rows });
-    }).catch(() => { if (active && receiptCurrent()) setError('Pending Credit Changes Are Unavailable. Keep This Browser Data And Check Again.'); });
-    return () => { active = false; };
-  },[actorId,clubId,receiptCurrent,refresh]);
+    void listPendingCreditReductions(actorId, clubId, receiptCurrent)
+      .then((rows) => {
+        if (active && receiptCurrent()) setPendingRows({ scope: receiptCurrent, rows });
+      })
+      .catch(() => {
+        if (active && receiptCurrent())
+          setError(
+            'Pending Credit Changes Are Unavailable. Keep This Browser Data And Check Again.'
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [actorId, clubId, receiptCurrent, refresh]);
   useEffect(() => {
-    setPrepared(null); setPreparationError(null);
+    setPrepared(null);
+    setPreparationError(null);
     if (!props.enabled || !props.targetUserId || !props.amount) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const current = () => active && receiptCurrent() && token.current === formToken && props.getRevision() === props.revision;
+    const current = () =>
+      active &&
+      receiptCurrent() &&
+      token.current === formToken &&
+      props.getRevision() === props.revision;
     try {
       const amount = creditReductionAmount(props.amount);
       const reason = props.note.trim() || null;
@@ -1936,60 +2105,136 @@ export function CreditReductionControls(props: {
       // preparation so ordinary typing does not lock the server row per key.
       timer = setTimeout(() => {
         if (!current()) return;
-        void prepareCreditReduction({ actorId,clubId,targetUserId:props.targetUserId,amount,reason,
-          isCurrent:current,receiptViewCurrent:receiptCurrent }).then(value => {
-          if (current()) setPrepared({ token:formToken,value });
-        }).catch(err => { if (current()) setPreparationError(safeErrorMessage(err)); });
-      },300);
-    } catch (err) { if (current()) setPreparationError(safeErrorMessage(err)); }
-    return () => { active = false; clearTimeout(timer); };
-  },[formToken,receiptCurrent,actorId,clubId]);
-  const canStart = props.enabled && !working && prepared?.token === formToken && receiptCurrent() && props.getRevision() === props.revision;
-  const showResult = (value:Readonly<CreditReductionEnvelope>) => {
+        void prepareCreditReduction({
+          actorId,
+          clubId,
+          targetUserId: props.targetUserId,
+          amount,
+          reason,
+          isCurrent: current,
+          receiptViewCurrent: receiptCurrent,
+        })
+          .then((value) => {
+            if (current()) setPrepared({ token: formToken, value });
+          })
+          .catch((err) => {
+            if (current()) setPreparationError(safeErrorMessage(err));
+          });
+      }, 300);
+    } catch (err) {
+      if (current()) setPreparationError(safeErrorMessage(err));
+    }
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [formToken, receiptCurrent, actorId, clubId]);
+  const canStart =
+    props.enabled &&
+    !working &&
+    prepared?.token === formToken &&
+    receiptCurrent() &&
+    props.getRevision() === props.revision;
+  const showResult = (value: Readonly<CreditReductionEnvelope>) => {
     if (!receiptCurrent()) return;
-    setReceipt({ scope:receiptCurrent,value }); setRefresh(value => value + 1);
+    setReceipt({ scope: receiptCurrent, value });
+    setRefresh((value) => value + 1);
   };
   const rows = pendingRows?.scope() ? pendingRows.rows : [];
   const result = receipt?.scope() ? receipt.value : null;
-  return <div aria-label="Credit Reduction Recovery">
-    {props.enabled && <>
-      {preparationError && <p role="alert">{preparationError}</p>}
-      <button className="admin-btn admin-btn-primary" disabled={!canStart} onClick={async () => {
-        if (!canStart || !prepared || busy.current) return;
-        busy.current = true; setWorking(true); setError(null);
-        try {
-          // Capture before any wait. A capture refusal is shown without dispatching.
-          const start = captureCreditReduction(prepared.value);
-          const value = await CreditService.lowerCreditLine(start);
-          assertCreditReductionCurrent(start); showResult(value);
-        } catch (err) {
-          if (receiptCurrent()) { setError(safeErrorMessage(err)); setRefresh(value => value + 1); }
-        } finally { busy.current = false; if (receiptCurrent()) setWorking(false); }
-      }}>{working ? 'Checking Credit Change...' : 'Reduce Credit Line'}</button>
-    </>}
-    {error && <p role="alert">{error}</p>}
-    {rows.length > 0 && <div aria-label="Pending Credit Changes">
-      <p>A pending credit change must be checked or cancelled before another change for that agent.</p>
-      {rows.map((row,index) => <div key={row.operationId}>
-        <span>Pending Credit Change {index + 1}</span>
-        {(['check','cancel'] as const).map(action => <button key={action} disabled={working} onClick={async () => {
-          if (busy.current || !receiptCurrent()) return;
-          busy.current = true; setWorking(true); setError(null);
-          try {
-            const start = capturePendingCreditReduction(row);
-            const value = action === 'check' ? await recoverCreditReduction(start) : await retireCreditReduction(start);
-            assertCreditReductionCurrent(start); showResult(value);
-          } catch (err) { if (receiptCurrent()) setError(safeErrorMessage(err)); }
-          finally { busy.current = false; if (receiptCurrent()) setWorking(false); }
-        }}>{action === 'check' ? 'Check Receipt' : 'Cancel Pending Change'}</button>)}
-      </div>)}
-    </div>}
-    {result?.state === 'recorded' && <div role="status">
-      <p>{result.receipt.outcome === 'no_change' ? 'No Credit Capacity Changed.' : `Credit Line Reduced By ${result.receipt.applied_reduction} Chips.`}</p>
-      <p>Limit After This Change: {result.receipt.after_limit} Chips.</p>
-      <p>This is the recorded result of that change. No chips moved and no payment is due.</p>
-    </div>}
-    {result?.state === 'retired' && <p role="status">Pending Change Cancelled. Its Original Request Cannot Apply.</p>}
-    {result?.state === 'absent' && <p role="status">No Recorded Result Yet. This Change Remains Pending.</p>}
-  </div>;
+  return (
+    <div aria-label="Credit Reduction Recovery">
+      {props.enabled && (
+        <>
+          {preparationError && <p role="alert">{preparationError}</p>}
+          <button
+            className="admin-btn admin-btn-primary"
+            disabled={!canStart}
+            onClick={async () => {
+              if (!canStart || !prepared || busy.current) return;
+              busy.current = true;
+              setWorking(true);
+              setError(null);
+              try {
+                // Capture before any wait. A capture refusal is shown without dispatching.
+                const start = captureCreditReduction(prepared.value);
+                const value = await CreditService.lowerCreditLine(start);
+                assertCreditReductionCurrent(start);
+                showResult(value);
+              } catch (err) {
+                if (receiptCurrent()) {
+                  setError(safeErrorMessage(err));
+                  setRefresh((value) => value + 1);
+                }
+              } finally {
+                busy.current = false;
+                if (receiptCurrent()) setWorking(false);
+              }
+            }}
+          >
+            {working ? 'Checking Credit Change...' : 'Reduce Credit Line'}
+          </button>
+        </>
+      )}
+      {error && <p role="alert">{error}</p>}
+      {rows.length > 0 && (
+        <div aria-label="Pending Credit Changes">
+          <p>
+            A Pending Credit Change Must Be Checked Or Cancelled Before Another Change For That
+            Agent.
+          </p>
+          {rows.map((row, index) => (
+            <div key={row.operationId}>
+              <span>Pending Credit Change {index + 1}</span>
+              {(['check', 'cancel'] as const).map((action) => (
+                <button
+                  key={action}
+                  disabled={working}
+                  onClick={async () => {
+                    if (busy.current || !receiptCurrent()) return;
+                    busy.current = true;
+                    setWorking(true);
+                    setError(null);
+                    try {
+                      const start = capturePendingCreditReduction(row);
+                      const value =
+                        action === 'check'
+                          ? await recoverCreditReduction(start)
+                          : await retireCreditReduction(start);
+                      assertCreditReductionCurrent(start);
+                      showResult(value);
+                    } catch (err) {
+                      if (receiptCurrent()) setError(safeErrorMessage(err));
+                    } finally {
+                      busy.current = false;
+                      if (receiptCurrent()) setWorking(false);
+                    }
+                  }}
+                >
+                  {action === 'check' ? 'Check Receipt' : 'Cancel Pending Change'}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {result?.state === 'recorded' && (
+        <div role="status">
+          <p>
+            {result.receipt.outcome === 'no_change'
+              ? 'No Credit Capacity Changed.'
+              : `Credit Line Reduced By ${result.receipt.applied_reduction} Chips.`}
+          </p>
+          <p>Limit After This Change: {result.receipt.after_limit} Chips.</p>
+          <p>This Is The Recorded Result Of That Change. No Chips Moved And No Payment Is Due.</p>
+        </div>
+      )}
+      {result?.state === 'retired' && (
+        <p role="status">Pending Change Cancelled. Its Original Request Cannot Apply.</p>
+      )}
+      {result?.state === 'absent' && (
+        <p role="status">No Recorded Result Yet. This Change Remains Pending.</p>
+      )}
+    </div>
+  );
 }

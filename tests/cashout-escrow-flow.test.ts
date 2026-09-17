@@ -2,26 +2,46 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { CASHOUT_IDS as ID, cashoutV2Receipt, type FixtureCashoutKind } from './helpers/cashoutV2Receipt';
+import {
+  CASHOUT_IDS as ID,
+  cashoutV2Receipt,
+  type FixtureCashoutKind,
+} from './helpers/cashoutV2Receipt';
 const identity = vi.hoisted(() => ({ userId: '' }));
-vi.mock('../src/lib/supabase', () => ({ supabase: {
-  from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
-  rpc: vi.fn(),
-} }));
-vi.mock('../src/core/IdentityDNA', () => ({ getIdentityDNAStatus: () => ({ loaded: true, authenticated: true, userId: identity.userId }) }));
-vi.mock('../src/core/MasterBus', () => ({ masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) } }));
+vi.mock('../src/lib/supabase', () => ({
+  supabase: {
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+    }),
+    rpc: vi.fn(),
+  },
+}));
+vi.mock('../src/core/IdentityDNA', () => ({
+  getIdentityDNAStatus: () => ({ loaded: true, authenticated: true, userId: identity.userId }),
+}));
+vi.mock('../src/core/MasterBus', () => ({
+  masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
+}));
 vi.mock('../src/utils/retryAsync', () => ({ retryAsync: <T>(fn: () => Promise<T>) => fn() }));
 vi.mock('../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
-vi.mock('../src/services/PushNotificationService', () => ({ pushNotificationService: { sendToUser: vi.fn() } }));
-import { cashoutService, newOpId, CashoutOutcomeUnknownError } from '../src/services/CashoutService';
+vi.mock('../src/services/PushNotificationService', () => ({
+  pushNotificationService: { sendToUser: vi.fn() },
+}));
+import {
+  cashoutService,
+  newOpId,
+  CashoutOutcomeUnknownError,
+} from '../src/services/CashoutService';
 import { supabase } from '../src/lib/supabase';
 import { pushNotificationService } from '../src/services/PushNotificationService';
 const rpc = vi.mocked(supabase.rpc);
 const push = vi.mocked(pushNotificationService.sendToUser);
 const current = () => true;
 const intent = { clubId: ID.club, playerId: ID.player, amount: 250, isCurrent: current };
-const accept = (payload: Record<string, unknown>) => rpc.mockResolvedValueOnce({ data: { success: true, ...payload }, error: null } as never);
-const receipt = (kind: FixtureCashoutKind, replayed = false) => rpc.mockResolvedValueOnce({ data: cashoutV2Receipt(kind, { replayed }), error: null } as never);
+const accept = (payload: Record<string, unknown>) =>
+  rpc.mockResolvedValueOnce({ data: { success: true, ...payload }, error: null } as never);
+const receipt = (kind: FixtureCashoutKind, replayed = false) =>
+  rpc.mockResolvedValueOnce({ data: cashoutV2Receipt(kind, { replayed }), error: null } as never);
 const ROOT = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(ROOT, path), 'utf8');
 const SERVICE = read('src/services/CashoutService.ts');
@@ -29,29 +49,55 @@ const MODAL = read('src/components/wallet/CashoutRequestModal.tsx');
 const PANEL = read('src/components/agent/AgentCashoutPanel.tsx');
 const DISPUTE = read('src/components/wallet/DisputeSubmitModal.tsx');
 const OPERATIONS = read('src/services/CashoutOperation.ts');
-beforeEach(() => { vi.clearAllMocks(); rpc.mockReset(); identity.userId = ID.player; });
+beforeEach(() => {
+  vi.clearAllMocks();
+  rpc.mockReset();
+  identity.userId = ID.player;
+});
 
 describe('the caller retains the operation identity', () => {
   it('exports UUID generation for caller-owned operations', () => {
     expect(newOpId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(newOpId()).not.toBe(newOpId());
   });
-  it.each(['hold', 'approval', 'decline', 'cancellation'] as const)('forwards the exact %s operation and account/club tuple', async kind => {
-    if (kind === 'approval' || kind === 'decline') identity.userId = ID.agent;
-    receipt(kind);
-    if (kind === 'hold') await cashoutService.requestCashout(ID.player, ID.club, 250, undefined, ID.operation, current);
-    else if (kind === 'approval') await cashoutService.approveCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
-    else if (kind === 'decline') await cashoutService.rejectCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
-    else await cashoutService.cancelCashout(ID.cashout, ID.player, ID.operation, intent);
-    expect(rpc.mock.calls[0][1]).toMatchObject({ p_op_id: ID.operation, p_club_id: ID.club, p_amount: '250.00', p_expected_actor_id: identity.userId });
-  });
+  it.each(['hold', 'approval', 'decline', 'cancellation'] as const)(
+    'forwards the exact %s operation and account/club tuple',
+    async (kind) => {
+      if (kind === 'approval' || kind === 'decline') identity.userId = ID.agent;
+      receipt(kind);
+      if (kind === 'hold')
+        await cashoutService.requestCashout(
+          ID.player,
+          ID.club,
+          250,
+          undefined,
+          ID.operation,
+          current
+        );
+      else if (kind === 'approval')
+        await cashoutService.approveCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
+      else if (kind === 'decline')
+        await cashoutService.rejectCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
+      else await cashoutService.cancelCashout(ID.cashout, ID.player, ID.operation, intent);
+      expect(rpc.mock.calls[0][1]).toMatchObject({
+        p_op_id: ID.operation,
+        p_club_id: ID.club,
+        p_amount: '250.00',
+        p_expected_actor_id: identity.userId,
+      });
+    }
+  );
   it('requires a retained key and view guard rather than minting another payment attempt', async () => {
-    await expect(cashoutService.requestCashout(ID.player, ID.club, 250)).rejects.toThrow(/Retained Operation/);
+    await expect(cashoutService.requestCashout(ID.player, ID.club, 250)).rejects.toThrow(
+      /Retained Operation/
+    );
     expect(rpc).not.toHaveBeenCalled();
   });
   it('holds the same key after an unknown response until an explicit caller retry', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'lost' } } as never);
-    await expect(cashoutService.requestCashout(ID.player, ID.club, 250, undefined, ID.operation, current)).rejects.toBeInstanceOf(CashoutOutcomeUnknownError);
+    await expect(
+      cashoutService.requestCashout(ID.player, ID.club, 250, undefined, ID.operation, current)
+    ).rejects.toBeInstanceOf(CashoutOutcomeUnknownError);
     expect(rpc).toHaveBeenCalledTimes(1);
     receipt('hold', true);
     await cashoutService.requestCashout(ID.player, ID.club, 250, undefined, ID.operation, current);
@@ -70,16 +116,31 @@ describe('the caller retains the operation identity', () => {
 });
 
 describe('the server exclusively owns notification delivery', () => {
-  it.each([false, true])('request and approval add no client push, replayed=%s', async replayed => {
-    receipt('hold', replayed);
-    await cashoutService.requestCashout(ID.player, ID.club, 250, undefined, ID.operation, current);
-    identity.userId = ID.agent; receipt('approval', replayed);
-    await cashoutService.approveCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
-    expect(rpc.mock.calls.map(call => call[0])).toEqual(['fn_cashout_request_v2', 'fn_cashout_approve_v2']);
-    expect(push).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'request and approval add no client push, replayed=%s',
+    async (replayed) => {
+      receipt('hold', replayed);
+      await cashoutService.requestCashout(
+        ID.player,
+        ID.club,
+        250,
+        undefined,
+        ID.operation,
+        current
+      );
+      identity.userId = ID.agent;
+      receipt('approval', replayed);
+      await cashoutService.approveCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
+      expect(rpc.mock.calls.map((call) => call[0])).toEqual([
+        'fn_cashout_request_v2',
+        'fn_cashout_approve_v2',
+      ]);
+      expect(push).not.toHaveBeenCalled();
+    }
+  );
   it('a replayed decline adds no client push', async () => {
-    identity.userId = ID.agent; receipt('decline', true);
+    identity.userId = ID.agent;
+    receipt('decline', true);
     await cashoutService.rejectCashout(ID.cashout, ID.agent, undefined, ID.operation, intent);
     expect(push).not.toHaveBeenCalled();
   });
@@ -106,7 +167,9 @@ describe('a player cannot ask for an amount the server is bound to refuse', () =
   it('the sheet refuses the same three before it touches the service', () => {
     expect(MODAL).toContain('validateCashoutAmount(amount)');
     expect(MODAL).toContain('setError(validation.error)');
-    expect(MODAL).toContain("setError('That Is More Than Your Available Balance')");
+    expect(MODAL).toContain(
+      "if (cashoutAmount > currentBalance) throw new Error('That Is More Than Your Available Balance')"
+    );
     // Presets select an explicitly displayed amount at the cent quantum.
     expect(MODAL).toContain('cashoutPercentage(currentBalance ?? NaN, pct)');
   });
@@ -124,9 +187,13 @@ describe('an empty queue and a broken queue are different answers', () => {
 
   it('and returns verified scoped rows normally', async () => {
     identity.userId = ID.agent;
-    rpc.mockResolvedValueOnce({ data: [{ ...cashoutV2Receipt().request, amount: 500 }], error: null } as never);
+    rpc.mockResolvedValueOnce({
+      data: [{ ...cashoutV2Receipt().request, amount: 500 }],
+      error: null,
+    } as never);
     const rows = await cashoutService.getAgentPendingCashouts(ID.agent, ID.club);
-    expect(rows).toHaveLength(1); expect(rows[0].amount).toBe(500);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount).toBe(500);
   });
 
   it('the panel now surfaces that failure, which is what makes its Retry reachable', () => {
@@ -140,10 +207,12 @@ describe('an empty queue and a broken queue are different answers', () => {
 // ───────────────────────────────────────────────────────────────────────────
 describe('browser expiry cannot report scheduler success', () => {
   it('refuses the service-only operation without invoking an old RPC', async () => {
-    await expect(cashoutService.expireStale(72)).rejects.toThrow(/Browser Cashout Expiry Is Retired/);
+    await expect(cashoutService.expireStale(72)).rejects.toThrow(
+      /Browser Cashout Expiry Is Retired/
+    );
     expect(rpc).not.toHaveBeenCalled();
   });
-  it("retains expired as a historical request status", () => {
+  it('retains expired as a historical request status', () => {
     expect(SERVICE).toMatch(/\|\s*'expired'/);
   });
 });
@@ -151,10 +220,10 @@ describe('browser expiry cannot report scheduler success', () => {
 // ───────────────────────────────────────────────────────────────────────────
 describe('the agent may never take chips outside the two ways Dan allows', () => {
   it('the blanket removal is still a flat refusal', async () => {
-    await expect(cashoutService.canRemoveChips('a1', 'p1', 'club-1', 10)).resolves.toBe(false);
     await expect(cashoutService.removeChipsFromPlayer('a1', 'p1', 'club-1', 10)).rejects.toThrow(
       /cannot remove chips/i
     );
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('the clawback is anchored on a TRANSACTION and carries the caller op id', async () => {
@@ -265,8 +334,9 @@ describe('the escrow story the screens tell matches the one the server runs', ()
   });
 
   it('the panel says where the chips go, in both directions', () => {
-    expect(PANEL).toContain('Approving Moves Them Into Your Agent Wallet');
-    expect(PANEL).toContain('Returns Them To The Player');
+    const copy = PANEL.replace(/\s+/g, ' ');
+    expect(copy).toContain('Approval Transfers The Verified Hold Into Your Agent Wallet');
+    expect(copy).toContain('Rejection Returns The Verified Hold To The Player');
   });
 
   it('the panel scopes its realtime filter to a RESOLVED club uuid', () => {

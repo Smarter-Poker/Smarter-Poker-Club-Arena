@@ -108,10 +108,28 @@ describe('a money key identifies the purchase, not the attempt', () => {
 
   it('the agent dashboard sends an op id, scoped to the action AND the request', () => {
     const src = strip(read('src/pages/AgentDashboardPage.tsx'));
-    expect(src).toMatch(/cashoutOpIdFor\('approve', cashoutId\)/);
-    expect(src).toMatch(/cashoutOpIdFor\('reject', cashoutId\)/);
-    // A key shared between approve and reject COLLIDES on the unique index.
-    expect(src).toMatch(/`\$\{action\}:\$\{cashoutId\}`/);
+    expect(src).toContain('key: `${row.id}:approve`');
+    expect(src).toContain('key: `${row.id}:reject`');
+    expect(src).toMatch(/targetId:\s*row\.id,\s*kind:\s*'cashout_approve'/);
+    expect(src).toMatch(/targetId:\s*row\.id,\s*kind:\s*'cashout_decline'/);
+    const decision = sliceBlockAfter(src, 'const processCashout = async');
+    expect(decision).toMatch(
+      /decisions\.get\(\s*`\$\{cashout\.id\}:\$\{action\}`,\s*action\s*===\s*'approve'\s*\?\s*'cashout_approve'\s*:\s*'cashout_decline'\s*,?\s*\)/
+    );
+    expect(decision).toContain('start = captureCashoutStart(prepared)');
+    expect(decision).toContain('await recoverCashoutOperation(start)');
+    expect(decision).toContain('await runCashoutOperation(start)');
+    expect(decision).not.toMatch(/randomUUID|newOpId|supabase\.rpc/);
+    // The shared durable identity includes both the request and the action,
+    // along with the account/club/amount/note; it is not minted per attempt.
+    const preparation = sliceBlockAfter(
+      read('src/services/AgentWalletIntent.ts'),
+      'export async function prepareAgentCashoutOperation('
+    );
+    expect(preparation).toMatch(
+      /intent\.userId,\s*intent\.clubId,\s*intent\.targetId,\s*intent\.kind/
+    );
+    expect(preparation).toContain('cashoutGenerations.prepare(hash, repeatable, isCurrent)');
   });
 
   it('spin activation takes the key from its caller', () => {

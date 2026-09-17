@@ -62,7 +62,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useCashoutScope } from '../hooks/useCashoutScope';
-import { readClubWeeklyStatements, formatWeeklyChips, CLUB_WEEKLY_STATEMENT_LIMIT, type ClubWeeklyStatement } from '../services/ClubWeeklyAccountingReader';
+import {
+  readClubWeeklyStatements,
+  formatWeeklyChips,
+  CLUB_WEEKLY_STATEMENT_LIMIT,
+  type ClubWeeklyStatement,
+} from '../services/ClubWeeklyAccountingReader';
 import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { cashierReasonCode, recordCashierOperation } from '../services/CashierOperationsTelemetry';
@@ -868,13 +873,12 @@ export default function CashierTradePage() {
   // Refresh on any balance event
   useEffect(() => {
     // AUDIT 2026-08-21: BALANCE_UPDATED alone missed mints, distributions and
-    // settlement credits, so the strip could sit stale after real money moved.
+    // cashier changes, so the strip could sit stale after real money moved.
     const events = [
       'BALANCE_UPDATED',
       'CHIPS_ADDED',
       'CHIPS_DISTRIBUTED',
       'CASHIER_BALANCE_CHANGED',
-      'SETTLEMENT_COMPLETED',
     ] as const;
     // Only OUR club. CHIPS_DISTRIBUTED and CASHIER_BALANCE_CHANGED both carry a
     // clubId that was thrown away, so a chip event anywhere on the platform
@@ -1354,8 +1358,12 @@ export default function CashierTradePage() {
     setInvoicesLoading(true);
     setInvoicesError(null);
     try {
-      const { rows } = await readClubWeeklyStatements({ clubId: clubUuid, userId: user.id,
-        limit: CLUB_WEEKLY_STATEMENT_LIMIT, isCurrent: readCurrent });
+      const { rows } = await readClubWeeklyStatements({
+        clubId: clubUuid,
+        userId: user.id,
+        limit: CLUB_WEEKLY_STATEMENT_LIMIT,
+        isCurrent: readCurrent,
+      });
       if (!isMounted.current || seq !== invoiceSeqRef.current) return false;
       if (!readCurrent()) throw new Error('Weekly Statement Account Or Club Changed');
       setInvoices(rows);
@@ -1380,7 +1388,9 @@ export default function CashierTradePage() {
     // with a button that did nothing.
   }, [tab, loadInvoices, invoicesReload]);
   const visibleInvoices = invoiceReadScopeRef.current?.() === true ? invoices : [];
-  const weeklyStatementsUnavailable = invoicesError || (!weeklyReadScope() ? 'Weekly Statements Are Unavailable For This Account.' : null);
+  const weeklyStatementsUnavailable =
+    invoicesError ||
+    (!weeklyReadScope() ? 'Weekly Statements Are Unavailable For This Account.' : null);
 
   // ── Derived list ───────────────────────────────────────────────────────────
   /* Everyone the viewer can SEND to: the roster minus the viewer's own row. */
@@ -2906,7 +2916,9 @@ export default function CashierTradePage() {
                 Settlement Record
               </h2>
             </div>
-            <span className={styles.sectionMeta}>Latest Up To {CLUB_WEEKLY_STATEMENT_LIMIT} Weekly Statements</span>
+            <span className={styles.sectionMeta}>
+              Latest Up To {CLUB_WEEKLY_STATEMENT_LIMIT} Weekly Statements
+            </span>
           </div>
           <div className={styles.list}>
             {invoicesLoading && <div className={styles.empty}>Loading Settlement Records...</div>}
@@ -2927,23 +2939,31 @@ export default function CashierTradePage() {
                 No Settlement Records Yet. They Appear Here After The First Weekly Close.
               </div>
             )}
-            {!invoicesLoading && !weeklyStatementsUnavailable && visibleInvoices.map((iv) => (
-              <div key={iv.id} className={styles.row}>
-                <div className={styles.rowInfo}>
-                  <span className={styles.rowName}>Club Weekly Accounting</span>
+            {!invoicesLoading &&
+              !weeklyStatementsUnavailable &&
+              visibleInvoices.map((iv) => (
+                <div key={iv.id} className={styles.row}>
+                  <div className={styles.rowInfo}>
+                    <span className={styles.rowName}>Club Weekly Accounting</span>
+                    <span className={styles.rowSub}>
+                      {new Date(iv.createdAt).toLocaleDateString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}{' '}
+                      &middot; Weekly Summary
+                    </span>
+                  </div>
                   <span className={styles.rowSub}>
-                    {new Date(iv.createdAt).toLocaleDateString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}{' '}
-                    &middot; Weekly Summary
+                    Rake Funding {formatWeeklyChips(iv.rakeFunding)}
+                    <br />
+                    Paid By Club {formatWeeklyChips(iv.paidByClub)}
+                  </span>
+                  <span className={styles.rowBalance}>
+                    Retained {formatWeeklyChips(iv.retainedByClub)}
                   </span>
                 </div>
-                <span className={styles.rowSub}>Rake Funding {formatWeeklyChips(iv.rakeFunding)}<br />Paid By Club {formatWeeklyChips(iv.paidByClub)}</span>
-                <span className={styles.rowBalance}>Retained {formatWeeklyChips(iv.retainedByClub)}</span>
-              </div>
-            ))}
+              ))}
           </div>
         </section>
       )}

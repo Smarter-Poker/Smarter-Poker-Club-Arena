@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "spin-mixed-basis-pure-hosted",
+  "scope": "Pure supplied-JSON evidence and scalar key rules only; no original-row, statement-lane or financial completion qualification.",
+  "full_qualification": false,
+  "provider_preimage": {
+    "path": "scripts/ci/probes/spin-expiry/inputs/schema.sql",
+    "sha256": "5a5966afca3b2c9699aba326baf5f32d6c0e1baa2ad09340feaa3b23f4d9dc0a",
+    "function": "public.fn_settle_tournament_places(uuid,uuid)",
+    "prosrc_md5": "6181734ff98555ecc04648186f6ebf24"
+  },
+  "files": {
+    "supabase/components/spin-mixed-basis-evidence.sql": {
+      "sha256": "f0d703e56be6f6bd171a2ed56cd4943a5021fd4bfc9da57a60c706d1af7d8572",
+      "bytes": 23640
+    },
+    "scripts/qualification/spin-mixed-basis-shape.sql": {
+      "sha256": "3b5d0c7e9e656eff54f23fd9b8a1cd1f02f070e6bfe14fb6fcaf3f52b9ca3684",
+      "bytes": 11720
+    },
+    "scripts/qualification/spin-mixed-basis-pure.sql": {
+      "sha256": "47c9f8149a65ce657735d3aafee71b100c1e61416f6b504b1117d9996ef4655e",
+      "bytes": 45168
+    },
+    "scripts/qualification/fixtures/spin-history-retention/database-state.sql": {
+      "sha256": "35534bfff51d3bae651cc85e8165679c93ea14ec04de6d30c16283834e774b12",
+      "bytes": 3095
+    }
+  },
+  "relative_include_graph": {
+    "scripts/qualification/spin-mixed-basis-pure.sql": [
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql"
+    ]
+  },
+  "embedded_sources": {
+    "mixed_component_source": {
+      "path": "supabase/components/spin-mixed-basis-evidence.sql",
+      "remove_outer_transaction": [
+        "BEGIN;",
+        "COMMIT;"
+      ]
+    },
+    "mixed_shape_source": {
+      "path": "scripts/qualification/spin-mixed-basis-shape.sql",
+      "remove_outer_transaction": [
+        "BEGIN;",
+        "ROLLBACK;"
+      ]
+    }
+  },
+  "stage": {
+    "name": "mixed_pure_evidence_rollback",
+    "role": "postgres",
+    "path": "scripts/qualification/spin-mixed-basis-pure.sql"
+  },
+  "execution_status": "native_unrun"
+}

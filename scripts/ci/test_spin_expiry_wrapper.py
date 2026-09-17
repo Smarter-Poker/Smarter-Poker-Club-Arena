@@ -27,6 +27,22 @@ PG = Path('/usr/lib/postgresql/17/bin')
 SOURCE = Path('/tmp/spin5-protocol/source')
 
 
+def pure_source_files():
+    root = Path(__file__).resolve().parents[2]
+    return {name: (root / name).read_bytes() for name in W.PURE_INPUTS}
+
+
+def pure_result():
+    # Independent expected protocol only. The actual original SQL supplies proof.
+    return {'qualification': 'spin_mixed_basis_pure_evidence', 'shape_positive': 1,
+            'shape_negative': 21, 'key_scalar_controls': 17, 'private_invocation_refusals': 9,
+            'installed_authority_verified': True, 'missing_preimage_refused': True,
+            'duplicate_install_refused': True, 'inner_and_outer_rollback_verified': True,
+            'business_rows_unchanged': True, 'historical_original_rows_qualified': False,
+            'statement_lane_qualified': False, 'financial_completion_qualified': False,
+            'full_qualification': False}
+
+
 def retention_behavior():
     # Protocol samples only; actual SQL must produce its own original result.
     sequences = {name: {'last_value': '1', 'is_called': False} for name in (
@@ -89,6 +105,7 @@ def completed_receipt(source=SOURCE):
         ('authentic_entry_sequence_authority', 'fixture_bootstrap', 'inputs/entry-sequence-authority.sql'),
         ('authentic_settlement_source_authority', 'fixture_bootstrap', 'inputs/settle-source-authority.sql'),
         ('retention_provider_authority', 'fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
+        ('mixed_pure_evidence_rollback', 'postgres', 'scripts/qualification/spin-mixed-basis-pure.sql'),
         ('retention_completed_eligibility', 'postgres', 'scripts/qualification/spin-history-retention-completed.sql'),
     ]
     value['stages'] = [value['stages'][0]] + [
@@ -118,6 +135,7 @@ def receipt(image='candidate', source=SOURCE):
     retention = [
         ('authentic_settlement_source_authority', 'fixture_bootstrap', 'inputs/settle-source-authority.sql'),
         ('retention_provider_authority', 'fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
+        ('mixed_pure_evidence_rollback', 'postgres', 'scripts/qualification/spin-mixed-basis-pure.sql'),
         ('retention_catalog_rollback', 'postgres', 'scripts/qualification/spin-history-retention.sql'),
         ('retention_behavior_rollback', 'postgres', 'scripts/qualification/spin-history-retention-behavior.sql'),
     ]
@@ -156,7 +174,7 @@ def receipt(image='candidate', source=SOURCE):
             'execution_backend': 'hosted-owned-pg17-unix-socket',
             'hosted_cleanup_observed': True, 'original_clients_terminal': True,
             'stages': stages, 'business_cases': records, 'server_endpoint': endpoint,
-            'retention_qualification': retention_behavior()}
+            'retention_qualification': retention_behavior(), 'mixed_pure_qualification': pure_result()}
 
 
 class SessionEnvironmentTests(unittest.TestCase):
@@ -618,6 +636,7 @@ class FixtureSourceTests(unittest.TestCase):
         files = dict(self.files)
         files.update({name: ('current source '+name).encode() for name in W.REPLACEMENTS})
         files.update(completed_source_files())
+        files.update(pure_source_files())
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -776,6 +795,8 @@ class ReceiptTests(unittest.TestCase):
                 if mode == 'missing': stages.remove(stage)
                 if mode == 'repeated': stages.append(copy.deepcopy(stage))
                 if mode == 'early': stages.remove(stage); stages.insert(0, stage)
+                if mode == 'before-provider':
+                    stages.remove(stage); stages.insert(next(i for i,x in enumerate(stages) if x['stage']=='retention_provider_authority'),stage)
                 if mode == 'late': stages.remove(stage); stages.append(stage)
                 if mode == 'failed': stage['returncode'] = 1
                 if mode == 'role': stage['argv'][stage['argv'].index('-U') + 1] = 'service_role'
@@ -1004,6 +1025,8 @@ class CompletedRetentionTests(unittest.TestCase):
                 if mode == 'missing': stages.remove(stage)
                 if mode == 'repeated': stages.append(copy.deepcopy(stage))
                 if mode == 'early': stages.remove(stage); stages.insert(0, stage)
+                if mode == 'before-provider':
+                    stages.remove(stage); stages.insert(next(i for i,x in enumerate(stages) if x['stage']=='retention_provider_authority'),stage)
                 if mode == 'late':
                     # Move before the prior phase; moving the last stage to the
                     # end would not mutate the protocol.
@@ -1047,7 +1070,7 @@ class CompletedRetentionTests(unittest.TestCase):
 
     def test_completed_original_output_and_cleanup_required_before_allocation_disposal(self):
         # Only the adapter protocol is simulated; no PG command executes.
-        for mode in ('success', 'changed-output', 'failed-cleanup'):
+        for mode in ('success', 'changed-output', 'failed-cleanup', 'changed-pure-output', 'missing-pure-output'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder).resolve(); allocation = root / 'allocation'; allocation.mkdir(mode=0o700)
                 args = W.argparse.Namespace(execution=EXECUTION, ordinary_user=ORDINARY,
@@ -1062,10 +1085,13 @@ class CompletedRetentionTests(unittest.TestCase):
                     if mode == 'failed-cleanup': value['cleanup_errors'] = ['original fast-stop failure']
                     for stage in value['stages']:
                         output = (json.dumps(completed_result()).encode() if stage['stage'] == 'retention_completed_eligibility'
+                                  else json.dumps(pure_result()).encode() if stage['stage'] == W.PURE_STAGE
                                   else b'original protocol output')
                         stage['stdout_sha256'] = W.digest(output)
                         if mode == 'changed-output' and stage['stage'] == 'retention_completed_eligibility': output += b'changed'
-                        (work / (stage['stage'] + '.stdout')).write_bytes(output)
+                        if mode == 'changed-pure-output' and stage['stage'] == W.PURE_STAGE: output += b'changed'
+                        if not (mode == 'missing-pure-output' and stage['stage'] == W.PURE_STAGE):
+                            (work / (stage['stage'] + '.stdout')).write_bytes(output)
                         (work / (stage['stage'] + '.stderr')).write_bytes(b'')
                     (work / 'receipt.json').write_text(json.dumps(value))
                     return value
@@ -1077,6 +1103,87 @@ class CompletedRetentionTests(unittest.TestCase):
                 self.assertEqual(result, 0 if mode == 'success' else 1)
                 self.assertEqual(allocation.exists(), mode != 'success')
                 output = root / 'artifacts/spin-expiry' / EXECUTION
-                self.assertTrue((output / 'receipt.json').exists())
-                self.assertTrue((output / 'retention_completed_eligibility.stdout').exists())
+                if mode == 'missing-pure-output':
+                    # Incomplete original logs refuse export/disposal; the exact
+                    # receipt and remaining evidence stay in the owned allocation.
+                    self.assertTrue((allocation / 'work/receipt.json').exists())
+                    self.assertFalse((output / 'receipt.json').exists())
+                else:
+                    self.assertTrue((output / 'receipt.json').exists())
+                    self.assertTrue((output / 'retention_completed_eligibility.stdout').exists())
                 self.assertEqual(json.loads((output / 'RESULT.json').read_text())['passed'], mode == 'success')
+
+
+class PureEvidenceTests(unittest.TestCase):
+    def validate(self, value, image='candidate'):
+        return W.validate_receipt(value, EXECUTION, ORDINARY, TOURNAMENT, image,
+                                  MANIFEST_SHA, SOURCE, PG)
+
+    def test_exact_sources_embedded_bodies_and_include_graph(self):
+        files = pure_source_files()
+        W.validate_pure_sources(files)
+        self.assertEqual(set(W.decode(files[W.PURE_MANIFEST])['files']),
+                         {W.PURE_COMPONENT, W.PURE_SHAPE, W.PURE_QUALIFIER, W.PURE_ORACLE})
+        self.assertFalse(any('terminal' in name or 'receipt-lane' in name for name in W.PURE_INPUTS))
+        for name in W.PURE_INPUTS:
+            missing = dict(files); missing.pop(name)
+            modified = dict(files); modified[name] += b'changed'
+            for value in (missing, modified):
+                with self.subTest(name=name), self.assertRaises(RuntimeError): W.validate_pure_sources(value)
+
+    def test_rebound_manifest_cannot_hide_embedded_authority_or_include_drift(self):
+        for mode in ('component', 'shape', 'include', 'scope', 'role'):
+            files = pure_source_files(); manifest = W.decode(files[W.PURE_MANIFEST])
+            if mode in ('component', 'shape'):
+                path = W.PURE_COMPONENT if mode == 'component' else W.PURE_SHAPE
+                files[path] += b'-- source no longer matches embedded body\n'
+                manifest['files'][path] = W.pin(files[path])
+            if mode == 'include':
+                files[W.PURE_QUALIFIER] += b'\n\\ir spin-mixed-basis-terminal.sql\n'
+                manifest['files'][W.PURE_QUALIFIER] = W.pin(files[W.PURE_QUALIFIER])
+            if mode == 'scope': manifest['full_qualification'] = True
+            if mode == 'role': manifest['stage']['role'] = 'service_role'
+            files[W.PURE_MANIFEST] = json.dumps(manifest).encode()
+            with self.subTest(mode=mode), patch.object(W, 'PURE_MANIFEST_SHA256', W.digest(files[W.PURE_MANIFEST])), \
+                    self.assertRaises(RuntimeError): W.validate_pure_sources(files)
+
+    def test_partial_original_result_exact_counts_types_and_no_extra_claims(self):
+        raw = json.dumps(pure_result()).encode()
+        self.assertEqual(W.pure_output(b'BEGIN\nROLLBACK\n' + raw), pure_result())
+        for output in (b'', raw+b'\n'+raw, b'{bad}\n'+raw, raw[:-1],
+                       raw.replace(b'"full_qualification": false', b'"full_qualification": false, "full_qualification": false')):
+            with self.subTest(output=output[:40]), self.assertRaises((RuntimeError, ValueError)):
+                W.pure_output(output)
+        for key, original in pure_result().items():
+            wrong = dict(pure_result()); wrong[key] = (not original if type(original) is bool else None)
+            with self.subTest(key=key), self.assertRaises(RuntimeError): W.validate_pure_result(wrong)
+        for wrong in (dict(pure_result(), shape_positive=True), dict(pure_result(), new_claim=True)):
+            with self.assertRaises(RuntimeError): W.validate_pure_result(wrong)
+
+    def test_every_original_image_requires_pure_phase_before_retention_or_money(self):
+        for image in W.IMAGES:
+            original = completed_receipt() if image == 'retention-completed' else receipt(image)
+            self.validate(original, image)
+            for mode in ('missing', 'repeated', 'early', 'before-provider', 'late', 'role', 'identity', 'failed', 'hash', 'result'):
+                value = copy.deepcopy(original); stages = value['stages']
+                stage = next(item for item in stages if item['stage'] == 'mixed_pure_evidence_rollback')
+                if mode == 'missing': stages.remove(stage)
+                if mode == 'repeated': stages.append(copy.deepcopy(stage))
+                if mode == 'early': stages.remove(stage); stages.insert(0, stage)
+                if mode == 'before-provider':
+                    stages.remove(stage); stages.insert(next(i for i,x in enumerate(stages) if x['stage']=='retention_provider_authority'),stage)
+                if mode == 'late': stages.remove(stage); stages.append(stage)
+                if mode == 'role': stage['argv'][stage['argv'].index('-U')+1] = 'fixture_bootstrap'
+                if mode == 'identity': stage['argv'][-1] = '/old/pure.sql'
+                if mode == 'failed': stage['returncode'] = 1
+                if mode == 'hash': stage.pop('stdout_sha256')
+                if mode == 'result': value['mixed_pure_qualification'] = None
+                with self.subTest(image=image, mode=mode), self.assertRaises(RuntimeError): self.validate(value,image)
+
+    def test_original_images_cases_and_budgets_unchanged(self):
+        self.assertEqual(W.IMAGES, ('preimage','candidate','retention-completed'))
+        self.assertEqual(W.CASES, {'preimage':('order',), 'candidate':('order','timeout','committed-refund'),
+                                  'retention-completed':()})
+        source = Path(W.__file__).read_text()
+        self.assertIn('deadline = time.monotonic() + 240', source)
+        self.assertIn("'cleanup_deadline_seconds': 30", source)

@@ -425,6 +425,10 @@ describe('required CI owns native fixture verification', () => {
 // Keep the full current qualification closure explicit: no manifest read is
 // needed to classify its own removal, or a source renamed outside the scope.
 const spinExpiryAccountingPaths = [
+  'supabase/components/spin-mixed-basis-evidence.sql',
+  'scripts/qualification/spin-mixed-basis-shape.sql',
+  'scripts/qualification/spin-mixed-basis-pure.sql',
+  'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json',
   'scripts/qualification/fixtures/spin-history-retention/capture-closure.sql',
   'scripts/qualification/fixtures/spin-history-retention/capture-provider.sql',
   'scripts/qualification/fixtures/spin-history-retention/component-inputs.sql',
@@ -536,6 +540,10 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     'scripts/qualification/unrelated.sql',
     'supabase/components/unrelated.sql',
     'supabase/components/spin-expiry-lock-order.sql.bak',
+    'supabase/components/spin-mixed-basis-evidence.sql.bak',
+    'scripts/qualification/spin-mixed-basis-pure.sql.bak',
+    'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json.bak',
+    'scripts/qualification/spin-mixed-basis-shape.sql.bak',
     'supabase/components/spin-history-retention.sql.bak',
     'scripts/qualification/spin-history-retention.sql.bak',
     'scripts/qualification/spin-history-retention-completed.sql.bak',

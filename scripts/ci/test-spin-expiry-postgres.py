@@ -86,6 +86,15 @@ COMPLETED_RESTORE = 'scripts/qualification/fixtures/spin-history-retention/compl
 COMPLETED_CONSUMER = 'scripts/qualification/spin-history-retention-completed.sql'
 COMPLETED_CAPTURE_TIME = '2026-09-17T07:35:54.523723+00:00'
 REPLACEMENTS.update({name: name for name in (*RETENTION_INPUTS, *COMPLETED_INPUTS)})
+PURE_MANIFEST = 'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json'
+PURE_MANIFEST_SHA256 = '635dd1e785c49058bd15752d89ca7ef12648f6bdeba0289ecd31e27af1623e2a'
+PURE_COMPONENT = 'supabase/components/spin-mixed-basis-evidence.sql'
+PURE_SHAPE = 'scripts/qualification/spin-mixed-basis-shape.sql'
+PURE_QUALIFIER = 'scripts/qualification/spin-mixed-basis-pure.sql'
+PURE_ORACLE = 'scripts/qualification/fixtures/spin-history-retention/database-state.sql'
+PURE_INPUTS = (PURE_COMPONENT, PURE_SHAPE, PURE_QUALIFIER, PURE_ORACLE, PURE_MANIFEST)
+PURE_STAGE = 'mixed_pure_evidence_rollback'
+REPLACEMENTS.update({name: name for name in PURE_INPUTS})
 RETENTION_STAGES = {
     'retention_provider_authority': ('fixture_bootstrap', 'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql'),
     'retention_catalog_rollback': ('postgres', 'scripts/qualification/spin-history-retention.sql'),
@@ -288,6 +297,71 @@ def git_read(*args):
     return subprocess.check_output(['git', '-C', str(ROOT), *args], env=CLEAN_ENV, timeout=5)
 
 
+def pure_transaction_body(data, closing):
+    # No parser or rewritten authority: only the exact single outer wrapper of
+    # these two hash-pinned files is removed for the rollback-only native test.
+    source = data.decode()
+    require(source.count('\nBEGIN;\n') == 1 and source.endswith(closing + '\n'),
+            'pure source transaction envelope differs')
+    return source.replace('\nBEGIN;\n', '\n', 1)[:-len(closing + '\n')]
+
+
+def validate_pure_sources(files):
+    require(set(PURE_INPUTS) <= set(files), 'pure source inventory incomplete')
+    require(digest(files[PURE_MANIFEST]) == PURE_MANIFEST_SHA256,
+            'pure manifest differs from reviewed source')
+    manifest = decode(files[PURE_MANIFEST])
+    require(set(manifest['files']) == set(PURE_INPUTS) - {PURE_MANIFEST}, 'pure leaf inventory differs')
+    for name, expected in manifest['files'].items():
+        require(pin(files[name]) == expected, 'pure source pin mismatch: ' + name)
+    require(manifest['full_qualification'] is False and manifest['stage'] == {
+        'name': PURE_STAGE, 'role': 'postgres', 'path': PURE_QUALIFIER}, 'pure scope or role differs')
+    qualifier = files[PURE_QUALIFIER].decode()
+    expected_sources = {
+        'mixed_component_source': {'path': PURE_COMPONENT, 'remove_outer_transaction': ['BEGIN;', 'COMMIT;']},
+        'mixed_shape_source': {'path': PURE_SHAPE, 'remove_outer_transaction': ['BEGIN;', 'ROLLBACK;']}}
+    require(manifest['embedded_sources'] == expected_sources, 'pure embedded source inventory differs')
+    for delimiter, spec in expected_sources.items():
+        parts = qualifier.split('$' + delimiter + '$')
+        require(len(parts) == 3 and parts[1] == pure_transaction_body(
+            files[spec['path']], spec['remove_outer_transaction'][1]), 'pure embedded source differs: ' + delimiter)
+    graph = {}
+    for name in manifest['files']:
+        targets = []
+        for line in files[name].decode().splitlines():
+            if not line.lstrip().startswith('\\ir'): continue
+            match = re.fullmatch(r'\\ir ([A-Za-z0-9_./-]+)', line.strip())
+            require(match is not None, 'unsupported pure include directive')
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(name), match[1]))
+            safe_name(target)
+            require(target in manifest['files'], 'pure include outside exact consumed source')
+            targets.append(target)
+        if targets: graph[name] = targets
+    require(graph == manifest['relative_include_graph'] == {PURE_QUALIFIER: [PURE_ORACLE]},
+            'pure include graph differs')
+
+
+def validate_pure_result(value):
+    fixed = {'qualification': 'spin_mixed_basis_pure_evidence', 'shape_positive': 1,
+             'shape_negative': 21, 'key_scalar_controls': 17, 'private_invocation_refusals': 9,
+             'installed_authority_verified': True, 'missing_preimage_refused': True,
+             'duplicate_install_refused': True, 'inner_and_outer_rollback_verified': True,
+             'business_rows_unchanged': True, 'historical_original_rows_qualified': False,
+             'statement_lane_qualified': False, 'financial_completion_qualified': False,
+             'full_qualification': False}
+    require(isinstance(value, dict) and set(value) == set(fixed), 'pure original JSON shape differs')
+    for key, expected in fixed.items():
+        require(type(value[key]) is type(expected) and value[key] == expected,
+                'pure assertion differs: ' + key)
+    return value
+
+
+def pure_output(output):
+    values = [decode(line) for line in output.splitlines() if line.lstrip().startswith(b'{')]
+    require(len(values) == 1, 'pure original JSON absent or repeated')
+    return validate_pure_result(values[0])
+
+
 def validate_retention_sources(files):
     """Validate the frozen component/fixture and every relative staged include."""
     require(set(RETENTION_INPUTS) <= set(files), 'retention source inventory incomplete')
@@ -409,6 +483,7 @@ def completed_sql_stages(source):
         'authentic_entry_sequence_authority': ('fixture_bootstrap', 'inputs/entry-sequence-authority.sql'),
         'authentic_settlement_source_authority': ('fixture_bootstrap', 'inputs/settle-source-authority.sql'),
         'retention_provider_authority': RETENTION_STAGES['retention_provider_authority'],
+        PURE_STAGE: ('postgres', PURE_QUALIFIER),
         'retention_completed_eligibility': ('postgres', COMPLETED_CONSUMER),
     }
     return stages
@@ -465,6 +540,7 @@ def source_packet():
         actual = read_regular(ROOT / name, 1048576)
         require(git_read('show', head + ':' + name) == actual, 'wrapper source differs from checkout HEAD: ' + name)
     validate_completed_sources(copied)
+    validate_pure_sources(copied)
     manifest = {'schemaVersion': 1, 'kind': 'spin-expiry-hosted-attempt',
                 'checkout': {'head': head, 'tree': tree}, 'fixtureManifestSha256': digest(raw),
                 'fixtureProvenance': fixture_manifest,
@@ -507,6 +583,7 @@ def verify_packet(source, raw, manifest):
         files[name] = read_regular(source / name, 16777216)
         require(pin(files[name]) == expected, 'staged source changed: ' + name)
     validate_completed_sources(files)
+    validate_pure_sources(files)
 
 
 def find_pg():
@@ -637,7 +714,7 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                'native_status': 'running', 'stages': [], 'full_qualification': False,
                'business_scenario_passed': False, 'business_qualified': False,
                'catalog_slice_passed': False, 'retention_qualification': None,
-               'completed_retention_qualification': None,
+               'completed_retention_qualification': None, 'mixed_pure_qualification': None,
                'image': args.image, 'tournament': args.tournament, 'business_cases': [],
                'qualification_scope': ('captured completed-receipt retention eligibility only' if args.image == 'retention-completed'
                                        else 'one authentic funded Spin expiry schedule'),
@@ -747,9 +824,14 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         sql('authentic_entry_provider_supplement', ROOT / 'inputs/entry-provider-supplement.sql')
         sql('authentic_entry_sequence_authority', ROOT / 'inputs/entry-sequence-authority.sql')
         sql('authentic_settlement_source_authority', ROOT / 'inputs/settle-source-authority.sql')
+        role, path = RETENTION_STAGES['retention_provider_authority']
+        retention_provider_original = sql('retention_provider_authority', ROOT / path, user=role)
+        # The shared observer references this authentic pruner authority at CREATE.
+        # Pure controls follow that existing setup in every image, before funding.
+        pure_original = sql(PURE_STAGE, ROOT / PURE_QUALIFIER, user='postgres')
+        receipt['mixed_pure_qualification'] = pure_output(pure_original.encode())
+        persist()
         if args.image == 'retention-completed':
-            role, path = RETENTION_STAGES['retention_provider_authority']
-            sql('retention_provider_authority', ROOT / path, user=role)
             original = sql('retention_completed_eligibility', ROOT / COMPLETED_CONSUMER, user='postgres')
             receipt['completed_retention_qualification'] = completed_retention_output(original.encode())
             # The finally block still proves cleanup/source stability. This
@@ -758,8 +840,8 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
             return receipt
         # Same finite allocation and original deadline. The rollback-only estate
         # precedes funding; it does not qualify completed-terminal or race behavior.
-        retention_stdout = {}
-        for stage, (role, path) in RETENTION_STAGES.items():
+        retention_stdout = {'retention_provider_authority': retention_provider_original.encode()}
+        for stage, (role, path) in list(RETENTION_STAGES.items())[1:]:
             retention_stdout[stage] = sql(stage, ROOT / path, user=role).encode()
         receipt['retention_qualification'] = retention_output(
             retention_stdout['retention_catalog_rollback'], retention_stdout['retention_behavior_rollback'])
@@ -870,6 +952,7 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(receipt.get('execution') == execution and receipt.get('source_manifest_sha256') == manifest_sha
             and receipt.get('image') == image and receipt.get('tournament') == tournament,
             'wrong/stale qualification receipt')
+    validate_pure_result(receipt.get('mixed_pure_qualification'))
     completed = image == 'retention-completed'
     status = ('retention_completed_eligibility_passed_cleanup_observed' if completed
               else 'business_scenario_passed_cleanup_observed')
@@ -905,7 +988,8 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
                     'real_funded_paid_seat_fixture', 'retention_catalog_rollback', 'retention_behavior_rollback']),
                 'completed receipt estate reached unrelated catalog or financial stages')
     else:
-        expected = ['authentic_settlement_source_authority', *RETENTION_STAGES]
+        expected = ['authentic_settlement_source_authority', 'retention_provider_authority',
+                    PURE_STAGE, *list(RETENTION_STAGES)[1:]]
         expected += (catalog + ['install_candidate'] if image == 'candidate' else []) + ['real_funded_paid_seat_fixture']
         expected += [business_stage_name(case) for case in CASES[image]]
         require(receipt.get('completed_retention_qualification') is None
@@ -930,6 +1014,7 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
         validate_retention_behavior(receipt.get('retention_qualification'))
     sql_inputs = {
         'authentic_settlement_source_authority': 'inputs/settle-source-authority.sql',
+        PURE_STAGE: PURE_QUALIFIER,
         **{name: path for name, (_, path) in RETENTION_STAGES.items()},
         'spin_catalog_before': 'spin-catalog-observer.sql',
         'spin_catalog_rollback_qualification': 'scripts/qualification/spin-expiry-lock-order.sql',
@@ -943,8 +1028,8 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
         stage = stages[names.index(name)]
         require(stage.get('returncode') == 0 and isinstance(stage.get('argv'), list) and stage['argv'],
                 'stage identity or outcome mismatch')
-        if completed or name in RETENTION_STAGES or name == 'authentic_settlement_source_authority':
-            role = (completed_inputs[name][0] if completed else
+        if completed or name in RETENTION_STAGES or name in (PURE_STAGE, 'authentic_settlement_source_authority'):
+            role = (completed_inputs[name][0] if completed else 'postgres' if name == PURE_STAGE else
                     RETENTION_STAGES[name][0] if name in RETENTION_STAGES else 'fixture_bootstrap')
             require(stage['argv'] == qualification_sql_argv(PG, source, execution, ordinary, tournament,
                                                            role, sql_inputs[name]),
@@ -1015,6 +1100,11 @@ def run_image(image, PG):
         retained_evidence(allocation / 'work', output, receipt, manifest_bytes)
         validate_receipt(receipt, args.execution, args.ordinary_user, args.tournament, image,
                          digest(manifest_bytes), allocation / 'source', PG)
+        pure_original = read_regular(allocation / 'work' / (PURE_STAGE + '.stdout'), 1048576)
+        pure_stage = next(item for item in receipt['stages'] if item['stage'] == PURE_STAGE)
+        require(digest(pure_original) == pure_stage['stdout_sha256']
+                and pure_output(pure_original) == receipt['mixed_pure_qualification'],
+                'pure result differs from original output')
         retention_stdout = {}
         observed_stages = (('restore_completed_start', 'retention_provider_authority', 'retention_completed_eligibility')
                            if image == 'retention-completed' else tuple(RETENTION_STAGES))

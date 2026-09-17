@@ -6,11 +6,13 @@
 -- 6fbb1a35895c8f7e98db657f19751b6eb902d16d2fa6d3762ab7a4e2cb010f09.
 -- No job is created or deleted here. The intermediate command must never be
 -- presented as an independently deployed final scheduler state.
-BEGIN;
+BEGIN ISOLATION LEVEL SERIALIZABLE;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
 DO $captured_cron_provider$
 BEGIN
+ IF current_setting('transaction_isolation') IS DISTINCT FROM 'serializable' THEN
+  RAISE EXCEPTION 'accounting_cron_requires_serializable' USING ERRCODE='25000';END IF;
  IF current_user<>'postgres' OR current_database()<>'postgres'
   OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999
   OR current_setting('cron.database_name',true) IS DISTINCT FROM current_database()
@@ -23,7 +25,9 @@ BEGIN
   RAISE EXCEPTION 'captured_accounting_cron_requires_actual_provider';END IF;
 END $captured_cron_provider$;
 
-LOCK TABLE cron.job IN SHARE ROW EXCLUSIVE MODE;
+-- Serializable extension-API updates and the retained exact pre/postchecks
+-- protect this owned-job transition. The retired-job checks remain necessary
+-- for the extension's catalog-scan delete; unrelated cron writers are not locked.
 DO $captured_cron_transition$
 DECLARE
  original_close jsonb;

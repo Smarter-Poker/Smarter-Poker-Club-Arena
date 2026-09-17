@@ -1,11 +1,13 @@
 -- SOURCE-ONLY PROPOSAL. UNRUN. Existing job only; no second timer or payer.
 -- Follow captured transition 00 before sealed155500, the remaining sealed
 -- components, union continuation and timing01 in the same atomic bundle.
-BEGIN;
+BEGIN ISOLATION LEVEL SERIALIZABLE;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
 DO $cron_source_guard$
 BEGIN
+ IF current_setting('transaction_isolation') IS DISTINCT FROM 'serializable' THEN
+  RAISE EXCEPTION 'accounting_cron_requires_serializable' USING ERRCODE='25000';END IF;
  IF current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999
   OR NOT EXISTS(SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid
     WHERE e.extname='pg_cron' AND d.classid='pg_class'::regclass
@@ -19,9 +21,8 @@ BEGIN
   RAISE EXCEPTION 'accounting_cron_timezone_requires_qualification';END IF;
 END $cron_source_guard$;
 
--- Serialize the named-job preimage and unchanged-role postcondition. The
--- launcher can still read; this short transaction never edits another job.
-LOCK TABLE cron.job IN SHARE ROW EXCLUSIVE MODE;
+-- The serializable snapshot and actual extension-owned update protect this
+-- owned-job preimage without table-wide exclusion of unrelated cron writers.
 DO $change_existing_job$
 DECLARE
  job cron.job%ROWTYPE;

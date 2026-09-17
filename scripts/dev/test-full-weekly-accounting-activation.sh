@@ -51,7 +51,7 @@ finish_fixture() {
     fi
     started=0
   fi
-  for artifact in credit-reduction.log credit-concurrency-setup.log credit-concurrency.log credit-concurrency-rows.txt credit-concurrency-final-rows.txt credit-concurrency-final-capture.log accepted-credit-reduction-authority.json initdb.log correction-concurrency-setup.log correction-concurrency.log correction-concurrency-rows.txt correction-concurrency-final-rows.txt correction-concurrency-final-capture.log start.log server.log stop.log baseline.log activation.log rejected.log assertions.log pnl-hooks.log historical-conflict.log period-authority.log period-privacy.log privacy-rejected.log messenger-privacy.log messenger-weekly.log push-ownership.log push-rotation.log credit-request.log cashier-document.log correction-document.log browser-period-observer.log scheduler-catalog.log cron-before.json cron-after.json cron-fixture.log before.sql after.sql before-rows.txt after-rows.txt before-roles.txt after-roles.txt accepted-schema.sql accepted-authority.json accepted-correction-writer-authority.json accepted-roles.json accepted-rows.txt; do
+  for artifact in credit-reduction.log credit-concurrency-setup.log credit-concurrency.log credit-concurrency-rows.txt credit-concurrency-final-rows.txt credit-concurrency-final-capture.log accepted-credit-reduction-authority.json initdb.log correction-concurrency-setup.log correction-concurrency.log correction-concurrency-rows.txt correction-concurrency-final-rows.txt correction-concurrency-final-capture.log start.log server.log stop.log baseline.log activation.log rejected.log assertions.log pnl-hooks.log historical-conflict.log period-authority.log period-privacy.log privacy-rejected.log messenger-privacy.log messenger-weekly.log push-ownership.log push-rotation.log credit-request.log cashier-document.log correction-document.log browser-period-observer.log scheduler-catalog.log managed-cron-role.log cron-before.json cron-after.json cron-fixture.log before.sql after.sql before-rows.txt after-rows.txt before-roles.txt after-roles.txt accepted-schema.sql accepted-authority.json accepted-correction-writer-authority.json accepted-roles.json accepted-rows.txt; do
     if [ -f "$fixture/$artifact" ]; then
       if ! cp "$fixture/$artifact" "$ACCOUNTING_TEST_OUTPUT_DIR/$phase/$artifact"; then
         result=1
@@ -387,6 +387,13 @@ PY
   -f "$credit_reduction/regression.sql" 2>&1 | tee "$fixture/credit-reduction.log"
 "${psql[@]}" -A -t -d "$fixture_db" \
   -f "$credit_reduction/accepted-authority-supplement.sql" > "$fixture/accepted-credit-reduction-authority.json"
+# Last probe in this disposable acceptance cluster: recreate actual disabled
+# pg_cron under a distinct extension owner, then test SELECT-only postgres.
+# It deliberately changes fixture role/extension setup after accepted evidence
+# capture. No later financial probe runs under this different role model.
+python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py" \
+  "$pgbin/psql" "$fixture/socket" 55507 "$fixture_db" "$fixture/cron-before.json" \
+  2>&1 | tee "$fixture/managed-cron-role.log"
 fi
 finish_fixture
 done

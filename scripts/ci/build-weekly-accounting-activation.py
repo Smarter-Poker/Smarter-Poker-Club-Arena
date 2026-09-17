@@ -121,18 +121,25 @@ if (before_body.count('\nBEGIN\n')!=1
  or json.loads(guards[1])!=json.loads((credit_dir/'guard-lock-successor-sources.json').read_text())):
  raise ValueError('Cashier lock-order successor must preserve the reviewed predecessor and mutex')
 
+serializable_components={
+ '20260914155450_captured_cron_enters_the_sealed_accounting_transition.sql',
+ '20260914163000_canonical_cron_wakes_on_the_hour.sql',
+}
 parts=[];manifest=[]
 for name in names:
  path=root/'supabase/accounting/weekly-v3/components'/name
  source=path.read_text()
  begin=len(re.findall(r'^BEGIN;\s*$',source,re.M))
+ serializable_begin=len(re.findall(r'^BEGIN ISOLATION LEVEL SERIALIZABLE;\s*$',source,re.M))
  commit=len(re.findall(r'^COMMIT;\s*$',source,re.M))
  expected=0 if name.startswith('20260914135530_') else 1
- if (begin,commit)!=(expected,expected):
-  raise ValueError(f'{name}: unexpected transaction boundaries {begin}/{commit}')
+ expected_serializable=1 if name in serializable_components else 0
+ if (begin,serializable_begin,commit)!=(expected-expected_serializable,expected_serializable,expected):
+  raise ValueError(f'{name}: unexpected transaction boundaries {begin}/{serializable_begin}/{commit}')
  if re.search(r'^\s*(?:VACUUM|CREATE\s+DATABASE|DROP\s+DATABASE|COMMIT\s+AND|ROLLBACK\s*;)|\bINDEX\s+CONCURRENTLY\b',source,re.I|re.M):
   raise ValueError(f'{name}: non-atomic statement is not allowed')
- payload=re.sub(r'^(?:BEGIN|COMMIT);\s*$','',source,flags=re.M).strip()
+ begin_statement='BEGIN ISOLATION LEVEL SERIALIZABLE' if name in serializable_components else 'BEGIN'
+ payload=re.sub(r'^(?:'+re.escape(begin_statement)+r'|COMMIT);\s*$','',source,flags=re.M).strip()
  manifest.append({'name':name,'sha256':hashlib.sha256(source.encode()).hexdigest()})
  parts.append('-- Component '+name+'\n'+payload+'\n')
 header='''-- UNAPPLIED CANDIDATE. Generated from source-reviewed components.
@@ -141,7 +148,9 @@ header='''-- UNAPPLIED CANDIDATE. Generated from source-reviewed components.
 -- Complete schema replay, commercial terms, compatible engine reader deployment,
 -- and exact live preimage verification are still required before activation.
 -- All components share ONE transaction; no partial coordinator cutover.
-BEGIN;
+-- Serializable owned-job transitions use pg_cron APIs, not catalog table locks.
+-- Concurrent target-job writes refuse; unrelated scheduler writers may proceed.
+BEGIN ISOLATION LEVEL SERIALIZABLE;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='300s';
 SELECT pg_advisory_xact_lock(hashtextextended('accounting-authority-install',0));
@@ -150,7 +159,8 @@ SELECT pg_advisory_xact_lock(hashtextextended('accounting-authority-install',0))
 LOCK TABLE public.tournament_terminal_settlements IN ACCESS EXCLUSIVE MODE;
 '''
 sql=header+'\n'.join(parts)+'\nCOMMIT;\n'
-assert len(re.findall(r'^BEGIN;\s*$',sql,re.M))==1
+assert len(re.findall(r'^BEGIN ISOLATION LEVEL SERIALIZABLE;\s*$',sql,re.M))==1
+assert len(re.findall(r'^BEGIN;\s*$',sql,re.M))==0
 assert len(re.findall(r'^COMMIT;\s*$',sql,re.M))==1
 candidate=output/'candidate.sql'
 if arguments.check:

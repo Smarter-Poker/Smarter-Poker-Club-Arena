@@ -30,7 +30,7 @@
  *   6. the two other daemons sharing daemon_state are untouched
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { pacificAccountingWeek } from './pacificAccountingWeek.js';
 
 type Op = [string, unknown[]];
@@ -640,6 +640,9 @@ describe('RakebackSettlerService durable composite cursor', () => {
 });
 
 describe('cash source receipts protect the durable cursor', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   const creditedRow = () => ({
     ...row(1, 200),
     hand_id: uid(77),
@@ -852,6 +855,9 @@ describe('cash source receipts protect the durable cursor', () => {
   it.each(['error', 'throw'] as const)(
     'recovers the final credited period after checkpoint %s without waiting for a new source',
     async (failure) => {
+      // Compare retries at one controlled instant; preserve the full payload assertion.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-08-06T20:00:01.000Z'));
       setup({ stateWriteOutcomes: [failure, null] });
       const settler = new RakebackSettlerService();
       expect(await run(settler)).toBe('halted');
@@ -880,6 +886,7 @@ describe('cash source receipts protect the durable cursor', () => {
       expect(periods[0][1]).toEqual(periods[1][1]);
       expect((scenario.current.receipts as Map<string, unknown>).size).toBe(1);
       expect(settlerUpserts()).toHaveLength(2);
+      expect(upsertPayload(settlerUpserts()[0])).toEqual(upsertPayload(settlerUpserts()[1]));
     }
   );
   it('advances past a refused hand only after immutable receipt and retry work readback', async () => {

@@ -1,4 +1,4 @@
-> **Current owner instruction (September 17):** Read [AGENTS.md](AGENTS.md) before this historical playbook. Authorized tasks own protected push, merge, publication and exact live verification independently, without another human approval or manual label. Silent Revert Guard reports historical-content findings for review; it is not a merge gate. Preserve required technical checks and original GitHub/Vercel/Hetzner routes. Retired local/custom publishers, autopilot, watchdogs, repair loops and external error telemetry remain forbidden. Older approval and ordered-delivery directions below are superseded.
+> **Current owner instruction (September 17):** Use [PUBLISHING.md](PUBLISHING.md) for the active push, protected merge, publication and live-verification procedure. Each authorized agent owns its delivery independently and may work and publish in parallel. There is no restoration-owner approval or numbered release queue. This later owner instruction supersedes conflicting historical release directions below. Retired local/custom publishers, autopilot, watchdog/repair release paths and external error telemetry remain inactive. Preserve required technical checks, production safeguards and other agents’ work. The human-only approval restriction is revoked; Silent Revert Guard reports findings for review and is not a merge gate.
 
 # Club Arena -- Agent Instructions
 
@@ -56,16 +56,9 @@ already gone wrong: the control is painted in the art.
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
 
-It is byte-identical in all seven repos and it answers, in one page, how to ship
-without losing work: claim your own worktree, commit, push, open a pull request,
-stop. It also lists every guard that is protecting you, what each one is telling
-you when it speaks, and **where every credential lives** (never the value — the
-place). `.github/scripts/estate-integrity.sh` checks hourly that all seven
-copies still agree.
-
-If you are lost, cannot find a credential, or something is red and you do not
-know why, that file is the answer. This one is the Club Arena detail underneath
-it.
+Use [PUBLISHING.md](PUBLISHING.md) for the current release procedure.
+The playbook retains repository safeguards and historical context; its older
+release directions cannot override the September 17 owner instruction.
 
 ---
 
@@ -94,47 +87,27 @@ Club Arena is a Vite + React SPA published to its own Hetzner static origin.
 The World Hub serves `/hub/club-arena/*` through a rewrite to that origin;
 Club Arena releases do not deploy through the World Hub repo. See section 1.1.
 
-### 1.1 How your work reaches production (rewritten 2026-09-03 - the World Hub is no longer in the path)
+### 1.1 How your work reaches production
 
-There is exactly one route from a commit to a player, and every mutation step
-is owned by Club Arena automation. A branch push starts that route; only
-exact-SHA production proof completes it.
+Follow [PUBLISHING.md](PUBLISHING.md): owned branch, existing or new PR,
+actual required checks, protected squash merge, existing publisher, live proof.
+The authorized agent owns the merge and verification. All tasks can proceed
+independently; disabled autopilot and numbered delivery queues are not prerequisites.
 
-1. **Work on a branch in your own worktree.** Any name is fine - `fix/<slug>`
-   is the convention. Never commit on `main`; it is a protected mirror.
-2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`),
-   then follow its checks, merge, and owning Club Arena release workflows to a
-   terminal result. Fix red checks forward; do not report a branch push as a
-   release.
-3. `agent-branch-proposal.yml` records the branch push without credentials;
-   trusted default-branch `agent-open-pr.yml` consumes that completed signal
-   and opens the pull request for any eligible branch name.
-4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
-   on their declared isolated runners, and GitHub merges when they are green.
-   Privileged PR/release control never reuses a runner that executed branch
-   code. Red checks never merge (5.8).
-5. **`publish-club-arena.yml` publishes - to Club Arena's own origin.** On
-   merge it builds the bundle, runs the four-way sharded test gate, and
-   rsyncs `dist/` to the static origin (Caddy on `estate-ci-1`,
-   `ca-static.smarter.poker`) as `/srv/club-arena/releases/<ca_sha>/`, then
-   swaps the `current` symlink atomically. The World Hub carries ONE rewrite,
-   `/hub/club-arena/*` -> that origin, so the player is still on
-   `smarter.poker` and the shared session (`smarter-poker-auth`) still works.
-   The rsync and the symlink swap take seconds. The PUBLISH does not:
-   measured 2026-09-08, merge to bundle-stamped was 3m54s, and the whole
-   pipeline is a four-job DAG with a full `npm run build` in the middle. The
-   old wording said "a publish takes seconds" and it is the first number an
-   agent reads here, so it was routinely mistaken for the end-to-end figure -
-   see `.agent/audits/2026-09-08-publish-pipeline-improvements.md` for the
-   stage-by-stage breakdown. Nothing is committed to the World Hub repo any
-   more, and Vercel does not rebuild the World Hub for a Club Arena merge.
-   Rollback is re-pointing the symlink; ten releases are kept.
-6. **Verify** by reading, never by assuming: both
-   `https://ca-static.smarter.poker/build-info.json` and
-   `https://smarter.poker/hub/club-arena/build-info.json` must report a
-   `ca_sha` equal to the squash commit on `main`. For `server/` changes,
-   the sealed `auto-deploy-hetzner.yml` run must complete and cache-busted
-   engine health must report that same SHA. Nothing else counts as deployed.
+`publish-club-arena.yml` builds through GitHub and publishes the client to
+Hetzner's static origin. World Hub rewrites `/hub/club-arena/*` to that origin;
+a Club Arena release does not rebuild World Hub. Preserve append-only assets,
+the atomic origin switch and the existing publisher's concurrency controls.
+
+Verify the selected client revision at both
+`https://ca-static.smarter.poker/build-info.json` and
+`https://smarter.poker/hub/club-arena/build-info.json`.
+For engine changes, record `stage-engine-release.yml` -> selected runtime
+component revision -> `auto-deploy-hetzner.yml`, then verify the sealed release,
+`https://engine.smarter.poker/health` and applicable post-deployment proof.
+The component revision need not equal a later documentation-only main revision.
+With concurrent merges, verify the actual selected protected revision contains
+your change instead of overwriting a newer release to force an older SHA.
 
 **Why it used to go through the World Hub, and why it stopped (2026-09-03).**
 `smarter.poker/hub/club-arena` is a path on the World Hub's Vercel deployment,
@@ -979,12 +952,10 @@ human approval is required. Labels and commit-message tokens do not suppress
 the report. Complete protected delivery after the required technical checks
 pass; preserve other agents' changes and verify publication separately.
 
-**3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
-PR, report the PR number, END YOUR SESSION. Native events open it, Autopilot
-arms protected merge, and read-only production audits provide evidence. "I've set another brief
-timer and will be back shortly" is the forbidden `wait_and_merge.sh` written
-in prose; it burns tokens and adds nothing. Checking ONCE at the end to say
-why something is BLOCKED is fine. Sitting in a loop is not.
+**3. CONTINUE WORK WHILE PROVIDERS RUN.** Follow [PUBLISHING.md](PUBLISHING.md).
+Keep the pending run/revision, continue other authorized work and inspect the
+result afterward. The agent still owns protected merge and live verification.
+Do not use retired autopilot, a timer, watcher or repair loop to complete a release.
 
 **4. WORKTREES ARE DISPOSABLE.** `scripts/prune-stale-worktrees.sh` removes
 any worktree that is clean, pushed, and idle for 72 hours. Do not keep state

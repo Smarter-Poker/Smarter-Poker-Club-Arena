@@ -113,8 +113,8 @@
       "bytes": 21668
     },
     "scripts/ci/build_pg17_isolationtester.py": {
-      "sha256": "df9e8db08e7fcbd4e18f3c878a0f5fd05efb160777a70ff48e2348efee484317",
-      "bytes": 7129
+      "sha256": "333af6ce22a541a7308dd9aed79b51af690ffcc42d8ef28d159cf6cc1f110b10",
+      "bytes": 7290
     },
     "scripts/qualification/fixtures/spin-repair-evidence/race-setup.sql": {
       "bytes": 64094,

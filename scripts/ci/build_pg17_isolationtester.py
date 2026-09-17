@@ -116,7 +116,9 @@ def main():
         command([source / 'configure', '--prefix=' + str(prefix), '--without-readline',
                  '--without-zlib', '--without-icu'], 'configure', source)
         command(['make', '-C', source / 'src/backend', 'generated-headers'], 'generated-headers')
-        command(['make', '-C', source / 'src/test/isolation', '-j2', 'all'], 'build-isolation')
+        # This subdirectory's recursive libpq and libpgport targets share archive
+        # outputs. Parallel recursion can truncate the same libpgport archive.
+        command(['make', '-C', source / 'src/test/isolation', '-j1', 'all'], 'build-isolation')
         command(['make', '-C', source / 'src/interfaces/libpq', 'install'], 'install-libpq')
         command(['make', '-C', source / 'src/test/isolation', 'install'], 'install-isolation')
         tool = output / TOOL_LEAF

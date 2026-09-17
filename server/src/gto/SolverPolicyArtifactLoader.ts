@@ -8,7 +8,6 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { basename } from 'node:path';
 import {
   SOLVER_POLICY_CONTRACT_VERSION,
   SOLVER_POLICY_SCHEMA_SHA256,
@@ -552,6 +551,7 @@ export function lookupChartPolicyAdvice(args: {
   depth: number;
   hand: string;
 }): ChartPolicyAdvice | null {
+  if (!CHART_HAND_CLASSES.has(args.hand)) return null;
   const policy = lookupChartPolicy(args);
   if (!policy) return null;
   const mix = policy.rangeDistribution?.[args.hand];
@@ -580,7 +580,6 @@ export function loadSolverPolicyArtifactFile(filePath: string): number {
       ...externalState,
       configured: true,
       lastError: error instanceof Error ? error.message : String(error),
-      sourceArtifact: basename(filePath),
     };
     throw error;
   }

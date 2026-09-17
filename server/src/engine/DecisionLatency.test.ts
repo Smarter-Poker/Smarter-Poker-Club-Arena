@@ -159,14 +159,15 @@ describe('the shipped wiring - an instrument nobody calls measures nothing', () 
     expect(turns).not.toContain('(gameState as any)?.variant');
   });
 
-  it('the flush drains latency separately from fires, so one outage cannot silently eat the other', async () => {
+  it('the flush sends both streams through the atomic retryable batch publisher', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(
       new URL('../services/BrainTelemetryFlush.ts', import.meta.url).pathname,
       'utf8'
     );
     expect(src).toContain('drainDecisionLatency()');
-    expect(src).toContain('restoreDecisionLatency(latency)');
-    expect(src).toContain('fn_horse_decision_latency_add');
+    expect(src).toContain('fires: drainFires(), latency: drainDecisionLatency()');
+    expect(src).toContain('new HorseBrainTelemetryPublisher(');
+    expect(src).toContain('fn_horse_brain_flush_receipt');
   });
 });

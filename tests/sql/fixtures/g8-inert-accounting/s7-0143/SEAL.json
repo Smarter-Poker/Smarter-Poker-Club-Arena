@@ -1,0 +1,24 @@
+{
+  "schema": "accounting-source-packet/v1",
+  "files": {
+    "SOURCE-CHECKS.json": {
+      "sha256": "3740dbc59a842677b8a76b2e1b11ff327e577a7b7495153a3c6e12a0e55d6a46",
+      "bytes": 202
+    },
+    "s7-cases.sql": {
+      "sha256": "3ddc95ce22a6cf94cc25d47e89d267060fec84e89b03fda8087c56b49050abd1",
+      "bytes": 15632
+    },
+    "HANDOFF.md": {
+      "sha256": "113e05052fbb22196d2b3d5f617e3333fa84a5e922bd3e9e8b6c83f054235f24",
+      "bytes": 1221
+    },
+    "definition.sql": {
+      "sha256": "37e0bcc3ace7a607cc79ea6ec343673e51cc20d3f46168aa36468febb75eb4bd",
+      "bytes": 3156
+    }
+  },
+  "source_only": true,
+  "execution_authority": false,
+  "publication_authority": false
+}

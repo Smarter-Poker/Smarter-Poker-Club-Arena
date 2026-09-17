@@ -15,6 +15,8 @@ import {
   type OmahaEquityResult,
 } from './OmahaEquityOracle.js';
 import { omahaVariantPublicRanges } from './OmahaVariantPublicRanges.js';
+import { horsePolicyDealtPlayers } from '../engine/multiway/DealtSeatCensus.js';
+import { captureOfflineOmahaPolicyInput } from './OfflineOmahaPolicyInput.js';
 
 export interface OmahaVariantPolicyInput {
   hero: SeatPlayer;
@@ -26,12 +28,12 @@ export interface OmahaVariantPolicyInput {
   opponentRanges?: Record<string, OmahaRange>;
 }
 export async function evaluateOmahaVariantProgram(
-  input: OmahaVariantPolicyInput,
+  supplied: OmahaVariantPolicyInput,
   shouldContinue = () => true
 ) {
   const started = performance.now();
-  const { hero, baseline } = input;
-  const s = { ...input.state, players: input.state.players.map((p) => ({ ...p, cards: [] })) };
+  const input = captureOfflineOmahaPolicyInput(supplied);
+  const { hero, baseline, state: s } = input;
   const mode = input.mode ?? 'shadow';
   let core = evaluateOmahaVariantPolicy(hero, s, baseline, null, mode, () => 0, 1, false);
   let equity: OmahaEquityResult | null = null;
@@ -65,7 +67,9 @@ export async function evaluateOmahaVariantProgram(
       s.gameMode === 'tournament' ? 'phase7_utility_required' : core.receipt.reason,
       true
     );
-  const seats = s.players.filter((p) => !p.is_sitting_out);
+  // Reference the original physical deal, just as the live sampler does.
+  // An away all-in can still win, and a folded deal still occupies cards.
+  const seats = horsePolicyDealtPlayers(s.players, hero.seat, s.dealtSeatIds);
   if (
     input.opponentRanges &&
     (Object.keys(input.opponentRanges).length !== seats.length - 1 ||

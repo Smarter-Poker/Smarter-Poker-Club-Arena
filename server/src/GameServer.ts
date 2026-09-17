@@ -18,6 +18,7 @@ import { AsyncResource } from 'node:async_hooks';
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
+import { stopBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import {
   HorseDecisionAbortedError,
   liveHorseDecisionWorkerStatus,
@@ -3037,14 +3038,28 @@ export class GameServer {
     // decision already accepted before its table was fenced. Dealers and
     // managers must stop first; then this drain flushes the worker-owned mind,
     // telemetry and solver clocks before any distributed lease is released.
-    const horseDecisionStop = await (startingHorseDecisionStop ??
-      beginOwnedStop('LiveHorseDecisionWorker', stopLiveHorseDecisionWorker));
+    // Main-process execution counters can still arrive while dealers finish
+    // their hands. Both Horse telemetry streams now flush after that drain.
+    // Join them concurrently so their bounded RPC waits do not add in series.
+    const [horseDecisionStop, horseExecutionTelemetryStop] = await Promise.all([
+      startingHorseDecisionStop ??
+        beginOwnedStop('LiveHorseDecisionWorker', stopLiveHorseDecisionWorker),
+      beginOwnedStop('HorseExecutionTelemetry', stopBrainTelemetryFlush),
+    ]);
     if (horseDecisionStop.status === 'rejected') {
       const error = new AggregateError(
         [horseDecisionStop.reason],
         'LiveHorseDecisionWorker did not certify shutdown ownership'
       );
       reportError(error, 'GameServer.horse_decision_worker_shutdown_failed');
+      ownershipFailures.push(error);
+    }
+    if (horseExecutionTelemetryStop.status === 'rejected') {
+      const error = new AggregateError(
+        [horseExecutionTelemetryStop.reason],
+        'HorseExecutionTelemetry did not confirm its final batch'
+      );
+      reportError(error, 'GameServer.horse_execution_telemetry_shutdown_failed');
       ownershipFailures.push(error);
     }
     await this.handOutboxListener.stop();

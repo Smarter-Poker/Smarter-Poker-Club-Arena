@@ -77,22 +77,37 @@ export function isFlatPayoutCurve(payouts: number[]): boolean {
 export function exactIcmEquity(stacks: number[], payouts: number[], heroIdx: number): number {
   const original = cleanStacks(stacks);
   const prizes = cleanPayouts(payouts);
+  return exactCleanIcmEquity(original, prizes, heroIdx, payoutMass(prizes));
+}
+
+/** Sanitization is owned by the public entry point or admitted estimator.
+ * The exact recursion retains the same ascending sums and winner order.
+ * An action-local scratch array contains no returned values or caller aliases. */
+function exactCleanIcmEquity(
+  original: number[],
+  prizes: number[],
+  heroIdx: number,
+  prizeMass: number,
+  scratch?: Float64Array
+): number {
   if (
     original.length === 0 ||
     heroIdx < 0 ||
     heroIdx >= original.length ||
     original[heroIdx] <= 0 ||
-    payoutMass(prizes) <= 0
+    prizeMass <= 0
   ) {
     return 0;
   }
 
-  const live = original
-    .map((stack, index) => ({ stack, index }))
-    .filter((entry) => entry.stack > 0);
-  if (live.length > EXACT_MAX_PLAYERS) return 0;
-  const clean = live.map((entry) => entry.stack);
-  const compactHero = live.findIndex((entry) => entry.index === heroIdx);
+  const clean: number[] = [];
+  let compactHero = -1;
+  for (let index = 0; index < original.length; index++) {
+    if (original[index] <= 0) continue;
+    if (index === heroIdx) compactHero = clean.length;
+    clean.push(original[index]);
+  }
+  if (clean.length > EXACT_MAX_PLAYERS) return 0;
   if (compactHero < 0) return 0;
 
   const n = clean.length;
@@ -100,8 +115,8 @@ export function exactIcmEquity(stacks: number[], payouts: number[], heroIdx: num
   const paidDepth = Math.min(n, prizes.length);
   // At most 1,024 masks: indexed storage avoids hashing and per-entry allocation
   // on every candidate vector while retaining the exact recursion and sum order.
-  const memo = new Float64Array(1 << n);
-  memo.fill(Number.NaN);
+  const memo = scratch ?? new Float64Array(1 << n);
+  memo.fill(Number.NaN, 0, 1 << n);
 
   const recurse = (mask: number): number => {
     const cached = memo[mask];
@@ -182,6 +197,10 @@ export function createIcmEquityEstimator(
     .sort((left, right) => left - right);
   const mutableSet = new Set(mutable);
   if (live <= EXACT_MAX_PLAYERS) {
+    // One bounded buffer per action instead of one per candidate/rollout vector.
+    // Each estimate clears every reachable mask, including after a bust/revival.
+    const exactScratch = new Float64Array(1 << EXACT_MAX_PLAYERS);
+    const prizeMass = payoutMass(prizes);
     return {
       method: 'exact_mh',
       trials: 0,
@@ -198,7 +217,7 @@ export function createIcmEquityEstimator(
         }
         const modeledPlayers = clean.filter((stack) => stack > 0).length;
         return {
-          equity: exactIcmEquity(clean, prizes, heroIdx),
+          equity: exactCleanIcmEquity(clean, prizes, heroIdx, prizeMass, exactScratch),
           errorBound: 0,
           method: 'exact_mh',
           modeledPlayers,
@@ -268,6 +287,9 @@ export function createIcmEquityEstimator(
   if (heroSlot === undefined) throw new Error('ICM estimator requires a mutable hero index');
   const maximum = prizes.reduce((largest, payout) => Math.max(largest, payout), 0);
   const errorBound = maximum * Math.sqrt(Math.log(2 / MC_ERROR_ALPHA) / (2 * trials));
+  const prizeMass = payoutMass(prizes);
+  // Only immutable scalar confidence bounds are cached, never an estimate.
+  const prefixErrorBounds = new Map<number, number>([[trials, errorBound]]);
 
   return {
     method: 'plackett_luce_mc',
@@ -284,7 +306,15 @@ export function createIcmEquityEstimator(
         const stack = vector[index];
         return Number.isFinite(stack) && stack > 0 ? stack : 0;
       });
-      let modeledPlayers = localStacks.filter((stack) => stack > 0).length + fixed.length;
+      // Per-invocation ownership preserves reentrant caller-vector reads.
+      // The retained slots follow exactly the prior ascending comparison order.
+      const activeOpponentSlots: number[] = [];
+      let modeledPlayers = fixed.length;
+      for (let slot = 0; slot < localStacks.length; slot++) {
+        if (localStacks[slot] <= 0) continue;
+        modeledPlayers++;
+        if (slot !== heroSlot) activeOpponentSlots.push(slot);
+      }
       for (const entry of immutable) {
         const raw = vector[entry.index];
         // Equal reference values already have their validated live count.
@@ -302,7 +332,7 @@ export function createIcmEquityEstimator(
         trials,
         Math.max(MC_MIN_TRIALS, Number.isFinite(trialLimit) ? Math.floor(trialLimit) : trials)
       );
-      if (heroStack <= 0 || payoutMass(prizes) <= 0) {
+      if (heroStack <= 0 || prizeMass <= 0) {
         return {
           equity: 0,
           errorBound: 0,
@@ -321,8 +351,12 @@ export function createIcmEquityEstimator(
         // Keep every remote clock and every paid place, but stop searching
         // after this trial is already proven unpaid. Trial order is unchanged.
         let playersAhead = lowerBound(remoteClocks[trial], heroClock, prizes.length);
-        for (let slot = 0; slot < mutable.length && playersAhead < prizes.length; slot++) {
-          if (slot === heroSlot || localStacks[slot] <= 0) continue;
+        for (
+          let active = 0;
+          active < activeOpponentSlots.length && playersAhead < prizes.length;
+          active++
+        ) {
+          const slot = activeOpponentSlots[active];
           if (mutableDraws[slot][trial] / localStacks[slot] < heroClock) playersAhead++;
         }
         const value = prizes[playersAhead] ?? 0;
@@ -333,12 +367,15 @@ export function createIcmEquityEstimator(
       }
 
       const variance = sampleTrials > 1 ? m2 / (sampleTrials - 1) : 0;
+      let prefixErrorBound = prefixErrorBounds.get(sampleTrials);
+      if (prefixErrorBound === undefined) {
+        // Keep the original expression and IEEE-754 operation order exactly.
+        prefixErrorBound = maximum * Math.sqrt(Math.log(2 / MC_ERROR_ALPHA) / (2 * sampleTrials));
+        prefixErrorBounds.set(sampleTrials, prefixErrorBound);
+      }
       return {
         equity: mean,
-        errorBound:
-          sampleTrials === trials
-            ? errorBound
-            : maximum * Math.sqrt(Math.log(2 / MC_ERROR_ALPHA) / (2 * sampleTrials)),
+        errorBound: prefixErrorBound,
         method: 'plackett_luce_mc',
         modeledPlayers,
         trials: sampleTrials,

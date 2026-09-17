@@ -7,7 +7,7 @@ export const FUTURE_GAME_MAX_SEATS = 10;
 export const FUTURE_GAME_MAX_HANDS = 2;
 
 export interface TournamentFutureGame {
-  model: 'forced-orbit-envelope-v1';
+  model: 'forced-orbit-envelope-v2';
   available: boolean;
   unavailableReason: string | null;
   /** No recorded hand duration means level timing has two explicit bounds. */
@@ -37,7 +37,7 @@ export function projectTournamentFutureGame(
   investment: number
 ): TournamentFutureGame {
   const result: TournamentFutureGame = {
-    model: 'forced-orbit-envelope-v1',
+    model: 'forced-orbit-envelope-v2',
     available: false,
     unavailableReason: null,
     levelTiming: 'current_level_only',
@@ -60,10 +60,9 @@ export function projectTournamentFutureGame(
   const fail = (reason: string): TournamentFutureGame => ({ ...result, unavailableReason: reason });
   const t = gs.tournament;
   if (t?.schemaVersion !== 1 || t.contextStatus !== 'complete') return fail('context_incomplete');
-  const seats = gs.players
-    .filter((p) => !p.is_sitting_out)
-    .slice()
-    .sort((a, b) => a.seat - b.seat);
+  // Tournament sit-outs are still dealt in and pay forced money. Preserve
+  // their place in the ring, just as the Phase 6 M owner does.
+  const seats = gs.players.slice().sort((a, b) => a.seat - b.seat);
   if (
     seats.length < 2 ||
     seats.length > FUTURE_GAME_MAX_SEATS ||

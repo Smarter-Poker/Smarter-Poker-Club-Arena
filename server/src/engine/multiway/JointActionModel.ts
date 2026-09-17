@@ -7,9 +7,10 @@ import type { JointRangeSamples, JointOpponentRange } from './JointRangeSampler.
 import { jointStateKey } from './JointRangeSampler.js';
 import { prepareJointPots, settleJointScores } from './JointPotDistribution.js';
 import { applyJointDeductions } from './JointDeductions.js';
+import { calculateContestablePot } from '../PokerEngine.js';
 
 export const JOINT_ACTION_PACK = Object.freeze({
-  version: 'joint-action-response-round1-v1',
+  version: 'joint-action-response-round1-v2',
   source: 'explicit_one_response_then_showdown_heuristic',
   calibratedConfidence: null,
   responseBranches: 'opponent_specific_fold_call_short_all_in',
@@ -217,7 +218,9 @@ export function evaluateJointActions(
           strengths: sample.boards.map((b) => b.opponentDecisionStrength[otherIndex]),
           range,
           price,
-          pot: seats.reduce((a, p) => a + p.totalInvested, 0),
+          // A short caller cannot buy a share of deeper side pots. Price
+          // this response against its own eligibility before adding the call.
+          pot: calculateContestablePot(seats, opponent.user_id, price),
           activeOpponents: seats.filter((p) => !p.is_folded && p.user_id !== opponent.user_id)
             .length,
           coversHero: opponent.stack + opponent.totalInvested >= hero.stack + hero.totalInvested,

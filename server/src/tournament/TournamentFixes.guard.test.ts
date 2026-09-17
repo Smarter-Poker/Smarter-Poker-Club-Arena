@@ -295,12 +295,18 @@ describe('the settler keeps running every sentinel it is meant to', () => {
   });
 });
 
-describe('ESM: every relative import carries its .js extension', () => {
+describe('ESM: every relative import carries its runtime extension', () => {
   it('because Node resolves the specifier literally at runtime', () => {
     // Defect: two files imported '../config/spinSpec' with no extension. tsc
     // accepts it, so it cleared the build gate and only died on boot with
     // ERR_MODULE_NOT_FOUND - which left main unbootable and blocked EVERY
     // engine deploy until it was found.
+    const hasRuntimeExtension = (specifier: string) => /\.(?:m?js|json)$/.test(specifier);
+    // Native ESM helpers retain .mjs; extensionless or TypeScript-only
+    // specifiers still cannot boot from the compiled server tree.
+    expect(hasRuntimeExtension('./fixture.test-support.mjs')).toBe(true);
+    expect(hasRuntimeExtension('../config/spinSpec')).toBe(false);
+    expect(hasRuntimeExtension('../config/spinSpec.ts')).toBe(false);
     const walk = (dir: string, out: string[] = []): string[] => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, e.name);
@@ -326,7 +332,7 @@ describe('ESM: every relative import carries its .js extension', () => {
         let m: RegExpExecArray | null;
         while ((m = re.exec(src)) !== null) {
           const spec = m[1];
-          if (!spec.endsWith('.js') && !spec.endsWith('.json')) {
+          if (!hasRuntimeExtension(spec)) {
             offenders.push(`${path.relative(process.cwd(), file)} -> ${spec}`);
           }
         }

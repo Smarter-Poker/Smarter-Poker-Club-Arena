@@ -744,9 +744,9 @@ async function insertHandHistoryRow(
         }
         const historyId = typeof result.history_id === 'string' ? result.history_id : '';
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(historyId)) {
-          throw new Error(
-            `atomic hand commit refused (invalid_receipt): ${JSON.stringify(result)}`
-          );
+          // Receipt extensions are private; diagnostic text must not copy the
+          // entire accepted response into ordinary error reporting.
+          throw new Error('atomic hand commit refused (invalid_receipt)');
         }
         const requestedHistoryId = payload.p_hand_row.id;
         if (
@@ -782,7 +782,7 @@ async function insertHandHistoryRow(
       }
       if (!error && result.success === false && result.reason !== 'in_flight') {
         throw new Error(
-          `atomic hand commit refused (${result.reason ?? 'unknown'}): ${String(result.error ?? JSON.stringify(result))}`
+          `atomic hand commit refused (${result.reason ?? 'unknown'}): ${String(result.error ?? 'receipt_detail_redacted')}`
         );
       }
       lastError = error?.message ?? String(result.reason ?? result.error ?? 'in_flight');

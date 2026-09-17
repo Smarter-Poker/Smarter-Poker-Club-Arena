@@ -105,7 +105,10 @@ describe('prepared actual client and retained-reader attribution boundaries', ()
       type: lane === 'fast' ? 'FAST_RESULT' : 'DEEP_RESULT',
       requestId: 1,
       ...(lane === 'fast'
-        ? { planBinding: horsePlanBatchBindingFromRequest({ ...s, requestId: 1 }) }
+        ? {
+            planBinding: horsePlanBatchBindingFromRequest({ ...s, requestId: 1 }),
+            planIssueDisposition: 'no_effects',
+          }
         : { planContext: horsePlanContextFromDecision(s) }),
       generation: s.generation,
       fence: s.fence,

@@ -52,7 +52,13 @@ const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 /** The documents an agent is told to obey before it touches anything. */
-const BINDING_DOCS = ['CLAUDE.md', 'AGENT-PLAYBOOK.md', 'AGENTS-PUSH-GUIDE.md'];
+const BINDING_DOCS = [
+  'CLAUDE.md',
+  'AGENT-PLAYBOOK.md',
+  'AGENTS-PUSH-GUIDE.md',
+  '.claude/skills/deploy-hetzner/SKILL.md',
+  '.claude/skills/club-arena-console/SKILL.md',
+];
 
 /**
  * A doc is allowed to talk ABOUT something that is gone - most of this repo's
@@ -68,13 +74,28 @@ const NOTES_ABSENCE =
 const NAMES_ANOTHER_REPO = /World Hub|Smarter-Poker-World-Hub|world-hub/i;
 
 const SCRIPT_REF =
-  /(?:\.github\/scripts|scripts|server\/scripts)\/[A-Za-z0-9._/-]+\.(?:sh|mjs|cjs|js|ts)(?![A-Za-z0-9])/g;
+  /(?:\.claude\/skills\/[A-Za-z0-9_-]+\/scripts|\.github\/scripts|scripts|server\/scripts)\/[A-Za-z0-9._/-]+\.(?:sh|mjs|cjs|js|ts)(?![A-Za-z0-9])/g;
 
 function contextAround(lines: string[], i: number): string {
   return lines.slice(Math.max(0, i - 3), i + 4).join('\n');
 }
 
 describe('the docs describe THIS environment', () => {
+  it('active skills retain assigned delivery authority without obsolete human gates', () => {
+    const forbidden = [
+      /do not push until (?:Dan|he|the owner) approves/i,
+      /an agent never sets (?:one|credentials)/i,
+    ];
+    for (const doc of BINDING_DOCS) {
+      const body = read(doc).replace(/\s+/g, ' ');
+      for (const phrase of forbidden) expect(body, doc).not.toMatch(phrase);
+    }
+    const engine = read('.claude/skills/deploy-hetzner/SKILL.md');
+    expect(engine).toContain('PUBLISHING.md');
+    expect(engine).toContain('Only engine activation');
+    expect(engine).toContain('throughout the hour');
+  });
+
   it('every script a binding doc names is a script that exists', () => {
     const broken: string[] = [];
     for (const doc of BINDING_DOCS) {

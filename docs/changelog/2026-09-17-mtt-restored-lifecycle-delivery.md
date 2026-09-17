@@ -71,6 +71,15 @@ required assertion or workflow gate is relaxed.
 
 ## Work still assigned
 
+The existing deployed-page MTT checks also exposed delayed initial WebSocket
+readiness. An anonymous, bounded record on each existing subscription now
+separates authorization return, table acquisition, acknowledgement and first
+frame enqueue. It preserves access decisions, protocol, deadlines and ownership;
+no user, table, IP or game payload is recorded. The directly affected 78 tests
+passed, including cancellation, logger failure and socket backpressure. This
+supplies missing diagnostic evidence; it is not a claim that the latency defect
+is repaired. Publication must precede attribution of the live delayed phase.
+
 R46 unlimited MTT/satellite entry is preserved at original PR4701 donor
 cc633751429bbbd5b1937721c08bab8b32c30555 and is not activated by this delivery.
 It still requires coupled database/application transition qualification:

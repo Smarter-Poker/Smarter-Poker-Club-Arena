@@ -21,11 +21,25 @@ export function classifyChangedPaths(paths) {
   const bbjFixture = matches(
     /^scripts\/ci\/(?:test-bbj-bank-replay\.py$|probes\/bbj-bank-replay\/)/
   );
+  // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
+  const phase4Changed = matches(phase4);
+  // Script/fixture-only edits must admit accounting and its routing tests.
+  const commitmentAudit = matches(
+    /^(scripts\/ci\/test-horse-commitment-audit\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
+  );
   return {
     src: broad || matches(/^src\//),
-    server: broad || bbjFixture || matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
-    tests: broad || matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/)/),
-    phase4: matches(phase4),
+    server:
+      broad ||
+      bbjFixture ||
+      phase4Changed ||
+      commitmentAudit ||
+      matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
+    tests:
+      broad ||
+      commitmentAudit ||
+      matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/),
+    phase4: phase4Changed,
     fixture: matches(fixture),
   };
 }

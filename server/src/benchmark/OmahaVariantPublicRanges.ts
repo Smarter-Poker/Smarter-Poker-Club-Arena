@@ -7,6 +7,7 @@ import {
 } from '../engine/omaha/OmahaVariantPolicyPack.js';
 import { referenceDeck, cardKey, referenceOmaha } from './OmahaReference.js';
 import type { OmahaRange } from './OmahaEquityOracle.js';
+import { horsePolicyDealtPlayers } from '../engine/multiway/DealtSeatCensus.js';
 
 /** Explicit finite heuristic priors for independent oracle work. These are
  * intentionally distinct from the bounded sequential live sampler. The oracle
@@ -21,8 +22,8 @@ export function omahaVariantPublicRanges(
   const seen = new Set([...hero.cards, ...state.communityCards].map(cardKey));
   const available = referenceDeck().filter((c) => !seen.has(cardKey(c)));
   return Object.fromEntries(
-    state.players
-      .filter((p) => p.user_id !== hero.user_id && !p.is_sitting_out)
+    horsePolicyDealtPlayers(state.players, hero.seat, state.dealtSeatIds)
+      .filter((p) => p.user_id !== hero.user_id)
       .map((p) => {
         let rng = seed >>> 0 || 1;
         for (const c of `${variant}:${p.user_id}`)

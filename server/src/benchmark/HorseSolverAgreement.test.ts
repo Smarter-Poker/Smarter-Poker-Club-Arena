@@ -5,7 +5,7 @@
  * This scores the brain against the hold'em push/fold charts: the mean solver
  * frequency of the action the horse actually chose.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   buildSpots,
   cardsForHandKey,
@@ -17,12 +17,17 @@ import {
 import { setGtoCharts, _clearGtoCharts, gtoChartCount } from '../engine/GtoCharts.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { saveFastRandom, seedFastRandom } from '../engine/HorseEval.js';
+import { HorseLogic } from '../engine/HorseLogic.js';
+import * as charts from '../engine/GtoCharts.js';
 
 beforeEach(() => {
   _clearGtoCharts();
   HorseMind.reset();
 });
-afterEach(() => _clearGtoCharts());
+afterEach(() => {
+  _clearGtoCharts();
+  vi.restoreAllMocks();
+});
 
 /** A tiny chart: UTG at 10bb jams AA always and 72o never. */
 function loadTinyChart(): void {
@@ -98,16 +103,90 @@ describe('V47 spot construction', () => {
 
   it('maps a decision onto the solver vocabulary', () => {
     expect(actionLabel('open_jam', 'all_in')).toBe('push');
-    expect(actionLabel('open_jam', 'raise')).toBe('push');
+    expect(() => actionLabel('open_jam', 'raise')).toThrow('outside_reference');
     expect(actionLabel('open_jam', 'fold')).toBe('fold');
-    expect(actionLabel('open_jam', 'call')).toBe('fold');
+    expect(() => actionLabel('open_jam', 'call')).toThrow('outside_reference');
     expect(actionLabel('bb_defend', 'call')).toBe('call');
     expect(actionLabel('bb_defend', 'all_in')).toBe('call');
     expect(actionLabel('bb_defend', 'fold')).toBe('fold');
+    expect(() => actionLabel('bb_defend', 'raise')).toThrow('outside_reference');
+    expect(() => actionLabel('bb_defend', 'check')).toThrow('outside_reference');
+    expect(() => actionLabel('open_jam', 'unknown')).toThrow('outside_reference');
   });
+
+  it.each(['UTG', 'MP', 'CO', 'BTN', 'SB'])(
+    'the real brain consults the labeled %s chart and depth',
+    (position) => {
+      setGtoCharts([
+        {
+          game_type: 'Cash',
+          stack_depth: 8,
+          hero_position: position,
+          villain_action: 'fold_to_hero',
+          hand_matrix: { AA: { push: 1, fold: 0 } },
+        },
+      ]);
+      const lookup = vi.spyOn(charts, 'gtoOpenJam');
+      const { hero, gs } = stateForSpot({
+        kind: 'open_jam',
+        position,
+        stackBB: 8,
+        hand: 'AA',
+        isTournament: false,
+      });
+      expect(hero.stack + hero.bet).toBe(16);
+      expect(gs.players.reduce((sum, p) => sum + p.totalInvested, 0)).toBe(gs.pot);
+      expect(gs.actionHistory?.map((a) => a.seat)).toEqual(
+        gs.players.filter((p) => p.is_folded).map((p) => p.seat)
+      );
+      const result = HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false, telemetry: false });
+      expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ position, stackBB: 8 }));
+      expect(result.action).toBe('all_in');
+    }
+  );
 });
 
 describe('V47 scoring', () => {
+  it.each([0, -1, 1.5, NaN, Infinity])(
+    'rejects invalid sample budget %s before doing work',
+    (budget) => {
+      expect(() => scoreSolverAgreement(budget)).toThrow('invalid_sample_budget');
+    }
+  );
+
+  it('never exceeds the requested sample budget with a fully covered corpus', () => {
+    const rows: charts.GtoChartRow[] = buildSpots()
+      .filter((s) => s.hand === 'AA')
+      .map(
+        (s): charts.GtoChartRow => ({
+          game_type: s.isTournament ? 'Tournament' : 'Cash',
+          stack_depth: s.stackBB,
+          hero_position: s.position,
+          villain_action: s.kind === 'open_jam' ? 'fold_to_hero' : 'sb_push',
+          hand_matrix: { AA: s.kind === 'open_jam' ? { push: 1, fold: 0 } : { call: 1, fold: 0 } },
+        })
+      );
+    setGtoCharts(rows);
+    const decide = vi
+      .spyOn(HorseLogic, 'decide')
+      .mockReturnValue({ action: 'fold', amount: 0, thinkTime: 0 });
+    const result = scoreSolverAgreement(600);
+    expect(result.spots).toBe(600);
+    expect(result.reconciledSpots).toBe(600);
+    expect(decide).toHaveBeenCalledTimes(600);
+  });
+
+  it('refuses an out-of-reference action without changing the live RNG', () => {
+    loadTinyChart();
+    vi.spyOn(HorseLogic, 'decide').mockReturnValue({ action: 'raise', amount: 4, thinkTime: 0 });
+    seedFastRandom(999);
+    const before = saveFastRandom();
+    expect(() => scoreSolverAgreement(2000)).toThrow(
+      'solver_agreement_action_outside_reference:open_jam:raise'
+    );
+    expect(saveFastRandom()).toBe(before);
+  });
+
   it('with no chart store there is no reference and no score', () => {
     expect(gtoChartCount()).toBe(0);
     const r = scoreSolverAgreement(50);

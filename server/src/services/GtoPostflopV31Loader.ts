@@ -40,6 +40,23 @@ const MAX_RETRY_MS = 5 * 60_000;
 const PAGE = 500;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+// A missing/malformed RPC body is not an authoritative empty dataset. Keep
+// full policy validation in the real store; these checks bind transport shape
+// and the requested offline identity before any candidate store can change.
+function readV31CellPage(data: unknown, expectedDatasetId?: string): GtoPostflopV31Row[] {
+  if (!Array.isArray(data)) throw new Error('v31_cell_page_not_array');
+  if (data.length > PAGE) throw new Error('v31_cell_page_overflow');
+  for (const row of data) {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) {
+      throw new Error('v31_cell_page_row_invalid');
+    }
+    if (expectedDatasetId !== undefined && row.dataset_id !== expectedDatasetId) {
+      throw new Error('v31_evaluation_dataset_mismatch');
+    }
+  }
+  return data as GtoPostflopV31Row[];
+}
+
 async function loadGtoPostflopV31Attempt(): Promise<{ ok: boolean; count: number }> {
   try {
     const rows: GtoPostflopV31Row[] = [];
@@ -49,9 +66,10 @@ async function loadGtoPostflopV31Attempt(): Promise<{ ok: boolean; count: number
         p_limit: PAGE,
       });
       if (error) throw new Error(error.message);
-      if (!data || data.length === 0) break;
-      rows.push(...(data as GtoPostflopV31Row[]));
-      if (data.length < PAGE) break;
+      const page = readV31CellPage(data);
+      if (page.length === 0) break;
+      rows.push(...page);
+      if (page.length < PAGE) break;
     }
     // Full success only. The validator performs the atomic swap.
     const applied = replaceGtoPostflopV31(rows);
@@ -87,7 +105,7 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
   checksum: string;
   cells: number;
 }> {
-  if (!UUID.test(datasetId)) {
+  if (typeof datasetId !== 'string' || !UUID.test(datasetId)) {
     throw new Error('invalid V31 evaluation dataset id');
   }
   const rows: GtoPostflopV31Row[] = [];
@@ -98,9 +116,10 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
       p_limit: PAGE,
     });
     if (error) throw new Error(error.message);
-    if (!data || data.length === 0) break;
-    rows.push(...(data as GtoPostflopV31Row[]));
-    if (data.length < PAGE) break;
+    const page = readV31CellPage(data, datasetId);
+    if (page.length === 0) break;
+    rows.push(...page);
+    if (page.length < PAGE) break;
   }
   if (rows.length === 0) throw new Error('V31 evaluation dataset returned no cells');
   const checksum = rows[0].dataset_checksum;

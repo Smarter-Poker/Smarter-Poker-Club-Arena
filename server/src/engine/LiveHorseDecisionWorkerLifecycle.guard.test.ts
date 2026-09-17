@@ -43,12 +43,18 @@ describe('live HorseLogic has one lifecycle owner', () => {
       'const [engineStopResults, managerStopResults] = await Promise.all('
     );
     const workerStop = stop.indexOf('stopLiveHorseDecisionWorker', dealerJoin);
+    const executionFlush = stop.indexOf('stopBrainTelemetryFlush', dealerJoin);
     const ownershipFailure = stop.indexOf('ownershipFailures.push(error)', workerStop);
     const ownershipGate = stop.indexOf('if (ownershipFailures.length > 0)', workerStop);
     const cashRelease = stop.indexOf('await releaseTables(cashLeaseClaims)', workerStop);
 
     expect(dealerJoin).toBeGreaterThan(-1);
     expect(workerStop).toBeGreaterThan(dealerJoin);
+    expect(executionFlush).toBeGreaterThan(dealerJoin);
+    expect(executionFlush).toBeLessThan(ownershipGate);
+    expect(stop.slice(executionFlush, ownershipGate)).toContain(
+      'horseExecutionTelemetryStop.status'
+    );
     expect(ownershipFailure).toBeGreaterThan(workerStop);
     expect(ownershipGate).toBeGreaterThan(ownershipFailure);
     expect(cashRelease).toBeGreaterThan(ownershipGate);

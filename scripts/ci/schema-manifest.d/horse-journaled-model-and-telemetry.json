@@ -1,0 +1,53 @@
+{
+  "_owner": "Horse Brain Phase14 journaled model diagnostics and Phase15 atomic telemetry",
+  "tables": [
+    "horse_journaled_model_sweep",
+    "horse_journaled_opponent_models",
+    "horse_brain_flush_receipts"
+  ],
+  "functions": [
+    "fn_claim_horse_journaled_model",
+    "fn_finish_horse_journaled_model",
+    "fn_horse_brain_flush_receipt"
+  ],
+  "columns": {
+    "horse_journaled_model_sweep": [
+      "singleton",
+      "cursor_actor",
+      "cursor_scope",
+      "lease_token",
+      "lease_until",
+      "actor_key",
+      "scope_key",
+      "from_ms",
+      "to_ms",
+      "snapshot_id",
+      "evidence_digest",
+      "population_status",
+      "completed_token",
+      "completed_digest",
+      "capacity_refusals",
+      "last_capacity_actor",
+      "last_capacity_scope"
+    ],
+    "horse_journaled_opponent_models": [
+      "actor_key",
+      "scope_key",
+      "report_digest",
+      "report_payload",
+      "recorded_at"
+    ],
+    "horse_brain_flush_receipts": [
+      "batch_id",
+      "payload_sha256",
+      "worker_id",
+      "sequence",
+      "source_release",
+      "day",
+      "collected_at",
+      "accepted_at",
+      "fires",
+      "latency"
+    ]
+  }
+}

@@ -68,7 +68,7 @@ async function main() {
       for (const seed of PLO4_LEAGUE_SEEDS) {
         if (!running) break;
         const result = await runPlo4PolicyLeague(
-          { profileId: profile.id, pairs, seed, samples },
+          { profileId: profile.id, pairs, seed },
           () => running
         );
         leagues.push(result);
@@ -96,6 +96,7 @@ async function main() {
       leagues.every(
         (r) =>
           r.complete &&
+          r.positionCoverageComplete &&
           !r.illegalActions &&
           !r.conservationErrors &&
           !r.cardErrors &&

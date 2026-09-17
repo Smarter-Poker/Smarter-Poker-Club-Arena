@@ -1,0 +1,13 @@
+# Horse Brain: away all-ins retain wager context
+
+The continuing gold-standard audit reproduced additional Phase6 and Phase8 failures. A player who has committed all their chips retains a showdown claim and their accepted wager even after sitting out. Their inability to act again cannot erase that public context.
+
+Phase8's `deepOnePairCommitment` excluded away all-in opponents when calculating matched additional risk and public raise pressure. A call or wager committing at least25% of a deep stack could lose its critical-commitment flag. The opponent filter now preserves away all-ins while continuing to exclude folded players and ordinary away non-all-ins. Policy identity advances to `horse-tournament-postflop-round1-v4`. Uncalled excess still does not count as risk; an all-in call still does not manufacture raising pressure.
+
+Phase6 counted voluntary all-ins only while the opponents were present. Its exact branch and its effective depth calculation now retain away all-in opponents. Forced blind all-ins remain distinct: they do not become voluntary multiway decisions. The actual policy-input test proves effective depth remains15BB against the recorded15BB all-in, regardless of away status, while a forced-blind-only unopened hand retains the hero's20BB depth.
+
+Two matched-risk boundary checks and two actual Phase7-to-Phase8 checks failed before the Phase8 repair. One paired real HorseLogic Phase6 case failed before its correction. The focused group passes181 tests across Phase6, Phase8, replay and worker-client receipt validation. It preserves the shadow baseline, returned-excess boundary, full/short-raise versus call discriminator and stack conservation. The final TypeScript build passes, and integrated verification passes12,900 tests with157 declared skips across845 passing files and one skipped file. Exact source identity is recorded in the owning task's checkpoint.
+
+No policy promotion or budget relaxation is included. Phase8's4ms work/5ms wall budget, safety controls and rejected promotion evidence remain in force. The full15-phase program is still incomplete: remaining source/causal controls, complete private ledger and restart replay, domain/performance/external qualification and native publication/natural proof have not all passed.
+
+Further audit targets identified by the seat-status sweep, not yet resolved by this patch: reference-layer rake/ante population counts; legacy variant preflop committed-opponent band alignment and sample population; classification of other voluntary-response versus showdown-contender filters. Each needs a behavioral reproduction and bounded correction before it can be declared verified.

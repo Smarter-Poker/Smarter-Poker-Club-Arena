@@ -23,14 +23,15 @@ describe('Phase 10 basic PLO4 policy', () => {
     expect(spots[2].receipt.livePolicy?.fired).toBe(true);
     expect(spots[3].receipt.proposal.amount).toBe(5);
   });
-  it('defaults to shadow, reports a proposal and preserves the exact baseline object', async () => {
+  it('defaults to shadow, reports a proposal and preserves detached baseline values', async () => {
     const input = plo4ReferenceSpot('non_nut_flush');
     delete input.mode;
     const before = JSON.stringify(input);
     const result = await evaluatePlo4Policy(input);
     expect(result.mode).toBe('shadow');
     expect(result.proposal.action).toBe('fold');
-    expect(result.selected).toBe(input.baseline);
+    expect(result.selected).toEqual(input.baseline);
+    expect(result.selected).not.toBe(input.baseline);
     expect(result.applied).toBe(false);
     expect(JSON.stringify(input)).toBe(before);
   });
@@ -90,7 +91,7 @@ describe('Phase 10 basic PLO4 policy', () => {
       expect(result.reason).toBe('phase7_utility_required');
       expect(result.eligible).toBe(true);
       expect(result.livePolicy?.fired).toBe(true);
-      expect(result.selected).toBe(input.baseline);
+      expect(result.selected).toEqual(input.baseline);
       expect(result.applied).toBe(false);
     }
   );
@@ -191,7 +192,7 @@ describe('Phase 10 basic PLO4 policy', () => {
       change(input);
       const result = await evaluatePlo4Policy(input);
       expect(result.reason).toBe(reason);
-      expect(result.selected).toBe(input.baseline);
+      expect(result.selected).toEqual(input.baseline);
     }
   });
   it('preserves the baseline on cancellation or an incompatible opponent range', async () => {
@@ -200,7 +201,7 @@ describe('Phase 10 basic PLO4 policy', () => {
     input.opponentRanges = { opponent: { combos: [{ cards: input.hero.cards, weight: 1 }] } };
     const result = await evaluatePlo4Policy(input);
     expect(result.reason).toBe('equity_incompatible_ranges');
-    expect(result.selected).toBe(input.baseline);
+    expect(result.selected).toEqual(input.baseline);
   });
   it('does not turn a sampled estimate into a guaranteed price or force an illegal raise', async () => {
     const river = plo4ReferenceSpot('royal_flush');

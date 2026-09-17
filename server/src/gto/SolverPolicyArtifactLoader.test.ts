@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gtoOpenJam } from '../engine/GtoCharts.js';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -334,6 +337,66 @@ describe('cross-repository solver policy contract', () => {
 });
 
 describe('atomic artifact hydration', () => {
+  it.each(['__proto__', 'constructor', 'toString', 'not-a-hand'])(
+    'does not manufacture chart advice for the invalid hand name %s',
+    (hand) => {
+      for (const source of ['memory', 'external']) {
+        _clearSolverPolicyArtifactsForTests();
+        if (source === 'memory') hydrateChartPolicyArtifact([chartRow]);
+        else replaceSolverPolicyArtifact(bundle());
+        expect(
+          lookupChartPolicyAdvice({
+            gameType: 'Tournament',
+            villainAction: 'fold_to_hero',
+            position: 'BTN',
+            depth: 10,
+            hand,
+          })
+        ).toBeNull();
+        expect(gtoOpenJam({ isTournament: true, position: 'BTN', stackBB: 10, hand })).toBeNull();
+        expect(
+          gtoOpenJam({ isTournament: true, position: 'BTN', stackBB: 10, hand: 'AA' })
+        ).toMatchObject({ action: 'push', freq: 1 });
+      }
+    }
+  );
+
+  it.each(['missing', 'malformed'])(
+    'retains the admitted source identity after a %s file refresh',
+    (failure) => {
+      const dir = mkdtempSync(join(tmpdir(), 'horse-artifact-identity-'));
+      try {
+        const valid = join(dir, 'admitted.json'),
+          bad = join(dir, 'rejected.json');
+        writeFileSync(valid, JSON.stringify(bundle()));
+        if (failure === 'malformed') writeFileSync(bad, '{');
+        expect(loadSolverPolicyArtifactFile(valid)).toBe(1);
+        const coordinate = {
+          gameType: 'Tournament',
+          villainAction: 'fold_to_hero',
+          position: 'BTN',
+          depth: 10,
+        };
+        const policy = lookupChartPolicy(coordinate);
+        const before = solverPolicyArtifactStatus().external;
+        expect(() => loadSolverPolicyArtifactFile(bad)).toThrow();
+        expect(lookupChartPolicy(coordinate)).toBe(policy);
+        expect(solverPolicyArtifactStatus().external).toEqual({
+          ...before,
+          lastError: expect.any(String),
+        });
+        expect(loadSolverPolicyArtifactFile(valid)).toBe(1);
+        expect(solverPolicyArtifactStatus().external).toMatchObject({
+          sourceArtifact: 'contract-test',
+          count: 1,
+          lastError: null,
+        });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
+
   it('loads the exact artifact envelope published by World Hub from disk', () => {
     const filename = fileURLToPath(
       new URL('./contracts/fixtures/chart-policy-artifact.v1.json', import.meta.url)

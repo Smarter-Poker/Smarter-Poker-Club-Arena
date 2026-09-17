@@ -13,14 +13,30 @@ try {
   // Loading/parsing public batches and service transport stays in this
   // dedicated thread. No source payload or service credential crosses IPC.
   const { processAdaptiveJournalWork } = await import('../HorseAdaptiveJournalWork.js');
+  const { processHorseCommittedPotAudit } = await import('../HorseCommittedPotAudit.js');
+  const { processJournaledOpponentModels } = await import('../HorseJournaledOpponentModels.js');
   const { pruneAdaptiveJournal } = await import('../HorseAdaptiveJournalRetention.js');
-  const { readJournalQueueHealth } = await import('../HorseAdaptiveJournalQueueHealth.js');
+  const { readLearningQueueHealth } = await import('../HorseLearningQueueHealth.js');
+  const { processObservationCapture, pruneObservationCaptures } =
+    await import('../HorseObservationCapture.js');
+  const { discoverObservationRequests, pruneObservationDiscovery } =
+    await import('../HorseObservationDiscovery.js');
   if (!stop.signal.aborted) {
     port.postMessage({ type: 'READY' });
     await runJournalLoop(stop.signal, {
       processWork: processAdaptiveJournalWork,
+      processModels: processJournaledOpponentModels,
+      processCommitments: processHorseCommittedPotAudit,
+      processCapture: processObservationCapture,
+      discover: discoverObservationRequests,
       prune: pruneAdaptiveJournal,
-      readQueueHealth: readJournalQueueHealth,
+      pruneCaptures: pruneObservationCaptures,
+      pruneDiscovery: pruneObservationDiscovery,
+      readQueueHealth: async () => {
+        const health = await readLearningQueueHealth();
+        port.postMessage({ type: 'CAPTURE_HEALTH', value: { version: 1, ...health.capture } });
+        return health.journal;
+      },
       queueHealth: (health) =>
         port.postMessage({ type: 'QUEUE_HEALTH', value: { version: 1, ...health } }),
       now: Date.now,
@@ -28,7 +44,12 @@ try {
         await wait(ms, undefined, { signal });
       },
       started: () => port.postMessage({ type: 'CYCLE_STARTED' }),
-      completed: (cycle) => port.postMessage({ type: 'CYCLE_COMPLETED', ...cycle }),
+      completed: (cycle) =>
+        port.postMessage({
+          type: 'CYCLE_COMPLETED',
+          ...cycle,
+          ...(cycle.discovery ? { discovery: { version: 1, ...cycle.discovery } } : {}),
+        }),
     });
   }
   port.postMessage({ type: 'STOPPED' });

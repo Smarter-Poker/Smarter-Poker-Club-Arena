@@ -7,6 +7,7 @@ import {
   readBuildInfoSha,
   requireUnchangedBuildInfoSha,
   requireReadyEngineSha,
+  readReadyEngineSha,
 } from '../scripts/ci/production-e2e-provenance.mjs';
 
 const A = 'a'.repeat(40);
@@ -37,24 +38,39 @@ describe('production E2E uses exact trusted provenance', () => {
     expect(() => requireReadyEngineSha('{}', 'abc1234')).toThrow();
   });
 
-  it('keeps the prerequisite after schema audits and before browser installation and account creation', () => {
-    const workflow = readFileSync(
+  it('keeps the exact engine prerequisite in its own job before its browser fixtures', () => {
+    const fullWorkflow = readFileSync(
       resolve(process.cwd(), '.github/workflows/post-deploy-e2e.yml'),
       'utf8'
     );
+    const workflow = fullWorkflow.slice(fullWorkflow.indexOf('  live-table-e2e:'));
     const gate = workflow.indexOf(
       '- name: Require the exact engine before opening production browser fixtures'
     );
-    expect(gate).toBeGreaterThan(
-      workflow.indexOf('- name: Audit the remaining live schema from trusted code')
-    );
+    expect(gate).toBeGreaterThan(0);
     expect(gate).toBeLessThan(workflow.indexOf('- name: Install Chromium and WebKit'));
+    expect(gate).toBeLessThan(
+      workflow.indexOf('- name: Provision an isolated production E2E account')
+    );
     const stanza = workflow.slice(gate, workflow.indexOf('- name: Install Chromium and WebKit'));
     expect(stanza).toContain('set -euo pipefail');
     expect(stanza).toContain('curl -fsS --max-time 20');
     expect(stanza).toContain('engine-ready "$EXPECTED_ENGINE_SHA"');
     expect(stanza).not.toContain('continue-on-error');
     expect(stanza).not.toContain('|| true');
+  });
+
+  it('records the healthy serving engine without substituting an unshipped main commit', () => {
+    expect(
+      readReadyEngineSha(JSON.stringify({ releaseSha: B, running: true, liveness: 'ok' }))
+    ).toBe(B);
+    for (const value of [
+      { releaseSha: B, running: false, liveness: 'ok' },
+      { releaseSha: 'abc123', running: true, liveness: 'ok' },
+      { releaseSha: B, running: true, liveness: 'bad' },
+    ]) {
+      expect(() => readReadyEngineSha(JSON.stringify(value))).toThrow();
+    }
   });
 
   it('uses the same exact engine parser from the workflow CLI', () => {

@@ -40,7 +40,12 @@ bash "$(git rev-parse --show-toplevel)/scripts/guard-mass-deletion.sh"
 # above, which are the ones that must never be skipped.
 LS="$(git rev-parse --show-toplevel)/node_modules/.bin/lint-staged"
 if [ -x "$LS" ]; then
-  "$LS"
+  LINT_BASE="$(node scripts/ci/precommit-lint-base.mjs)"
+  if [ -n "$LINT_BASE" ]; then
+    "$LS" --diff "$LINT_BASE"
+  else
+    "$LS"
+  fi
 else
   echo "[pre-commit] no local node_modules - skipped formatting (guards above still ran)."
 fi

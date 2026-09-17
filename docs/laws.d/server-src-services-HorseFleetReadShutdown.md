@@ -1,4 +1,4 @@
-# Cash seeding joins its work after lifecycle withdrawal
+# server/src/services/HorseFleetReadShutdown.law.test.ts
 
 Tests: `server/src/services/HorseFleetReadShutdown.law.test.ts` and
 `server/src/services/supabase/paginationLifecycle.test.ts`.

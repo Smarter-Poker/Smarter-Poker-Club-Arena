@@ -26,7 +26,6 @@ const fsm = { state: 'SAT_OUT' as const, sinceMs: 1, graceDeadlineMs: null };
 const bank = {
   remainingSeconds: 11,
   usesRemaining: 1,
-  unlimitedActivations: false,
   initialSeconds: 40,
   baseSeconds: 30,
   dbConsumedSeconds: 4,
@@ -173,7 +172,6 @@ describe('the destination adopts only the transfer that created this stay', () =
     expect(engine.timeBankEngine.initializePlayer).toHaveBeenCalledWith(table, player, {
       remainingSeconds: 11,
       usesRemaining: 1,
-      unlimitedActivations: false,
     });
     expect(engine.timeBankMeta.get(player)).toEqual({
       initialSeconds: 40,

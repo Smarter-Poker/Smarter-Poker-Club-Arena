@@ -14,8 +14,10 @@ Read-only production verification on September 17 confirmed installed versions `
 
 - Preserve the restored provider workflows and external telemetry removal.
 - Run existing required GitHub-hosted client, server, build and isolated PostgreSQL checks on the final integration.
-- Coordinate shared engine changes with Production Alerts and preserve publication order.
+- Coordinate actual shared engine dependencies and preserve provider concurrency safeguards.
 - Complete protected merge, client publication and engine release through the restored routes.
 - Verify both client build identities, the engine component identity and owning release proof, then bounded affected UI behavior.
 
 Historical checks are source-recovery evidence. They do not qualify this new integration. This package does not start Phase 2 or claim whole-application, full shutdown-cohort or financial-program certification.
+
+The final recovery retains the qualified roster-wake, controller-continuation and regression-registry corrections from `57653ba0`. The move-arrival fixture uses the restored time-bank interface (remaining seconds and remaining uses); it does not introduce the later unlimited-activation feature. Existing required checks exposed the missing registry header, two historical source assertions and that fixture-interface mismatch before this correction.

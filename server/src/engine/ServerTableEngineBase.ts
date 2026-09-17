@@ -6394,6 +6394,11 @@ export abstract class ServerTableEngineBase {
 
   /** The wait loop's pause: this engine's sleep, which a seat arrival or a stop ends early. */
   protected waitForPlayersPause(ms: number): Promise<void> {
+    // A move can arrive during the awaited roster work, when no sleeper
+    // exists to wake. Its recorded owner must send the loop back to the real
+    // pause gate instead of admitting another sleep. Keep this check and
+    // sleeper registration synchronous so a new wake cannot fall between them.
+    if (this.tournamentMovePauseOwners.size > 0) return Promise.resolve();
     let wake!: () => void;
     const woken = new Promise<void>((resolve) => {
       wake = resolve;

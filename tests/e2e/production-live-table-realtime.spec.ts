@@ -12,6 +12,8 @@ import {
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
 import { createProgressSilenceGuard } from './support/progressSilence';
+import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { remainingObservationMs } from './support/observationDeadline';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -201,21 +203,6 @@ function healthyRunningTable(
   return table;
 }
 
-async function dismissClubMessage(page: Page): Promise<void> {
-  const close = page.getByRole('button', { name: 'Close Club Message' });
-  if (
-    await close
-      .waitFor({ state: 'visible', timeout: 2_000 })
-      .then(() => true)
-      .catch(() => false)
-  ) {
-    await close.click();
-    await expect(close, 'the club message blocked the live-table selector').toBeHidden({
-      timeout: 8_000,
-    });
-  }
-}
-
 async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCandidate[]> {
   // Cluster game cards retain the representative table id. Their View/Watch
   // Game action uses the same spectator table route as manual cash tables.
@@ -229,17 +216,6 @@ async function selectOccupiedRunningCashTable(
   page: Page,
   request: APIRequestContext
 ): Promise<{ candidate: RunningTableCandidate; health: EngineHealth; table: EngineTableLiveness }> {
-  // The reserved account may legitimately receive this optional lobby offer.
-  // Dismiss it through its own control if it blocks a spectator action.
-  const diamondPrompt = page.getByRole('dialog', { name: 'Diamond Spins', exact: true });
-  await page.addLocatorHandler(
-    diamondPrompt,
-    async () => {
-      await diamondPrompt.getByRole('button', { name: 'Not Now', exact: true }).click();
-      await expect(diamondPrompt).toBeHidden({ timeout: 8_000 });
-    },
-    { times: 1 }
-  );
   await page.goto(CLUB_LOBBY, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (/\/auth(?:\/|\?|$)/.test(page.url())) {
     throw new Error('Production redirected to auth despite the required authenticated state');
@@ -247,7 +223,7 @@ async function selectOccupiedRunningCashTable(
   await expect(page.locator('.club-home'), 'the production club lobby did not render').toBeVisible({
     timeout: 30_000,
   });
-  await dismissClubMessage(page);
+  await prepareCashLobbyActions(page);
 
   await page
     .locator(
@@ -531,6 +507,10 @@ async function certifyReadOnlyTournamentFormat(
   testInfo: TestInfo,
   gameFormat: (typeof TOURNAMENT_FORMATS)[number]
 ): Promise<void> {
+  // Poker's action clock bounds each turn, not the whole hand. Keep the
+  // existing runner's hard case limit and one fixed observation deadline;
+  // live poker events still must satisfy the unchanged silence limit.
+  const observationDeadline = Date.now() + testInfo.timeout;
   const selected = await selectProgressingTournamentTable(request, gameFormat, testInfo);
   const { candidate, evidence } = selected;
   await testInfo.attach(`${gameFormat}-engine-before-navigation`, {
@@ -640,7 +620,7 @@ async function certifyReadOnlyTournamentFormat(
       journal.waitForCausalHandCycle(
         candidate.id,
         progressStartedAt,
-        CAUSAL_HAND_TIMEOUT_MS,
+        remainingObservationMs(observationDeadline),
         MAX_GAMEPLAY_SILENCE_MS,
         `${candidate.name} did not progress through a hand and automatically start the next`
       ),
@@ -723,7 +703,7 @@ async function certifyReadOnlyTournamentFormat(
         journal.waitForCausalHandCycle(
           candidate.id,
           recoveredProgressStartedAt,
-          CAUSAL_HAND_TIMEOUT_MS,
+          remainingObservationMs(observationDeadline),
           MAX_GAMEPLAY_SILENCE_MS,
           `${candidate.name} did not resume causal gameplay after reconnect`
         ),

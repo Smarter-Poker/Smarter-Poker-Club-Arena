@@ -75,8 +75,8 @@
       "sha256": "53230395abb2eef42b570614deb1070ca1a9e190cfebd61b6cb087325b6989fc"
     },
     "scripts/qualification/spin-history-retention-behavior.sql": {
-      "bytes": 5008,
-      "sha256": "4ddfbb1bd3b082ed27ba0949654be99397f9f179026befce631127d75e70967e"
+      "bytes": 5010,
+      "sha256": "b72bce7eefd14e3276c6971f99a8a87a8b4374af8bf4687ccfb54cbe697bcbc7"
     },
     "scripts/qualification/spin-history-retention.md": {
       "bytes": 12008,

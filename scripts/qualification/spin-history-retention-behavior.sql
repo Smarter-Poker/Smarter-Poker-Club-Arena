@@ -47,7 +47,7 @@ BEGIN
    IF v_case=1 THEN EXECUTE v_rollback; ELSE EXECUTE v_forward; END IF;
    SELECT array_agg(hand_id ORDER BY hand_id) INTO v_expected_ids FROM retention_cases
     WHERE CASE WHEN v_case=1 THEN original_deletes ELSE candidate_deletes END;
-   IF cardinality(v_expected_ids) IS DISTINCT FROM CASE WHEN v_case=1 THEN 5 ELSE 2 END THEN
+   IF cardinality(v_expected_ids) IS DISTINCT FROM (CASE WHEN v_case=1 THEN 5 ELSE 2 END) THEN
     RAISE EXCEPTION 'retention behavior: independently enumerated oracle cardinality changed'; END IF;
    v_expected:=pg_temp.retention_database_state(v_expected_ids);
    v_removed:=public.sp_prune_hand_history(1);

@@ -19,9 +19,11 @@ describe('global Club Arena footer mounting and clearance', () => {
     );
 
     expect(app.match(/<ClubBottomNav/g)).toHaveLength(1);
-    // Route OR in-tab lobby (tests/the-lobby-always-has-its-footer.law.test.ts).
-    expect(app).toContain(
-      'shouldShowClubFooterFor(location.pathname, inTabLobbyActive, inTabLobbyClubId)'
+    // Route OR in-tab lobby, and whether anyone is signed in (public pages
+    // show no footer to a signed-out visitor; discoverability phase 5).
+    // See tests/the-lobby-always-has-its-footer.law.test.ts.
+    expect(app).toMatch(
+      /shouldShowClubFooterForVisitor\(\s*location\.pathname,\s*inTabLobbyActive,\s*inTabLobbyClubId,\s*footerVisitorSignedIn\s*\)/
     );
     expect(pageMounts).toEqual([]);
   });

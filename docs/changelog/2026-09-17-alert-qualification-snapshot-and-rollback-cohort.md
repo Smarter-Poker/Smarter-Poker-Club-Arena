@@ -45,6 +45,16 @@ hashes are preserved. The unchanged admission check passes after this repair,
 and the existing 37-component source builder and wrapper binding checks pass.
 Source generation is not database execution or accounting activation.
 
+The normal pre-push check then exposed two additional fixture failures. The
+cashout source assertion now normalizes whitespace while retaining the complete
+balance condition and refusal. The storage-unavailable dismissal test now
+replaces the exact sessionStorage getter with real delegated reads and a throwing
+write fixture, avoiding interception of an already-bound DOM storage method.
+It retains all dismissal assertions, additionally proves the write threw and
+persisted no hint, and restores the getter in finally. The unchanged storage
+test failed with zero intercepted writes; the corrected file passes all four
+tests, and all 49 cashout tests pass. No product dismissal behavior changed.
+
 A connected review of the current tournament terminal found a separate defect:
 the receipt installer could accept a terminal/places cohort that its matching
 reverse refused. Forward admission now requires the same two complete original

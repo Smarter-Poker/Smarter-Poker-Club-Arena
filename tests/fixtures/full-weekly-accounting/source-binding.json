@@ -139,7 +139,7 @@
     "tests/components/agent-cashout-scope.test.tsx": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
     "tests/unit/CashoutService.test.ts": "26461a6485532da8ea2cef4c69a47f5b1e4f8711da2eb44834a8eab88681f469",
     "tests/config/roleScopedCashier.test.ts": "bca1a5a8308ebae743c1749a63441a5663685bc91aa62b609c55f224035af5aa",
-    "tests/cashout-escrow-flow.test.ts": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19",
+    "tests/cashout-escrow-flow.test.ts": "b74114ae26cc7499d9243d67ac9b9b41d0d1c64dcfb47d8d0140aad0dc536fd5",
     "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "4faed6fab4a8eac765219b794e555edf9186064bc19b7ba02c8bc9f0572c1fca",

@@ -39,15 +39,15 @@ import path from 'path';
 const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
 
 /** Every migration that defines the finaliser, oldest first. */
-function definitions(): string[] {
+function definitions(name = 'fn_finalize_bounty_pool'): string[] {
   return fs
     .readdirSync(MIGRATIONS)
     .filter((f) => f.endsWith('.sql'))
     .sort()
     .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
-    .filter((b) => b.includes('FUNCTION public.fn_finalize_bounty_pool'))
+    .filter((b) => b.includes(`FUNCTION public.${name}`))
     .map((body) => {
-      const start = body.indexOf('CREATE OR REPLACE FUNCTION public.fn_finalize_bounty_pool');
+      const start = body.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
       if (start < 0) return '';
       const next = body.indexOf('CREATE OR REPLACE FUNCTION', start + 1);
       return body.slice(start, next < 0 ? undefined : next);
@@ -100,7 +100,20 @@ describe('fn_finalize_bounty_pool', () => {
 
   it('the terminal root owns the event and keeps the ledger implementation in-process', () => {
     const root = sql(definitions()[definitions().length - 1]);
-    expect(root).toMatch(/pg_advisory_xact_lock\(/);
+    const lane = sql(definitions('fn_ca_lock_settlement_lane_global').at(-1) ?? '');
+    expect(root).toMatch(/PERFORM public\.fn_ca_lock_settlement_lane_global\(\);/);
+    expect(lane).toMatch(
+      /pg_advisory_xact_lock\(\s*hashtextextended\('ca:tournament-terminal-settlement:v1', 0\)\)/
+    );
+    expect(lane).toMatch(
+      /pg_advisory_xact_lock\(\s*hashtextextended\('ca:hand-settlement-barrier:v1', 0\)\)/
+    );
+    expect(lane.indexOf('ca:tournament-terminal-settlement:v1')).toBeLessThan(
+      lane.indexOf('ca:hand-settlement-barrier:v1')
+    );
+    expect(root.indexOf('PERFORM public.fn_ca_lock_settlement_lane_global();')).toBeLessThan(
+      root.indexOf('SELECT * INTO v_t FROM public.tournaments')
+    );
     expect(root).toMatch(
       /SELECT \* INTO v_t FROM public\.tournaments WHERE id=p_tournament_id FOR UPDATE/
     );

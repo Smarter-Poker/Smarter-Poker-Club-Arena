@@ -426,6 +426,7 @@ export class EngineWebSocketServer {
   private accessFailed = 0;
   private accessMaxMs = 0;
   private accessOverGrace = 0;
+  private muxSubscriptionAttempt = 0;
 
   constructor(opts: EngineWebSocketServerOptions) {
     this.hub = opts.hub;
@@ -1003,13 +1004,32 @@ export class EngineWebSocketServer {
     let owned: HubSubscriber | symbol = Symbol('pending subscription');
     conn.subs.set(tableId, owned);
     const isCurrent = () => this.connectionCanWrite(conn) && conn.subs?.get(tableId) === owned;
+    // One bounded record for this admitted attempt. Anonymous sequence + wall
+    // time correlate phases without retaining table/user/IP/token or game data.
+    // Offsets end at enqueue, not network delivery or browser presentation.
+    const started = performance.now();
+    const elapsed = () => Math.round(Math.max(0, performance.now() - started) * 1000) / 1000;
+    const timing = {
+      attempt: ++this.muxSubscriptionAttempt,
+      startedAt: Date.now(),
+      outcome: 'interrupted',
+      authorityReturnedAtMs: null as number | null,
+      ensureStartedAtMs: null as number | null,
+      tableReadyAtMs: null as number | null,
+      ackQueuedAtMs: null as number | null,
+      firstHubFrameQueuedAtMs: null as number | null,
+      hubSubscribedAtMs: null as number | null,
+    };
+    let measuringInitialFrames = true;
     try {
       const viewerAccess = await this.authorizeConnection(tableId, conn.userId);
+      timing.authorityReturnedAtMs = elapsed();
       const banned = viewerAccess.banned;
       // UNSUBSCRIBE, close, or a new attempt may have won during the await.
       // Neither a stale success nor a stale refusal belongs to that attempt.
       if (!isCurrent()) return;
       if (!viewerAccess.allowed) {
+        timing.outcome = 'access_refused';
         conn.subs.delete(tableId);
         this.sendMuxError(
           conn,
@@ -1032,6 +1052,7 @@ export class EngineWebSocketServer {
         return;
       }
       if (banned) {
+        timing.outcome = 'banned';
         conn.subs.delete(tableId);
         this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
         return;
@@ -1039,15 +1060,21 @@ export class EngineWebSocketServer {
       // The multiplexed path must wake new empty tables exactly like the
       // single-table WebSocket path, or multi-table users still get the old
       // permanent TABLE_NOT_FOUND loop.
-      const tableReady =
-        this.tableExists(tableId) || (this.ensureTable && (await this.ensureTable(tableId)));
+      let tableReady = this.tableExists(tableId);
+      if (!tableReady && this.ensureTable) {
+        timing.ensureStartedAtMs = elapsed();
+        tableReady = await this.ensureTable(tableId);
+      }
+      timing.tableReadyAtMs = elapsed();
       if (!isCurrent()) return;
       if (!tableReady) {
+        timing.outcome = 'table_unavailable';
         conn.subs.delete(tableId);
         this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
         return;
       }
       if (this.isIpConflict(tableId, conn.userId, conn.clientIp, viewerAccess.ipRestricted)) {
+        timing.outcome = 'ip_restricted';
         conn.subs.delete(tableId);
         this.sendMuxError(
           conn,
@@ -1074,6 +1101,9 @@ export class EngineWebSocketServer {
         },
         send(data: string) {
           ws.send(data);
+          if (measuringInitialFrames && timing.firstHubFrameQueuedAtMs === null) {
+            timing.firstHubFrameQueuedAtMs = elapsed();
+          }
         },
         // bufferedAmount belongs to the shared socket, not this table. Keeping
         // the physical connection lets each retry create a fresh adapter and
@@ -1085,8 +1115,11 @@ export class EngineWebSocketServer {
       owned = subscriber;
       conn.subs.set(tableId, subscriber);
       if (!this.sendControl(conn, { type: 'SUBSCRIBED', tableId })) return;
+      timing.ackQueuedAtMs = elapsed();
       this.hub.subscribe(tableId, subscriber);
+      timing.hubSubscribedAtMs = elapsed();
       if (!isCurrent()) return;
+      timing.outcome = 'subscribed';
       // 2026-08-22 review: guarded separately — after hub.subscribe() has
       // succeeded, a throw from these engine callbacks must not fall into the
       // outer catch, which would delete the sub entry and orphan the hub
@@ -1100,9 +1133,30 @@ export class EngineWebSocketServer {
       }
     } catch (err) {
       if (!isCurrent()) return;
+      timing.outcome = 'error';
       if (typeof owned !== 'symbol') this.hub.unsubscribe(tableId, owned);
       conn.subs.delete(tableId);
       this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');
+    } finally {
+      measuringInitialFrames = false;
+      // Private replay/presence callbacks can retire an admitted connection.
+      // Observe final ownership without invoking another admission/cleanup gate.
+      if (
+        timing.outcome === 'subscribed' &&
+        (this.connections.get(conn.ws) !== conn ||
+          conn.ws.readyState !== WebSocket.OPEN ||
+          conn.subs?.get(tableId) !== owned)
+      ) {
+        timing.outcome = 'interrupted';
+      }
+      try {
+        console.info(
+          '[EngineWS] mux subscription timing',
+          JSON.stringify({ ...timing, totalMs: elapsed() })
+        );
+      } catch {
+        // Observing a connection must never change its admission or ownership.
+      }
     }
   }
 

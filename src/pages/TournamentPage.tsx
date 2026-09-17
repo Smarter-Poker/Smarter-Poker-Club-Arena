@@ -1,3 +1,7 @@
+import {
+  tournamentEntryWindowOpen,
+  type TournamentEntryWindowRow,
+} from '../utils/tournamentEntryWindow';
 /**
  * ♠ CLUB ARENA — Tournament Lobby Page
  * Register and view upcoming tournaments
@@ -76,25 +80,8 @@ type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
  * Levels take precedence over minutes when the tournament defines both, because
  * that is how the engine closes the window.
  */
-function isLateRegOpen(t: {
-  status?: string | null;
-  current_level?: number | null;
-  late_reg_levels?: number | null;
-  late_reg_mins?: number | null;
-  started_at?: string | null;
-}): boolean {
-  if (t.status !== 'RUNNING') return false;
-  const levels = Number(t.late_reg_levels ?? 0);
-  // 0-BASED (2026-08-23): current_level indexes blind_structure directly, so
-  // "through level N" is indices 0..N-1 and N is the cutoff. `<=` here left
-  // the Register button live for a level after the engine had closed late reg
-  // and finalized the pool. Matches TournamentManagerBase.isLateRegClosed.
-  if (levels > 0) return Number(t.current_level ?? 0) < levels;
-  const mins = Number(t.late_reg_mins ?? 0);
-  if (mins > 0 && t.started_at) {
-    return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
-  }
-  return false;
+function isLateRegOpen(t: TournamentEntryWindowRow): boolean {
+  return tournamentEntryWindowOpen(t, Date.now());
 }
 
 // Default fallback for unauthed (shouldn't happen in real app)
@@ -734,7 +721,7 @@ export default function TournamentPage() {
       const { data, error } = await supabase
         .from('tournaments')
         .select(
-          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, start_time, started_at, variant, tournament_type, spin_multiplier, payout_structure'
+          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, start_time, started_at, variant, tournament_type, spin_multiplier, payout_structure'
         )
         .eq('id', id)
         .maybeSingle();

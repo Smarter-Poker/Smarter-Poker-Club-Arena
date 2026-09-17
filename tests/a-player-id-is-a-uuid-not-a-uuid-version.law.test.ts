@@ -33,6 +33,9 @@
  * files that already do are listed below and frozen at that list, so the count
  * can only go down. None of them may be copied forward, because the next
  * person to reach for "a uuid regex" will copy the nearest one.
+ * The September 14 installed collector archive is recognized below by exact
+ * provenance, retaining the platform-obligation check explicitly approved on
+ * September 10. This does not permit another copy or an edited expression.
  *
  * Use the shape, never the version:
  *   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
@@ -40,7 +43,9 @@
  * docs/changelog/2026-09-10-one-refused-bust-does-not-freeze-an-event.md
  */
 import { describe, it, expect } from 'vitest';
-import { migrationCorpus } from './helpers/migrationCorpus';
+import { createHash } from 'node:crypto';
+import { migrationCorpus, type MigrationFile } from './helpers/migrationCorpus';
+import { sliceSqlStatement } from './helpers/sourceWindow';
 
 /** The version-and-variant-checked pattern, as it appears in SQL. */
 const VERSION_CHECKED = '[1-5][0-9a-f]{3}-[89ab]';
@@ -69,12 +74,78 @@ const HISTORICAL = new Set([
   '20260910134429_every_seat_means_every_seat.sql',
 ]);
 
+const INSTALLED_OBLIGATION_ARCHIVE =
+  '20260914133503_pko_heads_follow_accepted_knockout_dependencies.sql';
+const PLATFORM_ID_APPROVAL = '20260910134429_every_seat_means_every_seat.sql';
+const OBLIGATION_UUID_PREDICATE =
+  "'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'";
+const APPROVED_OBLIGATION_SCAN_MARKER = "'<previously approved installed obligation UUID check>'";
+const digest = (algorithm: 'sha256' | 'md5', text: string) =>
+  createHash(algorithm).update(text).digest('hex');
+
+/**
+ * September 10's explicit nine-function platform-ID allowlist includes
+ * fn_collect_bounty's app.bounty_obligation_id GUC. The September 14 installed
+ * R37 artifact preserves that check; it does not validate a player ID. Its
+ * captured collector prosrc was read back on September 17 at 05:08:32 UTC.
+ *
+ * Recognize only those exact immutable sources and that single obligation
+ * expression, in memory for this scan. Any changed name, bytes, function body,
+ * subject, lookup or extra check falls back to the original generic scan.
+ * This is not a function-name exemption, and HISTORICAL remains frozen.
+ */
+function scanAfterPreviouslyApprovedInstalledObligationCheck(
+  migration: MigrationFile,
+  approval: MigrationFile | undefined
+): string {
+  if (
+    migration.name !== INSTALLED_OBLIGATION_ARCHIVE ||
+    digest('sha256', migration.sql) !==
+      '209677be92189861d585c45d041841cc9ec4ec8e7c6d729f43a15ab66c0bb12c' ||
+    approval?.name !== PLATFORM_ID_APPROVAL ||
+    digest('sha256', approval.sql) !==
+      '0a460a25ee1948abf643d3067866f5173cb495b80bd395d9c234422cd140ddea' ||
+    migration.sql.split(VERSION_CHECKED).length !== 2
+  ) {
+    return migration.sql;
+  }
+
+  const collector = sliceSqlStatement(
+    migration.sql,
+    'CREATE OR REPLACE FUNCTION public.fn_collect_bounty('
+  );
+  const body = /\nAS \$function\$([\s\S]*)\$function\$;$/.exec(collector)?.[1];
+  if (
+    !body ||
+    digest('md5', body) !== 'bc621ffbddfd931897706f6d1f099109' ||
+    !body.includes("v_context text := current_setting('app.bounty_obligation_id',true);") ||
+    !body.includes(
+      `IF COALESCE(v_context,'')
+       ~* ${OBLIGATION_UUID_PREDICATE} THEN
+    SELECT * INTO o FROM public.tournament_bounty_obligations bo
+     WHERE bo.id=v_context::uuid AND bo.tournament_id=p_tournament_id`
+    )
+  ) {
+    return migration.sql;
+  }
+  return migration.sql.replace(OBLIGATION_UUID_PREDICATE, APPROVED_OBLIGATION_SCAN_MARKER);
+}
+
+function migrationsWithUnapprovedVersionChecks(migrations: MigrationFile[]): string[] {
+  const approval = migrations.find((migration) => migration.name === PLATFORM_ID_APPROVAL);
+  return migrations
+    .filter((migration) =>
+      scanAfterPreviouslyApprovedInstalledObligationCheck(migration, approval).includes(
+        VERSION_CHECKED
+      )
+    )
+    .map((migration) => migration.name)
+    .filter((name) => !HISTORICAL.has(name));
+}
+
 describe('a player id is a uuid, not a uuid of a particular version', () => {
   it('no new migration validates an id by its uuid version nibble', () => {
-    const offenders = migrationCorpus()
-      .filter((m) => m.sql.includes(VERSION_CHECKED))
-      .map((m) => m.name)
-      .filter((name) => !HISTORICAL.has(name));
+    const offenders = migrationsWithUnapprovedVersionChecks(migrationCorpus());
     expect(
       offenders,
       [
@@ -87,6 +158,143 @@ describe('a player id is a uuid, not a uuid of a particular version', () => {
       ].join('\n')
     ).toEqual([]);
   });
+
+  it('recognizes only the captured installed obligation expression approved on September 10', () => {
+    const archive = migrationCorpus().find(
+      (migration) => migration.name === INSTALLED_OBLIGATION_ARCHIVE
+    )!;
+    const approval = migrationCorpus().find(
+      (migration) => migration.name === PLATFORM_ID_APPROVAL
+    )!;
+    expect(archive).toBeDefined();
+    expect(approval).toBeDefined();
+    const scanned = scanAfterPreviouslyApprovedInstalledObligationCheck(archive, approval);
+    expect(scanned).not.toBe(archive.sql);
+    expect(scanned).toBe(
+      archive.sql.replace(OBLIGATION_UUID_PREDICATE, APPROVED_OBLIGATION_SCAN_MARKER)
+    );
+    expect(scanned).not.toContain(VERSION_CHECKED);
+    expect(migrationsWithUnapprovedVersionChecks([approval, archive])).toEqual([]);
+  });
+
+  it.each([
+    [
+      'a new migration copies the archive',
+      (m: MigrationFile) => ({ ...m, name: '20260918000000_copied_collector.sql' }),
+    ],
+    [
+      'the predicate validates a player',
+      (m: MigrationFile) => ({
+        ...m,
+        sql: m.sql.replace(
+          "IF COALESCE(v_context,'')",
+          "IF COALESCE(p_eliminated_user_id::text,'')"
+        ),
+      }),
+    ],
+    [
+      'the context reads a player GUC',
+      (m: MigrationFile) => ({
+        ...m,
+        sql: m.sql.replace(
+          "current_setting('app.bounty_obligation_id',true)",
+          "current_setting('app.player_id',true)"
+        ),
+      }),
+    ],
+    [
+      'the context is assigned a player',
+      (m: MigrationFile) => ({
+        ...m,
+        sql: m.sql.replace(
+          "current_setting('app.bounty_obligation_id',true)",
+          'p_collector_user_id::text'
+        ),
+      }),
+    ],
+    [
+      'the lookup changes identity',
+      (m: MigrationFile) => ({
+        ...m,
+        sql: m.sql.replace(
+          'WHERE bo.id=v_context::uuid',
+          'WHERE bo.eliminated_user_id=v_context::uuid'
+        ),
+      }),
+    ],
+    [
+      'the function is renamed',
+      (m: MigrationFile) => ({
+        ...m,
+        sql: m.sql.replace(
+          'CREATE OR REPLACE FUNCTION public.fn_collect_bounty(',
+          'CREATE OR REPLACE FUNCTION public.fn_collect_player('
+        ),
+      }),
+    ],
+    [
+      'a second check is added inside the collector',
+      (m: MigrationFile) => ({
+        ...m,
+        sql: m.sql.replace(
+          "  IF COALESCE(v_context,'')",
+          `  IF p_collector_user_id::text ~* ${OBLIGATION_UUID_PREDICATE} THEN RETURN '{}'::jsonb; END IF;\n  IF COALESCE(v_context,'')`
+        ),
+      }),
+    ],
+    [
+      'a second check is added outside the collector',
+      (m: MigrationFile) => ({
+        ...m,
+        sql: `${m.sql}\nSELECT id FROM public.profiles WHERE id::text ~* ${OBLIGATION_UUID_PREDICATE};\n`,
+      }),
+    ],
+    [
+      'unrelated archive bytes change',
+      (m: MigrationFile) => ({ ...m, sql: `${m.sql}\n-- changed artifact\n` }),
+    ],
+  ] as const)('fails closed when %s', (_description, change) => {
+    const archive = migrationCorpus().find(
+      (migration) => migration.name === INSTALLED_OBLIGATION_ARCHIVE
+    )!;
+    const approval = migrationCorpus().find(
+      (migration) => migration.name === PLATFORM_ID_APPROVAL
+    )!;
+    const changed = change(archive);
+    expect(changed).not.toEqual(archive);
+    expect(scanAfterPreviouslyApprovedInstalledObligationCheck(changed, approval)).toBe(
+      changed.sql
+    );
+    expect(migrationsWithUnapprovedVersionChecks([approval, changed])).toEqual([changed.name]);
+  });
+
+  it.each(['missing', 'renamed', 'changed'] as const)(
+    'fails closed with %s prior approval',
+    (change) => {
+      const archive = migrationCorpus().find(
+        (migration) => migration.name === INSTALLED_OBLIGATION_ARCHIVE
+      )!;
+      const approval = migrationCorpus().find(
+        (migration) => migration.name === PLATFORM_ID_APPROVAL
+      )!;
+      const changed =
+        change === 'missing'
+          ? undefined
+          : change === 'renamed'
+            ? { ...approval, name: '20260918000000_copied_approval.sql' }
+            : {
+                ...approval,
+                sql: approval.sql.replace("'fn_collect_bounty',", "'fn_collect_other',"),
+              };
+      expect(changed).not.toEqual(approval);
+      expect(scanAfterPreviouslyApprovedInstalledObligationCheck(archive, changed)).toBe(
+        archive.sql
+      );
+      expect(
+        migrationsWithUnapprovedVersionChecks(changed ? [changed, archive] : [archive])
+      ).toContain(archive.name);
+    }
+  );
 
   it('the historical list only shrinks - a name that is gone stays gone', () => {
     const present = new Set(

@@ -481,7 +481,7 @@ function TickerHost() {
           ? supabase
               .from('tournaments')
               .select(
-                'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players'
+                'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, started_at, current_level, max_players'
               )
               .in('club_id', clubIds)
               .eq('tournament_type', 'MTT')
@@ -503,7 +503,7 @@ function TickerHost() {
           ? supabase
               .from('tournaments')
               .select(
-                'id,name,status,start_time,started_at,ended_at,updated_at,guaranteed_prize,prize_pool,current_players,late_reg_levels,late_reg_mins,current_level,blind_structure,level_started_at,max_players'
+                'id,name,status,start_time,started_at,ended_at,updated_at,guaranteed_prize,prize_pool,current_players,late_reg_levels,late_reg_mins,rebuy_levels,prize_pool_finalized,current_level,blind_structure,level_started_at,max_players'
               )
               .in('club_id', clubIds)
               // Completed results only render for ten minutes. Exclude older

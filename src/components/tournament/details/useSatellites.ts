@@ -17,12 +17,9 @@
  *  2. `Number(sat.blind_duration)` — no such column either. Always undefined,
  *     so the card's speed badge (Hyper / Turbo / Deep Stack) never appeared.
  *
- *  3. `blindStructure: 'regular'` — hardcoded. The card DISPLAYS this string
- *     under "Structure", so every satellite claimed to be a regular-speed
- *     event regardless of what it actually was. Note the card both prints this
- *     field and tries to JSON.parse it for the speed tier, which is why the fix
- *     is a human label here plus a real `blindDuration` alongside, and not the
- *     raw JSON: passing the structure through would print JSON on the card.
+ *  3. The mapper hardcoded regular speed. Structure labels now travel with
+ *     engine-derived facts, keeping the printed label, badge, actual clock
+ *     and independent starting depth consistent without printing raw JSON.
  *
  *  4. None of `late_reg_levels`, `late_reg_mins`, `current_level`,
  *     `started_at`, `starting_chips`, `is_rebuy`, `is_reentry`, `is_bounty`,
@@ -49,7 +46,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
-import { blindLevelMinutes } from '../../lobby/tournamentFigures';
+import { describeStoredMttStructure } from '../../../../server/src/tournament/mttStructureDescription';
 import { totalBuyIn } from '../../../utils/buyIn';
 
 /**
@@ -78,6 +75,8 @@ export const SATELLITE_COLUMNS = [
   'blind_structure',
   'current_level',
   'late_reg_levels',
+  'rebuy_levels',
+  'prize_pool_finalized',
   'late_reg_mins',
   'addon_levels',
   'is_rebuy',
@@ -107,36 +106,14 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-/** Minutes of level one, from whichever of the three spellings the row uses. */
+/** Opening playing-level minutes; zero means unavailable. */
 export function firstLevelMinutes(blindStructure: unknown): number {
-  const raw =
-    typeof blindStructure === 'string'
-      ? (() => {
-          try {
-            return JSON.parse(blindStructure);
-          } catch {
-            return [];
-          }
-        })()
-      : blindStructure || [];
-  if (!Array.isArray(raw) || raw.length === 0) return 0;
-  return blindLevelMinutes(raw as Parameters<typeof blindLevelMinutes>[0], 1);
+  return describeStoredMttStructure(blindStructure, 0).openingMinutes ?? 0;
 }
 
-/**
- * The label the card prints under "Structure".
- *
- * The thresholds match `getSpeedTier` in TournamentLobbyCard exactly, so the
- * printed label and the coloured speed badge can never disagree. "Regular" is
- * the honest answer when the structure does not say — the old mapper asserted
- * it unconditionally, which is the difference between not knowing and lying.
- */
+/** Kept for existing callers; classification belongs to the engine policy. */
 export function speedLabel(minutes: number): string {
-  if (!minutes) return 'Regular';
-  if (minutes <= 3) return 'Hyper';
-  if (minutes <= 5) return 'Turbo';
-  if (minutes <= 10) return 'Regular';
-  return 'Deep Stack';
+  return describeStoredMttStructure([{ durationMinutes: minutes }], 0).speedLabel ?? 'Unconfirmed';
 }
 
 export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
@@ -162,7 +139,7 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
   else if (rawStatus === 'RUNNING') status = 'running';
   else if (['CANCELLED', 'ABORTED'].includes(rawStatus)) status = 'cancelled';
 
-  const levelMinutes = firstLevelMinutes(sat.blind_structure);
+  const structureFacts = describeStoredMttStructure(sat.blind_structure, sat.starting_chips);
 
   return {
     id: String(sat.id),
@@ -178,8 +155,9 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
        showed zero. */
     prizePool: num(sat.guaranteed_prize) || num(sat.prize_pool),
     guaranteedPrize: num(sat.guaranteed_prize) || undefined,
-    blindStructure: speedLabel(levelMinutes),
-    blindDuration: levelMinutes || undefined,
+    blindStructure: structureFacts.speedLabel ?? 'Unconfirmed',
+    blindDuration: structureFacts.openingMinutes ?? undefined,
+    structureFacts,
     maxPlayers: num(sat.max_players),
     registeredPlayers: num(sat.current_players),
     startsAt: sat.start_time as string | undefined,
@@ -190,9 +168,11 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
     /* Late reg needs BOTH spellings: the card reads levels and minutes
        separately and treats either as enabling it. Passing neither is why no
        satellite card has ever shown a late-reg countdown. */
-    late_reg_levels: num(sat.late_reg_levels) || undefined,
+    late_reg_levels: sat.late_reg_levels == null ? null : Number(sat.late_reg_levels),
+    rebuy_levels: sat.rebuy_levels == null ? null : Number(sat.rebuy_levels),
+    prize_pool_finalized: sat.prize_pool_finalized === true,
     late_reg_mins: num(sat.late_reg_mins) || undefined,
-    current_level: num(sat.current_level) || undefined,
+    current_level: sat.current_level == null ? null : Number(sat.current_level),
     addon_levels: num(sat.addon_levels) || undefined,
     isRebuy: Boolean(sat.is_rebuy),
     is_reentry: Boolean(sat.is_reentry),

@@ -730,10 +730,12 @@ async function insertHandHistoryRow(
       : {}),
   });
   let lastError = 'no response';
+  let rollbackRetries = 0;
+  const rollbackRetryDelays = [250, 1_000] as const;
 
   // Every retry is the same idempotent transaction.  This loop exists only
-  // for the ambiguous transport case: a lost HTTP response may follow a
-  // committed hand.  There is no alternate writer and no per-seat fallback.
+  // for ambiguous transport and the narrowly qualified rollback envelope below.
+  // Lost responses remain unknown; no alternate writer or per-seat fallback.
   for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
     try {
       atomicCommit.assertLeaseAuthority?.();
@@ -782,6 +784,31 @@ async function insertHandHistoryRow(
         };
       }
       if (!error && result.success === false && result.reason !== 'in_flight') {
+        // Only this canonical core envelope proves a retryable rolled-back
+        // attempt. Message wording alone and transport failure prove no rollback.
+        // Keep the original captured payload and owner; never reenter the mutable
+        // post-hand callback to build another request.
+        const rollback =
+          result.atomic_hand_commit === false &&
+          result.reason === 'atomic_hand_rolled_back' &&
+          (result.sqlstate === '40001' || result.sqlstate === '40P01') &&
+          typeof result.table_id === 'string' &&
+          result.table_id.toLowerCase() === payload.p_table_id.toLowerCase() &&
+          (typeof result.hand_number === 'number' || typeof result.hand_number === 'string') &&
+          String(result.hand_number) === String(payload.p_hand_number) &&
+          typeof result.commit_hash === 'string' &&
+          /^[0-9a-f]{64}$/.test(result.commit_hash);
+        const rollbackDelay = rollbackRetryDelays[rollbackRetries];
+        if (
+          rollback &&
+          rollbackDelay !== undefined &&
+          attempt < HAND_COMMIT_RETRY_DELAYS_MS.length
+        ) {
+          rollbackRetries++;
+          lastError = `confirmed atomic hand rollback (${String(result.sqlstate)}): ${String(result.error)}`;
+          await new Promise<void>((resolve) => setTimeout(resolve, rollbackDelay));
+          continue; // The loop reasserts original lease authority before dispatch.
+        }
         throw new Error(
           `atomic hand commit refused (${result.reason ?? 'unknown'}): ${String(result.error ?? 'receipt_detail_redacted')}`
         );

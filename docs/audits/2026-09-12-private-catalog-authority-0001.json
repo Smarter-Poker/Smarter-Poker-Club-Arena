@@ -1,0 +1,126 @@
+{
+  "scope": "Exact installed SQL and catalog snapshot; not full funded/runtime acceptance",
+  "recorded_at": "2026-09-12T10:19:32.614289+00:00",
+  "migration_path": "supabase/migrations/20260912101439_ci_private_schema_catalog_coverage.sql",
+  "postflight": {
+    "catalog": {
+      "schema": "smarter_private",
+      "tables": [
+        "smarter_private.f06_attempts",
+        "smarter_private.f06_cursors",
+        "smarter_private.f06_dispatch",
+        "smarter_private.f06_hand_dispatch",
+        "smarter_private.f06_hand_permits",
+        "smarter_private.f06_members",
+        "smarter_private.f06_operations"
+      ],
+      "columns": {
+        "smarter_private.f06_cursors": ["tournament_id", "ordinal", "revision"],
+        "smarter_private.f06_members": [
+          "break_id",
+          "user_id",
+          "source_seat_id",
+          "source_seat_number",
+          "occupancy_id"
+        ],
+        "smarter_private.f06_attempts": [
+          "request_id",
+          "break_id",
+          "user_id",
+          "revision",
+          "predecessor",
+          "amendment_id",
+          "amendment_payload",
+          "destination_table_id",
+          "destination_seat_number",
+          "generation",
+          "state",
+          "receipt"
+        ],
+        "smarter_private.f06_dispatch": [
+          "request_id",
+          "xid",
+          "occupancy_id",
+          "source_seat_id",
+          "lifecycle"
+        ],
+        "smarter_private.f06_operations": [
+          "break_id",
+          "ordinal",
+          "tournament_id",
+          "source_table_id",
+          "lifecycle",
+          "boundary_id",
+          "origin_generation",
+          "state",
+          "manifest",
+          "revision",
+          "custody_id",
+          "custody_generation",
+          "cleanup_kind",
+          "close_receipt",
+          "created_at"
+        ],
+        "smarter_private.f06_hand_permits": [
+          "permit_id",
+          "tournament_id",
+          "table_id",
+          "lifecycle",
+          "hand_number",
+          "custody_id",
+          "generation",
+          "state",
+          "evidence_id"
+        ],
+        "smarter_private.f06_hand_dispatch": ["permit_id", "xid"]
+      },
+      "version": 1,
+      "complete": true,
+      "functions": [
+        "smarter_private.f06_accept_hand",
+        "smarter_private.f06_allocate_number_above",
+        "smarter_private.f06_authority",
+        "smarter_private.f06_hand_dispatch_guard",
+        "smarter_private.f06_immutable_identity",
+        "smarter_private.f06_lock_break",
+        "smarter_private.f06_move_guard",
+        "smarter_private.f06_new_lifecycle",
+        "smarter_private.f06_prefix",
+        "smarter_private.f06_receipt_guard",
+        "smarter_private.f06_source_guard",
+        "smarter_private.f06_state",
+        "smarter_private.f06_table_guard",
+        "smarter_private.f06_try_lane",
+        "smarter_private.f06_validate_destination",
+        "smarter_private.fn_smarter_data_api_pre_request"
+      ]
+    },
+    "history": [
+      {
+        "name": "ci_private_schema_catalog_coverage",
+        "bytes": 2951,
+        "sha256": "4b648b7689e63aab3d67d4c29a5bb2e5d3b5b49a78143645d06da1904fb1cad6",
+        "version": "20260912101439",
+        "statements": [
+          "SET LOCAL lock_timeout='1s';\nSET LOCAL statement_timeout='15s';\n-- Proposal only. Root applies after independent review in one transaction.\nCREATE FUNCTION public.fn_ci_smarter_private_manifest()\nRETURNS jsonb\nLANGUAGE plpgsql\nSTABLE\nSECURITY DEFINER\nSET search_path = pg_catalog\nAS $function$\nDECLARE\n  v_namespace oid;\n  v_result jsonb;\nBEGIN\n  SELECT n.oid INTO v_namespace\n    FROM pg_catalog.pg_namespace AS n\n   WHERE n.nspname = 'smarter_private';\n  IF v_namespace IS NULL THEN\n    RAISE EXCEPTION USING ERRCODE = '3F000',\n      MESSAGE = 'smarter_private manifest unavailable: namespace does not exist';\n  END IF;\n\n  WITH relations AS (\n    SELECT c.oid, pg_catalog.format('%I.%I', n.nspname, c.relname) AS identifier\n      FROM pg_catalog.pg_class AS c\n      JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace\n     WHERE c.relnamespace = v_namespace\n       AND c.relkind IN ('r', 'p', 'v', 'm', 'f')\n  ), relation_columns AS (\n    SELECT r.identifier,\n      COALESCE((SELECT pg_catalog.jsonb_agg(a.attname ORDER BY a.attnum)\n                  FROM pg_catalog.pg_attribute AS a\n                 WHERE a.attrelid = r.oid AND a.attnum > 0 AND NOT a.attisdropped),\n               '[]'::jsonb) AS names\n      FROM relations AS r\n  ), routines AS (\n    SELECT DISTINCT pg_catalog.format('%I.%I', n.nspname, p.proname) AS identifier\n      FROM pg_catalog.pg_proc AS p\n      JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace\n     WHERE p.pronamespace = v_namespace\n  )\n  SELECT pg_catalog.jsonb_build_object(\n    'version', 1,\n    'schema', 'smarter_private',\n    'complete', true,\n    'tables', COALESCE((SELECT pg_catalog.jsonb_agg(r.identifier ORDER BY r.identifier COLLATE \"C\") FROM relations AS r), '[]'::jsonb),\n    'functions', COALESCE((SELECT pg_catalog.jsonb_agg(f.identifier ORDER BY f.identifier COLLATE \"C\") FROM routines AS f), '[]'::jsonb),\n    'columns', COALESCE((SELECT pg_catalog.jsonb_object_agg(c.identifier, c.names) FROM relation_columns AS c), '{}'::jsonb)\n  ) INTO v_result;\n  RETURN v_result;\nEND;\n$function$;\nALTER FUNCTION public.fn_ci_smarter_private_manifest() OWNER TO postgres;\nREVOKE ALL ON FUNCTION public.fn_ci_smarter_private_manifest() FROM PUBLIC, anon, authenticated;\nGRANT EXECUTE ON FUNCTION public.fn_ci_smarter_private_manifest() TO service_role;\n-- Refuse unexpected default ACLs rather than silently expose the new helper.\nDO $acl$\nBEGIN\n  IF EXISTS (\n    SELECT 1\n      FROM pg_catalog.pg_proc AS p\n      CROSS JOIN LATERAL pg_catalog.aclexplode(\n        COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS a\n     WHERE p.oid = 'public.fn_ci_smarter_private_manifest()'::pg_catalog.regprocedure\n       AND a.grantee NOT IN (\n         (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = 'postgres'),\n         (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = 'service_role'))\n  ) THEN\n    RAISE EXCEPTION 'unexpected private manifest function ACL';\n  END IF;\nEND;\n$acl$;\n"
+        ]
+      }
+    ],
+    "function": {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "anon": false,
+      "body": "\nDECLARE\n  v_namespace oid;\n  v_result jsonb;\nBEGIN\n  SELECT n.oid INTO v_namespace\n    FROM pg_catalog.pg_namespace AS n\n   WHERE n.nspname = 'smarter_private';\n  IF v_namespace IS NULL THEN\n    RAISE EXCEPTION USING ERRCODE = '3F000',\n      MESSAGE = 'smarter_private manifest unavailable: namespace does not exist';\n  END IF;\n\n  WITH relations AS (\n    SELECT c.oid, pg_catalog.format('%I.%I', n.nspname, c.relname) AS identifier\n      FROM pg_catalog.pg_class AS c\n      JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace\n     WHERE c.relnamespace = v_namespace\n       AND c.relkind IN ('r', 'p', 'v', 'm', 'f')\n  ), relation_columns AS (\n    SELECT r.identifier,\n      COALESCE((SELECT pg_catalog.jsonb_agg(a.attname ORDER BY a.attnum)\n                  FROM pg_catalog.pg_attribute AS a\n                 WHERE a.attrelid = r.oid AND a.attnum > 0 AND NOT a.attisdropped),\n               '[]'::jsonb) AS names\n      FROM relations AS r\n  ), routines AS (\n    SELECT DISTINCT pg_catalog.format('%I.%I', n.nspname, p.proname) AS identifier\n      FROM pg_catalog.pg_proc AS p\n      JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace\n     WHERE p.pronamespace = v_namespace\n  )\n  SELECT pg_catalog.jsonb_build_object(\n    'version', 1,\n    'schema', 'smarter_private',\n    'complete', true,\n    'tables', COALESCE((SELECT pg_catalog.jsonb_agg(r.identifier ORDER BY r.identifier COLLATE \"C\") FROM relations AS r), '[]'::jsonb),\n    'functions', COALESCE((SELECT pg_catalog.jsonb_agg(f.identifier ORDER BY f.identifier COLLATE \"C\") FROM routines AS f), '[]'::jsonb),\n    'columns', COALESCE((SELECT pg_catalog.jsonb_object_agg(c.identifier, c.names) FROM relation_columns AS c), '{}'::jsonb)\n  ) INTO v_result;\n  RETURN v_result;\nEND;\n",
+      "owner": "postgres",
+      "signature": "fn_ci_smarter_private_manifest()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ci_smarter_private_manifest()\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  v_namespace oid;\n  v_result jsonb;\nBEGIN\n  SELECT n.oid INTO v_namespace\n    FROM pg_catalog.pg_namespace AS n\n   WHERE n.nspname = 'smarter_private';\n  IF v_namespace IS NULL THEN\n    RAISE EXCEPTION USING ERRCODE = '3F000',\n      MESSAGE = 'smarter_private manifest unavailable: namespace does not exist';\n  END IF;\n\n  WITH relations AS (\n    SELECT c.oid, pg_catalog.format('%I.%I', n.nspname, c.relname) AS identifier\n      FROM pg_catalog.pg_class AS c\n      JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace\n     WHERE c.relnamespace = v_namespace\n       AND c.relkind IN ('r', 'p', 'v', 'm', 'f')\n  ), relation_columns AS (\n    SELECT r.identifier,\n      COALESCE((SELECT pg_catalog.jsonb_agg(a.attname ORDER BY a.attnum)\n                  FROM pg_catalog.pg_attribute AS a\n                 WHERE a.attrelid = r.oid AND a.attnum > 0 AND NOT a.attisdropped),\n               '[]'::jsonb) AS names\n      FROM relations AS r\n  ), routines AS (\n    SELECT DISTINCT pg_catalog.format('%I.%I', n.nspname, p.proname) AS identifier\n      FROM pg_catalog.pg_proc AS p\n      JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace\n     WHERE p.pronamespace = v_namespace\n  )\n  SELECT pg_catalog.jsonb_build_object(\n    'version', 1,\n    'schema', 'smarter_private',\n    'complete', true,\n    'tables', COALESCE((SELECT pg_catalog.jsonb_agg(r.identifier ORDER BY r.identifier COLLATE \"C\") FROM relations AS r), '[]'::jsonb),\n    'functions', COALESCE((SELECT pg_catalog.jsonb_agg(f.identifier ORDER BY f.identifier COLLATE \"C\") FROM routines AS f), '[]'::jsonb),\n    'columns', COALESCE((SELECT pg_catalog.jsonb_object_agg(c.identifier, c.names) FROM relation_columns AS c), '{}'::jsonb)\n  ) INTO v_result;\n  RETURN v_result;\nEND;\n$function$\n",
+      "volatility": "s",
+      "service_role": true,
+      "authenticated": false,
+      "configuration": ["search_path=pg_catalog"],
+      "public_execute": false,
+      "security_definer": true,
+      "definition_sha256": "401774661af8562bf7530fcd5b811ae01515820f24486fca7d567c2d26f209ce"
+    },
+    "observed_at": "2026-09-12T10:15:15.717473+00:00"
+  }
+}

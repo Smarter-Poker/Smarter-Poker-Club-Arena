@@ -31,9 +31,9 @@ describe('live horse decisions stay outside the table event loop', () => {
   it('counts queue and compute latency inside the chosen visible think time', () => {
     const schedule = sliceMethod(turns, '  protected scheduleHorseAction(');
 
-    expect(schedule).toContain(
-      'const remainingThinkMs = Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs))'
-    );
+    expect(schedule).toContain('const remainingThinkMs = Math.min(');
+    expect(schedule).toContain('Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs))');
+    expect(schedule).toContain('Math.max(0, protectedDeadlineMs - Date.now() - 100)');
     expect(schedule).toContain('fastResult.governorScale');
     expect(schedule).toContain('}, remainingThinkMs)');
   });

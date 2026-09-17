@@ -131,6 +131,7 @@ describe('dedicated authenticated tournament observation route', () => {
     expect((await request(path, {})).status).toBe(503);
     const getStatus = vi.fn(() => ({
       liveness: 'ok',
+      status: 'ok',
       dealerPrerequisitesReady: true,
       liveHorseDecision: { phase: 'ready' },
     }));

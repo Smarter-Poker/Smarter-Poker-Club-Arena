@@ -2893,10 +2893,12 @@ export abstract class ServerTableEngineBase {
 
     const teardown = this.performStop(dealingLoopAtFence, settlementsAtFence);
     this.teardownPromise = teardown;
-    void teardown.then(
-      () => this.recordLifecycleDiagnostic('stop_completed'),
-      () => this.recordLifecycleDiagnostic('stop_failed')
-    );
+    void teardown
+      .then(
+        () => this.recordLifecycleDiagnostic('stop_completed'),
+        () => this.recordLifecycleDiagnostic('stop_failed')
+      )
+      .catch((error) => reportError(error, 'ServerTableEngine.stop_diagnostic_failed'));
     return teardown;
   }
 

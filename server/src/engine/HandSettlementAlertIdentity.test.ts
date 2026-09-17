@@ -142,7 +142,10 @@ describe('the original request identity survives both hand-failure reports', () 
     vi.mocked(reportError).mockImplementation((error, context) => {
       if (error instanceof Error) error.message = `[${context}] ${error.message}`;
     });
-    await engine.postHandTasks(players, 1);
+    await expect(engine.postHandTasks(players, 1)).rejects.toThrow(
+      `authoritative hand commit was not proved for ${id}#9459694`
+    );
+    expect(engine.killForRestart).toHaveBeenCalledWith('authoritative_hand_commit_not_proved');
     expect(mocks.commit).toHaveBeenCalledTimes(1);
     const request = mocks.commit.mock.calls[0][0];
     expect(request.handNumber).toBe(9459694);
@@ -197,7 +200,9 @@ describe('the original request identity survives both hand-failure reports', () 
     mocks.commit.mockRejectedValue(
       new Error('authoritative hand commit failed after identical attempts')
     );
-    await engine.postHandTasks(players, 1);
+    await expect(engine.postHandTasks(players, 1)).rejects.toThrow(
+      `authoritative hand commit was not proved for ${id}#9459694`
+    );
     const history = reported(historySource);
     expect(history).toHaveLength(1);
     expect(history[0][3]!.hand_request_identity_v1).toMatchObject({ post_commit_required: false });
@@ -220,10 +225,14 @@ describe('the original request identity survives both hand-failure reports', () 
       new Error('atomic hand commit refused (atomic_hand_rolled_back): debugger failure')
     );
     const first = cashTable();
-    await first.engine.postHandTasks(first.players, 1);
+    await expect(first.engine.postHandTasks(first.players, 1)).rejects.toThrow(
+      `authoritative hand commit was not proved for ${id}#9459694`
+    );
     const second = cashTable();
     second.engine.handCount = 9459695;
-    await second.engine.postHandTasks(second.players, 2);
+    await expect(second.engine.postHandTasks(second.players, 2)).rejects.toThrow(
+      `authoritative hand commit was not proved for ${id}#9459695`
+    );
     const alerts = reported(source);
     expect(alerts).toHaveLength(2);
     expect(alerts[0][3]!.hand_request_identity_v1).toMatchObject({ hand_number: 9459694 });

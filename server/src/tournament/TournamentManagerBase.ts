@@ -5221,10 +5221,12 @@ export abstract class TournamentManagerBase {
         }
       }
     })();
-    void teardown.then(
-      () => this.recordManagerDiagnostic('stop_completed'),
-      () => this.recordManagerDiagnostic('stop_failed')
-    );
+    void teardown
+      .then(
+        () => this.recordManagerDiagnostic('stop_completed'),
+        () => this.recordManagerDiagnostic('stop_failed')
+      )
+      .catch((error) => reportError(error, 'Tournament.stop_diagnostic_failed'));
     const trackedTeardown = teardown.finally(() => {
       if (this.teardownPromise === trackedTeardown) this.teardownPromise = null;
     });

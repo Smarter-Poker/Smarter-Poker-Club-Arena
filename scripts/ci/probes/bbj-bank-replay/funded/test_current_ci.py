@@ -353,15 +353,15 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             run.bind_job_timing(None)
         with tempfile.TemporaryDirectory() as directory, patch.object(ci.time,'time',return_value=1000):
             run.output=Path(directory)
-            timing={**run.identity,'job_started_at_unix':990,'job_deadline_unix':2190,
+            timing={**run.identity,'job_started_at_unix':990,'job_deadline_unix':2790,
                     'case_execution_seconds':600,'cleanup_reserve_seconds':120}
-            for mutation in ({'run_id':'other'}, {'job_deadline_unix':2000}, {'job_deadline_unix':1890},
-                             {'cleanup_reserve_seconds':700},
-                             {'job_started_at_unix':1001,'job_deadline_unix':2201}):
+            for mutation in ({'run_id':'other'}, {'job_deadline_unix':2000}, {'job_deadline_unix':1890}, {'job_deadline_unix':2190},
+                             {'cleanup_reserve_seconds':1300},
+                             {'job_started_at_unix':1001,'job_deadline_unix':2801}):
                 with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
                     run.bind_job_timing({**timing,**mutation})
             run.bind_job_timing(timing)
-            with patch.object(ci.time,'time',return_value=1500), self.assertRaises(RuntimeError):
+            with patch.object(ci.time,'time',return_value=2100), self.assertRaises(RuntimeError):
                 run.require_case_time()
 
     def budget(self, execution=20, cleanup=10):
@@ -646,14 +646,14 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
         selected,timing=ci.timing_observation(self.identity(),self.job_response(),1000)
         self.assertEqual(selected['id'],42)
         self.assertEqual(timing['job_started_at_unix'],990)
-        self.assertEqual(timing['job_deadline_unix'],2190)
+        self.assertEqual(timing['job_deadline_unix'],2790)
         workflow=(Path(__file__).resolve().parents[5]/'.github/workflows/ci.yml').read_text()
         job=workflow.split('\n  accounting_postgres:',1)[1].split('\n  server_shards:',1)[0]
         limits=re.findall(r'^    timeout-minutes: ([0-9]+)$',job,re.MULTILINE)
-        self.assertEqual(limits,['20'])
+        self.assertEqual(limits,['30'])
         self.assertEqual(ci.JOB_SECONDS,int(limits[0])*60)
         self.assertEqual((timing['case_execution_seconds'],timing['cleanup_reserve_seconds']),(300,90))
-        with self.assertRaises(RuntimeError):ci.timing_observation(self.identity(),self.job_response(),1801)
+        with self.assertRaises(RuntimeError):ci.timing_observation(self.identity(),self.job_response(),2401)
 
     def test_timing_refuses_ambiguous_or_wrong_current_job(self):
         mutations=({'run_id':124},{'head_sha':'d'*40},{'runner_name':'different'},

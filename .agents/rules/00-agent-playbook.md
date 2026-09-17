@@ -6,6 +6,8 @@ trigger: always_on
 
 Read root `AGENTS.md`, `AGENT-PLAYBOOK.md`, `docs/agent-policy/REFERENCE-INDEX.md`, `docs/agent-policy/OPERATING-LAW.md`, `docs/agent-policy/HARDENING.md`, and `PUBLISHING.md` when delivering. This entry point delegates policy to those maintained sources; older duplicated release procedures are retired.
 
+For workspace preparation, the maintained `scripts/agent-workspace.sh` helper is described in `AGENT-PLAYBOOK.md`. Recover an existing owned worktree before creating another; preparation is not publication.
+
 ## Release scheduling
 
 NEVER SET A TIMER, AND NEVER USE THE `schedule` TOOL to initiate, advance, retry or certify a release. The retired rule used to say the opposite. The current owner forbids release watchers and recurring repair jobs; unrelated existing business schedules retain their authority. New scheduled functionality requires explicit task-specific instruction.

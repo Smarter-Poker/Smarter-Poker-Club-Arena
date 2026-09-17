@@ -1,6 +1,8 @@
 # Smarter Poker Agent Operating Law
 
-Version 2.3 — adopted operating instruction, September 17, 2026.
+Version 2.4 — adopted operating instruction, September 17, 2026.
+
+Revision 2.4 incorporates the owner's additional direction on direct delivery ownership, unavailable help and provider queue delays.
 
 Owner authorized installation and instruction alignment on September 17, 2026. This consolidates the four rules described in the supplied conversation; the earlier full 2.2 document was not supplied.
 
@@ -51,6 +53,20 @@ When an external constraint prevents further progress, retain the exact pending 
 
 One writer owns a particular deployment operation or task record at a time. A replacement must verify current ownership and actual remote state before taking over. A returning agent must not compete with its replacement. This rule does not create one global deployment owner or an agent-managed queue: independent authorized workstreams remain independent, subject to real dependencies and existing provider concurrency controls.
 
+### Own the result directly; another chat is not a release gate
+
+The assigned agent personally follows its current source, required checks, protected merge, publication, installed state and live proof through completion. Read the provider's actual run/job results and logs directly. A message from another task may supply evidence or a precise dependency; it is never a substitute for direct verification, permission to stop, or a new approval gate. Do not wait for chats, a helper's availability, another agent's status report or an offer of help to do work already authorized and executable by the assigned agent.
+
+If a helper is unavailable, stopped or finished only part of an assignment, recover its actual files and operation state, confirm that no writer is still active, and complete the remaining assigned work yourself. Preserve existing work and operation identity. Do not duplicate a running publisher, change another task's source without an actual handoff, or bypass a required machine check. Optional assistance or review does not transfer delivery ownership; this rule does not authorize spawning agents or sending unsolicited messages.
+
+A completed review, pushed correction, merged fix, successful build or recovery of the previous runtime does not complete a delivery that still needs publication or behavioral proof. Keep each unresolved item explicit in the same checklist: the exact failing check or behavior, missing authorized access, installation, selected live revision, and final acceptance result. During a provider wait, resolve eligible items yourself instead of closing the task at an intermediate milestone or advancing to an unqualified next phase.
+
+For an access blocker, first inspect configured tools, documented credential locations and authorized metadata without printing secrets, reading environment-file values, inventing credentials or bypassing access controls. Reuse an already configured supported route. If required access is genuinely unavailable, finish all independent assigned work and state the exact missing capability and prepared next action; do not disguise that dependency as waiting for another chat.
+
+For queued checks, distinguish a missing worker from a failing test, blocked dependency, wrong runner label, exhausted provider concurrency or superseded run still using capacity. Inspect the actual workflow and current comparable successful run. Correct demonstrated configuration defects and retire only verified obsolete attempts of the same assigned PR through the approved event/operation. Confirm cancellation actually reached a terminal state; an accepted request is not proof that `always()` jobs stopped. Never cancel another task's current checks or a production transaction to free workers. Preserve required failure-reporting and validation; do not manufacture green checks by skipping work.
+
+A real provider or maintenance prerequisite can still take time. State the exact remaining prerequisite, what you inspected or repaired, the owning run/revision and the next actionable event. Do not portray it as waiting for help or as completion. Investigate a repeated missed window against its actual certificate and checkpoint evidence; do not simply park the same failed attempt for another hour.
+
 ### Failed deployment: immediate recovery, no invented hourly cooldown
 
 A failed attempt must not automatically become “try again next hour.” Diagnose and repair the failure immediately, revalidate the affected inputs, and submit the corrected attempt through the owning protected route as soon as it is eligible. Do not wait for `:55` to investigate, fix, build, test, stage, or recover missing verification.
@@ -75,6 +91,8 @@ Prepare the required source, checks, build, sealed release evidence, compatibili
 - **Five minutes or more remain:** do useful, finite work within the authorized scope that leaves the prepared release intact. Examples are finishing missing release evidence, reviewing an unresolved risk, preparing the exact post-deployment verification, improving the handoff, or preparing a next phase already authorized by the owner. Keep candidate-changing work separate and do not silently alter the release being published.
 - **Fewer than five minutes remain:** brief standby is permitted when the release is ready and switching work would risk missing the window. Standby is not permission to bypass readiness or force cutover.
 - **A blocker exists:** Rule 3 governs; optional improvements do not displace blocker repair.
+
+When five minutes or more remain, actively choose the next useful item from the existing acceptance checklist and complete it independently. Finish missing evidence, an unresolved connected defect, required integration or the already authorized next preparation while preserving the qualified candidate. If a required helper's contribution is missing and no writer owns it, recover and finish that contribution. Repeated unchanged status messages, repeated passed tests, unnecessary chat waits and invented audits do not count as productive work. Record completed work and its result, rather than merely claiming not to be idle.
 
 The existing owner policy permits separately authorized work while provider jobs run. Record the pending run and remaining verification before switching, and retain responsibility for the result. Do not create a new assignment merely to appear busy.
 

@@ -8,6 +8,12 @@ Recover the assigned worktree, branch, PR and evidence. Use an owned linked work
 
 Use configured Git/GitHub tools; verify availability in the current environment. Prefer authenticated CLI/API tools for repository operations, with other authorized tools when needed. An unavailable interface is not proof that all access is unavailable. Never read `.env` values or scrape tokens from remotes, documents or sibling repos.
 
+## Workspace, credentials and guard references
+
+`scripts/agent-workspace.sh <agent-name> <branch-slug> --print-path` is the maintained workspace-preparation helper. Inspect its current checkout and preserve existing ownership before using it; an existing owned SSD worktree does not need to be recreated. Keep the `reference-transaction` Git hook that protects retained commits from destructive ref changes. The `estate-integrity` workflow audits repository guards read-only; it does not publish or repair releases.
+
+Use configured authenticated GitHub tools. Repository Actions may use the configured GitHub App identifier `AUTOPILOT_APP_ID`; that secret name is a location reference, not permission to extract values, mint replacement credentials or reactivate retired autopilot. Read `PUBLISHING.md` for the actual route. Verify Club Arena client provenance with `build-info.json` at both required public endpoints, and engine identity separately.
+
 ## Read the actual check result
 
 Use `node scripts/ci/pr-status.mjs <PR-number>` or the authenticated Actions API for the exact head revision. `GET /commits/:sha/status` reports legacy commit statuses and can say pending with zero results even when Actions has failed. A denied `/commits/:sha/check-runs` read is UNKNOWN, never proof that no check failed. Read `/actions/runs?head_sha=<sha>` and its jobs to identify the actual result. On this Mac `/opt/homebrew/bin` must be on PATH for the configured `gh` executable; check the current environment before declaring it unavailable. A green check still requires the authorized agent to complete protected merge and publication under PUBLISHING.md.

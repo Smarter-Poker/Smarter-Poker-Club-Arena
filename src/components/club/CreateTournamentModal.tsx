@@ -22,6 +22,7 @@ import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { digitsOnly, isWholeBuyIn, money, rakeRateFor, splitBuyIn } from '../../utils/buyIn';
+import { freeBuyConfig, FREE_BUY_HELPER } from '../../utils/freeBuy';
 import { tournamentScheduleService } from '../../services/TournamentScheduleService';
 import WeeklyScheduleEditor, {
   DEFAULT_WEEKLY_SCHEDULE,
@@ -258,8 +259,6 @@ export default function CreateTournamentModal({
   const [bountyAmount, setBountyAmount] = useState('5');
 
   // ── Mystery Bounty Config ──
-  const [mysteryBountyMin, setMysteryBountyMin] = useState('1');
-  const [mysteryBountyMax, setMysteryBountyMax] = useState('100');
   // Mystery bounty options (Dan section 72). Defaults are the spec's own:
   // the classic ladder, chests opening at the money, and half the bounty pool
   // held back for them.
@@ -383,6 +382,19 @@ export default function CreateTournamentModal({
   }, [maxPlayers, format]);
 
   const isSngOrSpin = format === 'sng' || format === 'spin';
+  // Display the same Free Buy overrides that buildRpcConfig applies. Keep the
+  // draft inputs: omitted rebuy chips follow the selected starting stack, and
+  // returning to a paid format retains its editable terms.
+  const freeBuyTerms = freeBuyConfig({
+    buyIn: Number(buyIn),
+    type: format,
+    startingStack: parseInt(startingChips),
+    rebuyChips: isRebuy || isReentry ? parseInt(rebuyChips) || parseInt(startingChips) : undefined,
+    rebuyLevels: isRebuy || isReentry ? parseInt(lateRegLevels) || 8 : undefined,
+    addOnChips: addOnAvailable ? parseInt(addOnChips) || parseInt(startingChips) : undefined,
+    addOnLevels: addOnAvailable ? 1 : undefined,
+  });
+  const isFreeBuy = freeBuyTerms.freeBuy === true;
   const showCustomBlinds =
     !isSngOrSpin && mttPreset !== null ? mttPreset === 'custom' : blindSpeed === 'custom';
 
@@ -719,22 +731,6 @@ export default function CreateTournamentModal({
           setIsSubmitting(false);
           return;
         }
-        if (format === 'mystery_bounty') {
-          const min = Math.round(Number(mysteryBountyMin));
-          const max = Math.round(Number(mysteryBountyMax));
-          if (!min || min <= 0 || !max || max <= 0) {
-            toast.error('Mystery bounty min and max multipliers are required');
-            submittingRef.current = false;
-            setIsSubmitting(false);
-            return;
-          }
-          if (max <= min) {
-            toast.error('Mystery bounty max multiplier must be greater than min');
-            submittingRef.current = false;
-            setIsSubmitting(false);
-            return;
-          }
-        }
       }
 
       // Build start time
@@ -914,15 +910,6 @@ export default function CreateTournamentModal({
         restartEveryMinutes: restartMinutes ?? undefined,
         maxRebuys: isRebuy ? maxRebuysNum : undefined,
         maxReentries: isReentry ? maxRebuysNum : undefined,
-        // Mystery bounty range multipliers — previously collected by this
-        // modal and never SENT, so the advertised range was cosmetic.
-        mysteryBountyMin:
-          format === 'mystery_bounty' ? Math.round(Number(mysteryBountyMin)) : undefined,
-        mysteryBountyMax:
-          format === 'mystery_bounty' ? Math.round(Number(mysteryBountyMax)) : undefined,
-        // Section 72. Collected above and actually SENT, via
-        // fn_apply_mystery_bounty_config — unlike the tier ladder this modal
-        // used to build and drop on the floor.
         mysteryBountyProfile: format === 'mystery_bounty' ? mysteryProfile : undefined,
         mysteryBountyActivation: format === 'mystery_bounty' ? mysteryActivation : undefined,
         mysteryBountyActivationValue:
@@ -1044,11 +1031,6 @@ export default function CreateTournamentModal({
     if (!isWholeBuyIn(bountyAmount)) return false;
     // The split must leave a non-negative prize pool.
     if (bountySplit && bountySplit.prize < 0) return false;
-    if (format === 'mystery_bounty') {
-      const min = Math.round(Number(mysteryBountyMin));
-      const max = Math.round(Number(mysteryBountyMax));
-      if (!min || min <= 0 || !max || max <= 0 || max <= min) return false;
-    }
     return true;
   })();
 
@@ -1645,57 +1627,15 @@ export default function CreateTournamentModal({
                         required
                         style={!isWholeBuyIn(bountyAmount) ? { borderColor: '#ef4444' } : undefined}
                       />
-                      <span className={styles.helperText}>Amount Awarded For Each Knockout</span>
+                      <span className={styles.helperText}>
+                        {format === 'mystery_bounty'
+                          ? 'Bounty Contribution Per Entry'
+                          : 'Amount Awarded For Each Knockout'}
+                      </span>
                     </div>
                   </div>
                   {format === 'mystery_bounty' && (
                     <>
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>
-                            Min Multiplier <span style={{ color: '#ef4444' }}>*</span>
-                          </label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={mysteryBountyMin}
-                            onChange={(e) => setMysteryBountyMin(digitsOnly(e.target.value))}
-                            min={1}
-                            step={1}
-                            inputMode="numeric"
-                            required
-                            style={
-                              !isWholeBuyIn(mysteryBountyMin)
-                                ? { borderColor: '#ef4444' }
-                                : undefined
-                            }
-                          />
-                          <span className={styles.helperText}>Lowest Multiplier (E.G. 1X)</span>
-                        </div>
-                      </div>
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>
-                            Max Multiplier <span style={{ color: '#ef4444' }}>*</span>
-                          </label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={mysteryBountyMax}
-                            onChange={(e) => setMysteryBountyMax(digitsOnly(e.target.value))}
-                            min={2}
-                            step={1}
-                            inputMode="numeric"
-                            required
-                            style={
-                              Number(mysteryBountyMax) <= Number(mysteryBountyMin)
-                                ? { borderColor: '#ef4444' }
-                                : undefined
-                            }
-                          />
-                          <span className={styles.helperText}>Highest Multiplier (E.G. 100X)</span>
-                        </div>
-                      </div>
                       {/* MYSTERY BOUNTY OPTIONS (Dan section 72). Four settings,
                         all with a working default, so an owner who ignores this
                         block still gets the ladder Dan specified. */}
@@ -1797,9 +1737,9 @@ export default function CreateTournamentModal({
                 )}
                 {format === 'mystery_bounty' && (
                   <span className={styles.helperText}>
-                    Each Head Is Sealed At Registration From A Jackpot Ladder - 60% X0.5, 25% X1,
-                    10% X2, 4% X3, 1% X13 Of The Bounty Amount - And Revealed On Knockout. The
-                    Ladder Averages Exactly 1X, So The Bounty Pool Always Funds The Heads.
+                    The Chest Inventory Is Built From The Funded Mystery Pool When The Selected
+                    Phase Opens, After Registration And Purchases Close. The Selected Prize Ladder
+                    Sets The Chest Amounts And Counts. Knockouts Draw From That Inventory.
                   </span>
                 )}
                 {bountySplit && (
@@ -1840,7 +1780,7 @@ export default function CreateTournamentModal({
                       ? 'Bounty Amount Is Required And Must Be A Whole Number Greater Than 0'
                       : bountySplit && bountySplit.prize < 0
                         ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} Rake Exceeds The ${money(bountySplit.buyIn)} Buy-In - Nothing Left For The Prize Pool`
-                        : 'Mystery Max Multiplier Must Be Greater Than Min Multiplier'}
+                        : 'Check The Bounty Amount And Buy-In'}
                   </p>
                 )}
               </div>
@@ -1856,13 +1796,13 @@ export default function CreateTournamentModal({
                       <label className={styles.toggleLabel}>
                         <input
                           type="checkbox"
-                          checked={isRebuy}
+                          checked={isRebuy || isFreeBuy}
                           disabled
                           className={styles.checkbox}
                         />
                         Allow Rebuys (Same Seat)
                       </label>
-                      {!isRebuy && (
+                      {!isRebuy && !isFreeBuy && (
                         <span className={styles.helperText}>
                           Select "MTT (Rebuy)" Format To Enable
                         </span>
@@ -1874,13 +1814,13 @@ export default function CreateTournamentModal({
                       <label className={styles.toggleLabel}>
                         <input
                           type="checkbox"
-                          checked={isReentry}
+                          checked={isReentry || isFreeBuy}
                           disabled
                           className={styles.checkbox}
                         />
                         Allow Re-Entry (New Seat)
                       </label>
-                      {!isReentry && (
+                      {!isReentry && !isFreeBuy && (
                         <span className={styles.helperText}>
                           Select "MTT (Re-Entry)" Format To Enable
                         </span>
@@ -1892,7 +1832,8 @@ export default function CreateTournamentModal({
                       <label className={styles.toggleLabel}>
                         <input
                           type="checkbox"
-                          checked={addOnAvailable}
+                          checked={addOnAvailable || isFreeBuy}
+                          disabled={isFreeBuy}
                           onChange={(e) => setAddOnAvailable(e.target.checked)}
                           className={styles.checkbox}
                         />
@@ -1902,52 +1843,67 @@ export default function CreateTournamentModal({
                   </div>
                 </div>
 
-                {(isRebuy || isReentry) && (
+                {isFreeBuy && <span className={styles.helperText}>{FREE_BUY_HELPER}</span>}
+                {(isRebuy || isReentry || isFreeBuy) && (
                   <>
                     <div className={styles.row}>
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>{isRebuy ? 'Rebuy' : 'Re-Entry'} Cost</label>
+                          <label>
+                            {isFreeBuy ? 'Rebuy / Re-Entry' : isRebuy ? 'Rebuy' : 'Re-Entry'} Cost
+                          </label>
                           <input
                             type="number"
                             className={styles.input}
-                            value={rebuyCost}
+                            value={isFreeBuy ? freeBuyTerms.rebuyCost : rebuyCost}
+                            disabled={isFreeBuy}
                             onChange={(e) => setRebuyCost(digitsOnly(e.target.value))}
                             placeholder={buyIn}
                             min={1}
                             step={1}
                             inputMode="numeric"
                           />
-                          <span className={styles.helperText}>Blank = Same As Buy-In</span>
+                          <span className={styles.helperText}>
+                            {isFreeBuy ? 'Fixed Free Buy Price' : 'Blank = Same As Buy-In'}
+                          </span>
                         </div>
                       </div>
                       <div className={styles.col}>
                         <div className={styles.formGroup}>
-                          <label>{isRebuy ? 'Rebuy' : 'Re-Entry'} Chips</label>
+                          <label>
+                            {isFreeBuy ? 'Rebuy / Re-Entry' : isRebuy ? 'Rebuy' : 'Re-Entry'} Chips
+                          </label>
                           <input
                             type="number"
                             className={styles.input}
-                            value={rebuyChips}
+                            value={isFreeBuy ? freeBuyTerms.rebuyChips : rebuyChips}
+                            disabled={isFreeBuy}
                             /* digitsOnly, like every other chip field. A raw value let
                              parseInt('-500') through into the config. */
                             onChange={(e) => setRebuyChips(digitsOnly(e.target.value))}
                             placeholder={startingChips}
                           />
-                          <span className={styles.helperText}>Blank = Starting Stack</span>
+                          <span className={styles.helperText}>
+                            {isFreeBuy && !isRebuy && !isReentry
+                              ? 'Matches The Selected Starting Stack'
+                              : 'Blank = Starting Stack'}
+                          </span>
                         </div>
                       </div>
                     </div>
                     <span className={styles.helperText} style={{ display: 'block', marginTop: 4 }}>
-                      {isRebuy && isReentry
-                        ? `Rebuy (Same Seat) And Re-Entry (New Seat) Both Close After Level ${lateRegLevels || 0}`
-                        : isRebuy
-                          ? `Rebuy Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`
-                          : `Re-Entry Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`}
+                      {isFreeBuy
+                        ? `Rebuys And Re-Entries Close After Level ${freeBuyTerms.rebuyLevels}`
+                        : isRebuy && isReentry
+                          ? `Rebuy (Same Seat) And Re-Entry (New Seat) Both Close After Level ${lateRegLevels || 0}`
+                          : isRebuy
+                            ? `Rebuy Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`
+                            : `Re-Entry Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`}
                     </span>
                   </>
                 )}
 
-                {addOnAvailable && (
+                {(addOnAvailable || isFreeBuy) && (
                   <div className={styles.row} style={{ marginTop: 8 }}>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
@@ -1955,14 +1911,17 @@ export default function CreateTournamentModal({
                         <input
                           type="number"
                           className={styles.input}
-                          value={addOnCost}
+                          value={isFreeBuy ? freeBuyTerms.addOnCost : addOnCost}
+                          disabled={isFreeBuy}
                           onChange={(e) => setAddOnCost(digitsOnly(e.target.value))}
                           placeholder={buyIn}
                           min={1}
                           step={1}
                           inputMode="numeric"
                         />
-                        <span className={styles.helperText}>Blank = Same As Buy-In</span>
+                        <span className={styles.helperText}>
+                          {isFreeBuy ? 'Fixed Free Buy Price' : 'Blank = Same As Buy-In'}
+                        </span>
                       </div>
                     </div>
                     <div className={styles.col}>
@@ -1981,7 +1940,11 @@ export default function CreateTournamentModal({
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
                         <label>Add-On Period</label>
-                        <div className={styles.readOnlyRule}>1 Minute After Rebuy Period</div>
+                        <div className={styles.readOnlyRule}>
+                          {isFreeBuy
+                            ? 'From Seating Until The Add-On Window Closes'
+                            : '1 Minute After Rebuy Period'}
+                        </div>
                         <span className={styles.helperText}>
                           Play Pauses For 60 Seconds. The Full Add-On Cost Goes To The Prize Pool
                           With No Rake.

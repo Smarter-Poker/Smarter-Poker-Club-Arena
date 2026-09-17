@@ -270,10 +270,10 @@ def main():
         require(psql("SELECT count(*) FROM public.operational_alert_events WHERE event_key LIKE '259:"+str(wrong['runid'])+"%';",'wrong-receipt-rollback')=='0','Wrong receipt survived rollback')
         psql('DROP TRIGGER fixture_wrong_receipt ON public.operational_alert_events; DROP FUNCTION cash_qualification.mutate_queue();','wrong-receipt-cleanup')
         # Queue permission failure is distinct from a fabricated writer return.
-        psql('REVOKE INSERT ON public.operational_alert_events FROM postgres;','permission-fault-setup')
+        psql('REVOKE INSERT ON public.operational_alert_events FROM postgres,service_role;','permission-fault-setup')
         denied=native_run('queue-permission-failure');assert_outcome(denied,'intake_failed','queue-permission-failure')
         require(psql('SELECT intake_sqlstate FROM public.ca_cash_failed_run_outcomes WHERE runid='+str(denied['runid'])+';','permission-sqlstate')=='42501','Expected actual permission denial')
-        psql('GRANT INSERT ON public.operational_alert_events TO postgres;','permission-fault-cleanup')
+        psql('GRANT INSERT ON public.operational_alert_events TO postgres,service_role;','permission-fault-cleanup')
         # Failure to retain the outcome rolls back its queue write. The original
         # pg_cron failure still commits and the readback explicitly finds no outcome.
         psql("CREATE FUNCTION cash_qualification.reject_outcome() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION USING ERRCODE='ZC403',MESSAGE='fixture outcome unavailable'; END $$; CREATE TRIGGER fixture_outcome_failure BEFORE INSERT ON public.ca_cash_failed_run_outcomes FOR EACH ROW EXECUTE FUNCTION cash_qualification.reject_outcome();",'outcome-fault-setup')

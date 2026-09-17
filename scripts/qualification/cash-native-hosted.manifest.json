@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 123520,
-      "sha256": "0329a497fe7475b2e4679daea98917ae69d2a9dde509c7ed7119abff25037734"
+      "bytes": 123946,
+      "sha256": "6a82e57bead10c8916d26ed4cd2582b348e7fa72870df175b88ad98fbd0c8539"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -29,8 +29,8 @@
       "sha256": "9329120862da8c38e3be0ac1053fd93c07877a5d4bc76bc19d0e5291c29e476c"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
-      "bytes": 29969,
-      "sha256": "d168dd3f63cdf6a0513670cfff5e94e83d7ae4df7c200e3724663bafebd5d409"
+      "bytes": 29995,
+      "sha256": "811a38ca34517f1d06fe337b88dfc5f65477e621d24fbb1ffc8587e422801f72"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
       "bytes": 17990,

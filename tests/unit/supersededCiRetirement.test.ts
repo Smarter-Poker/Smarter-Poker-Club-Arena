@@ -170,6 +170,9 @@ describe('current PR event retires only its own obsolete CI', () => {
     expect(ci).toContain('node scripts/ci/retire-superseded-pr-ci.mjs');
     expect(ci).toContain('actions: write');
     expect(ci).toContain('if: always()');
-    expect(ci).toContain('Required server tests were unexpectedly skipped.');
+    expect(ci).toContain('Required $suite checks were unexpectedly skipped.');
+    expect(ci).toContain(
+      'for dependency in "server:$MATRIX_RESULT" "accounting:$ACCOUNTING_RESULT"'
+    );
   });
 });

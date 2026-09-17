@@ -6878,8 +6878,10 @@ export abstract class ServerTableEngineBase {
     const occupancyId = matches[0]?.occupancy_id;
     if (
       matches.length !== 1 ||
-      typeof seatId !== 'string' || seatId.length === 0 ||
-      typeof occupancyId !== 'string' || occupancyId.length === 0
+      typeof seatId !== 'string' ||
+      seatId.length === 0 ||
+      typeof occupancyId !== 'string' ||
+      occupancyId.length === 0
     ) {
       console.warn(
         `[ServerTableEngine:${tableId}] entry hold write skipped for ${userId.slice(0, 8)}: original seat occupancy unavailable or ambiguous`

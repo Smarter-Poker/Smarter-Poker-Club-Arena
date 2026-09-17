@@ -412,3 +412,12 @@
     font-size: 13px;
   }
 }
+
+/* A tapered ladder needs its opening clock and range without clipping either. */
+.levelRow {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+}
+.levelValue {
+  display: block;
+  white-space: normal;
+}

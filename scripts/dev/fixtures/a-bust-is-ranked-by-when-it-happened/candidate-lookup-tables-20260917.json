@@ -1,0 +1,514 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='8s'; SELECT current_timestamp AS captured_at,n.nspname AS schema_name,c.relname AS name,c.relkind,pg_get_userbyid(c.relowner) AS owner,c.relrowsecurity,c.relforcerowsecurity,\n(SELECT jsonb_agg(jsonb_build_object('name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'notnull',a.attnotnull,'default',pg_get_expr(d.adbin,d.adrelid),'identity',a.attidentity,'generated',a.attgenerated) ORDER BY a.attnum) FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS columns,\n(SELECT jsonb_agg(jsonb_build_object('name',x.conname,'definition',pg_get_constraintdef(x.oid),'validated',x.convalidated) ORDER BY x.conname) FROM pg_constraint x WHERE x.conrelid=c.oid) AS constraints,\n(SELECT jsonb_agg(jsonb_build_object('name',i.indexrelid::regclass::text,'definition',pg_get_indexdef(i.indexrelid),'constraint_backed',EXISTS(SELECT 1 FROM pg_constraint k WHERE k.conindid=i.indexrelid),'valid',i.indisvalid,'ready',i.indisready) ORDER BY i.indexrelid::regclass::text) FROM pg_index i WHERE i.indrelid=c.oid) AS indexes,\n(SELECT jsonb_agg(jsonb_build_object('name',t.tgname,'definition',pg_get_triggerdef(t.oid),'enabled',t.tgenabled) ORDER BY t.tgname) FROM pg_trigger t WHERE t.tgrelid=c.oid AND NOT t.tgisinternal) AS triggers,\n(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.policyname) FROM pg_policies p WHERE p.schemaname=n.nspname AND p.tablename=c.relname) AS policies,\n(SELECT jsonb_agg(jsonb_build_object('role',CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END,'grantor',pg_get_userbyid(x.grantor),'privilege',x.privilege_type,'grantable',x.is_grantable) ORDER BY x.grantee,x.privilege_type) FROM aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) x) AS grants\nFROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('tournament_pko_settlement_watermarks','poker_diamond_tournament_ledger') ORDER BY c.relname; COMMIT;",
+  "rows": [
+    {
+      "captured_at": "2026-09-17 05:40:26.971128+00",
+      "schema_name": "public",
+      "name": "poker_diamond_tournament_ledger",
+      "relkind": "r",
+      "owner": "postgres",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "default": "nextval('poker_diamond_tournament_ledger_id_seq'::regclass)",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "arena_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "custody_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "amount",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "prize_part",
+          "type": "bigint",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bounty_part",
+          "type": "bigint",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "fee_part",
+          "type": "bigint",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "wallet_journal_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "obligation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "registration_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "request",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "poker_diamond_tournament_ledger_amount_check",
+          "validated": true,
+          "definition": "CHECK (((amount >= 1) AND (amount <= 2147483647)))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_arena_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (arena_id) REFERENCES clubs(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_bounty_bank",
+          "validated": true,
+          "definition": "CHECK (((kind <> 'bounty'::text) OR ((prize_part = 0) AND (fee_part = 0))))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_bounty_part_check",
+          "validated": true,
+          "definition": "CHECK ((bounty_part >= 0))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_custody_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (custody_id) REFERENCES poker_diamond_custody(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_fee_part_check",
+          "validated": true,
+          "definition": "CHECK ((fee_part >= 0))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_idempotency_key_check",
+          "validated": true,
+          "definition": "CHECK (((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 400)))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_idempotency_key_key",
+          "validated": true,
+          "definition": "UNIQUE (idempotency_key)"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_inflow",
+          "validated": true,
+          "definition": "CHECK (((kind <> ALL (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text])) OR ((user_id IS NOT NULL) AND (custody_id IS NOT NULL) AND (wallet_journal_id IS NOT NULL))))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_kind_check",
+          "validated": true,
+          "definition": "CHECK ((kind = ANY (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text, 'prize'::text, 'bounty'::text, 'fee'::text, 'refund'::text])))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_outflow",
+          "validated": true,
+          "definition": "CHECK ((((kind = ANY (ARRAY['prize'::text, 'bounty'::text, 'refund'::text])) AND (user_id IS NOT NULL)) OR ((kind = 'fee'::text) AND (user_id IS NULL) AND (prize_part = 0) AND (bounty_part = 0)) OR (kind = ANY (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text]))))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_parts",
+          "validated": true,
+          "definition": "CHECK ((((prize_part + bounty_part) + fee_part) = amount))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_prize_bank",
+          "validated": true,
+          "definition": "CHECK (((kind <> 'prize'::text) OR ((bounty_part = 0) AND (fee_part = 0))))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_prize_part_check",
+          "validated": true,
+          "definition": "CHECK ((prize_part >= 0))"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_tournament_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_user_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE RESTRICT"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_poker_diamond_tournament_ledger_arena_id_fk",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX idx_poker_diamond_tournament_ledger_arena_id_fk ON public.poker_diamond_tournament_ledger USING btree (arena_id)",
+          "constraint_backed": false
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_custody_idx",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX poker_diamond_tournament_ledger_custody_idx ON public.poker_diamond_tournament_ledger USING btree (custody_id)",
+          "constraint_backed": false
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_idempotency_key_key",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX poker_diamond_tournament_ledger_idempotency_key_key ON public.poker_diamond_tournament_ledger USING btree (idempotency_key)",
+          "constraint_backed": true
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX poker_diamond_tournament_ledger_pkey ON public.poker_diamond_tournament_ledger USING btree (id)",
+          "constraint_backed": true
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_tournament_idx",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX poker_diamond_tournament_ledger_tournament_idx ON public.poker_diamond_tournament_ledger USING btree (tournament_id, kind)",
+          "constraint_backed": false
+        },
+        {
+          "name": "poker_diamond_tournament_ledger_user_idx",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE INDEX poker_diamond_tournament_ledger_user_idx ON public.poker_diamond_tournament_ledger USING btree (user_id, tournament_id)",
+          "constraint_backed": false
+        }
+      ],
+      "triggers": [
+        {
+          "name": "poker_diamond_tournament_ledger_append_only",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER poker_diamond_tournament_ledger_append_only BEFORE DELETE OR UPDATE ON public.poker_diamond_tournament_ledger FOR EACH ROW EXECUTE FUNCTION fn_poker_diamond_append_only()"
+        }
+      ],
+      "policies": null,
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ]
+    },
+    {
+      "captured_at": "2026-09-17 05:40:26.971128+00",
+      "schema_name": "public",
+      "name": "tournament_pko_settlement_watermarks",
+      "relkind": "r",
+      "owner": "postgres",
+      "relrowsecurity": true,
+      "relforcerowsecurity": false,
+      "columns": [
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "last_settled_hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "last_obligation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "tournament_pko_settlement_waterm_last_settled_hand_number_check",
+          "validated": true,
+          "definition": "CHECK ((last_settled_hand_number >= 1000000))"
+        },
+        {
+          "name": "tournament_pko_settlement_watermarks_last_obligation_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (last_obligation_id) REFERENCES tournament_bounty_obligations(id) ON DELETE RESTRICT"
+        },
+        {
+          "name": "tournament_pko_settlement_watermarks_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (tournament_id)"
+        },
+        {
+          "name": "tournament_pko_settlement_watermarks_tournament_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "tournament_pko_settlement_watermarks_pkey",
+          "ready": true,
+          "valid": true,
+          "definition": "CREATE UNIQUE INDEX tournament_pko_settlement_watermarks_pkey ON public.tournament_pko_settlement_watermarks USING btree (tournament_id)",
+          "constraint_backed": true
+        }
+      ],
+      "triggers": null,
+      "policies": null,
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        }
+      ]
+    }
+  ]
+}

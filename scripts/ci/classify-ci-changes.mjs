@@ -11,6 +11,15 @@ const phase4 =
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
+export function gitEnvironmentForCwd() {
+  // Hooks export repository context that overrides cwd. These local-only Git
+  // calls must also discard inherited index/object/config overrides so a
+  // foreign fixture cannot read or modify the hook's repository.
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+  );
+}
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
@@ -29,7 +38,9 @@ export function classifyChangedPaths(paths) {
       broad ||
       phase4Changed ||
       commitmentAudit ||
-      matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
+      matches(
+        /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
+      ),
     tests:
       broad ||
       commitmentAudit ||
@@ -50,6 +61,7 @@ export function classifyGitChanges({ cwd, base, head }) {
   const git = (...args) =>
     execFileSync('git', args, {
       cwd,
+      env: gitEnvironmentForCwd(),
       maxBuffer: 16 * 1024 * 1024,
       timeout: 30000,
       stdio: ['ignore', 'pipe', 'pipe'],

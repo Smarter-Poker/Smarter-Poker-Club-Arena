@@ -72,6 +72,10 @@ import {
   topBountyCents,
 } from '../../../services/MysteryBountyService';
 import { useSatellites } from './useSatellites';
+import {
+  describeMttStructure,
+  mttClockDescription,
+} from '../../../../server/src/tournament/mttStructureDescription';
 import '../../../styles/tournament-lobby-3d.css';
 import './DetailOverviewTab.css';
 
@@ -322,12 +326,12 @@ export default function DetailOverviewTab({
   }, [tournament, field.entries, payoutStructure, isSatellite]);
 
   const lateRegText = useMemo(() => {
-    const levels = Number(tournament?.late_reg_levels) || 0;
+    const levels = Number(tournament?.late_reg_levels ?? tournament?.rebuy_levels) || 0;
     const mins = Number(tournament?.late_reg_mins) || 0;
     if (levels > 0) return `Lv ${levels}`;
     if (mins > 0) return `${mins}m`;
     return 'Closed';
-  }, [tournament?.late_reg_levels, tournament?.late_reg_mins]);
+  }, [tournament?.late_reg_levels, tournament?.rebuy_levels, tournament?.late_reg_mins]);
 
   /* ── The nine stat tiles. ── */
   const stats = useMemo<StatTile[]>(() => {
@@ -422,15 +426,16 @@ export default function DetailOverviewTab({
     const rebuyThrough = Number(t.late_reg_levels ?? t.rebuy_levels ?? 8) || 8;
     const addonFrom = rebuyThrough;
     const addonTo = rebuyThrough + (Number(t.addon_levels ?? 1) || 1);
-    const firstDuration = Number(blindLevels?.[0]?.duration) || 0;
-    const speed =
-      firstDuration === 0
-        ? 'Standard'
-        : firstDuration <= 5
-          ? 'Turbo'
-          : firstDuration <= 10
-            ? 'Regular'
-            : 'Deep Stack';
+    const structure = describeMttStructure(
+      (blindLevels || []).map((row) => ({
+        durationMinutes: row.duration,
+        bigBlind: row.bigBlind,
+        isBreak: row.isBreak,
+      })),
+      Number(t.starting_chips)
+    );
+    const depth = structure.startingDepthBB;
+    const clockVaries = structure.minimumMinutes !== structure.maximumMinutes;
 
     const rows: InfoItem[] = [
       {
@@ -446,12 +451,17 @@ export default function DetailOverviewTab({
         label: 'Buy-In',
         value: formatBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0),
       },
-      { key: 'stack', label: 'Starting Stack', value: chips(t.starting_chips) },
-      { key: 'speed', label: 'Structure', value: speed },
+      {
+        key: 'stack',
+        label: 'Starting Stack',
+        value: `${chips(t.starting_chips)}${depth === null ? '' : ` · ${depth.toLocaleString('en-US', { maximumFractionDigits: 2 })} BB`}`,
+      },
+      { key: 'speed', label: 'Structure', value: structure.speedLabel ?? 'Unconfirmed' },
       {
         key: 'levels',
         label: 'Levels',
-        value: firstDuration ? `${firstDuration} Min` : 'Standard',
+        value: mttClockDescription(structure),
+        wide: clockVaries,
       },
       {
         key: 'rebuy',

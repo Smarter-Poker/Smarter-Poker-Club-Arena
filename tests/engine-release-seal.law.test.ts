@@ -446,23 +446,26 @@ exit 1
     const sharedDirectory = join(sandbox, 'shared-horse-directory');
     mkdirSync(sharedDirectory, { mode: 0o755 });
     chmodSync(sharedDirectory, 0o755);
-    const unsafeDirectories = ['linked-file', 'hard-linked-file', 'shared-file', 'directory-file'].map(
-      (name) => {
-        const directory = join(sandbox, name);
-        mkdirSync(directory, { mode: 0o700 });
-        const file = join(directory, 'horse-decisions.sqlite');
-        if (name === 'linked-file') symlinkSync(retainedPath, file);
-        else if (name === 'hard-linked-file') {
-          const external = join(sandbox, 'hard-linked-sentinel');
-          writeFileSync(external, retainedBytes, { mode: 0o600 });
-          linkSync(external, file);
-        } else if (name === 'shared-file') {
-          writeFileSync(file, retainedBytes, { mode: 0o644 });
-          chmodSync(file, 0o644);
-        } else mkdirSync(file, { mode: 0o700 });
-        return directory;
-      }
-    );
+    const unsafeDirectories = [
+      'linked-file',
+      'hard-linked-file',
+      'shared-file',
+      'directory-file',
+    ].map((name) => {
+      const directory = join(sandbox, name);
+      mkdirSync(directory, { mode: 0o700 });
+      const file = join(directory, 'horse-decisions.sqlite');
+      if (name === 'linked-file') symlinkSync(retainedPath, file);
+      else if (name === 'hard-linked-file') {
+        const external = join(sandbox, 'hard-linked-sentinel');
+        writeFileSync(external, retainedBytes, { mode: 0o600 });
+        linkSync(external, file);
+      } else if (name === 'shared-file') {
+        writeFileSync(file, retainedBytes, { mode: 0o644 });
+        chmodSync(file, 0o644);
+      } else mkdirSync(file, { mode: 0o700 });
+      return directory;
+    });
     for (const directory of [
       'relative-horse-directory',
       join(sandbox, 'comma,horse-directory'),

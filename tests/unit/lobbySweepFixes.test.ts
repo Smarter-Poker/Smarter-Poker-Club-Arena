@@ -149,7 +149,15 @@ describe('a missing field cap is not a heads-up', () => {
 describe('the statuses the query fetches all have a branch', () => {
   it('LATE_REG is late reg, not "Registering"', () => {
     expect(
-      tournamentStatus(tRow({ status: 'LATE_REG', variant: 'mtt', max_players: 500 })).key
+      tournamentStatus(
+        tRow({
+          status: 'LATE_REG',
+          variant: 'mtt',
+          max_players: 500,
+          late_reg_levels: 3,
+          current_level: 1,
+        })
+      ).key
     ).toBe('late_reg');
   });
   it('a seat-first game in STARTING_SOON still reads its seats', () => {
@@ -186,17 +194,19 @@ describe('Format sorts on the RENDERED bucket, not the alphabet and not raw dept
     const col = TABLE.slice(TABLE.indexOf('const COL_FORMAT'), TABLE.indexOf('const COL_ACTIONS'));
     expect(col).toContain('stackFormatRank');
   });
-  it('a name keyword and a measured depth land on the SAME rank as their label', () => {
+  it('the real MTT clock determines both its label and sort rank despite its name', () => {
     const named = tournamentEntry(
       tRow({
         name: 'Sunday Turbo Special',
         starting_chips: 6000,
-        blind_structure: JSON.stringify([{ level: 1, smallBlind: 50, bigBlind: 100, ante: 0 }]),
+        blind_structure: JSON.stringify([
+          { level: 1, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 10 },
+        ]),
       }),
       'mtt'
-    ); // 60bb — Deepstack by measured depth, Turbo by name
-    expect(stackDepthLabel(named)).toBe('Turbo');
-    expect(stackFormatRank(named)).toBe(2); // Turbo's rank, not Deepstack's
+    ); // 60 BB and a Turbo name cannot relabel the actual ten-minute clock.
+    expect(stackDepthLabel(named)).toBe('Regular');
+    expect(stackFormatRank(named)).toBe(3);
   });
 });
 

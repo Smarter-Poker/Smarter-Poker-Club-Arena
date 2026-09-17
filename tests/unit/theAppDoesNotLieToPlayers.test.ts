@@ -39,7 +39,9 @@ const readCode = (p: string) =>
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 describe('the Help FAQ describes the app that shipped', () => {
-  const help = read('pages/HelpPage.tsx');
+  // The FAQ copy moved to pages/helpContent.ts (AEO phase 1, 2026-09-17):
+  // HelpPage and the prerender both render it from there.
+  const help = read('pages/helpContent.ts');
   const settings = read('pages/SettingsPage.tsx');
 
   it('2FA is documented as available, because it is', () => {

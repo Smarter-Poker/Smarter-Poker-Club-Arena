@@ -6,6 +6,9 @@ DO $$ BEGIN
    OR to_regprocedure('public.fn_cash_pot_conservation_check(integer)') IS NOT NULL
  THEN RAISE EXCEPTION 'cash connected checker leaf requires exact fresh owned fixture'; END IF;
 END $$;
+-- The full schema capture omitted this existing production index. Restore its
+-- exact catalog definition inside the admitted disposable fixture only.
+CREATE INDEX idx_hand_history_created ON public.hand_history USING btree (created_at DESC);
 CREATE OR REPLACE FUNCTION public.fn_cash_pot_conservation_check(p_since_hours integer DEFAULT 24)
  RETURNS jsonb
  LANGUAGE plpgsql

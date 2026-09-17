@@ -21,12 +21,12 @@
       "sha256": "344a74581c51da1af485f121f212c0d91cdca4f5182ccf8139017a0eca9d59dc"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
-      "bytes": 6135,
-      "sha256": "4f91321bf2d97e99614803b7a05e4c7d4d408071d932e6ea5ae0d9035355d7d2"
+      "bytes": 6379,
+      "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
       "bytes": 6270,
-      "sha256": "8e6fb475bd6d839f329ca15c0663834be6edb112f3f85b7f117bf3f186c9eb18"
+      "sha256": "9329120862da8c38e3be0ac1053fd93c07877a5d4bc76bc19d0e5291c29e476c"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 29969,

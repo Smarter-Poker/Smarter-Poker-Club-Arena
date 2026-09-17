@@ -4,8 +4,11 @@
 -- Existing award `place` is the stable financial award slot for v3; actual
 -- eliminated positions and the separate bubble remainder retain their meaning.
 -- The target must be an ordinary unlimited MTT. No payout formula changes.
--- UNINSTALLED preparation. Requires qualified R46 format/admission preparation;
--- does not activate its private ABI. Engine barrier integration is required.
+-- Installed receipt authority; requires qualified R46 format/admission preparation.
+-- Does not activate its private ABI. Engine barrier integration is required.
+-- money-trigger-ok: tournaments.tournaments_rank_before_complete because this migration
+-- only compares the already-installed attachment through pg_get_triggerdef below;
+-- it does not create, replace, enable, disable or alter that existing trigger.
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='30s';
@@ -841,6 +844,10 @@ BEGIN
 END;
 $function$
 ;
+-- Restate the exact service-only ACL required by the preimage above.
+-- CREATE OR REPLACE already preserves it; these grants do not expand access.
+REVOKE ALL ON FUNCTION public.fn_rank_survivors(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_rank_survivors(uuid) TO service_role;
 -- The existing money-DDL guard requires registration before creation.
 -- This private implementation is reached only through the service-role wrapper;
 -- the same transaction verifies the frozen awards and journals all movements.

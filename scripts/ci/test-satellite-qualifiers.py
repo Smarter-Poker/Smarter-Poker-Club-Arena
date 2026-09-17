@@ -160,7 +160,12 @@ def main():
         registry=re.compile(r"INSERT INTO public\.ca_money_rpc_registry\(proname,status,notes\)\nVALUES \('fn_ca_settle_satellite_cohort','approved',\n '[^']*'\);\n")
         if len(registry.findall(candidate))!=1:
             raise ValueError('exact cohort writer registration missing')
-        code,out,err=e.sql(unregistered,registry.sub('',candidate),label='refuse-unregistered-cohort-writer',seconds=60,check=False)
+        # psql can report the expected DDL refusal before consuming this large
+        # input. A file avoids bidirectional pipe backpressure while preserving
+        # the exact negative candidate and bounded existing execution owner.
+        unregistered_input=output/'unregistered-cohort-candidate.sql'
+        unregistered_input.write_text(registry.sub('',candidate))
+        code,out,err=e.sql(unregistered,file=unregistered_input,label='refuse-unregistered-cohort-writer',seconds=60,check=False)
         errors=[x.split('ERROR:',1)[1].strip() for x in err.splitlines() if 'ERROR:' in x]
         if code!=3 or errors!=['REFUSED: fn_ca_settle_satellite_cohort writes balance columns and is not in ca_money_rpc_registry']:
             raise RuntimeError('production money-DDL refusal was not reproduced')

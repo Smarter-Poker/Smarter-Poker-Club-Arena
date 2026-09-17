@@ -53,7 +53,7 @@ describe('Diamond Spins bust invitation', () => {
   it('removes a dismissed offer when session storage is unavailable', () => {
     state.retainExit = true;
     state.entry = { bust_prompt: true, member_chips: 0, diamonds: 25 };
-    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const write = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
       throw new Error('Storage unavailable');
     });
     try {

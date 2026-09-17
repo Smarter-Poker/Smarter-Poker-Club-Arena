@@ -391,16 +391,16 @@ export function BuyInModal({
             </div>
           )}
         </div>
-            {!recovery && !hasEnoughBalance && balanceKnown && onPlayDiamonds && (
-              <div className="buy-in-modal__diamonds-door">
-                <DiamondsToChipsButton
-                  clubId={diamondGamesClubId}
-                  enabled={isOpen && !isProcessing}
-                  size="compact"
-                  onGo={onPlayDiamonds}
-                />
-              </div>
-            )}
+        {!recovery && !hasEnoughBalance && balanceKnown && onPlayDiamonds && (
+          <div className="buy-in-modal__diamonds-door">
+            <DiamondsToChipsButton
+              clubId={diamondGamesClubId}
+              enabled={isOpen && !isProcessing}
+              size="compact"
+              onGo={onPlayDiamonds}
+            />
+          </div>
+        )}
 
         {/* Quick Amounts dynamically scale the interval between min and max */}
         {!recovery && (

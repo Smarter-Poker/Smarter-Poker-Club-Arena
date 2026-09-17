@@ -447,12 +447,7 @@ export function SignUpHost() {
           <p className="signup-note">You Can Unregister Any Time Before The Tournament Starts</p>
         )}
 
-        {short && (
-          <SignUpDiamondsDoor
-            clubId={clubId}
-            onGo={() => settle(id, false)}
-          />
-        )}
+        {short && <SignUpDiamondsDoor clubId={clubId} onGo={() => settle(id, false)} />}
         <div className="signup-actions">
           <button type="button" className="btn btn-cancel" onClick={() => settle(id, false)}>
             Cancel

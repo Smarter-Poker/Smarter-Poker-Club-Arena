@@ -18,12 +18,15 @@ assert.equal(
 );
 const directory = mkdtempSync(join(tmpdir(), 'checkpoint-transport-'));
 let child, lines, exit, hardStop;
-const bounded = (promise, ms = 2500) => {
+const startedAt = Date.now(),
+  lifecycle = [];
+const mark = (stage) => lifecycle.push({ stage, elapsedMs: Date.now() - startedAt });
+const bounded = (promise, ms = 2500, stage = 'fixture') => {
   let timer;
   return Promise.race([
     promise,
     new Promise((_, reject) => {
-      timer = setTimeout(() => reject(Error('fixture deadline')), ms);
+      timer = setTimeout(() => reject(Error('fixture deadline: ' + stage)), ms);
     }),
   ]).finally(() => clearTimeout(timer));
 };
@@ -90,36 +93,71 @@ try {
   hardStop = setTimeout(() => child.kill('SIGKILL'), 8000);
   const waiting = new Map(),
     queued = new Map();
+  let channelFailure;
+  const failChannel = (reason) => {
+    channelFailure ??= Error(reason);
+    for (const waiter of waiting.values()) waiter.reject(channelFailure);
+    waiting.clear();
+  };
+  child.on('error', () => failChannel('fixture child process error'));
+  child.stdin.on('error', () => failChannel('fixture stdin error'));
+  child.stdout.on('error', () => failChannel('fixture stdout error'));
+  child.stdout.on('end', () => failChannel('fixture stdout ended'));
+  child.stderr.on('error', () => failChannel('fixture stderr error'));
   lines = createInterface({ input: child.stdout });
+  lines.on('error', () => failChannel('fixture response reader error'));
   let stderrBytes = 0;
   child.stderr.on('data', (bytes) => {
     stderrBytes += bytes.length;
+    if (bytes.includes('Debugger attached.')) mark('debugger_attached');
+    if (bytes.includes('Debugger ending')) mark('debugger_ending');
+    if (bytes.includes('Waiting for the debugger to disconnect'))
+      mark('waiting_for_debugger_disconnect');
     if (stderrBytes > 16384) child.kill('SIGKILL');
   });
   lines.on('line', (line) => {
-    assert.ok(line.length < 4096);
-    const value = JSON.parse(line),
-      waiter = waiting.get(value.type);
-    if (waiter) {
-      waiting.delete(value.type);
-      waiter(value);
-    } else queued.set(value.type, value);
+    try {
+      assert.ok(line.length < 4096);
+      const value = JSON.parse(line),
+        waiter = waiting.get(value.type);
+      assert.ok(['ready', 'state', 'closed', 'guard_started'].includes(value.type));
+      mark('received_' + value.type);
+      if (waiter) {
+        waiting.delete(value.type);
+        waiter.resolve(value);
+      } else queued.set(value.type, value);
+    } catch {
+      failChannel('fixture response malformed');
+    }
   });
   exit = new Promise((resolve) =>
     child.once('exit', (code, signal) => {
+      mark('target_exit');
+      failChannel('fixture target exited');
       lines.close();
       resolve({ code, signal });
     })
   );
   const next = (type) => {
+    if (channelFailure) return Promise.reject(channelFailure);
     if (queued.has(type)) {
       const value = queued.get(type);
       queued.delete(type);
       return Promise.resolve(value);
     }
-    return bounded(new Promise((resolve) => waiting.set(type, resolve)));
+    return bounded(
+      new Promise((resolve, reject) => waiting.set(type, { resolve, reject })),
+      2500,
+      'await_' + type
+    ).finally(() => waiting.delete(type));
   };
-  const send = (type) => child.stdin.write(JSON.stringify({ type }) + '\n');
+  const send = (type) => {
+    if (channelFailure) throw channelFailure;
+    mark('send_' + type);
+    return child.stdin.write(JSON.stringify({ type }) + '\n', (error) => {
+      if (error) failChannel('fixture stdin write failed');
+    });
+  };
   const ready = await next('ready');
   assert.equal(ready.pid, child.pid);
   assert.equal(ready.inspectorOpen, false);
@@ -231,6 +269,7 @@ try {
     }
   }
   assert.equal(result.ok, scenario === 'success');
+  mark('driver_returned');
   assert.equal(result.retryAllowed, false);
   assert.ok(!JSON.stringify(result).includes('synthetic-secret'));
   if (scenario !== 'preexisting') assert.equal(result.inspectorClosed, true);
@@ -252,12 +291,14 @@ try {
         socket.destroy();
         resolve(error.code);
       });
-    })
+    }),
+    2500,
+    'port_refusal'
   );
   assert.equal(refused, 'ECONNREFUSED');
   send('quit');
   child.stdin.end();
-  assert.deepEqual(await bounded(exit, 1500), { code: 0, signal: null });
+  assert.deepEqual(await bounded(exit, 1500, 'normal_exit'), { code: 0, signal: null });
   console.log(
     JSON.stringify({
       ok: true,
@@ -268,11 +309,21 @@ try {
       normalExit: true,
     })
   );
+} catch (error) {
+  console.error(
+    JSON.stringify({
+      scenario,
+      lifecycle,
+      childExited: child?.exitCode !== null,
+      childSignalled: child?.signalCode !== null,
+    })
+  );
+  throw error;
 } finally {
   clearTimeout(hardStop);
   if (child && child.exitCode === null && child.signalCode === null) {
     child.kill('SIGKILL');
-    await bounded(exit, 1500);
+    await bounded(exit, 1500, 'cleanup_exit');
   }
   lines?.close();
   rmSync(directory, { recursive: true, force: true });

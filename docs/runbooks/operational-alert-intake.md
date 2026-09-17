@@ -23,10 +23,19 @@ OpenClaw persists pending messages before delivery and drains its outbox on
 the regular health check. Workers retain existing durable fault records and
 record operational messages in the same inbox before advancing delivery state.
 
-The task's local heartbeat reads the inbox every five minutes while its Mac
-and Codex are available. This is periodic consumption, not an inbound chat
-webhook. Pending events remain durable while the task is offline. Consumer
-availability must never be inferred from successful producer receipt alone.
+The former five-minute local heartbeat is paused. That historical consumer
+must not be reactivated as the correctness mechanism. Durable inbox persistence
+and activation of this Codex task are separate facts: a supported direct event
+to this chat is not installed or proved. Pending evidence remains in the database;
+a successful producer receipt alone does not establish chat delivery.
+
+The proposed direct-source component preserves complete financial/drift snapshots
+and oversized engine snapshots privately. Oversized rows receive an explicitly labeled immutable reference in
+the inbox; the service-only `fn_read_operational_source_snapshot(inbox_id)` checks
+the complete reference, classification and task before returning the full row.
+This source candidate is unqualified and uninstalled. Consumers must use that
+reader for reference events and must not treat the compact envelope as the full
+original. Normal-sized source payloads retain the existing inline format.
 
 ## Investigation contract
 

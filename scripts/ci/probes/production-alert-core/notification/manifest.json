@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "scope": "Isolated composed bridge/raiser/escalator source, malformed identity and actual trigger/mirror/owner notification/inbox chain; no money or connected service proof; cash checker complete-evidence and preserved informational incident and no-notification policy through actual financial trigger graph, with real connected control",
+  "historicalBaseline": {
+    "sourceManifestSha256": "638d8a1ba6927538d9eede3819112f3754cffa9e778f3a01f1db10b8244f5280",
+    "receiptSha256": "1d0988d12d1ab8e950a5c23b103df5b5590cfafc98a111528b80d912027e2f5e",
+    "execution": "9bf3a3af-baa6-4d64-9993-8ba379aa0ce1"
+  },
+  "fixtureFiles": {
+    "scripts/ci/probes/production-alert-core/notification/inputs/schema.sql": {
+      "sha256": "5a5966afca3b2c9699aba326baf5f32d6c0e1baa2ad09340feaa3b23f4d9dc0a",
+      "bytes": 2709616
+    },
+    "scripts/ci/probes/production-alert-core/notification/principals.sql": {
+      "sha256": "db3ea6ce908e1540b281b0e5ad4fbde30440c5d09557b3542029681d7445cabf",
+      "bytes": 1554
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/access.sql": {
+      "sha256": "ad2cb0ddc955bd97c9ef719e9106aad9f55be5cf034e014d04c90b3a1667c541",
+      "bytes": 786489
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/policies.sql": {
+      "sha256": "075254070c905c0bac70a9bc5a0b3e938b5262f0e1a186ee2a56127da0f77698",
+      "bytes": 46690
+    },
+    "scripts/ci/probes/production-alert-core/notification/provider-supplement.sql": {
+      "sha256": "f314167de1ba693305f878fa6d308ce119f3e28aaf51fbf94d71fac8fce4975c",
+      "bytes": 47886
+    },
+    "scripts/ci/probes/production-alert-core/notification/provider-roles.sql": {
+      "sha256": "632811a7dd5283283a9637fab4fdb1338c946017ddde2b2aa06cb6653ebca349",
+      "bytes": 1457
+    },
+    "scripts/ci/probes/production-alert-core/notification/provider-roles-check.sql": {
+      "sha256": "92db03bb138724e37c32293bea5cbf32fdadffcd2d9f512dac3b6f55c6f4e2f1",
+      "bytes": 2562
+    },
+    "scripts/ci/probes/production-alert-core/notification/provider-check.sql": {
+      "sha256": "e3ce21fc27a18a01c0d6fc1af08f0330d46309f2acb00cc47fa3df567ff6bf3e",
+      "bytes": 287784
+    },
+    "scripts/ci/probes/production-alert-core/notification/empty-provider-check.sql": {
+      "sha256": "f2dc7997a2b89194e0e837950f69fc6b269f30934896d658305cc21da14345c0",
+      "bytes": 1332
+    },
+    "scripts/ci/probes/production-alert-core/notification/readback.sql": {
+      "sha256": "be11b5f51e911be5a0cd6b8d885153a36d643ef3d2ab2cec6a4fbbf2fdbd50b6",
+      "bytes": 1833
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/owner-notification-catalog-postimage.sql": {
+      "sha256": "f9f350377e5778e9ff50fe0d5b55278ba9178bc2bea3dd06eb33929293bda1d8",
+      "bytes": 4355
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/linked-invoice-positive.sql": {
+      "sha256": "c5a91baed4f83550c4db4b982f41c619054ae80d793332191c4d033065a2fa22",
+      "bytes": 16559
+    },
+    "scripts/ci/probes/production-alert-core/notification/inputs/captured-financial-store-policy.sql": {
+      "sha256": "0dca50689e9a86efa5c61aafeb134dc721ef1690d4ff6828481e2fa1de79238c",
+      "bytes": 835
+    }
+  },
+  "checkoutInputs": {
+    "component": {
+      "path": "scripts/ci/probes/production-alert-core/inputs/owner-notification-component.sql",
+      "sha256": "6bec28d663a8c191f864bce6d0051828db6137bdcbff419c6ad34a844b360a70",
+      "bytes": 13734
+    },
+    "qualifier": {
+      "path": "scripts/ci/probes/production-alert-core/inputs/owner-notification-qualification.sql",
+      "sha256": "dc847ad578ba7acb3d6b2f037b0b6ab187bf4c0d8fb74b477fe165e089d92d24",
+      "bytes": 30941
+    },
+    "core_supplement": {
+      "path": "scripts/ci/probes/production-alert-core/core-catalog-supplement.sql",
+      "sha256": "cdb4cabb5d1aac6c94daac577650f99e203ff956bfe685b3ed6db26846d9e594",
+      "bytes": 16994
+    },
+    "core_component": {
+      "path": "supabase/components/production-alert-identity-and-rake-wording.sql",
+      "sha256": "6622531f15dc53dc532dcba4d7441f5907be06be62decca528baf8d94a235710",
+      "bytes": 54390
+    },
+    "core_rollback": {
+      "path": "supabase/components/production-alert-identity-and-rake-wording.rollback.sql",
+      "sha256": "5eede0ab3f1214294735dbbd2a97ddedb102c2c3a45c88b4adfd4de016d4612a",
+      "bytes": 54389
+    },
+    "core_identity": {
+      "path": "scripts/qualification/production-alert-core-identity.sql",
+      "sha256": "d70c35f0d5b980cb3a7410485f0dc31d19a283f6fa2ac38ebc7ba7b9493178a3",
+      "bytes": 28768
+    },
+    "core_connected": {
+      "path": "scripts/qualification/production-alert-core-connected.sql",
+      "sha256": "3473ba1e4684a79966af57e1d80b7eee4a87f720c01db6599ae204bdb46ab9ba",
+      "bytes": 19678
+    },
+    "core_readback": {
+      "path": "scripts/ci/probes/production-alert-core/readback.sql",
+      "sha256": "d94309720abe5f0dad879cac6a4aef5bf402bb835659e5de779e9fecefe91650",
+      "bytes": 1011
+    },
+    "core_received_reconcile": {
+      "path": "scripts/ci/probes/production-alert-core/inputs/received-reconcile.sql",
+      "sha256": "569a5a22e78dd295427034cc1f77bed12594ed566af9aad1add857868ad68f44",
+      "bytes": 2673
+    },
+    "cash_connected": {
+      "path": "scripts/qualification/cash-pot-check-connected.sql",
+      "sha256": "9e270f4bccbacdcf4c650509937d87a7798bf925faf837ed51b47eb38594191a",
+      "bytes": 18817
+    },
+    "cash_preimage": {
+      "path": "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql",
+      "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562",
+      "bytes": 6379
+    },
+    "cash_component": {
+      "path": "supabase/components/cash-pot-check-evidence.sql",
+      "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014",
+      "bytes": 50456
+    },
+    "cash_rollback": {
+      "path": "supabase/components/cash-pot-check-evidence.rollback.sql",
+      "sha256": "2c60e14442fa14e0933b70e93f3200163812186c5858e41c8f4fcac61a7408ca",
+      "bytes": 50461
+    },
+    "direct_component": {
+      "path": "supabase/components/direct-operational-source-intake.sql",
+      "sha256": "a8633bc4e22be266edb8ad1123d87fa0aced40bf6f12d2d77266b8d19b01cc78",
+      "bytes": 5729
+    },
+    "direct_rollback": {
+      "path": "supabase/components/direct-operational-source-intake.rollback.sql",
+      "sha256": "8dfdae30182080e19c799c67eddc578be0876a3ccf790c44ecbc82cbeb60151c",
+      "bytes": 5809
+    },
+    "direct_authority": {
+      "path": "supabase/components/direct-operational-source-intake.authority.sql",
+      "sha256": "3c448e21269007959ed3dafe2d566112b545ec5cce8bd5af6a6eb946d15507cc",
+      "bytes": 23885
+    },
+    "direct_functions": {
+      "path": "supabase/components/direct-operational-source-intake.functions.sql",
+      "sha256": "32cf8249f6b691f007e7375a52746f3682c575874fd3bfa2d962ec8ed69d50c0",
+      "bytes": 21784
+    },
+    "direct_postimage": {
+      "path": "supabase/components/direct-operational-source-intake.postimage.sql",
+      "sha256": "8a9ad0ad6095f0626df91c4c0fd199b4b91354cde9fb3183edfa975713fc4011",
+      "bytes": 3603
+    },
+    "direct_qualifier": {
+      "path": "scripts/qualification/direct-operational-source-intake.sql",
+      "sha256": "27b13a2e22a5226a1b6d9d522eb18a95db240797020733ce2881bb664779dc65",
+      "bytes": 23396
+    },
+    "direct_engine_catalog": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/engine-catalog.sql",
+      "sha256": "5ea76b07d85b1baf0c0dc1e873bd1917e38d110ff61e6148dd11b1e4fc4a3705",
+      "bytes": 19930
+    },
+    "direct_prepare": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/prepare.sql",
+      "sha256": "dfc76e0fe55793ffae72b25c3d9d8efa10ba3c6cbf3b343e11af8b839e45d6d6",
+      "bytes": 2320
+    },
+    "direct_readback": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/readback.sql",
+      "sha256": "7bae8929581f5add30f96c6dd5cd94fd139e0575812f3ffdd72e02b031cbf84e",
+      "bytes": 1939
+    },
+    "direct_source_capture": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/authority.json",
+      "sha256": "03765137a209e8ef548213cc96455a657339abca67e6b118af532722f85d6964",
+      "bytes": 73861
+    },
+    "direct_engine_preimage": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/engine-preimage.sql",
+      "sha256": "6994d23837e070eab098ee5854c15d816c8a462139d05f5d1494b132831f9286",
+      "bytes": 4009
+    },
+    "direct_race": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/race.sql",
+      "sha256": "7666e94d8b064decfa8923ab3dec46406e13c9d01c12aa7989891d845877561c",
+      "bytes": 5049
+    },
+    "direct_financial_race": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/financial-race.sql",
+      "sha256": "c2871fcb770cf9b833f287484501345e0a409992279f83509bbebe294234ea86",
+      "bytes": 3316
+    },
+    "direct_state": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/state.sql",
+      "sha256": "06f88cc4cb2def0f5d4033d21eef5f5428864cfca5a60000c46ab5799d6a67f7",
+      "bytes": 1452
+    },
+    "direct_retained": {
+      "path": "scripts/qualification/fixtures/direct-operational-source-intake/retained.sql",
+      "sha256": "c6418b7cb55fc89d72928e5af8bac31e343017b683b1b9f2039494f0c09a70f4",
+      "bytes": 5107
+    },
+    "legacy_envelope_component": {
+      "path": "supabase/components/direct-operational-source-legacy-envelope.sql",
+      "bytes": 4295,
+      "sha256": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d"
+    },
+    "legacy_envelope_rollback": {
+      "path": "supabase/components/direct-operational-source-legacy-envelope.rollback.sql",
+      "bytes": 4294,
+      "sha256": "ac682b1b56db0a1270f1cde8c5aed9d5ab701f108895868938224a33a755a6b3"
+    },
+    "legacy_envelope_qualifier": {
+      "path": "scripts/qualification/direct-operational-source-legacy-envelope.sql",
+      "bytes": 7533,
+      "sha256": "6f3de33e5f574d48f6d992885897a62ba446736cf55d25a86b852f4fc8d4f553"
+    }
+  },
+  "sequenceContract": {
+    "type": "bigint",
+    "start": "1",
+    "increment": "1",
+    "minimum": "1",
+    "maximum": "9223372036854775807",
+    "cache": "1",
+    "cycle": false
+  }
+}

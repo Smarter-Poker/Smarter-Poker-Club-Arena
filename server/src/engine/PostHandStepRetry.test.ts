@@ -7,11 +7,9 @@
  * whole boundary with it: every departure the sweep would have made AND the
  * announced seat moves that run after them.
  *
- * The timeout is not a slow statement. `processLeavePending` rejects only on
- * its enumerate SELECT (a per-seat cash-out failure is swallowed by
- * `atomicCashout`'s own `onFailed`), and that SELECT measures 0.0ms mean /
- * 162.8ms max over 749,233 calls in pg_stat_statements. Fifteen seconds is a
- * round trip that never got a connection on a saturated database - a blink.
+ * A generic timeout alone does not identify the failed suboperation or prove
+ * database saturation. The three later received originals 37375/37377/37389
+ * lack that attribution; the diagnostic tests below harden future evidence.
  *
  * Every assertion below except the two marked "unchanged" FAILS on
  * origin/main, where the first throw was the last word.
@@ -40,8 +38,18 @@ vi.mock('../services/errorReporter.js', () => ({
   describeError: (error: unknown) => String(error),
 }));
 import { ServerTableEngine } from './ServerTableEngine.js';
+import {
+  ServerTableEngineBase,
+  _setEngineLeaseMonotonicNowForTests,
+  type EngineLeaseAuthority,
+} from './ServerTableEngineBase.js';
+import {
+  LeavePendingAttempt,
+  type LeavePendingOperation,
+} from '../observability/LeavePendingDiagnostic.js';
 import { supabase } from '../services/supabase/client.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
+import { reportError } from '../services/errorReporter.js';
 
 const id = '00000000-0000-0000-0000-0000000009a1';
 const handId = '00000000-0000-0000-0000-0000001009a1';
@@ -53,8 +61,8 @@ const leavePendingAlerts = () =>
     (call) => call[1] === 'postHandTasks.leave_pending_failed'
   );
 
-function cashTable() {
-  const engine = new ServerTableEngine(id) as any;
+function cashTable(authority?: EngineLeaseAuthority) {
+  const engine = new ServerTableEngine(id, authority) as any;
   engine.tableInfo = {
     id,
     club_id: 'club',
@@ -131,6 +139,7 @@ beforeEach(() => {
   mocks.leaves.mockReset().mockResolvedValue([]);
   mocks.recount.mockReset().mockResolvedValue(2);
   (raiseFinancialAlert as unknown as ReturnType<typeof vi.fn>).mockClear();
+  vi.mocked(reportError).mockReset();
   vi.spyOn(supabase, 'rpc').mockImplementation(mocks.rpc);
   vi.spyOn(supabase, 'from').mockImplementation((() => {
     const chain: any = {
@@ -144,6 +153,7 @@ beforeEach(() => {
   }) as any);
 });
 afterEach(() => {
+  _setEngineLeaseMonotonicNowForTests();
   vi.restoreAllMocks();
   mocks.rpc.mockReset();
 });
@@ -176,6 +186,21 @@ describe('a transient leave_pending failure costs a retry, not the boundary', ()
     expect(alerts).toHaveLength(1);
     expect(alerts[0][2]).toContain('after 3 attempts');
     expect(alerts[0][3]).toMatchObject({ attempts: 3, retry_budget: 2, hand_number: 9459694 });
+    const evidence = alerts[0][3].leave_pending_diagnostic_v1;
+    expect(evidence).toMatchObject({
+      table_id: id,
+      hand_number: 9459694,
+      persistence_generation: 1,
+    });
+    expect(evidence.attempts.map((a: any) => a.retry_decision)).toEqual([
+      'retry_scheduled',
+      'retry_scheduled',
+      'budget_exhausted',
+    ]);
+    expect(evidence.attempts[2]).toMatchObject({
+      transient_checked: false,
+      lifecycle_checked: false,
+    });
   });
 
   it('does not retry a refusal the database meant, only a blink', async () => {
@@ -186,6 +211,11 @@ describe('a transient leave_pending failure costs a retry, not the boundary', ()
 
     expect(mocks.leaves).toHaveBeenCalledTimes(1);
     expect(leavePendingAlerts()).toHaveLength(1);
+    expect(leavePendingAlerts()[0][3].leave_pending_diagnostic_v1.attempts[0]).toMatchObject({
+      retry_decision: 'non_transient',
+      transient_checked: true,
+      lifecycle_checked: false,
+    });
   });
 
   it('leaves every other step exactly as it was: no budget, one attempt (unchanged)', async () => {
@@ -195,6 +225,140 @@ describe('a transient leave_pending failure costs a retry, not the boundary', ()
     await engine.postHandTasks(players, 1);
 
     expect(mocks.recount).toHaveBeenCalledTimes(1);
+    const other = vi
+      .mocked(raiseFinancialAlert)
+      .mock.calls.find((call) => call[1] === 'postHandTasks.table_unlock_failed');
+    expect(other?.[3]).not.toHaveProperty('leave_pending_diagnostic_v1');
+  });
+});
+
+describe('leave failure evidence preserves the actual retry and reporting decisions', () => {
+  it.each(['budget_exhausted', 'non_transient'] as const)(
+    'does not add predicate calls on the %s short circuit',
+    async (decision) => {
+      const { engine, players } = cashTable();
+      engine.sleep = vi.fn().mockResolvedValue(undefined);
+      const lifecycle = vi.spyOn(engine, 'lifecycleCanMutate');
+      const classifier = vi.spyOn(ServerTableEngineBase as any, 'isTransientDbError');
+      const reject = LeavePendingAttempt.prototype.rejected;
+      let counts: [number, number] | undefined;
+      vi.spyOn(LeavePendingAttempt.prototype, 'rejected').mockImplementation(function (
+        this: LeavePendingAttempt,
+        error: unknown
+      ) {
+        reject.call(this, error);
+        if (this.attempt === (decision === 'budget_exhausted' ? 3 : 1)) {
+          counts = [lifecycle.mock.calls.length, classifier.mock.calls.length];
+        }
+      });
+      let observed = false;
+      vi.mocked(reportError).mockImplementation((_error, context) => {
+        if (context !== 'postHandTasks.step_failed.leave_pending') return;
+        observed = true;
+        expect(counts).toBeDefined();
+        expect(lifecycle.mock.calls.length).toBe(counts![0]);
+        expect(classifier.mock.calls.length).toBe(
+          counts![1] + (decision === 'non_transient' ? 1 : 0)
+        );
+      });
+      mocks.leaves.mockRejectedValue(
+        new Error(decision === 'budget_exhausted' ? 'supabase_timeout' : 'read refused')
+      );
+      await engine.postHandTasks(players, 19);
+      expect(observed).toBe(true);
+      expect(leavePendingAlerts()).toHaveLength(1);
+      expect(classifier).toHaveBeenCalledTimes(decision === 'budget_exhausted' ? 2 : 1);
+    }
+  );
+  it('captures the query phase and original message before the existing reporter mutation', async () => {
+    const { engine, players } = cashTable();
+    engine.sleep = vi.fn().mockResolvedValue(undefined);
+    const classify = vi.spyOn(ServerTableEngineBase as any, 'isTransientDbError');
+    const error = new Error('supabase_timeout');
+    mocks.leaves.mockImplementation(
+      async (
+        _t: string,
+        _c: string,
+        _l: unknown,
+        _d: unknown,
+        diagnostic: LeavePendingOperation
+      ) => {
+        diagnostic.phase('table_seats_query');
+        throw error;
+      }
+    );
+    vi.mocked(reportError).mockImplementation((err, context) => {
+      if (context === 'postHandTasks.step_failed.leave_pending' && err instanceof Error) {
+        err.message = '[existing reporter] ' + err.message;
+      }
+    });
+    await engine.postHandTasks(players, 17);
+    const alert = leavePendingAlerts()[0][3];
+    expect(alert.error).toContain('[existing reporter] supabase_timeout');
+    expect(alert.leave_pending_diagnostic_v1).toMatchObject({
+      table_id: id,
+      hand_number: 9459694,
+      persistence_generation: 17,
+      attempts: [1, 2, 3].map((attempt) => ({
+        attempt,
+        departures: { phase: 'table_seats_query', error: { message: 'supabase_timeout' } },
+      })),
+    });
+    expect(classify).toHaveBeenCalledTimes(2); // budget short-circuits the third
+    expect(classify.mock.calls.every(([value]) => value === error)).toBe(true);
+    expect(engine.sleep.mock.calls).toEqual([[250], [1000]]);
+  });
+
+  it('records actual lease expiry as the reason a third attempt cannot run', async () => {
+    let monotonic = 0;
+    _setEngineLeaseMonotonicNowForTests(() => monotonic);
+    const generation = 'aaaaaaaa-0000-4000-8000-000000000017';
+    const { engine, players } = cashTable({
+      scope: 'cash',
+      verified: true,
+      generation,
+      proofDeadlineMonotonicMs: 20_000,
+    });
+    // Restore actual instance authority and terminal transitions, not a fake
+    // false-returning lifecycle predicate. The transport remains mocked.
+    delete engine.lifecycleCanMutate;
+    delete engine.hasCurrentEngineLeaseAuthority;
+    delete engine.getEngineLeaseAuthority;
+    delete engine.killForRestart;
+    expect(engine.claimProcessOwnership()).toBe(true);
+    engine.running = true;
+    engine.sleep = vi.fn().mockResolvedValue(undefined);
+    engine.flushSnapshot = vi.fn().mockResolvedValue(undefined);
+    let attempts = 0;
+    mocks.leaves.mockImplementation(async () => {
+      if (++attempts === 2) monotonic = 20_001;
+      throw new Error('supabase_timeout');
+    });
+    try {
+      await engine.postHandTasks(players, 18);
+      expect(mocks.leaves).toHaveBeenCalledTimes(2);
+      expect(engine.sleep.mock.calls).toEqual([[250]]);
+      const alert = leavePendingAlerts()[0][3];
+      expect(alert).toMatchObject({ attempts: 2, retry_budget: 2 });
+      expect(alert.leave_pending_diagnostic_v1.attempts[1]).toMatchObject({
+        attempt: 2,
+        retry_decision: 'lifecycle_denied',
+        guards: {
+          runStep_retry: {
+            allowed: false,
+            state: {
+              terminal: true,
+              running: false,
+              lease_generation: generation,
+              lease_expired: true,
+              first_terminal: { reason: 'cash_lease_proof_expired' },
+            },
+          },
+        },
+      });
+    } finally {
+      await engine.stop();
+    }
   });
 });
 

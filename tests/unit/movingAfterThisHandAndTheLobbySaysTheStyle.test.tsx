@@ -23,14 +23,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => mocks.toast }));
-vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
-  useSpinTierAvailability: () => ({ can_draw_100x: false }),
-}));
-// This suite exercises lobby copy and filters. The warm-up suites own real
-// transport/route preparation; detached page imports must not outlive this fixture.
+// This suite checks lobby copy and controls. Route/socket preparation has its
+// own real lifecycle coverage in table-warmup.test.ts; starting it here can
+// leave dynamic page imports logging after this display test has unmounted.
 vi.mock('../../src/services/tableWarmup', () => ({
   warmTable: vi.fn(),
   observeLobbyTableWarmups: vi.fn(() => () => undefined),
+}));
+vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
+  useSpinTierAvailability: () => ({ can_draw_100x: false }),
 }));
 
 import { CashClusterHUD } from '../../src/components/table/CashClusterHUD';

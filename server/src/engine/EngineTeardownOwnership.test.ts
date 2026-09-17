@@ -26,6 +26,38 @@ function rejectableDeferred(): {
 }
 
 describe('table-engine lifecycle ownership', () => {
+  it('retains the first terminal reason across duplicate kills and subsequent cleanup', async () => {
+    const engine = new ServerTableEngine('21212121-2121-4121-8121-212121212121') as any;
+    engine.flushSnapshot = vi.fn().mockResolvedValue(undefined);
+    const owner = vi.fn();
+    engine.onRestartRequired(owner);
+    engine.killForRestartPublic('cash_lease_proof_expired');
+    const first = engine.leavePendingLifecycleSnapshot().first_terminal;
+    engine.killForRestartPublic('later_duplicate');
+    await engine.stop();
+    expect(engine.leavePendingLifecycleSnapshot().first_terminal).toEqual(first);
+    expect(first).toMatchObject({ reason: 'cash_lease_proof_expired', truncated: false });
+    expect(owner).toHaveBeenCalledOnce();
+    expect(owner).toHaveBeenCalledWith('cash_lease_proof_expired');
+  });
+
+  it('ordinary stop records only its known cause and cannot manufacture a restart request', async () => {
+    const engine = new ServerTableEngine('22212121-2121-4121-8121-212121212121') as any;
+    engine.flushSnapshot = vi.fn().mockResolvedValue(undefined);
+    const owner = vi.fn();
+    engine.onRestartRequired(owner);
+    const stopping = engine.stop();
+    const first = engine.leavePendingLifecycleSnapshot();
+    expect(first).toMatchObject({
+      terminal: true,
+      running: false,
+      first_terminal: { reason: 'stop_requested', truncated: false },
+    });
+    expect(engine.stop()).toBe(stopping);
+    await stopping;
+    expect(owner).not.toHaveBeenCalled();
+    expect(engine.leavePendingLifecycleSnapshot().first_terminal).toEqual(first.first_terminal);
+  });
   it('shares one in-flight teardown promise and preserves it after completion', async () => {
     const tableId = '10101010-1010-4010-8010-101010101010';
     const flush = deferred();

@@ -169,6 +169,8 @@ describe('committed final-table presentation is failure-contained', () => {
     );
     const rejectedStop = vi.fn().mockRejectedValue(new Error('snapshot flush failed'));
     manager.tournamentId = '00000000-0000-4000-8000-000000000001';
+    // This partial-recovery fixture bypasses constructor field initializers.
+    manager.stoppedDiagnosticOriginals = new Map();
     manager.running = true;
     manager.blindTimer = null;
     manager.eliminationTimer = null;

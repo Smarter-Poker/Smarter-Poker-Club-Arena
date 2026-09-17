@@ -15,6 +15,25 @@ const fixture =
 // PostgreSQL accounting job even when no server application source changes.
 const accounting =
   /^(supabase\/accounting\/|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
+// Spin qualification and every reviewed input use the existing accounting job.
+const spinExpiry =
+  /^(supabase\/components\/(?:spin-expiry-lock-order|spin-history-retention)(?:\.rollback)?\.sql$|scripts\/qualification\/(?:spin-expiry-|spin-history-retention(?:-behavior\.sql|(?:-completed)?\.(?:sql|md|manifest\.json))$|fixtures\/spin-history-retention\/)|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
+
+// Production Alert SQL inputs select the existing accounting checks.
+const productionAlertsSql =
+  /^(scripts\/ci\/(?:test-(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\.py$|probes\/(?:hand-index-writer-order|hand-stat-writer-order|rake-attribution-atomic)\/)|tests\/tournament-rake-attribution-retries-inside-its-own-transaction\.law\.test\.ts$)/;
+
+// These alert components and their exact inputs run in the same accounting job.
+const productionAlertCore =
+  /^(supabase\/components\/(?:production-alert-identity-and-rake-wording(?:\.rollback)?|direct-operational-source-legacy-envelope(?:\.rollback)?|direct-operational-source-intake(?:\.(?:rollback|authority|functions|postimage))?)\.sql$|scripts\/qualification\/(?:production-alert-core-(?:identity|connected)\.sql$|direct-operational-source-(?:intake|legacy-envelope)\.sql$|fixtures\/direct-operational-source-intake\/)|scripts\/ci\/(?:test-production-alert-core-postgres\.py$|test_production_alert_core_postgres\.py$|probes\/production-alert-core\/))/;
+const alertEvidence =
+  /^(supabase\/components\/(?:duplicate-structure-record-evidence(?:\.rollback)?|rake-repair-record-evidence(?:-rollback)?|spin-repair-evidence(?:\.rollback)?)\.sql$|scripts\/qualification\/(?:alert-evidence-hosted\.manifest\.json$|(?:duplicate-structure-record-evidence|rake-repair-record-evidence|spin-repair-evidence)(?:\.manifest\.json|\.md|\.sql|-race\.spec)$|fixtures\/(?:duplicate-structure-record-evidence|rake-repair-record-evidence|spin-repair-evidence)\/)|scripts\/ci\/(?:test-alert-evidence-postgres|test_alert_evidence_wrapper)\.py$)/;
+
+const class4HandOutcome =
+  /^(supabase\/components\/class4-hand-outcome-evidence(?:\.rollback)?\.sql$|scripts\/qualification\/(?:class4-hand-outcome-evidence\.(?:sql|drift\.sql|concurrency\.spec|md|manifest\.json)$|fixtures\/class4-hand-outcome-evidence\.(?:preimage|candidate|originals)\.sql$)|scripts\/ci\/(?:test-class4-hand-outcome-postgres\.py$|test_class4_hand_outcome_postgres\.py$|probes\/class4-hand-outcome\/))/;
+
+const cashEvidence =
+  /^(supabase\/components\/(?:cash-pot-check-evidence|cash-failed-run-intake)(?:\.rollback)?\.sql$|scripts\/operational-alerts\/cash-pot-failed-run-intake\.(?:sql|md)$|scripts\/qualification\/(?:cash-native-hosted\.manifest\.json$|cash-pot-check-connected\.sql$|cash-pot-check-evidence(?:\.sql|\.md|\.manifest\.json|-concurrency\.spec)$|cash-pot-failed-run-intake\.sql$|fixtures\/(?:cash-pot-check-evidence|cash-pot-failed-run-intake|cash-native-pgcron)\/)|scripts\/ci\/(?:build_pg17_cash_pgcron|test-cash-failure-pgcron|test_cash_native_pgcron)\.py$)/;
 
 export function gitEnvironmentForCwd() {
   // Hooks export repository context that overrides cwd. These local-only Git
@@ -31,13 +50,28 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  const nativeIsolationTool = matches(/^scripts\/ci\/build_pg17_isolationtester\.py$/);
+  const horsePriority = matches(
+    /^scripts\/qualification\/(?:horse-league-process-priority-native\.mjs$|fixtures\/horse-league-process-priority\/)/
+  );
+  // Rule-only changes must run the existing reporting contract suites.
+  const spinRules = matches(/^infra\/monitoring\/spin-rules\.yml$/);
+  const memoryMonitoring = matches(
+    /^infra\/monitoring\/(?:alert-rules\.yml|grafana-dashboards\/poker-engine\.json)$/
+  );
+  const spinComparator = matches(
+    /^(scripts\/ci\/(check-alert-rules-match|rule-metric-producers)\.mjs|infra\/monitoring\/prometheus\.yml)$/
+  );
   // The existing accounting job owns the BBJ runner and its nested fixture inputs.
   const bbjFixture = matches(
     /^scripts\/ci\/(?:test-bbj-bank-replay\.py$|probes\/bbj-bank-replay\/)/
   );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
-  const diamondGames = matches(/^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/);
+  const diamondGames = matches(
+    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/
+  );
+
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
   // Script/fixture-only edits must admit accounting and its routing tests.
@@ -58,17 +92,37 @@ export function classifyChangedPaths(paths) {
       phase4Changed ||
       commitmentAudit ||
       matches(accounting) ||
+      nativeIsolationTool ||
+      spinRules ||
+      horsePriority ||
       tournamentAccountingInput ||
       matches(
         /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
-      ),
+      ) ||
+      matches(spinExpiry) ||
+      matches(productionAlertsSql) ||
+      matches(productionAlertCore) ||
+      matches(alertEvidence) ||
+      matches(class4HandOutcome) ||
+      matches(cashEvidence),
     tests:
       broad ||
       diamondGames ||
       commitmentAudit ||
       tournamentAccountingInput ||
       matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
-      matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/),
+      nativeIsolationTool ||
+      spinRules ||
+      spinComparator ||
+      memoryMonitoring ||
+      horsePriority ||
+      matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/) ||
+      matches(spinExpiry) ||
+      matches(productionAlertsSql) ||
+      matches(productionAlertCore) ||
+      matches(alertEvidence) ||
+      matches(class4HandOutcome) ||
+      matches(cashEvidence),
     phase4: phase4Changed,
     fixture: matches(fixture),
   };

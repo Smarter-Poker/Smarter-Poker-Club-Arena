@@ -18,8 +18,9 @@
  * tried again. Now it retries exactly the two transient SQLSTATEs, bounded,
  * and stamps attributed_at in the same call.
  *
- * This law pins the shape so the retry cannot quietly become unbounded, catch
- * everything, or disappear.
+ * September14: exhausted/permanent failures now escape the entire settle,
+ * including its fee credit. A retry may not leave partial settlement behind.
+ * Native lock/rollback proof: scripts/ci/test-rake-attribution-atomic.py.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -28,7 +29,7 @@ import path from 'path';
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
 const SQL = read(
-  'supabase/migrations/20260909202824_tournament_rake_attribution_retries_inside_its_own_transaction.sql'
+  'supabase/migrations/20260914223105_rake_settlement_requires_complete_attribution.sql'
 );
 const body = SQL.slice(SQL.indexOf('LOOP'), SQL.indexOf('END LOOP;'));
 
@@ -42,10 +43,8 @@ describe('the attribution is retried inside the settle', () => {
 
   it('retries exactly the two transient lock classes, and nothing else', () => {
     expect(body).toContain('WHEN deadlock_detected OR lock_not_available THEN');
-    // everything else fails once, alerts, and exits - as before
-    expect(body).toMatch(/WHEN OTHERS THEN[\s\S]*?EXIT;/);
-    const others = body.slice(body.indexOf('WHEN OTHERS THEN'));
-    expect(others).not.toContain('pg_sleep');
+    // Permanent errors escape unchanged so the fee cannot commit alone.
+    expect(body).not.toContain('WHEN OTHERS');
   });
 
   it('is bounded: four attempts, back-off totalling one second', () => {
@@ -55,10 +54,10 @@ describe('the attribution is retried inside the settle', () => {
     );
   });
 
-  it('still alerts when the retries are exhausted - the net stays, expected to find nothing', () => {
+  it('propagates exhaustion so the caller rolls back and reports its refusal', () => {
     const exhausted = body.slice(body.indexOf('IF v_attempt >= 4 THEN'), body.indexOf('pg_sleep'));
-    expect(exhausted).toContain("'Rake settled but attribution failed: '");
-    expect(exhausted).toContain("'sqlstate', v_state, 'attempts', v_attempt");
+    expect(exhausted).toMatch(/IF v_attempt >= 4 THEN\s+RAISE;/);
+    expect(exhausted).not.toContain('INSERT INTO');
   });
 
   it('stamps attributed_at in the same call on success, never leaving it to a cron', () => {
@@ -74,17 +73,17 @@ describe('the attribution is retried inside the settle', () => {
   });
 
   it('asserts its own shape at apply time and refuses browser roles', () => {
-    expect(SQL).toContain(
-      "IF v_src NOT LIKE '%WHEN deadlock_detected OR lock_not_available THEN%' THEN"
-    );
-    expect(SQL).toContain("IF v_src NOT LIKE '%IF v_attempt >= 4 THEN%' THEN");
-    expect(SQL).toContain(
-      "has_function_privilege('anon', 'public.fn_settle_tournament_rake(uuid,text)', 'EXECUTE')"
-    );
+    expect(SQL).toContain('IF v_hash NOT IN');
+    expect(SQL).toContain("pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef");
+    expect(SQL).toContain("p.proacl::text='{postgres=X/postgres,service_role=X/postgres}'");
   });
 
   it('is one transaction, per the production DDL policy', () => {
-    expect(SQL.trim().startsWith('BEGIN;')).toBe(true);
+    expect(
+      SQL.replace(/^--.*$/gm, '')
+        .trim()
+        .startsWith('BEGIN;')
+    ).toBe(true);
     expect(SQL.trim().endsWith('COMMIT;')).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import * as db from '../services/supabase.js';
 import * as moves from '../services/supabase/seatMoves.js';
+import { LeavePendingAttempt } from '../observability/LeavePendingDiagnostic.js';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -40,13 +41,14 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
       h.engine.tableId,
       'club',
       expect.any(Function),
-      expect.any(Function)
+      expect.any(Function),
+      undefined
     );
     h.leaveCall.mock.calls[0][3]?.('departed', 'occupancy-departed');
     expect(h.engine.departedSeatsAwaitingTeardown).toEqual([
       { userId: 'departed', occupancyId: 'occupancy-departed' },
     ]);
-    expect(h.moveRead).toHaveBeenCalledWith(h.engine.tableId);
+    expect(h.moveRead).toHaveBeenCalledWith(h.engine.tableId, undefined);
     h.pending.resolve([]);
     await Promise.resolve();
     await Promise.resolve();
@@ -93,6 +95,42 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
     });
     expect(h.moveRead).not.toHaveBeenCalled();
   });
+  it.each(['leaves', 'moves'] as const)(
+    'retains both failures when %s rejects first',
+    async (first) => {
+      const h = setup();
+      const diagnostic = new LeavePendingAttempt(2);
+      const leaveError = Object.freeze(new Error('departure timeout'));
+      const moveError = Object.freeze(new Error('move timeout'));
+      const failed = vi.fn();
+      const boundary = h.engine.readCashHandDepartures(diagnostic).catch(failed);
+      if (first === 'leaves') h.leaves.reject(leaveError);
+      else h.pending.reject(moveError);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(failed).not.toHaveBeenCalled();
+      if (first === 'leaves') h.pending.reject(moveError);
+      else h.leaves.reject(leaveError);
+      await boundary;
+      expect(failed).toHaveBeenCalledWith(leaveError);
+      expect(diagnostic.snapshot()).toMatchObject({
+        selected_failure: 'departures',
+        departures: { status: 'rejected', error: { message: 'departure timeout' } },
+        move_read: { status: 'rejected', error: { message: 'move timeout' } },
+      });
+      expect(h.engine.lifecycleCanMutate).toHaveBeenCalledTimes(1);
+    }
+  );
+  it('retains the actual skipped branch even if cluster metadata changes during the sweep', async () => {
+    const h = setup(false);
+    const diagnostic = new LeavePendingAttempt(1);
+    const boundary = h.engine.readCashHandDepartures(diagnostic);
+    h.engine.tableInfo.cluster_id = 'new-game';
+    h.leaves.resolve([]);
+    await boundary;
+    expect(diagnostic.snapshot().move_read.status).toBe('skipped_non_cluster');
+    expect(h.moveRead).not.toHaveBeenCalled();
+  });
   it('retired authority neither starts work nor reflects a delayed leave refusal', async () => {
     const h = setup();
     h.engine.lifecycleCanMutate.mockReturnValue(false);
@@ -116,6 +154,38 @@ describe('a prefetched move still goes through the authoritative executor', () =
     announced_at: '2026-09-08',
     reason: 'seat_change',
   } as moves.PendingSeatMove;
+  it('keeps a later mirror failure local after the move service returned', async () => {
+    const engine = Object.create(ServerTableEngine.prototype) as any;
+    engine.tableId = 'table';
+    engine.tableInfo = { cluster_id: 'game' };
+    engine.isTournamentTable = () => false;
+    engine.lifecycleCanMutate = vi.fn(() => true);
+    engine.reconcileSeatMoveHolds = vi.fn();
+    engine.announcedSeatMoves = new Set();
+    engine.heldForSwap = new Set();
+    const failure = Object.freeze(new Error('mirror unavailable'));
+    engine.hub = {
+      emitEvent: vi.fn(() => {
+        throw failure;
+      }),
+    };
+    const execution = vi.spyOn(moves, 'executePendingSeatMoves').mockResolvedValue({
+      done: [],
+      held: [],
+      refused: [{ move_id: 'move', player_id: 'player', reason: 'destination_full' }],
+    });
+    const diagnostic = new LeavePendingAttempt(1);
+    await expect(
+      engine.executePendingSeatMoves({ announcedOnly: true }, [candidate], diagnostic)
+    ).rejects.toBe(failure);
+    expect(execution).toHaveBeenCalledOnce();
+    expect(diagnostic.snapshot()).toMatchObject({
+      local_phase: 'move_mirrors',
+      selected_failure: 'local',
+      move_execution: { status: 'fulfilled', error: null },
+    });
+    expect(engine.lifecycleCanMutate).toHaveBeenCalledTimes(2);
+  });
   it('executes an announced candidate once and respects a disappeared source seat', async () => {
     const rpc = vi
       .spyOn(db.supabase, 'rpc')

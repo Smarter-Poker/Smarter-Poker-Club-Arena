@@ -406,6 +406,458 @@ describe('required CI owns native fixture verification', () => {
   });
 });
 
+// Keep the full current qualification closure explicit: no manifest read is
+// needed to classify its own removal, or a source renamed outside the scope.
+const spinExpiryAccountingPaths = [
+  'scripts/qualification/fixtures/spin-history-retention/capture-closure.sql',
+  'scripts/qualification/fixtures/spin-history-retention/capture-provider.sql',
+  'scripts/qualification/fixtures/spin-history-retention/component-inputs.sql',
+  'scripts/qualification/fixtures/spin-history-retention/database-state.sql',
+  'scripts/qualification/fixtures/spin-history-retention/estate.sql',
+  'scripts/qualification/fixtures/spin-history-retention/history-writer-authority.json',
+  'scripts/qualification/fixtures/spin-history-retention/preimage.sql',
+  'scripts/qualification/fixtures/spin-history-retention/provider-authority.json',
+  'scripts/qualification/fixtures/spin-history-retention/provider-check.sql',
+  'scripts/qualification/fixtures/spin-history-retention/provider-closure-authority.json',
+  'scripts/qualification/fixtures/spin-history-retention/provider-closure-check.sql',
+  'scripts/qualification/fixtures/spin-history-retention/provider-closure.sql',
+  'scripts/qualification/fixtures/spin-history-retention/provider-supplement.sql',
+  'scripts/qualification/fixtures/spin-history-retention/sequence-authority-capture.json',
+  'scripts/qualification/fixtures/spin-history-retention/sequence-authority.sql',
+  'scripts/qualification/fixtures/spin-history-retention/social-alias-reference.sql',
+  'scripts/qualification/fixtures/spin-history-retention/social-alias-reference-authority.json',
+  'scripts/qualification/fixtures/spin-history-retention/state.sql',
+  'scripts/qualification/spin-history-retention-behavior.sql',
+  'scripts/qualification/spin-history-retention.md',
+  'scripts/qualification/spin-history-retention.sql',
+  'supabase/components/spin-history-retention.rollback.sql',
+  'supabase/components/spin-history-retention.sql',
+  'scripts/qualification/spin-history-retention.manifest.json',
+  'scripts/qualification/fixtures/spin-history-retention/capture-completed-start.sql',
+  'scripts/qualification/fixtures/spin-history-retention/completed-start-authority.json',
+  'scripts/qualification/fixtures/spin-history-retention/completed-start-input.sql',
+  'scripts/qualification/fixtures/spin-history-retention/completed-start-restore.sql',
+  'scripts/qualification/spin-history-retention-completed.sql',
+  'scripts/qualification/spin-history-retention-completed.md',
+  'scripts/qualification/spin-history-retention-completed.manifest.json',
+  'scripts/qualification/spin-expiry-business-races.md',
+  'scripts/qualification/spin-expiry-business-races.py',
+  'scripts/qualification/spin-expiry-business-state.sql',
+  'scripts/qualification/spin-expiry-committed-refund-oracle.py',
+  'scripts/qualification/spin-expiry-committed-refund-state.sql',
+  'scripts/qualification/spin-expiry-committed-refund.authority.json',
+  'scripts/qualification/spin-expiry-committed-refund.md',
+  'scripts/qualification/spin-expiry-committed-refund.py',
+  'scripts/qualification/spin-expiry-lock-order.authority.json',
+  'scripts/qualification/spin-expiry-lock-order.component-inputs.sql',
+  'scripts/qualification/spin-expiry-lock-order.md',
+  'scripts/qualification/spin-expiry-lock-order.sql',
+  'scripts/qualification/spin-expiry-real-funded-fixture.sql',
+  'supabase/components/spin-expiry-lock-order.rollback.sql',
+  'supabase/components/spin-expiry-lock-order.sql',
+  'scripts/ci/probes/spin-expiry/inputs/schema.sql',
+  'scripts/ci/probes/spin-expiry/inputs/access.sql',
+  'scripts/ci/probes/spin-expiry/inputs/policies.sql',
+  'scripts/ci/probes/spin-expiry/principals.sql',
+  'scripts/ci/probes/spin-expiry/provider-supplement.sql',
+  'scripts/ci/probes/spin-expiry/provider-roles.sql',
+  'scripts/ci/probes/spin-expiry/provider-roles-check.sql',
+  'scripts/ci/probes/spin-expiry/provider-check.sql',
+  'scripts/ci/probes/spin-expiry/empty-provider-check.sql',
+  'scripts/ci/probes/spin-expiry/inputs/catalog-sequence-exact.json',
+  'scripts/ci/probes/spin-expiry/inputs/spin-catalog-supplement.sql',
+  'scripts/ci/probes/spin-expiry/inputs/entry-provider-supplement.sql',
+  'scripts/ci/probes/spin-expiry/inputs/entry-sequence-authority.sql',
+  'scripts/ci/probes/spin-expiry/inputs/settle-source-authority.sql',
+  'scripts/ci/probes/spin-expiry/inputs/captured-financial-store-policy.sql',
+  'scripts/ci/probes/spin-expiry/inputs/captured-spin-catalog.json',
+  'scripts/ci/probes/spin-expiry/spin-catalog-observer.sql',
+  'scripts/ci/probes/spin-expiry/manifest.json',
+  'scripts/ci/test-spin-expiry-postgres.py',
+  'scripts/ci/test_spin_expiry_wrapper.py',
+  'tests/unit/fixtureNativeCi.test.ts',
+] as const;
+
+describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
+  it.each(spinExpiryAccountingPaths)('selects accounting and its guards for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+    expect(flags.src).toBe(false);
+  });
+
+  it.each(['modified', 'deleted', 'renamed'] as const)(
+    'keeps the full qualification selected when its actual Git paths are %s',
+    (operation) => {
+      withGitFixture(({ directory, git, write, commit }) => {
+        for (const path of spinExpiryAccountingPaths) write(path, 'original qualification input');
+        const base = commit();
+        const relocated = spinExpiryAccountingPaths.map(
+          (_, index) => `docs/relocated-spin-${index}.txt`
+        );
+        for (const [index, path] of spinExpiryAccountingPaths.entries()) {
+          if (operation === 'modified') write(path, 'changed qualification input');
+          if (operation === 'deleted') rmSync(join(directory, path));
+          if (operation === 'renamed') git('mv', '--', path, relocated[index]);
+        }
+        const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+        expect(result.complete).toBe(true);
+        for (const path of spinExpiryAccountingPaths) expect(result.paths).toContain(path);
+        expect(result.flags.server).toBe(true);
+        expect(result.flags.tests).toBe(true);
+        if (operation === 'renamed') {
+          for (const path of relocated) expect(result.paths).toContain(path);
+          // The old paths, rather than harmless destinations, select the job.
+          expect(classifyChangedPaths(relocated).server).toBe(false);
+          expect(classifyChangedPaths(relocated).tests).toBe(false);
+        }
+      });
+    }
+  );
+
+  it.each([
+    'docs/spin-expiry-plan.md',
+    'scripts/qualification/unrelated.sql',
+    'supabase/components/unrelated.sql',
+    'supabase/components/spin-expiry-lock-order.sql.bak',
+    'supabase/components/spin-history-retention.sql.bak',
+    'scripts/qualification/spin-history-retention.sql.bak',
+    'scripts/qualification/spin-history-retention-completed.sql.bak',
+    'scripts/ci/probes/unrelated/input.sql',
+    'scripts/ci/test-spin-expiry-postgres.py.bak',
+  ])('preserves an unrelated accounting skip for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(false);
+    expect(flags.tests).toBe(false);
+  });
+
+  it('preserves a verified empty Git diff without weakening uncertain-diff behavior', () => {
+    withGitFixture(({ directory, base }) => {
+      const result = classifyGitChanges({ cwd: directory, base, head: base });
+      expect(result.complete).toBe(true);
+      expect(result.paths).toEqual([]);
+      expect(result.flags.server).toBe(false);
+      expect(result.flags.tests).toBe(false);
+    });
+  });
+
+  it('calls the finite Spin runner from the existing PostgreSQL dependency', () => {
+    const accounting = ci.jobs.accounting_postgres;
+    expect(accounting.needs).toBe('changes');
+    expect(accounting.if).toContain("needs.changes.outputs.server == 'true'");
+    expect(accounting.if).toContain("needs.changes.result != 'success'");
+    expect(accounting['runs-on']).toBe('ubuntu-latest');
+    expect(accounting['continue-on-error']).toBeUndefined();
+    const calls = accounting.steps.filter(
+      (step: { id?: string }) => step.id === 'spin_expiry_postgres'
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].run).toBe('python3 scripts/ci/test-spin-expiry-postgres.py');
+    expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(calls[0].if).toBeUndefined();
+    expect(calls[0]['continue-on-error']).toBeUndefined();
+    expect(ci.jobs.server_shards.needs).toContain('accounting_postgres');
+    const gate = ci.jobs.server_shards.steps.find(
+      (step: { name?: string }) =>
+        step.name === 'Require successful real PostgreSQL accounting tests'
+    );
+    expect(gate.if).toBe("needs.accounting_postgres.result != 'success'");
+    // This refusal runs before checkout, so the job's server/ default is absent.
+    expect(gate['working-directory']).toBe('${{ github.workspace }}');
+    expect(gate.run).toContain('exit 1');
+    expect(ci.jobs.unit_shards.if).toContain("needs.changes.outputs.tests == 'true'");
+    expect(
+      ci.jobs.unit_shards.steps.some(
+        (step: { run?: string }) =>
+          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+      )
+    ).toBe(true);
+  });
+});
+
+describe('Production Alert SQL checks use the existing accounting job', () => {
+  const paths = [
+    'scripts/ci/test-hand-index-writer-order.py',
+    'scripts/ci/test-hand-stat-writer-order.py',
+    'scripts/ci/test-rake-attribution-atomic.py',
+    'scripts/ci/probes/hand-index-writer-order/baseline.json',
+    'scripts/ci/probes/hand-stat-writer-order/baseline.json',
+    'scripts/ci/probes/rake-attribution-atomic/baseline.json',
+    'supabase/migrations/20260914194928_hand_index_writers_share_a_canonical_order.sql',
+    'supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql',
+    'supabase/migrations/20260914223105_rake_settlement_requires_complete_attribution.sql',
+    'tests/tournament-rake-attribution-retries-inside-its-own-transaction.law.test.ts',
+  ];
+
+  it.each(paths)('selects the real accounting check and source guards for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+  });
+
+  it.each([
+    'scripts/ci/test-hand-stat-writer-order.py.bak',
+    'scripts/ci/probes/unrelated-input/baseline.json',
+  ])('does not select an unrelated accounting check for %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(false);
+  });
+
+  it('runs all three real drivers with the installed PG17 tools and no failure bypass', () => {
+    const accounting = ci.jobs.accounting_postgres;
+    expect(accounting['runs-on']).toBe('ubuntu-latest');
+    expect(accounting['continue-on-error']).toBeUndefined();
+    const expected = [
+      [
+        'hand_index_writer_order',
+        'python3 scripts/ci/test-hand-index-writer-order.py --migration supabase/migrations/20260914194928_hand_index_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-index',
+      ],
+      [
+        'hand_stat_writer_order',
+        'python3 scripts/ci/test-hand-stat-writer-order.py --migration supabase/migrations/20260914212802_hand_stat_writers_share_a_canonical_order.sql --output artifacts/production-alerts-sql/hand-stat',
+      ],
+      [
+        'rake_attribution_atomic',
+        'python3 scripts/ci/test-rake-attribution-atomic.py --output artifacts/production-alerts-sql/rake-attribution',
+      ],
+    ];
+    let previous = -1;
+    for (const [id, command] of expected) {
+      const calls = accounting.steps.filter((step: { id?: string }) => step.id === id);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].run).toBe(command);
+      expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+      expect(calls[0].if).toBeUndefined();
+      expect(calls[0]['continue-on-error']).toBeUndefined();
+      const current = accounting.steps.indexOf(calls[0]);
+      expect(current).toBeGreaterThan(previous);
+      previous = current;
+    }
+    expect(ci.jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(
+      ci.jobs.unit_shards.steps.some(
+        (step: { run?: string }) =>
+          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+      )
+    ).toBe(true);
+  });
+});
+
+describe('memory observation rules keep their existing monitoring regression checks', () => {
+  it.each([
+    'infra/monitoring/alert-rules.yml',
+    'infra/monitoring/grafana-dashboards/poker-engine.json',
+  ])('runs the existing test suite for a rule-only change to %s', (path) => {
+    expect(classifyChangedPaths([path]).tests).toBe(true);
+    expect(classifyChangedPaths([path]).src).toBe(false);
+  });
+});
+
+describe('Horse League priority fixture stays in the existing server verification', () => {
+  it.each([
+    'scripts/qualification/horse-league-process-priority-native.mjs',
+    'scripts/qualification/fixtures/horse-league-process-priority/child.mjs',
+  ])('selects server checks when only %s changes', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+    expect(classifyChangedPaths([path]).tests).toBe(true);
+  });
+  it('does not select the server for qualification prose alone', () => {
+    expect(
+      classifyChangedPaths(['scripts/qualification/horse-league-process-priority-native.md']).server
+    ).toBe(false);
+  });
+});
+
+describe('native PG17 isolation tool is built by the existing accounting job', () => {
+  it('tool source changes require the accounting and contract suites', () => {
+    const flags = classifyChangedPaths(['scripts/ci/build_pg17_isolationtester.py']);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+    expect(flags.src).toBe(false);
+    expect(classifyChangedPaths(['scripts/ci/build_pg17_isolationtester.py.bak']).server).toBe(
+      false
+    );
+  });
+
+  it('builds the pinned upstream tool once before PostgreSQL business qualification', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const builders = steps.filter((step: { id?: string }) => step.id === 'pg17_isolation_tool');
+    expect(builders).toHaveLength(1);
+    expect(builders[0].run).toBe('python3 scripts/ci/build_pg17_isolationtester.py');
+    expect(builders[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(builders[0]['continue-on-error']).toBeUndefined();
+    const bbj = steps.filter((step: { id?: string }) => step.id === 'bbj');
+    expect(bbj).toHaveLength(1);
+    expect(bbj[0].run).toContain('python3 scripts/ci/test-bbj-bank-replay.py');
+    expect(steps.indexOf(builders[0])).toBeLessThan(steps.indexOf(bbj[0]));
+    const evidence = steps.find(
+      (step: { name?: string }) => step.name === 'Retain PostgreSQL isolation tool build evidence'
+    );
+    expect(evidence.if).toBe("always() && steps.pg17_isolation_tool.outcome != 'skipped'");
+    expect(evidence.with.path).toContain('artifacts/postgresql-17-isolationtester/receipt.json');
+    expect(evidence.with.path).not.toContain('**');
+  });
+});
+
+describe('composed alert inputs stay in the existing accounting qualification', () => {
+  it.each([
+    'supabase/components/production-alert-identity-and-rake-wording.sql',
+    'supabase/components/production-alert-identity-and-rake-wording.rollback.sql',
+    'supabase/components/direct-operational-source-intake.sql',
+    'supabase/components/direct-operational-source-legacy-envelope.sql',
+    'supabase/components/direct-operational-source-legacy-envelope.rollback.sql',
+    'scripts/qualification/direct-operational-source-legacy-envelope.sql',
+    'supabase/components/direct-operational-source-intake.rollback.sql',
+    'supabase/components/direct-operational-source-intake.authority.sql',
+    'supabase/components/direct-operational-source-intake.functions.sql',
+    'supabase/components/direct-operational-source-intake.postimage.sql',
+    'scripts/qualification/direct-operational-source-intake.sql',
+    'scripts/qualification/fixtures/direct-operational-source-intake/prepare.sql',
+    'scripts/qualification/fixtures/direct-operational-source-intake/authority.json',
+    'scripts/qualification/fixtures/direct-operational-source-intake/race.sql',
+    'scripts/qualification/fixtures/direct-operational-source-intake/retained.sql',
+    'scripts/qualification/production-alert-core-connected.sql',
+    'scripts/qualification/production-alert-core-identity.sql',
+    'scripts/ci/probes/production-alert-core/notification/inputs/schema.sql',
+    'scripts/ci/test-production-alert-core-postgres.py',
+    'scripts/ci/test_production_alert_core_postgres.py',
+    'supabase/components/duplicate-structure-record-evidence.rollback.sql',
+    'supabase/components/rake-repair-record-evidence-rollback.sql',
+    'supabase/components/spin-repair-evidence.sql',
+    'scripts/qualification/duplicate-structure-record-evidence.sql',
+    'scripts/qualification/rake-repair-record-evidence.manifest.json',
+    'scripts/qualification/spin-repair-evidence-race.spec',
+    'scripts/qualification/fixtures/spin-repair-evidence/original.sql',
+    'scripts/qualification/alert-evidence-hosted.manifest.json',
+    'scripts/ci/test-alert-evidence-postgres.py',
+    'scripts/ci/test_alert_evidence_wrapper.py',
+  ])('selects server and test checks for %s', (path) => {
+    const flags = classifyChangedPaths([path]);
+    expect(flags.server).toBe(true);
+    expect(flags.tests).toBe(true);
+  });
+
+  it.each([
+    'scripts/ci/test-production-alert-core-postgres.py.bak',
+    'supabase/components/spin-repair-evidence.sql.bak',
+    'supabase/components/direct-operational-source-intake.sql.bak',
+    'supabase/components/direct-operational-source-legacy-envelope.sql.bak',
+    'scripts/qualification/direct-operational-source-intake.md',
+    'scripts/qualification/unrelated.sql',
+  ])('does not select unrelated input %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(false);
+  });
+
+  it('calls both real qualifiers without a conditional or error bypass', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    for (const [id, command] of [
+      [
+        'production_alert_core',
+        'python3 scripts/ci/test-production-alert-core-postgres.py --output artifacts/production-alerts-sql/core',
+      ],
+      [
+        'alert_evidence_postgres',
+        'python3 scripts/ci/test-alert-evidence-postgres.py --output artifacts/production-alerts-sql/evidence',
+      ],
+    ]) {
+      const calls = steps.filter((step: { id?: string }) => step.id === id);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].run).toBe(command);
+      expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+      expect(calls[0].if).toBeUndefined();
+      expect(calls[0]['continue-on-error']).toBeUndefined();
+      expect(steps.indexOf(calls[0])).toBeLessThan(
+        steps.findIndex(
+          (step: { name?: string }) =>
+            step.name === 'Retain production alert SQL qualification evidence'
+        )
+      );
+    }
+    const evidence = steps.find((step: { id?: string }) => step.id === 'alert_evidence_postgres');
+    expect(evidence.env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+  });
+});
+
+describe('Class4 evidence uses the same PostgreSQL job', () => {
+  it.each([
+    'supabase/components/class4-hand-outcome-evidence.sql',
+    'supabase/components/class4-hand-outcome-evidence.rollback.sql',
+    'scripts/qualification/class4-hand-outcome-evidence.sql',
+    'scripts/qualification/class4-hand-outcome-evidence.drift.sql',
+    'scripts/qualification/class4-hand-outcome-evidence.concurrency.spec',
+    'scripts/qualification/fixtures/class4-hand-outcome-evidence.preimage.sql',
+    'scripts/qualification/fixtures/class4-hand-outcome-evidence.candidate.sql',
+    'scripts/qualification/fixtures/class4-hand-outcome-evidence.originals.sql',
+    'scripts/ci/test-class4-hand-outcome-postgres.py',
+    'scripts/ci/test_class4_hand_outcome_postgres.py',
+    'scripts/ci/probes/class4-hand-outcome/manifest.json',
+  ])('selects server and test execution for %s', (path) => {
+    expect(classifyChangedPaths([path]).server).toBe(true);
+    expect(classifyChangedPaths([path]).tests).toBe(true);
+  });
+  it('does not classify an unrelated or backup SQL file', () => {
+    expect(
+      classifyChangedPaths(['supabase/components/class4-hand-outcome-evidence.sql.bak']).server
+    ).toBe(false);
+  });
+  it('runs the original states and native concurrency without a bypass', () => {
+    const calls = ci.jobs.accounting_postgres.steps.filter(
+      (step: { id?: string }) => step.id === 'class4_hand_outcome'
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].if).toBeUndefined();
+    expect(calls[0]['continue-on-error']).toBeUndefined();
+    expect(calls[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(calls[0].run.trim()).toBe(
+      'python3 -m unittest discover -s scripts/ci -p test_class4_hand_outcome_postgres.py\npython3 scripts/ci/test-class4-hand-outcome-postgres.py --output artifacts/production-alerts-sql/class4'
+    );
+  });
+});
+
+describe('cash failure intake is exercised by the actual hosted scheduler fixture', () => {
+  it.each([
+    'supabase/components/cash-failed-run-intake.sql',
+    'supabase/components/cash-failed-run-intake.rollback.sql',
+    'supabase/components/cash-pot-check-evidence.sql',
+    'supabase/components/cash-pot-check-evidence.rollback.sql',
+    'scripts/ci/build_pg17_cash_pgcron.py',
+    'scripts/ci/test-cash-failure-pgcron.py',
+    'scripts/ci/test_cash_native_pgcron.py',
+    'scripts/qualification/cash-native-hosted.manifest.json',
+    'scripts/qualification/cash-pot-check-connected.sql',
+    'scripts/ci/probes/production-alert-core/cash-checker-preimage.sql',
+    'scripts/qualification/cash-pot-check-evidence-concurrency.spec',
+    'scripts/qualification/fixtures/cash-native-pgcron/pg_cron-heap-tables.patch',
+    'scripts/qualification/fixtures/cash-pot-check-evidence/preimage.sql',
+  ])('requires accounting and its guard suite for %s', (path) => {
+    const result = classifyChangedPaths([path]);
+    expect(result.server).toBe(true);
+    expect(result.tests).toBe(true);
+  });
+  it('keeps backup files outside the production source match', () => {
+    expect(
+      classifyChangedPaths(['supabase/components/cash-failed-run-intake.sql.bak']).server
+    ).toBe(false);
+  });
+  it('builds and executes the native scheduler without suppressing failure', () => {
+    const job = ci.jobs.accounting_postgres;
+    const build = job.steps.filter((s: { id?: string }) => s.id === 'cash_pgcron_build');
+    const execution = job.steps.filter((s: { id?: string }) => s.id === 'cash_native_failure');
+    expect(job['runs-on']).toBe('ubuntu-latest');
+    expect(job['continue-on-error']).toBeUndefined();
+    expect(build).toHaveLength(1);
+    expect(execution).toHaveLength(1);
+    expect(build[0].run).toBe('python3 scripts/ci/build_pg17_cash_pgcron.py');
+    expect(execution[0].run.trim()).toBe(
+      'python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py\npython3 scripts/ci/test-cash-failure-pgcron.py'
+    );
+    expect(execution[0].if).toBeUndefined();
+    expect(execution[0]['continue-on-error']).toBeUndefined();
+    expect(job.steps.indexOf(build[0])).toBeLessThan(job.steps.indexOf(execution[0]));
+  });
+});
+
 describe('restored provider accounting qualification', () => {
   const fixtureDirectories = [
     'accounting-agreement-history',

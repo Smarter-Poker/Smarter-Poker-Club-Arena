@@ -24,7 +24,8 @@ CLUB = '7beef002-0002-4000-8000-000000000002'
 # Record this invocation's actual binary identities; never reuse retired worker pins.
 PROVIDER_BINARIES = ('postgres', 'initdb', 'pg_ctl', 'psql')
 ACCOUNTING_JOB_NAME = 'Accounting transactions (PostgreSQL 17)'
-JOB_SECONDS = 900
+# Must match accounting_postgres in ci.yml; directly checked by test_current_ci.
+JOB_SECONDS = 1800
 # Finite first qualification ceilings, not observed funded runtimes. Setup's
 # original 300-second cap and three original 30-second physical cleanup caps.
 CASE_SECONDS = 300
@@ -307,11 +308,11 @@ class CurrentAccountingRun:
             require(timing[key] == self.identity[key], 'Timing belongs to a different current job: ' + key)
         for key in ('job_started_at_unix', 'job_deadline_unix', 'case_execution_seconds', 'cleanup_reserve_seconds'):
             require(type(timing[key]) in (int, float) and math.isfinite(timing[key]) and timing[key] > 0, 'Positive actual timing value required')
-        require(timing['job_deadline_unix'] - timing['job_started_at_unix'] == 900,
-                'Preserve the existing 15-minute accounting job limit')
+        require(timing['job_deadline_unix'] - timing['job_started_at_unix'] == JOB_SECONDS,
+                'Preserve the configured accounting job limit')
         require(timing['job_started_at_unix'] <= time.time() < timing['job_deadline_unix'],
                 'Current accounting job deadline is not usable')
-        require(timing['case_execution_seconds'] + timing['cleanup_reserve_seconds'] < 900,
+        require(timing['case_execution_seconds'] + timing['cleanup_reserve_seconds'] < JOB_SECONDS,
                 'Reviewed single-case and cleanup budget does not fit the existing job')
         require(not hasattr(self, 'timing'), 'Current job timing cannot be rebound')
         self.timing = dict(timing)

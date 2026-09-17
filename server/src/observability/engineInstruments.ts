@@ -22,6 +22,7 @@
 import { createDefaultRegistry, type Counter, type Histogram } from './Metrics.js';
 import { Tracer, InMemorySpanExporter } from './Tracing.js';
 import { MetricsRegistry as AlwaysOnRegistryCtor } from './Metrics.js';
+import { sampleProcessMemory } from './processMemory.js';
 
 /**
  * ALWAYS-ON registry: exposed by /metrics unconditionally, and therefore the
@@ -710,7 +711,8 @@ export const horseForcedSitOutsTotal: Counter = alwaysOnRegistry.counter(
  *   hand_replaced     the hand controller or hand number moved on;
  *   lifecycle_locked  the table may not mutate right now;
  *   seat_moved        the table is no longer on this seat;
- *   lease_lost        the engine lease generation changed or stopped verifying.
+ *   lease_lost        the engine lease generation changed or stopped verifying;
+ *   clock_expired     the retained reconnect deadline already elapsed.
  * stage: how far the turn got - schedule | fallback | fast_result |
  *   deep_start | deep_result | commit.
  * A `commit` abandonment is the expensive one: the decision was computed and
@@ -737,6 +739,7 @@ for (const reason of [
   'lifecycle_locked',
   'seat_moved',
   'lease_lost',
+  'clock_expired',
 ]) {
   for (const stage of [
     'schedule',
@@ -798,6 +801,63 @@ muckedHandsTotal.inc(0);
 rpcErrorsTotalAlwaysOn.inc(0, { method: 'action' });
 
 /** Prometheus lines for the always-on fleet registry. */
+/* ── THE PROCESS'S OWN MEMORY (2026-09-14) ────────────────────────────────
+   See observability/processMemory.ts for why these exist. Always-on, bounded
+   cardinality (no labels), refreshed at scrape time from one cached sample.
+   `poker_engine_native_main_arena_bytes` retains its public name but measures
+   only the current [heap] virtual extent, not RSS or allocation ownership.
+   -1 where /proc is unreadable, never absent. */
+export const processRssBytes = alwaysOnRegistry.gauge(
+  'poker_engine_process_rss_bytes',
+  'Resident set size of the engine process (every isolate, every arena)'
+);
+export const processHeapUsedBytes = alwaysOnRegistry.gauge(
+  'poker_engine_heap_used_bytes',
+  'V8 main-isolate heap in use'
+);
+export const processHeapTotalBytes = alwaysOnRegistry.gauge(
+  'poker_engine_heap_total_bytes',
+  'V8 main-isolate heap committed'
+);
+export const processExternalBytes = alwaysOnRegistry.gauge(
+  'poker_engine_external_bytes',
+  'Memory V8 accounts for outside its heap (Buffers, bound C++ objects)'
+);
+export const processArrayBuffersBytes = alwaysOnRegistry.gauge(
+  'poker_engine_array_buffers_bytes',
+  'ArrayBuffer backing stores alive in the main isolate'
+);
+export const processNativeMainArenaBytes = alwaysOnRegistry.gauge(
+  'poker_engine_native_main_arena_bytes',
+  'Current [heap] virtual mapping extent, not RSS or allocation ownership; -1 when /proc is unreadable'
+);
+export const processRssAnonBytes = alwaysOnRegistry.gauge(
+  'poker_engine_rss_anon_bytes',
+  'Anonymous (non file-backed) resident memory of the process; -1 when /proc is unreadable'
+);
+export const processThreads = alwaysOnRegistry.gauge(
+  'poker_engine_threads',
+  'OS threads in the engine process (worker isolates, libuv, V8 helpers); -1 when /proc is unreadable'
+);
+
+export function refreshProcessMemoryGauges(): void {
+  const s = sampleProcessMemory();
+  processRssBytes.set(s.rssBytes);
+  processHeapUsedBytes.set(s.heapUsedBytes);
+  processHeapTotalBytes.set(s.heapTotalBytes);
+  processExternalBytes.set(s.externalBytes);
+  processArrayBuffersBytes.set(s.arrayBuffersBytes);
+  processNativeMainArenaBytes.set(s.nativeMainArenaBytes);
+  processRssAnonBytes.set(s.rssAnonBytes);
+  processThreads.set(s.threads);
+}
+// Published from the first scrape, like every always-on series (see the law
+// anAlertCannotWaitForAFailureToExist): a memory gauge that first appears
+// once something reads it is a gauge with no baseline.
+refreshProcessMemoryGauges();
+
+/** Prometheus lines for the always-on fleet registry. */
 export function alwaysOnPrometheusLines(): string[] {
+  refreshProcessMemoryGauges();
   return alwaysOnRegistry.renderPrometheus().split('\n').filter(Boolean);
 }

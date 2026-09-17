@@ -152,6 +152,22 @@ afterEach(() => {
 });
 
 describe('The mounted notification feed owns recovery and account state', () => {
+  it('does not paint a personal feed cached before operational destination cutover', async () => {
+    localStorage.setItem(
+      'ca-notif-cache:v1:account-a',
+      JSON.stringify([{ ...row('retained-alert', 'Old Operational Alert'), _cache_ts: Date.now() }])
+    );
+    const pending = deferred<any>();
+    feeds.push(pending.promise);
+    mount();
+    await flush();
+    expect(screen.queryByText('Old Operational Alert')).toBeNull();
+    await act(async () => pending.resolve(response([row('personal', 'Personal Notice')])));
+    await flush();
+    expect(screen.queryByText('Personal Notice')).not.toBeNull();
+    expect(localStorage.getItem('ca-notif-cache:v2:account-a')).toContain('Personal Notice');
+  });
+
   it('rejects an auth read error even if the SDK also returns cached session data', async () => {
     fixture.getSession.mockResolvedValue({
       data: { session: { user: { id: 'account-a' }, access_token: 'cached-token' } },

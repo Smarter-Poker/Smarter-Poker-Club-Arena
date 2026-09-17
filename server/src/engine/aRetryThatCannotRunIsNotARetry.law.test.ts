@@ -173,8 +173,17 @@ describe('the kill does not pre-empt the retry budget', () => {
   it('runStep still refuses to retry a dead generation', () => {
     // Not a bug - it is correct, and it is the reason this law exists. The
     // fix is that nothing kills the generation before this question is asked.
-    expect(settlement()).toMatch(
-      /attempts > budget \|\|[\s\S]{0,200}!this\.lifecycleCanMutate\(\)/
+    const src = settlement();
+    const budget = src.indexOf('if (attempts > budget)');
+    const transient = src.indexOf('if (!ServerTableEngineBase.isTransientDbError(err))', budget);
+    const lifecycle = src.indexOf('const retryAllowed = this.lifecycleCanMutate();', transient);
+    expect(budget).toBeGreaterThan(-1);
+    expect(transient).toBeGreaterThan(budget);
+    expect(lifecycle).toBeGreaterThan(transient);
+    expect(src.slice(budget, transient)).toContain('throw err;');
+    expect(src.slice(transient, lifecycle)).toContain('throw err;');
+    expect(src.slice(lifecycle, src.indexOf('await this.sleep', lifecycle))).toMatch(
+      /if \(!retryAllowed\) \{[\s\S]*throw err;/
     );
   });
 

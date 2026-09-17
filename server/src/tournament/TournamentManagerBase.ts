@@ -1,4 +1,25 @@
 import {
+  LifecycleDiagnostics,
+  type LifecycleDetail,
+  type LifecycleTransition,
+} from '../services/LifecycleDiagnostics.js';
+
+export interface TournamentDiagnosticSelection {
+  tableIds?: readonly string[];
+}
+
+/** No more than limit iterator.next calls, including on a large registry. */
+function boundedDiagnosticEntries<T>(values: Iterable<T>, limit: number): T[] {
+  const iterator = values[Symbol.iterator]();
+  const entries: T[] = [];
+  for (let i = 0; i < limit; i++) {
+    const next = iterator.next();
+    if (next.done) break;
+    entries.push(next.value);
+  }
+  return entries;
+}
+import {
   continueBookedSpinBlinds,
   readFundedSpinDraw,
   spinRuleManifest,
@@ -89,7 +110,10 @@ import {
 } from './playedSpinLaunchRecovery.js';
 import { assignTournamentPlayerSeatAtomically } from './tournamentSeatAssignmentRpc.js';
 import type { GameServer } from '../GameServer.js';
-import { tournamentEliminationScheduler } from './TournamentEliminationScheduler.js';
+import {
+  tournamentEliminationScheduler,
+  diagnosticTableIds,
+} from './TournamentEliminationScheduler.js';
 import {
   TournamentLifecycleAbortedError,
   TournamentLifecycleEpoch,
@@ -205,6 +229,144 @@ export abstract class TournamentManagerBase {
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
+  private readonly managerLifecycleDiagnostics = new LifecycleDiagnostics();
+  private readonly schedulerDiagnosticIds = new WeakMap<Promise<void>, string>();
+  private readonly stoppedDiagnosticOriginals = new Map<string, ServerTableEngine>();
+  private stoppedDiagnosticOriginalsCaptured = false;
+  private stoppedDiagnosticOriginalCount = 0;
+  private managerDiagnosticWriteFailures = 0;
+
+  private recordManagerDiagnostic(event: LifecycleTransition, detail: LifecycleDetail = {}): void {
+    try {
+      this.managerLifecycleDiagnostics.record(event, detail);
+    } catch {
+      this.managerDiagnosticWriteFailures++;
+    }
+  }
+  private leaseReleaseDiagnostic: Readonly<{
+    diagnosticOnly: true;
+    managerInstanceId: string;
+    tournamentId: string;
+    leaseGeneration: string;
+    observedAtMs: number;
+    status: 'confirmed' | 'uncertain' | 'unknown';
+    attempts: number | null;
+    releasedCount: number | null;
+  }> | null = null;
+
+  /** Retain this exact object before release awaits; never look up a replacement. */
+  captureLeaseReleaseDiagnosticObserver(tournamentId: string, leaseGeneration: string) {
+    if (tournamentId !== this.tournamentId || leaseGeneration !== this.tournamentLeaseGeneration) {
+      return null;
+    }
+    const managerInstanceId = this.managerLifecycleDiagnostics.instanceId;
+    return (outcome: unknown) => {
+      if (leaseGeneration !== this.tournamentLeaseGeneration) return null;
+      const result =
+        outcome && typeof outcome === 'object' ? (outcome as Record<string, unknown>) : {};
+      const attempts =
+        typeof result.attempts === 'number' &&
+        Number.isSafeInteger(result.attempts) &&
+        result.attempts >= 0 &&
+        result.attempts <= 2
+          ? result.attempts
+          : null;
+      // This observer is for one exact claim. Never allocate a batch deletion
+      // count to an individual manager or retain raw RPC details/errors.
+      const releasedCount =
+        result.releasedCount === 0 || result.releasedCount === 1 ? result.releasedCount : null;
+      const status =
+        attempts === null
+          ? 'unknown'
+          : result.status === 'confirmed' && releasedCount !== null && attempts > 0
+            ? 'confirmed'
+            : result.status === 'uncertain'
+              ? 'uncertain'
+              : 'unknown';
+      this.leaseReleaseDiagnostic = Object.freeze({
+        diagnosticOnly: true as const,
+        managerInstanceId,
+        tournamentId,
+        leaseGeneration,
+        observedAtMs: Date.now(),
+        status,
+        attempts,
+        releasedCount: status === 'confirmed' ? releasedCount : null,
+      });
+      this.managerLifecycleDiagnostics.record('lease_release_observed', {
+        attempt: attempts ?? undefined,
+        leaseStatus: status,
+        releasedCount: this.leaseReleaseDiagnostic.releasedCount,
+      });
+      return this.leaseReleaseDiagnostic;
+    };
+  }
+
+  getLeaseReleaseDiagnosticSnapshot() {
+    return Object.freeze({
+      ...this.managerLifecycleDiagnostics.snapshot(),
+      leaseRelease: this.leaseReleaseDiagnostic ?? ('unobserved-owner-boundary' as const),
+    });
+  }
+
+  /** Synchronous local observation; unavailable originals are never replacements. */
+  getLifecycleDiagnosticSnapshot(selection: TournamentDiagnosticSelection = {}) {
+    const requestedTableIds = diagnosticTableIds(selection);
+    const retained = this.stoppedDiagnosticOriginalsCaptured;
+    const originals = retained ? this.stoppedDiagnosticOriginals : this.tableEngines;
+    const count = retained ? this.stoppedDiagnosticOriginalCount : this.tableEngines.size;
+    const tableIds = requestedTableIds
+      ? [...requestedTableIds]
+      : boundedDiagnosticEntries(originals.keys(), 8);
+    const selected = tableIds.map((tableId) => {
+      const engine = originals.get(tableId);
+      let snapshot: ReturnType<ServerTableEngine['getLifecycleDiagnosticSnapshot']> | null = null;
+      if (engine) {
+        try {
+          snapshot = engine.getLifecycleDiagnosticSnapshot();
+        } catch {
+          /* unknown */
+        }
+      }
+      return Object.freeze({
+        tableId,
+        availability: snapshot ? ('observed' as const) : ('unavailable' as const),
+        engine: snapshot,
+        session: null,
+        sessionCoverage: 'unavailable_on_selected_base' as const,
+      });
+    });
+    const returned = selected.filter((entry) => entry.engine !== null).length;
+    return Object.freeze({
+      ...this.managerLifecycleDiagnostics.snapshot(),
+      diagnosticWriteFailures: this.managerDiagnosticWriteFailures,
+      tournamentId: this.tournamentId,
+      leaseGeneration: this.tournamentLeaseGeneration,
+      proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
+      observedMonotonicMs: tournamentLeaseMonotonicNow(),
+      authorityExpired: this.tournamentLeaseAuthorityExpired,
+      stopPending: this.teardownPromise !== null,
+      schedulerPendingCount: this.eliminationSchedulerJobs.size,
+      lifecyclePendingCount: this.lifecycleJobs.size,
+      schedulerRecent: Object.freeze(
+        boundedDiagnosticEntries(this.eliminationSchedulerJobs, 32).map((job) =>
+          Object.freeze({ operationId: this.schedulerDiagnosticIds.get(job) ?? null })
+        )
+      ),
+      schedulerListTruncated: this.eliminationSchedulerJobs.size > 32,
+      originals: Object.freeze(selected),
+      originalSelection: retained ? ('retained-stop' as const) : ('current-live' as const),
+      originalsCount: count,
+      retainedOriginalCount: originals.size,
+      originalsReturned: returned,
+      originalsOmitted: Math.max(0, count - returned),
+      selectionMissingCount: selected.length - returned,
+      originalsTruncated: count > returned,
+      missingMeans: 'unknown' as const,
+      leaseRelease: this.getLeaseReleaseDiagnosticSnapshot().leaseRelease,
+    });
+  }
+
   protected blindTimer: NodeJS.Timeout | null = null;
   /** Removes this manager from the one process-wide elimination scheduler. */
   protected eliminationSchedulerUnregister: (() => void) | null = null;
@@ -486,6 +648,10 @@ export abstract class TournamentManagerBase {
    */
   standDownForDatabaseFence(): void {
     if (!this.tournamentLeaseGeneration || this.tournamentLeaseAuthorityExpired) return;
+    this.recordManagerDiagnostic('engine_fenced', {
+      reason: 'tournament_lease_proof_expired',
+      proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
+    });
     this.fenceForTournamentLeaseLoss();
     reportError(
       new Error(
@@ -1191,6 +1357,14 @@ export abstract class TournamentManagerBase {
     if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();
     this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
       tournamentId: this.tournamentId,
+      diagnostics: Object.freeze({
+        managerInstanceId: this.managerLifecycleDiagnostics.instanceId,
+        leaseGeneration: this.tournamentLeaseGeneration,
+        operationIdFor: (operation: Promise<void>) =>
+          this.schedulerDiagnosticIds.get(operation) ?? null,
+        snapshot: (selection: TournamentDiagnosticSelection) =>
+          this.getLifecycleDiagnosticSnapshot(selection),
+      }),
       run: (signal) => {
         // Defer entry by one microtask so the promise is registered as active
         // before user code can reach its first await (or initiate stop).
@@ -1199,7 +1373,18 @@ export abstract class TournamentManagerBase {
           await run(signal);
         });
         let tracked!: Promise<void>;
-        tracked = operation.finally(() => this.eliminationSchedulerJobs.delete(tracked));
+        let operationId: string | undefined;
+        try {
+          operationId = nodeCrypto.randomUUID();
+        } catch {
+          this.managerDiagnosticWriteFailures++;
+        }
+        this.recordManagerDiagnostic('writer_pending', { operationId });
+        tracked = operation.finally(() => {
+          this.eliminationSchedulerJobs.delete(tracked);
+          this.recordManagerDiagnostic('writer_settled', { operationId, outcome: 'unknown' });
+        });
+        if (operationId) this.schedulerDiagnosticIds.set(tracked, operationId);
         this.eliminationSchedulerJobs.add(tracked);
         return tracked;
       },
@@ -4953,6 +5138,16 @@ export abstract class TournamentManagerBase {
   stop(): Promise<void> {
     if (this.teardownPromise) return this.teardownPromise;
 
+    this.recordManagerDiagnostic('stop_initiated', {
+      proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
+    });
+    if (!this.stoppedDiagnosticOriginalsCaptured) {
+      this.stoppedDiagnosticOriginalsCaptured = true;
+      this.stoppedDiagnosticOriginalCount = this.tableEngines.size;
+      for (const [tableId, engine] of boundedDiagnosticEntries(this.tableEngines.entries(), 32)) {
+        this.stoppedDiagnosticOriginals.set(tableId, engine);
+      }
+    }
     const lifecycleOperation = this.applyStopFence();
     const teardown = (async () => {
       // Initiate every current engine stop before awaiting lifecycle startup.
@@ -4990,6 +5185,7 @@ export abstract class TournamentManagerBase {
       const stopResults = await Promise.allSettled(engines.map(([, engine]) => engine.stop()));
       await initialEngineStops;
       await this.drainTableEngineRunJobs();
+      this.recordManagerDiagnostic('owned_work_joined');
       const stopFailures: unknown[] = [];
       for (let i = 0; i < engines.length; i++) {
         const [tableId, engine] = engines[i];
@@ -5036,6 +5232,12 @@ export abstract class TournamentManagerBase {
         }
       }
     })();
+    void teardown
+      .then(
+        () => this.recordManagerDiagnostic('stop_completed'),
+        () => this.recordManagerDiagnostic('stop_failed')
+      )
+      .catch((error) => reportError(error, 'Tournament.stop_diagnostic_failed'));
     const trackedTeardown = teardown.finally(() => {
       if (this.teardownPromise === trackedTeardown) this.teardownPromise = null;
     });

@@ -1,5 +1,13 @@
 # Fifteen Rules Were Watching Thirteen Metrics That Did Not Exist
 
+## September 15: interpreting received money-backlog alerts
+
+Received `MoneyAlertsGoingUnread` (inbox 40749) measures critical financial originals that remain unresolved after 24 hours. Its historical name does not measure whether a person or agent has read or investigated them. Reading an alert cannot establish settlement or justify financial resolution.
+
+Received `MoneyAlertBacklogGrowing` (inbox 40776) reports unresolved original rows. The installed `fn_monitoring_health_snapshot` computes `poker_financial_alerts_distinct_conditions` with `COUNT(DISTINCT source)`, so this is a count of source categories. New hands, accounting periods and individual refusals can arrive inside an existing source category. A flat category count does not establish duplication. Keep each original identity and its hand, period or incident linkage; establish a root fix and exact outcome independently before closing it.
+
+The September 15 wording change preserves alert names, expressions, thresholds, duration, severity and routing. It is source-only pending protected qualification and installation; it does not repair or close the underlying financial cases. The historical verification below describes its original release, not qualification of this change.
+
 Before: `alert-rules.yml` and `slo-rules.yml` carried fifteen rules covering settlement failure, the money-alert backlog, the undeclared-trigger register, pg_cron liveness and Open Claw job staleness. Every one of them was written as `metric > threshold`. Thirteen of the metric names they use had never had a single sample — not stale, not zero: no series, across sixty days of retention, ever.
 
 Prometheus does not treat that as an error. `poker_settlement_failure_rate > 0.02` against a metric with no samples evaluates to an empty vector, which is indistinguishable from a condition that is false. The rules loaded. The rules validated. The rules showed green. The rules could not fire.

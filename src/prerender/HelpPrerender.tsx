@@ -16,11 +16,11 @@ import { mediaUrl } from '../utils/mediaBase';
 
 export default function HelpPrerender() {
   return (
-    <main className={styles.page}>
+    <article className={styles.page} aria-labelledby="help-title">
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>Player Support Circuit</span>
-          <h1>Help Center</h1>
+          <h1 id="help-title">Help Center</h1>
           <p>
             Search Verified Club Arena Guidance, Check The Live Data Circuit, Or Send A Request
             Directly To Support.
@@ -93,6 +93,6 @@ export default function HelpPrerender() {
           <Link to="/legal/tos">Terms</Link>
         </nav>
       </footer>
-    </main>
+    </article>
   );
 }

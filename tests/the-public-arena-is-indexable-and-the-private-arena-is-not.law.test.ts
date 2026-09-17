@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import {
   applySeo,
   canonicalUrl,
+  DEFAULT_OG_IMAGE,
   fullTitle,
   normalisePath,
   PUBLIC_PATHS,
@@ -188,5 +189,60 @@ describe('the public arena is measured and light (discoverability phase 5, 2026-
     }
     // The page still fetches nothing of its own: a crawler and a person get the same markup.
     expect(page).not.toMatch(/\bfetch\(/);
+  });
+});
+
+describe('the public arena is accessible (discoverability phase 6, 2026-09-17)', () => {
+  const ROOT = join(__dirname, '..');
+  const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+
+  it('every prerendered route is audited with axe-core on every build, and a serious violation fails it', () => {
+    const gate = read('scripts/ci/public-a11y.mjs');
+    expect(gate).toContain("import AxeBuilder from '@axe-core/playwright'");
+    expect(gate).toContain("'prerender-manifest.json'");
+    expect(gate).toContain("export const FAILING_IMPACTS = new Set(['serious', 'critical'])");
+    expect(gate).toContain("'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'");
+    expect(gate).toContain('has no routes; the public arena was not prerendered');
+    expect(read('package.json')).toContain('"test:a11y": "node scripts/ci/public-a11y.mjs"');
+    expect(read('.github/workflows/ci.yml')).toContain('run: npm run test:a11y');
+  });
+
+  it('there is one main landmark per page, and the skip link has a target on the landing page', () => {
+    // AppLayout owns <main id="main-content"> for every route it wraps, so a
+    // page inside it must not render a second <main>.
+    for (const file of [
+      'src/pages/HelpPage.tsx',
+      'src/prerender/HelpPrerender.tsx',
+      'src/components/legal/LegalDocumentLayout.tsx',
+    ]) {
+      expect(read(file), file).not.toMatch(/<main[\s>]/);
+    }
+    // The landing renders outside AppLayout (AuthGuard's publicFallback), so
+    // it is the main landmark and the skip link's target.
+    expect(read('src/pages/PokerArenaLandingPage.tsx')).toContain(
+      '<main className={styles.page} id="main-content" tabIndex={-1}>'
+    );
+    expect(read('src/App.tsx')).toContain('href="#main-content" className="skip-link"');
+    // The static prerender, which has no AppLayout, supplies the landmark itself.
+    expect(read('src/prerender/entry-server.tsx')).toContain(
+      '<main id="main-content" tabIndex={-1}>'
+    );
+  });
+});
+
+describe('Poker Arena has its own share card (discoverability phase 6, 2026-09-17)', () => {
+  const ROOT = join(__dirname, '..');
+  it('seo.ts and the static index.html name the same 1200x630 Poker Arena card', () => {
+    expect(DEFAULT_OG_IMAGE).toBe('https://smarter.poker/images/og-poker-arena.jpg');
+    const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+    expect(html).toContain(
+      '<meta property="og:image" content="https://smarter.poker/images/og-poker-arena.jpg" />'
+    );
+    expect(html).toContain(
+      '<meta name="twitter:image" content="https://smarter.poker/images/og-poker-arena.jpg" />'
+    );
+    expect(html).not.toContain('og-card.jpg');
+    expect(html).toContain('<meta property="og:image:width" content="1200" />');
+    expect(html).toContain('<meta property="og:image:height" content="630" />');
   });
 });

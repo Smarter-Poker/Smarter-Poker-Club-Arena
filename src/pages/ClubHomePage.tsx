@@ -1,3 +1,4 @@
+import { tournamentEntryWindowOpen } from '../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * CLUB HOME PAGE — Premium-Style Club Dashboard
@@ -115,6 +116,8 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
+import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
@@ -342,6 +345,8 @@ interface TournamentData {
    */
   late_reg_mins?: number | null;
   late_reg_levels?: number | null;
+  rebuy_levels?: number | null;
+  prize_pool_finalized?: boolean | null;
   started_at?: string | null;
   current_level?: number | null;
   variant?: string | null;
@@ -2787,7 +2792,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -3274,21 +3279,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     const stillEnterable = (t: TournamentData) => {
       const status = String(t.status).toUpperCase();
-      if (['REGISTERING', 'LATE_REG', 'LATE_REGISTRATION', 'STARTING_SOON'].includes(status))
-        return true;
-      if (status === 'RUNNING') {
-        const levels = Number(t.late_reg_levels ?? 0);
-        // 0-BASED (2026-08-23): current_level indexes blind_structure, so
-        // "through level N" is indices 0..N-1 and N is the cutoff. `<=` kept
-        // a closed tournament listed as enterable for one whole level after
-        // the engine finalized its prize pool, so the lobby offered a seat the
-        // RPC would refuse. Matches TournamentManagerBase.isLateRegClosed.
-        if (levels > 0) return Number(t.current_level ?? 0) < levels;
-        const mins = Number(t.late_reg_mins ?? 0);
-        if (mins > 0 && t.started_at) {
-          return Date.now() - new Date(t.started_at).getTime() <= mins * 60_000;
-        }
-      }
+      if (['ANNOUNCED', 'REGISTERING', 'STARTING_SOON'].includes(status)) return true;
+      if (['RUNNING', 'LATE_REG', 'LATE_REGISTRATION'].includes(status))
+        return tournamentEntryWindowOpen(t, Date.now());
       return false;
     };
 
@@ -5317,6 +5310,32 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           slot="lobby_strip"
           clubId={resolvedClubId || club.id}
           onNavigate={(path) => {
+            haptic.selection();
+            navigate(path);
+          }}
+        />
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          THE DIAMOND GAMES, WHERE A PLAYER ACTUALLY IS (Dan 2026-09-09).
+          The wheel, the board and the curve had exactly one door: a banner on
+          the Promotions page. Three finished games behind a link most players
+          never open. This is the second door, in the lobby, on the painted
+          action shell rather than drawn in CSS. The games page itself still
+          decides what is open here; this only gets the player to it.
+      ═══════════════════════════════════════════════════════════════════ */}
+        {/* Dan 2026-09-10: "there also needs to be a button for this inside
+          the club lobby." It was a plain link to the games; it is now the door
+          itself, printing what the player actually holds and what those
+          diamonds are worth in chips, and saying so when today's free spin is
+          still there. `alwaysShow` keeps the club's own door in its place
+          while the read lands and even when the player has nothing yet. */}
+        <DiamondBustPrompt clubId={resolvedClubId || club.id} />
+        <DiamondsToChipsButton
+          clubId={clubId ?? null}
+          alwaysShow
+          size="large"
+          className="lobby-diamond-games"
+          onGo={(path) => {
             haptic.selection();
             navigate(path);
           }}

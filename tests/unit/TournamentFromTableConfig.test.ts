@@ -24,6 +24,7 @@ import {
   type TournamentFormInput,
 } from '../../src/lib/tournamentFromTableConfig';
 import { SPIN_TIERS } from '../../src/config/spinSpec';
+import { describeMttStructure } from '../../server/src/tournament/mttStructureDescription';
 
 const base: TournamentFormInput = {
   name: 'Friday Major',
@@ -80,8 +81,11 @@ describe('payouts', () => {
     }
   });
 
-  it('winner-take-all is exactly one place at 100%', () => {
-    const c = buildTournamentConfig({ ...base, payoutStructure: 'winner_take_all' }, 'nlh');
+  it('the SNG winner-take-all choice is exactly one place at 100%', () => {
+    const c = buildTournamentConfig(
+      { ...base, gameMode: 'sng', payoutStructure: 'winner_take_all' },
+      'nlh'
+    );
     expect(c.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
   });
 
@@ -92,6 +96,32 @@ describe('payouts', () => {
 });
 
 describe('blind structure', () => {
+  it.each(['standard', 'slow'])(
+    'keeps explicit stack and clock independent from the %s ramp name',
+    (blindStructure) => {
+      const input = { ...base, blindStructure, startingChips: 1000, blindsUpMinutes: 3 };
+      const before = JSON.stringify(input);
+      const config = buildTournamentConfig(input, 'nlh');
+      const description = describeMttStructure(
+        config.blindStructure.map((row) => ({
+          durationMinutes: row.durationMinutes,
+          bigBlind: row.bigBlind,
+          isBreak: Boolean(row.isBreak),
+        })),
+        config.startingStack
+      );
+      expect(description).toMatchObject({
+        startingDepthBB: 50,
+        speedLabel: 'Turbo',
+        openingMinutes: 3,
+        minimumMinutes: 3,
+        maximumMinutes: 3,
+      });
+      expect(config.startingStack).toBe(1000);
+      expect(JSON.stringify(input)).toBe(before);
+    }
+  );
+
   it('applies the level length to playing levels and leaves breaks alone', () => {
     const c = buildTournamentConfig({ ...base, blindsUpMinutes: 12 }, 'nlh');
     const playing = c.blindStructure.filter((l) => !l.isBreak);
@@ -203,19 +233,23 @@ describe('start time', () => {
 });
 
 describe('payout structure choice (2026-08-22)', () => {
-  it('payout1/2/3 pay ~10/12.5/15% of a 100-player field', () => {
-    const places = (choice: string) =>
-      buildTournamentConfig({ ...base, maxPlayersRange: 100, payoutStructure: choice }, 'nlh')
-        .payoutStructure.length;
-    // These used to all fall through to autoSelectPayouts, making the four
-    // choices identical. Now the choice is honoured.
-    expect(places('payout1')).toBe(10);
-    expect(places('payout2')).toBe(13);
-    expect(places('payout3')).toBe(15);
+  it('MTT choices carry supported depth separately from their provisional creation ladder', () => {
+    for (const [choice, percent] of [
+      ['payout1', 10],
+      ['payout3', 15],
+      ['payout20', 20],
+    ] as const) {
+      const mapped = buildTournamentConfig(
+        { ...base, maxPlayersRange: 100, payoutStructure: choice },
+        'nlh'
+      );
+      expect(mapped.payoutPercent).toBe(percent);
+      expect(mapped.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
+    }
   });
 
   it('each choice still totals 100 and pays fewer places than the field', () => {
-    for (const choice of ['payout1', 'payout2', 'payout3', 'winner_take_all']) {
+    for (const choice of ['payout1', 'payout3', 'payout20']) {
       for (const field of [4, 9, 50, 300]) {
         const c = buildTournamentConfig(
           { ...base, maxPlayersRange: field, payoutStructure: choice },

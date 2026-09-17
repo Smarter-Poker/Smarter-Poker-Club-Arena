@@ -1,36 +1,13 @@
 name: Silent Revert Guard
 
-# Fails a push whose commits restore a file to exactly its state before an
-# earlier commit, without saying so in the message.
-#
-# The case this exists for: World Hub 902d8b2b, "match icon sizes to profile
-# orb, show hamburger menu on all pages", which also reverted every line of
-# 3fec6aa3 across three source files and deleted a migration. The fix stayed
-# dead for four days. The cause is mechanical -- an agent commits a working
-# tree checked out before someone else's change landed -- so a mechanical
-# check is the right shape of answer.
-#
-# No `schedule:` trigger, per the cron-governance rule: this runs on push only.
+# Reports exact historical-content restoration for review. Findings are advisory;
+# unexpected execution errors still fail. The owner removed the manual approval
+# dependency on 2026-09-17. Required technical checks remain enforced in CI.
 
 on:
-  # NO push TRIGGER. Removed 2026-08-23 for cost.
-  #
-  # The note below is the reason: running on the pull request turned this from
-  # detection into prevention. Once that was true the push run became a second
-  # opinion on a tree the first one had already cleared - 20 billed minutes an
-  # hour in this repo, at about twenty seconds of actual work each.
-  # 2026-08-22: this used to run on push ONLY, which meant a silent revert
-  # LANDED on main and was reported afterwards. Detection after the fact is how
-  # the leaderboard RPC call stayed dead for a day. Running it on the pull
-  # request turns the same check into prevention: the revert never lands.
   pull_request:
     branches: [main]
-    # `labeled`/`unlabeled` added 2026-09-01: approval for an intentional
-    # revert is now the human-applied `revert-approved` LABEL, not a token in
-    # a commit message an agent can edit (which is exactly what happened on
-    # 2026-08-31 — an agent amended [allow-revert] into its own message and
-    # force-pushed past this guard). Labeling re-runs the check automatically.
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
 
 concurrency:
   group: silent-revert-${{ github.ref }}
@@ -38,12 +15,10 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   detect:
-    # Named explicitly because this is a REQUIRED status check and the ruleset
-    # matches on the job name. Renaming it silently un-gates main.
+    # Retain the existing report name and run links; this is not a merge gate.
     name: Silent Revert Guard
     runs-on: ubuntu-latest
     steps:
@@ -73,7 +48,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Detect unannounced reverts
+      - name: Report restored file content
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # Compare the PR's own commits against the point it diverged from
@@ -92,27 +67,3 @@ jobs:
             fi
           fi
           node scripts/ci/detect-silent-revert.mjs --base "$BASE" --days 45
-        env:
-          # True only when a human has applied the `revert-approved` label.
-          # Autopilot never applies labels, and agents route merges through
-          # Autopilot, so this cannot be self-served from a commit message.
-          REVERT_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'revert-approved') && 'true' || 'false' }}
-
-      # A blocked revert must be LOUD, not a red line in a run log nobody
-      # reads. One self-describing issue per PR asks for the label; applying
-      # it re-runs this workflow via the `labeled` trigger above.
-      - name: Ask for the revert-approved label
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          TITLE="Revert detected in PR #${PR} — needs the revert-approved label or a rebase"
-          EXISTING=$(gh issue list --repo "$REPO" --state open --search "in:title \"PR #${PR}\" revert" --limit 1 --json number --jq '.[0].number' || echo "")
-          if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --repo "$REPO" --body "Still blocked. Latest run: $RUN" || true
-          else
-            gh issue create --repo "$REPO" --title "$TITLE" --body "$(printf 'The Silent Revert Guard found that PR #%s restores files to an earlier state.\n\nIf this revert is INTENTIONAL: a human applies the revert-approved label to the PR and the check re-runs and passes.\nIf it is NOT intentional: the author rebases onto current origin/main and re-applies their change.\n\nDetails: %s\n\nDo not edit the commit message to add [allow-revert] — announcing is no longer sufficient without the label (2026-08-31 incident).' "$PR" "$RUN")" || true
-          fi

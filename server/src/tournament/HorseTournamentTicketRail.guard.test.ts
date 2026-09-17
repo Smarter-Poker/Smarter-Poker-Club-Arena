@@ -129,9 +129,7 @@ describe('horse tournament entry spends the beneficiary ticket before chips', ()
     const partition = RECURRING.indexOf(
       'const ticketPool = pool.filter((horse) => ticketHintIds.has(horse.id));'
     );
-    const slice = RECURRING.indexOf(
-      'const horses = orderedTickets.concat(orderedWallets).slice(0, count);'
-    );
+    const slice = RECURRING.indexOf(': orderedTickets.concat(orderedWallets).slice(0, count);');
     expect(lane).toBeGreaterThan(-1);
     expect(bankroll).toBeGreaterThan(lane);
     expect(partition).toBeGreaterThan(bankroll);

@@ -32,6 +32,7 @@ import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
 import type { BlindLevel } from '../../config/blindStructures';
 import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { provisionalMttPayoutStructure } from '../../../server/src/tournament/mttPayoutDepth';
 
 interface Props {
   clubId: string;
@@ -362,7 +363,7 @@ export default function CreateTournamentModal({
       const mp = parseInt(maxPlayers) || 0;
       return mp <= 6 ? PAYOUT_STRUCTURES.sng6 : PAYOUT_STRUCTURES.sng9;
     }
-    return [{ place: 1, percentage: 100 }];
+    return provisionalMttPayoutStructure();
   }, [maxPlayers, format]);
 
   // The selected custom blind ladder is used only while its control is on.

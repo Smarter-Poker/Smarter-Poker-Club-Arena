@@ -11,12 +11,24 @@ const phase4 =
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
+export function gitEnvironmentForCwd() {
+  // Hooks export repository context that overrides cwd. These local-only Git
+  // calls must also discard inherited index/object/config overrides so a
+  // foreign fixture cannot read or modify the hook's repository.
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+  );
+}
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  // Diamond request/receipt changes and retained real SQL probes must reach
+  // the existing required PostgreSQL accounting job.
+  const diamondGames = matches(/^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/);
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.
   const phase4Changed = matches(phase4);
   // Script/fixture-only edits must admit accounting and its routing tests.
@@ -27,12 +39,17 @@ export function classifyChangedPaths(paths) {
     src: broad || matches(/^src\//),
     server:
       broad ||
+      diamondGames ||
       phase4Changed ||
       commitmentAudit ||
-      matches(/^(server\/|supabase\/migrations\/|scripts\/dev\/)/),
+      matches(
+        /^(server\/|supabase\/migrations\/|scripts\/dev\/|tests\/fixtures\/accounting-delivery\/|tests\/operations\/pko-probe-cleanup\.test\.py$)/
+      ),
     tests:
       broad ||
+      diamondGames ||
       commitmentAudit ||
+      matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       matches(/^(tests\/|supabase\/migrations\/|server\/|scripts\/dev\/|\.husky\/pre-push$)/),
     phase4: phase4Changed,
     fixture: matches(fixture),
@@ -50,6 +67,7 @@ export function classifyGitChanges({ cwd, base, head }) {
   const git = (...args) =>
     execFileSync('git', args, {
       cwd,
+      env: gitEnvironmentForCwd(),
       maxBuffer: 16 * 1024 * 1024,
       timeout: 30000,
       stdio: ['ignore', 'pipe', 'pipe'],

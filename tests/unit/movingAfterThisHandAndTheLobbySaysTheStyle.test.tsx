@@ -26,6 +26,12 @@ vi.mock('../../src/components/common/Toast', () => ({ useToast: () => mocks.toas
 vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
   useSpinTierAvailability: () => ({ can_draw_100x: false }),
 }));
+// This suite exercises lobby copy and filters. The warm-up suites own real
+// transport/route preparation; detached page imports must not outlive this fixture.
+vi.mock('../../src/services/tableWarmup', () => ({
+  warmTable: vi.fn(),
+  observeLobbyTableWarmups: vi.fn(() => () => undefined),
+}));
 
 import { CashClusterHUD } from '../../src/components/table/CashClusterHUD';
 import { MustMoveLobbyModal } from '../../src/components/table/MustMoveLobbyModal';

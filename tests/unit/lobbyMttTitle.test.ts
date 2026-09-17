@@ -160,7 +160,7 @@ describe('lateRegEndMs — when does the door actually close', () => {
     expect(lateRegEndMs(t)).toBe(NOW - 60000 + 3 * 60000);
   });
 
-  it('with both windows the LATER close wins — the countdown never lies short', () => {
+  it('uses the level window when both windows are configured', () => {
     const t = tournamentRow({
       status: 'RUNNING',
       started_at: iso(-9 * 60000),
@@ -183,7 +183,7 @@ describe('lateRegEndMs — when does the door actually close', () => {
     expect(lateRegEndMs(tournamentRow({ late_reg_mins: 0, late_reg_levels: 0 }))).toBeNull();
   });
 
-  it('survives a malformed blind structure via the minutes window', () => {
+  it('does not invent a minutes deadline for a malformed level structure', () => {
     const t = tournamentRow({
       status: 'RUNNING',
       started_at: iso(-60000),
@@ -191,7 +191,7 @@ describe('lateRegEndMs — when does the door actually close', () => {
       late_reg_levels: 3,
       blind_structure: 'not json at all',
     });
-    expect(lateRegEndMs(t)).toBe(NOW + 4 * 60000);
+    expect(lateRegEndMs(t)).toBeNull();
   });
 });
 

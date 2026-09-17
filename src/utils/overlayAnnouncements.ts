@@ -105,6 +105,8 @@ export interface OverlayCandidate {
   buy_in_fee?: number | string | null;
   /** 0-BASED cap: the door is open while `current_level < late_reg_levels`. */
   late_reg_levels?: number | null;
+  rebuy_levels?: number | null;
+  prize_pool_finalized?: boolean | null;
   late_reg_mins?: number | null;
   started_at?: string | null;
   /** 0-BASED index into the blind structure, as the engine keeps it. */
@@ -145,7 +147,8 @@ const num = (v: unknown): number => {
  * `late_reg_levels`, so nothing real is silenced by that strictness.
  */
 export function isInLastLateRegLevel(t: OverlayCandidate): boolean {
-  const cap = Number(t.late_reg_levels);
+  if (t.prize_pool_finalized === true) return false;
+  const cap = Number(t.late_reg_levels ?? t.rebuy_levels);
   if (!Number.isFinite(cap) || cap <= 0) return false;
   const level = Number(t.current_level ?? 0);
   if (!Number.isFinite(level)) return false;

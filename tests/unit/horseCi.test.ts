@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parse } from 'yaml';
-import { classifyChangedPaths, classifyGitChanges } from '../../scripts/ci/classify-ci-changes.mjs';
+import {
+  classifyChangedPaths,
+  classifyGitChanges,
+  gitEnvironmentForCwd,
+} from '../../scripts/ci/classify-ci-changes.mjs';
 
 const root = resolve(__dirname, '../..');
 const ci = parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
@@ -21,7 +25,11 @@ function withGitFixture(check: (fixture: GitFixture) => void) {
   const directory = mkdtempSync(join(tmpdir(), 'horse-ci-git-'));
   try {
     const git = (...args: string[]) =>
-      execFileSync('git', args, { cwd: directory, encoding: 'utf8' }).trim();
+      execFileSync('git', args, {
+        cwd: directory,
+        env: gitEnvironmentForCwd(),
+        encoding: 'utf8',
+      }).trim();
     const write = (name: string, value = 'fixture') => {
       const path = join(directory, name);
       mkdirSync(dirname(path), { recursive: true });
@@ -48,6 +56,84 @@ function withGitFixture(check: (fixture: GitFixture) => void) {
     rmSync(directory, { recursive: true, force: true });
   }
 }
+
+describe('Horse Git fixtures stay inside their disposable repository', () => {
+  it.each([false, true])(
+    'isolates horse fixture writes from hook context (extended=%s)',
+    (extended) => {
+      const decoy = mkdtempSync(join(tmpdir(), 'horse-ci-outer-git-'));
+      // Always create the outer decoy with explicit isolation. The negative
+      // control must never inherit a hook's real repository, even if the
+      // withGitFixture implementation under test loses its environment guard.
+      const outerGit = (...args: string[]) =>
+        execFileSync('git', args, {
+          cwd: decoy,
+          env: gitEnvironmentForCwd(),
+          encoding: 'utf8',
+        }).trim();
+      try {
+        outerGit('init', '-q');
+        writeFileSync(join(decoy, 'sentinel.txt'), 'outer repository must not change');
+        outerGit('add', '--all');
+        outerGit(
+          '-c',
+          'user.name=Horse CI Test',
+          '-c',
+          'user.email=horse-ci@invalid',
+          'commit',
+          '-qm',
+          'outer sentinel'
+        );
+        const head = outerGit('rev-parse', 'HEAD');
+        const gitDirectory = join(decoy, '.git');
+        const files = ['config', 'index', 'HEAD'];
+        const before = files.map((file) => readFileSync(join(gitDirectory, file)));
+        try {
+          for (const key of Object.keys(process.env)) {
+            if (key.startsWith('GIT_')) vi.stubEnv(key, undefined);
+          }
+          vi.stubEnv('GIT_DIR', gitDirectory);
+          if (extended) {
+            for (const [key, value] of Object.entries({
+              GIT_WORK_TREE: decoy,
+              GIT_COMMON_DIR: gitDirectory,
+              GIT_INDEX_FILE: join(gitDirectory, 'index'),
+              GIT_OBJECT_DIRECTORY: join(gitDirectory, 'objects'),
+              GIT_ALTERNATE_OBJECT_DIRECTORIES: join(gitDirectory, 'objects'),
+              GIT_CONFIG_COUNT: '1',
+              GIT_CONFIG_KEY_0: 'core.bare',
+              GIT_CONFIG_VALUE_0: 'true',
+              GIT_CONFIG_PARAMETERS: "'core.bare=true'",
+            }))
+              vi.stubEnv(key, value);
+          }
+          withGitFixture(({ directory, git, write, commit, base }) => {
+            expect(realpathSync(git('rev-parse', '--absolute-git-dir'))).toBe(
+              join(realpathSync(directory), '.git')
+            );
+            expect(git('rev-parse', '--is-bare-repository')).toBe('false');
+            const probe = 'scripts/ci/probes/horse-commitment-audit/roster-identity.sql';
+            write(probe);
+            const result = classifyGitChanges({ cwd: directory, base, head: commit() });
+            expect(result.complete).toBe(true);
+            expect(result.paths).toEqual([probe]);
+            expect(result.flags.server).toBe(true);
+            expect(result.flags.tests).toBe(true);
+          });
+        } finally {
+          vi.unstubAllEnvs();
+        }
+        expect(outerGit('rev-parse', 'HEAD')).toBe(head);
+        expect(outerGit('status', '--porcelain')).toBe('');
+        files.forEach((file, index) => {
+          expect(readFileSync(join(gitDirectory, file))).toEqual(before[index]);
+        });
+      } finally {
+        rmSync(decoy, { recursive: true, force: true });
+      }
+    }
+  );
+});
 
 describe('Horse Phase 4 changes admit their PostgreSQL parent job', () => {
   it.each([
@@ -165,6 +251,16 @@ describe('Horse commitment audit remains in the existing accounting PostgreSQL g
 
 it('runs the hook-selection laws for a pre-push-only edit', () => {
   expect(classifyChangedPaths(['.husky/pre-push'])).toEqual({
+    src: false,
+    server: false,
+    tests: true,
+    phase4: false,
+    fixture: false,
+  });
+});
+
+it('runs the real-Git report regressions for a detector-only edit', () => {
+  expect(classifyChangedPaths(['scripts/ci/detect-silent-revert.mjs'])).toEqual({
     src: false,
     server: false,
     tests: true,

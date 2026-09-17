@@ -1,0 +1,132 @@
+# Restore MTT lifecycle corrections on the provider baseline
+
+This independently compatible delivery restores the existing R20-R45 MTT
+application work after the September13 source restoration. It preserves the
+current client layout, lease/deadline protections, complete running-tournament
+enumeration, cash occupancy handling and removal of external error telemetry.
+The existing protected GitHub/Hetzner release routes remain unchanged.
+
+The original registering-tournament walk now retains up to four actual funding
+operations across passes instead of making every ready tournament wait for
+unrelated funding. The same ownership covers awarded-ticket entry before and
+during late registration. An event cannot launch while its own funding is
+unresolved, and shutdown joins the complete owned continuations. No discovery
+loop, timer or repair service is added. Running-ticket timestamps remain until
+the existing45-second interval expires; a direct regression reproduced the
+original early repeat and passes with the corrected prune condition.
+
+Recovered behavior includes exact-cent bounty creation, engine-owned blind and
+starting-stack profiles, atomic mystery options, maintenance-safe blind clocks,
+current-state resume, terminal clock retirement, accurate entry-window display,
+selected paid depth and capacity-independent provisional payout previews.
+Existing PKO causal/terminal and committed-payout migration sources and native
+regressions are restored. Ten SQL files were already installed: their bytes and
+26 current function bodies were reconciled on September17; no migration was
+reapplied. The truncated terminal-coverage source filename now matches its
+installed migration name without changing SQL bytes.
+
+## Verification before submission
+
+- 532 affected engine cases across19 files passed; both TypeScript checks passed.
+- The complete engine suite passed:12,046 cases, with145 existing skips.
+- 350 affected client cases across20 files passed across the initial run and the
+  final18-case card rerun. The only initial client failure expected donor markup;
+  its exact visible-label assertion now uses the restored layout and still
+  requires the late-entry label to disappear after finalization.
+- 21 direct-admission/shutdown cases passed, including fulfilled/rejected funding
+  continuations. These are controlled component tests, not production journeys.
+- Real isolated PostgreSQL17 PKO causal claims and terminal-coverage probes,
+  seven cluster cleanup controls,57 committed-payout groups and44 creation-depth
+  groups passed. Their captured schemas and explicit stand-ins remain documented
+  in the existing fixture READMEs; this is not full production financial proof.
+- The four preserved native commands are added to the existing hosted accounting
+  job. Existing change classification includes the cleanup test;25 classifier/
+  workflow checks passed. No new job, publisher or local release path is added.
+
+Last successful equivalent hosted baseline: required CI35159037199,
+headb8cc58274cc184ae3baba2e0a2a33d93122ceb16, all client/engine shards,
+accounting, compilation and production build passed before this composition.
+Final protected checks, merge, publication and connected live behavior remain
+separate requirements.
+
+The first ordinary push found two directly connected verification defects. Git
+fixtures inherited the pre-push repository environment, so their temporary
+`git init` addressed the calling repository instead. Local fixture and classifier
+Git calls now discard inherited Git context and retain regressions using only a
+disposable decoy repository. The late-registration bundle pin now explicitly
+admits its second pure display helper and rejects runtime dependencies in that
+helper. Neither correction bypasses the normal hooks or weakens the application
+assertions.
+
+Hosted CI 35185295828 then exposed a reminder-probe timing failure: its
+150 ms whole-statement deadline included planning and execution as well as
+the player lock it was intended to test. The same unchanged probe passed all
+54 checks in accounting job 105084370944 / CI 35184697729 immediately before
+this run; the precise runner delay was not measured. The probe now uses
+PostgreSQL's 150 ms lock deadline and its separate 5 s statement bound.
+Its negative control requires the actual lock-timeout code;
+the corrected path still has to complete while the other connection holds the
+player lock. All 54 real PostgreSQL checks passed locally. No product timeout,
+required assertion or workflow gate is relaxed.
+
+The same hosted run's client shard found the September 14 installed PKO source
+restating a UUID version check. Its subject is the system-generated
+`app.bounty_obligation_id`, explicitly approved by the September 10 platform-ID
+rule, not a player. The installed SQL and frozen historical list remain exact.
+The existing law now recognizes only that archived expression, bound to both
+source hashes, collector body hash and its original GUC/obligation lookup.
+Changed player checks, copied files, added checks or altered approval fail.
+All 17 law cases and both existing source-window checks passed. The prior
+unchanged law passed in CI 35184697729, whose source lacked this restored SQL;
+CI 35185295828 supplies the reproduced false-positive failure.
+
+## Work still assigned
+
+Production elimination queries compared every candidate ID with a VOLATILE
+resolver, causing repeated accepted-hand reads across approximately 95,000
+candidate rows while tournament locks were held. Migration
+`20260917054818_resolve_elimination_candidate_once.sql` resolves the UUID once
+at the existing locked boundary in three authorities, then uses its primary
+key. Resolver volatility, public refusal/replay behavior and financial guards
+remain intact. Full definition, owner, security, search-path and ACL guards
+protect installation. The supported public caller proves the candidate before
+the private core; a malformed direct owner-only core call can now reach the
+existing resolver error earlier than its old generic missing-time refusal.
+
+The real PostgreSQL regression reproduced 1,002 resolver calls for ordinary
+elimination and passes with two calls, one per authority. The positive PKO
+claim uses one call; replay and missing-history refusal pass. The existing
+required ranking probe retains all 27 earlier scenarios and adds the direct
+call-count regression plus body/ACL/resolver-ACL/postimage rejection with exact
+rollback. Its reduced financial fixture is explicitly documented; the separate
+captured-authority qualification proves PKO claim admission, not cash payment.
+
+The configured migration provider installed the exact reviewed SQL at
+05:48:18 UTC on September 17. Readback at 05:48:35 matched its ledger SQL MD5
+`ca3cb2afc80c242170cefd6b3002d072`, all three postimages and unchanged resolver
+authority. No tournament, player, balance or payout was manually changed.
+Live progress and financial completion remain separate verification steps.
+
+The existing deployed-page MTT checks also exposed delayed initial WebSocket
+readiness. An anonymous, bounded record on each existing subscription now
+separates authorization return, table acquisition, acknowledgement and first
+frame enqueue. It preserves access decisions, protocol, deadlines and ownership;
+no user, table, IP or game payload is recorded. The directly affected 78 tests
+passed, including cancellation, logger failure and socket backpressure. This
+supplies missing diagnostic evidence; it is not a claim that the latency defect
+is repaired. Publication must precede attribution of the live delayed phase.
+
+R46 unlimited MTT/satellite entry is preserved at original PR4701 donor
+cc633751429bbbd5b1937721c08bab8b32c30555 and is not activated by this delivery.
+It still requires coupled database/application transition qualification:
+nullable capacity, legacy satellite interpretation, restart identity and the
+atomic scheduled-satellite writer. The old boot-only contract/stopped-DDL plan
+has no qualified installation seam and conflicts with the existing break DDL
+guard. Do not enable its dependent creators or client until the actual contract
+is qualified and installed. Genuine SNG/Spin capacity and physical seats remain
+separate from the owner's unlimited MTT requirement.
+
+Stable live MTT readiness, funded format journeys, blind/break progress,
+ticket/prize/bounty reconciliation and the documented historical paid-rank
+discrepancy remain task acceptance requirements. This release is not a claim
+that the entire MTT assignment is complete.

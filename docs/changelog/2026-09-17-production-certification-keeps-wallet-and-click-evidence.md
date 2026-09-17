@@ -42,3 +42,11 @@ assertion remains. The delayed-response regression fails before this causal
 wait and passes afterward; no application or ledger behavior changes.
 
 The existing cash native qualification manifest also records the exact classifier and its route test. Both byte counts and SHA-256 pins now match the reviewed browser-gate addition. The six existing Python preflight oracles fail before this pin correction and pass after; the fixed input list, exact content verification and native PostgreSQL requirements remain intact.
+
+The normal merge hook formatted the existing CashoutRequestModal test without
+changing its behavior. Hosted accounting then correctly refused the old fixture
+checksum. Update only that reviewed file's current SHA-256 in the existing
+weekly-accounting source binding. The unchanged verifier reproduced the single
+mismatch before and passed all 271 bindings afterward; all 30 modal tests passed.
+The 37-component activation builder and captured-wrapper source check also passed.
+Historical custody records and financial assertions are unchanged.

@@ -4534,6 +4534,10 @@ export abstract class ServerTableEngineBase {
     this.tournamentMovePauseOwners.add(ownerId);
     this.holdBeforeNextHand = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+    // A quiet source may be sleeping for its next roster read. Wake that
+    // existing loop so it reaches the physical pause gate within this probe;
+    // only the gate and drained writers below can authorize the move.
+    this.wakeWaitingForPlayers();
     this.notifyBoundaryPauseWaiters();
 
     const deadline = Date.now() + Math.max(0, maxWaitMs);

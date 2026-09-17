@@ -1,6 +1,6 @@
 import { fork, execFileSync, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -104,6 +104,7 @@ it('verifies the Linux inherited-priority boundary with explicit remaining quali
   let stdout = '';
   let stderr = '';
   let outputExceeded = false;
+  let receiptLogged = false;
   try {
     child = fork(qualifier, [requestPath], {
       cwd: serverRoot,
@@ -147,6 +148,7 @@ it('verifies the Linux inherited-priority boundary with explicit remaining quali
     // The complete sanitized receipt enters the existing hosted test log. It
     // states its narrow scope and retains every unavailable proof explicitly.
     console.info('CPU40752_SCOPED_PROCESS_RECEIPT', JSON.stringify({ request, result }));
+    receiptLogged = true;
     expect(result.executionId).toBe(request.executionId);
     expect(result.sourceRevision).toBe(sourceRevision);
     expect(result.status).toBe('SCOPED_CONTROLS_PASSED_LIMITS_REMAIN');
@@ -170,10 +172,24 @@ it('verifies the Linux inherited-priority boundary with explicit remaining quali
     ).toBe(false);
   } finally {
     clearTimeout(deadline);
+    let groupConfirmedTerminal = false;
     try {
       if (child) await finishIsolatedGroup(child);
+      groupConfirmedTerminal = true;
     } finally {
-      rmSync(outputDirectory, { recursive: true, force: true });
+      const resultPath = join(outputDirectory, 'horse-league-process-priority-results.json');
+      if (!receiptLogged && existsSync(resultPath)) {
+        // Preserve failed/inconclusive case evidence in the same hosted log.
+        console.info(
+          'CPU40752_PARTIAL_PROCESS_RECEIPT',
+          JSON.stringify({
+            request,
+            result: JSON.parse(readFileSync(resultPath, 'utf8')),
+          })
+        );
+      }
+      if (groupConfirmedTerminal) rmSync(outputDirectory, { recursive: true, force: true });
+      else console.error('CPU40752_UNCONFIRMED_GROUP_EVIDENCE_RETAINED', outputDirectory);
     }
   }
 }, 170_000);

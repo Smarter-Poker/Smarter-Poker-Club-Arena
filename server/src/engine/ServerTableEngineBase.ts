@@ -2809,7 +2809,7 @@ export abstract class ServerTableEngineBase {
     const dealingLoopAtFence = this.dealingLoopPromise;
     const settlementsAtFence = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
     if (this.postHandTasksPromise) settlementsAtFence.push(this.postHandTasksPromise);
-    settlementsAtFence.push(...this.tournamentMoveOperations);
+    settlementsAtFence.push(...this.tournamentMoveOperations, ...this.readContinuationTasks);
 
     // Publish the terminal fence synchronously. Any start/restart attempt in
     // the same turn observes it before teardown reaches its first await.
@@ -2833,6 +2833,7 @@ export abstract class ServerTableEngineBase {
       ...(this.settlementInFlight ?? new Set<Promise<void>>()),
       ...(this.postHandTasksPromise ? [this.postHandTasksPromise] : []),
       ...this.tournamentMoveOperations,
+      ...this.readContinuationTasks,
     ]
   ): Promise<void> {
     const failures: unknown[] = [];
@@ -2867,7 +2868,8 @@ export abstract class ServerTableEngineBase {
     while (
       (this.settlementInFlight?.size ?? 0) > 0 ||
       this.postHandTasksPromise ||
-      this.tournamentMoveOperations.size > 0
+      this.tournamentMoveOperations.size > 0 ||
+      this.readContinuationTasks.size > 0
     ) {
       const settlements = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
       const postHandTasks = this.postHandTasksPromise;
@@ -2875,6 +2877,7 @@ export abstract class ServerTableEngineBase {
       for (const settlement of settlements) await joinOwnedWriter(settlement);
       await joinOwnedWriter(postHandTasks);
       for (const tournamentMove of tournamentMoves) await joinOwnedWriter(tournamentMove);
+      for (const read of [...this.readContinuationTasks]) await joinOwnedWriter(read);
       if (this.postHandTasksPromise === postHandTasks) this.postHandTasksPromise = null;
     }
     if (this.dealingLoopPromise === dealingLoopAtFence) this.dealingLoopPromise = null;
@@ -3798,6 +3801,25 @@ export abstract class ServerTableEngineBase {
   /** `load_seats+96s` — for recovery-event details and /health. */
   describeLoopPhase(): string {
     return this.loopPhase + '+' + Math.round(this.msSinceLoopPhase() / 1000) + 's';
+  }
+
+  /** Physical read continuations, separate from financial/canonical writers.
+   * A deadline may reject its caller, but cannot release this ownership. */
+  private readonly readContinuationTasks = new Set<Promise<void>>();
+  protected runOwnedReadContinuation(work: () => Promise<void>): Promise<void> {
+    let settle!: () => void;
+    const physical = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.readContinuationTasks.add(physical);
+    return (async () => {
+      try {
+        await work();
+      } finally {
+        this.readContinuationTasks.delete(physical);
+        settle();
+      }
+    })();
   }
 
   /**

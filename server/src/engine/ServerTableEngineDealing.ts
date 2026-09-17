@@ -1575,8 +1575,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     return seats.value;
   }
 
-  protected async refreshBlinds(): Promise<void> {
-    if (!this.tableInfo || !this.isTournamentTable()) return;
+  protected refreshBlinds(): Promise<void> {
+    if (!this.tableInfo || !this.isTournamentTable() || !this.lifecycleCanMutate())
+      return Promise.resolve();
+    const originalTable = this.tableInfo;
+    const lifecycle = originalTable.lifecycle;
+    const current = () =>
+      this.lifecycleCanMutate() &&
+      this.tableInfo === originalTable &&
+      this.tableInfo.lifecycle === lifecycle;
+    return this.runOwnedReadContinuation(() => this.refreshBlindsOwned(current, originalTable));
+  }
+
+  private async refreshBlindsOwned(
+    current: () => boolean,
+    table: NonNullable<typeof this.tableInfo>
+  ): Promise<void> {
     // BUG-error reporting-7463185461 FIX: retry up to 3x on transient fetch failures.
     // A single Node.js 'TypeError: fetch failed' (Supabase network blip) was
     // bubbling through to dealingLoop, triggering the error reporting error reporter
@@ -1585,7 +1599,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
+        if (!current()) return;
         const data = await loadTable(this.tableId);
+        if (!current()) return;
         if (data) {
           /* AND TELL THE FELT (2026-09-09). `TABLE_META_UPDATE` - the message
              `TableService.subscribeToTable` has consumed since the 2026-05-18
@@ -1599,18 +1615,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
              subscription still goes through the channel client and is still
              dead; the FELT is the surface a player is looking at.) */
           const changed =
-            Number(this.tableInfo.small_blind) !== Number(data.small_blind) ||
-            Number(this.tableInfo.big_blind) !== Number(data.big_blind) ||
-            Number(this.tableInfo.ante ?? 0) !== Number(data.ante ?? 0);
-          this.tableInfo.small_blind = data.small_blind;
-          this.tableInfo.big_blind = data.big_blind;
-          this.tableInfo.ante = data.ante;
+            Number(table.small_blind) !== Number(data.small_blind) ||
+            Number(table.big_blind) !== Number(data.big_blind) ||
+            Number(table.ante ?? 0) !== Number(data.ante ?? 0);
+          table.small_blind = data.small_blind;
+          table.big_blind = data.big_blind;
+          table.ante = data.ante;
           if (changed) {
             this.hub?.emitEvent(this.tableId, {
               type: 'table_meta_update',
               table_id: this.tableId,
-              name: this.tableInfo.name ?? null,
-              game_variant: this.tableInfo.game_variant ?? null,
+              name: table.name ?? null,
+              game_variant: table.game_variant ?? null,
               small_blind: data.small_blind,
               big_blind: data.big_blind,
               ante: data.ante ?? 0,
@@ -1620,6 +1636,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
         return; // success
       } catch (err: any) {
+        if (!current()) return;
         // Third copy of the same list, now also on the base. This one was the
         // narrowest of the three — it never listed `supabase_timeout`, the
         // wording the DB_TIMEOUT_MS abort actually emits, so the retry it

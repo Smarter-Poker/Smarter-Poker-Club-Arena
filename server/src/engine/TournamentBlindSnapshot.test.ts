@@ -8,8 +8,8 @@ import type {
 } from './horseDecision/protocol.js';
 import * as tournamentContext from '../services/TournamentBrainContext.js';
 
-const { loadTable, loadSeatedPlayers } = vi.hoisted(() => ({
-  loadTable: vi.fn(),
+const { loadTournamentBlinds, loadSeatedPlayers } = vi.hoisted(() => ({
+  loadTournamentBlinds: vi.fn(),
   loadSeatedPlayers: vi.fn(),
 }));
 const { decideFast } = vi.hoisted(() => ({
@@ -39,7 +39,7 @@ vi.mock('../services/supabase/client.js', () => ({
 }));
 vi.mock('../services/supabase.js', async (original) => ({
   ...(await original<Record<string, unknown>>()),
-  loadTable,
+  loadTournamentBlinds,
   loadSeatedPlayers,
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
@@ -57,7 +57,7 @@ afterEach(() => {
     engine.preciseTimer.dispose();
     engine.engineTelemetry.dispose();
   }
-  loadTable.mockReset();
+  loadTournamentBlinds.mockReset();
   loadSeatedPlayers.mockReset();
   decideFast.mockClear();
   vi.restoreAllMocks();
@@ -97,7 +97,7 @@ function fixture(count = 3, tableId = 'tournament-level-snapshot') {
   // Cash rake is outside this tournament blind-boundary rehearsal.
   engine.refreshRakeConfig = async () => {};
   loadSeatedPlayers.mockResolvedValue(seats);
-  loadTable.mockResolvedValue({ ...engine.tableInfo });
+  loadTournamentBlinds.mockResolvedValue({ ...engine.tableInfo });
   // Run the real deal through configuration and HandController creation.
   // Stop at the first unrelated time-bank read, before settlement or transport.
   const prepared = new Error('hand controller prepared');
@@ -149,7 +149,7 @@ describe('tournament levels belong to the hand that was created with them', () =
       };
       const first = await deal();
       first.start();
-      loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+      loadTournamentBlinds.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
       await engine.refreshBlinds();
       expect(engine.tableInfo).toMatchObject(levelTwo);
       const old = capture(first);
@@ -278,7 +278,7 @@ describe('tournament levels belong to the hand that was created with them', () =
         },
       };
       vi.spyOn(tournamentContext, 'getTournamentBrainContextSnapshot').mockReturnValue(cached);
-      loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+      loadTournamentBlinds.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
       await engine.refreshBlinds();
       const state = hand.getState();
       const player = state.players.find((p) => p.seat === state.currentPlayerSeat)!;
@@ -364,7 +364,7 @@ describe('tournament levels belong to the hand that was created with them', () =
     expect(first.getState()).toMatchObject({ stage: 'preflop', currentBet: 20, pot: 36 });
 
     // A level update arrives while this hand is still taking actions.
-    loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+    loadTournamentBlinds.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
     await engine.refreshBlinds();
     expect(engine.tableInfo).toMatchObject(levelTwo);
     expect(first.getState()).toMatchObject({ currentBet: 20, pot: 36 });
@@ -388,7 +388,7 @@ describe('tournament levels belong to the hand that was created with them', () =
   it('waits for the new blind read before a prepared roster can start the next hand', async () => {
     const { engine, seats, deal } = fixture();
     let release!: (row: unknown) => void;
-    loadTable.mockReturnValue(
+    loadTournamentBlinds.mockReturnValue(
       new Promise((resolve) => {
         release = resolve;
       })
@@ -425,10 +425,10 @@ describe('tournament levels belong to the hand that was created with them', () =
     await Promise.resolve();
     await Promise.resolve();
     expect(sleep).toHaveBeenCalledOnce();
-    loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+    loadTournamentBlinds.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
     releaseRest();
     await rest;
-    expect(loadTable).toHaveBeenCalledOnce();
+    expect(loadTournamentBlinds).toHaveBeenCalledOnce();
     const hand = await deal();
     hand.start();
     expect(hand.getState()).toMatchObject({ currentBet: 40, pot: 72 });
@@ -437,7 +437,7 @@ describe('tournament levels belong to the hand that was created with them', () =
   it('refuses the next deal when the blind authority cannot be read', async () => {
     const { engine } = fixture();
     const unavailable = new Error('blind authority rejected the read');
-    loadTable.mockRejectedValue(unavailable);
+    loadTournamentBlinds.mockRejectedValue(unavailable);
     await engine.readNextHandInputs();
     await expect(engine.awaitNextHandRest()).rejects.toBe(unavailable);
     expect(engine.handController).toBeNull();

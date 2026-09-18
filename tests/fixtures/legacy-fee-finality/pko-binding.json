@@ -1,0 +1,36 @@
+{
+  "export_method": "Raw psql bytes split only at explicit tab record prefixes. No JSON parse/reserialize of exported fixtures.",
+  "sslmode": "verify-full",
+  "read_only": true,
+  "artifacts": [
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-three-pko-lossless-20260918-original-fees.json",
+      "sha256": "c280278971fd63583fcfb30be4bbd52489bb56ff5fd3e8768260d2b6c87eefbd",
+      "bytes": 160599
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-three-pko-lossless-20260918-original-cohort.json",
+      "sha256": "0ba4acb267e47216bd770abfdb7936610bbbcbf1cd173537955dcc3ba9fe8a72",
+      "bytes": 25878
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-three-pko-lossless-20260918-original-canonical.json",
+      "sha256": "484d5f7c46f82faa7ff93702f5bc205e8b0a0cfe861e451a713a4ac7ed3d274c",
+      "bytes": 446367
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-three-pko-lossless-20260918-original-funding-scope.json",
+      "sha256": "3598ec96fe335a1b2af6efee66345defbd71016f698305360805d311703312ad",
+      "bytes": 732322
+    }
+  ],
+  "query": {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-three-pko-lossless-20260918-export.sql",
+    "sha256": "5329cd803a6a526c96a41adf1fa93d76d36bb098c41525b44b145cb781ff71d4"
+  },
+  "roundtrip": {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-14/un/outputs/union-three-pko-lossless-20260918-roundtrip.json",
+    "sha256": "3f656124e67dcb8ba1269a48f61308d0539b3542b7d9144f4f79dbd8c5a34df0",
+    "proof": "All216 rehydrated rows match actual original rows, with numeric scale4 preserved and all3 core fingerprints/counts/amounts exact."
+  }
+}

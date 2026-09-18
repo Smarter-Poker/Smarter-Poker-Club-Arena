@@ -42,6 +42,7 @@ PG17_BINDIR="$PGBIN" python3 "$probe_dir/../../../dev/probe-tournament-player-re
 
 # Exact occupancy identity must survive the terminal writer replacement.
 PG17_BINDIR="$PGBIN" python3 "$probe_dir/../../../dev/probe-hand-seat-generation.py"
+PG17_BINDIR="$PGBIN" python3 "$probe_dir/../../../dev/probe-cash-participant-funding.py"
 
 # Entry funding, charged-club receipts and HU prize payments use real local transactions.
 POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-tournament-registration-funding-pg17.py" --with-heads-up-payout

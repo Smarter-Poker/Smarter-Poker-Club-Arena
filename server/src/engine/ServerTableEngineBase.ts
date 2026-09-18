@@ -1,3 +1,7 @@
+import type { RetirementCustody } from '../services/TournamentRetirementCustody.js';
+import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
+import { FinancialPublicationBoundary } from '../services/FinancialPublicationBoundary.js';
+import { F06HandPermit } from '../services/F06HandPermit.js';
 /**
  * ServerTableEngine, layer 1/8 — fields, construction, lifecycle, seat/rake helpers, crash recovery.
  *
@@ -1735,6 +1739,218 @@ export abstract class ServerTableEngineBase {
    */
   protected tournamentMovePauseOwners: Set<string> = new Set();
   protected claimedTournamentMovePauseOwners: Set<string> = new Set();
+  private f06Allocator: (() => Promise<number>) | null = null;
+  private f06AllocationCurrent: (() => boolean) | null = null;
+  protected f06AllocationEpoch: string | null = null;
+  installF06Allocator(
+    epoch: string,
+    allocate: () => Promise<number>,
+    current: () => boolean
+  ): void {
+    if (this.running || this.f06Allocator || !epoch)
+      throw new Error('f06_allocator_install_invalid');
+    this.f06AllocationEpoch = epoch;
+    this.f06Allocator = allocate;
+    this.f06AllocationCurrent = current;
+  }
+  protected hasF06Allocator(): boolean {
+    return this.f06Allocator !== null;
+  }
+  protected preparedAllocationIsCurrent(epoch: string | null): boolean {
+    return (
+      epoch === this.f06AllocationEpoch &&
+      (!this.f06Allocator || this.f06AllocationCurrent?.() === true)
+    );
+  }
+  private f06PermitFactory:
+    | ((handNumber: string) => F06HandPermit | Promise<F06HandPermit>)
+    | null = null;
+  protected f06CurrentPermit: F06HandPermit | null = null;
+  /** Must be installed by admitted lifecycle custody before the dealer starts. */
+  installF06HandAdmission(
+    factory: (handNumber: string) => F06HandPermit | Promise<F06HandPermit>
+  ): void {
+    if (this.running || this.f06PermitFactory) throw new Error('f06_admission_install_too_late');
+    this.f06PermitFactory = factory;
+  }
+  protected async reserveF06Hand(handNumber: number): Promise<void> {
+    if (!this.f06PermitFactory) return; // Unactivated overlay; SQL activation must require installation.
+    if (this.f06CurrentPermit) throw new Error('f06_prior_hand_unresolved');
+    if (!Number.isSafeInteger(handNumber) || handNumber < 0)
+      throw new Error('f06_hand_number_precision');
+    const permit = await this.f06PermitFactory(String(handNumber));
+    if (!this.running) throw new Error('f06_dealer_fenced');
+    this.f06CurrentPermit = permit;
+    try {
+      await permit.reserve();
+    } catch (error) {
+      // Only the authoritative explicit no-reservation refusal frees this
+      // local attempt. RPC loss, malformed replies and other refusal stay held.
+      if (permit.knownNumberRefusal() && this.f06CurrentPermit === permit)
+        this.f06CurrentPermit = null;
+      throw error;
+    }
+    if (!this.running || this.f06CurrentPermit !== permit) throw new Error('f06_dealer_fenced');
+  }
+  /** Only the original live permit object can attest local non-actuation. */
+  /** Original-process recovery only. The caller retains Manager lifecycle,
+   * lease, table lifecycle and both map identities in ownerCurrent. The permit
+   * independently validates its captured original owner before/after its RPC.
+   * This returns no allocation authorization and never creates a new permit. */
+  getF06RetainedPermit(): { binding: Readonly<F06HandPermit['binding']>; phase: string } | null {
+    const permit = this.f06CurrentPermit;
+    return permit
+      ? { binding: Object.freeze({ ...permit.binding }), phase: permit.recoveryState() }
+      : null;
+  }
+  private f06RecoveryInFlight = false;
+  async replayF06OriginalPermit(
+    expected: F06HandPermit['binding'],
+    ownerCurrent: () => boolean
+  ): Promise<void> {
+    const permit = this.f06CurrentPermit;
+    const assertOriginal = () => {
+      if (
+        !permit ||
+        this.f06CurrentPermit !== permit ||
+        !ownerCurrent() ||
+        Object.entries(permit.binding).some(
+          ([key, value]) => expected[key as keyof typeof expected] !== value
+        )
+      )
+        throw new Error('f06_recovery_owner_changed');
+    };
+    assertOriginal();
+    if (this.f06RecoveryInFlight) throw new Error('f06_recovery_in_flight');
+    if (!this.running || !permit || !['unknown', 'reserved'].includes(permit.recoveryState()))
+      throw new Error('f06_original_begin_not_replayable');
+    this.f06RecoveryInFlight = true;
+    try {
+      await permit.reserve();
+      assertOriginal();
+      if (!this.running) throw new Error('f06_dealer_fenced');
+    } finally {
+      this.f06RecoveryInFlight = false;
+    }
+  }
+
+  private f06StoppedMovementProof: string | null = null;
+  private f06StoppedMovementGuards = new Map<string, () => void>();
+  /** Admit only this positively drained original object under a live, exact
+   * two-map retirement reservation. Run movement before that callback returns. */
+  async admitF06StoppedOriginalMovement(
+    ownerId: string,
+    custody: RetirementCustody<ServerTableEngineBase>,
+    readExactParkClaim: () => Promise<unknown>
+  ): Promise<void> {
+    const b = custody.binding;
+    const proof = JSON.stringify([
+      b.breakId,
+      b.tableId,
+      b.tableIncarnation,
+      b.tournamentId,
+      b.custodyId,
+      b.durableRevision,
+      b.leaseGeneration,
+      ownerId,
+    ]);
+    const assertSource = () => {
+      custody.assertCurrent();
+      if (
+        !ownerId ||
+        custody.engine !== this ||
+        b.tableId !== this.tableId ||
+        this.running ||
+        !this.terminal ||
+        !this.hasReleasedProcessOwnership() ||
+        this.hasSettlementInFlight() ||
+        this.postHandTasksPromise !== null ||
+        this.tournamentMoveOperations.size !== 0
+      )
+        throw new Error('f06_stopped_original_custody_unproven');
+    };
+    assertSource();
+    if (this.f06StoppedMovementProof !== proof) {
+      if (this.f06StoppedMovementProof) throw new Error('f06_stopped_original_binding_changed');
+      const permit = this.f06CurrentPermit;
+      if (
+        !permit ||
+        permit.binding.table_id !== b.tableId ||
+        permit.binding.lifecycle !== b.tableIncarnation ||
+        permit.binding.tournament_id !== b.tournamentId ||
+        permit.binding.lease_generation !== b.leaseGeneration
+      )
+        throw new Error('f06_stopped_original_permit_mismatch');
+      await this.drainF06NeverStarted();
+      assertSource();
+      await this.finishF06OriginalNoStart(
+        { break_id: b.breakId, custody_id: b.custodyId, revision: b.durableRevision },
+        async () => {
+          assertSource();
+          const row = await readExactParkClaim();
+          assertSource();
+          return row;
+        }
+      );
+      // Retain exact positive evidence even if the post-await map assertion
+      // fails. A different binding cannot turn it into new movement authority.
+      this.f06StoppedMovementProof = proof;
+      assertSource();
+    }
+    if (
+      this.claimedTournamentMovePauseOwners.size > 0 &&
+      !this.claimedTournamentMovePauseOwners.has(ownerId)
+    )
+      throw new Error('f06_foreign_movement_owner');
+    this.tournamentMovePauseOwners.add(ownerId);
+    this.claimedTournamentMovePauseOwners.add(ownerId);
+    this.f06StoppedMovementGuards.set(ownerId, () => {
+      custody.assertCurrent();
+      if (custody.engine !== this || this.f06StoppedMovementProof !== proof)
+        throw new Error('f06_stopped_original_custody_changed');
+    });
+  }
+
+  async drainF06NeverStarted(): Promise<void> {
+    const permit = this.f06CurrentPermit;
+    if (!permit) throw new Error('f06_original_permit_missing');
+    await permit.drainNeverStarted(
+      () => this.stop(),
+      () => this.hasReleasedProcessOwnership()
+    );
+    if (this.f06CurrentPermit !== permit) throw new Error('f06_permit_replaced');
+  }
+  async finishF06OriginalNoStart(
+    expected: { break_id: string; custody_id: string; revision: string },
+    claim: () => Promise<unknown>
+  ): Promise<void> {
+    const permit = this.f06CurrentPermit;
+    if (!permit) throw new Error('f06_original_permit_missing');
+    await permit.finishOriginalNeverStartedWithCustody(expected, claim);
+    if (this.f06CurrentPermit !== permit) throw new Error('f06_permit_replaced');
+    this.f06CurrentPermit = null;
+  }
+  async finishF06NeverStarted(
+    expected: { break_id: string; custody_id: string; revision: string },
+    claim: () => Promise<unknown>
+  ): Promise<void> {
+    const permit = this.f06CurrentPermit;
+    if (!permit) throw new Error('f06_original_permit_missing');
+    await permit.finishNeverStartedWithCustody(expected, claim);
+    if (this.f06CurrentPermit !== permit) throw new Error('f06_permit_replaced');
+    this.f06CurrentPermit = null;
+  }
+  /** Existing accepted settlement calls this with its exact committed hand UUID.
+   * The SQL evidence check is authoritative; local completion is insufficient. */
+  async finishF06AcceptedHand(handNumber: string, evidenceId: string): Promise<void> {
+    const permit = this.f06CurrentPermit;
+    if (!permit || permit.binding.hand_number !== handNumber)
+      throw new Error('f06_hand_identity_mismatch');
+    await permit.finish('accepted', evidenceId);
+    if (this.f06CurrentPermit !== permit) throw new Error('f06_permit_replaced');
+    this.f06CurrentPermit = null;
+  }
+
   private tournamentMovePauseExpiryTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private tournamentMoveOperations: Set<Promise<void>> = new Set();
   private tournamentMoveOperationByOwner: Map<string, Promise<void>> = new Map();
@@ -1750,6 +1966,48 @@ export abstract class ServerTableEngineBase {
   // FIX 211: Bible V8 §1.9 — Track postHandTasks promise to prevent next hand
   // starting before DB stacks are synced (was fire-and-forget, risked stale stacks)
   protected postHandTasksPromise: Promise<void> | null = null;
+  private financialPublicationBoundary: FinancialPublicationBoundary | null = null;
+  /** Install with the exact lease/engine/maps/incarnation assertion before start.
+   * The consumer must also capture/recheck original occupancy per ingress. */
+  private authorizeFinancialControllerStart: (() => void) | null = null;
+  installFinancialPublicationBoundary(
+    ownerCurrent: () => boolean,
+    authorizeStart: () => void
+  ): void {
+    if (this.running || this.financialPublicationBoundary)
+      throw new Error('financial_boundary_install_too_late');
+    this.financialPublicationBoundary = new FinancialPublicationBoundary(
+      ownerCurrent,
+      async (work) => {
+        const release = await this.acquireSeatBoundary();
+        try {
+          return await work();
+        } finally {
+          release();
+        }
+      }
+    );
+    this.authorizeFinancialControllerStart = authorizeStart;
+  }
+  protected async acquireFinancialControllerStart() {
+    return this.financialPublicationBoundary
+      ? this.financialPublicationBoundary.acquireControllerStart(() =>
+          this.authorizeFinancialControllerStart!()
+        )
+      : null;
+  }
+  protected dispatchFinancialHandComplete(dispatch: () => Promise<void>): Promise<void> {
+    // Canonical handler installs/chains postHandTasksPromise synchronously and
+    // captures the original controller before releaseHandWait clears it.
+    return this.financialPublicationBoundary
+      ? this.financialPublicationBoundary.handComplete(dispatch)
+      : dispatch();
+  }
+  getFinancialPublicationBoundary(): FinancialPublicationBoundary {
+    if (!this.financialPublicationBoundary) throw new Error('financial_boundary_not_installed');
+    return this.financialPublicationBoundary;
+  }
+
   // Serialize financial departure against asynchronous hand preparation.
   // Release after controller start, not after the hand finishes.
   protected seatBoundaryTail: Promise<void> = Promise.resolve();
@@ -4488,23 +4746,64 @@ export abstract class ServerTableEngineBase {
    * which is precisely the situation this work exists to end. Failing here
    * stalls one hand; dealing anyway corrupts the audit trail permanently.
    */
+  protected allocatorMeasurement: AllocatorIssuerMeasurement | null = null;
+  installAllocatorMeasurement(measurement: AllocatorIssuerMeasurement): void {
+    if (this.running || this.allocatorMeasurement)
+      throw new Error('allocator_measurement_install_too_late');
+    this.allocatorMeasurement = measurement;
+    measurement.onFence(
+      () => this.invalidatePreparedAllocatorValue(),
+      () => this.countReusableAllocatorValues()
+    );
+  }
+  protected invalidatePreparedAllocatorValue(): void {}
+  protected countReusableAllocatorValues(): number {
+    return 0;
+  }
   protected async allocateGlobalHandNumber(): Promise<number> {
+    const measurement = this.allocatorMeasurement;
+    const epoch = measurement?.capture();
+    return measurement
+      ? measurement.job('producer', epoch!, () => this.allocateMeasuredHandNumber(epoch))
+      : this.allocateMeasuredHandNumber(undefined);
+  }
+  private async allocateMeasuredHandNumber(epoch: number | undefined): Promise<number> {
+    const request = <T>(work: () => Promise<T>): Promise<T> =>
+      this.allocatorMeasurement ? this.allocatorMeasurement.request(epoch!, work) : work();
+    if (this.f06Allocator) {
+      if (!this.f06AllocationCurrent?.()) throw new Error('f06_allocator_owner_changed');
+      const allocated = await request(() => this.f06Allocator!());
+      if (!this.f06AllocationCurrent?.() || !Number.isSafeInteger(allocated) || allocated < 1000000)
+        throw new Error('f06_allocation_unproven');
+      return allocated; // No legacy fallback or internal retry on this path.
+    }
     const MAX_ATTEMPTS = 3;
     let lastErr: unknown = null;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        const { data, error } = await supabase.rpc('fn_next_hand_number');
+        this.allocatorMeasurement?.assertAdmission(epoch!);
+        const { data, error } = await request(
+          async () => await supabase.rpc('fn_next_hand_number')
+        );
         if (error) throw error;
-        const n = Number(data);
-        // A sequence never returns 0, NULL or anything below its MINVALUE, so
-        // any of those means we did not get a real allocation.
-        if (Number.isFinite(n) && n >= 1000000) return n;
-        throw new Error(`allocator returned an unusable value: ${JSON.stringify(data)}`);
+        const canonical =
+          typeof data === 'number' || (typeof data === 'string' && /^[1-9][0-9]*$/.test(data));
+        const n = canonical ? Number(data) : NaN;
+        if (Number.isSafeInteger(n) && n >= 1000000) return n;
+        // Old nextval-only bodies can return beyond JS's safe range even
+        // after relation-barrier qualification. Never round or retry a known
+        // unusable response into a different hand allocation.
+        throw new Error('allocator_unsafe_or_invalid_integer');
       } catch (err) {
+        if (err instanceof Error && err.message === 'allocator_unsafe_or_invalid_integer')
+          throw err;
         lastErr = err;
         if (attempt < MAX_ATTEMPTS) {
-          await new Promise((r) => setTimeout(r, 100 * attempt));
+          const backoff = () => new Promise<void>((r) => setTimeout(r, 100 * attempt));
+          if (this.allocatorMeasurement)
+            await this.allocatorMeasurement.job('retry', epoch!, backoff);
+          else await backoff();
         }
       }
     }
@@ -4840,6 +5139,7 @@ export abstract class ServerTableEngineBase {
     // it cannot deal, owns no process scheduler, and still proves the UUID's
     // source generation. No new owner may be created on a stopped engine.
     if (!this.running) {
+      this.f06StoppedMovementGuards.get(ownerId)?.();
       return (
         this.claimedTournamentMovePauseOwners.has(ownerId) &&
         this.terminal &&
@@ -4983,6 +5283,8 @@ export abstract class ServerTableEngineBase {
       throw new Error('tournament move source owner already has an operation in flight');
     }
 
+    const f06Guard = this.f06StoppedMovementGuards.get(ownerId);
+    f06Guard?.();
     const result = operation();
     const barrier = result.then(
       () => undefined,
@@ -4992,7 +5294,9 @@ export abstract class ServerTableEngineBase {
     this.tournamentMoveOperationByOwner.set(ownerId, barrier);
     this.notifyBoundaryPauseWaiters();
     try {
-      return await result;
+      const value = await result;
+      f06Guard?.();
+      return value;
     } finally {
       this.tournamentMoveOperations.delete(barrier);
       if (this.tournamentMoveOperationByOwner.get(ownerId) === barrier) {

@@ -1,0 +1,7 @@
+# Original cash funding dependencies in the journal probe
+
+The current original cash money cores retain the debit, wallet and occupancy in participant funding receipts. The journal probe resolved those current functions but still bootstrapped an older table shape. Its 45 fault cases passed before the first successful treasury funding failed on the missing occupancy field.
+
+The shared fixture now includes the real occupancy and chip-asset fields. Journal and rebuy bootstraps load the maintained original receipt table and captured wallet column/default definitions, and rebuy resolves its original private function dependency closure. The hand fixture reuses that wallet relation. Rollback/replay snapshots include the new provenance records; rebuy's existing five failure classes now also target the receipt insert. All existing assertions remain. This change alters only test dependencies, not money authority or production migrations.
+
+Native PostgreSQL 17 reproduced the original failure and passed the affected journal, horse, rebuy and remaining maintained assertions. The dedicated original cash funding/owner/P&L/retention probe and six parser tests also passed. The run was continued after correcting a private database name to the fixture's required `postgres`; the insurance connection guard was preserved. Hosted CI and publication remain separate evidence owned by the parent delivery.

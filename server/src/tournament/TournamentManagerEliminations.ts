@@ -32,6 +32,8 @@ import { TournamentManagerBase } from './TournamentManagerBase.js';
 import {
   eliminationSweepMs,
   eliminationSweepsInflight,
+  tournamentFinishRefusalsTotal,
+  classifyFinishRefusal,
 } from '../observability/engineInstruments.js';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
@@ -5047,6 +5049,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;
       const outcomeUnknown =
         settlementErr instanceof TerminalSettlementOutcomeUnknownError || !provenRefusal;
+      if (provenRefusal) {
+        // Counted by a bounded reason so a rule can say WHY finishes are
+        // failing, not only that they are (see engineInstruments).
+        tournamentFinishRefusalsTotal.inc(1, {
+          reason: classifyFinishRefusal((settlementErr as Error).message),
+        });
+      }
       reportError(
         settlementErr,
         outcomeUnknown

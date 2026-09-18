@@ -56,8 +56,12 @@ let child: Child;
 let clients: HorseLeagueComputeWorkerClient[];
 let originalExecArgv: string[];
 
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+
 beforeEach(() => {
-  expect(process.platform).toBe('linux');
+  // This suite models fork/IPC; actual Linux process proof has its own native runner.
+  // Model its OS input too, so the same assertions execute on developer Macs.
+  Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'linux' });
   child = new Child();
   clients = [];
   originalExecArgv = process.execArgv;
@@ -70,6 +74,7 @@ afterEach(async () => {
   if (child.exitCode === null && child.signalCode === null) child.exit();
   await Promise.all(clients.map((client) => client.shutdown()));
   vi.useRealTimers();
+  Object.defineProperty(process, 'platform', originalPlatform);
 });
 
 function client(): HorseLeagueComputeWorkerClient {
@@ -84,6 +89,11 @@ function client(): HorseLeagueComputeWorkerClient {
 }
 
 describe('Horse League dedicated launch and READY contract', () => {
+  it.each(['darwin', 'win32'])('still refuses a real %s launcher before spawning', (platform) => {
+    Object.defineProperty(process, 'platform', { ...originalPlatform, value: platform });
+    expect(() => client()).toThrow('requires the qualified Linux launcher');
+    expect(launch.fork).not.toHaveBeenCalled();
+  });
   it('wraps the original module and filtered Node arguments, retaining advanced IPC', () => {
     process.execArgv = [
       '--max-old-space-size=128',

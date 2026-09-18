@@ -47,6 +47,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { verifyPolicy } from '../docs/agent-policy/agent-policy.mjs';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -324,6 +325,9 @@ const RETIRED_ACTIVE_DIRECTIONS = [
 ];
 
 describe('active agent instructions use the current policy', () => {
+  it('the actual policy content and tool version match their reviewed hashes', () => {
+    expect(verifyPolicy(join(ROOT, 'docs/agent-policy')).policyVersion).toBe('2.9');
+  });
   it('the root loader reaches the portable policy and every policy file exists', () => {
     const loader = read('AGENTS.md');
     for (const file of POLICY_FILES) {

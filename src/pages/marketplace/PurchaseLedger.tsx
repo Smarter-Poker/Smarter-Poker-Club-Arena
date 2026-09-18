@@ -50,10 +50,18 @@ export default function PurchaseLedger({ clubId, userId }: { clubId: string; use
      the search box used to refetch /api/club-arena/shop-purchases through the
      World Hub. 300 ms is the same window the roster and hand searches use. */
   const debouncedQuery = useDebounce(query, 300);
+  /* Between a keystroke and the pause, the box holds a newer question than
+     the rows below it. Paging during that gap asks the server for an offset
+     into a list that is about to be replaced, so the pager is held until the
+     rows and the box agree again. */
+  const searching = query !== debouncedQuery;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  /* Only the newest request for the same signed-in owner may update this
+     money-moving table. The attempt and abort guards also invalidate an old
+     request when the account or club changes while it is in flight. */
   const refundingRef = useRef(false);
   const mountedRef = useRef(true);
   const activeOwnerRef = useRef({ userId, clubId });
@@ -126,6 +134,8 @@ export default function PurchaseLedger({ clubId, userId }: { clubId: string; use
       setRows(data.purchases || []);
       setTotal(data.total || 0);
     } catch (err: unknown) {
+      // A request nobody is waiting on cannot replace the current rows or
+      // leave an error banner over a newer successful response.
       if (!isCurrent() || (err instanceof Error && err.name === 'AbortError')) return;
       const msg = err instanceof Error ? err.message : 'Failed to load purchases';
       setError(msg);
@@ -253,7 +263,7 @@ export default function PurchaseLedger({ clubId, userId }: { clubId: string; use
       ) : rows.length === 0 ? (
         <div className={styles.emptyState}>
           <span className={styles.emptyText}>
-            {query.trim() ? 'No Purchases Match That Search.' : 'No Purchases Yet.'}
+            {debouncedQuery.trim() ? 'No Purchases Match That Search.' : 'No Purchases Yet.'}
           </span>
         </div>
       ) : (
@@ -330,7 +340,7 @@ export default function PurchaseLedger({ clubId, userId }: { clubId: string; use
           <div className={styles.crossSell}>
             <button
               className={styles.inlineLink}
-              disabled={offset === 0 || loading}
+              disabled={offset === 0 || loading || searching}
               onClick={() => setOffset(Math.max(0, offset - PAGE))}
             >
               Previous
@@ -340,7 +350,7 @@ export default function PurchaseLedger({ clubId, userId }: { clubId: string; use
             </span>
             <button
               className={styles.inlineLink}
-              disabled={offset + PAGE >= total || loading}
+              disabled={offset + PAGE >= total || loading || searching}
               onClick={() => setOffset(offset + PAGE)}
             >
               Next

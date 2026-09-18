@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -18,6 +18,7 @@ const native = parse(
 
 describe('cash lobby verification reaches the existing browser gate', () => {
   it.each([
+    'tests/e2e/global-setup.ts',
     'tests/e2e/mobile-lobby-chrome.spec.ts',
     'tests/e2e/production-live-table-realtime.spec.ts',
     'tests/e2e/support/cashLobbyOverlays.ts',
@@ -650,7 +651,8 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
         for (const [index, path] of spinExpiryAccountingPaths.entries()) {
           if (operation === 'modified') write(path, 'changed qualification input');
           if (operation === 'deleted') rmSync(join(directory, path));
-          if (operation === 'renamed') git('mv', '--', path, relocated[index]);
+          if (operation === 'renamed')
+            renameSync(join(directory, path), join(directory, relocated[index]));
         }
         const result = classifyGitChanges({ cwd: directory, base, head: commit() });
         expect(result.complete).toBe(true);

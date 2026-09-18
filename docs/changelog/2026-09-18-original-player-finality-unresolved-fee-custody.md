@@ -27,3 +27,10 @@ resolves. The engine decoder is submitted separately in PR #4869 and must be
 active before database activation. G8's original Breakfast witness must compose
 with this exact terminal verifier. This entry describes source and qualification;
 protected installation and production verification belong to the MTT owner.
+
+Hosted qualification reached the real receipt consumer after all financial
+cases passed, but its bare TypeScript import incorrectly required client-root
+dependencies. The consumer now resolves the compiler through the server's
+existing locked installation. A clean server-only dependency layout reproduced
+the failure and accepted all 13 retained native receipts after the repair.
+No SQL, financial case, decoder behavior or hosted installation step changed.

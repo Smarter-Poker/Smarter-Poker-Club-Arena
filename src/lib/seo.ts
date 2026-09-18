@@ -118,6 +118,18 @@ function helpFaqPage(): JsonLd {
   };
 }
 
+/*
+ * AEO phase 3 (2026-09-18): these five titles were the bare document name,
+ * so with " | Smarter.Poker" appended they read exactly like the World Hub's
+ * own pages. /hub/club-arena/legal/tos and /terms both shipped
+ * "Terms Of Service | Smarter.Poker", and both are indexed, on one domain,
+ * for two different documents. /legal/privacy and /privacy were the same,
+ * and /help sat a word away from /hub/help.
+ *
+ * Each now names the product whose document it is. The descriptions already
+ * said "Poker Arena"; only the titles did not. All five render inside the
+ * 60 characters a result shows, brand suffix counted.
+ */
 /** Public, indexable routes. Everything not listed here is noindex. */
 const PUBLIC_ROUTES: Record<string, Omit<SeoEntry, 'index'>> = {
   '/': {
@@ -128,21 +140,21 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoEntry, 'index'>> = {
     jsonLd: [ORGANIZATION, POKER_ARENA_APP, breadcrumbs([ARENA_CRUMB])],
   },
   '/help': {
-    title: 'Help Center',
+    title: 'Poker Arena Help Center',
     description:
       'Answers To The Most Common Poker Arena Questions: Accounts, Joining And Running Clubs, Cash Games And Tournaments, Rewards, Fair Gaming And Player Safety.',
     canonicalPath: '/help',
     jsonLd: [breadcrumbs([ARENA_CRUMB, { name: 'Help Center', path: '/help' }]), helpFaqPage()],
   },
   '/legal': {
-    title: 'Legal Center',
+    title: 'Poker Arena Legal Center',
     description:
       'The Poker Arena Legal Center: Terms Of Service, Privacy Policy, Fair Gaming Standards And Club Promotion Rules For Smarter.Poker Private Poker Clubs.',
     canonicalPath: '/legal',
     jsonLd: breadcrumbs([ARENA_CRUMB, { name: 'Legal Center', path: '/legal' }]),
   },
   '/legal/tos': {
-    title: 'Terms Of Service',
+    title: 'Poker Arena Terms Of Service',
     description:
       'The Terms Of Service For Playing In And Operating Private Poker Clubs On Poker Arena At Smarter.Poker.',
     canonicalPath: '/legal/tos',
@@ -153,7 +165,7 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoEntry, 'index'>> = {
     ]),
   },
   '/legal/privacy': {
-    title: 'Privacy Policy',
+    title: 'Poker Arena Privacy Policy',
     description:
       'How Poker Arena Collects, Uses And Protects Player Information Across Smarter.Poker Private Poker Clubs.',
     canonicalPath: '/legal/privacy',
@@ -164,7 +176,7 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoEntry, 'index'>> = {
     ]),
   },
   '/legal/fair-gaming': {
-    title: 'Fair Gaming Policy',
+    title: 'Poker Arena Fair Gaming Policy',
     description:
       'The Fair Gaming Standards Behind Every Poker Arena Table: Server Side Shuffling, Collusion Detection, Anti Cheat Monitoring And Dispute Resolution.',
     canonicalPath: '/legal/fair-gaming',
@@ -175,7 +187,7 @@ const PUBLIC_ROUTES: Record<string, Omit<SeoEntry, 'index'>> = {
     ]),
   },
   '/legal/promotions': {
-    title: 'Promotion Rules',
+    title: 'Poker Arena Promotion Rules',
     description:
       'The Rules That Govern Club Promotions, Bonuses And Jackpots Inside Poker Arena Private Poker Clubs On Smarter.Poker.',
     canonicalPath: '/legal/promotions',

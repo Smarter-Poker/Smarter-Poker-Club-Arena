@@ -12,7 +12,7 @@
     "tests/fixtures/legacy-fee-finality/before.sql": "2adf8490208f2d0b86d7c9198f28473ff27a77379e17ad4ce6b9647e9e7eacb5",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/capture-authority-catalog.json": "8b3dcacb46c85ca4b9680269db90f1b50545a4f7d5b84b4d46f1dbb554da4467",
-    "tests/fixtures/legacy-fee-finality/capture-bootstrap.sql": "faf50075be170c410f6477ca9d5577d946ed735416e6245b32d0ffc5c5238b19",
+    "tests/fixtures/legacy-fee-finality/capture-bootstrap.sql": "031c69e47876e67eff9262a476ee3915c2fc1058cf18f62a4a2e6d4e46812903",
     "tests/fixtures/legacy-fee-finality/captured-access.json": "80dcf01be5df2dfcca354aa26c9d61e89296d331da103b5f6e13af851e6ade37",
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/custody-resolution.sql": "d076f12aaf5cf8a655c7faab0423553ef3db69da3c142cd00270b16d0ede5b9b",
@@ -58,5 +58,21 @@
     "late_recognition_rollback": 1,
     "five_canonical_resolutions": 15,
     "retained_pko": 2
+  },
+  "protected_integration": {
+    "decoder_head": "8288901545473b4188b010fc0cb8418c8d28152d",
+    "changed_binding_inputs": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "bf8a270bccf7633dd982890b528f6a7a68a2a1c2e4348e52ec7e910052902727",
+        "current": "91d29218a4968dfcd108a1eca98ac82360bd5d7da58997cb4c234c0583cd1332"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/capture-bootstrap.sql",
+        "previous": "faf50075be170c410f6477ca9d5577d946ed735416e6245b32d0ffc5c5238b19",
+        "current": "031c69e47876e67eff9262a476ee3915c2fc1058cf18f62a4a2e6d4e46812903"
+      }
+    ],
+    "qualification": "Native run20 passed128 assertions and13 actual receipts on identical product SQL, qualifier, raw data and decoder. Integration retains upstream F06 CI selection; classifier suite rerun. Generated capture bootstrap differs only by removing one trailing blank line."
   }
 }

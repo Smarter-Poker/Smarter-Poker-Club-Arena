@@ -119,7 +119,9 @@ const engineWs = new EngineWebSocketServer({
 });
 
 // Phase U4: Channel WebSocket server at /ws/channel (Realtime migration).
-const channelWs = new ChannelWebSocketServer();
+const channelWs = new ChannelWebSocketServer((tournamentId) =>
+  gameServer.getTournamentHandForHand(tournamentId)
+);
 
 const httpServer = createEngineHttpServer(
   createRouter({ gameServer, tableStateHub, engineWs, channelHub })

@@ -10,4 +10,4 @@ The existing closed books remain Monday midnight in America/Los_Angeles through 
 
 The finite standalone native script is invoked once by the existing full weekly accounting runner after its established clusters finish. Its local PostgreSQL directory and logs are retained under the supplied scratch directory for review. It is not a production execution or publishing path.
 
-Installation concurrency replays the measured tables-before-seats deadlock in isolated PostgreSQL, then executes the exact migration lock-admission statements. It proves the original seat-then-table writer finishes and that a competing later source owner refuses only the migration and releases the initial seat lock. The test changes no production state.
+Installation concurrency replays the measured tables-before-seats deadlock in isolated PostgreSQL, then executes the exact migration lock-admission statements. It proves the original table FOR SHARE, seat update and table update writer finishes and that a competing later source owner refuses only the migration and releases the initial table lock. The test changes no production state.

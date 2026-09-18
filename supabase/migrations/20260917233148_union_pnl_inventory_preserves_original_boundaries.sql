@@ -6,15 +6,16 @@ BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
 
--- The live hand owner writes seats before tables. Drain that first relation
--- before holding another source lock; refuse competing later owners immediately
--- instead of forming a DDL/gameplay lock cycle. All locks end with this apply.
--- Production originals can run for eight seconds. Bound initial admission
--- at ten seconds while holding no hot-source lock; all later owners are NOWAIT.
+-- Original hands take FOR SHARE on tables, then write seats, then update tables.
+-- SHARE ROW EXCLUSIVE admits those original readers and later deadlocks on their
+-- upgrade. EXCLUSIVE drains the original FOR SHARE owner before holding seats,
+-- while plain table reads remain allowed. Measured writers can run eight seconds;
+-- initial admission has a ten-second bound with no other source lock held.
 SET LOCAL lock_timeout='10s';
-LOCK TABLE public.table_seats IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE public.tables IN EXCLUSIVE MODE;
 SET LOCAL lock_timeout='3s';
-LOCK TABLE public.tables,public.tournaments,public.tournament_players,public.union_clubs IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+-- Any different source ordering refuses this apply immediately, never a live hand.
+LOCK TABLE public.table_seats,public.tournaments,public.tournament_players,public.union_clubs IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 
 CREATE TABLE public.union_pnl_inventory_capture (
  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),

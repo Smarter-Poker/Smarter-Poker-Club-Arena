@@ -482,6 +482,9 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-earlier-receipts.sql',
     'scripts/ci/probes/f06-shared-hand-lane/completed-mtt-earlier-receipts-fixture.sql',
     'scripts/ci/probes/f06-shared-hand-lane/interrupted_custody_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/snapshot_retention_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/snapshot-retention-preimage.json',
+    'supabase/migrations/20260918230713_unresolved_hand_permits_retain_their_original_snapshots.sql',
     'supabase/migrations/20260918154419_interrupted_hands_preserve_original_custody_without_inventin.sql',
   ])('runs the existing accounting job for F06 input %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });

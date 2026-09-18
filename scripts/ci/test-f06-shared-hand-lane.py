@@ -171,6 +171,9 @@ try:
     interrupted = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/interrupted_custody_qualification.py'))
     interrupted['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('interruptedCustody', {}).get('passed') is True, 'Original interrupted custody qualification did not complete')
+    retention = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/snapshot_retention_qualification.py'))
+    retention['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('snapshotRetention', {}).get('passed') is True, 'Unresolved snapshot retention did not qualify')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

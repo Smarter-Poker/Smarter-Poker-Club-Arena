@@ -471,6 +471,13 @@ describe('required CI owns native fixture verification', () => {
 // Keep the full current qualification closure explicit: no manifest read is
 // needed to classify its own removal, or a source renamed outside the scope.
 const spinExpiryAccountingPaths = [
+  'scripts/qualification/spin-paid-terminal.py',
+  'scripts/qualification/spin-paid-terminal.md',
+  'scripts/qualification/spin-paid-terminal.hosted.manifest.json',
+  'scripts/qualification/fixtures/spin-paid-terminal/capture.json',
+  'scripts/qualification/fixtures/spin-paid-terminal/provider.sql',
+  'scripts/qualification/fixtures/spin-paid-terminal/execute.sql',
+  'scripts/qualification/fixtures/spin-paid-terminal/rules.json',
   'scripts/qualification/spin-positive-fee-entry.py',
   'scripts/qualification/spin-positive-fee-entry-oracle.py',
   'scripts/qualification/spin-mixed-positive-fee-entry.sql',
@@ -1236,4 +1243,12 @@ it('the actual replay condition executes for missing output and non-instruction 
   expect(classifier['continue-on-error']).toBeUndefined();
   expect(ci.jobs.typecheck_compile.needs).toBeUndefined();
   expect(ci.jobs.typecheck_compile.if).toBe("github.event_name == 'pull_request'");
+});
+
+it('paid terminal qualification uses the actual engine rule manifest', async () => {
+  const { spinRuleManifest } = await import('../../server/src/tournament/SpinDrawReceipt');
+  const rules = JSON.parse(
+    readFileSync(join(root, 'scripts/qualification/fixtures/spin-paid-terminal/rules.json'), 'utf8')
+  );
+  expect(rules).toEqual(spinRuleManifest(1, 1000));
 });

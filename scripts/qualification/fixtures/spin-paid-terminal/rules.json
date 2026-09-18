@@ -1,0 +1,908 @@
+{
+  "version": 1,
+  "buy_in": 1,
+  "seats": 3,
+  "rake_rate": 0.08,
+  "starting_chips": 1000,
+  "tiers": [
+    {
+      "multiplier": 2,
+      "freq": 4809776,
+      "payouts": [
+        1
+      ],
+      "levelMinutes": 3,
+      "reserveThresholdX": 0,
+      "blind_structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 11,
+          "smallBlind": 145,
+          "bigBlind": 290,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 12,
+          "smallBlind": 205,
+          "bigBlind": 410,
+          "ante": 0,
+          "duration": 180,
+          "spinContinuation": {
+            "version": 1,
+            "anchorLevel": 10,
+            "anchorBigBlind": 210,
+            "growth": 1.4,
+            "roundBigTo": 10
+          }
+        }
+      ],
+      "payout_structure": [
+        {
+          "place": 1,
+          "percentage": 100
+        }
+      ]
+    },
+    {
+      "multiplier": 3,
+      "freq": 3930716,
+      "payouts": [
+        1
+      ],
+      "levelMinutes": 3,
+      "reserveThresholdX": 0,
+      "blind_structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 11,
+          "smallBlind": 145,
+          "bigBlind": 290,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 12,
+          "smallBlind": 205,
+          "bigBlind": 410,
+          "ante": 0,
+          "duration": 180,
+          "spinContinuation": {
+            "version": 1,
+            "anchorLevel": 10,
+            "anchorBigBlind": 210,
+            "growth": 1.4,
+            "roundBigTo": 10
+          }
+        }
+      ],
+      "payout_structure": [
+        {
+          "place": 1,
+          "percentage": 100
+        }
+      ]
+    },
+    {
+      "multiplier": 4,
+      "freq": 900000,
+      "payouts": [
+        1
+      ],
+      "levelMinutes": 3,
+      "reserveThresholdX": 0,
+      "blind_structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 11,
+          "smallBlind": 145,
+          "bigBlind": 290,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 12,
+          "smallBlind": 205,
+          "bigBlind": 410,
+          "ante": 0,
+          "duration": 180,
+          "spinContinuation": {
+            "version": 1,
+            "anchorLevel": 10,
+            "anchorBigBlind": 210,
+            "growth": 1.4,
+            "roundBigTo": 10
+          }
+        }
+      ],
+      "payout_structure": [
+        {
+          "place": 1,
+          "percentage": 100
+        }
+      ]
+    },
+    {
+      "multiplier": 5,
+      "freq": 250000,
+      "payouts": [
+        1
+      ],
+      "levelMinutes": 3,
+      "reserveThresholdX": 0,
+      "blind_structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 11,
+          "smallBlind": 145,
+          "bigBlind": 290,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 12,
+          "smallBlind": 205,
+          "bigBlind": 410,
+          "ante": 0,
+          "duration": 180,
+          "spinContinuation": {
+            "version": 1,
+            "anchorLevel": 10,
+            "anchorBigBlind": 210,
+            "growth": 1.4,
+            "roundBigTo": 10
+          }
+        }
+      ],
+      "payout_structure": [
+        {
+          "place": 1,
+          "percentage": 100
+        }
+      ]
+    },
+    {
+      "multiplier": 10,
+      "freq": 100000,
+      "payouts": [
+        0.8,
+        0.2
+      ],
+      "levelMinutes": 3,
+      "reserveThresholdX": 0,
+      "blind_structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 11,
+          "smallBlind": 145,
+          "bigBlind": 290,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 12,
+          "smallBlind": 205,
+          "bigBlind": 410,
+          "ante": 0,
+          "duration": 180,
+          "spinContinuation": {
+            "version": 1,
+            "anchorLevel": 10,
+            "anchorBigBlind": 210,
+            "growth": 1.4,
+            "roundBigTo": 10
+          }
+        }
+      ],
+      "payout_structure": [
+        {
+          "place": 1,
+          "percentage": 80
+        },
+        {
+          "place": 2,
+          "percentage": 20
+        }
+      ]
+    },
+    {
+      "multiplier": 25,
+      "freq": 7500,
+      "payouts": [
+        0.8,
+        0.12,
+        0.08
+      ],
+      "levelMinutes": 3,
+      "reserveThresholdX": 0,
+      "blind_structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 11,
+          "smallBlind": 145,
+          "bigBlind": 290,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 12,
+          "smallBlind": 205,
+          "bigBlind": 410,
+          "ante": 0,
+          "duration": 180,
+          "spinContinuation": {
+            "version": 1,
+            "anchorLevel": 10,
+            "anchorBigBlind": 210,
+            "growth": 1.4,
+            "roundBigTo": 10
+          }
+        }
+      ],
+      "payout_structure": [
+        {
+          "place": 1,
+          "percentage": 80
+        },
+        {
+          "place": 2,
+          "percentage": 12
+        },
+        {
+          "place": 3,
+          "percentage": 8
+        }
+      ]
+    },
+    {
+      "multiplier": 50,
+      "freq": 1000,
+      "payouts": [
+        0.8,
+        0.12,
+        0.08
+      ],
+      "levelMinutes": 3,
+      "reserveThresholdX": 0,
+      "blind_structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 11,
+          "smallBlind": 145,
+          "bigBlind": 290,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 12,
+          "smallBlind": 205,
+          "bigBlind": 410,
+          "ante": 0,
+          "duration": 180,
+          "spinContinuation": {
+            "version": 1,
+            "anchorLevel": 10,
+            "anchorBigBlind": 210,
+            "growth": 1.4,
+            "roundBigTo": 10
+          }
+        }
+      ],
+      "payout_structure": [
+        {
+          "place": 1,
+          "percentage": 80
+        },
+        {
+          "place": 2,
+          "percentage": 12
+        },
+        {
+          "place": 3,
+          "percentage": 8
+        }
+      ]
+    },
+    {
+      "multiplier": 100,
+      "freq": 1008,
+      "payouts": [
+        0.8,
+        0.12,
+        0.08
+      ],
+      "levelMinutes": 3,
+      "reserveThresholdX": 1.5,
+      "blind_structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 11,
+          "smallBlind": 145,
+          "bigBlind": 290,
+          "ante": 0,
+          "duration": 180
+        },
+        {
+          "level": 12,
+          "smallBlind": 205,
+          "bigBlind": 410,
+          "ante": 0,
+          "duration": 180,
+          "spinContinuation": {
+            "version": 1,
+            "anchorLevel": 10,
+            "anchorBigBlind": 210,
+            "growth": 1.4,
+            "roundBigTo": 10
+          }
+        }
+      ],
+      "payout_structure": [
+        {
+          "place": 1,
+          "percentage": 80
+        },
+        {
+          "place": 2,
+          "percentage": 12
+        },
+        {
+          "place": 3,
+          "percentage": 8
+        }
+      ]
+    }
+  ]
+}

@@ -180,3 +180,8 @@ tests/components/cashier-cashout-generations.test.tsx
 tests/unit/FinancialAlertServiceRead.test.ts
 tests/unit/CreditReductionContract.test.ts
 tests/helpers/creditReductionReceipt.ts
+
+# Exact captured launch inputs and qualification seal
+scripts/qualification/fixtures/spin-paid-terminal/capture.json
+scripts/qualification/fixtures/spin-paid-terminal/rules.json
+scripts/qualification/spin-paid-terminal.hosted.manifest.json

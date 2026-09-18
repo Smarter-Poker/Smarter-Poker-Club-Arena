@@ -1,6 +1,6 @@
 """Source-specific hosted adapter controls; not native financial qualification.
 
-The normal wrapper runs these controls before all six separate PG17 images.
+The normal wrapper runs these controls before all seven separate PG17 images.
 No successful mocked protocol receipt establishes that SQL or refunds passed.
 """
 import copy
@@ -661,13 +661,13 @@ class MixedCurrentTests(unittest.TestCase):
                     b'{"amount":NaN}', b'{"amount":Infinity}', b'{"amount":-Infinity}'):
             with self.subTest(raw=raw), self.assertRaises(ValueError): W.MIXED.decode_races(raw)
 
-    def test_all_six_images_and_original_cases_remain_required(self):
+    def test_all_seven_images_and_original_cases_remain_required(self):
         self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
-                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry'))
+                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry', 'positive-fee-terminal'))
         self.assertEqual(W.CASES, {'preimage': ('order',),
             'candidate': ('order', 'timeout', 'committed-refund'),
             'retention-completed': (), 'mixed-current-completion': (),
-            'mixed-current-source-change': (), 'positive-fee-entry': ()})
+            'mixed-current-source-change': (), 'positive-fee-entry': (), 'positive-fee-terminal': ()})
         self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
 
     def test_exact_sources_and_executed_provider_paths_are_pinned(self):
@@ -1713,7 +1713,7 @@ class FixtureSourceTests(unittest.TestCase):
         files.update(lane_source_files())
         files.update(mixed_source_files())
         files.update({name: (Path(__file__).resolve().parents[2] / name).read_bytes()
-                      for name in W.FEE.INPUTS})
+                      for name in (*W.FEE.INPUTS, *W.TERMINAL.INPUTS)})
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -2479,3 +2479,54 @@ class ReceiptLaneTests(unittest.TestCase):
             if mode=='foreign-key':rpc['receipt_fk_count']=1
             with self.subTest(mode=mode),self.assertRaises(RuntimeError):
                 W.validate_lane_races(value,EXECUTION,lane_source_files())
+
+
+class PaidTerminalTests(unittest.TestCase):
+    def test_sources_are_exact_and_original_images_are_retained(self):
+        files={name:(W.ROOT/name).read_bytes() for name in W.TERMINAL.INPUTS}
+        W.TERMINAL.validate_sources(files,W.FEE)
+        self.assertTrue(set(W.TERMINAL.INPUTS)<=set(W.REPLACEMENTS))
+        self.assertEqual(W.CASES[W.TERMINAL.IMAGE],())
+        for name in W.TERMINAL.INPUTS:
+            changed=dict(files);changed[name]+=b'changed'
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                W.TERMINAL.validate_sources(changed,W.FEE)
+
+    def test_extended_stage_receipt_cannot_omit_fail_reorder_or_replace_a_stage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'source'
+            receipt=PositiveFeeEntryTests.allocation_receipt(self,source)
+            target=source/W.TERMINAL.BASE/'rules.json';target.parent.mkdir(parents=True)
+            target.write_bytes((W.ROOT/W.TERMINAL.BASE/'rules.json').read_bytes())
+            prefix=receipt['stages'][:22];suffix=receipt['stages'][-2:]
+            plan=W.TERMINAL.body_plan(PG,source,EXECUTION,ORDINARY,TOURNAMENT,W.FEE,W.MIXED)
+            body=[]
+            for n,argv in plan:
+                st={'stage':n,'argv':argv,'pid':1350+len(body),'returncode':0,'terminal_returncode':0}
+                for stream in ('stdout','stderr'):
+                    raw=(n+':'+stream+'\n').encode();(source.parent/'work'/(n+'.'+stream)).write_bytes(raw)
+                    st[stream+'_sha256']=W.digest(raw)
+                body.append(st)
+            receipt['stages']=prefix+body+suffix
+            receipt['positive_fee_terminal_qualification']={'protocol_mock_only':True}
+            def check(value):
+                with patch.object(W.FEE,'validate_outputs',return_value={'mocked_output_only':True}),patch.object(W.TERMINAL,'validate_outputs',return_value={'protocol_mock_only':True}):
+                    return W.TERMINAL.validate_stages(value,PG,source,EXECUTION,ORDINARY,TOURNAMENT,W.FEE,W.MIXED)
+            self.assertEqual(check(receipt),[])
+            for index in range(len(receipt['stages'])):
+                for mode in ('omit','failure','unknown','args','hash'):
+                    changed=copy.deepcopy(receipt);st=changed['stages'][index]
+                    if mode=='omit':changed['stages'].pop(index)
+                    elif mode=='failure':st['returncode']=1
+                    elif mode=='unknown':st['terminal_returncode']=None
+                    elif mode=='args':st['argv']+=['wrong-target']
+                    else:st['stdout_sha256']='f'*64
+                    with self.subTest(index=index,mode=mode),self.assertRaises((ValueError,KeyError)):
+                        check(changed)
+            changed=copy.deepcopy(receipt);changed['stages'][24:26]=reversed(changed['stages'][24:26])
+            with self.assertRaises(ValueError):check(changed)
+
+    def test_original_output_parser_rejects_nonfinite_duplicate_and_diagnostics(self):
+        for raw in (b'{"stage":"x","amount":NaN}\n',b'{"stage":"x","stage":"x"}\n',b'ERROR: failing SQL\n',b'{"ok":true}\n',b'{"stage":"x"}|unexpected\n'):
+            with self.subTest(raw=raw),self.assertRaises(ValueError):W.TERMINAL.observations(raw)
+        self.assertEqual(W.TERMINAL.observations(b'SET\n{"stage":"x","amount":0.24}\n')[0]['amount'],W.Decimal('.24'))

@@ -230,9 +230,187 @@ def main(password_file):
         # modification of the earlier accepted-authority capture or production.
 
 
+ADOPTION_MIGRATION = "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql"
+
+
+def qualify_schedule_adoption(query, owner):
+    """Exact production successor on the real extension and SELECT-only caller."""
+    root = Path(__file__).resolve().parents[3]
+    source = (root / ADOPTION_MIGRATION).read_text()
+    catalog = "SELECT coalesce(jsonb_agg(to_jsonb(j) ORDER BY jobid),'[]'::jsonb) FROM cron.job j;"
+    before = query(catalog)
+    xmin = query("SELECT xmin::text FROM cron.job WHERE jobid=272;")
+    query(source)
+    if query(catalog) != before or query("SELECT xmin::text FROM cron.job WHERE jobid=272;") == xmin:
+        raise AssertionError("same-row native update did not preserve the complete job catalog")
+    print("PASS: exact adoption migration commits a native same-row update; all job bytes preserved")
+    query(source.replace("BEGIN ISOLATION LEVEL SERIALIZABLE;", "BEGIN ISOLATION LEVEL READ COMMITTED;"),
+          refusal={("25000", "accounting_cron_adoption_requires_serializable")})
+    query("SELECT cron.alter_job(job_id:=272,schedule:='1,31 * * * *');")
+    drift = query(catalog)
+    query(source, refusal={("P0001", "accounting_cron_adoption_preimage_changed")})
+    if query(catalog) != drift:
+        raise AssertionError("refusal overwrote changed schedule")
+    query("SELECT cron.alter_job(job_id:=272,schedule:='0,30 * * * *');")
+    query("INSERT INTO cron.job(jobid,jobname,schedule,command,username,nodeport) VALUES "
+          "(271,'union-weekly-rakeback-recompute','0 0 1 1 *','SELECT 1','postgres',5432);", role=owner)
+    drift = query(catalog)
+    query(source, refusal={("P0001", "accounting_cron_adoption_single_authority_changed")})
+    if query(catalog) != drift:
+        raise AssertionError("refusal changed retired-job collision")
+    query("DELETE FROM cron.job WHERE jobid=271;", role=owner)
+    query("ALTER TABLE cron.job DISABLE TRIGGER cron_job_cache_invalidate;", role=owner)
+    query(source, refusal={("P0001", "accounting_cron_adoption_requires_native_invalidation")})
+    query("ALTER TABLE cron.job ENABLE TRIGGER cron_job_cache_invalidate;", role=owner)
+    if query(catalog) != before:
+        raise AssertionError("negative controls changed the initial complete catalog")
+    print("PASS: exact successor refuses isolation, schedule, retired authority and invalidation-trigger drift")
+    return source
+
+
+def focused_schedule_adoption(password_file):
+    """Finite disposable native launcher verification, never a production endpoint."""
+    import hashlib
+    import shutil
+    if len(sys.argv) != 5:
+        raise SystemExit("--schedule-adoption absolute_pg_bin absolute_scratch_parent absolute_output required")
+    pg, parent, output = map(Path, sys.argv[2:])
+    if not all(p.is_absolute() for p in (pg, parent, output)) or not parent.is_dir():
+        raise SystemExit("absolute owned paths required")
+    output.mkdir(parents=True, exist_ok=False)
+    fixture = Path(tempfile.mkdtemp(prefix="ucron-", dir=parent))
+    socket = fixture / "socket"
+    socket.mkdir()
+    if len(str(socket / '.s.PGSQL.55517').encode()) > 100:
+        raise SystemExit("socket path too long")
+    env = {"PATH": os.environ.get("PATH", ""), "LC_ALL": "C", "PGPASSFILE": password_file,
+           "PGCONNECT_TIMEOUT": "5"}
+    receipt = {"passed": False, "production_installed": False,
+               "runtime_scope": "harmless native scheduler schedule change in an isolated cluster",
+               "stale_production_cache_reproduced": False, "checks": []}
+    started = False
+    def run(argv):
+        result = subprocess.run([str(a) for a in argv], capture_output=True, text=True,
+                                env=env, timeout=40)
+        with (output / "runner.log").open("a") as sink:
+            sink.write(result.stdout + result.stderr)
+        if result.returncode:
+            raise AssertionError(result.stderr)
+        return result.stdout.strip()
+    owner = "accounting_fixture_cron_extension_owner"
+    command = [pg / 'psql', '-X', '-w', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1',
+               '-v', 'VERBOSITY=verbose', '-h', socket, '-p', '55517', '-d', 'postgres']
+    def query(sql, role="postgres", refusal=None):
+        result = subprocess.run([str(a) for a in command] + ['-U', role],
+                                input="SET statement_timeout='20s';SET lock_timeout='3s';\n" + sql,
+                                capture_output=True, text=True, env=env, timeout=30)
+        with (output / 'queries.log').open('a') as sink:
+            sink.write(result.stdout + result.stderr)
+        errors = re.findall(r"^ERROR:\s+([0-9A-Z]{5}): ([^\n]+)$", result.stderr, re.M)
+        if refusal is not None:
+            if result.returncode == 0 or len(errors) != 1 or errors[0] not in refusal:
+                raise AssertionError(f"unexpected refusal {result.returncode}: {errors}: {result.stderr}")
+        elif result.returncode:
+            raise AssertionError(result.stderr)
+        return result.stdout.strip()
+    try:
+        run([pg/'initdb','-D',fixture/'data','-U',owner,'-A','trust','--no-locale','-E','UTF8'])
+        with (fixture/'data/postgresql.conf').open('a') as config:
+            config.write("\ncron.launch_active_jobs=off\n")
+        run([pg/'pg_ctl','-D',fixture/'data','-l',output/'server.log','-o',
+             f"-k {socket} -p 55517 -h '' -c shared_preload_libraries=pg_cron "
+             "-c cron.database_name=postgres "
+             "-c cron.use_background_workers=on -c cron.timezone=GMT",'start'])
+        started = True
+        query("CREATE EXTENSION pg_cron;CREATE ROLE postgres LOGIN NOSUPERUSER BYPASSRLS;"
+              "GRANT pg_monitor TO postgres;GRANT USAGE ON SCHEMA cron TO postgres;"
+              "GRANT SELECT ON cron.job TO postgres;GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cron TO postgres;"
+              "INSERT INTO cron.job(jobid,active,jobname,schedule,command,database,username,nodename,nodeport) "
+              "VALUES(272,true,'union-weekly-rakeback-close','0,30 * * * *',"
+              "'SET statement_timeout=''2400s''; SELECT public.fn_union_settlement_cascade_due();',"
+              "'postgres','postgres','localhost',5432),"
+              "(900,true,'fixture-unrelated','17 * * * *','SELECT 42','postgres','postgres','localhost',5432);", role=owner)
+        privileges = json.loads(query("SELECT jsonb_build_object('superuser',(SELECT rolsuper FROM pg_roles WHERE rolname=current_user),"
+            "'select',has_table_privilege(current_user,'cron.job','SELECT'),"
+            "'update',has_table_privilege(current_user,'cron.job','UPDATE'))"))
+        if privileges != {'superuser': False, 'select': True, 'update': False}:
+            raise AssertionError('managed role privileges differ')
+        receipt['provider'] = json.loads(query("SELECT jsonb_build_object('postgres',version(),"
+            "'extension_sql_version',(SELECT extversion FROM pg_extension WHERE extname='pg_cron'),"
+            "'library',(SELECT probin FROM pg_proc WHERE oid='cron.alter_job(bigint,text,text,text,text,boolean)'::regprocedure))"))
+        libdir = Path(run([pg/'pg_config', '--pkglibdir']))
+        libraries = [p for p in (libdir/'pg_cron.so', libdir/'pg_cron.dylib') if p.is_file()]
+        if len(libraries) != 1:
+            raise AssertionError('native extension library identity is ambiguous')
+        receipt['provider']['native_library_path'] = str(libraries[0].resolve())
+        receipt['provider']['native_library_sha256'] = hashlib.sha256(libraries[0].read_bytes()).hexdigest()
+        source = qualify_schedule_adoption(query, owner)
+        receipt['migration_sha256'] = hashlib.sha256(source.encode()).hexdigest()
+        receipt['checks'].append('exact migration with managed role and four negative controls')
+        # Only this disposable fixture changes these jobs; no financial command
+        # can execute when its native launcher is enabled below.
+        query("SELECT cron.alter_job(job_id:=272,active:=false);SELECT cron.alter_job(job_id:=900,active:=false);")
+        query("CREATE TABLE public.fixture_cron_adoption_ticks(at timestamptz NOT NULL DEFAULT clock_timestamp());"
+              "GRANT INSERT,SELECT ON public.fixture_cron_adoption_ticks TO postgres;", role=owner)
+        job = int(query("SELECT cron.schedule('fixture-native-adoption','1 second',"
+                        "'INSERT INTO public.fixture_cron_adoption_ticks DEFAULT VALUES');"))
+        query("ALTER SYSTEM SET cron.launch_active_jobs='on';SELECT pg_reload_conf();", role=owner)
+        def await_ticks(minimum, after=None):
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                where = "" if after is None else " WHERE at > '" + after + "'::timestamptz"
+                ticks = json.loads(query("SELECT coalesce(jsonb_agg(at ORDER BY at),'[]'::jsonb) FROM public.fixture_cron_adoption_ticks" + where))
+                if len(ticks) >= minimum:
+                    return ticks
+                time.sleep(0.25)
+            raise AssertionError('natural launcher did not produce the required harmless receipts')
+        initial = await_ticks(3)
+        query(f"SELECT cron.alter_job(job_id:={job},schedule:='3 seconds');")
+        changed_at = query("SELECT clock_timestamp();")
+        adopted = await_ticks(4, changed_at)
+        from datetime import datetime
+        initial_gaps = [(datetime.fromisoformat(b) - datetime.fromisoformat(a)).total_seconds()
+                        for a,b in zip(initial, initial[1:])]
+        if not all(0.8 <= gap <= 2 for gap in initial_gaps):
+            raise AssertionError('initial natural one-second cadence differs: ' + str(initial_gaps))
+        gaps = [(datetime.fromisoformat(b) - datetime.fromisoformat(a)).total_seconds()
+                for a,b in zip(adopted, adopted[1:])]
+        # Discard at most the first pending old-cadence run; the final two gaps
+        # must be native three-second executions, not merely catalog values.
+        if not all(2.5 <= gap <= 5 for gap in gaps[-2:]):
+            raise AssertionError('native launcher did not adopt three-second cadence: ' + str(gaps))
+        query(f"SELECT cron.alter_job(job_id:={job},active:=false);")
+        if query(f"SELECT count(*) FROM cron.job_run_details WHERE jobid<>{job};", role=owner) != '0':
+            raise AssertionError('a captured accounting or unrelated fixture command launched')
+        receipt['runtime'] = {'initial_one_second_receipts': initial, 'changed_at': changed_at,
+                              'three_second_receipts': adopted, 'observed_gaps_seconds': gaps}
+        receipt['checks'].append('actual native launcher adopts changed harmless cadence')
+        print('PASS: actual native launcher produced one-second then three-second harmless receipts')
+        receipt['passed'] = True
+    except BaseException as exc:
+        receipt['failure'] = str(exc)
+        raise
+    finally:
+        if started:
+            try:
+                run([pg/'pg_ctl','-D',fixture/'data','-m','immediate','stop'])
+                receipt['cluster_stopped'] = True
+            except BaseException:
+                receipt['passed'] = False
+                receipt['cluster_stopped'] = False
+                raise
+            finally:
+                (output/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
+        if not (fixture/'data/postmaster.pid').exists():
+            shutil.rmtree(fixture)
+
+
 if __name__ == "__main__":
     # Match the existing native concurrency harness: an absent regular-path
     # password file prevents credential discovery without libpq's /dev/null
     # warning contaminating the exact process barriers.
     with tempfile.TemporaryDirectory(prefix="managed-cron-auth-") as directory:
-        main(str(Path(directory) / "absent.pgpass"))
+        if len(sys.argv) > 1 and sys.argv[1] == "--schedule-adoption":
+            focused_schedule_adoption(str(Path(directory) / "absent.pgpass"))
+        else:
+            main(str(Path(directory) / "absent.pgpass"))

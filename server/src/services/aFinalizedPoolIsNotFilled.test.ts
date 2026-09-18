@@ -122,6 +122,7 @@ describe('1. a finalized prize pool is not filled', () => {
       tournaments: {
         data: {
           variant: 'spin',
+          format_contract: 'spin-v1',
           max_players: 3,
           club_id: 'club',
           start_time: '2026-09-08T14:39:54.323Z',
@@ -156,6 +157,7 @@ describe('1. a finalized prize pool is not filled', () => {
       tournaments: {
         data: {
           variant: 'spin',
+          format_contract: 'spin-v1',
           max_players: 3,
           club_id: 'club',
           start_time: '2026-09-08T14:39:54.323Z',
@@ -186,6 +188,7 @@ describe('1. a finalized prize pool is not filled', () => {
       tournaments: {
         data: {
           variant: 'spin',
+          format_contract: 'spin-v1',
           max_players: 3,
           club_id: 'club',
           start_time: '2026-09-08T14:39:54.323Z',
@@ -236,7 +239,11 @@ describe('1. a finalized prize pool is not filled', () => {
     expect(walk.slice(report, gate)).not.toMatch(/poolFinalized\)\s*\{[^}]*continue;/);
     // The board read is paged, and carries the column.
     expect(walk).toContain("{ label: 'GameServer.registeringBoard', maxRows: 50_000 }");
-    expect(walk).toContain('const registering = registeringPage.rows;');
+    expect(walk).toContain('const classified = registeringPage.rows.filter(');
+    expect(walk).toContain('readPersistedTournamentFormatContract(row)');
+    expect(walk).toMatch(
+      /const registering = registeringPage\.complete\s*\? await projectTournamentAdmission\(classified\)\s*:\s*\[\]/
+    );
     const lane = method(GAME_SERVER, 'private async discoverSeatFirstStarts(');
     expect(lane).toContain('if (!finalized && seats > 0 && paid > 0 && paid < seats)');
   });
@@ -280,7 +287,13 @@ describe('2. the held-empty hold is the human window', () => {
   function emptyBoard(startTime: string): void {
     tableResults = {
       tournaments: {
-        data: { variant: 'spin', max_players: 3, club_id: 'club', start_time: startTime },
+        data: {
+          variant: 'spin',
+          format_contract: 'spin-v1',
+          max_players: 3,
+          club_id: 'club',
+          start_time: startTime,
+        },
         error: null,
       },
       table_seats: { data: [], error: null },

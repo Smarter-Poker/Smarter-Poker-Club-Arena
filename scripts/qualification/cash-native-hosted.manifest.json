@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 135779,
-      "sha256": "defdab4845e34b429d08c6855a623300e74b985402bf6223bd64bacf10262d7d"
+      "bytes": 136410,
+      "sha256": "e38482d8109938b55b1b044ff979c0db24b446cda192da863c35e5a98c789e36"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 13672,
-      "sha256": "708e38cfe88d717fb92af094ba4f093c54e9d686918fe942c72a9cb7494bde4c"
+      "bytes": 14322,
+      "sha256": "f5dfcac3fce55b70a887343f5dceac735e2f51274fd15827e2391dd49e7ff2d6"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 53144,
-      "sha256": "0d2d9cf7d72be7bbc9508ea84cfb69da2c7344722b17c1b5403e14063ea121b1"
+      "bytes": 53937,
+      "sha256": "9e4223da33f8f424af3893daf0ca1bfe1a4426a2bc4e6a8a66330cc3ef869c4b"
     }
   },
   "nativePgCron": {

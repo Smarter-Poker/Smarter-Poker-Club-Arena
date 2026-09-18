@@ -1,0 +1,4 @@
+{
+  "_owner": "MTT admission compatibility: the existing synchronous buy-in classifier uses this import-free shared engine helper to distinguish new unlimited MTT drafts from fixed fields. It adds no services or dependencies; measured entry remains 150 kB gzip versus 161 kB baseline. One canonical predicate keeps entry quotes and server classification aligned.",
+  "modules": ["src/tournament/tournamentEntryCapacity.ts"]
+}

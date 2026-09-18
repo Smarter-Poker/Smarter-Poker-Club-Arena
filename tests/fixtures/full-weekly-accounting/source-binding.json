@@ -1125,6 +1125,37 @@
     "reason": "Preserve the unchanged provider settings guards by reproducing the observed read-only monitoring role in the isolated managed caller; no production privilege changes.",
     "focused_validation": "Exact maintained managed-cron-role-regression.py passed with actual local PostgreSQL17.11 and pg_cron1.6.8 against prior accepted schema: oldLOCK42501, exact source transition and rollback, job272 staleupdate40001, job271 retirementguardrefusal and preserved concurrent rows, final272 timing race40001. No job launched. Full final hosted job remains required."
   },
+  "diamond_merge_test_successor_20260917": {
+    "baseline_commit": "66347b24660443d3d2496bccee9365a348018a9e",
+    "tested_commit": "b6c42fc365de3a2feca9ef6b04d52e2c3515171b",
+    "prior_binding_sha256": "26839887e0c9fb4d35d07b22a5fa4f23725a781129a28de05f956d21379f5283",
+    "failed_run": 35274824240,
+    "failed_job": 105383004849,
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/CreditRequestAuthority.test.ts",
+        "previous_sha256": "86a95a292ecefea07d394476a421328daaab3b19d24bf98814ea4efcfe2463b5",
+        "sha256": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821"
+      },
+      {
+        "path": "tests/unit/CreditRequestLegacyCaller.test.ts",
+        "previous_sha256": "ec6e38cf2fe8e38570f2142dcc735201de8c0a54aaf2e805a142ad01bbb6d25f",
+        "sha256": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b"
+      },
+      {
+        "path": "tests/cashout-escrow-flow.test.ts",
+        "previous_sha256": "aba0d973eb661f7af644a2bf221037a9c8a9d1063f0d2751ec0ee43c47a4ee19",
+        "sha256": "b74114ae26cc7499d9243d67ac9b9b41d0d1c64dcfb47d8d0140aad0dc536fd5"
+      },
+      {
+        "path": "tests/unit/FinancialExportService.test.ts",
+        "previous_sha256": "608845083c38ae79097a7f3550f25ae8f5df698586f9277f4db6bf0d98c68721",
+        "sha256": "17b705c4af3fa783ccaa556249f6915dd3c4a83b78863e2ca1ad29f46989633e"
+      }
+    ],
+    "reason": "Ordinary integration hooks exposed existing no-loss-of-precision, unexpected-multiline and no-useless-escape lint errors in three tests; explicit Number conversion, joined chained calls and equivalent regex preserve their assertions. The cashout source pin normalizes whitespace after required source formatting. All other 267 bindings remain byte-identical to the reviewed baseline, including captured SQL, catalog and native probes.",
+    "validation": "Existing three lint-affected suites passed118 cases; four format-pin suites passed77 cases; ordinary final pre-push related/source-pin tests passed. Final native composition must run after this explicit four-file successor binding; no historic execution is reattributed."
+  },
   "native_schedule_adoption_successor_20260917": {
     "migration": "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql",
     "scope": "Separately committed same-row native alter_job for exact captured canonical job272, with no new schedule or financial execution.",

@@ -32,6 +32,8 @@ import { TournamentManagerBase } from './TournamentManagerBase.js';
 import {
   eliminationSweepMs,
   eliminationSweepsInflight,
+  tournamentFinishRefusalsTotal,
+  classifyFinishRefusal,
 } from '../observability/engineInstruments.js';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
@@ -2140,7 +2142,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spin_multiplier + tournament_type: a Spin's payout split is a pure
         // function of its multiplier, so the spec can rebuild the structure
         // when the stored column is unreadable. See payoutStructure.ts.
-        'payout_structure, prize_pool, bubble_protection, buy_in_amount, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier'
+        'format_contract, payout_structure, prize_pool, bubble_protection, buy_in_amount, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -5047,6 +5049,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;
       const outcomeUnknown =
         settlementErr instanceof TerminalSettlementOutcomeUnknownError || !provenRefusal;
+      if (provenRefusal) {
+        // Counted by a bounded reason so a rule can say WHY finishes are
+        // failing, not only that they are (see engineInstruments).
+        tournamentFinishRefusalsTotal.inc(1, {
+          reason: classifyFinishRefusal((settlementErr as Error).message),
+        });
+      }
       reportError(
         settlementErr,
         outcomeUnknown

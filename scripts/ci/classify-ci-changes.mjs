@@ -66,7 +66,7 @@ export function classifyChangedPaths(paths) {
   // These maintained verification inputs execute in the existing CSS browser
   // job. A test-only correction must run its connected browser regressions.
   const cashLobbyBrowser = matches(
-    /^tests\/e2e\/(?:global-setup\.ts|mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
+    /^tests\/e2e\/(?:global-setup\.ts|css\/(?:diamond-games-playfield|diamond-wheel-reveal)\.spec\.ts|helpers\/(?:diamond-games|diamond-wheel)-fixture\.mjs|mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
   );
   // Both PR builds invoke this stamper; its own changes must reach them.
   const buildProvenance = paths.includes('scripts/stamp-build-provenance.mjs');
@@ -89,7 +89,7 @@ export function classifyChangedPaths(paths) {
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   const diamondGames = matches(
-    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-spins-claimed-daily-bonus)\.sql|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|diamondBonusRecovery)\.ts|src\/utils\/crashReceipt\.ts|src\/pages\/Diamond(Choice|Crash|Plinko)Page\.tsx)$/
+    /^(tests\/sql\/(diamond-games-funding-identity|diamond-games-bank-fallback|diamond-plinko-denominations|diamond-crash-clicked-multiplier|diamond-spins-claimed-daily-bonus|diamond-wheel-funded-awards|diamond-wheel-upgrade-eight)\.sql|tests\/fixtures\/(diamond-wheel-v2-(receipts|state)|diamond-spins\/wheel-(?:earned|v3)-postgres-receipts)\.json|tests\/unit\/wheel(ServerReceipts|EarnedPostgresContract|UpgradeReceipts|UpgradePostgresContract)\.test\.ts|src\/services\/(DiamondBonusService|DiamondGamesService|DiamondChoiceService|DiamondWheelService|WheelBonusEntryService|diamondBonusRecovery)\.ts|src\/hooks\/use(BonusBudget|EarnedBonus)\.ts|src\/components\/games\/BonusSetup\.tsx|src\/utils\/(crashReceipt|bonusGameBudget|wheelAward|wheelPendingSpin|wheelFairness)\.ts|src\/pages\/Diamond(Choice|Crash|Plinko|Wheel)Page\.tsx)$/
   );
 
   // The Phase 4 PostgreSQL step cannot run when its parent job is skipped.

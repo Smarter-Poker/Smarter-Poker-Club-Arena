@@ -1,6 +1,12 @@
 import { rememberBonus, clearPendingBonus } from './diamondBonusRecovery';
 import { supabase } from '../lib/supabase';
-import { bonusTotal, type BonusBudget } from '../utils/bonusGameBudget';
+import {
+  bonusAdded,
+  bonusTotal,
+  validBonusBudget,
+  earnedReceiptBudget,
+  type BonusBudget,
+} from '../utils/bonusGameBudget';
 import { validSpinAmount, PLINKO_DIAMONDS_PER_DROP } from '../utils/bonusGameBudget';
 import { parseChoiceRound } from './DiamondChoiceService';
 import { validateCrashSettlement } from '../utils/crashReceipt';
@@ -45,7 +51,15 @@ export interface PlinkoBonus {
   client_seed: string;
   nonce: number;
   commit_id: string;
-  bonus: { id: string; base_diamonds: number; added_diamonds: number; total_diamonds: number };
+  award_id?: string;
+  bonus: {
+    id: string;
+    base_diamonds: number;
+    added_diamonds: number;
+    total_diamonds: number;
+    entry_diamonds?: number;
+    boost_multiplier?: number;
+  };
 }
 export function parsePlinkoBonus(value: unknown): PlinkoBonus {
   const v = value as PlinkoBonus;
@@ -77,13 +91,15 @@ export function parsePlinkoBonus(value: unknown): PlinkoBonus {
     !v.bonus ||
     !id(v.bonus.id) ||
     v.bonus.id !== v.id ||
-    !validSpinAmount(v.bonus.base_diamonds) ||
-    ![0, v.bonus.base_diamonds].includes(v.bonus.added_diamonds) ||
+    (v.award_id !== undefined
+      ? !earnedReceiptBudget(v as unknown as Record<string, unknown>)
+      : !validSpinAmount(v.bonus.base_diamonds) ||
+        ![0, v.bonus.base_diamonds].includes(v.bonus.added_diamonds)) ||
     v.bonus.total_diamonds !== v.bet_diamonds ||
     v.bonus.base_diamonds + v.bonus.added_diamonds !== v.bet_diamonds ||
     !Number.isSafeInteger(v.bet_diamonds) ||
     v.bet_diamonds < 25 ||
-    v.bet_diamonds > 5000 ||
+    v.bet_diamonds > (v.award_id ? 7500 : 5000) ||
     !PLINKO_DIAMONDS_PER_DROP.includes(v.diamonds_per_drop as 1) ||
     v.bet_diamonds % v.diamonds_per_drop !== 0 ||
     !Array.isArray(v.drops) ||
@@ -126,7 +142,7 @@ export const DiamondBonusService = {
     if (
       !input.budget ||
       typeof input.budget.doubled !== 'boolean' ||
-      !validSpinAmount(input.budget.base)
+      !validBonusBudget(input.budget)
     )
       throw new BonusRefusal('Choose 25 To 2,500 Diamonds');
     if (!userId) throw new BonusRefusal('Sign In To Play');
@@ -144,11 +160,15 @@ export const DiamondBonusService = {
       throw new BonusRefusal('The Bonus Settings Could Not Be Verified');
     rememberBonus(userId, input);
     const { data, error } = await supabase.rpc(
-      'fn_diamond_bonus_start' as never,
+      (input.budget.award ? 'fn_wheel_bonus_start' : 'fn_diamond_bonus_start') as never,
       {
-        p_club_id: input.clubId,
-        p_game: input.game,
-        p_base_diamonds: input.budget.base,
+        ...(input.budget.award
+          ? { p_award_id: input.budget.award.id }
+          : {
+              p_club_id: input.clubId,
+              p_game: input.game,
+              p_base_diamonds: input.budget.base,
+            }),
         p_double: input.budget.doubled,
         p_commit_id: input.commitId,
         p_client_seed: input.seed,
@@ -170,7 +190,7 @@ export const DiamondBonusService = {
     if (
       !bonus ||
       bonus.base_diamonds !== input.budget.base ||
-      bonus.added_diamonds !== (input.budget.doubled ? input.budget.base : 0) ||
+      bonus.added_diamonds !== bonusAdded(input.budget) ||
       bonus.total_diamonds !== bonusTotal(input.budget) ||
       (result?.client_seed ?? fairness?.client_seed) !== input.seed ||
       result?.ok !== true ||
@@ -218,12 +238,18 @@ export function validateBonusReceipt(input: BonusStart, raw: Record<string, unkn
   const b = raw.bonus as PlinkoBonus['bonus'] | undefined;
   const fairness = raw.fairness as Record<string, unknown> | undefined;
   if (
+    (input.budget.award
+      ? raw.award_id !== input.budget.award.id ||
+        !earnedReceiptBudget(raw) ||
+        b?.entry_diamonds !== input.budget.award.entryDiamonds ||
+        b?.boost_multiplier !== input.budget.award.boostMultiplier
+      : raw.award_id !== undefined) ||
     raw.ok !== true ||
     raw.game !== input.game ||
     raw.club_id !== input.clubId ||
     !id(b?.id) ||
     b?.base_diamonds !== input.budget.base ||
-    b?.added_diamonds !== (input.budget.doubled ? input.budget.base : 0) ||
+    b?.added_diamonds !== bonusAdded(input.budget) ||
     b?.total_diamonds !== bonusTotal(input.budget) ||
     raw.bet_diamonds !== bonusTotal(input.budget) ||
     (input.serverSeedHash !== undefined &&

@@ -896,7 +896,17 @@ export abstract class TournamentManagerBase {
       tournamentId: this.tournamentId,
       proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
     };
-    for (const engine of this.tableEngines.values()) {
+    for (const [tableId, engine] of this.tableEngines) {
+      // A drained original can remain in both registries until its F06/move
+      // outcome is known. Keep it retired; extending its proof is unnecessary
+      // and its old deadline is not evidence that this live manager lost lease.
+      if (engine.isTerminalDrainedForTournamentLease?.(tableId, authority)) {
+        if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
+          this.fenceForTournamentLeaseLoss();
+          return false;
+        }
+        continue;
+      }
       if (!engine.renewEngineLeaseProof(authority)) {
         this.fenceForTournamentLeaseLoss();
         return false;

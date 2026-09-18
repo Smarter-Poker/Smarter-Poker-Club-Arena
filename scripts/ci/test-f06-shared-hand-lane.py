@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -143,6 +144,9 @@ try:
     probe('canonical-receipted-roster-move', bound + receipt + "UPDATE tournament_players SET table_id='00000000-0000-4000-8000-000000000001',seat_number=2 WHERE id=2 RETURNING seat_number;", '2')
     run('browser-execution-still-closed', "SELECT NOT has_function_privilege('anon','smarter_private.f06_source_guard()','EXECUTE') AND NOT has_function_privilege('authenticated','smarter_private.f06_source_guard()','EXECUTE');", 't')
     require(run('all-probes-rolled-back', snapshot) == before, 'Probe leaked player state')
+    extension = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py'))
+    extension['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('unsettledAbort', {}).get('passed') is True, 'Interrupted-hand qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

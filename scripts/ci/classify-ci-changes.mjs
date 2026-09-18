@@ -16,6 +16,8 @@ const mttPreparation =
 // and authoring dependencies. Fixture-only changes must reach this job too.
 const mttActivation =
   /^(scripts\/ci\/(mtt_activation_native\.py$|mtt_activation_funding\.py$|mtt_activation_satellite\.py$|satellite_qualifier_fixture\.py$|mtt_break_authoring_native\.py$|fixtures\/(mtt-format-activation|satellite-qualifiers|mtt-break-authoring)\/|probes\/mtt-activation\/)|tests\/operations\/mtt-activation-results\.test\.py$)/;
+const f06HandAuthority =
+  /^scripts\/ci\/(?:test-f06-shared-hand-lane\.py$|probes\/f06-shared-hand-lane\/)/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
@@ -121,6 +123,7 @@ export function classifyChangedPaths(paths) {
       matches(mttPreparation) ||
       matches(satelliteQualifiers) ||
       matches(mttActivation) ||
+      matches(f06HandAuthority) ||
       commitmentAudit ||
       matches(accounting) ||
       nativeIsolationTool ||
@@ -147,6 +150,7 @@ export function classifyChangedPaths(paths) {
       tournamentAccountingInput ||
       matches(mttPreparation) ||
       matches(mttActivation) ||
+      matches(f06HandAuthority) ||
       matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       nativeIsolationTool ||
       spinRules ||

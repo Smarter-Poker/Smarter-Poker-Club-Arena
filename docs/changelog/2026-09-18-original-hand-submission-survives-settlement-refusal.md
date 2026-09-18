@@ -80,3 +80,12 @@ Final workflow inspection found the journal step omitted the existing stock
 PostgreSQL isolation tester artifact path. Its new direct assertion failed on
 the omission. The step now passes that same qualified artifact explicitly; no
 new tool installation or fallback is introduced.
+
+The ordinary pre-push run exposed three old fixture assertions: the manager
+fixture supplied a hand-admission projection to journal resume, and the stack
+persistence fixture supplied an atomic receipt to retention. Their explicit RPC
+responses now preserve booked-start and unresolved-permit behavior, distinguish
+retention from receipt-only commit, and prove identical payloads after four lost
+responses at either boundary. The incomplete tournament mirror still refuses
+without projection or observation. Both existing files pass all 22 cases.
+No production source or native qualification input changed for this correction.

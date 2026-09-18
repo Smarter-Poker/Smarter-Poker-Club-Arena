@@ -17,12 +17,8 @@ BEGIN
   END IF;
   BEGIN
    PERFORM set_config('lock_timeout',least(1000,greatest(1,ceil(extract(epoch FROM v_deadline-clock_timestamp())*1000)))::text||'ms',true);
-   LOCK TABLE public.engine_tournament_leases IN ACCESS EXCLUSIVE MODE;
-   LOCK TABLE smarter_private.f06_unsettled_hand_aborts IN ACCESS EXCLUSIVE MODE NOWAIT;
-   LOCK TABLE smarter_private.f06_hand_permits IN ACCESS EXCLUSIVE MODE NOWAIT;
-   LOCK TABLE smarter_private.f06_operations IN ACCESS EXCLUSIVE MODE NOWAIT;
-   LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE NOWAIT;
-   LOCK TABLE public.hand_history IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+   LOCK TABLE public.hand_atomic_commits IN SHARE MODE;
+   LOCK TABLE public.hand_history IN SHARE MODE NOWAIT;
    IF clock_timestamp()>=v_deadline THEN
     RAISE EXCEPTION 'F06_GENERATION_INSTALL_ADMISSION_BUSY' USING ERRCODE='55P03';
    END IF;

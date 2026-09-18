@@ -94,7 +94,55 @@ def qualify(root, out, cmd, command, run, probe, require, results, held, money, 
                             ('accepted-guard', 'smarter_private.f06_aborted_hand_guard()'),
                             ('park-adoption', 'public.fn_f06_claim_custody(uuid,uuid,uuid,uuid,bigint)')]:
         run('generation-drift-' + name, 'BEGIN;ALTER FUNCTION '+signature+' SET search_path=pg_catalog,pg_temp;'+installer, error='F06_GENERATION_PREIMAGE_CHANGED')
-    run('generation-install', installer)
+    # A PostgreSQL frame can outlive CREATE OR REPLACE. Model a scheduler pause
+    # before the old guard's first permit read without changing its predicates.
+    # Use a private clone so the intentional counterexample cannot taint the
+    # actual batch/financial regression below.
+    import re
+    guard = next(row['definition'] for row in json.loads((here / 'generation-preimages.json').read_text())['functions']
+                 if row['proname'] == 'f06_aborted_hand_guard')
+    seam = 'BEGIN\n SELECT tournament_id INTO t'
+    require(guard.count(seam) == 1, 'Exact old guard scheduling seam missing')
+    paused = guard.replace(seam, 'BEGIN\n PERFORM pg_advisory_xact_lock(18092031);\n SELECT tournament_id INTO t')
+    source_db = cmd[-1]
+    clone_db = 'f06_generation_install_boundary'
+    require(re.fullmatch('[a-z][a-z0-9_]*', source_db) is not None, 'Unexpected fixture database identity')
+    run('generation-admission-clone', 'CREATE DATABASE ' + clone_db + ' TEMPLATE ' + source_db + ';')
+    writer = None
+    try:
+        cmd[-1] = clone_db
+        run('generation-old-frame-pause', paused)
+        with held('SELECT pg_advisory_lock(18092031);'):
+            writer = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, text=True)
+            writer.stdin.write("SET application_name='generation-old-history-frame';INSERT INTO hand_history(table_id,hand_number) VALUES(md5('gtab102:1')::uuid,2010201);\n")
+            writer.stdin.close()
+            writer.stdin = None
+            deadline = time.monotonic() + 4
+            while command(cmd, "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='generation-old-history-frame' AND wait_event_type='Lock');").stdout.strip() != 't':
+                require(writer.poll() is None and time.monotonic() < deadline, 'Old guard frame did not reach actual lock barrier')
+                time.sleep(.02)
+            run('generation-restore-exact-old-catalog', guard)
+            run('generation-two-share-drains-refuse-old-frame', installer, error='55P03: F06_GENERATION_INSTALL_ADMISSION_BUSY')
+            run('generation-admission-refusal-atomic', "SELECT to_regclass('smarter_private.f06_generation_aborts') IS NULL AND md5(pg_get_functiondef('smarter_private.f06_aborted_hand_guard()'::regprocedure))='fccb0507e74649a7176d6dc233b0a820';", 't')
+            unlocked = re.sub(r'DO \$admission\$[\s\S]*?END \$admission\$;', '', installer, count=1)
+            require(unlocked != installer, 'No-lock counterfactual unchanged')
+            run('generation-counterfactual-no-drain-install', unlocked)
+            run('generation-dispose-ahead-of-old-frame', service + abort(102))
+        old_out, old_err = writer.communicate(timeout=4)
+        (out / 'generation-old-frame-counterexample.log').write_text(old_out + old_err)
+        require(writer.returncode == 0, 'Old guard counterexample failed: ' + old_err)
+        run('generation-counterexample-late-history', "SELECT (SELECT count(*) FROM smarter_private.f06_generation_abort_hands WHERE table_id=md5('gtab102:1')::uuid)||'|'||(SELECT count(*) FROM hand_history WHERE table_id=md5('gtab102:1')::uuid);", '1|1')
+        run('generation-new-frame-refuses-late-history', "INSERT INTO hand_history(table_id,hand_number) VALUES(md5('gtab102:1')::uuid,2010201);", error='F06_ABORTED_HAND_FENCED')
+    finally:
+        if writer is not None and writer.poll() is None:
+            writer.terminate()
+            writer.wait(timeout=4)
+        cmd[-1] = source_db
+        run('generation-admission-clone-cleanup', 'DROP DATABASE ' + clone_db + ';')
+    with held("SELECT 1 FROM engine_tournament_leases WHERE tournament_id=md5('gt103')::uuid FOR KEY SHARE;SELECT 1 FROM hand_history LIMIT 1;"):
+        run('generation-install', installer)
+
     probe('generation-baseline-timestamp-alone-accepted-failed-postcommit', """DO $$DECLARE body text;BEGIN
       body:=pg_get_functiondef('fn_f06_abort_unsettled_generation(uuid,jsonb)'::regprocedure);
       IF strpos(body,'AND c.post_commit_result->''ok''=''true''::jsonb')=0 THEN RAISE EXCEPTION 'missing actual postcommit predicate'; END IF;

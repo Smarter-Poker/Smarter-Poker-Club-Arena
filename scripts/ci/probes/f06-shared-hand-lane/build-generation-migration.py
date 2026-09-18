@@ -29,11 +29,17 @@ for row in rows:
     if new != old:
         changed[row['signature']] = new
 assert len(changed) == 3
-# Use the predecessor's already qualified finite admission rather than taking
-# a new lock order while live lease readers can still enter old receipt bodies.
+# Only the two changed hand-write trigger bindings need old-frame drainage.
+# The generation/identity additions are guarded by the owning lease/row lanes;
+# no existing relation/constraint/trigger DDL occurs in this additive migration.
+# SHARE drains RowExclusive writers but permits unrelated lease and hand readers.
+# Preserve the finite first-gate budget and release every partial lock set.
 predecessor = (root / 'supabase/migrations/20260918061004_interrupted_original_hands_fence_their_successor_lease.sql').read_text()
 admission = predecessor[predecessor.index('DO $admission$'):predecessor.index('DO $preimages$')]
-admission = admission.replace("   IF clock_timestamp()>=v_deadline THEN", "   LOCK TABLE smarter_private.f06_hand_permits IN ACCESS EXCLUSIVE MODE NOWAIT;\n   LOCK TABLE smarter_private.f06_operations IN ACCESS EXCLUSIVE MODE NOWAIT;\n   LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE NOWAIT;\n   LOCK TABLE public.hand_history IN SHARE ROW EXCLUSIVE MODE NOWAIT;\n   IF clock_timestamp()>=v_deadline THEN")
+admission = admission.replace('LOCK TABLE public.engine_tournament_leases IN ACCESS EXCLUSIVE MODE;',
+                              'LOCK TABLE public.hand_atomic_commits IN SHARE MODE;')
+admission = admission.replace('LOCK TABLE smarter_private.f06_unsettled_hand_aborts IN ACCESS EXCLUSIVE MODE NOWAIT;',
+                              'LOCK TABLE public.hand_history IN SHARE MODE NOWAIT;')
 admission = admission.replace('F06_SUCCESSOR_INSTALL_ADMISSION_BUSY', 'F06_GENERATION_INSTALL_ADMISSION_BUSY')
 sql = '''-- Separate whole-generation interrupted-hand disposition. Zero chips credited.
 -- The installed HU and successor RPCs and their unique constraints are unchanged.

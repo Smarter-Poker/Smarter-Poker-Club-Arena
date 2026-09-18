@@ -230,6 +230,7 @@ import nativeCohorts from './__fixtures__/satellite-qualifier-native-receipts.js
 import { TournamentManager } from './TournamentManager.js';
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { TournamentRetirementCustody } from '../services/TournamentRetirementCustody.js';
 
 function cohortManager(
   raw: (typeof nativeCohorts)[keyof typeof nativeCohorts] = nativeCohorts.two_survivors
@@ -243,6 +244,9 @@ function cohortManager(
   const shared = new Map([[tableId, engine]]);
   const server: any = {
     getTableEngine: (id: string) => shared.get(id),
+    ownsTournamentTableEngine: (id: string, expected: ServerTableEngine) =>
+      shared.get(id) === expected,
+    tournamentRetirementCustody: new TournamentRetirementCustody(),
     unregisterTableEngine: vi.fn((id: string, expected: unknown) => {
       if (shared.get(id) !== expected) return false;
       shared.delete(id);
@@ -250,7 +254,12 @@ function cohortManager(
     }),
     stopClosedTournamentTableEngine: vi.fn().mockResolvedValue(false),
   };
-  const manager = new TournamentManager(raw.tournament_id, server) as any;
+  const manager = new TournamentManager(
+    raw.tournament_id,
+    server,
+    '00000000-0000-4000-8000-000000000004',
+    performance.now() + 60_000
+  ) as any;
   manager.lifecycleEpoch.begin();
   Object.assign(manager, {
     running: true,
@@ -283,6 +292,20 @@ function cohortManager(
     qualifier_ids: raw.qualifier_ids,
   };
   fixture.rpc.mockImplementation(async (name: string) => {
+    if (name === 'fn_f06_hand_number_state')
+      return {
+        data: {
+          ok: true,
+          table_id: tableId,
+          lifecycle: '1',
+          can_reserve: true,
+          blocked_reason: null,
+          used_hand_number_max: '0',
+          unresolved_permit: null,
+          next_hand_number_candidate: '1',
+        },
+        error: null,
+      };
     if (name === 'fn_get_satellite_qualifier_state') return { data: response, error: null };
     if (name === 'fn_settle_satellite_qualifiers') return { data: raw, error: null };
     throw new Error(`Unexpected cohort RPC ${name}`);
@@ -370,6 +393,7 @@ describe('new-format satellite completion at the actual full-ticket boundary', (
 
   it('adopted and replacement dealers preserve both the booked start and qualifier boundary before dealing', async () => {
     const f = cohortManager();
+    f.e.running = false;
     const bookedStart = Date.now() + 60_000;
     f.manager.tournamentCache.started_at = new Date(bookedStart).toISOString();
     const start = vi.spyOn(f.engine, 'start').mockImplementation(async () => {
@@ -378,9 +402,10 @@ describe('new-format satellite completion at the actual full-ticket boundary', (
     });
     Object.defineProperty(f.engine, 'ready', { value: Promise.resolve(true) });
     f.manager.startManagedTableEngine(f.engine, 'test');
-    await Promise.resolve();
+    await Promise.all([...f.manager.tableEngineRunJobs]);
     expect(start).toHaveBeenCalledOnce();
     expect(f.manager.satelliteQualifierBoundaryPending).toBe(true);
+    expect(fixture.reportError).not.toHaveBeenCalled();
   });
 
   it.each(['freeze', 'stop', 'abort', 'replacement', 'generation'] as const)(

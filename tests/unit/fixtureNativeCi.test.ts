@@ -1199,6 +1199,7 @@ describe('restored provider accounting qualification', () => {
     'credit-reduction-authority',
     'credit-request-authority',
     'full-weekly-accounting',
+    'legacy-fee-finality',
     'messenger-private-accounting',
     'mixed-rake-period',
     'pnl-evidence',

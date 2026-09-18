@@ -102,8 +102,9 @@ describe('it is scoped and bounded', () => {
   it('only seat-first games: spins, and heads-up SNGs', () => {
     expect(SWEEP).toMatch(/\.in\('variant', \['spin', 'sng'\]\)/);
     expect(SWEEP).toMatch(
-      /t\.variant === 'spin' \|\| \(t\.variant === 'sng' && Number\(t\.max_players\) <= 2\)/
+      /\.select\('format_contract, id, name, variant, max_players, started_at'\)/
     );
+    expect(SWEEP).toMatch(/\.filter\(\(t\) => isPersistedSeatFirst\(t\)\)/);
   });
 
   it('runs once a minute, not on every discovery pass', () => {

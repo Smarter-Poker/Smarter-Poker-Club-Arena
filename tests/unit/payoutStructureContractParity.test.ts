@@ -63,6 +63,7 @@ describe.each(resolvers)('%s payout-structure resolver', (_name, resolve) => {
   it('lets a drawn Spin tier outrank its stale winner-take-all placeholder', () => {
     expect(
       resolve({
+        format_contract: 'spin-v1',
         variant: 'spin',
         spin_multiplier: 10,
         payout_structure: [{ place: 1, percentage: 100 }],
@@ -74,6 +75,7 @@ describe.each(resolvers)('%s payout-structure resolver', (_name, resolve) => {
 
     expect(
       resolve({
+        format_contract: 'spin-v1',
         tournament_type: 'SPIN',
         spin_multiplier: 25,
         payout_structure: [{ place: 1, percentage: 100 }],
@@ -88,6 +90,7 @@ describe.each(resolvers)('%s payout-structure resolver', (_name, resolve) => {
   it('fails closed for an unknown Spin tier instead of showing the placeholder', () => {
     expect(
       resolve({
+        format_contract: 'spin-v1',
         variant: 'spin',
         spin_multiplier: 500,
         payout_structure: [{ place: 1, percentage: 100 }],
@@ -98,6 +101,7 @@ describe.each(resolvers)('%s payout-structure resolver', (_name, resolve) => {
   it('preserves the stored operator-authored ladder for non-Spin events', () => {
     expect(
       resolve({
+        format_contract: 'mtt-v1',
         variant: 'freezeout',
         spin_multiplier: 10,
         payout_structure: [

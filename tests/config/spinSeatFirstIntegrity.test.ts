@@ -57,7 +57,7 @@ describe('horses take seats, not just places on a list', () => {
 
   it('the past-start top-up seats rather than registers for seat-first', () => {
     const topUp = sliceMethod(recurring, 'async topUpWithHorses(');
-    expect(topUp).toMatch(/isSeatFirstFormat\(/);
+    expect(topUp).toMatch(/const seatFirst = isPersistedSeatFirst\(tRow\)/);
     const file = ts.createSourceFile(
       'top-up.ts',
       `class Recurring { ${topUp} }`,

@@ -90,6 +90,7 @@ function fixture(
       : spin
         ? 'SPIN'
         : 'SNG',
+    format_contract: options.timed ? 'mtt-v1' : spin ? 'spin-v1' : 'sng-v1',
     game_type: options.variant ?? 'nlh',
     max_players: options.timed ? 200 : count,
     min_players: count,
@@ -221,6 +222,7 @@ function fixture(
           launch_id: launchId,
           started_at: admittedStart,
           lease_generation: LEASE,
+          format_contract: row.format_contract,
         },
       };
     }
@@ -271,6 +273,7 @@ function fixture(
           started_at: admittedStart,
           completed_at: new Date().toISOString(),
           lease_generation: LEASE,
+          format_contract: row.format_contract,
         },
       };
     }

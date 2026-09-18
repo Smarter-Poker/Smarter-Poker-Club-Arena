@@ -1,29 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { publicTournamentTableFormat } from './liveTableFormat.js';
 
-describe('public live-table format classification', () => {
-  it('treats either historical Spin marker as authoritative', () => {
-    expect(publicTournamentTableFormat({ tournament_type: 'spin' })).toBe('spin');
-    expect(publicTournamentTableFormat({ variant: 'SPIN', tournament_type: 'MTT' })).toBe('spin');
-  });
-
-  it('classifies every Sit & Go spelling and legacy heads-up row', () => {
-    expect(publicTournamentTableFormat({ tournament_type: 'sng' })).toBe('sng');
-    expect(publicTournamentTableFormat({ variant: 'SNG', tournament_type: 'SATELLITE' })).toBe(
-      'sng'
-    );
-    expect(publicTournamentTableFormat({ tournament_type: 'MTT', max_players: 2 })).toBe('sng');
-  });
-
-  it('keeps ordinary and multi-table satellite tournaments in the MTT lane', () => {
-    expect(publicTournamentTableFormat({ tournament_type: 'MTT', max_players: 140 })).toBe('mtt');
+describe('public live-table format uses recorded authority', () => {
+  it.each([
+    ['spin-v1', 'spin'],
+    ['sng-v1', 'sng'],
+    ['seat-first-satellite-v1', 'sng'],
+    ['mtt-v1', 'mtt'],
+    ['mtt-v2', 'mtt'],
+  ])('%s is %s despite obsolete labels and numeric caps', (format_contract, expected) => {
     expect(
-      publicTournamentTableFormat({ tournament_type: 'SATELLITE', variant: 'satellite' })
-    ).toBe('mtt');
+      publicTournamentTableFormat({
+        format_contract,
+        tournament_type: 'MTT',
+        variant: 'spin',
+        max_players: 2,
+      })
+    ).toBe(expected);
   });
-
-  it('does not let malformed seat counts turn an unknown tournament into SNG', () => {
-    expect(publicTournamentTableFormat({ max_players: 0 })).toBe('mtt');
-    expect(publicTournamentTableFormat({ max_players: 'not-a-number' })).toBe('mtt');
-  });
+  it.each([undefined, null, '', 'unknown'])(
+    'refuses an unproved recorded format %s',
+    (format_contract) => {
+      expect(() =>
+        publicTournamentTableFormat({ format_contract, tournament_type: 'MTT', max_players: 100 })
+      ).toThrow('TOURNAMENT_FORMAT_CONTRACT_INVALID');
+    }
+  );
 });

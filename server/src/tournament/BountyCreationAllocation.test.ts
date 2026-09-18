@@ -36,14 +36,36 @@ async function create(method: string, overrides: Record<string, unknown>) {
       return chain;
     }),
     select: vi.fn(() => chain),
-    maybeSingle: vi.fn(async () => ({ data: { id: 'event-1' }, error: null })),
+    maybeSingle: vi.fn(async () => ({
+      data: { ...inserted, id: 'event-1', format_contract: 'mtt-v1' },
+      error: null,
+    })),
     update: vi.fn(() => chain),
     eq: vi.fn(async () => ({ error: null })),
   };
   vi.spyOn(supabase, 'from').mockReturnValue(chain as never);
+  vi.spyOn(supabase, 'rpc').mockImplementation(((
+    name: string,
+    args: { p_tournament_ids: string[] }
+  ) => {
+    expect(name).toBe('fn_ca_tournament_admission_snapshot');
+    expect(args).toEqual({ p_tournament_ids: ['event-1'] });
+    return Promise.resolve({
+      data: {
+        ok: true,
+        admission_abi: 'legacy-capacity-v1',
+        entries: [
+          { tournament_id: 'event-1', format_contract: 'mtt-v1', effective_max_players: 100 },
+        ],
+      },
+      error: null,
+    });
+  }) as never);
   const service = new TournamentRecurringService();
   vi.spyOn(service as any, 'registerHorses').mockResolvedValue(0);
-  await (service as any)[method](config, 'union-1', 'club-1');
+  const result = await (service as any)[method](config, 'union-1', 'club-1');
+  if (inserted) expect(result).toMatchObject({ tournamentId: 'event-1', registered: 0 });
+  else expect(result).toMatchObject({ tournamentId: null, registered: 0 });
   return inserted;
 }
 

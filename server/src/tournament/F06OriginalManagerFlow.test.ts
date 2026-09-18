@@ -49,6 +49,7 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
     tableEngines: new Map([[source, engine]]),
     tournamentOwnedTables: new Set([source]),
     tournamentRetirementCustody: new TournamentRetirementCustody(),
+    maintenanceBreak: { adopt: vi.fn() },
   });
   const manager: any = new TournamentManager(event, server, lease, performance.now() + 60000);
   Object.assign(manager, { running: true, eliminationSweepDeadlineAt: 0 });
@@ -78,6 +79,8 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
   const query: any = {
     select: () => query,
     eq: () => query,
+    neq: () => query,
+    or: async () => ({ data: [{ id: source }, { id: destination }], error: null }),
     is: async () => ({
       data: [{ id: seat, user_id: user, seat_number: 1, stack: 100, occupancy_id: occupancy }],
       error: null,
@@ -180,6 +183,11 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
       };
       return ok({ ...originalRow, ok: true });
     }
+    if (name === 'fn_f06_continue_no_start_last_table')
+      return {
+        data: null,
+        error: { code: '55000', message: 'F06_CONTINUATION_LAST_TABLE_REQUIRED' },
+      };
     if (name === 'fn_f06_begin_break') {
       durable.state = 'begun';
       durable.members = p.p_members.map((m: any) => ({
@@ -893,4 +901,210 @@ it('a replacement Manager admission cannot reconstruct an unresolved original pe
     f.engine.preciseTimer.dispose();
     replacement.preciseTimer.dispose();
   }
+});
+
+async function lastTableFixture() {
+  const f = await fixture();
+  f.manager.eligibleBreakDestinations.mockResolvedValue([]);
+  const fresh: any = new ServerTableEngine(source);
+  vi.spyOn(fresh, 'start').mockImplementation(async () => {
+    fresh.running = true;
+  });
+  Object.defineProperty(fresh, 'ready', { value: Promise.resolve(true) });
+  f.manager.createManagedTableEngine = vi.fn(() => fresh);
+  const originalRpc = f.rpc.getMockImplementation()!;
+  let receipt: any = null;
+  let continuationFailure: any = null;
+  let lostAfterCommit = false;
+  let currentGeneration = lease;
+  f.rpc.mockImplementation((async (name: string, p: any) => {
+    if (name === 'fn_f06_continue_no_start_last_table') {
+      f.calls.push({ name, p: structuredClone(p) });
+      f.events.push(name);
+      expect(f.engine.hasReleasedProcessOwnership()).toBe(true);
+      expect(f.engine.getF06RetainedPermit()).toBeNull();
+      expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(false);
+      if (continuationFailure) return { data: null, error: continuationFailure };
+      const state = f.state();
+      receipt ??= {
+        ok: true,
+        state: 'continued_never_started',
+        receipt_id: id(81),
+        credit: 0,
+        tournament_id: event,
+        table_id: source,
+        lifecycle: '1',
+        break_id: state.break_id,
+        park_custody_id: state.custody_id,
+        park_revision: state.revision,
+        lease_generation: currentGeneration,
+        original_generation: lease,
+        permit_id: id(8),
+        hand_number: '1000001',
+      };
+      // The native companion owns actual withdrawal/locks. This transport
+      // fixture returns the immutable same receipt after a committed lost reply.
+      if (lostAfterCommit) {
+        lostAfterCommit = false;
+        return { data: null, error: { message: 'committed reply lost' } };
+      }
+      return { data: { ...receipt }, error: null };
+    }
+    if (name === 'fn_f06_hand_number_state')
+      return {
+        data: {
+          ok: true,
+          table_id: source,
+          lifecycle: '1',
+          can_reserve: !!receipt,
+          blocked_reason: receipt ? null : 'source_excluded',
+          unresolved_permit: null,
+          used_hand_number_max: '1000001',
+          next_hand_number_candidate: receipt ? '1000002' : null,
+        },
+        error: null,
+      };
+    return originalRpc(name, p);
+  }) as any);
+  return {
+    ...f,
+    fresh,
+    receipt: () => receipt,
+    loseReply: () => {
+      lostAfterCommit = true;
+    },
+    refuse: (error: any) => {
+      continuationFailure = error;
+    },
+    useGeneration: (value: string) => {
+      currentGeneration = value;
+    },
+  };
+}
+
+it('last table original positive no-start uses one receipt and real registry CAS into fresh admission', async () => {
+  const f = await lastTableFixture();
+  await f.manager.recoverF06OriginalAdmissions();
+  await Promise.all([...f.manager.tableEngineRunJobs, ...f.manager.tableEngineStartJobs]);
+  expect(f.receipt()?.state).toBe('continued_never_started');
+  expect(f.originalState().state).toBe('never_started');
+  expect(f.server.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.manager.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.fresh.start).toHaveBeenCalledTimes(1);
+  expect(f.engine.running).toBe(false);
+  expect(f.manager.pendingNoStartContinuations.size).toBe(0);
+  expect(f.calls.filter((c) => c.name === 'fn_f06_begin_hand')).toHaveLength(1);
+  expect(
+    f.calls.some((c) =>
+      [
+        'fn_f06_begin_break',
+        'fn_move_tournament_player',
+        'fn_f06_close_break',
+        'fn_f06_ack_cleanup',
+      ].includes(c.name)
+    )
+  ).toBe(false);
+  f.fresh.running = false;
+});
+
+it('last table lost committed continuation replays exact identity before fresh registry admission', async () => {
+  const f = await lastTableFixture();
+  f.loseReply();
+  await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow('outcome unproven');
+  expect(f.receipt()).not.toBeNull();
+  expect(f.server.tableEngines.get(source)).toBe(f.engine);
+  expect(f.manager.pendingNoStartContinuations.size).toBe(1);
+  expect(f.fresh.start).not.toHaveBeenCalled();
+  await f.manager.recoverF06OriginalAdmissions();
+  await Promise.all([...f.manager.tableEngineRunJobs, ...f.manager.tableEngineStartJobs]);
+  const calls = f.calls.filter((c) => c.name === 'fn_f06_continue_no_start_last_table');
+  expect(calls).toHaveLength(2);
+  expect(calls[1].p).toEqual(calls[0].p);
+  expect(f.server.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.manager.pendingNoStartContinuations.size).toBe(0);
+  expect(f.calls.filter((c) => c.name === 'fn_f06_finish_original_no_start')).toHaveLength(1);
+  f.fresh.running = false;
+});
+
+it.each([
+  { code: '55000', message: 'F06_CONTINUATION_LAST_TABLE_REQUIRED' },
+  { code: '55000', message: 'F06_CONTINUATION_POSITIVE_ORIGINAL_REQUIRED' },
+  { code: '42501', message: 'current lease refused' },
+])(
+  'last table known refusal preserves stopped original and never admits fresh: $message',
+  async (error) => {
+    const f = await lastTableFixture();
+    f.refuse(error);
+    await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow();
+    expect(f.manager.pendingNoStartContinuations.size).toBe(0);
+    expect(f.server.tableEngines.get(source)).toBe(f.engine);
+    expect(f.fresh.start).not.toHaveBeenCalled();
+    expect(f.server.tournamentRetirementCustody.admissionAllowed(source)).toBe(false);
+  }
+);
+
+it('successor startup continues only positive terminal no-start, then uses normal fresh admission', async () => {
+  const f = await lastTableFixture();
+  f.refuse({ code: '55000', message: 'F06_CONTINUATION_LAST_TABLE_REQUIRED' });
+  await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow();
+  expect(f.originalState().state).toBe('never_started');
+  const successorLease = id(82);
+  f.useGeneration(successorLease);
+  f.refuse(null);
+  const candidate: any = new ServerTableEngine(source);
+  vi.spyOn(candidate, 'stop').mockImplementation(async () => {
+    candidate.running = false;
+    candidate.terminal = true;
+  });
+  vi.spyOn(candidate, 'hasReleasedProcessOwnership').mockReturnValue(true);
+  Object.defineProperty(candidate, 'ready', { value: Promise.resolve(true) });
+  const start = vi.spyOn(candidate, 'start').mockImplementation(async () => {});
+  // A successor owns a fresh process registry; the old owner remains retired.
+  f.server.tournamentRetirementCustody = new TournamentRetirementCustody();
+  f.server.tableEngines.set(source, candidate);
+  const manager: any = new TournamentManager(
+    event,
+    f.server,
+    successorLease,
+    performance.now() + 60000
+  );
+  manager.running = true;
+  manager.tableEngines.set(source, candidate);
+  const token = {};
+  manager.lifecycleEpoch.current = () => token;
+  manager.lifecycleIsCurrent = () => true;
+  manager.createManagedTableEngine = vi.fn(() => f.fresh);
+  const query: any = {
+    select: () => query,
+    eq: () => query,
+    neq: () => query,
+    or: async () => ({ data: [{ id: source }], error: null }),
+  };
+  vi.mocked(supabase.from).mockReturnValue(query);
+  manager.startManagedTableEngine(candidate, 'successor no-start fixture');
+  while (manager.tableEngineRunJobs.size) await Promise.all([...manager.tableEngineRunJobs]);
+  expect(f.receipt()?.lease_generation).toBe(successorLease);
+  expect(start).not.toHaveBeenCalled();
+  expect(candidate.stop).toHaveBeenCalled();
+  expect(f.fresh.start).toHaveBeenCalledTimes(1);
+  expect(manager.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.server.tableEngines.get(source)).toBe(f.fresh);
+  expect(f.originalState().state).toBe('never_started');
+  expect(f.calls.filter((c) => c.name === 'fn_f06_finish_original_no_start')).toHaveLength(1);
+  f.fresh.running = false;
+});
+
+it('multi-table source exclusion remains available to movement admission without stopping candidate', async () => {
+  const f = await lastTableFixture();
+  f.engine.f06CurrentPermit = null;
+  const query: any = {
+    select: () => query,
+    eq: () => query,
+    neq: () => query,
+    or: async () => ({ data: [{ id: source }, { id: destination }], error: null }),
+  };
+  vi.mocked(supabase.from).mockReturnValue(query);
+  expect(await f.manager.continueExcludedNoStartTable(source, f.engine, () => true)).toBe(false);
+  expect(f.engine.stop).not.toHaveBeenCalled();
+  expect(f.calls.some((c) => c.name === 'fn_f06_continue_no_start_last_table')).toBe(false);
 });

@@ -1401,6 +1401,36 @@ export abstract class TournamentManagerBase {
     });
   }
 
+  /** Layer three owns the exact terminal park/receipt contract. */
+  protected async continueExcludedNoStartTable(
+    _tableId: string,
+    _engine: ServerTableEngine,
+    _current: () => boolean
+  ): Promise<boolean> {
+    return false;
+  }
+
+  protected async readmitContinuedNoStartTable(
+    tableId: string,
+    engine: ServerTableEngine
+  ): Promise<void> {
+    const lifecycle = this.captureLifecycleToken();
+    if (
+      !lifecycle ||
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.tableEngines.get(tableId) !== engine ||
+      !this.gameServer.ownsTournamentTableEngine(tableId, engine)
+    )
+      throw new Error('F06 continued source owner changed');
+    await this.recoverManagedTableEngine(
+      tableId,
+      engine,
+      lifecycle,
+      'f06_no_start_continued',
+      false
+    );
+  }
+
   /** A manager is not torn down until every table start it launched has settled. */
   protected startManagedTableEngine(
     engine: ServerTableEngine,
@@ -1441,6 +1471,24 @@ export abstract class TournamentManagerBase {
         unresolved_permit?: unknown;
         next_hand_number_candidate?: string | null;
       } | null;
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'source_excluded' &&
+        state.unresolved_permit === null &&
+        state.next_hand_number_candidate === null &&
+        typeof state.lifecycle === 'string' &&
+        /^[1-9][0-9]{0,18}$/.test(state.lifecycle) &&
+        BigInt(state.lifecycle) <= 9223372036854775807n &&
+        (await this.continueExcludedNoStartTable(tableId, engine, current))
+      ) {
+        if (!current()) throw new Error('F06 continued startup owner changed');
+        await this.readmitContinuedNoStartTable(tableId, engine);
+        return;
+      }
       if (
         !current() ||
         error ||

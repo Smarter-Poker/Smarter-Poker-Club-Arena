@@ -1,0 +1,28 @@
+{
+  "_owner": "codex/mtt-f06-last-table-no-start-20260918",
+  "_comment": "Actual catalog readback 2026-09-18T12:33:02.603621Z and columns 12:34:23.165938Z after provider migration 20260918123246. Qualified and installed SQL SHA256 57bdce8ed60155806193cfc728bf5e92e97964ffff48106c70c064ca968ba608; submitted source adds only a leading catalog-witness annotation. All five function definitions/owners/ACLs/search paths match native postimages; private receipt RLS and both immutable triggers enabled. Schema installation only, with zero continuation receipts at readback; runtime publication and natural continuation remain separate.",
+  "tables": ["smarter_private.f06_no_start_continuations"],
+  "functions": [
+    "fn_f06_continue_no_start_last_table",
+    "smarter_private.f06_no_start_continuation_immutable",
+    "smarter_private.f06_no_start_prior_committed_stacks"
+  ],
+  "columns": {
+    "smarter_private.f06_no_start_continuations": [
+      "receipt_id",
+      "break_id",
+      "permit_id",
+      "tournament_id",
+      "table_id",
+      "lifecycle",
+      "hand_number",
+      "original_generation",
+      "current_generation",
+      "park",
+      "permit",
+      "roster",
+      "prior_committed",
+      "created_at"
+    ]
+  }
+}

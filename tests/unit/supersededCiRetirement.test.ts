@@ -176,3 +176,80 @@ describe('current PR event retires only its own obsolete CI', () => {
     );
   });
 });
+
+/**
+ * THE HEAVY MATRIX RUNS FOR THE HEAD THAT WILL BE MERGED (2026-09-18).
+ *
+ * The concurrency group is keyed on the head sha on purpose, so a superseded
+ * run is no longer cancelled - which is what stopped six pull requests being
+ * stranded by a required check that would never speak again, and what made
+ * every push to a branch pay for a complete fan-out. Measured 2026-09-17: 309
+ * CI runs across 95 branches, and the five busiest branches ran 34, 28, 17, 15
+ * and 13 times each. The account hit its Actions spending limit on 2026-09-18
+ * and took the engine release route down with it.
+ *
+ * So the heavy jobs now ask whether this sha is still the pull request head.
+ * A cost control that can quietly stop gating is worse than the cost, so what
+ * is pinned here is the two properties that make it safe:
+ *
+ *   1. FAIL OPEN. Anything other than a proven `false` runs the job, and an
+ *      unreadable answer writes `true`.
+ *   2. THE FAST GATES ARE NEVER GATED. source_windows, stub_gate and the
+ *      typecheck jobs run on every push; two of them are ungated precisely
+ *      because something once reached main unseen.
+ */
+describe('the heavy matrix runs for the head that will be merged', () => {
+  const ci = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8');
+  const job = (name: string) => {
+    const start = ci.indexOf(`\n  ${name}:\n`);
+    expect(start, `job ${name} not found - re-point this law`).toBeGreaterThan(-1);
+    const next = ci.slice(start + 1).search(/\n {2}[a-z0-9_-]+:\n/);
+    return next === -1 ? ci.slice(start) : ci.slice(start, start + 1 + next);
+  };
+
+  it('every heavy job is gated on the head still being current', () => {
+    for (const name of [
+      'fixture_native',
+      'unit_shards',
+      'accounting_postgres',
+      'server_shards',
+      'build',
+      'css-beats-e2e',
+    ]) {
+      expect(job(name), `${name} pays for a sha nobody will merge`).toContain(
+        "needs.changes.outputs.head_current != 'false'"
+      );
+    }
+  });
+
+  it('the gate fails open: only a proven false may skip', () => {
+    // `== 'true'` would skip the matrix whenever the output were missing or
+    // empty - a new job, a renamed output, a step that did not run - and a
+    // cost control must never be able to hide a failure.
+    expect(ci).not.toContain("needs.changes.outputs.head_current == 'true'");
+    const step = job('changes');
+    expect(step, 'an unreadable pull request head must run everything').toContain(
+      'could not read the pull request head; running everything'
+    );
+    expect(step).toContain('head_current=true');
+    expect(step).toContain('head_current=false');
+  });
+
+  it('the fast gates are never gated on it', () => {
+    for (const name of ['source_windows', 'stub_gate', 'typecheck', 'typecheck_compile']) {
+      expect(job(name), `${name} is a fast gate and must run on every push`).not.toContain(
+        'head_current'
+      );
+    }
+  });
+
+  it('a skip for a superseded sha is explained, never passed in silence', () => {
+    // The server aggregator refuses a skip it cannot account for. This case is
+    // legitimate, so it is named - it does not widen the silent path.
+    const server = job('server');
+    expect(server).toContain('HEAD_CURRENT');
+    expect(server).toContain('SUPERSEDED');
+    expect(server).toContain('Required $suite checks were unexpectedly skipped.');
+    expect(job('verdict')).toContain('SUPERSEDED SHA');
+  });
+});

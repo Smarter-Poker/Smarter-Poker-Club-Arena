@@ -206,6 +206,48 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/ci/test-original-paid-custody.py',
+    'scripts/ci/build-original-paid-custody.py',
+    'scripts/ci/original_paid_custody_native.py',
+    'scripts/ci/probes/original-paid-custody-authority.sql',
+    'scripts/ci/fixtures/original-paid-custody/owner-races.spec',
+    'scripts/ci/fixtures/original-paid-custody/purchase-prevention.sql',
+    'scripts/ci/fixtures/original-paid-custody/activation-guard.json',
+    'scripts/ci/fixtures/original-paid-custody/conserved-hand.sql',
+    'scripts/ci/fixtures/original-paid-custody/hand-authorities.json',
+    'scripts/ci/fixtures/original-paid-custody/hand-dependencies.json',
+    'scripts/ci/fixtures/original-paid-custody/hand-relations.json',
+    'scripts/ci/fixtures/original-paid-custody/hand-postcommit.json',
+    'scripts/ci/fixtures/original-paid-custody/hand-postcommit-tables.json',
+    'supabase/migrations/20260918093004_original_paid_tournament_stack_keeps_its_custody.sql',
+    'supabase/migrations/20260918125231_tournament_felt_guard_recognizes_conserved_hands.sql',
+  ])('enforces original paid entry custody qualification for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('runs the actual original paid custody owner and retains failures', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const native = steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-original-paid-custody.py')
+    );
+    expect(native).toHaveLength(1);
+    expect(native[0].id).toBe('original_paid_custody');
+    expect(native[0].run).toContain('scripts/ci/build-original-paid-custody.py --check');
+    expect(native[0].run).toContain('--pg-bin "$PG_BIN"');
+    expect(native[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(native[0].env.PG_ISOLATION_TESTER).toContain('isolationtester');
+    expect(native[0]['continue-on-error']).toBeUndefined();
+    expect(native[0].if).toBeUndefined();
+    const artifact = steps.find(
+      (step: { name?: string }) => step.name === 'Retain original paid custody evidence'
+    );
+    expect(artifact.uses).toBe('actions/upload-artifact@v4');
+    expect(artifact.if).toContain('always()');
+    expect(artifact.if).toContain('steps.original_paid_custody.outcome');
+    expect(artifact.with['if-no-files-found']).toBe('error');
+  });
+
+  it.each([
     'scripts/ci/test-f06-accepted-elimination.py',
     'scripts/ci/build-f06-elimination-migration.py',
     'scripts/ci/probes/f06-accepted-elimination.sql',

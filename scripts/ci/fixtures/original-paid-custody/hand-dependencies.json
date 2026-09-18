@@ -1,0 +1,114 @@
+{
+  "triggers": [
+    {
+      "name": "zzzzzz_tournament_felt_may_not_exceed_supply",
+      "type": 21,
+      "table": "table_seats",
+      "enabled": "O",
+      "deferred": true,
+      "deferrable": true,
+      "definition": "CREATE CONSTRAINT TRIGGER zzzzzz_tournament_felt_may_not_exceed_supply AFTER INSERT OR UPDATE OF stack, left_at ON public.table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_felt_may_not_exceed_supply()"
+    },
+    {
+      "name": "original_pnl_inventory_events_immutable",
+      "type": 58,
+      "table": "union_pnl_inventory_events",
+      "enabled": "O",
+      "deferred": false,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER original_pnl_inventory_events_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_inventory_events FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()"
+    },
+    {
+      "name": "union_pnl_original_inventory",
+      "type": 29,
+      "table": "table_seats",
+      "enabled": "O",
+      "deferred": false,
+      "deferrable": false,
+      "definition": "CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()"
+    },
+    {
+      "table": "tables",
+      "name": "union_pnl_original_inventory",
+      "enabled": "O",
+      "function": "fn_union_pnl_inventory_observe()",
+      "definition": "CREATE TRIGGER union_pnl_original_inventory AFTER INSERT OR DELETE OR UPDATE ON public.tables FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_inventory_observe()"
+    }
+  ],
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog"],
+      "body_md5": "1bd5f0f6fc7070e073478bdab317e249",
+      "signature": "smarter_private.assert_retained_hand_submission(jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.assert_retained_hand_submission(p_request jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE s smarter_private.hand_submissions; consumed integer;\nBEGIN\n PERFORM pg_advisory_xact_lock(hashtextextended('hand:submission:'||(p_request->>'p_table_id')||':'||(p_request->>'p_hand_number'),0));\n SELECT * INTO s FROM smarter_private.hand_submissions\n WHERE table_id=(p_request->>'p_table_id')::uuid AND hand_number=(p_request->>'p_hand_number')::bigint;\n IF NOT FOUND OR s.request IS NOT DISTINCT FROM p_request THEN RETURN; END IF;\n IF (s.request-'p_instance_id'-'p_lease_generation') IS NOT DISTINCT FROM\n    (p_request-'p_instance_id'-'p_lease_generation') THEN\n  DELETE FROM smarter_private.hand_submission_dispatch d WHERE d.transaction_id=txid_current()\n   AND d.submission_id=s.submission_id AND d.request_hash=s.request_hash\n   AND d.instance_id=p_request->>'p_instance_id'\n   AND d.lease_generation=(p_request->>'p_lease_generation')::uuid;\n  GET DIAGNOSTICS consumed=ROW_COUNT;\n  IF consumed=1 THEN RETURN; END IF;\n END IF;\n RAISE EXCEPTION 'HAND_SUBMISSION_ORIGINAL_PAYLOAD_REQUIRED' USING ERRCODE='55000';\nEND $function$\n",
+      "definition_md5": "6a3ab631fdab87ae9bcd353907de80b6"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "body_md5": "b6eb532e40ba9820643616e70cdeb265",
+      "signature": "fn_ca_insert_hand_with_awards(jsonb,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_insert_hand_with_awards(p_row jsonb, p_units jsonb DEFAULT '[]'::jsonb)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_id   uuid;\n  v_cols text;\nBEGIN\n  /* Only the columns the caller named. Anything absent keeps its DEFAULT,\n     which is the entire point - see the header. */\n  SELECT string_agg(quote_ident(c.column_name), ', ' ORDER BY c.ordinal_position)\n    INTO v_cols\n    FROM information_schema.columns c\n   WHERE c.table_schema = 'public'\n     AND c.table_name   = 'hand_history'\n     AND p_row ? c.column_name;\n\n  IF v_cols IS NULL THEN\n    RAISE EXCEPTION\n      'fn_ca_insert_hand_with_awards: p_row names no hand_history column - refusing to insert a row of pure defaults';\n  END IF;\n\n  EXECUTE format(\n    'INSERT INTO public.hand_history (%1$s) '\n    'SELECT %1$s FROM jsonb_populate_record(null::public.hand_history, $1) '\n    'RETURNING id', v_cols)\n    USING p_row\n     INTO v_id;\n\n  IF jsonb_array_length(COALESCE(p_units, '[]'::jsonb)) > 0 THEN\n    INSERT INTO public.bomb_pot_award_units\n      (hand_history_id, table_id, hand_number, pot_index, board, side, user_id, amount, hand_name)\n    SELECT v_id,\n           (u->>'table_id')::uuid,\n           (u->>'hand_number')::bigint,\n           (u->>'pot_index')::int,\n           COALESCE((u->>'board')::int, 1),\n           COALESCE(u->>'side', 'high'),\n           (u->>'user_id')::uuid,\n           (u->>'amount')::numeric,\n           NULLIF(u->>'hand_name', '')\n      FROM jsonb_array_elements(p_units) u\n    ON CONFLICT (hand_history_id, pot_index, board, side, user_id) DO NOTHING;\n  END IF;\n\n  RETURN v_id;\nEND $function$\n",
+      "definition_md5": "e7f05bb7d61360be7424c5f429066047"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "body_md5": "7a4d464261d6cc5cb185ad6c8b846440",
+      "signature": "fn_ca_share_settlement_lane_for_table(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_share_settlement_lane_for_table(p_table_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\nBEGIN\n  -- Acquire G before B and T; source custody guards also need G.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1',0));\n  -- B shared: yields to terminal authorities, concurrent with every other\n  -- hand and with rolling authorities of OTHER tournaments.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:hand-settlement-barrier:v1', 0));\n\n  IF p_table_id IS NULL THEN\n    RETURN;\n  END IF;\n\n  SELECT tb.tournament_id INTO v_tournament_id\n  FROM public.tables tb\n  WHERE tb.id = p_table_id;\n\n  IF v_tournament_id IS NOT NULL THEN\n    -- T(id) shared: yields to this tournament's own rolling authorities.\n    PERFORM pg_advisory_xact_lock_shared(\n      hashtextextended('ca:tournament-terminal-settlement:v1:' || v_tournament_id::text, 0));\n  END IF;\nEND;\n$function$\n",
+      "definition_md5": "409b14ee72ce888d3b26524c52d49a68"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "body_md5": "0201dc9ab47ebf759031ebc737900e67",
+      "signature": "fn_cash_accept_hand_provenance(uuid,bigint,uuid,jsonb,numeric,numeric,numeric,text,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cash_accept_hand_provenance(p_table uuid, p_number bigint, p_hand uuid, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_inflow numeric, p_hash text, p_request jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE m public.cash_hand_participant_manifests%ROWTYPE; x jsonb; y jsonb; v_id uuid;\n v_atomic jsonb; v_claim jsonb; v_settlement jsonb; v_stack_hand uuid;\n v_n integer; v_count integer; v_delta numeric:=0; v_people jsonb:='[]'; v_issues jsonb:='[]'; v_tournament uuid;\nBEGIN\n IF p_request IS NULL OR p_request->'stacks' IS DISTINCT FROM p_stacks\n  OR p_request->>'table_id' IS DISTINCT FROM p_table::text\n  OR p_request->>'hand_number' IS DISTINCT FROM p_number::text\n  OR encode(extensions.digest(convert_to(p_request::text,'UTF8'),'sha256'),'hex') IS DISTINCT FROM p_hash THEN\n  RAISE EXCEPTION 'Original cash accepted request hash mismatch' USING ERRCODE='23514'; END IF;\n SELECT tournament_id INTO v_tournament FROM public.tables WHERE id=p_table;\n IF v_tournament IS NOT NULL THEN RETURN; END IF;\n -- Keep original accounting proof independently of the seven-day game-history retention.\n SELECT to_jsonb(a) INTO STRICT v_atomic FROM public.hand_atomic_commits a\n  WHERE a.table_id=p_table AND a.hand_number=p_number AND a.hand_id=p_hand AND a.payload_hash=p_hash;\n v_stack_hand:=(v_atomic->'stack_result'->>'hand_id')::uuid;\n SELECT to_jsonb(k) INTO STRICT v_claim FROM public.settlement_idempotency_keys k\n  WHERE k.table_id=p_table AND k.hand_id=v_stack_hand AND k.status='succeeded'\n   AND k.completed_at IS NOT NULL AND k.result=v_atomic->'stack_result';\n SELECT to_jsonb(c) INTO STRICT v_settlement FROM public.ca_settlements c\n  WHERE c.table_id=p_table AND c.hand_id=v_stack_hand AND c.settlement_type='hand_stacks' AND c.state='final';\n SELECT count(DISTINCT value->>'funding_manifest_id'),count(*) FILTER(WHERE value->>'funding_manifest_id' IS NOT NULL)\n INTO v_n,v_count FROM jsonb_array_elements(p_stacks);\n IF v_count=0 THEN\n  INSERT INTO public.cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,atomic_receipt,stack_claim,stack_settlement,status,participants,\n   signed_external_net,rake,bbj,all_players_included,funding_provenance_complete,issues)\n  VALUES(p_table,p_number,p_hand,p_hash,p_request,v_atomic,v_claim,v_settlement,'uncertified',p_stacks,p_inflow,p_rake,p_bbj,false,false,\n   '[\"original_dealt_manifest_missing\"]');\n  RETURN;\n END IF;\n IF v_n<>1 OR v_count<>jsonb_array_length(p_stacks) THEN\n  RAISE EXCEPTION 'Incomplete or conflicting cash manifest references' USING ERRCODE='23514'; END IF;\n v_id:=(p_stacks->0->>'funding_manifest_id')::uuid;\n SELECT * INTO STRICT m FROM public.cash_hand_participant_manifests WHERE id=v_id AND table_id=p_table AND hand_number=p_number;\n IF jsonb_array_length(m.participants)<>jsonb_array_length(p_stacks) THEN\n  RAISE EXCEPTION 'Cash manifest participant set mismatch' USING ERRCODE='23514'; END IF;\n IF (SELECT count(DISTINCT value->>'user_id') FROM jsonb_array_elements(p_stacks))<>jsonb_array_length(p_stacks) THEN\n  RAISE EXCEPTION 'Duplicate cash manifest participant' USING ERRCODE='23514'; END IF;\n FOR x IN SELECT value FROM jsonb_array_elements(m.participants) LOOP\n  SELECT value INTO y FROM jsonb_array_elements(p_stacks) WHERE value->>'user_id'=x->>'user_id';\n  IF y IS NULL OR y->>'seat_id' IS DISTINCT FROM x->>'seat_id'\n   OR (y->>'seat_joined_at')::timestamptz IS DISTINCT FROM (x->>'seat_joined_at')::timestamptz\n   OR y->>'occupancy_id' IS DISTINCT FROM x->>'occupancy_id'\n   OR (y->>'stack_before')::numeric IS DISTINCT FROM (x->>'stack_before')::numeric\n   OR jsonb_typeof(y->'stack') IS DISTINCT FROM 'number'\n   OR (y->>'stack')::numeric<0 OR (y->>'stack')::numeric<>round((y->>'stack')::numeric,2)\n   OR y->>'stack' IN ('NaN','Infinity','-Infinity') THEN\n   RAISE EXCEPTION 'Cash manifest original participant mismatch' USING ERRCODE='23514'; END IF;\n  v_delta:=v_delta+(y->>'stack')::numeric-(x->>'stack_before')::numeric;\n  v_people:=v_people||jsonb_build_array(x||jsonb_build_object('stack_after',y->'stack',\n   'poker_delta',(y->>'stack')::numeric-(x->>'stack_before')::numeric));\n END LOOP;\n IF coalesce(p_rake,0)::text IN ('NaN','Infinity','-Infinity')\n  OR coalesce(p_bbj,0)::text IN ('NaN','Infinity','-Infinity')\n  OR coalesce(p_inflow,0)::text IN ('NaN','Infinity','-Infinity')\n  OR coalesce(p_rake,0)<>round(coalesce(p_rake,0),2)\n  OR coalesce(p_bbj,0)<>round(coalesce(p_bbj,0),2)\n  OR coalesce(p_inflow,0)<>round(coalesce(p_inflow,0),2)\n  OR coalesce(p_rake,0)<0 OR coalesce(p_bbj,0)<0\n  OR v_delta+coalesce(p_rake,0)+coalesce(p_bbj,0) IS DISTINCT FROM coalesce(p_inflow,0) THEN\n  RAISE EXCEPTION 'Cash manifest signed conservation mismatch' USING ERRCODE='23514'; END IF;\n v_issues:=m.issues;\n -- A signed net is conserved, but external-bank linkage and commercial terms\n -- must still be proven separately. Captured funding is not whole-period PNL.\n IF coalesce(p_inflow,0)<>0 THEN v_issues:=v_issues||'\"external_bank_receipt_not_certified\"'::jsonb; END IF;\n INSERT INTO public.cash_hand_provenance_receipts(table_id,hand_number,hand_id,payload_hash,accepted_request,atomic_receipt,stack_claim,stack_settlement,manifest_id,status,\n  game_scope,participants,signed_external_net,rake,bbj,all_players_included,funding_provenance_complete,issues)\n VALUES(p_table,p_number,p_hand,p_hash,p_request,v_atomic,v_claim,v_settlement,v_id,CASE WHEN jsonb_array_length(v_issues)=0 THEN 'captured' ELSE 'uncertified' END,\n  m.game_scope,v_people,coalesce(p_inflow,0),coalesce(p_rake,0),coalesce(p_bbj,0),true,m.funding_provenance_complete,v_issues);\nEND $function$\n",
+      "definition_md5": "9e276af576abbcc871e78746c4210fee"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "body_md5": "32335e76e9c5680e0c9cfbcf9631375b",
+      "signature": "fn_engine_lease_stale_seconds()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_engine_lease_stale_seconds()\n RETURNS integer\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT 30;\n$function$\n",
+      "definition_md5": "483a7e0ee940744fd557f1f2144d9eba"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "body_md5": "a08d06c4b6ae1332ac07ab1405c1a494",
+      "signature": "fn_union_pnl_inventory_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_inventory_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN RAISE EXCEPTION 'original_pnl_inventory_is_immutable' USING ERRCODE='55000'; END $function$\n",
+      "definition_md5": "307d83a1ee3d912bade24c48144aa801"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "body_md5": "687fd60a83e750f63f872c6e721256b5",
+      "signature": "fn_union_pnl_original_frame()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_original_frame()\n RETURNS union_pnl_transaction_frames\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE frame public.union_pnl_transaction_frames; observed timestamptz; book timestamptz;\nBEGIN\n SELECT * INTO frame FROM public.union_pnl_transaction_frames WHERE transaction_id=pg_current_xact_id();\n IF FOUND THEN RETURN frame; END IF;\n observed:=clock_timestamp(); book:=public.fn_union_week_start(observed);\n PERFORM pg_advisory_xact_lock_shared(hashtextextended('union-pnl-inventory:'||extract(epoch FROM book)::bigint::text,0));\n observed:=clock_timestamp();\n IF public.fn_union_week_start(observed)<>book THEN\n  book:=public.fn_union_week_start(observed);\n  PERFORM pg_advisory_xact_lock_shared(hashtextextended('union-pnl-inventory:'||extract(epoch FROM book)::bigint::text,0));\n  observed:=clock_timestamp();\n  IF public.fn_union_week_start(observed)<>book THEN RAISE EXCEPTION 'pnl_frame_clock_crossed_twice' USING ERRCODE='40001'; END IF;\n END IF;\n INSERT INTO public.union_pnl_transaction_frames VALUES(pg_current_xact_id(),observed,book) RETURNING * INTO frame;\n RETURN frame;\nEND $function$\n",
+      "definition_md5": "9a6559774cc1ed4ed49b315a3428abdb"
+    }
+  ],
+  "inventory": {
+    "acl": "{postgres=arwdDxtm/postgres}",
+    "rls": true,
+    "owner": "postgres",
+    "indexes": [
+      "CREATE INDEX union_pnl_inventory_boundary ON public.union_pnl_inventory_events USING btree (observed_at, event_id)",
+      "CREATE UNIQUE INDEX union_pnl_inventory_events_pkey ON public.union_pnl_inventory_events USING btree (event_id)",
+      "CREATE INDEX union_pnl_inventory_identity ON public.union_pnl_inventory_events USING btree (source_name, row_id, event_id DESC)",
+      "CREATE INDEX union_pnl_inventory_transaction ON public.union_pnl_inventory_events USING btree (transaction_id, source_name)"
+    ]
+  }
+}

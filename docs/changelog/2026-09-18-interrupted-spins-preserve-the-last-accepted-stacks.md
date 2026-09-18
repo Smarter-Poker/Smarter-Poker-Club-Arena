@@ -1,0 +1,13 @@
+# Interrupted Spins preserve the last accepted stacks
+
+A Spin can retain an interrupted reserved hand after its latest canonical hand already committed. The existing mixed-generation disposition excluded this one-table boundary. This additive migration changes only that existing service RPC, preserving the original generation fences and zero-credit receipt.
+
+Admission requires one original reserved hand, one three-seat Spin table, two or three positive current occupants, all three original registration rows, and the exact last complete canonical atomic/postcommit stack receipt. It binds each current seat, occupancy, joined time, user, registration and stack. An eliminated third player remains unchanged. A completed historical snapshot proves only that an interrupted hand existed; it remains untouched and never becomes a no-start or accepted-hand claim.
+
+The narrow ended-dispatch case additionally preserves the original committed dispatch and actual semantic-refusal record, proves the dispatch transaction has ended, rejects live/unknown transactions and current or later monetary/private/outbox/submission evidence, and matches every original settlement/idempotency/atomic/history record by its actual stored identity. The witness explicitly says the alert and dispatch have no intrinsic same-transaction linkage. No missing payload, original reference, hand outcome, payment or stack adjustment is reconstructed.
+
+The same existing MTT preflop boundary also accepts an individual ante already included in dead and total investment. It requires a finite nonnegative ante no greater than dead investment, preserves the original stack plus total investment equality and exact pot total, and adds no credit. This removes the zero-ante-only refusal without changing any saved stack or historical hand outcome.
+
+The installer requires exact prepared-cancellation, accepted-elimination, no-start continuation, occupancy and retained-submission dependencies. Its native composition uses the unchanged sealed continuation migration and request-retention prefix, including immutable row/truncate guards and the unique table/hand retention fence. Changed or disabled authorities, trigger bindings, schema constraints or index readiness refuse installation.
+
+Regression coverage stays in the maintained F06 shared-hand-lane owner and existing Accounting classification. It exercises the original exclusion, exact rollback/commit/replay, changed and incomplete proof, old ABI, dispatch and financial conflicts, two-survivor identity, retained-submission races, competing accepted commits and both generation fences. Production installation and operation remain separate evidence owned by the active MTT delivery.

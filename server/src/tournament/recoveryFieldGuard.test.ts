@@ -72,7 +72,7 @@ describe('the guard is actually wired into the rescue', () => {
       /const livePlayers = rows\.filter\(\(row\) => row\.status === 'playing'\)\.length/
     );
     expect(RECOVERY).toMatch(
-      /const structure = resolvePayoutStructure\(tournament as never, rows\.length\)/
+      /const structure =\s*tournament\.status === 'COMPLETING' && tournament\.format_contract === null\s*\? parsePayoutStructure\(tournament\.payout_structure\)\s*: resolvePayoutStructure\(tournament as never, rows\.length\)/
     );
   });
 

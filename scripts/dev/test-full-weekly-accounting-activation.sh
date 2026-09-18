@@ -406,3 +406,9 @@ python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regressi
 fi
 finish_fixture
 done
+
+# Same managed-cron path, one short native launcher probe after all financial
+# clusters have stopped. Only harmless fixture receipts are executable.
+python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py" \
+  --schedule-adoption "$pgbin" "$ACCOUNTING_FIXTURE_PARENT" \
+  "$ACCOUNTING_TEST_OUTPUT_DIR/native-schedule-adoption"

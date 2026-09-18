@@ -21,6 +21,13 @@ function boundedDiagnosticEntries<T>(values: Iterable<T>, limit: number): T[] {
   return entries;
 }
 import {
+  isPersistedUnlimitedMtt,
+  isPersistedSpin,
+  isPersistedSeatFirst,
+  readPersistedTournamentFormatContract,
+  type TournamentFormatContract,
+} from './tournamentEntryCapacity.js';
+import {
   continueBookedSpinBlinds,
   readFundedSpinDraw,
   spinRuleManifest,
@@ -79,14 +86,14 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
 import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
-import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
+import { mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
   escalatedBlindLevel,
   lastPlayableIndex,
 } from './blindEscalation.js';
 import { observedStepRatio } from './blindLadder.js';
-import { isSpinTournament, parsePayoutStructure } from './payoutStructure.js';
+import { parsePayoutStructure } from './payoutStructure.js';
 import { readTournamentPrizePool } from './tournamentPrizeContract.js';
 import { readPlayedMttLaunchProof } from './playedMttLaunchRecovery.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
@@ -161,6 +168,7 @@ interface TournamentEntryWindowResult {
 }
 
 interface TournamentLaunchBeginResult {
+  format_contract?: unknown;
   ok?: boolean;
   claimed?: boolean;
   launch_id?: string;
@@ -173,12 +181,14 @@ interface TournamentLaunchBeginResult {
 }
 
 interface TournamentLaunchClaim {
+  formatContract: TournamentFormatContract;
   launchId: string;
   startedAtIso: string;
   completed: boolean;
 }
 
 interface TournamentLaunchCompleteResult {
+  format_contract?: unknown;
   ok?: boolean;
   completed?: boolean;
   status?: string;
@@ -1584,7 +1594,12 @@ export abstract class TournamentManagerBase {
    * an incomplete admission rather than guessing a format.
    */
   getPublicLiveTableFormat(): Exclude<PublicLiveTableFormat, 'cash'> | null {
-    return this.tournamentCache ? publicTournamentTableFormat(this.tournamentCache) : null;
+    if (!this.tournamentCache) return null;
+    try {
+      return publicTournamentTableFormat(this.tournamentCache);
+    } catch {
+      return null;
+    } // Public observation never grants admission for an unknown format.
   }
 
   /** Public club scope paired with the format label; never an ownership id. */
@@ -2362,7 +2377,7 @@ export abstract class TournamentManagerBase {
     if (this.tournamentCache) return mayTakeSynchronizedBreak(this.tournamentCache);
     const { data } = await supabase
       .from('tournaments')
-      .select('tournament_type, variant, synchronized_breaks')
+      .select('tournament_type, variant, format_contract, synchronized_breaks')
       .eq('id', this.tournamentId)
       .maybeSingle();
     return mayTakeSynchronizedBreak(data);
@@ -2873,7 +2888,7 @@ export abstract class TournamentManagerBase {
    * drift apart.
    */
   isMttOrXmtt(): boolean {
-    return !isShortFormat(this.tournamentCache?.tournament_type, this.tournamentCache?.variant);
+    return this.tournamentCache != null && isPersistedUnlimitedMtt(this.tournamentCache);
   }
 
   /**
@@ -3034,7 +3049,8 @@ export abstract class TournamentManagerBase {
   private async beginTournamentLaunch(
     lifecycle: TournamentLifecycleToken,
     requestedLaunchId: string,
-    requestedStartedAtIso: string | null
+    requestedStartedAtIso: string | null,
+    expectedFormat: TournamentFormatContract
   ): Promise<TournamentLaunchClaim | null> {
     if (!this.tournamentLeaseGeneration) {
       reportError(
@@ -3053,6 +3069,7 @@ export abstract class TournamentManagerBase {
         p_launch_id: requestedLaunchId,
         p_started_at: requestedStartedAtIso,
         p_lease_generation: this.tournamentLeaseGeneration,
+        p_expected_format: expectedFormat,
       });
       this.assertLifecycleCurrent(lifecycle);
 
@@ -3087,6 +3104,7 @@ export abstract class TournamentManagerBase {
         result.replay === true &&
         returnedLaunchId.toLowerCase() !== requestedLaunchId.toLowerCase();
       const exactReceipt =
+        result.format_contract === expectedFormat &&
         result.ok === true &&
         result.claimed === true &&
         typeof result.lease_generation === 'string' &&
@@ -3100,6 +3118,7 @@ export abstract class TournamentManagerBase {
           adoptsExistingReceipt);
       if (exactReceipt && result.completed === false) {
         return {
+          formatContract: expectedFormat,
           launchId: returnedLaunchId,
           startedAtIso: new Date(returnedStartedAtMs).toISOString(),
           completed: false,
@@ -3107,6 +3126,7 @@ export abstract class TournamentManagerBase {
       }
       if (exactReceipt && result.completed === true && result.status === 'RUNNING') {
         return {
+          formatContract: expectedFormat,
           launchId: returnedLaunchId,
           startedAtIso: new Date(returnedStartedAtMs).toISOString(),
           completed: true,
@@ -3134,7 +3154,8 @@ export abstract class TournamentManagerBase {
   private async completeTournamentLaunch(
     lifecycle: TournamentLifecycleToken,
     launchId: string,
-    startedAtIso: string
+    startedAtIso: string,
+    expectedFormat: TournamentFormatContract
   ): Promise<boolean> {
     if (!this.tournamentLeaseGeneration) {
       reportError(
@@ -3152,6 +3173,7 @@ export abstract class TournamentManagerBase {
         p_tournament_id: this.tournamentId,
         p_launch_id: launchId,
         p_lease_generation: this.tournamentLeaseGeneration,
+        p_expected_format: expectedFormat,
       });
       this.assertLifecycleCurrent(lifecycle);
 
@@ -3167,6 +3189,7 @@ export abstract class TournamentManagerBase {
 
       const result = (data ?? {}) as TournamentLaunchCompleteResult;
       const exactCompletion =
+        result.format_contract === expectedFormat &&
         result.ok === true &&
         result.completed === true &&
         result.status === 'RUNNING' &&
@@ -3226,10 +3249,8 @@ export abstract class TournamentManagerBase {
       return refuse(`the tournament status is ${String(tournamentProof.status ?? 'missing')}`);
     }
 
-    const spinLaunch =
-      String(tournament.variant ?? '').toLowerCase() === 'spin' ||
-      String(tournament.tournament_type ?? '').toUpperCase() === 'SPIN';
-    const seatFirstLaunch = spinLaunch || Number(tournament.max_players) <= 2;
+    const spinLaunch = isPersistedSpin(tournament);
+    const seatFirstLaunch = isPersistedSeatFirst(tournament);
     const startingChips = Number(tournament.starting_chips);
     if (!Number.isInteger(startingChips) || startingChips <= 0) {
       return refuse('the tournament has no valid integer starting stack contract');
@@ -3557,9 +3578,7 @@ export abstract class TournamentManagerBase {
     if (
       tournament.status !== 'REGISTERING' ||
       tournament.prize_pool_finalized !== true ||
-      !['MTT', 'SATELLITE'].includes(String(tournament.tournament_type).toUpperCase()) ||
-      !(Number(tournament.max_players) > 2) ||
-      isSpinTournament(tournament)
+      !isPersistedUnlimitedMtt(tournament)
     )
       return false;
 
@@ -3591,12 +3610,22 @@ export abstract class TournamentManagerBase {
 
     // Preserve PostgreSQL microseconds: converting this anchor through a JS
     // Date would make the receipt differ from the hand the SQL proof checks.
-    const claim = await this.beginTournamentLaunch(lifecycle, nodeCrypto.randomUUID(), firstHandAt);
+    const claim = await this.beginTournamentLaunch(
+      lifecycle,
+      nodeCrypto.randomUUID(),
+      firstHandAt,
+      readPersistedTournamentFormatContract(tournament)
+    );
     this.assertLifecycleCurrent(lifecycle);
     if (!claim) throw new Error('Played MTT launch claim was not confirmed');
     if (
       !claim.completed &&
-      !(await this.completeTournamentLaunch(lifecycle, claim.launchId, claim.startedAtIso))
+      !(await this.completeTournamentLaunch(
+        lifecycle,
+        claim.launchId,
+        claim.startedAtIso,
+        claim.formatContract
+      ))
     ) {
       throw new Error('Played MTT launch completion was not confirmed');
     }
@@ -3619,6 +3648,11 @@ export abstract class TournamentManagerBase {
       this.assertLifecycleCurrent(lifecycle);
 
       if (!tournament) throw new Error('Tournament not found');
+      if (['COMPLETING', 'COMPLETED', 'CANCELLED'].includes(tournament.status)) {
+        this.running = false;
+        return;
+      }
+      const format = readPersistedTournamentFormatContract(tournament);
 
       if (typeof tournament.blind_structure === 'string') {
         try {
@@ -3645,8 +3679,9 @@ export abstract class TournamentManagerBase {
         (tournament.mystery_bounty_stage as typeof this.mysteryBountyStage) || 'pending';
 
       /**
-       * Enforce a minimum field of three -- OR EVERY SEAT, WHEN THERE ARE
-       * FEWER THAN THREE OF THEM.
+       * Preserve the recorded MTT minimum, with a floor of two for existing
+       * mtt-v1 contracts and three for new mtt-v2 contracts. Fixed formats
+       * retain their actual seat requirement.
        *
        * FIX 2026-08-23 [P0]: the floor was the literal 3, which a HEADS-UP
        * game (max_players = 2) can never reach. It is not short of players --
@@ -3659,9 +3694,9 @@ export abstract class TournamentManagerBase {
        * The rule Dan set is about a Spin ("spins can NEVER START until 3
        * players are registered AND HAVE PAID") and a Spin has three seats, so
        * capping the floor at max_players leaves that rule bit-for-bit intact
-       * and changes behaviour ONLY for the formats the literal broke -- the
-       * ones with fewer than three seats. An MTT is unaffected: its floor is
-       * min(3, 50) = 3, exactly as before.
+       * and changes behaviour ONLY for the fixed formats the literal broke --
+       * the ones with fewer than three seats. MTT minima come from their
+       * immutable funded parent contract, not the entry capacity.
        *
        * FIX 2026-08-20 [P0]: this counted `status = 'registered'` ONLY, which
        * made any tournament that got PART WAY through starting permanently
@@ -3707,8 +3742,7 @@ export abstract class TournamentManagerBase {
        * trade made backwards.
        */
       const spinPaidGateWillRun =
-        (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') &&
-        Number(tournament.buy_in_amount || 0) > 0;
+        isPersistedSpin(tournament) && Number(tournament.buy_in_amount || 0) > 0;
 
       let regCount: number | null = null;
       let spinRoster: Array<{ user_id?: string | null; table_id?: string | null }> | null = null;
@@ -3757,7 +3791,11 @@ export abstract class TournamentManagerBase {
        * or 0 here must not silently lower the Spin floor.
        */
       const seatsAvailable = Number(tournament.max_players) || 0;
-      let requiredField = seatsAvailable > 0 ? Math.max(2, Math.min(3, seatsAvailable)) : 3;
+      let requiredField = isPersistedUnlimitedMtt(tournament)
+        ? Math.max(format === 'mtt-v2' ? 3 : 2, Number(tournament.min_players) || 3)
+        : seatsAvailable > 0
+          ? Math.max(2, Math.min(3, seatsAvailable))
+          : 3;
 
       /**
        * A PLAYED SPIN IS NOT A NEW TWO-PLAYER SPIN (2026-09-09).
@@ -3850,7 +3888,7 @@ export abstract class TournamentManagerBase {
       // gate demands. A mismatch is quarantined for operator review. The
       // launch path never deletes a roster, vacates a seat or reconciles a
       // counter in separate requests.
-      if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
+      if (isPersistedSpin(tournament)) {
         const buyIn = Number(tournament.buy_in_amount || 0);
         if (buyIn > 0) {
           /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28).
@@ -3979,13 +4017,16 @@ export abstract class TournamentManagerBase {
       const launchClaim = await this.beginTournamentLaunch(
         lifecycle,
         requestedLaunchId,
-        requestedStartedAtIso
+        requestedStartedAtIso,
+        readPersistedTournamentFormatContract(tournament)
       );
       this.assertLifecycleCurrent(lifecycle);
       if (!launchClaim || launchClaim.completed) {
         this.running = false;
         return;
       }
+      // Only the parent-bound receipt authorizes the format used by launch setup.
+      tournament.format_contract = launchClaim.formatContract;
       const { launchId, startedAtIso } = launchClaim;
       const launchStartMs = Date.parse(startedAtIso);
       this.preStartLeadMs = launchStartMs > Date.now() ? launchStartMs - Date.now() : 0;
@@ -4013,7 +4054,7 @@ export abstract class TournamentManagerBase {
       //   house_rake = rake_rate x collected, FIXED, to rake_records
       //   reserve_in = the remainder, into the pool
       //   prize_pool = buy_in x multiplier, drawn FROM the pool
-      if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
+      if (isPersistedSpin(tournament)) {
         const buyIn = Number(tournament.buy_in_amount) || 0;
         const ruleManifest = spinRuleManifest(buyIn, Number(tournament.starting_chips) || 0);
 
@@ -4581,7 +4622,8 @@ export abstract class TournamentManagerBase {
       const launchCompleted = await this.completeTournamentLaunch(
         lifecycle,
         launchId,
-        startedAtIso
+        startedAtIso,
+        launchClaim.formatContract
       );
       this.assertLifecycleCurrent(lifecycle);
       if (!launchCompleted) {
@@ -4775,6 +4817,7 @@ export abstract class TournamentManagerBase {
         this.running = false;
         return;
       }
+      readPersistedTournamentFormatContract(tournament);
 
       if (typeof tournament.blind_structure === 'string') {
         try {
@@ -5868,12 +5911,11 @@ export abstract class TournamentManagerBase {
     }
 
     // Determine table size based on tournament type
-    let maxPerTable = tournament.max_players || 9;
-    const tType = (tournament.tournament_type || '').toUpperCase();
-    const variant = (tournament.variant || '').toLowerCase();
-    if (variant === 'spin' || tType === 'SPIN') {
+    let maxPerTable: number;
+    const format = readPersistedTournamentFormatContract(tournament);
+    if (format === 'spin-v1') {
       maxPerTable = 3;
-    } else if (variant === 'sng' || tType === 'SNG') {
+    } else if (format === 'sng-v1' || format === 'seat-first-satellite-v1') {
       maxPerTable = Math.min(tournament.max_players || 6, 9);
     } else {
       // table_size (2026-08-22 parity): seats per table INSIDE the MTT.
@@ -6218,9 +6260,7 @@ export abstract class TournamentManagerBase {
        identical across restarts for the same reason the generic path is. */
     {
       const t = this.tournamentCache;
-      const isSpin =
-        String(t?.variant ?? '').toLowerCase() === 'spin' ||
-        String(t?.tournament_type ?? '').toUpperCase() === 'SPIN';
+      const isSpin = t != null && isPersistedSpin(t);
       if (isSpin) {
         const lastRow = blindStructure[blindStructure.length - 1] ?? {};
         const b = continueBookedSpinBlinds(lastRow, i + 1) ?? spinBlindsForLevel(i + 1);

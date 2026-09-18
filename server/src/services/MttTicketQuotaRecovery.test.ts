@@ -19,6 +19,7 @@ function harness(ids = ['ticket']) {
   const population = ids.map(horse);
   const target = {
     variant: 'freezeout',
+    format_contract: 'mtt-v1',
     max_players: 200,
     club_id: null,
     start_time: new Date(Date.now() + 600000).toISOString(),

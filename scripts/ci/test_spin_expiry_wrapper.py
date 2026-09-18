@@ -14,7 +14,7 @@ import stat
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location('spin_expiry_pg_wrapper', Path(__file__).with_name('test-spin-expiry-postgres.py'))
 W = importlib.util.module_from_spec(SPEC)
@@ -933,6 +933,97 @@ class RelationAuthorityTests(unittest.TestCase):
         for observed in invalid:
             with self.subTest(observed=observed), self.assertRaises(RuntimeError):
                 self.refund.observed_policy_roles(observed)
+
+
+class CommittedRefundCleanupTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        path = Path(__file__).resolve().parents[1] / 'qualification/spin-expiry-committed-refund.py'
+        spec = importlib.util.spec_from_file_location('spin_expiry_cleanup_controls', path)
+        cls.refund = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.refund)
+
+    def test_delayed_backend_exit_retains_every_sample_without_replaying_business(self):
+        verifier, journal = Mock(spec=['json']), Mock(spec=['append'])
+        verifier.json.side_effect = [dict(backends=1, locks=2), dict(backends=0, locks=0)]
+        clock = [10.0]
+        with patch.object(self.refund.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(self.refund.time, 'sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds)):
+            result = self.refund.observe_original_backend_cleanup(verifier, [71, 72], True, 15.0, journal)
+        self.assertEqual(result, dict(backends=0, locks=0))
+        self.assertEqual(verifier.json.call_count, 2)
+        self.assertEqual(verifier.json.call_args_list[0], verifier.json.call_args_list[1])
+        sql = verifier.json.call_args.args[0]
+        self.assertIn('pg_stat_activity', sql)
+        self.assertIn('pid IN (71,72)', sql)
+        self.assertTrue(sql.startswith('SELECT '))
+        self.assertNotIn('fn_spin_expire', sql)
+        self.assertNotIn('atomic_cancel', sql)
+        samples = journal.append.call_args_list
+        self.assertEqual([c.kwargs['remaining'] for c in samples],
+                         [dict(backends=1, locks=2), dict(backends=0, locks=0)])
+        self.assertTrue(all(c.args == ('original_backend_cleanup_sample',)
+                            and c.kwargs['backend_pids'] == [71, 72]
+                            and c.kwargs['client_terminal_verified'] is True for c in samples))
+
+    def test_lingering_backend_or_lock_exhausts_original_budget_and_remains_failure(self):
+        for observation in (dict(backends=1, locks=0), dict(backends=0, locks=1)):
+            with self.subTest(observation=observation):
+                verifier, journal = Mock(spec=['json']), Mock(spec=['append'])
+                verifier.json.return_value = observation
+                clock = [10.0]
+                with patch.object(self.refund.time, 'monotonic', side_effect=lambda: clock[0]), \
+                     patch.object(self.refund.time, 'sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds)), \
+                     self.assertRaisesRegex(TimeoutError, 'before cleanup deadline'):
+                    self.refund.observe_original_backend_cleanup(verifier, [71, 72], True, 15.0, journal)
+                self.assertEqual(clock[0], 15.0)
+                self.assertGreater(verifier.json.call_count, 1)
+                self.assertEqual(journal.append.call_count, verifier.json.call_count)
+                self.assertEqual(journal.append.call_args.kwargs['remaining'], observation)
+
+    def test_zero_observed_after_deadline_does_not_qualify(self):
+        verifier, journal = Mock(spec=['json']), Mock(spec=['append'])
+        verifier.json.return_value = dict(backends=0, locks=0)
+        with patch.object(self.refund.time, 'monotonic', side_effect=[10.0, 15.1]), \
+             self.assertRaises(TimeoutError):
+            self.refund.observe_original_backend_cleanup(verifier, [71], True, 15.0, journal)
+        journal.append.assert_called_once()
+
+    def test_expired_budget_cannot_start_another_observation(self):
+        verifier, journal = Mock(spec=['json']), Mock(spec=['append'])
+        with patch.object(self.refund.time, 'monotonic', return_value=15.0), \
+             self.assertRaises(TimeoutError):
+            self.refund.observe_original_backend_cleanup(verifier, [71], True, 15.0, journal)
+        verifier.json.assert_not_called()
+
+    def test_missing_client_exit_cannot_be_replaced_by_zero_server_counts(self):
+        verifier, journal = Mock(spec=['json']), Mock(spec=['append'])
+        verifier.json.return_value = dict(backends=0, locks=0)
+        with patch.object(self.refund.time, 'monotonic', return_value=10.0), \
+             self.assertRaisesRegex(RuntimeError, 'clients did not all reach terminal exit'):
+            self.refund.observe_original_backend_cleanup(verifier, [71], False, 15.0, journal)
+        verifier.json.assert_called_once()
+        self.assertIs(journal.append.call_args.kwargs['client_terminal_verified'], False)
+
+    def test_unknown_readback_or_evidence_failure_is_not_retried_as_success(self):
+        for observation in (None, {}, dict(backends=False, locks=0),
+                            dict(backends='0', locks=0), dict(backends=-1, locks=0)):
+            with self.subTest(observation=observation):
+                verifier, journal = Mock(spec=['json']), Mock(spec=['append'])
+                verifier.json.return_value = observation
+                with patch.object(self.refund.time, 'monotonic', return_value=10.0), \
+                     self.assertRaisesRegex(RuntimeError, 'invalid original backend cleanup observation'):
+                    self.refund.observe_original_backend_cleanup(verifier, [71], True, 15.0, journal)
+                verifier.json.assert_called_once()
+        for failed in ('readback', 'journal'):
+            verifier, journal = Mock(spec=['json']), Mock(spec=['append'])
+            verifier.json.return_value = dict(backends=0, locks=0)
+            (verifier.json if failed == 'readback' else journal.append).side_effect = OSError(failed)
+            with self.subTest(failed=failed), \
+                 patch.object(self.refund.time, 'monotonic', return_value=10.0), \
+                 self.assertRaisesRegex(OSError, failed):
+                self.refund.observe_original_backend_cleanup(verifier, [71], True, 15.0, journal)
+            verifier.json.assert_called_once()
 
 
 class TerminalObservationTests(unittest.TestCase):

@@ -38,6 +38,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 function completeTournamentRow(nowMs: number) {
   return {
+    format_contract: 'mtt-v1',
+    effective_max_players: 200,
     tournament_type: 'MTT',
     status: 'RUNNING',
     game_type: 'NLH',
@@ -276,6 +278,7 @@ describe('Phase 6 tournament context', () => {
   it('labels missing tournament inputs instead of silently presenting a cash-like object', () => {
     const context = deriveContext(
       {
+        format_contract: 'mtt-v1',
         tournament_type: null,
         variant: null,
         max_players: null,

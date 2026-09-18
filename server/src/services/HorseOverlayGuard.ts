@@ -97,7 +97,7 @@ export interface OverlayRisk {
   entries_needed: number;
   current_players: number;
   shortfall: number;
-  max_players: number;
+  max_players: number | null;
   minutes_to_start: number;
 }
 
@@ -106,7 +106,7 @@ const enabled = (): boolean => process.env.HORSE_OVERLAY_GUARD_ENABLED !== 'fals
 /** Pure: what to do about one at-risk event. Exported for tests. */
 export function topUpTargetFor(risk: OverlayRisk): number {
   const needed = Math.max(0, Math.floor(risk.entries_needed));
-  const cap = risk.max_players > 0 ? risk.max_players : needed;
+  const cap = risk.max_players !== null && risk.max_players > 0 ? risk.max_players : needed;
   const target = Math.min(needed, cap);
   // Never ask for more than the per-cycle ceiling above the current field:
   // a huge guarantee on an empty board should fill over several cycles so a
@@ -119,12 +119,14 @@ export interface FreerollTarget {
   name: string;
   status: string;
   current_players: number;
-  max_players: number;
+  max_players: number | null;
   minutes_to_start: number;
 }
 
 /** Pure: how full should this freeroll be right now? Exported for tests. */
 export function freerollTargetFor(t: FreerollTarget): number {
+  // NULL is supplied only by the database projection for activated MTTs.
+  if (t.max_players === null) return t.current_players + MAX_TOPUP_PER_CYCLE;
   const cap = Math.max(0, Math.floor(t.max_players));
   if (cap === 0) return 0;
   // Fill toward capacity, but never add more than the per-cycle ceiling at

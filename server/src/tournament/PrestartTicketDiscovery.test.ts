@@ -12,6 +12,7 @@ function harness(ticketRows: unknown[] = [{ id: 'ticket', source_tournament_id: 
   const target = {
     id: T,
     name: 'Qualified Target',
+    format_contract: 'mtt-v1',
     tournament_type: 'MTT',
     variant: 'freezeout',
     max_players: 200,
@@ -24,6 +25,21 @@ function harness(ticketRows: unknown[] = [{ id: 'ticket', source_tournament_id: 
     buy_in_amount: 20,
     buy_in_fee: 2,
   };
+  vi.spyOn(supabase as any, 'rpc').mockImplementation(async (name, args: any) => {
+    if (name !== 'fn_ca_tournament_admission_snapshot') throw new Error(`Unexpected RPC ${name}`);
+    return {
+      error: null,
+      data: {
+        ok: true,
+        admission_abi: 'legacy-capacity-v1',
+        entries: args.p_tournament_ids.map((id: string) => ({
+          tournament_id: id,
+          format_contract: target.format_contract,
+          effective_max_players: target.max_players,
+        })),
+      },
+    } as any;
+  });
   const ticketRead = vi.fn((cursor: string | null) => ({
     data: cursor ? [] : ticketRows,
     error: null as unknown,

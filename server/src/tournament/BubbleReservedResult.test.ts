@@ -38,6 +38,7 @@ function harness(
   } = {}
 ) {
   const tournament = {
+    format_contract: 'mtt-v1',
     payout_structure: [
       { place: 1, percentage: 50 },
       { place: 2, percentage: 30 },

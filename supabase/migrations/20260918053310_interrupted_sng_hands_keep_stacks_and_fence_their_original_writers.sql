@@ -12,11 +12,11 @@ BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='8s';
 -- BEGIN installer relation admission
--- Acquire every existing relation's eventual DDL/write mode before any DDL.
--- Never queue while holding a partial set: ordinary readers may acquire these
--- relations in another order. NOWAIT rolls back admission on any contention.
+-- Drain existing permit readers with the bounded lock_timeout while holding
+-- no other application relation lock. Acquire every remaining DDL/write mode
+-- without waiting: readers may need these relations before releasing permits.
+LOCK TABLE smarter_private.f06_hand_permits IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE public.engine_tournament_leases IN SHARE ROW EXCLUSIVE MODE NOWAIT;
-LOCK TABLE smarter_private.f06_hand_permits IN ACCESS EXCLUSIVE MODE NOWAIT;
 LOCK TABLE smarter_private.f06_operations IN ACCESS EXCLUSIVE MODE NOWAIT;
 LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 LOCK TABLE public.hand_history IN SHARE ROW EXCLUSIVE MODE NOWAIT;

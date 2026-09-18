@@ -14,6 +14,11 @@
       "file": "reserve-functions.json",
       "sha256": "6327e7f6944e35037ed72fea6241d9ec2f61ac9f47457216c5c672ec2b1ffb91",
       "captured_at": "2026-09-18 03:19:21.42538+00"
+    },
+    {
+      "path": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/modern-launch-source-20260918/payout-terms-capture.json",
+      "sha256": "13afddf6ff17909109d4fe13be30ac130f6806ac5ceaf3abd544e0fc2d2ddc3d",
+      "captured_at": "2026-09-18 03:41:28.636296+00"
     }
   ],
   "functions": [
@@ -317,6 +322,18 @@
       "volatility": "i",
       "definition_md5": "bcccb57e89ab61c1ed77458ece8ff7ec",
       "security_definer": false
+    },
+    {
+      "signature": "fn_tournament_payout_terms_committed_v1(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_payout_terms_committed_v1(p_tournament_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT EXISTS (SELECT 1 FROM public.tournaments t\n                  WHERE t.id=p_tournament_id AND t.prize_pool_finalized IS TRUE)\n     OR EXISTS (SELECT 1 FROM public.tournament_entry_close_receipts r\n                 WHERE r.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_place_settlement_batches b\n                 WHERE b.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_satellite_settlement_batches b\n                 WHERE b.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_final_table_deal_batches b\n                 WHERE b.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_terminal_settlements h\n                 WHERE h.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_cancellation_receipts c\n                 WHERE c.tournament_id=p_tournament_id)\n     OR EXISTS (SELECT 1 FROM public.tournament_obligations o\n                 WHERE o.tournament_id=p_tournament_id\n                   AND o.kind IN ('place','bubble_protection','final_table_deal','late_reg_adjustment'))\n     OR EXISTS (SELECT 1 FROM public.tournament_payouts p\n                 WHERE p.tournament_id=p_tournament_id\n                   AND (p.source IN ('structure','reconcile','hu_shortfall','late_reg_adjustment',\n                         'clawback','spin_backpay','overlay_backpay','final_table_deal','bubble_protection')\n                        OR public.fn_tournament_payout_key_is_place_evidence(\n                             p.tournament_id,p.idempotency_key)));\n$function$\n",
+      "definition_md5": "918c62cbcc182d43a6a27edeb2c1c107",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "volatility": "s",
+      "security_definer": true
     }
   ],
   "relations": [
@@ -651,6 +668,10 @@
     },
     {
       "signature": "fn_spin_seed_instalment(numeric,numeric,numeric)",
+      "present": false
+    },
+    {
+      "signature": "fn_tournament_payout_terms_committed_v1(uuid)",
       "present": false
     }
   ],

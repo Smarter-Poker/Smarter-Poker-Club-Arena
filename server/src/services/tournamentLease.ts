@@ -47,7 +47,10 @@ import { supabase } from './supabase/client.js';
 import { leaseHeartbeatOutcomesTotal } from '../observability/engineInstruments.js';
 import { INSTANCE_ID, INSTANCE_VERSION } from './tableLease.js';
 import { throttledLeaseWarning } from './leaseWarningThrottle.js';
-import { mapLeaseHeartbeatBatches } from './leaseHeartbeatBatches.js';
+import {
+  mapLeaseHeartbeatBatches,
+  RetainedLeaseHeartbeatBatches,
+} from './leaseHeartbeatBatches.js';
 
 /** Matches the table lease, and the RPC default. */
 export const TOURNAMENT_LEASE_STALE_SECONDS = 30;
@@ -142,7 +145,7 @@ export type TournamentLeaseHeartbeatOutcome =
     }
   | {
       status: 'uncertain';
-      reason: 'rpc_error' | 'rpc_threw';
+      reason: 'rpc_error' | 'rpc_threw' | 'pending';
     };
 
 function unverifiedClaimResult(
@@ -287,8 +290,16 @@ export async function claimTournamentLease(
  * from the instant before this RPC began. A busy exact generation extends
  * nothing; the existing proof deadline and expiry timer remain authoritative.
  */
+const retainedTournamentHeartbeats = new RetainedLeaseHeartbeatBatches<
+  TournamentLeaseHeartbeatClaim,
+  TournamentLeaseHeartbeatOutcome
+>();
+
 export async function heartbeatTournaments(
-  claims: TournamentLeaseHeartbeatClaim[]
+  claims: TournamentLeaseHeartbeatClaim[],
+  onBatch?: (outcome: TournamentLeaseHeartbeatOutcome) => void,
+  ownerIsCurrent: () => boolean = () => true,
+  claimIsCurrent: (claim: TournamentLeaseHeartbeatClaim) => boolean = () => true
 ): Promise<TournamentLeaseHeartbeatOutcome> {
   if (claims.length === 0) {
     return { status: 'answered', proofs: [], lostTournamentIds: [] };
@@ -319,6 +330,27 @@ export async function heartbeatTournaments(
   }
   const capturedClaims = claims.map((claim) => ({ ...claim }));
   const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
+  if (onBatch) {
+    retainedTournamentHeartbeats.dispatch(
+      capturedClaims,
+      (claim) => `${claim.tournamentId.toLowerCase()}/${claim.leaseGeneration.toLowerCase()}`,
+      () => ownerIsCurrent() && tournamentLeaseMonotonicNow() < proofDeadlineMonotonicMs,
+      (batch) => {
+        const currentClaims = batch.filter(claimIsCurrent);
+        return currentClaims.length
+          ? heartbeatTournamentBatch(currentClaims, proofDeadlineMonotonicMs)
+          : Promise.resolve({ status: 'answered', proofs: [], lostTournamentIds: [] });
+      },
+      onBatch,
+      (error) =>
+        warnTournamentLease(
+          'batch_delivery_failed',
+          `[lease] heartbeat batch delivery failed: ${String(error)}`
+        )
+    );
+    // Dispatch is not a renewal. Only a validated batch callback proves one.
+    return { status: 'uncertain', reason: 'pending' };
+  }
   const outcomes = await mapLeaseHeartbeatBatches(capturedClaims, (batch) =>
     heartbeatTournamentBatch(batch, proofDeadlineMonotonicMs)
   );

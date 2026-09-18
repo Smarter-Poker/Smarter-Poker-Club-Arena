@@ -5281,12 +5281,16 @@ export abstract class TournamentManagerBase {
       // Find existing tables. `first_button_seat` comes along so a Spin whose
       // button was drawn but never dealt keeps the seat it drew — see
       // restoreDrawnFirstButtons.
-      const { data: tables } = await supabase
+      const { data: tables, error: tablesError } = await supabase
         .from('tables')
         .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['running', 'waiting']);
       this.assertLifecycleCurrent(lifecycle);
+      if (tablesError)
+        throw new Error(`Tournament resume table inventory read failed: ${tablesError.message}`);
+      if (!Array.isArray(tables))
+        throw new Error('Tournament resume table inventory was unreadable');
 
       /**
        * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
@@ -5297,15 +5301,23 @@ export abstract class TournamentManagerBase {
        * the tables and seat them — exactly what start() does. A room that lost
        * a table redeals it; it does not void the tournament.
        */
-      if (!tables || tables.length === 0) {
-        const { count: liveEntrants } = await supabase
+      if (tables.length === 0) {
+        const { count: liveEntrants, error: entrantsError } = await supabase
           .from('tournament_players')
           .select('id', { count: 'exact', head: true })
           .eq('tournament_id', this.tournamentId)
           .in('status', ['registered', 'playing']);
         this.assertLifecycleCurrent(lifecycle);
+        if (entrantsError)
+          throw new Error(`Tournament resume entrant count failed: ${entrantsError.message}`);
+        if (
+          typeof liveEntrants !== 'number' ||
+          !Number.isSafeInteger(liveEntrants) ||
+          liveEntrants < 0
+        )
+          throw new Error('Tournament resume entrant count was unreadable');
 
-        if ((liveEntrants || 0) > 0) {
+        if (liveEntrants > 0) {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables - rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
           );

@@ -17,7 +17,7 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     require(migration.read_text() == builder['render'](), 'Spin migration/source differ')
     inputs = [here / name for name in ('build-spin-prior-migration.py', 'spin-prior-boundary.sql',
               'spin-prior-current-guard.sql', 'spin-prior-fixture.sql', 'spin_prior_qualification.py',
-              'spin-prior-ended-dispatch.sql', 'spin-prior-refusal-preimages.json',
+              'spin-prior-ended-dispatch.sql', 'spin-prior-refusal-preimages.json', 'spin-prior-current-journal.sql',
               'spin-prior-continuation-dependency.sql', 'spin-prior-continuation-postimages.json')]
     candidate_source = root / 'supabase/migrations/20260908042100_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path.sql'
     submission_source = here / 'spin-prior-retention-prefix.sql'
@@ -128,6 +128,7 @@ def qualify(root, out, cmd, command, run, probe, require, results):
       'snapshots',(SELECT jsonb_agg(to_jsonb(s)||jsonb_build_object('row_xmin',xmin::text) ORDER BY id) FROM hand_state_snapshots s),
       'alerts',(SELECT jsonb_agg(to_jsonb(a)||jsonb_build_object('row_xmin',xmin::text) ORDER BY id) FROM financial_alerts a),
       'dispatch',(SELECT jsonb_agg(to_jsonb(d)||jsonb_build_object('row_xmin',xmin::text) ORDER BY permit_id) FROM smarter_private.f06_hand_dispatch d),
+      'submission_dispatch',(SELECT jsonb_agg(to_jsonb(d) ORDER BY transaction_id,submission_id) FROM smarter_private.hand_submission_dispatch d),
       'submissions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY submission_id) FROM smarter_private.hand_submissions s),
       'settlements',(SELECT jsonb_agg(to_jsonb(s)||jsonb_build_object('row_xmin',xmin::text) ORDER BY id) FROM ca_settlements s),
       'settlement_keys',(SELECT jsonb_agg(to_jsonb(s)||jsonb_build_object('row_xmin',xmin::text) ORDER BY table_id,hand_id) FROM settlement_idempotency_keys s),
@@ -146,6 +147,8 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     # snapshot guard must not backdate a submission disposition for either.
     run('spin-prior-legacy-ended-dispatch-opening', seed(704))
     run('spin-actual-original-submission-retention', submission_prefix)
+    run('spin-current-journal-successor-overlay', builder['current_journal_overlay']())
+    run('spin-current-journal-exact-installed-helper', "SELECT md5(pg_get_functiondef('smarter_private.assert_retained_hand_submission(jsonb)'::regprocedure));", '6a3ab631fdab87ae9bcd353907de80b6')
     # Individual MTT antes are already part of both dead and total investment,
     # as persisted by HandController.postBlinds. Never credit them a second time.
     run('mtt-ante-original-opening', "SELECT fixture_seed_mixed(707);")
@@ -172,6 +175,9 @@ def qualify(root, out, cmd, command, run, probe, require, results):
         ('occupancy-binding', 'ALTER TABLE table_seats DISABLE TRIGGER zzz_stamp_seat_occupancy;', 'F06_SPIN_PRIOR_OCCUPANCY_CHANGED'),
         ('retention-binding', 'ALTER TABLE smarter_private.f06_hand_permits DISABLE TRIGGER f06_retained_submission_guard;', 'F06_SPIN_RETENTION_BINDING_CHANGED'),
         ('retention-authority', 'ALTER FUNCTION smarter_private.f06_retained_submission_guard() SET search_path=public;', 'F06_SPIN_RETENTION_AUTHORITY_CHANGED'),
+        ('retention-legacy-helper', re.search(r'CREATE FUNCTION smarter_private.assert_retained_hand_submission\(.*?\$function\$;', submission_prefix, re.S)[0].replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1), 'F06_SPIN_RETENTION_AUTHORITY_CHANGED'),
+        ('retention-dispatch-acl', 'GRANT SELECT ON smarter_private.hand_submission_dispatch TO service_role;', 'F06_SPIN_DEPENDENCY_SCHEMA_CHANGED'),
+        ('retention-dispatch-identity', 'ALTER TABLE smarter_private.hand_submission_dispatch DROP CONSTRAINT hand_submission_dispatch_pkey;', 'F06_SPIN_DEPENDENCY_SCHEMA_CHANGED'),
         ('retention-unique-fence', 'ALTER TABLE smarter_private.hand_submission_dispositions DROP CONSTRAINT hand_submission_dispositions_pkey;', 'F06_SPIN_DEPENDENCY_SCHEMA_CHANGED'),
     ]:
         run('spin-prior-install-refuses-' + label, 'BEGIN;' + change + migration.read_text(), error=error)
@@ -283,6 +289,20 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     with held(service + retain(705), finish='COMMIT'):
         probe('spin-prior-retaining-writer-drained', "SET LOCAL lock_timeout='150ms';" + service + abort(705), error='55P03')
     run('spin-prior-retained-payload-exact-replay', service + retain(705))
+    retained_request = "(SELECT request FROM smarter_private.hand_submissions WHERE table_id=md5('spin-prior705-table')::uuid)"
+    successor_request = "(" + retained_request + "||jsonb_build_object('p_instance_id','qualified-successor','p_lease_generation',md5('qualified-successor')::uuid))"
+    capability = """INSERT INTO smarter_private.hand_submission_dispatch
+      SELECT txid_current(),submission_id,request_hash,'qualified-successor',md5('qualified-successor')::uuid
+      FROM smarter_private.hand_submissions WHERE table_id=md5('spin-prior705-table')::uuid;"""
+    check_successor = "SELECT smarter_private.assert_retained_hand_submission(" + successor_request + ");"
+    probe('spin-journal-original-request-remains-valid', "SELECT smarter_private.assert_retained_hand_submission(" + retained_request + ");")
+    probe('spin-journal-successor-without-capability-refused', check_successor, error='HAND_SUBMISSION_ORIGINAL_PAYLOAD_REQUIRED')
+    probe('spin-journal-wrong-transaction-capability-refused', capability.replace('txid_current()', 'txid_current()-1') + check_successor, error='HAND_SUBMISSION_ORIGINAL_PAYLOAD_REQUIRED')
+    probe('spin-journal-changed-payload-with-capability-refused', capability + "SELECT smarter_private.assert_retained_hand_submission(" + successor_request + "||jsonb_build_object('p_rake',1));", error='HAND_SUBMISSION_ORIGINAL_PAYLOAD_REQUIRED')
+    probe('spin-journal-exact-successor-consumes-once', capability + check_successor + "SELECT count(*) FROM smarter_private.hand_submission_dispatch;", '\n0')
+    probe('spin-journal-consumed-capability-reuse-refused', capability + check_successor + check_successor, error='HAND_SUBMISSION_ORIGINAL_PAYLOAD_REQUIRED')
+    run('spin-journal-capability-probes-rolled-back', 'SELECT count(*) FROM smarter_private.hand_submission_dispatch;', '0')
+
     run('spin-prior-retained-original-generation-released', "SELECT release_tournament_leases_v2('spin-prior705-current',jsonb_build_array(jsonb_build_object('tournament_id',md5('spin-prior705')::uuid,'lease_generation',md5('spin-prior705-current')::uuid)));")
     run('spin-prior-retained-new-generation-claimed', "SELECT granted FROM claim_tournament_lease_v2(md5('spin-prior705')::uuid,'spin-prior705-successor','fixed',md5('spin-prior705-successor')::uuid);", 't')
     run('spin-prior-retained-new-generation-dto', refresh(705))

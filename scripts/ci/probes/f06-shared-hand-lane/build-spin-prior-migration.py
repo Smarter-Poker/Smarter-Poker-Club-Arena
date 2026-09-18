@@ -10,6 +10,38 @@ ROOT = HERE.parents[3]
 MIGRATION = 'supabase/migrations/20260918092117_spin_interrupted_hands_retain_their_prior_committed_stacks.sql'
 
 
+def current_journal_overlay():
+    """Extract the exact connected successor from its sealed owner's migration.
+
+    The historical retention prefix stays intact. The journal's settlement
+    adapter and unrelated acceptance authorities remain owned by its qualifier.
+    """
+    source = (HERE / 'spin-prior-current-journal.sql').read_text()
+    if hashlib.sha256(source.encode()).hexdigest() != '4bdbcf3fb80e7111c5b951bee5d83c31695a3cf19916c72c041ca99ba9dfc268':
+        raise ValueError('sealed installed journal successor changed')
+    name = 'smarter_private.hand_submission_dispatch'
+    table = re.search(r'CREATE TABLE ' + re.escape(name) + r' \(.*?\n\);', source, re.S)
+    helper = re.search(r'CREATE OR REPLACE FUNCTION smarter_private\.assert_retained_hand_submission\(.*?\$function\$;', source, re.S)
+    if table is None or helper is None:
+        raise ValueError('installed journal dependency inventory changed')
+    statements = [table[0]]
+    for suffix in (' OWNER TO postgres;', ' ENABLE ROW LEVEL SECURITY;'):
+        statement = 'ALTER TABLE ' + name + suffix
+        if source.count(statement) != 1:
+            raise ValueError('installed journal table authority changed')
+        statements.append(statement)
+    # Expand just this table from the owner's grouped REVOKE; no other ACL is
+    # granted, and native/catalog checks bind the exact installed table shape.
+    if not re.search(r'REVOKE ALL ON smarter_private.hand_submission_failures,smarter_private.hand_submission_handoffs,\s*smarter_private.hand_submission_handoff_results,smarter_private.hand_submission_dispatch\s*FROM PUBLIC,anon,authenticated,service_role;', source):
+        raise ValueError('installed journal dispatch ACL changed')
+    statements += ['REVOKE ALL ON ' + name + ' FROM PUBLIC,anon,authenticated,service_role;', helper[0]]
+    revoke = 'REVOKE ALL ON FUNCTION smarter_private.assert_retained_hand_submission(jsonb) FROM PUBLIC,anon,authenticated,service_role;'
+    if source.count(revoke) != 2:
+        raise ValueError('installed journal helper ACL changed')
+    statements.append(revoke)
+    return '\n'.join(statements)
+
+
 def retention_checks():
     source = (HERE / 'spin-prior-retention-prefix.sql').read_text()
     if hashlib.sha256(source.encode()).hexdigest() != '0423ccbfe95f8ef980bc0699ca3ad873648e2dc620b9d1418ab08faf1343af9d':
@@ -18,12 +50,18 @@ def retention_checks():
     functions = re.findall(r'CREATE FUNCTION ([^(]+)\((.*?)\)(.*?)AS \$function\$(.*?)\$function\$;', source, re.S)
     if len(functions) != 5:
         raise ValueError('sealed retention function inventory changed')
+    successor = re.search(r'AS \$function\$(.*?)\$function\$;', current_journal_overlay(), re.S)[1]
+    if hashlib.md5(successor.encode()).hexdigest() != '1bd5f0f6fc7070e073478bdab317e249':
+        raise ValueError('installed journal helper body differs from captured catalog')
     for name, args, declaration, body in functions:
+        if name == 'smarter_private.assert_retained_hand_submission':
+            body = successor
         signature = name + ('(jsonb)' if args else '()')
         config = 'search_path=pg_catalog, public, extensions' if name.startswith('public.') else 'search_path=pg_catalog'
         acl = '{postgres=X/postgres,service_role=X/postgres}' if name.startswith('public.') else '{postgres=X/postgres}'
         result = 'jsonb' if name.startswith('public.') else ('void' if 'assert_retained' in name else 'trigger')
         checks.append(" IF NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang WHERE p.oid=to_regprocedure('%s') AND md5(p.prosrc)='%s' AND pg_get_userbyid(p.proowner)='postgres' AND p.proacl::text='%s' AND to_jsonb(p.proconfig)='%s'::jsonb AND l.lanname='plpgsql' AND p.prosecdef AND NOT p.proleakproof AND NOT p.proisstrict AND NOT p.proretset AND p.provolatile='v' AND p.proparallel='u' AND p.prokind='f' AND p.pronargdefaults=0 AND p.prorettype='%s'::regtype) THEN RAISE EXCEPTION 'F06_SPIN_RETENTION_AUTHORITY_CHANGED: %%','%s'; END IF;" % (signature, hashlib.md5(body.encode()).hexdigest(), acl, json.dumps([config]), result, signature))
+    checks.append(" IF md5(pg_get_functiondef('smarter_private.assert_retained_hand_submission(jsonb)'::regprocedure)) IS DISTINCT FROM '6a3ab631fdab87ae9bcd353907de80b6' THEN RAISE EXCEPTION 'F06_SPIN_RETENTION_AUTHORITY_CHANGED'; END IF;")
     triggers = [
       ('smarter_private.hand_submissions', 'hand_submission_immutable', 'BEFORE DELETE OR UPDATE', 'ROW', 'smarter_private.hand_submission_immutable()'),
       ('smarter_private.hand_submission_dispositions', 'hand_submission_disposition_immutable', 'BEFORE DELETE OR UPDATE', 'ROW', 'smarter_private.hand_submission_immutable()'),
@@ -38,6 +76,9 @@ def retention_checks():
         definition = f'CREATE TRIGGER {name} {event} ON {table} FOR EACH {each} EXECUTE FUNCTION {function}'
         checks.append(" IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='%s'::regclass AND tgname='%s' AND tgenabled='O' AND tgfoid=to_regprocedure('%s') AND pg_get_triggerdef(oid)='%s') THEN RAISE EXCEPTION 'F06_SPIN_RETENTION_BINDING_CHANGED: %%','%s'; END IF;" % (table, name, function, definition, name))
     tables = {
+      'smarter_private.hand_submission_dispatch': [
+        ['transaction_id','bigint',True,None],['submission_id','uuid',True,None],
+        ['request_hash','text',True,None],['instance_id','text',True,None],['lease_generation','uuid',True,None]],
       'smarter_private.hand_submissions': [
         ['submission_id','uuid',True,None],['table_id','uuid',True,None],['hand_number','bigint',True,None],
         ['instance_id','text',True,None],['lease_generation','uuid',True,None],['request','jsonb',True,None],
@@ -53,6 +94,7 @@ def retention_checks():
         ['prior_committed','jsonb',True,None],['created_at','timestamp with time zone',True,'clock_timestamp()']],
     }
     constraints = {
+      'smarter_private.hand_submission_dispatch': ['PRIMARY KEY (transaction_id, submission_id)'],
       'smarter_private.hand_submissions': [
         'PRIMARY KEY (submission_id)','UNIQUE (table_id, hand_number)',
         'CHECK ((hand_number > 0))','CHECK ((length(btrim(instance_id)) > 0))',

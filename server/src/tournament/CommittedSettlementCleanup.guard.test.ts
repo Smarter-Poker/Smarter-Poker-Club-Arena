@@ -97,7 +97,11 @@ describe('a committed tournament always reaches its non-money terminal cleanup',
   it('releases only a proven refusal and stops ownership for every unknown result', () => {
     const refusal = sliceEnclosingBlock(finish, "'Tournament.atomic_finish_outcome_unknown'");
     const proof = refusal.indexOf('settlementErr instanceof TerminalSettlementRefusedError');
-    const alarm = refusal.indexOf('raiseFinancialAlert(');
+    // 2026-09-18: the alarm goes through alertFinishRefusalOnce, which raises
+    // it the first time this tournament reports this reason and counts the
+    // repeats. The ordering this pins is unchanged: alarm, then release, then
+    // fence.
+    const alarm = refusal.indexOf('alertFinishRefusalOnce(');
     const release = refusal.indexOf('if (provenRefusal) releaseFinishGuard()');
     const stop = refusal.indexOf(
       "this.fenceUnknownTerminalOutcome('Tournament.atomic_finish_manager_stop_failed')"

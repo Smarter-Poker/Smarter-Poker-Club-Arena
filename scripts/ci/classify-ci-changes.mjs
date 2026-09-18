@@ -52,6 +52,19 @@ export function gitEnvironmentForCwd() {
   );
 }
 
+// Only these non-executable instruction inputs can omit the isolated SQL replay.
+// Every compiler/invariant and the entire client/source-contract suite still runs.
+const instructionFiles = new Set([
+  'docs/agent-policy/OWNER-POLICY.md',
+  'docs/agent-policy/OPERATING-LAW.md',
+  'docs/agent-policy/HARDENING.md',
+  'docs/agent-policy/REFERENCE-INDEX.md',
+  'docs/agent-policy/policy-manifest.json',
+]);
+export function instructionOnlyPaths(paths) {
+  return Array.isArray(paths) && paths.length > 0 && paths.every((p) => instructionFiles.has(p));
+}
+
 export function classifyChangedPaths(paths) {
   if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string' || !p || p.includes('\0'))) {
     return all();
@@ -124,6 +137,8 @@ export function classifyChangedPaths(paths) {
       matches(class4HandOutcome) ||
       matches(cashEvidence),
     tests:
+      instructionOnlyPaths(paths) ||
+      paths.some((p) => p.startsWith('docs/agent-policy/')) ||
       broad ||
       matches(satelliteQualifiers) ||
       buildProvenance ||
@@ -202,7 +217,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   else console.log(`Classified ${result.paths.length} paths from exact base/head Git commits.`);
   appendFileSync(
     process.env.GITHUB_OUTPUT,
-    Object.entries(result.flags)
+    Object.entries({
+      ...result.flags,
+      instructions_only: result.complete && instructionOnlyPaths(result.paths),
+    })
       .map(([key, value]) => `${key}=${value}\n`)
       .join('')
   );

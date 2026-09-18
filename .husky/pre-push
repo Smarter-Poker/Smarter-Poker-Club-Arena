@@ -130,6 +130,19 @@ fi
 # owned checkout read-only; never install into a shared symlink from a hook.
 # Missing dependencies refuse the affected check instead of deferring it to CI.
 CA_TREE_TOP="$(git rev-parse --show-toplevel)"
+# Direct policy verification and one actual-result receipt in this worktree's
+# private Git metadata. A failed check keeps its original failing exit status.
+POLICY_PRECHECK_STARTED=$(date +%s)
+policy_precheck_result() {
+  policy_exit=$?
+  trap - EXIT
+  node "$CA_TREE_TOP/docs/agent-policy/agent-policy.mjs" hook-report "$POLICY_PRECHECK_STARTED" "$policy_exit" || policy_exit=1
+  exit "$policy_exit"
+}
+trap policy_precheck_result EXIT
+node "$CA_TREE_TOP/docs/agent-policy/agent-policy.mjs" check
+node --test "$CA_TREE_TOP/docs/agent-policy/agent-policy.test.mjs"
+
 CLIENT_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP")
 SERVER_DEPENDENCY_MODE=local
 if [ -f "$CA_TREE_TOP/server/package.json" ]; then
@@ -272,14 +285,17 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # so the wall builds itself. The list is narrowed to the branch-owned diff;
   # mandatory checks remain active for every push.
   #
-  # So drop anything whose content matches origin/main. This only ever NARROWS,
-  # never skips: if main is not fetched, the list is left exactly as computed.
+  # Compare with the protected main ancestor actually inherited by this head.
+  # Another task can advance the shared origin/main while this push runs. Its
+  # newer engine bytes must not turn our unchanged inherited engine into a
+  # branch-owned change. Capture the base once; no known base keeps every input.
   # ═══════════════════════════════════════════════════════════════════════
   if [ -n "$FILES" ] && git rev-parse --verify -q "$REMOTE/main" >/dev/null 2>&1; then
+    QUALIFIED_MAIN_BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null || true)
     KEPT=""
     DROPPED=0
     for f in $FILES; do
-      if git diff --quiet "$REMOTE/main" -- "$f" 2>/dev/null; then
+      if [ -n "$QUALIFIED_MAIN_BASE" ] && git diff --quiet "$QUALIFIED_MAIN_BASE" "$LOCAL_SHA" -- "$f" 2>/dev/null; then
         DROPPED=$((DROPPED + 1))
         continue
       fi
@@ -289,7 +305,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     FILES="$KEPT"
     if [ "$DROPPED" -gt 0 ]; then
       echo "[club-arena pre-push] $DROPPED file(s) came in with a main merge and are"
-      echo "                      byte-identical to $REMOTE/main; judging the rest."
+      echo "                      byte-identical to inherited main $QUALIFIED_MAIN_BASE; judging the rest."
     fi
   fi
 

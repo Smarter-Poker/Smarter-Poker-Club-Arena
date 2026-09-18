@@ -4,6 +4,8 @@
 
 Read [AGENTS.md](AGENTS.md) first, then the full references in [the reference index](docs/agent-policy/REFERENCE-INDEX.md). [The operating law](docs/agent-policy/OPERATING-LAW.md) owns scope, resumption, blocker recovery and productive waiting. [The hardening standard](docs/agent-policy/HARDENING.md) owns implementation and regression protection. [PUBLISHING.md](PUBLISHING.md) owns the approved delivery route. Product and financial rules in `CLAUDE.md`, where present, still apply.
 
+Run `node docs/agent-policy/agent-policy.mjs read` on start/resumption, read its full output and the other required references, then record the version/hash receipt in the existing checkpoint. `plan origin/main HEAD` classifies the exact candidate; `report` and `timing` summarize actual evidence. See the reference index for schemas and limits. The normal pre-push hook and existing CI run policy integrity/scenario checks.
+
 ## Preserve work and authority
 
 Recover the assigned worktree, branch, PR and evidence. Use an owned linked worktree; a unique writable directory on `/Volumes/SmarterWork/agent-work` is permitted when mounted. Do not reset, clean, stash, move or commit another task's changes. Stage explicit paths and use normal hooks and the configured Git identity. Resolve conflicts by inspecting both sides; never blanket-accept one side or force-push main. Integrate current main into the owned branch when needed and revalidate affected evidence.

@@ -51,7 +51,7 @@ FOR r IN SELECT value FROM jsonb_array_elements($capture$[{"acl":"{postgres=arwd
  -- Match the entire exact preimage before restoring it; the postcheck below
  -- still requires every captured production index and all original metadata.
  IF r->>'name'='engine_tournament_leases' THEN
-  r := jsonb_set(r,'{indexes}',r->'indexes' - 'CREATE INDEX idx_engine_tournament_leases_heartbeat ON public.engine_tournament_leases USING btree (heartbeat_at)');
+  r := jsonb_set(r,'{indexes}',(r->'indexes') - 'CREATE INDEX idx_engine_tournament_leases_heartbeat ON public.engine_tournament_leases USING btree (heartbeat_at)');
   IF to_regclass('public.idx_engine_tournament_leases_heartbeat') IS NOT NULL THEN
    RAISE EXCEPTION 'modern launch index preimage differs'; END IF;
  END IF;

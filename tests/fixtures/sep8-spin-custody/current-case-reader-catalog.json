@@ -1,0 +1,31 @@
+{
+  "observed_at": "2026-09-18T21:21Z",
+  "function": {
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.spin_original_current_case(p_tournament uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE result jsonb; rowset jsonb; item record; boundary bigint;\nBEGIN\n SELECT max(hand_number) INTO boundary FROM public.tournament_knockout_candidates WHERE tournament_id=p_tournament;\n SELECT jsonb_build_object('tournament',to_jsonb(t)-ARRAY['updated_at','current_level']) INTO result\n FROM public.tournaments t WHERE id=p_tournament;\n FOR item IN SELECT * FROM (VALUES\n ('roster','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),''[]'') FROM public.tournament_players r WHERE tournament_id=$1'),\n ('candidates','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),''[]'') FROM public.tournament_knockout_candidates r WHERE tournament_id=$1'),\n ('escrow','SELECT to_jsonb(r) FROM public.tournament_escrow r WHERE tournament_id=$1'),\n ('entry_close','SELECT to_jsonb(r) FROM public.tournament_entry_close_receipts r WHERE tournament_id=$1'),\n ('payouts','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),''[]'') FROM public.tournament_payouts r WHERE tournament_id=$1'),\n ('obligations','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),''[]'') FROM public.tournament_obligations r WHERE tournament_id=$1'),\n ('wallet_keys','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY key),''[]'') FROM public.wallet_credit_idempotency r WHERE key LIKE ''tourney:''||$1::text||'':%'''),\n ('rake_records','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),''[]'') FROM public.rake_records r WHERE tournament_id=$1'),\n ('rake_settlement','SELECT to_jsonb(r) FROM public.tournament_rake_settlements r WHERE tournament_id=$1'),\n ('terminal','SELECT to_jsonb(r) FROM public.tournament_terminal_settlements r WHERE tournament_id=$1'),\n ('tables','SELECT coalesce(jsonb_agg(to_jsonb(r)-''updated_at'' ORDER BY id),''[]'') FROM public.tables r WHERE tournament_id=$1'),\n ('seats','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.id),''[]'') FROM public.table_seats r JOIN public.tables b ON b.id=r.table_id WHERE b.tournament_id=$1'),\n ('atomic','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.hand_id),''[]'') FROM public.hand_atomic_commits r JOIN public.tables b ON b.id=r.table_id WHERE b.tournament_id=$1 AND r.hand_number >= $2'),\n ('history','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.id),''[]'') FROM public.hand_history r WHERE (r.tournament_id=$1 OR r.table_id IN(SELECT id FROM public.tables WHERE tournament_id=$1)) AND r.hand_number >= $2'),\n ('settlement_keys','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.hand_id),''[]'') FROM public.settlement_idempotency_keys r JOIN public.tables b ON b.id=r.table_id WHERE b.tournament_id=$1'),\n ('ledger','SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),''[]'') FROM public.chip_ledger r WHERE tournament_id=$1 OR from_entity_id=$1 OR to_entity_id=$1')\n ) q(name,query) LOOP\n  EXECUTE item.query INTO rowset USING p_tournament,boundary;\n  result:=result||jsonb_build_object(item.name,rowset);\n END LOOP;\n RETURN result;\nEND $function$\n",
+    "full_hash": "54bc16e3aa98c131f9d4995b85733e81",
+    "owner": "postgres",
+    "acl": [
+      "postgres=X/postgres"
+    ],
+    "config": [
+      "search_path=pg_catalog, public"
+    ]
+  },
+  "indexes": [
+    {
+      "name": "idx_hand_history_table_handnum",
+      "table": "hand_history",
+      "definition": "CREATE INDEX idx_hand_history_table_handnum ON public.hand_history USING btree (table_id, hand_number DESC)"
+    },
+    {
+      "name": "idx_hand_history_tournament_created",
+      "table": "hand_history",
+      "definition": "CREATE INDEX idx_hand_history_tournament_created ON public.hand_history USING btree (tournament_id, created_at DESC) WHERE (tournament_id IS NOT NULL)"
+    },
+    {
+      "name": "idx_tables_tournament_id",
+      "table": "tables",
+      "definition": "CREATE INDEX idx_tables_tournament_id ON public.tables USING btree (tournament_id) WHERE (tournament_id IS NOT NULL)"
+    }
+  ]
+}

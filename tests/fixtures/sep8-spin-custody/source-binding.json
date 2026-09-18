@@ -9,7 +9,7 @@
     "scripts/ci/classify-ci-changes.mjs": "f037363cf1da6ddfca7cfa73ff4129b9b9b5457a846cf2d783fde2b3a06a1fdf",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/dev/qualify-sep8-spin-custody.py": "0f0c1db73eddef199197ef2cc09cfb5ef810f5a621917b73d32548f9e2d679e8",
+    "scripts/dev/qualify-sep8-spin-custody.py": "f4ded79763a2aa9fae554116ef5e2045638264828c9cad99433eda8dedff3ad2",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "e500aa832ea849e9272fb63119e15a938393e6da3d821f7cb69272e6ccf13a4a",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "server/src/tournament/completionSettlementReceipt.ts": "9bad709928cf5918bbf0290f87ee5494697f09f50a35c4a8e01686f400d72443",
@@ -56,6 +56,10 @@
     "tests/fixtures/sep8-spin-custody/original-physical-support.sql": "b0fb7edb0162a098731e5271e9109eef2709e0c11ba1a4313e2430d3ea396bfa",
     "tests/fixtures/sep8-spin-custody/final-readback.sql": "064f0d0443ec4919d219e5f33524adcc92e8b66b02c5c7e640f28c2fe0c69760",
     "tests/fixtures/sep8-spin-custody/union-journal-guard.sql": "9e51de2fff3be93ea99ea493d54eca2f2da2ede7c189f710ff4a401572a8912d",
-    "tests/fixtures/sep8-spin-custody/union-journal-after.sql": "fdb962f82796d0d3d2244de0bd2092467d337c7f4bb86e5bdc06a8745f11d5ae"
+    "tests/fixtures/sep8-spin-custody/union-journal-after.sql": "fdb962f82796d0d3d2244de0bd2092467d337c7f4bb86e5bdc06a8745f11d5ae",
+    "tests/fixtures/sep8-spin-custody/qualify-current-case-reader.py": "3895e9bce5741a6e68ef2e27adf19c37299641ec25413f52b8b306fefb116659",
+    "tests/fixtures/sep8-spin-custody/current-case-reader-coverage.sql": "8a4ef16e65398f34d72fd683b3993f327cdaa1be016e37d77492b775a65159ae",
+    "tests/fixtures/sep8-spin-custody/current-case-reader-catalog.json": "bcd4f2b0dcd810c35d676809b5b1bba7eab81a86df3e09e550cca2c5f6d74766",
+    "supabase/migrations/20260918212229_original_spin_reader_preserves_exact_indexed_history_coverag.sql": "e780f7ac61a15aa0b03b34c264e4f87597d41314702847a63cb024cadba36acf"
   }
 }

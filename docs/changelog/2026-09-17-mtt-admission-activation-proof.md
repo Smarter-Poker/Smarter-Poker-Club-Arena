@@ -49,3 +49,19 @@ the proof JSON as new DDL. Existing per-trigger declaration comments document
 those inert descriptions without changing the scanner or SQL. A direct negative
 control still refuses a newly appended undeclared trigger. The composed native
 qualification was repeated for the updated exact source binding.
+
+Hosted client checks exposed two existing source-window assumptions after
+the connected satellite integration. The payout-record law now recognizes
+the explicitly named cohort settlement authority and its valid split-line
+function terminator. Its existing proof still requires exactly two noncash
+payout inserts, separate cash credit, and whole-pool conservation. The old
+parser failed two cases; the corrected law passes all 11, including five
+mutated unsafe bodies, an unknown owner, and preservation of following SQL.
+No financial function or migration changed.
+
+The Spin launch law now reads the actual launch method's table loop through
+the maintained source-window helper. It still requires the dealing hold before
+the re-announcement skip and explicitly refuses a missing skip. The prior
+unbounded slice incorrectly included an unrelated satellite continuation.
+The root's 10 law cases and 19 real Spin reveal-boundary cases passed; the
+adopted test, production method, helper and Spin inputs are byte-identical.

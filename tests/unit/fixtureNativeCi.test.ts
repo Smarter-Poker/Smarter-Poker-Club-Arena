@@ -250,6 +250,7 @@ describe('required CI owns native fixture verification', () => {
 
   it.each([
     'scripts/ci/mtt_activation_native.py',
+    'scripts/ci/mtt_activation_funding.py',
     'scripts/ci/satellite_qualifier_fixture.py',
     'scripts/ci/mtt_break_authoring_native.py',
     'scripts/ci/fixtures/mtt-format-activation/source-binding.json',

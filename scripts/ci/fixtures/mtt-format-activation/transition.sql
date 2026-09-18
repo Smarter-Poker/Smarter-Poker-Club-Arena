@@ -37,7 +37,9 @@ SET LOCAL session_replication_role=origin;
 CREATE FUNCTION r46_activation.money() RETURNS jsonb LANGUAGE plpgsql STABLE AS $$
 DECLARE result jsonb:=r46_mtt_isolation.economic_snapshot(); r record; value jsonb; BEGIN
  FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-  WHERE n.nspname='public' AND c.relkind='r' AND c.relname LIKE 'accounting_tournament_%' LOOP
+  WHERE n.nspname='public' AND c.relkind='r' AND (c.relname LIKE 'accounting_tournament_%'
+   OR c.relname IN ('tournament_participant_funding_receipts','tournament_accounting_credit_receipts',
+    'tournament_obligation_events','union_pnl_transaction_frames','union_pnl_original_flows','union_pnl_inventory_events')) LOOP
   EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),''[]''::jsonb) FROM public.%I t',r.relname) INTO value;
   result:=result||jsonb_build_object(r.relname,value);
  END LOOP;

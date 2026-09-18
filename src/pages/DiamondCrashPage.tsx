@@ -785,7 +785,7 @@ function DiamondCrashGame() {
           earned.required || budget.award
             ? {
                 label: 'Spin The Wheel',
-                onClick: () => navigate(`/clubs/${routeClubId}/diamond-games`),
+                onClick: () => navigate(`/clubs/${routeClubId}/wheel`),
                 disabled: open || starting,
               }
             : running

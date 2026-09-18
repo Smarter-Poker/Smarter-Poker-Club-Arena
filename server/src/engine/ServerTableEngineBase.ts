@@ -5412,6 +5412,8 @@ export abstract class ServerTableEngineBase {
         remainingSeconds: bank.remainingSeconds,
         usesRemaining: bank.usesRemaining,
         ...meta,
+        // TimeBankEngine owns the live entitlement; metadata is only its accounting mirror.
+        unlimitedActivations: bank.unlimitedActivations,
       };
     }
     return saved;

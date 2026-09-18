@@ -11,6 +11,13 @@ banks. An unreadable or invalid history result rejects startup through its
 existing failure owner before any replacement checkpoint. New hands retain the
 global allocator, and crash recovery still restores its own in-flight number.
 
+The same hand identity is retained when a pause arrives after reserving a new
+number but before the controller starts. `dealHand` restores the previous
+boundary only if no controller started, so an abandoned reservation cannot
+invalidate the next parked-bank read. The global sequence is still consumed;
+its unused number is never reused. A real allocation-to-maintenance regression
+failed before this correction; the six affected suites pass 94 cases afterward.
+
 The existing parked-bank suite drives real `start()` from its default zero
 through history lookup, bank read and the first maintenance checkpoint before
 the roster sweep. It verifies exact remaining seconds, uses, occupancy and

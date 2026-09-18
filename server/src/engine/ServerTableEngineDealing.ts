@@ -1779,6 +1779,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
     const releaseSeatBoundary = await this.acquireSeatBoundary();
+    const completedHandNumber = this.handCount;
+    let handStarted = false;
     try {
       // The roster was selected before the between-hand rest and may now contain
       // a cashed-out occupancy. Revalidate it while departures cannot run.
@@ -3167,6 +3169,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             }
             const startExactController = () => {
               persistenceGeneration = this.beginTerminalBoundaryPersistence();
+              handStarted = true;
               controllerForHand.start();
             };
             const startWithPermit = () => {
@@ -3193,6 +3196,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         publicationStart?.release();
       }
     } finally {
+      // A reserved number abandoned before start is not a completed boundary.
+      // Keep parked banks bound to the last real hand, including every pause
+      // that can arrive during asynchronous hand preparation.
+      if (!handStarted) this.handCount = completedHandNumber;
       releaseSeatBoundary();
     }
   }

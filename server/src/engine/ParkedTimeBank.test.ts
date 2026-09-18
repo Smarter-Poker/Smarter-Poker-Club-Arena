@@ -157,6 +157,37 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     expect(data.row).toBeNull();
     expect(data.rpc).not.toHaveBeenCalled();
   });
+
+  it('keeps the completed boundary when maintenance interrupts hand-number allocation', async () => {
+    const old = engine();
+    old.running = true;
+    old.seatedPlayers.push({
+      user_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      occupancy_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      seat_number: 3,
+      stack: 25,
+    });
+    old.timeBankEngine.initializePlayer(table, user, { remainingSeconds: 7, usesRemaining: 1 });
+    old.timeBankMeta.set(user, { initialSeconds: 80, baseSeconds: 40, dbConsumedSeconds: 33 });
+    old.takePreparedHandNumber = () => null;
+    old.allocateGlobalHandNumber = async () => 13;
+    old.reserveF06Hand = async () => {
+      old.maintenancePaused = true;
+    };
+    await old.dealHand([...old.seatedPlayers]);
+    expect(old.handController).toBeNull();
+    await old.persistPresenceForRestart('parked');
+    const next = freshStartup();
+    await next.start();
+    expect(data.row.time_bank_snapshot.handNumber).toBe(12);
+    expect(next.parkedTimeBanks[user]).toMatchObject({ remainingSeconds: 7, usesRemaining: 1 });
+    expect(data.row.time_bank_snapshot.players[user]).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+      dbConsumedSeconds: 33,
+    });
+    expect(data.rpc).not.toHaveBeenCalled();
+  });
   it('never bills an active allocation twice across its parked snapshot and restart', async () => {
     data.rpc.mockResolvedValue({ data: { success: true, shortfall_seconds: 0 }, error: null });
     const old = engine();

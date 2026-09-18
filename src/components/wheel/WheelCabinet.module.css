@@ -108,6 +108,8 @@
   flex-wrap: wrap;
 }
 .presets button {
+  flex: 1 1 44px;
+  min-width: 44px;
   color: #9aa5b3;
   border: 0;
   background: transparent;

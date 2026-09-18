@@ -61,6 +61,11 @@ for (const width of [320, 390, 1280]) {
       await expect(page.getByLabel('Diamonds To Spin')).toHaveValue(
         String(receipt.entry_value_diamonds)
       );
+      for (const amount of ['25', '100', '500', '1,000', '2,500']) {
+        const target = await page.getByRole('button', { name: amount, exact: true }).boundingBox();
+        expect(target!.width).toBeGreaterThanOrEqual(44);
+        expect(target!.height).toBeGreaterThanOrEqual(44);
+      }
       await page.screenshot({
         path: testInfo.outputPath(`wheel-idle-${width}.png`),
         fullPage: true,

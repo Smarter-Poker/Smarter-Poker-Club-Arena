@@ -48,8 +48,10 @@ print('PASS: original tables-before-seats installation reproduces the actual own
 root=pathlib.Path(__file__).resolve().parents[3]
 migration=(root/'supabase/migrations/20260917233148_union_pnl_inventory_preserves_original_boundaries.sql').read_text()
 admission=re.findall(r'^LOCK TABLE .+?;$',migration,re.M)
-assert len(admission)==2 and admission[0]=='LOCK TABLE public.tables IN EXCLUSIVE MODE;'
-assert admission[1].endswith(' NOWAIT;')
+assert len(admission)==3 and admission[:2]==[
+    'LOCK TABLE public.tournaments IN EXCLUSIVE MODE;',
+    'LOCK TABLE public.tables IN EXCLUSIVE MODE;']
+assert admission[2].endswith(' NOWAIT;')
 admission=re.findall(r'^(?:SET LOCAL lock_timeout|LOCK TABLE).+?;$',migration,re.M)
 writer=connection('inventory_install_fixed_writer')
 write(writer,"BEGIN; SELECT id FROM tables FOR SHARE; UPDATE table_seats SET stack=stack; SELECT 'seat-owned';")
@@ -63,14 +65,35 @@ assert int(query("SET lock_timeout='500ms'; SELECT count(*) FROM tables;"))>0
 write(installer,'ROLLBACK;');finish(installer)
 print('PASS: exact migration admission lets the original seat-then-table writer finish before DDL without blocking plain table reads')
 
+# The original seat-first creator owns its tournament before its table. Taking
+# tables first lets that creator enter while table admission drains cash hands.
+# Reproduce the resulting refusal, then prove the actual new ordering drains it.
+writer=connection('inventory_install_tournament_creator_old')
+write(writer,"BEGIN; SELECT id FROM tournaments FOR UPDATE; UPDATE tournaments SET status=status; SELECT 'tournament-owned';")
+until(writer,'tournament-owned')
+old_refusal=subprocess.run(base+['-c',"BEGIN; LOCK TABLE public.tables IN EXCLUSIVE MODE; LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE NOWAIT; ROLLBACK;"],text=True,capture_output=True,env=env,timeout=5)
+assert old_refusal.returncode!=0 and 'could not obtain lock on relation' in old_refusal.stderr,old_refusal.stderr
+write(writer,'SELECT id FROM tables FOR UPDATE; COMMIT;');finish(writer)
+writer=connection('inventory_install_tournament_creator')
+write(writer,"BEGIN; SELECT id FROM tournaments FOR UPDATE; UPDATE tournaments SET status=status; SELECT 'tournament-owned';")
+until(writer,'tournament-owned')
+installer=connection('inventory_install_tournament_first_ddl')
+write(installer,"BEGIN; "+' '.join(admission)+" SELECT 'admitted';")
+waiting_for_relation('inventory_install_tournament_first_ddl')
+write(writer,'SELECT id FROM tables FOR UPDATE; COMMIT;');finish(writer)
+until(installer,'admitted')
+assert int(query("SET lock_timeout='500ms'; SELECT count(*) FROM tournaments;"))>0
+write(installer,'ROLLBACK;');finish(installer)
+print('PASS: table-first admission refuses the original tournament creator; exact tournament-first migration drains it and admits plain reads')
+
 # A different original owner can already hold a later source. NOWAIT must
 # retire only this migration attempt and promptly release its first lock.
 writer=connection('inventory_install_competing_owner')
-write(writer,"BEGIN; UPDATE tournaments SET status=status; SELECT 'tournament-owned';")
-until(writer,'tournament-owned')
+write(writer,"BEGIN; UPDATE table_seats SET stack=stack; SELECT 'seat-owned';")
+until(writer,'seat-owned')
 refusal=subprocess.run(base+['-c',"BEGIN; SET LOCAL lock_timeout='2s'; "+' '.join(admission)+" ROLLBACK;"],text=True,capture_output=True,env=env,timeout=5)
 assert refusal.returncode!=0 and 'could not obtain lock on relation' in refusal.stderr,refusal.stderr
-write(writer,'UPDATE table_seats SET stack=stack; COMMIT;');finish(writer)
+write(writer,'UPDATE tables SET is_private=is_private; COMMIT;');finish(writer)
 print('PASS: competing later owner refuses only installation and releases its original table lock')
 
 # The real original trigger owns a shared transaction lock until commit.

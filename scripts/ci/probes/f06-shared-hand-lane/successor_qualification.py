@@ -38,6 +38,16 @@ def qualify(root, out, cmd, command, run, probe, require, results, seed, held, m
     probe('successor-baseline-original-door-refuses', service + "SELECT fn_f06_abort_unsettled_hand(md5('unusable')::uuid,(SELECT expected-'lease_generation' FROM fixture_expected_inputs WHERE i=11));", error='F06_ABORT_ORIGINAL_LEASE_CHANGED')
     installer = path.read_text()
     run('successor-disabled-fence-refused', 'BEGIN; ALTER TABLE engine_tournament_leases DISABLE TRIGGER f06_aborted_generation;' + installer, error='F06_SUCCESSOR_ABORT_BINDING_CHANGED')
+    run('successor-disabled-original-identity-refused', 'BEGIN; ALTER TABLE smarter_private.f06_hand_permits DISABLE TRIGGER f06_hand_permits_immutable;' + installer, error='F06_ABORT_BINDING_CHANGED')
+    for name, signature, error in [
+        ('lane', 'smarter_private.f06_try_lane(uuid)', 'F06_ABORT_DEPENDENCY_CHANGED'),
+        ('release', 'public.release_tournament_leases_v2(text,jsonb)', 'F06_ABORT_DEPENDENCY_CHANGED'),
+        ('settlement-lane', 'public.fn_ca_share_settlement_lane_for_table(uuid)', 'F06_ABORT_DEPENDENCY_CHANGED'),
+        ('freeze-boundary', 'public.fn_active_maintenance_release_boundary()', 'F06_ABORT_FREEZE_DEPENDENCY_CHANGED'),
+        ('freeze', 'public.fn_platform_frozen()', 'F06_ABORT_FREEZE_DEPENDENCY_CHANGED'),
+        ('outer-settlement', 'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)', 'F06_ABORT_OUTER_SETTLEMENT_CHANGED'),
+    ]:
+        run('successor-refuses-drift-' + name, 'BEGIN; ALTER FUNCTION ' + signature + ' SET search_path=pg_catalog,pg_temp;' + installer, error=error)
     with held("SELECT 1 FROM engine_tournament_leases WHERE tournament_id=md5('t11')::uuid FOR KEY SHARE;"):
         run('successor-installer-refuses-busy-lease-without-wait', installer, error='55P03')
     run('successor-refused-install-leaves-no-column', "SELECT count(*) FROM pg_attribute WHERE attrelid='smarter_private.f06_unsettled_hand_aborts'::regclass AND attname='retired_lease_generation' AND NOT attisdropped;", '0')

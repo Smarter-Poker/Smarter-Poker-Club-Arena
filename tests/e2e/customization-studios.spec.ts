@@ -331,7 +331,13 @@ test.describe('real Table Studio browser flows', () => {
       const shell = studio.locator('.theme-modal__preview-shell');
 
       await page.addStyleTag({
-        content: '*,*::before,*::after{animation:none!important;transition:none!important}',
+        // Theme selection raises a fixed notification. The old landscape
+        // preview sat above it, but the intentional portrait console now
+        // intersects that viewport layer. Keep this snapshot scoped to the
+        // preview itself so transient notification timing cannot cover the
+        // caption or become part of a reviewed table-art baseline.
+        content:
+          '*,*::before,*::after{animation:none!important;transition:none!important}.toast-container{display:none!important}',
       });
 
       const settleArtwork = async () => {

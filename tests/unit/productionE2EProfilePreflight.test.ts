@@ -296,6 +296,14 @@ describe('authenticated production account preflight', () => {
       /async function lobbySettled\(page: Page\)[\s\S]*await prepareCashLobbyActions\(page\);/
     );
 
+    const liveMobileLobby = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
+    expect(liveMobileLobby).toContain(
+      "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
+    );
+    expect(liveMobileLobby).toMatch(
+      /async function openLobby\(page: Page\)[\s\S]*await prepareCashLobbyActions\(page\);[\s\S]*lobby-wallets-trigger/
+    );
+
     const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');
     expect(mobile).toContain("const CLUB_ARENA_PATH = '/hub/club-arena'");
     expect(mobile).toContain('evaluateAcrossDocumentReplacement');

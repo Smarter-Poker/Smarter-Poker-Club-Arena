@@ -1,0 +1,29 @@
+{
+  "_owner": "agent/codex/union-weekly-basis-20260917",
+  "tables": [
+    "union_pnl_transaction_frames",
+    "union_pnl_weekly_capture",
+    "union_pnl_cash_outcomes",
+    "union_pnl_original_flows",
+    "union_pnl_eco_observations"
+  ],
+  "functions": [
+    "fn_union_pnl_original_frame",
+    "fn_union_pnl_inventory_observe",
+    "fn_union_pnl_receipt_frame",
+    "fn_union_pnl_capture_original_flow",
+    "fn_union_pnl_capture_accepted_cash",
+    "fn_union_pnl_tournament_returns",
+    "fn_union_pnl_tournament_entry_club",
+    "fn_union_pnl_boundary",
+    "fn_union_pnl_original_flow_evidence",
+    "fn_union_pnl_evidence_report",
+    "fn_union_pnl_qualified_clubs",
+    "fn_union_pnl_all_clubs",
+    "fn_union_pnl_cash_by_club",
+    "fn_union_pnl_baseline",
+    "fn_union_pnl_closed_book_barrier",
+    "fn_union_eco_adjustment",
+    "fn_union_reconciliation_report"
+  ]
+}

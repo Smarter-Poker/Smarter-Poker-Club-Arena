@@ -416,3 +416,6 @@ bash "$root/scripts/dev/test-union-pnl-inventory.sh"
 python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py" \
   --schedule-adoption "$pgbin" "$ACCOUNTING_FIXTURE_PARENT" \
   "$ACCOUNTING_TEST_OUTPUT_DIR/native-schedule-adoption"
+
+# Connected prospective basis qualification uses the same original money owners.
+PG_BIN="$pgbin" python3 "$root/scripts/dev/test-union-weekly-basis.py"

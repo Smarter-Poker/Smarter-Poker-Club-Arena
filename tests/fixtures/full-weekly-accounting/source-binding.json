@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "8eaf731253c4f6924ba5b9a5afcff2f8304d6f4aba3170b5118d1896ac33ea15",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "0db450921db5e55622c83e1b70b9d3ce951d5351c16f5928b1ead0733717270f",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -312,7 +312,32 @@
     "tests/fixtures/union-pnl-inventory/concurrency.py": "b373c839e0514d3fc9e66c40059867734c4797540853306734a3ab67c03165c8",
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
-    "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876"
+    "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "8d13c7f977d20dae2ce243d1f71a2b595981df3645af757ae3c0c22c785d9c72",
+    "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
+    "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
+    "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
+    "tests/fixtures/union-weekly-basis/regression.sql": "44064e6ace5baff1fb489b4d7c513107367068a56fbd868118d8215781c1e75f",
+    "tests/fixtures/union-weekly-basis/captured-installed-preconditions.json": "02247c11bc311c79197225ca729f860d30210da896314185817b441ad39cb313",
+    "tests/fixtures/union-weekly-basis/captured-cash-dependencies.json": "f6be64837e2e5db2f0329fdda009e6d09b72a386ccf876c49ae6a083fad624f4",
+    "tests/fixtures/union-weekly-basis/cascade-regression.sql": "2ae3f0ef454a803daca30c9b383fe7f0f94877ff51e6e168eb105b3deaabc9c6",
+    "tests/fixtures/union-weekly-basis/captured-coordinator-preimages.json": "ad51e7b757d9fc9cab4a14dcfe37cedba660bacde89e0db26efe0d5292c27acb",
+    "tests/fixtures/union-weekly-basis/concurrency.py": "0c39241c365297ec24f472234428b11d36f93411bc2110fd8542cb673365a94e",
+    "tests/fixtures/union-weekly-basis/accepted-document-relations.sql": "ff1493ba0e3dd7a3480029ab83dd522d29c03502d37ff05d74bc59dda20beaf3",
+    "tests/fixtures/union-weekly-basis/captured-rake-dependencies.json": "30c0915a12676a85e720ffa2d8f56797e15d9de8217197f60bdc99a6de197ece",
+    "tests/fixtures/union-weekly-basis/raked-regression.sql": "399e235101b3d77a83432425674e89cd7cd8dbd7bd245fe1fa5d34ff83e691b3",
+    "tests/fixtures/union-weekly-basis/captured-refund-dependencies.sql": "5332204d5d5c8edf070c199652acaaa4108e349c08207a84768d2c7a901dc42b",
+    "tests/fixtures/union-weekly-basis/README.md": "c56db2b09a21b1ac393d4dadac94f8d0a49cbe6f21b279f420146173e3a2ce2d",
+    "tests/fixtures/union-weekly-basis/captured-payer-preimages.json": "fca603ec5e3ffe5ba00c718a6ccde6514e39e477b8e4deb7004635b1f4c762e9",
+    "tests/fixtures/union-weekly-basis/captured-cascade-preimage.json": "af70c7a63f87d3556cd876623b878e7aaacdcb858bcb4567e8e7ba46611e77ff",
+    "tests/fixtures/union-weekly-basis/payment-regression.sql": "2270f4bd2e60c1601783173fa24a351b52bdb1ea489fed92c059fd83da90ee96",
+    "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
+    "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
+    "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
+    "scripts/dev/test-union-weekly-basis.py": "b3adb763cbdf97ef19104c258c49dde7c775aa1441db51de07646ddd6db37c5e",
+    "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "55dfbf1d04250ab0b300d4141c583a978d80c8356f211d0098d60ae4dacf9531",
+    "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
+    "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -1142,5 +1167,11 @@
     "migration": "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql",
     "scope": "Separately committed same-row native alter_job for exact captured canonical job272, with no new schedule or financial execution.",
     "qualification": "Existing full weekly runner invokes focused native launcher qualification after its stopped financial clusters; actual provider runtime adoption remains separate."
+  },
+  "prospective_weekly_original_basis": {
+    "migration": "20260917234315",
+    "invocation": "Existing full weekly activation runner invokes scripts/dev/test-union-weekly-basis.py once.",
+    "qualification": "Native real owners, full positive rake/payer/cascade, original-source negative controls, invoice rollback, replay and two-session lock red/green.",
+    "production": "Not established by this source binding. Installation requires exact original17 preconditions and live readback."
   }
 }

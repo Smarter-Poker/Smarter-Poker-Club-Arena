@@ -9,8 +9,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 142687,
-      "sha256": "8f1a33be99429876bf59cb820f32931961a0d1b2dd7c7fcf7cb04ea92b8eb7d9"
+      "bytes": 142836,
+      "sha256": "a0c249a335fd995d7715d8a41d842fcb1e1b0efa40aacd431fb6e2e42eea3921"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 77409,
-      "sha256": "5fa255a3298c2381ffc7d9dff9b5e76208270c592705193ce219a3262f483719"
+      "bytes": 77594,
+      "sha256": "4cf0125d021f12e5d1ecfb2ae3150167ecb78e1efdc1f133b35f5582c315756b"
     }
   },
   "nativePgCron": {
@@ -181,6 +181,23 @@
         }
       },
       "reason": "Compose both existing Accounting native routes and all routing assertions. Cash SQL and capture inputs unchanged."
+    },
+    "stockToolchainBinding": {
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 142687,
+          "sha256": "8f1a33be99429876bf59cb820f32931961a0d1b2dd7c7fcf7cb04ea92b8eb7d9"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 16845,
+          "sha256": "dc667e99808844e8351137a5e68a32278b763ca164344e67fe9fb285ff263a48"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 77409,
+          "sha256": "5fa255a3298c2381ffc7d9dff9b5e76208270c592705193ce219a3262f483719"
+        }
+      },
+      "reason": "Pass the already-built PG_ISOLATION_TESTER artifact explicitly to the journal native runner; routing assertion reproduced missing environment before repair."
     }
   }
 }

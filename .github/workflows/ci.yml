@@ -1348,6 +1348,7 @@ jobs:
         id: hand_submission
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
         run: python3 scripts/ci/test-hand-submission.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission
       - name: Retain original hand and successor proof
         if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission.outcome)

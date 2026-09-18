@@ -227,6 +227,9 @@ describe('required CI owns native fixture verification', () => {
     expect(native).toHaveLength(1);
     expect(native[0].id).toBe('hand_submission');
     expect(native[0]['continue-on-error']).not.toBe(true);
+    expect(native[0].env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
     expect(native[0].run).toContain('--pg-bin "$POKER_AUDIT_PG_BIN"');
     expect(native[0].run).toContain('--evidence artifacts/hand-submission');
     const artifact = steps.find(

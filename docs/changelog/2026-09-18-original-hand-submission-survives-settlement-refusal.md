@@ -75,3 +75,8 @@ migration. Required hosted checks, composed engine publication and live behavior
 remain separate pending evidence; this installation alone does not deploy the
 compatible engine consumer. No scheduler, repair loop, new retry
 timer, timeout padding or financial reconstruction is introduced.
+
+Final workflow inspection found the journal step omitted the existing stock
+PostgreSQL isolation tester artifact path. Its new direct assertion failed on
+the omission. The step now passes that same qualified artifact explicitly; no
+new tool installation or fallback is introduced.

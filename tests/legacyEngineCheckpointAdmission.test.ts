@@ -10,7 +10,9 @@ const installer = read('server/scripts/install-engine-supervisor.sh');
 const checkpointShell = read('server/scripts/legacy-engine-checkpoint.sh');
 const checkpointTransport = read('server/scripts/legacy-engine-checkpoint.mjs');
 const predecessor758 = '758610f3f844406bbbaee2f5100ced36d84fb943';
+const predecessorA0 = 'a0ab287d902879280f0c915e44f5222c5db4d7df';
 const image758 = 'sha256:0190d49e394fd2b12b1462730bb22c4c4d1c4d49564e19b192bb07e3754c5561';
+const imageA0 = 'sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6';
 const countdownStart = transaction.indexOf('legacy_checkpoint_countdown() {');
 const countdownEnd = transaction.indexOf('\npersist_break_deadline()', countdownStart);
 const countdown = transaction.slice(countdownStart, countdownEnd);
@@ -52,6 +54,9 @@ legacy_checkpoint_countdown
 describe('the exact legacy checkpoint enters the existing release transaction', () => {
   it.each([
     [predecessor758, image758, 0],
+    [predecessorA0, imageA0, 0],
+    [predecessorA0, image758, 1],
+    [predecessor758, imageA0, 1],
     [
       '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5',
       'sha256:3796b874331fee7d3b0824472df65e9fe613306a5175d3a211fdf8158bdab852',
@@ -87,7 +92,7 @@ printf '%s' "$LEGACY_IMAGE"
     if (status === 0) expect(result.stdout).toBe(image);
   });
 
-  it.each([predecessor758, '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5'])(
+  it.each([predecessor758, predecessorA0, '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5'])(
     'retains the existing recovery event only for capable predecessor %s',
     (sha) => {
       const entry = transaction.indexOf(
@@ -102,6 +107,7 @@ printf '%s' "$LEGACY_IMAGE"
           `set -euo pipefail
 CHECKPOINT_PREDECESSOR_SHA="$PROFILE_SHA"
 CHECKPOINT_758_SHA=${predecessor758}
+CHECKPOINT_A0_SHA=${predecessorA0}
 CERTIFICATE_RC=2
 RECOVERY_ADMISSION_MISSED=0
 legacy_checkpoint_countdown() { return 1; }
@@ -113,7 +119,9 @@ fi
         { encoding: 'utf8', timeout: 3000, env: { ...process.env, PROFILE_SHA: sha } }
       );
       expect(result.status, result.stderr).toBe(0);
-      expect(result.stdout).toBe(sha === predecessor758 ? 'existing-event:1' : '');
+      expect(result.stdout).toBe(
+        [predecessor758, predecessorA0].includes(sha) ? 'existing-event:1' : ''
+      );
     }
   );
 
@@ -125,6 +133,7 @@ fi
     expect(production).toContain('const checkpointRelease = process.argv[3]');
     expect(production).toContain('].includes(checkpointRelease)');
     expect(production).toContain(predecessor758);
+    expect(production).toContain(predecessorA0);
     expect(production).toContain('releaseSha: checkpointRelease');
   });
   it.each([false, true])(

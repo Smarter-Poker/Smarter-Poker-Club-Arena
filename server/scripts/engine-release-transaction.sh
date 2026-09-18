@@ -14,6 +14,7 @@ DATABASE_PROOF="$CONTROL_DIR/engine-release-database-proof.py"
 LEGACY_CHECKPOINT="$CONTROL_DIR/legacy-engine-checkpoint.sh"
 LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
+CHECKPOINT_A0_SHA=a0ab287d902879280f0c915e44f5222c5db4d7df
 REPO_DIR="${REPO_DIR:-/opt/club-arena}"
 ENV_FILE="${ENV_FILE:-$REPO_DIR/server/.env}"
 REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-requests}"
@@ -965,14 +966,15 @@ timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
   || die 'bounded immutable engine image build failed'
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
-# This is a compatibility operation for two pinned immutable predecessors, not a
+# This is a compatibility operation for three pinned immutable predecessors, not a
 # general checkpoint API. The helper rebinds the seal/image/process under the
 # engine lock immediately before its one durable intent and checkpoint.
 CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
   "$RELEASE_SEAL" get desired-sha)" || die 'sealed checkpoint predecessor is unreadable'
 LEGACY_CHECKPOINT_REQUIRED=0
 if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$LEGACY_CHECKPOINT_SHA" ] \
-  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ]; then
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ]; then
   LEGACY_CHECKPOINT_REQUIRED=1
 fi
 
@@ -993,10 +995,11 @@ while :; do
     # Counting down follows the final announcement. Run even when the old
     # certificate says ready: that predecessor can retain a stale saved bit.
     if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown)"; then
-      # This exact successor already implements the original bounded recovery
+      # These exact successors already implement the original bounded recovery
       # event. Retain that opportunity; the helper still needs its real durable
       # countdown, and an unknown request can never create another announcement.
-      if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ]; then
+      if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
+        || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ]; then
         if [ "$CERTIFICATE_RC" -eq 2 ]; then RECOVERY_ADMISSION_MISSED=1; fi
         request_recovery_window
       fi
@@ -1028,7 +1031,8 @@ while :; do
     CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
       "$RELEASE_SEAL" get desired-sha)" || die 'locked checkpoint predecessor is unreadable'
     if [ "$CHECKPOINT_PREDECESSOR_SHA" != "$LEGACY_CHECKPOINT_SHA" ] \
-      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_758_SHA" ]; then
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_758_SHA" ] \
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_A0_SHA" ]; then
       # A different release may have advanced desired while this run waited.
       # Source/high-water admission above still owns whether our target may
       # follow it. Never apply the old-image compatibility path to its successor.

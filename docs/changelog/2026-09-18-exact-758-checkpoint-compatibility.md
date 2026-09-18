@@ -44,3 +44,18 @@ two-second rest and rabbit-hunt contracts require the exact guarded checkpoint
 calls. The pause-authority test now reads enclosing syntax conditions rather
 than a preceding text window, preserving both explicit maintenance gates and
 the terminal-only gates without misclassifying a sibling checkpoint condition.
+
+## Concurrent Predecessor Advance
+
+At 03:16 UTC the existing Union release replaced 758 with
+`a0ab287d902879280f0c915e44f5222c5db4d7df`, immutable image
+`sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6`.
+Its measured Node runtime and three checkpoint-owner compiled files match 758.
+Its only dealing-source change adds original cash-hand provenance capture before
+dealing; it still lacks the three pause-entry checkpoint calls. A third closed
+profile therefore pins this actual predecessor and its different measured
+Dealing hash. The same native accounting, custody, generation, single-use and
+285-second certificate requirements remain unchanged. The exact a0 positive
+fixture failed before the profile addition; affected profile tests cover its
+success, mixed source/image/files and refused original work. Unchanged native
+transport and runtime evidence is retained rather than duplicated.

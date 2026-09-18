@@ -1,5 +1,5 @@
 /**
- * Two exact-image first-install checkpoint profiles. This function has no module-scoped
+ * Three exact-image first-install checkpoint profiles. This function has no module-scoped
  * dependencies: the publisher serializes it for Runtime.callFunctionOn, with
  * `this` bound to the discovered, already-running GameServer. It never creates
  * a server, opens an inspector, changes a pause/readiness flag, or retries a write.
@@ -10,7 +10,7 @@
  * client, dataActorContext, fs (node:fs), crypto (node:crypto). Loading/identity verification belongs
  * to that transport; the checks below additionally pin the three critical files.
  *
- * The 2f4 profile preserves its old untracked accounting semantics. The 758 profile
+ * The 2f4 profile preserves its old untracked accounting semantics. The 758/a0 profiles
  * additionally requires its native debit registry already drained and its exact
  * checkpoint generation unchanged. Neither claims historical reconciliation or
  * restart approval, and neither may settle or discard retained F06 custody.
@@ -23,7 +23,8 @@
  */
 export async function legacyEngineCheckpointGuard(options, discoveredServers, modules) {
   const release = options?.expectedReleaseSha;
-  const trackedAccounting = release === '758610f3f844406bbbaee2f5100ced36d84fb943';
+  const trackedAccounting = release === '758610f3f844406bbbaee2f5100ced36d84fb943' ||
+    release === 'a0ab287d902879280f0c915e44f5222c5db4d7df';
   const reserveMs = 285000;
   // Refusal ceilings, not truncation or latency promises. The observed fleet has
   // 1379 tables, so the ordinary PostgREST 1000-row cap cannot bound the fleet.
@@ -35,7 +36,9 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
     ['/app/dist/GameServer.js', 'f8a4e646348fbd0209b9afde24658660dca0837f7720e04b47d37cff4fa2bea7'],
     ['/app/dist/engine/ServerTableEngineBase.js', 'cc715650eca1b6cfbccadcef46a9f07f581549e75df6581cb8c32f3fbfffc0b3'],
     ['/app/dist/services/supabase/client.js', 'f129642e3ce48e26a84f3f7fa60c46d3ceabd67e35f0508c1711319bc95f56ad'],
-    ['/app/dist/engine/ServerTableEngineDealing.js', '44a7c52ede31dd3a5600d6b648b0d34c9ecabc3e10f14a65830712b432dc62e9'],
+    ['/app/dist/engine/ServerTableEngineDealing.js', release === 'a0ab287d902879280f0c915e44f5222c5db4d7df'
+      ? 'a15d068c8a43ab0c34a208abf4380815813cf71a703978e334ed5c78ef70788b'
+      : '44a7c52ede31dd3a5600d6b648b0d34c9ecabc3e10f14a65830712b432dc62e9'],
   ] : [
     ['/app/dist/GameServer.js', 'bfcb47c498c34408dd95047e90535c7ddc1ecc5fef14e41e1063ec72a1aad119'],
     [
@@ -230,7 +233,7 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         engine instanceof modules.base.ServerTableEngineBase &&
         engine.tableId === tableId, 'engine_identity_mismatch');
       if (trackedAccounting) {
-        // These fields belong to the exact native 758 owner. Unknown or retained
+        // These fields belong to the exact native 758/a0 owner. Unknown or retained
         // work is not an empty boundary, even when the map entry is stopped.
         require(engine.timeBankAccountingPending instanceof Set &&
           engine.timeBankAccountingPending.size === 0 &&

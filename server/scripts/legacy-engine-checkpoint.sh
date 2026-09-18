@@ -30,6 +30,8 @@ case "$LEGACY_SHA" in
     LEGACY_IMAGE=sha256:3796b874331fee7d3b0824472df65e9fe613306a5175d3a211fdf8158bdab852 ;;
   758610f3f844406bbbaee2f5100ced36d84fb943)
     LEGACY_IMAGE=sha256:0190d49e394fd2b12b1462730bb22c4c4d1c4d49564e19b192bb07e3754c5561 ;;
+  a0ab287d902879280f0c915e44f5222c5db4d7df)
+    LEGACY_IMAGE=sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6 ;;
   *) die 'sealed predecessor has no qualified checkpoint profile' ;;
 esac
 [ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \

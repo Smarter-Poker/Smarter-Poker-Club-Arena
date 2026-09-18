@@ -4,6 +4,7 @@ import * as dataActorContext from '../server/src/services/supabase/dataActorCont
 
 const release = '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5';
 const checkpoint758 = '758610f3f844406bbbaee2f5100ced36d84fb943';
+const checkpointA0 = 'a0ab287d902879280f0c915e44f5222c5db4d7df';
 const instance = '1-c86a8f37';
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const pins = [
@@ -16,6 +17,10 @@ const pins758 = [
   'cc715650eca1b6cfbccadcef46a9f07f581549e75df6581cb8c32f3fbfffc0b3',
   'f129642e3ce48e26a84f3f7fa60c46d3ceabd67e35f0508c1711319bc95f56ad',
   '44a7c52ede31dd3a5600d6b648b0d34c9ecabc3e10f14a65830712b432dc62e9',
+];
+const pinsA0 = [
+  ...pins758.slice(0, 3),
+  'a15d068c8a43ab0c34a208abf4380815813cf71a703978e334ed5c78ef70788b',
 ];
 
 function fixture(count = 1, predecessor = release) {
@@ -188,7 +193,12 @@ function fixture(count = 1, predecessor = release) {
     crypto: {
       createHash: () => ({
         update: (bytes: Buffer) => ({
-          digest: () => (predecessor === checkpoint758 ? pins758 : pins)[bytes[0]],
+          digest: () =>
+            (predecessor === checkpointA0
+              ? pinsA0
+              : predecessor === checkpoint758
+                ? pins758
+                : pins)[bytes[0]],
         }),
       }),
     },
@@ -238,6 +248,54 @@ function fixture(count = 1, predecessor = release) {
 }
 
 describe('legacy checkpoint admission and exact persisted readback', () => {
+  it('checkpoints the exact a0 original owner with its measured compiled bytes', async () => {
+    const f = fixture(1, checkpointA0);
+    expect(await f.run()).toMatchObject({
+      ok: true,
+      attemptedTables: 1,
+      verifiedTables: 1,
+      paidAccountingQualification: 'native_pending_registry_drained',
+      restartAuthorized: false,
+    });
+    expect(f.calls).toEqual(['parked']);
+  });
+
+  it.each([
+    'pending-accounting',
+    'unconfirmed-accounting',
+    'retained-permit',
+    'recovery-in-flight',
+    '758-dealing-bytes',
+  ])('refuses exact a0 %s before any native write', async (cause) => {
+    const f = fixture(1, checkpointA0);
+    if (cause === 'pending-accounting') f.first.timeBankAccountingPending.add(Promise.resolve());
+    if (cause === 'unconfirmed-accounting') f.first.timeBankAccountingUnconfirmed = true;
+    if (cause === 'retained-permit') f.first.f06CurrentPermit = {};
+    if (cause === 'recovery-in-flight') f.first.f06RecoveryInFlight = true;
+    if (cause === '758-dealing-bytes')
+      f.modules.crypto.createHash = () => ({
+        update: (bytes: Buffer) => ({ digest: () => pins758[bytes[0]] }),
+      });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      attemptedTables: 0,
+      restartAuthorized: false,
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('retains the a0 original checkpoint generation through the announcement join', async () => {
+    const f = fixture(1, checkpointA0);
+    f.first.presenceSave = Promise.resolve().then(() => {
+      f.first.maintenanceCheckpointGeneration++;
+    });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      reason: 'native_checkpoint_owner_changed',
+      attemptedTables: 0,
+    });
+    expect(f.calls).toEqual([]);
+  });
   it('checkpoints the exact758 original owner with tracked accounting already drained', async () => {
     const f = fixture(1, checkpoint758);
     expect(await f.run()).toMatchObject({

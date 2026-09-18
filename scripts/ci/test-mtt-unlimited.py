@@ -235,9 +235,32 @@ SELECT pg_temp.r46_snapshot();
         return name
 
     def discard(self, database):
-        _, active, _ = self.sql("postgres", f"SELECT count(*) FROM pg_stat_activity WHERE datname='{database}';", label="database-connections")
-        if active.strip() != "0":
-            raise RuntimeError("owned case still has connections; outcome/cleanup requires investigation")
+        # A terminal psql process can precede server-side TEMP cleanup and
+        # backend exit. Observe fresh autocommit state within the original wall
+        # deadline; never terminate a backend or force a database drop.
+        query = ("SELECT jsonb_build_object('backends',"
+                 f"(SELECT count(*) FROM pg_stat_activity WHERE datname='{database}'),"
+                 "'locks',(SELECT count(*) FROM pg_locks WHERE database="
+                 f"(SELECT oid FROM pg_database WHERE datname='{database}')));")
+        evidence = {"database": database, "observations": []}
+        self.report.setdefault("database_cleanup", []).append(evidence)
+        while time.monotonic() < self.expires:
+            _, active, _ = self.sql("postgres", query, label="database-connections")
+            remaining = json.loads(active)
+            evidence["observations"].append(remaining)
+            if (not isinstance(remaining, dict) or set(remaining) != {"backends", "locks"}
+                    or any(type(value) is not int or value < 0 for value in remaining.values())):
+                raise RuntimeError("invalid database cleanup observation")
+            budget = self.expires - time.monotonic()
+            if budget <= 0:
+                break
+            if remaining == {"backends": 0, "locks": 0}:
+                break
+            time.sleep(min(0.01, budget))
+        else:
+            raise TimeoutError("owned case backends/locks not cleared before original deadline")
+        if budget <= 0:
+            raise TimeoutError("owned case backends/locks not cleared before original deadline")
         self.sql("postgres", f'DROP DATABASE "{database}";', label="drop-database")
         _, remaining, _ = self.sql("postgres", f"SELECT count(*) FROM pg_database WHERE datname='{database}';", label="database-absent")
         if remaining.strip() != "0":

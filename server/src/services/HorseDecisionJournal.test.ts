@@ -336,6 +336,68 @@ describe('bounded immutable Horse archive custody', () => {
       },
       { synthetic: true }
     );
+  it('releases the catalog snapshot before segment I/O without mixing later writer commits', () => {
+    const dir = folder(),
+      writer = store(dir, { archive: options(dir) }),
+      first = recordForHand(1, 'committed'),
+      later = recordForHand(2, 'committed');
+    writer.append(first);
+    const reader = store(dir, { readOnly: true, archive: options(dir) });
+    const original = (reader as any).readSegment.bind(reader);
+    const read = vi.spyOn(reader as any, 'readSegment').mockImplementationOnce((meta) => {
+      // A real second SQLite connection must commit while this reader performs
+      // file/decompression work. DELETE journaling and busy_timeout stay real.
+      expect(writer.append(later)).toBe('recorded');
+      return original(meta);
+    });
+    try {
+      expect(reader.readHand(first.handKey)).toEqual([first]);
+      expect(read).toHaveBeenCalledOnce();
+    } finally {
+      read.mockRestore();
+    }
+    expect(reader.readHand(first.handKey)).toEqual([first, later]);
+  });
+  it.each(['committed', 'unrelated'])(
+    'retains captured pending %s custody after a writer finishes before decoding',
+    (pendingHand) => {
+      const dir = folder(),
+        writer = store(dir, { archive: options(dir) }),
+        native = catalog(dir),
+        first = recordForHand(1, 'committed'),
+        pending = recordForHand(2, pendingHand);
+      writer.append(first);
+      try {
+        native.exec(
+          "CREATE TRIGGER fail_index BEFORE INSERT ON archive_events BEGIN SELECT RAISE(ABORT,'synthetic interruption'); END;"
+        );
+        expect(() => writer.append(pending)).toThrow('synthetic interruption');
+        const reader = store(dir, { readOnly: true, archive: options(dir) });
+        const original = (reader as any).readPendingSegments.bind(reader);
+        const decode = vi
+          .spyOn(reader as any, 'readPendingSegments')
+          .mockImplementationOnce((rows) => {
+            native.exec('DROP TRIGGER fail_index');
+            expect(writer.append(pending)).toBe('replayed');
+            return original(rows);
+          });
+        try {
+          if (pendingHand === 'committed')
+            expect(() => reader.readHand(first.handKey)).toThrow('Horse archive custody pending');
+          else expect(reader.readHand(first.handKey)).toEqual([first]);
+          expect(decode).toHaveBeenCalledOnce();
+        } finally {
+          decode.mockRestore();
+        }
+        expect(reader.storageStats().archive?.pendingSegments).toBe(0);
+        expect(reader.readHand(first.handKey)).toEqual(
+          pendingHand === 'committed' ? [first, pending] : [first]
+        );
+      } finally {
+        native.close();
+      }
+    }
+  );
   it.each([false, true])(
     'reads an unrelated committed hand during pending custody (readOnly=%s)',
     (readOnly) => {

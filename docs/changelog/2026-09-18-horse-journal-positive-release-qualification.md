@@ -1,0 +1,9 @@
+# Horse journal storage is required for positive release qualification
+
+A manually launched engine could match the sealed image and public health while omitting the private Horse journal bind and directory setting. Canonical `engine-up.sh` already supplies both; the seal previously checked only alert-journal storage and could record successful completion without Horse capture configuration.
+
+The seal now checks the exact running container ID, image, release label and start generation, the unique durable writable Horse bind, and the exact journal directory setting before candidate commit and every new or replayed `sealed`/`already-released` result. The owning transaction passes its existing candidate container/start witness into commit. These two internal arguments travel with the same immutable control generation; the cross-generation result protocol is unchanged.
+
+Predecessor classification, bootstrap, authorization, recovery, failure recording and historical attestation remain unchanged. Canonical rollback launches already supply the bind and setting, so they can qualify. A mountless predecessor remains observable and recoverable, but cannot acquire a fresh positive result. Duplicate-completion refusal exits without falling through to a build or restart. No storage quota, retained file, maintenance deadline or business schedule changes.
+
+Regression protection uses the existing seal law and its Python fixture: real seal files/locks/results with isolated Docker metadata; missing, read-only, duplicate and incorrect storage/configuration; exact generation mismatch; immutable completion replay; legacy recovery and rollback; and the actual transaction's duplicate-result refusal path. These checks prove configuration and source behavior. Installation, actual mount readback and natural enqueue/record evidence remain required for live Horse acceptance; neither a seal nor a mount proves complete capture or reconciliation.

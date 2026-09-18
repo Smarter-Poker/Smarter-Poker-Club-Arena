@@ -145,6 +145,43 @@ def require_alert_journal_mount(container: dict[str, Any], image: dict[str, Any]
         die("engine alert journal environment does not match its persistent mount")
 
 
+def require_horse_journal_runtime(container: str, sha: str, image_id: str,
+                                  container_id: str, started_at: str) -> None:
+    """Qualify this positive result, never predecessor observation or recovery.
+
+    Canonical launches (including rollback) already supply this run-spec. A
+    mountless manually launched predecessor remains recoverable, but cannot
+    acquire a new positive receipt. Do not move this into container_identity:
+    classification treats its refusal as absence and recovery must stay valid.
+    """
+    if (not CONTAINER_ID_RE.fullmatch(container_id) or not started_at
+            or len(started_at) > 80 or any(ord(char) < 32 for char in started_at)):
+        die("Horse journal qualification has no valid container generation")
+    runtime = docker_json("container", container)
+    state = runtime.get("State") if isinstance(runtime.get("State"), dict) else {}
+    config = runtime.get("Config") if isinstance(runtime.get("Config"), dict) else {}
+    labels = config.get("Labels") if isinstance(config.get("Labels"), dict) else {}
+    if (runtime.get("Id") != container_id or runtime.get("Image") != image_id
+            or state.get("Status") != "running" or state.get("StartedAt") != started_at
+            or labels.get("sp.release.sha") != sha):
+        die("Horse journal qualification does not match the exact running generation")
+    destination = "/var/lib/club-arena/horse-decisions"
+    expected_source = str(Path(os.environ.get("ENGINE_HORSE_JOURNAL_HOST_DIR", destination)).resolve())
+    all_mounts = runtime.get("Mounts")
+    if not isinstance(all_mounts, list) or any(not isinstance(m, dict) for m in all_mounts):
+        die("Horse journal mount metadata is unavailable")
+    mounts = [m for m in all_mounts if m.get("Destination") == destination]
+    if (len(mounts) != 1 or mounts[0].get("Type") != "bind" or mounts[0].get("RW") is not True
+            or mounts[0].get("Source") != expected_source):
+        die("Horse journal is not on its durable writable host mount")
+    environment = config.get("Env")
+    if not isinstance(environment, list) or any(not isinstance(e, str) for e in environment):
+        die("Horse journal environment metadata is unavailable")
+    configured = [e for e in environment if e.startswith("HORSE_DECISION_JOURNAL_DIR=")]
+    if configured != [f"HORSE_DECISION_JOURNAL_DIR={destination}"]:
+        die("Horse journal environment does not match its persistent mount")
+
+
 def ensure_dirs() -> None:
     state_created = not STATE_DIR.exists()
     result_created = not RESULT_DIR.exists()
@@ -1129,6 +1166,8 @@ def cmd_record_result(args: argparse.Namespace) -> None:
         # authority on whether this run performed the cutover.
         effective_result = "sealed" if this_run_sealed else "already-released"
 
+        require_horse_journal_runtime(os.environ.get("CONTAINER", "club-arena-engine"),
+                                      target_sha, image_id, container_id, started_at)
         path = result_path(run_id)
         finalization = state.get("finalization")
         exact_finalization = (
@@ -1284,6 +1323,8 @@ def cmd_commit(args: argparse.Namespace) -> None:
         pending = state.get("pending")
         if meta["runId"] in state.get("orphanFinalizationResolutions", {}):
             die("retired orphan owner cannot recreate committed finalization")
+        require_horse_journal_runtime(args.container, target_sha, image_id,
+                                      args.container_id, args.started_at)
         # A lost SSH response or an audit-append failure can make the caller
         # uncertain after the fsynced state replacement succeeded. The same
         # audited run may safely retry/attest that exact durable receipt; it may
@@ -1496,6 +1537,8 @@ def parser() -> argparse.ArgumentParser:
     commit.add_argument("--sha", required=True)
     commit.add_argument("--image", required=True)
     commit.add_argument("--container", default="club-arena-engine")
+    commit.add_argument("--container-id", required=True)
+    commit.add_argument("--started-at", required=True)
     add_audit_arguments(commit)
     commit.set_defaults(handler=cmd_commit)
 

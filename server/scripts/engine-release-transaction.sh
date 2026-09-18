@@ -1228,6 +1228,7 @@ if [ -n "$SUPERSEDED_BY" ]; then
 fi
 bounded_break_command 10 "$RELEASE_SEAL" commit \
   --sha "$SHA" --image "$TARGET_IMAGE_ID" --container "$CONTAINER" \
+  --container-id "$CANDIDATE_CID" --started-at "$CANDIDATE_STARTED_AT" \
   --run-id "$RUN_ID" --run-url "$RUN_URL" --actor "$ACTOR" \
   --reason "$SEAL_REASON"
 COMMIT_RC=$?

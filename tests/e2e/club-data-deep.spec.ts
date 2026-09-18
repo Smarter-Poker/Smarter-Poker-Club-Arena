@@ -1,8 +1,60 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { isDeepStrictEqual } from 'node:util';
 
 const CLUB_DATA_PATH = 'clubs/shark-club/data';
 type ClubDataAccess = 'authorized' | 'restricted';
+
+interface ObservedPlayerPage {
+  rows: Array<{ user_id: string }>;
+  next_cursor: Record<string, unknown> | null;
+}
+
+/** The live ranking can move between requests. Bind the rendered count to the
+ * actual identities returned for this query, including cross-page duplicates. */
+export function playerPageUnion(...pages: ObservedPlayerPage[]): string[] {
+  const union = new Set<string>();
+  for (const page of pages) {
+    if (!page || !Array.isArray(page.rows)) throw new Error('Player page has no rows');
+    const ids = page.rows.map((row) => row?.user_id);
+    if (ids.some((id) => typeof id !== 'string' || !id))
+      throw new Error('Player page has an invalid identity');
+    if (new Set(ids).size !== ids.length) throw new Error('Player page repeated an identity');
+    for (const id of ids) union.add(id);
+  }
+  return [...union];
+}
+
+async function observePlayerPage(
+  page: Page,
+  sort: 'winners' | 'losers',
+  cursor: Record<string, unknown> | null,
+  action: () => Promise<unknown>
+): Promise<ObservedPlayerPage> {
+  // Capture the request before the gesture, so an older response or another
+  // sort's background read cannot certify this page.
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) => {
+        if (
+          candidate.method() !== 'POST' ||
+          !candidate.url().includes('/rest/v1/rpc/ca_club_player_page')
+        )
+          return false;
+        const body = candidate.postDataJSON();
+        return body?.p_sort === sort && isDeepStrictEqual(body.p_cursor, cursor);
+      },
+      { timeout: 60_000 }
+    ),
+    action(),
+  ]);
+  const response = await request.response();
+  expect(response, 'the requested player page did not return').not.toBeNull();
+  expect(response!.ok(), 'the requested player page was refused').toBe(true);
+  const result = (await response!.json()) as ObservedPlayerPage;
+  playerPageUnion(result); // Validate identities before using them as an oracle.
+  return result;
+}
 
 async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAccess> {
   const configuredBase = String(testInfo.project.use.baseURL || 'http://localhost:5173/');
@@ -232,18 +284,32 @@ test.describe('Club Data production experience', () => {
     const playersList = page.getByRole('list', { name: 'Players' });
     await expect(playersList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
     const biggestLosers = page.getByRole('button', { name: 'Biggest losers' });
-    await biggestLosers.click();
+    let firstLosers = await observePlayerPage(page, 'losers', null, () => biggestLosers.click());
     await expect(biggestLosers).toHaveAttribute('aria-pressed', 'true');
     await expect(playersList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+    await expect(playersList).toHaveAttribute('aria-busy', 'false');
     const loadMorePlayers = page.getByRole('button', { name: /Load More Players/i });
-    let expandedPlayerCount = '';
+    let expandedPlayerCount = 0;
     if (await loadMorePlayers.isVisible()) {
+      await expect(loadMorePlayers).toContainText(
+        `- ${firstLosers.rows.length.toLocaleString()} Of`
+      );
+      expect(firstLosers.next_cursor, 'the first page has no continuation identity').not.toBeNull();
       const before = (await loadMorePlayers.textContent()) || '';
-      await loadMorePlayers.click();
       try {
-        await expect
-          .poll(async () => (await loadMorePlayers.textContent()) || '', { timeout: 60_000 })
-          .not.toBe(before);
+        const continuation = await observePlayerPage(page, 'losers', firstLosers.next_cursor, () =>
+          loadMorePlayers.click()
+        );
+        expandedPlayerCount = playerPageUnion(firstLosers, continuation).length;
+        expect(expandedPlayerCount, 'the continuation added no new player').toBeGreaterThan(
+          firstLosers.rows.length
+        );
+        await expect(loadMorePlayers).toContainText(
+          `- ${expandedPlayerCount.toLocaleString()} Of`,
+          {
+            timeout: 60_000,
+          }
+        );
       } catch (error) {
         await testInfo.attach('player-pagination-receipts', {
           body: JSON.stringify({ before, receipts: playerPageReceipts }, null, 2),
@@ -251,20 +317,29 @@ test.describe('Club Data production experience', () => {
         });
         throw error;
       }
-      expandedPlayerCount =
-        ((await loadMorePlayers.textContent()) || '').match(/- ([\d,]+) Of/i)?.[1] || '';
     }
 
     if (expandedPlayerCount) {
       const biggestWinners = page.getByRole('button', { name: 'Biggest winners' });
-      await biggestWinners.click();
+      const winners = await observePlayerPage(page, 'winners', null, () => biggestWinners.click());
       await expect(biggestWinners).toHaveAttribute('aria-pressed', 'true');
-      await expect(loadMorePlayers).toContainText('- 100 Of', { timeout: 60_000 });
-      await biggestLosers.click();
+      await expect(loadMorePlayers).toContainText(`- ${winners.rows.length.toLocaleString()} Of`, {
+        timeout: 60_000,
+      });
+      firstLosers = await observePlayerPage(page, 'losers', null, () => biggestLosers.click());
       await expect(biggestLosers).toHaveAttribute('aria-pressed', 'true');
-      await expect(loadMorePlayers).toContainText('- 100 Of', { timeout: 60_000 });
-      await loadMorePlayers.click();
-      await expect(loadMorePlayers).toContainText(`- ${expandedPlayerCount} Of`, {
+      await expect(loadMorePlayers).toContainText(
+        `- ${firstLosers.rows.length.toLocaleString()} Of`,
+        {
+          timeout: 60_000,
+        }
+      );
+      const continuation = await observePlayerPage(page, 'losers', firstLosers.next_cursor, () =>
+        loadMorePlayers.click()
+      );
+      expandedPlayerCount = playerPageUnion(firstLosers, continuation).length;
+      expect(expandedPlayerCount).toBeGreaterThan(firstLosers.rows.length);
+      await expect(loadMorePlayers).toContainText(`- ${expandedPlayerCount.toLocaleString()} Of`, {
         timeout: 60_000,
       });
     }
@@ -275,7 +350,10 @@ test.describe('Club Data production experience', () => {
     await expect(page.getByRole('heading', { name: 'Data Integrity' })).toBeVisible();
     await expect(playersList.getByRole('listitem').first()).toBeVisible();
     if (expandedPlayerCount) {
-      await expect(loadMorePlayers).toContainText(`- ${expandedPlayerCount} Of`);
+      // refreshAll calls loadPlayers(true); preserveExpandedClubDataRows keeps
+      // this exact expanded window while re-reading the first page and totals.
+      // Unlike switching sorts above, refresh must not reset its cardinality.
+      await expect(loadMorePlayers).toContainText(`- ${expandedPlayerCount.toLocaleString()} Of`);
     }
   });
 

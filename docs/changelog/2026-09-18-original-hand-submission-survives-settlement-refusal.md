@@ -61,8 +61,10 @@ Native input hashes bind the exact source. Cash opening rows are isolated
 synthetic fixture inputs with explicit legacy funding provenance; this does not
 certify current production funding or the historical Spin's recovery.
 
-No journal migration has been installed or published by this work. Installation,
-required hosted checks, composed engine publication and live behavior remain
-separate evidence. The new database contract must be installed before the
-compatible engine consumer is activated. No scheduler, repair loop, new retry
+The release owner installed exact migration SHA256 `4bdbcf3f` once as provider
+version `20260918124935`. Independent 12:50:04 UTC catalog readback matched all
+qualified postimages, ACLs, triggers and private relations. Never replay that
+migration. Required hosted checks, composed engine publication and live behavior
+remain separate pending evidence; this installation alone does not deploy the
+compatible engine consumer. No scheduler, repair loop, new retry
 timer, timeout padding or financial reconstruction is introduced.

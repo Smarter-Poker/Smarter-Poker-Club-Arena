@@ -1978,6 +1978,7 @@
     "fn_ca_has_committed_tournament_receipt",
     "fn_ca_hierarchy_payables",
     "fn_ca_horse_claim_due",
+    "fn_ca_horse_fleet_metrics",
     "fn_ca_house_board_allows_automation",
     "fn_ca_incident_action",
     "fn_ca_incident_dashboard",

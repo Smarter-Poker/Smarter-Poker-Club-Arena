@@ -1,0 +1,40 @@
+# The fleet reports what it cannot finish (2026-09-17)
+
+Phase 3 of the horse programme: the numbers a person had to type SQL for are on the scrape, with rules on them, through the monitoring deploy route.
+
+## What was wrong
+
+Read off production 2026-09-17 20:20 UTC, by hand: 835 RUNNING tournaments, 547 of them decided (one player left playing) for over ten minutes, the oldest for nine days; 547 horses seated in those games, one per game, waiting to be paid; 560 tournaments unable to finish because their entry fee predates the accounting cutover and has no captured batch; 864 finishes refused in one hour of engine log, all `tournament_fee_sources_require_reconciliation`; completions down from 20-45 a minute to 3-11. Earlier the same afternoon, 1,393 deadlocks in fourteen minutes from a lock-order change, witnessed only by the Postgres log.
+
+`/metrics` carried `poker_tournaments_running` and `poker_tournaments_owned` and nothing that said how many running tournaments were already over, nothing about refused finishes, nothing about advisory lane waiters, nothing about deadlocks. Thirteen alerts were firing into an inbox (`operational_alert_events`) whose consumer had not moved an event past "new" since 2026-09-16 21:53 UTC (11,188 at "new", 37,359 at "investigating" when this was written). That routing is Dan's decision (the Production Alerts chat works them) and is not changed here; the fact that the consumer stopped is reported, not worked around.
+
+## What changed
+
+| Piece                                                                                                                                                                                                                                                                                                                                                                                                                       | Where                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fn_ca_horse_fleet_metrics(p_decided_minutes)`: one read-only, service_role-only RPC returning RUNNING, decided, decided over N minutes, oldest age, seated horses, horses in decided games, tournaments with an unbatched positive fee, waiters on the G, F and B lanes and the longest such wait, and `pg_stat_database.deadlocks`                                                                                        | `supabase/migrations/20260917202659_the_fleet_reports_what_it_cannot_finish.sql`, applied and recorded 20:28:00 UTC; 0.3 s warm through PostgREST |
+| `HorseFleetMetrics`: 60 s collector on the `TournamentMetrics` contract (last good snapshot kept on failure, staleness always published, one error report per outage), wired into `GameServer` start, stop and `/metrics`                                                                                                                                                                                                   | `server/src/services/HorseFleetMetrics.ts`, `server/src/GameServer.ts`                                                                            |
+| `poker_tournament_finish_refusals_total{reason}`: every `TerminalSettlementRefusedError` counted under a bounded reason (`fee_reconciliation`, `rake_attribution`, `prize_set`, `deadlock`, `timeout`, `other`), never under its message                                                                                                                                                                                    | `server/src/observability/engineInstruments.ts`, `server/src/tournament/TournamentManagerEliminations.ts`                                         |
+| Alert group `horse-fleet-settlement` (7 rules): `TournamentsDecidedButUnfinished`, `HorsesCommittedToDecidedGames`, `TournamentFinishRefusalsPersisting`, `TournamentsBlockedByUnreconciledFees`, `DatabaseDeadlocksElevated`, `SettlementLaneConvoy`, `HorseFleetMetricsStale`; every gauge rule reads `and poker_horse_fleet_metrics_stale_seconds < 600` so a broken collector silences them and the stale rule says why | `infra/monitoring/tournament-rules.yml` (deployed by `deploy-monitoring.yml` on merge, with read-back)                                            |
+| Runbook                                                                                                                                                                                                                                                                                                                                                                                                                     | `docs/runbooks/horse-fleet-settlement.md`                                                                                                         |
+| Law test, 8 cases                                                                                                                                                                                                                                                                                                                                                                                                           | `server/src/services/theFleetReportsWhatItCannotFinish.law.test.ts`                                                                               |
+
+## Series added
+
+`poker_tournaments_decided_unfinished`, `poker_tournaments_decided_unfinished_oldest_minutes`, `poker_horses_in_decided_games`, `poker_horses_seated_in_database`, `poker_tournaments_unbatched_fee_running`, `poker_settlement_lane_waiters{lane="G"|"F"|"B"}`, `poker_settlement_lane_waiters_oldest_ms`, `poker_db_deadlocks_total` (counter), `poker_horse_fleet_metrics_stale_seconds`, `poker_tournament_finish_refusals_total{reason}`.
+
+## What the rules would have said today
+
+`TournamentsDecidedButUnfinished` at 547 (threshold 50) and `HorsesCommittedToDecidedGames` at 23% (threshold 10%) fire fifteen minutes after the collector's first read. `TournamentsBlockedByUnreconciledFees` at 560 fires after thirty. `TournamentFinishRefusalsPersisting{reason="fee_reconciliation"}` fires on the first quarter hour with more than 20 refusals (the afternoon ran 12-44 a minute). `DatabaseDeadlocksElevated` would have fired at 19:37, five minutes into the storm, on the second scrape after the count crossed ten.
+
+## Verified
+
+- `node scripts/ci/check-monitoring-drift.mjs`: every metric the rules name has a producer, every runbook resolves.
+- `promtool check rules` on the box's Prometheus (v2.55.1): 16 rules found, SUCCESS.
+- `tsc --noEmit` clean; vitest 8/8 plus the two existing tournament metrics suites.
+- `fn_ca_horse_fleet_metrics(10)` through PostgREST as service_role: 0.30-0.40 s, `{running 733, decided 545, decided_over_minutes 545, oldest_decided_minutes 13422, horses_seated 2326, horses_in_decided 545, unbatched_fee_running 560, deadlocks_total 1841}` at 20:29 UTC.
+- The engine side is live when the release that carries it installs (the release gate is its own open item, see the Phase 2 changelog).
+
+## Not done here
+
+The consumer of `operational_alert_events` (the Production Alerts chat) stopped moving events on 2026-09-16 21:53 UTC; that is reported to Dan and left where he routed it. The 560 unreconciled fees are the accounting domain's transition gap; this phase makes them a number and a rule, not a fix.

@@ -754,6 +754,74 @@ for (const reason of [
 }
 
 /**
+ * A tournament finish the database DEFINITIVELY REFUSED, by why (2026-09-17,
+ * phase 3 of the horse programme).
+ *
+ * `TerminalSettlementRefusedError` is the atomic finish saying no before
+ * commit: nothing moved, the manager may retry with corrected inputs. It was
+ * reported to the error reporter and the financial alerts table and nowhere
+ * a rule could read. Measured 2026-09-17 19:04-19:53 UTC: 864 refusals for 529
+ * distinct tournaments, every one `tournament_fee_sources_require_
+ * reconciliation`, every one of the 529 still RUNNING at 20:20 with its horse
+ * seated and unpaid. `poker_tournaments_decided_unfinished` says how many are
+ * stuck; this says why the last attempt failed.
+ *
+ * reason is a BOUNDED CLASSIFICATION of the message, never the message: the
+ * database phrases a refusal with ids and amounts, and a label with an id in
+ * it is a cardinality leak.
+ *   fee_reconciliation   tournament_fee_sources_require_reconciliation and its
+ *                        siblings: the accounting batch behind the entry fee is
+ *                        missing or does not match;
+ *   rake_attribution     rake attribution incomplete for another reason;
+ *   prize_set            the prize set could not be certified;
+ *   deadlock             the database chose this transaction as the victim;
+ *   timeout              statement or lock timeout;
+ *   other                anything else, which is the label to read first when
+ *                        it moves.
+ */
+export type FinishRefusalReason =
+  | 'fee_reconciliation'
+  | 'rake_attribution'
+  | 'prize_set'
+  | 'deadlock'
+  | 'timeout'
+  | 'other';
+
+export const FINISH_REFUSAL_REASONS: readonly FinishRefusalReason[] = [
+  'fee_reconciliation',
+  'rake_attribution',
+  'prize_set',
+  'deadlock',
+  'timeout',
+  'other',
+];
+
+export function classifyFinishRefusal(message: string | null | undefined): FinishRefusalReason {
+  const m = (message ?? '').toLowerCase();
+  if (
+    m.includes('tournament_fee_sources_require_reconciliation') ||
+    m.includes('tournament_fee_not_captured') ||
+    m.includes('tournament_fee_source') ||
+    m.includes('accounting_terms_not')
+  )
+    return 'fee_reconciliation';
+  if (m.includes('rake attribution') || m.includes('attribution incomplete'))
+    return 'rake_attribution';
+  if (m.includes('prize')) return 'prize_set';
+  if (m.includes('deadlock')) return 'deadlock';
+  if (m.includes('timeout') || m.includes('canceling statement')) return 'timeout';
+  return 'other';
+}
+
+export const tournamentFinishRefusalsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_tournament_finish_refusals_total',
+  'Tournament finishes the database definitively refused before commit (label: reason=fee_reconciliation|rake_attribution|prize_set|deadlock|timeout|other)'
+);
+for (const reason of FINISH_REFUSAL_REASONS) {
+  tournamentFinishRefusalsTotal.inc(0, { reason });
+}
+
+/**
  * Duplicate suppression on `POST /action` (Phase 3 - 2026-09-05). Three
  * series, no table and no user: `stored` is one intent reaching the engine,
  * `replay` is a retry answered from memory instead of moving chips twice, and

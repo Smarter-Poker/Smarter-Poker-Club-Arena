@@ -44,6 +44,37 @@ groups:
             engine.smarter.poker/health -> stalledTables for the table ids.
           runbook: https://monitor.smarter.poker/runbooks/tables-frozen
 
+      # ── THE FLEET STOPPED TOGETHER (2026-09-18) ────────────────────────
+      # The zombie sweep now refuses to rebuild the whole estate at once, and
+      # counts each refusal. Zero is the healthy value. Anything else says a
+      # systemic pause made every dealable table cross the 180s line in the
+      # same pass - which for seven days ran on a clock: 97% of all zombie
+      # kills landed in minutes :03 and :04, because the maintenance break
+      # parks the fleet at :55, the break is five minutes, and the sweep
+      # condemns at 180 seconds. On 2026-09-18 at 03:03 that was 464 tables
+      # in one minute out of a fleet of about 500.
+      #
+      # The refusal is the SAFE outcome - nothing was destroyed - so this is a
+      # warning, not a page. What needs looking at is why the fleet stopped,
+      # not the refusal.
+      - alert: PokerFleetWideStall
+        expr: increase(poker_fleet_wide_zombie_refusals_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'a sweep declined to rebuild the whole fleet ({{ $value }} in 15m)'
+          description: |
+            More than a third of the tables that should be dealing made no
+            progress for 180 seconds in the same sweep. Nothing was rebuilt:
+            that many tables stopping together is one systemic pause, not that
+            many broken tables, and each one's own watchdog still answers for
+            it. Look for what stopped the fleet - the maintenance break
+            boundary, a database stall, or an event-loop stall - rather than at
+            the tables.
+          runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+
       # A settlement retry heartbeat can keep the existing progress watchdog
       # healthy while the same accepted hand remains blocked indefinitely.
       # Confirmed in the live Prometheus name catalog on 2026-09-08 after

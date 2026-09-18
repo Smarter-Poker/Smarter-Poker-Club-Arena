@@ -420,9 +420,39 @@ describe('required CI owns native fixture verification', () => {
     }
   );
 
+  it('keeps the real public watermark qualification in the existing PKO gate', () => {
+    const runner = readFileSync(
+      join(root, 'scripts/dev/probe-causal-pko-predecessors-pg17.sh'),
+      'utf8'
+    );
+    const probe = readFileSync(
+      join(root, 'scripts/dev/fixtures/causal-pko-predecessors/full-native.py'),
+      'utf8'
+    );
+    expect(runner).toContain(
+      'python3 -B "$FIX/full-native.py" --root "$ROOT" --evidence "$TMP/full-financial" --pg-bin "$BIN"'
+    );
+    expect(runner.indexOf('python3 -B "$FIX/full-native.py"')).toBeLessThan(
+      runner.indexOf("echo 'PASS: causal PKO admission")
+    );
+    expect(probe).toContain('qualify_installation(e,root,db)');
+    expect(probe).toContain('if shared:qualify_races(e,root,native,scene)');
+    expect(probe).toContain('for shared in [False,True]:');
+    expect(probe).toContain('for repaired in [False,True]:');
+    expect(probe).toContain("raise RuntimeError('race verdict accepted missing/false evidence')");
+  });
+
   it.each([
     'scripts/dev/probe-causal-pko-predecessors-pg17.sh',
     'scripts/dev/fixtures/causal-pko-predecessors/qualification.sql',
+    ...[
+      'full-native.py',
+      'full-opening.sql',
+      'full-cases.sql',
+      'full-race.spec',
+      'watermark-commuting.sql',
+      'watermark-refusals.sql',
+    ].map((file) => `scripts/dev/fixtures/causal-pko-predecessors/${file}`),
     'scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh',
     'scripts/dev/probe-committed-payout-terms-pg17.py',
     'scripts/dev/probe-tournament-create-payout-depth-pg17.py',

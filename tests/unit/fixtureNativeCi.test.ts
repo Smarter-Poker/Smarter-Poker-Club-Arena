@@ -208,6 +208,7 @@ describe('required CI owns native fixture verification', () => {
   it.each([
     'scripts/ci/test-f06-shared-hand-lane.py',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/successor_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-preimages.json',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-authority.sql',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-bindings.json',

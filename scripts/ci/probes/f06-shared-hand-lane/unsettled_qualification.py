@@ -260,3 +260,6 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     run('abort-accepted-proof-remains-accepted',"SELECT state||'|'||evidence_id::text FROM smarter_private.f06_hand_permits WHERE permit_id=md5('permit9')::uuid;",
         'accepted|'+str(__import__('uuid').UUID(hashlib.md5(b'accepted9').hexdigest())))
     results['unsettledAbort']={'passed':True,'originals':8,'persistedStacks':6200,'snapshotStacks':5870,'uncommittedForcedBlinds':330,'preservedPriorHands':70,'walletCredit':0}
+    import runpy
+    successor = runpy.run_path(str(here / 'successor_qualification.py'))
+    successor['qualify'](root, out, cmd, command, run, probe, require, results, seed, held, money, service)

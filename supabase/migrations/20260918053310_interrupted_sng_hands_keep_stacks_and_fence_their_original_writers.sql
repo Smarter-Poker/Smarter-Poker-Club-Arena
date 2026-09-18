@@ -12,15 +12,34 @@ BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='8s';
 -- BEGIN installer relation admission
--- Drain existing permit readers with the bounded lock_timeout while holding
--- no other application relation lock. Acquire every remaining DDL/write mode
--- without waiting: readers may need these relations before releasing permits.
-LOCK TABLE smarter_private.f06_hand_permits IN ACCESS EXCLUSIVE MODE;
-LOCK TABLE public.engine_tournament_leases IN SHARE ROW EXCLUSIVE MODE NOWAIT;
-LOCK TABLE smarter_private.f06_operations IN ACCESS EXCLUSIVE MODE NOWAIT;
-LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE NOWAIT;
-LOCK TABLE public.hand_history IN SHARE ROW EXCLUSIVE MODE NOWAIT;
-LOCK TABLE public.ca_declared_money_triggers IN ROW EXCLUSIVE MODE NOWAIT;
+-- One bounded admission, before DDL or business writes. Every partial lock set
+-- rolls back in its exception subtransaction before yielding to live readers.
+-- Waiting while retaining any subset would reintroduce the observed deadlock.
+DO $admission$
+DECLARE v_deadline timestamptz := clock_timestamp()+interval '3 seconds';
+BEGIN
+ LOOP
+  IF clock_timestamp()>=v_deadline THEN
+   RAISE EXCEPTION 'F06_INSTALL_ADMISSION_BUSY' USING ERRCODE='55P03';
+  END IF;
+  BEGIN
+   LOCK TABLE smarter_private.f06_hand_permits IN ACCESS EXCLUSIVE MODE NOWAIT;
+   LOCK TABLE public.engine_tournament_leases IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+   LOCK TABLE smarter_private.f06_operations IN ACCESS EXCLUSIVE MODE NOWAIT;
+   LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+   LOCK TABLE public.hand_history IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+   LOCK TABLE public.ca_declared_money_triggers IN ROW EXCLUSIVE MODE NOWAIT;
+   IF clock_timestamp()>=v_deadline THEN
+    RAISE EXCEPTION 'F06_INSTALL_ADMISSION_BUSY' USING ERRCODE='55P03';
+   END IF;
+   EXIT;
+  EXCEPTION WHEN lock_not_available THEN
+   -- All six transaction-level relation locks acquired above are now released.
+   -- Yield only the remaining part of the original admission budget.
+   PERFORM pg_sleep(least(0.01,greatest(0,extract(epoch FROM v_deadline-clock_timestamp()))));
+  END;
+ END LOOP;
+END $admission$;
 -- END installer relation admission
 DO $preimages$ BEGIN
  IF md5(pg_get_functiondef('public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure))<>'c451a6859a15bf62fea00fb31ef7ffa0' OR (SELECT pg_get_userbyid(proowner)<>'postgres' OR proacl::text IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' FROM pg_proc WHERE oid='public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure) THEN RAISE EXCEPTION 'F06_ABORT_PREIMAGE_CHANGED public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'; END IF;

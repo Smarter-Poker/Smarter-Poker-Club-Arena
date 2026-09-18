@@ -169,50 +169,56 @@ def qualify(root, out, cmd, command, run, probe, require, results):
                 process.terminate();process.wait(timeout=5)
     require(command(cmd,catalog).stdout.strip()==catalog_before,'Baseline deadlock leaked catalog changes')
     # Exercise the full installer, not only isolated LOCK statements. Every
-    # acquired subset must unwind; the server error proves NOWAIT, not timeout.
+    # acquired subset must unwind; persistent contention exhausts one budget.
     for relation,mode in [
+      ('smarter_private.f06_hand_permits','ACCESS SHARE'),
       ('public.engine_tournament_leases','ROW EXCLUSIVE'),
       ('smarter_private.f06_operations','ACCESS SHARE'),
       ('public.hand_atomic_commits','ROW EXCLUSIVE'),
       ('public.hand_history','ROW EXCLUSIVE'),
       ('public.ca_declared_money_triggers','ACCESS EXCLUSIVE')]:
         with held('LOCK TABLE '+relation+' IN '+mode+' MODE;'):
+            started=time.monotonic()
             failed=command(cmd,installer)
+            elapsed=time.monotonic()-started
             text=failed.stdout+failed.stderr
-            name='abort-installer-nowait-'+relation.split('.')[-1]
+            name='abort-installer-budget-'+relation.split('.')[-1]
             (out/(name+'.log')).write_text(text)
-            require(failed.returncode!=0 and '55P03' in text and 'could not obtain lock on relation' in text,
-                    'Installer waited or changed schema under contention: '+text)
+            require(failed.returncode!=0 and '55P03' in text and 'F06_INSTALL_ADMISSION_BUSY' in text and 2.9<=elapsed<4.5,
+                    'Installer exceeded admission budget or began schema work: '+text)
         require(command(cmd,catalog).stdout.strip()==catalog_before,'Refused installer leaked catalog changes: '+relation)
         require(command(cmd,money).stdout.strip()==before,'Refused installer changed money: '+relation)
         results['cases'].append({'name':name,'passed':True})
     run('abort-refuses-disabled-original-trigger',"BEGIN; ALTER TABLE public.hand_atomic_commits DISABLE TRIGGER zzzz_f06_accepted_hand;"+installer,error='F06_ABORT_BINDING_CHANGED')
     run('abort-refuses-uninstalled-request-hook',"BEGIN; ALTER ROLE authenticator RESET pgrst.db_pre_request;"+installer,error='F06_ABORT_PRE_REQUEST_NOT_INSTALLED')
-    # Drain the original permit reader before owning any other application
-    # relation. That reader must still read operations and finish normally.
-    with held('LOCK TABLE smarter_private.f06_hand_permits IN ACCESS SHARE MODE;') as original_reader:
+    # A last-relation blocker must see every earlier partial lock released.
+    # Interleave a new permit reader before it drains to exercise re-admission.
+    reader=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    with held('LOCK TABLE public.ca_declared_money_triggers IN ACCESS EXCLUSIVE MODE;'):
         admitted=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         admitted.stdin.write("SET application_name='f06-corrected-installer';"+installer);admitted.stdin.close()
-        barrier("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='f06-corrected-installer' AND wait_event_type='Lock');",admitted,'corrected installer drains permit reader')
-        run('abort-installer-waits-with-no-other-application-lock',"""SELECT NOT EXISTS(
+        barrier("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='f06-corrected-installer' AND wait_event='PgSleep');",admitted,'corrected installer releases partial lock set')
+        reader.stdin.write("BEGIN;SET lock_timeout='1s'; LOCK TABLE smarter_private.f06_hand_permits IN ACCESS SHARE MODE; SELECT count(*) FROM smarter_private.f06_operations; SELECT pg_advisory_lock(18092029);\n")
+        reader.stdin.flush()
+        barrier("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=18092029 AND granted);",reader,'original permit reader proceeds through operations')
+        run('abort-installer-yields-with-no-application-lock',"""SELECT NOT EXISTS(
           SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
           JOIN pg_class c ON c.oid=l.relation JOIN pg_namespace n ON n.oid=c.relnamespace
           WHERE a.application_name='f06-corrected-installer' AND l.granted
           AND n.nspname IN('public','smarter_private'));""",'t')
-        # pg_get_constraintdef in the full fingerprint would itself queue an
-        # AccessShare lock behind the waiting installer. Read raw catalog rows.
-        run('abort-installer-waits-before-any-ddl',"""SELECT
+        run('abort-installer-yields-before-any-ddl',"""SELECT
           to_regclass('smarter_private.f06_unsettled_hand_aborts') IS NULL
           AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='smarter_private.f06_operations'::regclass
           AND attname='abort_receipt_id' AND NOT attisdropped);""",'t')
-        original_reader.stdin.write('SELECT count(*) FROM smarter_private.f06_operations; SELECT pg_advisory_lock(18092029);\n')
-        original_reader.stdin.flush()
-        barrier("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=18092029 AND granted);",original_reader,'original reader can finish operations read')
+
+    require(admitted.poll() is None,'Installer did not preserve the interleaved permit reader')
+    reader.stdin.write('ROLLBACK;\n');reader.stdin.close();reader.wait(timeout=5)
+    require(reader.returncode==0,'Interleaved reader failed: '+reader.stderr.read())
     admitted.wait(timeout=8)
     installed=admitted.stdout.read()+admitted.stderr.read()
-    (out/'abort-install-after-original-permit-reader-drains.log').write_text(installed)
+    (out/'abort-install-after-interleaved-readers-drain.log').write_text(installed)
     require(admitted.returncode==0,'Drained full installer failed: '+installed)
-    results['cases'].append({'name':'abort-install-after-original-permit-reader-drains','passed':True})
+    results['cases'].append({'name':'abort-install-after-interleaved-readers-drain','passed':True})
     postimages=json.loads(run('abort-installed-function-hashes', """SELECT jsonb_agg(jsonb_build_object('name',p.oid::regprocedure::text,
       'md5',md5(pg_get_functiondef(p.oid)),'acl',p.proacl::text,'owner',pg_get_userbyid(p.proowner)) ORDER BY p.oid::regprocedure::text)
       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.prokind='f'

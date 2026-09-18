@@ -46,6 +46,15 @@ SELECT pg_temp.paid_assert((SELECT count(*)=3 AND bool_and(status='playing' AND 
  FROM public.tournaments) AND NOT EXISTS(SELECT 1 FROM public.spin_draw_receipts)
  AND NOT EXISTS(SELECT 1 FROM public.tournament_launch_receipts),
  'real committed entries must precede launch');
+-- The scoped fixture constructs its club directly, outside club creation.
+-- Add the required empty reporting wallet as explicit structural input only;
+-- no chips, fee receipt, income or balance is fabricated here.
+SELECT pg_temp.paid_assert(NOT EXISTS(SELECT 1 FROM public.club_wallets), 'empty club wallet preimage');
+INSERT INTO public.club_wallets(club_id) SELECT execution FROM paid_q;
+SELECT pg_temp.paid_assert((SELECT count(*)=1 AND bool_and(chip_balance=0 AND insurance_balance=0
+ AND period_rake_collected=0 AND lifetime_rake_collected=0 AND period_commission_paid=0
+ AND lifetime_commission_paid=0 AND period_bbj_contribution=0 AND lifetime_bbj_contribution=0)
+ FROM public.club_wallets), 'zero structural club reporting wallet');
 SELECT pg_temp.paid_observe('paid_before_launch');
 BEGIN;
 SELECT set_config('request.jwt.claims','{"role":"service_role"}',true),

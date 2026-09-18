@@ -73,7 +73,7 @@ describe('the existing certification waits only for its engine maintenance bound
         },
         report: () => {},
       })
-    ).rejects.toThrow('eight-minute');
+    ).rejects.toThrow('ten-minute');
     expect(elapsed).toBe(GAMEPLAY_WAIT_MS);
     expect(fetchImpl).toHaveBeenCalledTimes(GAMEPLAY_WAIT_MS / 5000);
   });
@@ -88,7 +88,7 @@ describe('the existing certification waits only for its engine maintenance bound
           return reply(health(idle));
         },
       })
-    ).rejects.toThrow('eight-minute');
+    ).rejects.toThrow('ten-minute');
   });
 
   it.each([

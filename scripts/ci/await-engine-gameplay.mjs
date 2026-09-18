@@ -2,9 +2,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { requireReadyEngineSha } from './production-e2e-provenance.mjs';
 
 // One prerequisite inside the existing certification job, never a release retry.
-// Allow the five-minute break, v3's release tail, and the 10.5-second resume spread.
+// Allow the two-minute last-hand lead, five-minute break, v3 release tail,
+// and 10.5-second resume spread. Client-triggered checks may arrive during the lead.
 // The September 18 release resumed 423.65 seconds after its break began.
-export const GAMEPLAY_WAIT_MS = 8 * 60_000;
+export const GAMEPLAY_WAIT_MS = 10 * 60_000;
 const POLL_MS = 5_000;
 
 export function gameplayHasResumed(raw, expected) {
@@ -62,7 +63,7 @@ export async function awaitEngineGameplay(
     await pause(Math.min(POLL_MS, Math.max(0, deadline - now())));
   }
   throw new Error(
-    'The exact engine did not resume gameplay within the eight-minute prerequisite budget.'
+    'The exact engine did not resume gameplay within the ten-minute prerequisite budget.'
   );
 }
 

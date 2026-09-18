@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import socket
 import stat
@@ -35,6 +36,101 @@ def mixed_source_files():
 
 
 class PositiveFeeEntryTests(unittest.TestCase):
+    def trigger_authority_inputs(self):
+        root = Path(__file__).resolve().parents[2]
+        base = root / W.FEE.BASE
+        return {
+            'schema': (root / 'scripts/ci/probes/spin-expiry/inputs/schema.sql').read_text(),
+            'preimage': W.FEE.decode((base / 'preimage-metadata.json').read_bytes()),
+            'expected': W.FEE.decode((base / 'expected-metadata.json').read_bytes()),
+            'provider': (base / 'provider-supplement.sql').read_text(),
+            'readback': (base / 'catalog-readback.sql').read_text(),
+        }
+
+    def binding_literals(self, sql):
+        arrays = []
+        for match in re.finditer(r'\$capture\$(.*?)\$capture\$', sql, re.S):
+            value = W.FEE.decode(match.group(1))
+            if (isinstance(value, list) and value and isinstance(value[0], dict)
+                    and {'relation', 'name', 'enabled', 'definition'} <= value[0].keys()):
+                arrays.append(value)
+        return arrays
+
+    def assert_trigger_authority(self, inputs):
+        # Native 0c3e5d81 refused because CREATE-only parsing lost these authentic
+        # DISABLE declarations. This is source evidence, not a native pass.
+        names = {
+            'aa_guard_tournament_completing_claim', 'aaa_guard_atomic_satellite_completion',
+            'zzzz_freeze_finalized_tournament_prize_pool',
+            'zzzz_tournament_pool_finalization_window_guard',
+            'zzzz_tournaments_atomic_place_completion_guard',
+            'zzzzz_tournaments_atomic_final_table_deal_completion_guard',
+            'zzzzzz_tournaments_financial_certificate',
+        }
+        disabled = re.findall(r'^ALTER TABLE public\.tournaments DISABLE TRIGGER "([^"]+)";$',
+                              inputs['schema'], re.M)
+        self.assertEqual(len(disabled), 7, 'authentic disabled-trigger premise changed')
+        self.assertEqual(set(disabled), names)
+        before, after = inputs['preimage']['bindings'], inputs['expected']['bindings']
+        self.assertEqual((len(before), len(after)), (153, 192))
+        maps = [{(row['relation'], row['name']): row for row in rows} for rows in (before, after)]
+        self.assertEqual(tuple(map(len, maps)), (153, 192), 'duplicate binding identity')
+        for name in disabled:
+            self.assertIsNotNone(re.search(
+                r'(?m)^CREATE TRIGGER ' + re.escape(name) + r' [^\n]* ON (?:public\.)?tournaments ',
+                inputs['schema']), name + ' original CREATE binding absent')
+            pre, post = (mapping[('tournaments', name)] for mapping in maps)
+            self.assertEqual(pre['enabled'], 'D', name + ' preimage differs from original schema')
+            self.assertEqual(post['enabled'], 'D', name + ' captured postimage differs')
+            self.assertEqual(pre['definition'], post['definition'])
+        # Bind every row/field/order, not just the seven corrected flags. Both
+        # SQL consumers must execute the exact standalone metadata expectation.
+        self.assertEqual(self.binding_literals(inputs['provider']), [before, after])
+        self.assertEqual(self.binding_literals(inputs['readback']), [after])
+
+    def test_paid_entry_trigger_authority_preserves_authentic_disabled_bindings(self):
+        self.assert_trigger_authority(self.trigger_authority_inputs())
+
+    def test_paid_entry_trigger_authority_refuses_metadata_flag_corruption(self):
+        original = self.trigger_authority_inputs()
+        names = [row['name'] for row in original['preimage']['bindings'] if row['enabled'] == 'D']
+        self.assertEqual(len(names), 7)
+        for label in ('preimage', 'expected'):
+            for name in names:
+                changed = copy.deepcopy(original)
+                next(row for row in changed[label]['bindings'] if row['name'] == name)['enabled'] = 'O'
+                with self.subTest(metadata=label, name=name), self.assertRaises(AssertionError):
+                    self.assert_trigger_authority(changed)
+
+    def test_paid_entry_trigger_authority_refuses_embedded_flag_corruption(self):
+        original = self.trigger_authority_inputs()
+        for label, ordinal in (('provider', 0), ('provider', 1), ('readback', 0)):
+            changed = copy.deepcopy(original)
+            arrays = self.binding_literals(changed[label])
+            target = arrays[ordinal]
+            for match in re.finditer(r'\$capture\$(.*?)\$capture\$', changed[label], re.S):
+                if W.FEE.decode(match.group(1)) == target:
+                    altered = copy.deepcopy(target)
+                    next(row for row in altered if row['enabled'] == 'D')['enabled'] = 'O'
+                    changed[label] = (changed[label][:match.start(1)] + json.dumps(altered)
+                                      + changed[label][match.end(1):])
+                    break
+            else:
+                self.fail('original embedded binding array absent')
+            with self.subTest(consumer=label, array=ordinal), self.assertRaises(AssertionError):
+                self.assert_trigger_authority(changed)
+
+    def test_paid_entry_trigger_authority_refuses_omitted_original_declaration(self):
+        original = self.trigger_authority_inputs()
+        declarations = re.findall(r'^ALTER TABLE public\.tournaments DISABLE TRIGGER "[^"]+";$',
+                                  original['schema'], re.M)
+        self.assertEqual(len(declarations), 7)
+        for declaration in declarations:
+            changed = dict(original)
+            changed['schema'] = original['schema'].replace(declaration, '', 1)
+            with self.subTest(declaration=declaration), self.assertRaises(AssertionError):
+                self.assert_trigger_authority(changed)
+
     def allocation_receipt(self, source):
         # Protocol-only evidence. The independent baseline below mirrors actual
         # successful allocator 8ce73e0b, not FEE's validation-plan implementation.

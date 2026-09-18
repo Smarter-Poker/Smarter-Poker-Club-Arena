@@ -32,7 +32,7 @@ _mixed_spec.loader.exec_module(MIXED)
 _fee_spec = importlib.util.spec_from_file_location('spin_positive_fee_entry', ROOT / 'scripts/qualification/spin-positive-fee-entry.py')
 FEE = importlib.util.module_from_spec(_fee_spec)
 _fee_spec.loader.exec_module(FEE)
-FEE_MANIFEST_SHA256 = '3a1a1c4f5cfb7cca9fb10eb6dfe7ec14b2a8a9e20ff419a8ac1516f6f9a84fd4'
+FEE_MANIFEST_SHA256 = '705d817acedffe8535d662d6a3346af3994e8931fb90457eb7e9ed82ffb3da47'
 MIXED_MANIFEST_SHA256 = '39bebd368157dbf9f8296468f472492d7ded1fb8f1b37f91867cb4b35ed246b0'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
 ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff580'

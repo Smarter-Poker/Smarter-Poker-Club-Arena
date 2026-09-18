@@ -24,3 +24,12 @@ final source controls and actual PostgreSQL execution are pending. This document
 must be updated with final execution evidence before protected submission.
 Entry qualification is not gameplay, settlement, commission agreement,
 historical recovery, production installation or alert closure.
+
+First native attempt 0c3e5d81 failed before financial requests: the provider
+preimage expected seven enabled triggers although both the executed original
+schema and captured live tournament inventory say disabled. Desired postimage
+metadata already correctly says disabled. Only the seven preimage flags and
+its embedded assertion were corrected; runtime flags and all captured function
+bodies are unchanged. Original failed evidence, source stability and successful
+cleanup are retained. This corrects test restoration evidence, not production
+trigger configuration. The next actual entry result remains pending.

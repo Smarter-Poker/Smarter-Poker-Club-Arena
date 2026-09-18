@@ -17,7 +17,7 @@
     },
     "scripts/qualification/fixtures/spin-mixed-positive-fee/provider-supplement.sql": {
       "bytes": 512502,
-      "sha256": "0e1da4dd74b8c8bc2b014302f93a33c9fcbaad5e004fc64eebc8345bfdcdfa9c"
+      "sha256": "0da6ff0941a8917241a6a9434c97c55bf0197bc8a3f298e8e941931c1e27ebe9"
     },
     "scripts/qualification/fixtures/spin-mixed-positive-fee/catalog-readback.sql": {
       "bytes": 169568,
@@ -33,11 +33,11 @@
     },
     "scripts/qualification/fixtures/spin-mixed-positive-fee/preimage-metadata.json": {
       "bytes": 132521,
-      "sha256": "083d9a65e11d9ad471a0ea0dff2241f70964dde46a1f9189658d02479fa0e954"
+      "sha256": "753d9e9c9e521218098e97bb3e5c937bab22486182e78b60dd36501888e072ec"
     },
     "scripts/qualification/fixtures/spin-mixed-positive-fee/provenance.json": {
-      "bytes": 15284,
-      "sha256": "71a55254af9fc8a52101e6d9e3e613e3542f48796555c31c75b61c83770ce273"
+      "bytes": 15505,
+      "sha256": "4f3ac019050746920f82dfdf6123a9f4712dcb12481ca99f094e807bb30ea791"
     }
   },
   "relative_include_graph": {

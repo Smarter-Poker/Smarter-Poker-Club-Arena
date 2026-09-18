@@ -3203,13 +3203,13 @@
     {
       "relation": "tournaments",
       "name": "aa_guard_tournament_completing_claim",
-      "enabled": "O",
+      "enabled": "D",
       "definition": "CREATE TRIGGER aa_guard_tournament_completing_claim BEFORE UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_completing_claim()"
     },
     {
       "relation": "tournaments",
       "name": "aaa_guard_atomic_satellite_completion",
-      "enabled": "O",
+      "enabled": "D",
       "definition": "CREATE TRIGGER aaa_guard_atomic_satellite_completion BEFORE UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_guard_atomic_satellite_completion()"
     },
     {
@@ -3479,7 +3479,7 @@
     {
       "relation": "tournaments",
       "name": "zzzz_freeze_finalized_tournament_prize_pool",
-      "enabled": "O",
+      "enabled": "D",
       "definition": "CREATE TRIGGER zzzz_freeze_finalized_tournament_prize_pool BEFORE UPDATE OF prize_pool, guaranteed_prize, prize_pool_finalized, payout_structure, spin_multiplier ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_freeze_finalized_tournament_prize_pool()"
     },
     {
@@ -3497,13 +3497,13 @@
     {
       "relation": "tournaments",
       "name": "zzzz_tournament_pool_finalization_window_guard",
-      "enabled": "O",
+      "enabled": "D",
       "definition": "CREATE TRIGGER zzzz_tournament_pool_finalization_window_guard BEFORE UPDATE OF prize_pool_finalized ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_tournament_pool_finalization_window_guard()"
     },
     {
       "relation": "tournaments",
       "name": "zzzz_tournaments_atomic_place_completion_guard",
-      "enabled": "O",
+      "enabled": "D",
       "definition": "CREATE TRIGGER zzzz_tournaments_atomic_place_completion_guard BEFORE UPDATE ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text AND old.status IS DISTINCT FROM 'COMPLETED'::text) EXECUTE FUNCTION trg_tournament_atomic_place_completion_guard()"
     },
     {
@@ -3515,13 +3515,13 @@
     {
       "relation": "tournaments",
       "name": "zzzzz_tournaments_atomic_final_table_deal_completion_guard",
-      "enabled": "O",
+      "enabled": "D",
       "definition": "CREATE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard BEFORE UPDATE OF status ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text AND old.status IS DISTINCT FROM 'COMPLETED'::text) EXECUTE FUNCTION trg_atomic_final_table_deal_completion_guard()"
     },
     {
       "relation": "tournaments",
       "name": "zzzzzz_tournaments_financial_certificate",
-      "enabled": "O",
+      "enabled": "D",
       "definition": "CREATE TRIGGER zzzzzz_tournaments_financial_certificate BEFORE UPDATE OF status ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text AND old.status IS DISTINCT FROM 'COMPLETED'::text) EXECUTE FUNCTION fn_guard_tournament_completed_certificate()"
     },
     {

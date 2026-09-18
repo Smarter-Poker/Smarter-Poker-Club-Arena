@@ -331,7 +331,8 @@
     "Captured physical attnum positions are compared by exact logical column order; no invented dropped columns.",
     "Rounded agreement-history seqmax is replaced only by the independent decimal-text capture.",
     "Catalog null empty aggregates are represented as empty arrays.",
-    "Executable delimiter semicolon appended after unchanged captured full definitions."
+    "Executable delimiter semicolon appended after unchanged captured full definitions.",
+    "Seven preimage trigger-state expectations corrected to D from original schema DISABLE statements and independent current tournament catalog; postimage catalog, runtime flags and captured function bodies unchanged."
   ],
   "limits": {
     "financial_qualification": false,
@@ -348,7 +349,7 @@
   ],
   "output_files": {
     "provider-supplement.sql": {
-      "sha256": "0e1da4dd74b8c8bc2b014302f93a33c9fcbaad5e004fc64eebc8345bfdcdfa9c",
+      "sha256": "0da6ff0941a8917241a6a9434c97c55bf0197bc8a3f298e8e941931c1e27ebe9",
       "bytes": 512502
     },
     "catalog-readback.sql": {
@@ -364,7 +365,7 @@
       "bytes": 207286
     },
     "preimage-metadata.json": {
-      "sha256": "083d9a65e11d9ad471a0ea0dff2241f70964dde46a1f9189658d02479fa0e954",
+      "sha256": "753d9e9c9e521218098e97bb3e5c937bab22486182e78b60dd36501888e072ec",
       "bytes": 132521
     }
   }

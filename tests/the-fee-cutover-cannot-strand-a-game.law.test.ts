@@ -26,6 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceBetween } from './helpers/sourceWindow';
 
 const MIGRATIONS = resolve(__dirname, '..', 'supabase/migrations');
 const CHANGELOG = resolve(__dirname, '..', 'docs/changelog');
@@ -83,10 +84,16 @@ describe('the cutover may not be armed over a game it cannot witness', () => {
   });
 
   it('the observer reads live rows and is reachable by nobody but the guard', () => {
-    const fn = SQL.slice(SQL.indexOf('FUNCTION public.fn_ca_fee_cutover_stranded_by'));
+    // The declaration, bounded by where the body starts rather than by a byte
+    // count: documenting this function can never move the window off it.
+    const decl = sliceBetween(
+      SQL,
+      'FUNCTION public.fn_ca_fee_cutover_stranded_by',
+      'AS $stranded$'
+    );
     // STABLE, never IMMUTABLE: the answer depends on rows that change.
-    expect(fn.slice(0, 500)).toMatch(/\bSTABLE SECURITY DEFINER\b/);
-    expect(fn.slice(0, 500)).not.toMatch(/\bIMMUTABLE\b/);
+    expect(decl).toMatch(/\bSTABLE SECURITY DEFINER\b/);
+    expect(decl).not.toMatch(/\bIMMUTABLE\b/);
     expect(SQL).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_ca_fee_cutover_stranded_by\(timestamptz\) FROM PUBLIC, anon, authenticated/
     );
@@ -96,10 +103,12 @@ describe('the cutover may not be armed over a game it cannot witness', () => {
   });
 
   it('the refusal says what to drain, not only that something is wrong', () => {
-    const raise = SQL.slice(SQL.indexOf("'fee cutover % would strand"));
-    expect(raise.slice(0, 400)).toContain('stranded_tournaments');
-    expect(raise.slice(0, 400)).toContain('oldest_tournament');
-    expect(raise.slice(0, 400)).toContain('oldest_fee_at');
+    // Bounded by the IF that encloses it. The message itself contains a
+    // semicolon, so a statement scanner would stop inside the string.
+    const raise = sliceBetween(SQL, "'fee cutover % would strand", 'END IF;');
+    expect(raise).toContain('stranded_tournaments');
+    expect(raise).toContain('oldest_tournament');
+    expect(raise).toContain('oldest_fee_at');
   });
 
   it('the migration exercises the guard before it commits, and proves who refused', () => {

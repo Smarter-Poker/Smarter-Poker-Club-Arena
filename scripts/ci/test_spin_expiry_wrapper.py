@@ -1,6 +1,6 @@
 """Source-specific hosted adapter controls; not native financial qualification.
 
-The normal wrapper runs these controls before its three separate PG17 images.
+The normal wrapper runs these controls before all five separate PG17 images.
 No successful mocked protocol receipt establishes that SQL or refunds passed.
 """
 import copy
@@ -25,6 +25,188 @@ TOURNAMENT = '00000000-0000-4000-8000-000000000003'
 MANIFEST_SHA = 'b' * 64
 PG = Path('/usr/lib/postgresql/17/bin')
 SOURCE = Path('/tmp/spin5-protocol/source')
+
+
+def mixed_source_files():
+    root = Path(__file__).resolve().parents[2]
+    files={name:(root/name).read_bytes() for name in W.MIXED.INPUTS}
+    files['inputs/captured-financial-store-policy.sql']=(root/'scripts/ci/probes/spin-expiry/inputs/captured-financial-store-policy.sql').read_bytes()
+    return files
+
+
+class MixedCurrentTests(unittest.TestCase):
+    def race_receipt(self, image):
+        # Protocol-only control: these tiny records do not simulate or qualify SQL.
+        M = W.MIXED
+        value = {'execution': EXECUTION, 'mode': M.mode_for(image),
+            'qualification': 'synthetic_current_terminal_zero_fee',
+            'passed': True, 'cleanup_verified': True, 'source_stable': True,
+            'work_deadline_seconds': 20, 'cleanup_deadline_seconds': 5,
+            'source_sha256': {name: W.digest(data) for name, data in mixed_source_files().items() if name in M.INPUTS},
+            'backend_pids': {'observer': 101, 'holder': 102, 'caller': 103},
+            'clients': [{'backend_pid': pid, 'client_exit': 0} for pid in (103, 102, 101)],
+            'verifier_client': {'backend_pid': 104, 'client_exit': 0},
+            'backend_cleanup': {'backends': 0, 'locks': 0},
+            'environment': {'database': 'qual_spin_expiry_' + EXECUTION.replace('-', ''),
+                'user': 'postgres', 'session_user': 'postgres', 'address': None, 'listen': '',
+                'port': '5432', 'super': False, 'version': 170011, 'others': 0},
+            'transcripts': {'current_mixed_' + name + '_' + EXECUTION: 'original transcript\n'
+                            for name in ('observer', 'holder', 'caller')},
+            'cleanup_transcript': 'original cleanup transcript\n'}
+        for key in ('production_mutation', 'full_qualification', 'historical_qualification',
+                    'full_financial_qualification', 'fee_bearing_qualification', 'incident_closed'):
+            value[key] = False
+        value['source_readback'] = {name: {'sha256': sha, 'matches': True}
+                                    for name, sha in value['source_sha256'].items()}
+        barriers = [{'classid': '4265093629', 'objid': '1253463894'},
+                    {'classid': '880566413', 'objid': '1926503905'}]
+        wait = {'pid': 103, 'type': 'Lock', 'event': 'advisory', 'blockers': [102],
+                'data_locks': 0, 'locks': [dict(barriers[0], mode='ExclusiveLock', granted=False, objsubid=1)]}
+        if image == M.IMAGES[0]:
+            value['cases'] = [{'case': 'receipt_writer_rollback_then_wrapper',
+                               'exact_rollback': True, 'wait': copy.deepcopy(wait)}]
+            for replay in (False, True):
+                value['cases'].append({'case': 'concurrent_completion_commit_replay' if replay else 'concurrent_completion_rollback_retry',
+                    'exact_rollback': not replay, 'exact_replay': replay, 'wait': copy.deepcopy(wait),
+                    'exclusive_barriers': [dict(x, mode='ExclusiveLock', granted=True, objsubid=1) for x in barriers],
+                    'second_receipt': {'ok': True, 'fully_settled': True, 'status': 'COMPLETED',
+                                       'tournament_id': M.TID, 'winner_id': M.WINNER}})
+        else:
+            value['source_preconditions'] = {'table_id': '20000000-0000-4000-8000-000000000001',
+                'hand_id': M.SOURCE_HAND, 'status': 'succeeded', 'error': None, 'running_unsealed': True}
+            value['cases'] = [{'case': 'committed_source_reread_after_wait', 'affected_rows': 1,
+                'exact_refusal': True, 'only_declared_source_change': True, 'wait': wait}]
+            value['transcripts']['current_mixed_caller_' + EXECUTION] += (
+                'ERROR:  P0404: mixed-basis retained history refused: unaccepted_receipt\n')
+        return value
+
+    def test_nested_race_receipt_requires_sources_waits_scope_and_cleanup(self):
+        changes = [
+            (('source_stable',), False), (('source_sha256', W.MIXED.PROGRAM), '0' * 64),
+            (('source_readback', W.MIXED.PROGRAM, 'matches'), False),
+            (('work_deadline_seconds',), 21), (('cleanup_deadline_seconds',), 6),
+            (('failure',), None), (('cleanup_failure',), ''), (('verifier_cleanup_error',), ''),
+            (('historical_qualification',), True), (('full_financial_qualification',), True),
+            (('fee_bearing_qualification',), True), (('production_mutation',), True),
+            (('incident_closed',), True), (('full_qualification',), True),
+            (('environment', 'super'), True), (('environment', 'address'), '127.0.0.1'),
+            (('environment', 'others'), 1), (('backend_pids', 'holder'), 101),
+            (('clients', 0, 'client_exit'), None), (('verifier_client', 'backend_pid'), 101),
+            (('backend_cleanup', 'locks'), 1), (('cases', 0, 'wait', 'data_locks'), 1),
+            (('cases', 0, 'wait', 'blockers'), [999]),
+            (('cases', 0, 'wait', 'locks', 0, 'granted'), True),
+            (('cases', 0, 'wait', 'locks', 0, 'classid'), '0'),
+            (('cleanup_transcript',), 'ERROR: wrong cleanup\n'),
+        ]
+        for image in W.MIXED.IMAGES:
+            original = self.race_receipt(image)
+            W.MIXED.validate_races(original, EXECUTION, image, mixed_source_files())
+            for path, wrong in changes:
+                value = copy.deepcopy(original); cursor = value
+                for key in path[:-1]: cursor = cursor[key]
+                cursor[path[-1]] = wrong
+                with self.subTest(image=image, path=path), self.assertRaises(ValueError):
+                    W.MIXED.validate_races(value, EXECUTION, image, mixed_source_files())
+        for path, wrong in [
+            (('source_preconditions', 'status'), 'failed'),
+            (('cases', 0, 'affected_rows'), 0), (('cases', 0, 'exact_refusal'), False),
+            (('transcripts', 'current_mixed_caller_' + EXECUTION), 'ERROR:  P0404: unrelated failure\n'),
+        ]:
+            value = self.race_receipt(W.MIXED.IMAGES[1]); cursor = value
+            for key in path[:-1]: cursor = cursor[key]
+            cursor[path[-1]] = wrong
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                W.MIXED.validate_races(value, EXECUTION, W.MIXED.IMAGES[1], mixed_source_files())
+
+    def test_race_decoder_preserves_decimal_and_rejects_ambiguous_json(self):
+        self.assertEqual(str(W.MIXED.decode_races(b'{"amount":9007199254740992.01}')['amount']), '9007199254740992.01')
+        for raw in (b'{"ok":false,"ok":true}', b'{"x":{"ok":false,"ok":true}}',
+                    b'{"amount":NaN}', b'{"amount":Infinity}', b'{"amount":-Infinity}'):
+            with self.subTest(raw=raw), self.assertRaises(ValueError): W.MIXED.decode_races(raw)
+
+    def test_all_five_images_and_original_cases_remain_required(self):
+        self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
+                                   'mixed-current-completion', 'mixed-current-source-change'))
+        self.assertEqual(W.CASES, {'preimage': ('order',),
+            'candidate': ('order', 'timeout', 'committed-refund'),
+            'retention-completed': (), 'mixed-current-completion': (),
+            'mixed-current-source-change': ()})
+        self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
+
+    def test_exact_sources_and_executed_provider_paths_are_pinned(self):
+        files = mixed_source_files()
+        W.MIXED.validate_sources(files)
+        for name in W.MIXED.INPUTS:
+            for missing in (False, True):
+                changed = dict(files)
+                if missing:
+                    del changed[name]
+                else:
+                    changed[name] += b'changed'
+                with self.subTest(name=name, missing=missing), self.assertRaises((ValueError, KeyError)):
+                    W.MIXED.validate_sources(changed)
+        for mode in ('scope', 'inventory', 'include', 'store-policy'):
+            changed = dict(files)
+            manifest = json.loads(changed[W.MIXED.MANIFEST])
+            if mode == 'scope': manifest['historical_qualification'] = True
+            if mode == 'inventory': manifest['files']['unexecuted/provider.sql'] = {'bytes': 0, 'sha256': W.digest(b'')}
+            if mode == 'include': manifest['relative_include_graph'] = {'other.sql': ['outside.sql']}
+            if mode == 'store-policy': changed['inputs/captured-financial-store-policy.sql'] += b'changed'
+            changed[W.MIXED.MANIFEST] = json.dumps(manifest).encode()
+            with self.subTest(mode=mode), self.assertRaises(ValueError): W.MIXED.validate_sources(changed)
+
+    def test_stage_plan_uses_staged_source_and_separate_committed_estates(self):
+        M = W.MIXED
+        source = W.ROOT
+        completion = M.body_plan(PG, source, EXECUTION, ORDINARY, TOURNAMENT, M.IMAGES[0])
+        refusal = M.body_plan(PG, source, EXECUTION, ORDINARY, TOURNAMENT, M.IMAGES[1])
+        common = next(i for i, row in enumerate(completion) if row[0] == 'terminal_consumer')
+        self.assertEqual(completion[:common], refusal[:common])
+        self.assertEqual([name for name, _ in refusal[common:]],
+                         ['terminal_consumer', 'independent_after_source_change'])
+        self.assertEqual(completion[-2][0], 'current_terminal_rollback')
+        self.assertEqual(completion[-1][0], 'independent_after_rollback')
+        for name, argv in M.seed_plan(PG, source, EXECUTION, ORDINARY, TOURNAMENT) + completion:
+            if '-f' in argv:
+                self.assertTrue(Path(argv[-1]).is_relative_to(source))
+                self.assertEqual(argv[argv.index('-h')+1], str(source.parent / 'work/socket'))
+                self.assertEqual(argv[argv.index('-d')+1], 'qual_spin_expiry_' + EXECUTION.replace('-', ''))
+            elif name == 'terminal_consumer':
+                self.assertEqual(argv[1], str(source / M.PROGRAM))
+                self.assertEqual(argv[-1], str(source.parent / 'work' / M.RESULT))
+        self.assertIn('SET ROLE postgres;', dict(completion)['mixed_synthetic_provider'][-3])
+        self.assertEqual(dict(completion)['mixed_terminal_install'][-1], str(source / M.COMPONENT))
+        with self.assertRaises(ValueError): M.mode_for('candidate')
+
+    def test_diagnostic_selection_and_local_storage_guard(self):
+        for platform, scratch, mounted, accepted in (
+            ('linux', None, False, True),
+            ('darwin', None, True, False),
+            ('darwin', '/Volumes/SmarterWork/agent-work', False, False),
+            ('darwin', '/Volumes/SmarterWork/agent-work', True, True),
+        ):
+            argv = ['wrapper', '--image', W.MIXED.IMAGES[1]]
+            if scratch: argv += ['--scratch-dir', scratch]
+            with self.subTest(platform=platform, scratch=scratch, mounted=mounted), \
+                    patch.object(W, 'source_controls', return_value=True), \
+                    patch.object(W, 'find_pg', return_value=PG), \
+                    patch.object(W, 'run_image', return_value=0) as run, \
+                    patch.object(W.sys, 'argv', argv), patch.object(W.sys, 'platform', platform), \
+                    patch.object(W.os, 'geteuid', return_value=1000), \
+                    patch.object(W.os.path, 'ismount', return_value=mounted), \
+                    patch.object(W.os, 'access', return_value=True), \
+                    patch.object(W.Path, 'is_dir', return_value=True), patch.object(W.signal, 'signal'):
+                if accepted:
+                    self.assertEqual(W.main(), 0)
+                    run.assert_called_once_with(W.MIXED.IMAGES[1], PG, Path(scratch) if scratch else None)
+                else:
+                    with self.assertRaises(RuntimeError): W.main()
+                    run.assert_not_called()
+
+    def test_process_absence_requires_actual_os_observation(self):
+        with patch.object(W.os, 'kill', side_effect=ProcessLookupError): self.assertTrue(W.process_absent(123))
+        with patch.object(W.os, 'kill', side_effect=PermissionError): self.assertFalse(W.process_absent(123))
+        with patch.object(W.os, 'kill', return_value=None): self.assertFalse(W.process_absent(123))
 
 
 def lane_source_files():
@@ -791,6 +973,7 @@ class FixtureSourceTests(unittest.TestCase):
         files.update(completed_source_files())
         files.update(pure_source_files())
         files.update(lane_source_files())
+        files.update(mixed_source_files())
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)
@@ -1121,9 +1304,10 @@ class HostedLifecycleTests(unittest.TestCase):
             self.assertEqual(set(kept),{'receipt.json','postgres.log','business-order.json','native.stdout','native.stderr'})
             self.assertFalse((out/'data').exists());self.assertFalse((out/'home').exists());self.assertFalse((out/'unrelated').exists())
 
-    def test_three_images_run_in_order_and_stop_after_first_failure(self):
-        for outcomes,expected in [([1],['preimage']),([0,1],['preimage','candidate']),
-                                  ([0,0,1],list(W.IMAGES)),([0,0,0],list(W.IMAGES))]:
+    def test_all_images_run_in_order_and_stop_after_first_failure(self):
+        scenarios=[([0]*index+[1],list(W.IMAGES[:index+1])) for index in range(len(W.IMAGES))]
+        scenarios.append(([0]*len(W.IMAGES),list(W.IMAGES)))
+        for outcomes,expected in scenarios:
             with self.subTest(outcomes=outcomes),patch.object(W,'source_controls',return_value=True), \
                     patch.object(W,'find_pg',return_value=PG),patch.object(W,'run_image',side_effect=outcomes) as run, \
                     patch.object(W.sys,'argv',['wrapper']),patch.object(W.sys,'platform','linux'), \
@@ -1147,8 +1331,8 @@ class CompletedRetentionTests(unittest.TestCase):
     def test_success_is_receipt_eligibility_only_with_no_business_cases(self):
         self.assertEqual(self.validate(completed_receipt()), [])
         self.assertEqual(W.completed_retention_output(json.dumps(completed_result()).encode()), completed_result())
-        self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed'))
-        self.assertEqual(W.CASES, {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
+        self.assertEqual(W.IMAGES[:3], ('preimage', 'candidate', 'retention-completed'))
+        self.assertEqual({image:W.CASES[image] for image in W.IMAGES[:3]}, {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
                                   'retention-completed': ()})
 
     def test_exact_source_pins_and_every_relative_include_are_staged(self):
@@ -1339,7 +1523,7 @@ class PureEvidenceTests(unittest.TestCase):
             with self.assertRaises(RuntimeError): W.validate_pure_result(wrong)
 
     def test_every_original_image_requires_pure_phase_before_retention_or_money(self):
-        for image in W.IMAGES:
+        for image in W.IMAGES[:3]:
             original = completed_receipt() if image == 'retention-completed' else receipt(image)
             self.validate(original, image)
             for mode in ('missing', 'repeated', 'early', 'before-provider', 'late', 'role', 'identity', 'failed', 'hash', 'result'):
@@ -1359,8 +1543,8 @@ class PureEvidenceTests(unittest.TestCase):
                 with self.subTest(image=image, mode=mode), self.assertRaises(RuntimeError): self.validate(value,image)
 
     def test_original_images_cases_and_budgets_unchanged(self):
-        self.assertEqual(W.IMAGES, ('preimage','candidate','retention-completed'))
-        self.assertEqual(W.CASES, {'preimage':('order',), 'candidate':('order','timeout','committed-refund'),
+        self.assertEqual(W.IMAGES[:3], ('preimage','candidate','retention-completed'))
+        self.assertEqual({image:W.CASES[image] for image in W.IMAGES[:3]}, {'preimage':('order',), 'candidate':('order','timeout','committed-refund'),
                                   'retention-completed':()})
         source = Path(W.__file__).read_text()
         self.assertIn('deadline = time.monotonic() + 240', source)
@@ -1377,8 +1561,8 @@ class ReceiptLaneTests(unittest.TestCase):
         lane=importlib.util.module_from_spec(spec);spec.loader.exec_module(lane)
         self.assertEqual(lane.SESSION_PATH,W.LANE_SESSION)
         self.assertEqual(lane.SESSION_SHA,W.digest(files[W.LANE_SESSION]))
-        self.assertEqual(W.IMAGES,('preimage','candidate','retention-completed'))
-        self.assertEqual(W.CASES,{'preimage':('order',),'candidate':('order','timeout','committed-refund'),
+        self.assertEqual(W.IMAGES[:3],('preimage','candidate','retention-completed'))
+        self.assertEqual({image:W.CASES[image] for image in W.IMAGES[:3]},{'preimage':('order',),'candidate':('order','timeout','committed-refund'),
                                  'retention-completed':()})
         for name in W.LANE_INPUTS:
             changed=dict(files);changed[name]+=b'changed'

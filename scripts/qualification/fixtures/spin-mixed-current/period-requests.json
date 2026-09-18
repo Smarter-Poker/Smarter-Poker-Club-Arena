@@ -1,0 +1,149 @@
+[
+  {
+    "evidence": {
+      "relation": {
+        "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+        "rls": true,
+        "name": "accounting_period_recompute_requests",
+        "owner": "postgres",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "number": 1,
+            "default": "gen_random_uuid()",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "name": "club_id",
+            "type": "uuid",
+            "number": 2,
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "name": "period_start",
+            "type": "date",
+            "number": 3,
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "name": "period_end",
+            "type": "date",
+            "number": 4,
+            "default": null,
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "number": 5,
+            "default": "'pending'::text",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "name": "reason",
+            "type": "text",
+            "number": 6,
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "name": "requested_at",
+            "type": "timestamp with time zone",
+            "number": 7,
+            "default": "clock_timestamp()",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "name": "last_requested_at",
+            "type": "timestamp with time zone",
+            "number": 8,
+            "default": "clock_timestamp()",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "name": "attempted_at",
+            "type": "timestamp with time zone",
+            "number": 9,
+            "default": null,
+            "identity": "",
+            "not_null": false,
+            "generated": ""
+          },
+          {
+            "name": "attempts",
+            "type": "bigint",
+            "number": 10,
+            "default": "0",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          },
+          {
+            "name": "last_result",
+            "type": "jsonb",
+            "number": 11,
+            "default": "'{}'::jsonb",
+            "identity": "",
+            "not_null": true,
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          "CREATE UNIQUE INDEX accounting_period_recompute_r_club_id_period_start_period_e_key ON public.accounting_period_recompute_requests USING btree (club_id, period_start, period_end)",
+          "CREATE INDEX accounting_period_recompute_requests_pending ON public.accounting_period_recompute_requests USING btree (period_start, club_id) WHERE (status <> 'complete'::text)",
+          "CREATE UNIQUE INDEX accounting_period_recompute_requests_pkey ON public.accounting_period_recompute_requests USING btree (id)"
+        ],
+        "policies": null,
+        "triggers": null,
+        "force_rls": false,
+        "constraints": [
+          {
+            "name": "accounting_period_recompute_r_club_id_period_start_period_e_key",
+            "validated": true,
+            "definition": "UNIQUE (club_id, period_start, period_end)"
+          },
+          {
+            "name": "accounting_period_recompute_requests_check",
+            "validated": true,
+            "definition": "CHECK (((EXTRACT(isodow FROM period_start) = (1)::numeric) AND (period_end = (period_start + 6))))"
+          },
+          {
+            "name": "accounting_period_recompute_requests_club_id_fkey",
+            "validated": true,
+            "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+          },
+          {
+            "name": "accounting_period_recompute_requests_pkey",
+            "validated": true,
+            "definition": "PRIMARY KEY (id)"
+          },
+          {
+            "name": "accounting_period_recompute_requests_status_check",
+            "validated": true,
+            "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'blocked'::text, 'complete'::text])))"
+          }
+        ]
+      },
+      "captured_at": "2026-09-17T23:55:58.583314+00:00"
+    }
+  }
+]

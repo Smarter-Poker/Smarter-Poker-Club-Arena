@@ -2,7 +2,7 @@
 """Finite hosted PG17 Spin expiry qualification, using authentic captured inputs.
 
 Runs source-specific controls first, then independent preimage, candidate and
-completed-receipt eligibility clusters. No provider daemon, VM, arbitrary database
+completed-receipt eligibility and two synthetic current-terminal clusters. No provider daemon, VM, arbitrary database
 target, retry or resume.
 The financial schedules and their independent oracle remain authoritative.
 """
@@ -26,14 +26,19 @@ import unittest
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
+_mixed_spec = importlib.util.spec_from_file_location('spin_mixed_current', ROOT / 'scripts/qualification/spin-mixed-current.py')
+MIXED = importlib.util.module_from_spec(_mixed_spec)
+_mixed_spec.loader.exec_module(MIXED)
+MIXED_MANIFEST_SHA256 = '3abef5d4b85ef34e276f9f098813159a6c9509a184bc0f706a83ba438bf7e9b5'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
 ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff580'
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 OWNER = '47965354-0e56-43ef-931c-ddaab82af765'
 REFUND_ACTOR = '2d1cd6c3-5700-4af9-a271-d4863fdab20d'
-IMAGES = ('preimage', 'candidate', 'retention-completed')
+IMAGES = ('preimage', 'candidate', 'retention-completed', *MIXED.IMAGES)
 CASES = {'preimage': ('order',), 'candidate': ('order', 'timeout', 'committed-refund'),
          'retention-completed': ()}
+CASES.update({image: () for image in MIXED.IMAGES})
 CASE_RESULTS = {'order': 'business-order.json', 'timeout': 'business-timeout.json',
                 'committed-refund': 'committed-refund.jsonl'}
 SERVER_ENDPOINT_QUERY = """SELECT jsonb_build_object(
@@ -126,6 +131,7 @@ LANE_INPUTS = (LANE_MANIFEST, LANE_COMPONENT, LANE_ROLLBACK, LANE_PROGRAM, LANE_
     *(LANE_BASE + name for name in ('authority.json','boundary.sql','provider.sql','state.sql',
                                   'snapshot.sql','component-inputs.sql')))
 REPLACEMENTS.update({name: name for name in LANE_INPUTS})
+REPLACEMENTS.update({name: name for name in MIXED.INPUTS})
 LANE_CATALOG = {'qualification':'receipt_lane_catalog','original_and_candidate_compactor_checked':True,
     'unrelated_update_trigger_refused':True,'altered_binding_refusals':7,'helper_authority_drift_refusals':2,'missing_preimage_refused':True,
     'original_cohort_mismatch_reproduced':True,'reverse_prerequisite_refusals':4,
@@ -763,6 +769,8 @@ def source_packet():
     validate_completed_sources(copied)
     validate_pure_sources(copied)
     validate_lane_sources(copied)
+    require(digest(copied[MIXED.MANIFEST]) == MIXED_MANIFEST_SHA256, 'mixed current manifest changed')
+    MIXED.validate_sources(copied)
     manifest = {'schemaVersion': 1, 'kind': 'spin-expiry-hosted-attempt',
                 'checkout': {'head': head, 'tree': tree}, 'fixtureManifestSha256': digest(raw),
                 'fixtureProvenance': fixture_manifest,
@@ -807,6 +815,8 @@ def verify_packet(source, raw, manifest):
     validate_completed_sources(files)
     validate_pure_sources(files)
     validate_lane_sources(files)
+    require(digest(files[MIXED.MANIFEST]) == MIXED_MANIFEST_SHA256, 'mixed current manifest changed')
+    MIXED.validate_sources(files)
 
 
 def find_pg():
@@ -821,6 +831,18 @@ def find_pg():
 def process_group_absent(pid):
     try: os.killpg(pid, 0)
     except ProcessLookupError: return True
+    return False
+
+
+def process_absent(pid):
+    if pid is None:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
     return False
 
 
@@ -875,13 +897,14 @@ def business_stage_name(case):
 
 def retained_evidence(work, output, receipt, source_manifest):
     # Exact allowlist: no PGDATA, homes, passwords, arbitrary worktrees or env.
-    names = {'receipt.json', 'postgres.log', LANE_RESULT} | set(CASE_RESULTS.values())
+    names = {'receipt.json', 'postgres.log', LANE_RESULT, MIXED.RESULT} | set(CASE_RESULTS.values())
     for stage in receipt.get('stages', []):
         name = stage['stage']
         require(re.fullmatch(r'[a-z0-9_]+', name), 'unsafe evidence stage name')
         names.update((name + '.stdout', name + '.stderr'))
     mandatory = {'receipt.json'}
     if receipt.get('receipt_lane_qualification') is not None: mandatory.add(LANE_RESULT)
+    if receipt.get('mixed_current_qualification') is not None: mandatory.add(MIXED.RESULT)
     for stage in receipt.get('stages', []):
         mandatory.update((stage['stage'] + '.stdout', stage['stage'] + '.stderr'))
     mandatory.update(case['result_path'] for case in receipt.get('business_cases', []) if case.get('state') == 'passed')
@@ -901,6 +924,7 @@ def retained_evidence(work, output, receipt, source_manifest):
 
 def qualify(args, allocation, manifest_bytes, manifest, PG):
     ROOT = allocation / 'source'
+    mixed_image = args.image in MIXED.IMAGES
     verify_packet(ROOT, manifest_bytes, manifest)
     embedded = (ROOT / 'scripts/qualification/spin-expiry-lock-order.component-inputs.sql').read_text()
     for label, name in [('forward', 'spin-expiry-lock-order.sql'),
@@ -939,9 +963,10 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                'business_scenario_passed': False, 'business_qualified': False,
                'catalog_slice_passed': False, 'retention_qualification': None,
                'completed_retention_qualification': None, 'mixed_pure_qualification': None,
-               'receipt_lane_qualification': None,
+               'receipt_lane_qualification': None, 'mixed_current_qualification': None,
                'image': args.image, 'tournament': args.tournament, 'business_cases': [],
-               'qualification_scope': ('captured completed-receipt retention eligibility only' if args.image == 'retention-completed'
+               'qualification_scope': ('synthetic current mixed terminal only; not paid-entry, positive-fee or historical qualification' if mixed_image
+                                       else 'captured completed-receipt retention eligibility only' if args.image == 'retention-completed'
                                        else 'one authentic funded Spin expiry schedule'),
                'connected_services_qualified': False, 'cleanup_verified': False,
                'execution_backend': 'hosted-owned-pg17-unix-socket',
@@ -1035,7 +1060,11 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         command('create_sql_owner', bootstrap + ['-c', 'CREATE ROLE postgres NOSUPERUSER INHERIT LOGIN CREATEDB CREATEROLE REPLICATION BYPASSRLS'], timeout=5)
         command('create_database', [str(PG / 'createdb'), '-w', '-h', str(work / 'socket'), '-p', '5432', '-U', 'fixture_bootstrap', '-O', 'postgres', db], timeout=5)
         sql('schema_prefix', work / 'schema-prefix.sql')
-        sql('restore_preexisting_principals', ROOT / 'principals.sql')
+        if mixed_image:
+            for stage, argv in MIXED.seed_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament):
+                command(stage, argv, timeout=20)
+        else:
+            sql('restore_preexisting_principals', ROOT / 'principals.sql')
         if args.image == 'retention-completed':
             sql('empty_provider_readback', ROOT / 'empty-provider-check.sql')
             sql('restore_completed_start', ROOT / COMPLETED_RESTORE)
@@ -1046,7 +1075,7 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         sql('current_tested_roles', ROOT / 'provider-roles.sql')
         sql('tested_role_readback', ROOT / 'provider-roles-check.sql')
         sql('current_catalog_readback', ROOT / 'provider-check.sql')
-        if args.image != 'retention-completed':
+        if args.image != 'retention-completed' and not mixed_image:
             sql('empty_provider_readback', ROOT / 'empty-provider-check.sql')
         sql('authentic_spin_catalog_supplement', ROOT / 'inputs/spin-catalog-supplement.sql')
         sql('authentic_entry_provider_supplement', ROOT / 'inputs/entry-provider-supplement.sql')
@@ -1054,6 +1083,12 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         sql('authentic_settlement_source_authority', ROOT / 'inputs/settle-source-authority.sql')
         role, path = RETENTION_STAGES['retention_provider_authority']
         retention_provider_original = sql('retention_provider_authority', ROOT / path, user=role)
+        if mixed_image:
+            for stage, argv in MIXED.body_plan(PG, ROOT, args.execution, args.ordinary_user, args.tournament, args.image):
+                command(stage, argv, timeout=30)
+            receipt['mixed_current_qualification'] = MIXED.validate_outputs(ROOT, work, args.execution, args.image)
+            persist()
+            return receipt
         # The shared observer references this authentic pruner authority at CREATE.
         # Pure controls follow that existing setup in every image, before funding.
         pure_original = sql(PURE_STAGE, ROOT / PURE_QUALIFIER, user='postgres')
@@ -1159,7 +1194,7 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
                     cleanup_outcome.failed(first)
                     command('pg_stop_immediate', [str(PG / 'pg_ctl'), '-D', str(data), '-w', '-t', '8', '-m', 'immediate', 'stop'], timeout=10, cleanup=True)
                 command('pg_stopped_readback', [str(PG / 'pg_ctl'), '-D', str(data), 'status'], timeout=3, cleanup=True, allow=(3,))
-                if pidfile.exists() or (original_pid is not None and Path('/proc', str(original_pid)).exists()) or (work / 'socket/.s.PGSQL.5432').exists():
+                if pidfile.exists() or not process_absent(original_pid) or (work / 'socket/.s.PGSQL.5432').exists():
                     raise RuntimeError('owned PostgreSQL process/socket absence not proved')
             pg_terminal = True
         except BaseException as error:
@@ -1176,7 +1211,8 @@ def qualify(args, allocation, manifest_bytes, manifest, PG):
         except BaseException as error:
             receipt['source_stable'] = False
             receipt['source_readback_error'] = str(error)
-        success = ('retention_completed_eligibility_passed_cleanup_observed' if args.image == 'retention-completed'
+        success = ('mixed_current_synthetic_passed_cleanup_observed' if mixed_image
+                   else 'retention_completed_eligibility_passed_cleanup_observed' if args.image == 'retention-completed'
                    else 'business_scenario_passed_cleanup_observed')
         receipt['native_status'] = success if failed is None and cleanup_outcome.qualifies() and receipt['source_stable'] else 'failed_or_unknown'
         receipt['postmaster_pid'] = original_pid
@@ -1191,12 +1227,15 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(receipt.get('execution') == execution and receipt.get('source_manifest_sha256') == manifest_sha
             and receipt.get('image') == image and receipt.get('tournament') == tournament,
             'wrong/stale qualification receipt')
-    validate_pure_result(receipt.get('mixed_pure_qualification'))
+    mixed_image = image in MIXED.IMAGES
+    if not mixed_image:
+        validate_pure_result(receipt.get('mixed_pure_qualification'))
     completed = image == 'retention-completed'
-    status = ('retention_completed_eligibility_passed_cleanup_observed' if completed
+    status = ('mixed_current_synthetic_passed_cleanup_observed' if mixed_image
+              else 'retention_completed_eligibility_passed_cleanup_observed' if completed
               else 'business_scenario_passed_cleanup_observed')
     require(receipt.get('native_status') == status
-            and receipt.get('business_scenario_passed') is (not completed) and receipt.get('cleanup_verified') is True
+            and receipt.get('business_scenario_passed') is (not completed and not mixed_image) and receipt.get('cleanup_verified') is True
             and receipt.get('cleanup_errors') == [] and receipt.get('source_stable') is True
             and 'failure' not in receipt, 'business scenario or cleanup did not qualify')
     require(receipt.get('full_qualification') is False and receipt.get('connected_services_qualified') is False
@@ -1216,6 +1255,12 @@ def validate_receipt(receipt, execution, ordinary, tournament, image, manifest_s
     require(endpoint_stage.get('returncode') == 0
             and endpoint_stage.get('argv') == server_endpoint_command(PG, source.parent / 'work/socket'),
             'server endpoint readback identity or outcome differs')
+    if mixed_image:
+        require(all(receipt.get(key) is None for key in ('mixed_pure_qualification',
+                'retention_qualification', 'completed_retention_qualification', 'receipt_lane_qualification'))
+                and receipt.get('business_cases') == [] and 'natural_aging' not in receipt,
+                'synthetic current case claimed another image result')
+        return MIXED.validate_stages(receipt, PG, source, execution, ordinary, tournament, image)
     catalog = ['spin_catalog_before', 'spin_catalog_rollback_qualification', 'spin_catalog_after']
     completed_inputs = completed_sql_stages(source)
     if completed:
@@ -1331,7 +1376,7 @@ def new_identity(image):
     return argparse.Namespace(execution=values[0], ordinary_user=values[1], tournament=values[2], image=image)
 
 
-def run_image(image, PG):
+def run_image(image, PG, scratch=None):
     require(image in IMAGES, 'unknown FIFO5 image')
     args = new_identity(image)
     output = ROOT / 'artifacts/spin-expiry' / args.execution
@@ -1347,7 +1392,7 @@ def run_image(image, PG):
         manifest['image'] = image
         manifest['ordinary_user'] = args.ordinary_user
         manifest['tournament'] = args.tournament
-        allocation = Path(tempfile.mkdtemp(prefix='spin5-', dir='/tmp')).resolve()
+        allocation = Path(tempfile.mkdtemp(prefix='spin5-', dir=scratch or '/tmp')).resolve()
         allocation.chmod(0o700)
         result['allocation'] = str(allocation)
         manifest_bytes = stage_packet(allocation, manifest, files)
@@ -1357,37 +1402,38 @@ def run_image(image, PG):
         retained_evidence(allocation / 'work', output, receipt, manifest_bytes)
         validate_receipt(receipt, args.execution, args.ordinary_user, args.tournament, image,
                          digest(manifest_bytes), allocation / 'source', PG)
-        pure_original = read_regular(allocation / 'work' / (PURE_STAGE + '.stdout'), 1048576)
-        pure_stage = next(item for item in receipt['stages'] if item['stage'] == PURE_STAGE)
-        require(digest(pure_original) == pure_stage['stdout_sha256']
-                and pure_output(pure_original) == receipt['mixed_pure_qualification'],
-                'pure result differs from original output')
-        if image == 'candidate':
-            originals = {}
-            for name in LANE_STAGES:
-                original = read_regular(allocation/'work'/(name+'.stdout'), 16777216)
-                stage = next(item for item in receipt['stages'] if item['stage']==name)
-                require(digest(original)==stage['stdout_sha256'], 'lane original output changed')
-                originals[name]=original
-            original = read_regular(allocation/'work'/LANE_RESULT, 16777216)
-            require(lane_outputs(originals,original,args.execution,files)==receipt['receipt_lane_qualification'],
-                    'lane receipt differs from original source/SQL/session observations')
-        retention_stdout = {}
-        observed_stages = (('restore_completed_start', 'retention_provider_authority', 'retention_completed_eligibility')
-                           if image == 'retention-completed' else tuple(RETENTION_STAGES))
-        for stage in observed_stages:
-            original = read_regular(allocation / 'work' / (stage + '.stdout'), 1048576)
-            observed = next(item for item in receipt['stages'] if item['stage'] == stage)
-            require(digest(original) == observed['stdout_sha256'], 'retention original output digest mismatch')
-            retention_stdout[stage] = original
-        if image == 'retention-completed':
-            require(completed_retention_output(retention_stdout['retention_completed_eligibility'])
-                    == receipt['completed_retention_qualification'],
-                    'completed retention result differs from original output')
-        else:
-            require(retention_output(retention_stdout['retention_catalog_rollback'],
-                                     retention_stdout['retention_behavior_rollback']) == receipt['retention_qualification'],
-                    'retention result differs from original output')
+        if image not in MIXED.IMAGES:
+            pure_original = read_regular(allocation / 'work' / (PURE_STAGE + '.stdout'), 1048576)
+            pure_stage = next(item for item in receipt['stages'] if item['stage'] == PURE_STAGE)
+            require(digest(pure_original) == pure_stage['stdout_sha256']
+                    and pure_output(pure_original) == receipt['mixed_pure_qualification'],
+                    'pure result differs from original output')
+            if image == 'candidate':
+                originals = {}
+                for name in LANE_STAGES:
+                    original = read_regular(allocation/'work'/(name+'.stdout'), 16777216)
+                    stage = next(item for item in receipt['stages'] if item['stage']==name)
+                    require(digest(original)==stage['stdout_sha256'], 'lane original output changed')
+                    originals[name]=original
+                original = read_regular(allocation/'work'/LANE_RESULT, 16777216)
+                require(lane_outputs(originals,original,args.execution,files)==receipt['receipt_lane_qualification'],
+                        'lane receipt differs from original source/SQL/session observations')
+            retention_stdout = {}
+            observed_stages = (('restore_completed_start', 'retention_provider_authority', 'retention_completed_eligibility')
+                               if image == 'retention-completed' else tuple(RETENTION_STAGES))
+            for stage in observed_stages:
+                original = read_regular(allocation / 'work' / (stage + '.stdout'), 1048576)
+                observed = next(item for item in receipt['stages'] if item['stage'] == stage)
+                require(digest(original) == observed['stdout_sha256'], 'retention original output digest mismatch')
+                retention_stdout[stage] = original
+            if image == 'retention-completed':
+                require(completed_retention_output(retention_stdout['retention_completed_eligibility'])
+                        == receipt['completed_retention_qualification'],
+                        'completed retention result differs from original output')
+            else:
+                require(retention_output(retention_stdout['retention_catalog_rollback'],
+                                         retention_stdout['retention_behavior_rollback']) == receipt['retention_qualification'],
+                        'retention result differs from original output')
         for case in receipt['business_cases']:
             original = read_regular(allocation / 'work' / case['result_path'], 33554432)
             require(digest(original) == case['result_sha256'], 'original case receipt digest mismatch')
@@ -1423,16 +1469,26 @@ def source_controls():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--self-test', action='store_true', help='bounded source controls only; no PostgreSQL')
+    parser.add_argument('--image', choices=IMAGES, help='one finite diagnostic image; CI runs every image by default')
+    parser.add_argument('--scratch-dir', type=Path, help='owned writable allocation parent; required on macOS')
     args = parser.parse_args()
     if not source_controls(): return 1
     if args.self_test: return 0
-    require(sys.platform == 'linux' and os.geteuid() != 0, 'ordinary non-root Linux hosted runner required')
+    require(sys.platform in ('linux', 'darwin') and os.geteuid() != 0, 'ordinary non-root Linux or macOS runner required')
+    if args.scratch_dir is not None:
+        require(args.scratch_dir.is_absolute() and args.scratch_dir.resolve() == args.scratch_dir
+                and args.scratch_dir.is_dir() and os.access(args.scratch_dir, os.W_OK),
+                'exact writable scratch parent required')
+    if sys.platform == 'darwin':
+        require(os.path.ismount('/Volumes/SmarterWork')
+                and args.scratch_dir == Path('/Volumes/SmarterWork/agent-work'),
+                'local native qualification requires mounted task SSD working storage')
     PG = find_pg()
     def interrupted(signum, _frame):
         raise AttemptCancelled('original CI command cancelled by signal ' + str(signum))
-    for image in IMAGES:
+    for image in ((args.image,) if args.image else IMAGES):
         for sig in (signal.SIGINT, signal.SIGTERM): signal.signal(sig, interrupted)
-        if run_image(image, PG) != 0: return 1
+        if run_image(image, PG, args.scratch_dir) != 0: return 1
     return 0
 
 

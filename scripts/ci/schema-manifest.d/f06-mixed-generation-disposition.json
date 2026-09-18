@@ -1,0 +1,14 @@
+{
+  "_owner": "codex/g8-f06-mixed451-disposition-20260918",
+  "_comment": "Installed once as provider20260918073711. Readback 2026-09-18T07:37:28.359319Z confirms exact source ef702828ffeb8dd6c35c7786a3ba9c833ed974263dcf845c1864965bec9e885a, six full function-definition hashes, postgres owners and restricted ACLs, three private RLS tables and enabled immutable triggers. Public mixed RPC definition MD5 641225958b8b24426cb222e336e2a5ec. Zero receipts at readback; operation and live behavior remain separately owned by MTT. Source reservation20260918065923; never replay.",
+  "functions": [
+    "fn_f06_abort_mixed_unsettled_generation",
+    "smarter_private.f06_prior_committed_stacks",
+    "smarter_private.f06_prior_aborted_stacks"
+  ],
+  "tables": [
+    "smarter_private.f06_mixed_aborts",
+    "smarter_private.f06_mixed_abort_generations",
+    "smarter_private.f06_mixed_abort_hands"
+  ]
+}

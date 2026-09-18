@@ -1,0 +1,74 @@
+{
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public"],
+      "signature": "fn_ca_guard_original_paid_stack_receipt()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_guard_original_paid_stack_receipt()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n IF TG_OP='DELETE' OR TG_OP='TRUNCATE' THEN\n  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_IMMUTABLE' USING ERRCODE='55000';\n ELSIF TG_OP='INSERT' THEN\n  IF NEW.state IS DISTINCT FROM 'reserved' OR NEW.transaction_id IS DISTINCT FROM pg_current_xact_id() THEN\n   RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_RESERVATION_REQUIRED' USING ERRCODE='55000';\n  END IF;\n ELSIF OLD.state IS DISTINCT FROM 'reserved' OR NEW.state IS DISTINCT FROM 'seated'\n OR OLD.transaction_id IS DISTINCT FROM pg_current_xact_id()\n OR (to_jsonb(NEW)-ARRAY['state','assignment','completed_at']) IS DISTINCT FROM\n    (to_jsonb(OLD)-ARRAY['state','assignment','completed_at']) THEN\n  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_IMMUTABLE' USING ERRCODE='55000';\n END IF;\n RETURN NEW;\nEND $function$\n",
+      "definition_md5": "06bbbafae6950b54fdb00297830a30a4"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public"],
+      "signature": "fn_ca_original_paid_stack_must_complete()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_original_paid_stack_must_complete()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n IF NOT EXISTS(SELECT 1 FROM public.tournament_paid_stack_custody_receipts r\n WHERE r.id=NEW.id AND r.state='seated' AND r.assignment->>'ok'='true'\n AND r.assignment->>'tournament_id'=r.tournament_id::text\n AND r.assignment->>'user_id'=r.user_id::text\n AND r.assignment->>'table_id'=r.destination_table_id::text\n AND (r.assignment->>'seat_number')::integer=r.destination_seat_number\n AND (r.assignment->>'stack')::numeric=r.grant_chips) THEN\n  RAISE EXCEPTION 'ORIGINAL_PAID_CUSTODY_INCOMPLETE' USING ERRCODE='55000';\n END IF;\n RETURN NULL;\nEND $function$\n",
+      "definition_md5": "8e221724e453fe284280f1f72dedaa7d"
+    }
+  ],
+  "triggers": [
+    {
+      "name": "original_paid_custody_completed",
+      "enabled": "O",
+      "definition": "CREATE CONSTRAINT TRIGGER original_paid_custody_completed AFTER INSERT OR UPDATE ON public.tournament_paid_stack_custody_receipts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_ca_original_paid_stack_must_complete()"
+    },
+    {
+      "name": "original_paid_custody_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER original_paid_custody_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_paid_stack_custody_receipts FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_original_paid_stack_receipt()"
+    },
+    {
+      "name": "original_paid_custody_no_truncate",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER original_paid_custody_no_truncate BEFORE TRUNCATE ON public.tournament_paid_stack_custody_receipts FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_guard_original_paid_stack_receipt()"
+    }
+  ],
+  "columns": [
+    ["id", "uuid", true, null],
+    ["transaction_id", "xid8", true, "pg_current_xact_id()"],
+    ["tournament_id", "uuid", true, null],
+    ["user_id", "uuid", true, null],
+    ["candidate_id", "uuid", true, null],
+    ["entitlement_id", "uuid", true, null],
+    ["source_ledger_id", "uuid", true, null],
+    ["source_wallet_id", "uuid", true, null],
+    ["destination_table_id", "uuid", true, null],
+    ["destination_seat_number", "integer", true, null],
+    ["grant_chips", "numeric", true, null],
+    ["live_chips_before", "numeric", true, null],
+    ["funded_supply", "numeric", true, null],
+    ["scoring_excess", "numeric", true, null],
+    ["expected", "jsonb", true, null],
+    ["state", "text", true, null],
+    ["assignment", "jsonb", false, null],
+    ["created_at", "timestamp with time zone", true, "clock_timestamp()"],
+    ["completed_at", "timestamp with time zone", false, null]
+  ],
+  "constraints": [
+    "CHECK ((((state = 'reserved'::text) AND (assignment IS NULL) AND (completed_at IS NULL)) OR ((state = 'seated'::text) AND (assignment IS NOT NULL) AND (completed_at IS NOT NULL))))",
+    "CHECK (((destination_seat_number >= 1) AND (destination_seat_number <= 10)))",
+    "CHECK (((funded_supply > (0)::numeric) AND (funded_supply < 'Infinity'::numeric)))",
+    "CHECK (((grant_chips > (0)::numeric) AND (grant_chips = trunc(grant_chips)) AND (grant_chips < ('2147483648'::bigint)::numeric)))",
+    "CHECK (((live_chips_before >= (0)::numeric) AND (live_chips_before < 'Infinity'::numeric)))",
+    "CHECK ((jsonb_typeof(expected) = 'object'::text))",
+    "CHECK ((scoring_excess = ((live_chips_before + grant_chips) - funded_supply)))",
+    "CHECK ((state = ANY (ARRAY['reserved'::text, 'seated'::text])))",
+    "PRIMARY KEY (id)",
+    "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+    "UNIQUE (candidate_id)",
+    "UNIQUE (entitlement_id)",
+    "UNIQUE (source_ledger_id)",
+    "UNIQUE (source_wallet_id)"
+  ]
+}

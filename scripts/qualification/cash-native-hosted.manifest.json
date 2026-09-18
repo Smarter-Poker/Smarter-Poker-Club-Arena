@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 140716,
-      "sha256": "f223211fc49a26cadaca69b275569d416b36565d612052ab2298d5dba3d97687"
+      "bytes": 145150,
+      "sha256": "083b1d6197ecd59ab3b746f8cf5aff9179d70ba57d6406553fd3c7cb2e315b1e"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 16557,
-      "sha256": "ee1fa3415e1831343f58c75c8134f0f4ab4c7451d398c37de70b08042159e5c9"
+      "bytes": 17570,
+      "sha256": "f037363cf1da6ddfca7cfa73ff4129b9b9b5457a846cf2d783fde2b3a06a1fdf"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 71313,
-      "sha256": "181f6a80a9c4e837bfabd226ffacb0d2d725b64791b15d25ca8bf4dc0cf28b67"
+      "bytes": 86254,
+      "sha256": "bb58f37feb9bac28ea2994be33f24bbf96a8f70db998f2126df865d22f180d64"
     }
   },
   "nativePgCron": {
@@ -128,5 +128,94 @@
     "Production provider binary identity not captured; source/schema compatibility only",
     "Existing positive donor fixture is a narrow synthetic schema; current full financial-trigger graph closure is not proved by this native scheduler test",
     "Production resource/extension lifecycle behavior unqualified; no production failure injection"
-  ]
+  ],
+  "handSubmissionIntegration": {
+    "reason": "Existing Accounting job directly invokes retained-hand native qualification; selector and routing regression expanded. Cash SQL and immutable capture inputs unchanged.",
+    "previousPins": {
+      ".github/workflows/ci.yml": {
+        "bytes": 139539,
+        "sha256": "50fa46ccf228dca4be463240f9ebd9d59725586a4ae6f6b122fbb3c1d976106d"
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "bytes": 16351,
+        "sha256": "844fa375346299ebac935116203fa20cc7413b1f5f670b17eea4b8a754252ddd"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 67917,
+        "sha256": "34e81f4c7bdbfe4678ea8ff6b437a025e2a601bc43f46ceea07793b3f65c5a6f"
+      }
+    },
+    "mainIntegration": {
+      "revision": "59759374f63503f046b00fc54d3e0c161b87a0f4",
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 140716,
+          "sha256": "f223211fc49a26cadaca69b275569d416b36565d612052ab2298d5dba3d97687"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 16557,
+          "sha256": "ee1fa3415e1831343f58c75c8134f0f4ab4c7451d398c37de70b08042159e5c9"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 71313,
+          "sha256": "181f6a80a9c4e837bfabd226ffacb0d2d725b64791b15d25ca8bf4dc0cf28b67"
+        }
+      },
+      "reason": "Preserves accepted elimination, Spin fee, PKO and cash-week routes while adding the same retained-submission route; exact merged workflow and selector bytes."
+    },
+    "noStartParent": "1d1a6cced3cd956e99dd94e3a63de159fcda1010",
+    "movementParent": {
+      "revision": "f3e5bae43395980fc49ca02876b3f94818a54672",
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 141427,
+          "sha256": "94ec280b980b29ba5450cfea1eebf05449e97b8bdeb60b0c8de7861ce244fe4b"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 16694,
+          "sha256": "943b980c8b9583a80e6eada4902dde27921dd7cc6ff2d72c5f4f71f66c21a35d"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 73180,
+          "sha256": "98a593abab97df771e53477ceafc2d8eeeeb2869e5ac8e52335d4ca364f47f34"
+        }
+      },
+      "reason": "Compose both existing Accounting native routes and all routing assertions. Cash SQL and capture inputs unchanged."
+    },
+    "stockToolchainBinding": {
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 142687,
+          "sha256": "8f1a33be99429876bf59cb820f32931961a0d1b2dd7c7fcf7cb04ea92b8eb7d9"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 16845,
+          "sha256": "dc667e99808844e8351137a5e68a32278b763ca164344e67fe9fb285ff263a48"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 77409,
+          "sha256": "5fa255a3298c2381ffc7d9dff9b5e76208270c592705193ce219a3262f483719"
+        }
+      },
+      "reason": "Pass the already-built PG_ISOLATION_TESTER artifact explicitly to the journal native runner; routing assertion reproduced missing environment before repair."
+    },
+    "finalMovementParent": {
+      "revision": "546421d4a8080b6cf8127c538e9043f3219beb6a",
+      "movementParentPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 141976,
+          "sha256": "9a1f06bf566d36eec5d84fe340eaf434309059eb9097e692292782bb8f43a21e"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 16708,
+          "sha256": "3ab7bd814109d3406e3e4b19a390d330ce3fd81d18f68bda6bd3a92c5eec05c9"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 76134,
+          "sha256": "fe4a48231623c0b3376e7c08d58a57654d55a4d17c3a0cc948782ad5a4713b0e"
+        }
+      },
+      "reason": "Preserves final movement native metadata and result-validator correction, both qualification routes and exact merged source bytes; Cash SQL untouched."
+    }
+  }
 }

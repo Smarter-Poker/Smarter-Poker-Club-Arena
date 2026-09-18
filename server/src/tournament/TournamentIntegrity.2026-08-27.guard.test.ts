@@ -43,10 +43,12 @@ function newestFunction(name: string): string {
       if (!body || body.index == null) throw new Error(`${filename}: ${name} has no body`);
       const tag = body[1];
       const bodyStart = start + body.index + body[0].length;
-      const end = source.indexOf(`${tag};`, bodyStart);
-      if (end < 0) throw new Error(`${filename}: ${name} has an incomplete body`);
-      newest = source.slice(start, end + tag.length + 1);
-      start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, end + tag.length + 1);
+      const end = source.indexOf(tag, bodyStart);
+      const terminator = end < 0 ? null : source.slice(end + tag.length).match(/^\s*;/);
+      if (!terminator) throw new Error(`${filename}: ${name} has an incomplete body`);
+      const definitionEnd = end + tag.length + terminator[0].length;
+      newest = source.slice(start, definitionEnd);
+      start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, definitionEnd);
     }
   }
   if (!newest) throw new Error(`${name} is missing`);

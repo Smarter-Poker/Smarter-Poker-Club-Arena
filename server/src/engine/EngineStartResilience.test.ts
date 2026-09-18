@@ -249,3 +249,167 @@ describe(
     });
   }
 );
+
+function movementStartable() {
+  const tournamentId = '11111111-1111-4111-8111-111111111111';
+  const generation = '22222222-2222-4222-8222-222222222222';
+  const { engine } = startable({
+    scope: 'tournament',
+    verified: true,
+    generation,
+    tournamentId,
+    proofDeadlineMonotonicMs: performance.now() + 60_000,
+  });
+  loadTable.mockResolvedValue({
+    ...TABLE_ROW,
+    tournament_id: tournamentId,
+    game_type: 'tournament',
+  });
+  const revalidate = vi.fn(async () => {});
+  const authority = { current: true };
+  engine.installF06MovementAdmission(
+    'original-break-owner',
+    {
+      admission_id: '33333333-3333-4333-8333-333333333333',
+      tournament_id: tournamentId,
+      lease_generation: generation,
+      table_id: TABLE,
+      lifecycle: '252200',
+      break_id: '44444444-4444-4444-8444-444444444444',
+      custody_id: '55555555-5555-4555-8555-555555555555',
+      revision: '1',
+      proof_hash: 'a'.repeat(64),
+    },
+    () => authority.current,
+    revalidate
+  );
+  return { engine, revalidate, authority };
+}
+
+it('canonical movement admission reaches the real pause gate but can never become a dealer', async () => {
+  const { engine, revalidate } = movementStartable();
+  const crash = vi.spyOn(engine, 'checkCrashRecovery');
+  const dealing = vi.spyOn(engine, 'dealingLoop');
+  const started = engine.start();
+  try {
+    await expect(engine.ready).resolves.toBe(true);
+    expect(revalidate).toHaveBeenCalledOnce();
+    expect(crash).not.toHaveBeenCalled();
+    await expect(engine.parkForTournamentMove('original-break-owner', 1_000)).resolves.toBe(true);
+    expect(engine.handForHandResolve).not.toBeNull();
+    await expect(
+      engine.executeTournamentMoveAtBoundary('original-break-owner', async () => 'receipt')
+    ).resolves.toBe('receipt');
+    engine.resumeFromMaintenance();
+    engine.resumeDealing();
+    engine.releaseTournamentMovePause('original-break-owner');
+    expect(engine.handForHandResolve).not.toBeNull();
+    await expect(engine.allocateGlobalHandNumber()).rejects.toThrow('f06_movement_only_no_hand');
+    await expect(engine.reserveF06Hand(12297120)).rejects.toThrow('f06_movement_only_no_hand');
+    expect(() =>
+      engine.installF06Allocator(
+        'later',
+        async () => 12297120,
+        () => true
+      )
+    ).toThrow();
+    expect(() => engine.installF06HandAdmission(() => null)).toThrow();
+    await expect(ServerTableEngineBase.prototype.checkCrashRecovery.call(engine)).rejects.toThrow(
+      'no_snapshot_disposition'
+    );
+    expect(dealing).not.toHaveBeenCalled();
+    expect(loadSeatedPlayers).not.toHaveBeenCalled();
+  } finally {
+    await engine.stop();
+    await started;
+  }
+  await expect(engine.start()).rejects.toThrow('terminal');
+});
+
+it('the original stopped movement owner revalidates custody before replay despite its retired dealer deadline', async () => {
+  const { engine, revalidate } = movementStartable();
+  const started = engine.start();
+  await engine.ready;
+  await engine.parkForTournamentMove('original-break-owner', 1_000);
+  await engine.stop();
+  await started;
+  expect(engine.terminalTeardownComplete).toBe(true);
+  // Manager renewal intentionally skips terminal drained objects. Its current
+  // ownership predicate and the exact SQL receipt remain the replay authority.
+  engine.engineLeaseProofDeadlineMonotonicMs = performance.now() - 1;
+  const move = vi.fn(async () => 'original-receipt');
+  await expect(engine.parkForTournamentMove('original-break-owner', 0)).resolves.toBe(true);
+  await expect(engine.executeTournamentMoveAtBoundary('original-break-owner', move)).resolves.toBe(
+    'original-receipt'
+  );
+  expect(revalidate).toHaveBeenCalledTimes(2);
+  expect(move).toHaveBeenCalledOnce();
+  expect(engine.tournamentMoveOperations.size).toBe(0);
+  await expect(engine.start()).rejects.toThrow('terminal');
+  await expect(engine.allocateGlobalHandNumber()).rejects.toThrow('f06_movement_only_no_hand');
+});
+
+it.each(['unknown proof', 'owner changed'])(
+  'stopped movement refuses %s before invoking the original mover',
+  async (mode) => {
+    const { engine, revalidate, authority } = movementStartable();
+    const started = engine.start();
+    await engine.ready;
+    await engine.parkForTournamentMove('original-break-owner', 1_000);
+    await engine.stop();
+    await started;
+    let finish!: () => void;
+    let fail!: (error: Error) => void;
+    revalidate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        })
+    );
+    const move = vi.fn(async () => 'receipt');
+    const replay = engine.executeTournamentMoveAtBoundary('original-break-owner', move);
+    const outcome = replay.then(
+      () => ({ error: null }),
+      (error: Error) => ({ error })
+    );
+    try {
+      await Promise.resolve();
+      expect(engine.tournamentMoveOperations.size).toBe(1);
+      expect(move).not.toHaveBeenCalled();
+      await expect(
+        engine.executeTournamentMoveAtBoundary('original-break-owner', move)
+      ).rejects.toThrow('f06_movement_owner_changed');
+      if (mode === 'owner changed') authority.current = false;
+    } finally {
+      if (mode === 'unknown proof') fail?.(new Error('proof_unknown'));
+      else finish?.();
+    }
+    expect((await outcome).error?.message).toContain(
+      mode === 'owner changed' ? 'owner_changed' : 'proof_unknown'
+    );
+    expect(move).not.toHaveBeenCalled();
+    expect(engine.tournamentMoveOperations.size).toBe(0);
+  }
+);
+
+it('a movement-only gate remains parked when the ordinary unclaimed pause timer fires', async () => {
+  const timeout = vi.spyOn(globalThis, 'setTimeout');
+  const { engine } = movementStartable();
+  const started = engine.start();
+  try {
+    await engine.ready;
+    await Promise.resolve();
+    const pause = timeout.mock.calls.find((call) => call[1] === 120_000);
+    expect(pause).toBeDefined();
+    const resolver = engine.handForHandResolve;
+    expect(resolver).not.toBeNull();
+    (pause![0] as () => void)();
+    expect(engine.handForHandResolve).toBe(resolver);
+    expect(engine.running).toBe(true);
+    await expect(engine.parkForTournamentMove('original-break-owner', 0)).resolves.toBe(true);
+  } finally {
+    await engine.stop();
+    await started;
+  }
+});

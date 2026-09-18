@@ -8,6 +8,9 @@ const wide =
   /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate)\.mjs)/;
 const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/classify-ci-changes\.mjs|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/20260909(165541|170039|170749|171644|172537|175000|180000)_|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31)|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
+const breakfastWitness =
+  /^scripts\/ci\/(?:test-breakfast-original-witness\.py$|breakfast_(?:fixture|original_witness|qualification|concurrency)\.py$|fixtures\/breakfast-original-witness\/|probes\/breakfast-original-witness\/)/;
+
 const satelliteQualifiers =
   /^(scripts\/ci\/(?:test-satellite-qualifiers\.py$|(?:satellite_qualifier_(?:fixture|concurrency)|satellite_entry_club_native)\.py$|fixtures\/satellite-qualifiers\/|probes\/(?:satellite-entry-club-native\.sql|satellite-qualifier(?:s-native\.sql|-(?:finish|reader)\.spec))$)|tests\/operations\/satellite-qualifier-results\.test\.py$)/;
 const mttPreparation =
@@ -16,15 +19,17 @@ const mttPreparation =
 // and authoring dependencies. Fixture-only changes must reach this job too.
 const mttActivation =
   /^(scripts\/ci\/(mtt_activation_native\.py$|mtt_activation_funding\.py$|mtt_activation_satellite\.py$|satellite_qualifier_fixture\.py$|mtt_break_authoring_native\.py$|fixtures\/(mtt-format-activation|satellite-qualifiers|mtt-break-authoring)\/|probes\/mtt-activation\/)|tests\/operations\/mtt-activation-results\.test\.py$)/;
+const originalPaidCustody =
+  /^(?:scripts\/ci\/(?:(?:test|build)-original-paid-custody\.py$|original_paid_custody_native\.py$|fixtures\/original-paid-custody\/|probes\/original-paid-custody-authority\.sql$))/;
 const f06HandAuthority =
-  /^(?:scripts\/ci\/(?:test-f06-shared-hand-lane\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration)\.py$|fixtures\/f06-accepted-elimination\/|probes\/f06-(?:shared-hand-lane\/|accepted-elimination\.(?:sql|spec)$))|tests\/operations\/f06-elimination-results\.test\.py$)/;
+  /^(?:scripts\/ci\/(?:test-f06-shared-hand-lane\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration|movement-admission|drained-custody)\.py$|fixtures\/f06-(?:accepted-elimination|movement-admission|drained-custody)\/|probes\/f06-(?:shared-hand-lane\/|(?:accepted-elimination|movement-admission|drained-custody)\.(?:sql|spec)$|(?:movement-opening|drained-custody-authority)\.sql$)|schema-manifest\.d\/f06-(?:movement-admission|drained-custody)\.json$|(?:test-hand-submission|build-hand-submission-migration)\.py$|probes\/hand-submission-[a-z-]+\.(?:sql|spec)$|fixtures\/hand-submission\/)|tests\/operations\/f06-(?:elimination|movement)-results\.test\.py$)/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
 // These maintained SQL components and fixture inputs feed the existing required
 // PostgreSQL accounting job even when no server application source changes.
 const accounting =
-  /^(supabase\/accounting\/|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
+  /^(supabase\/accounting\/|scripts\/ci\/build-weekly-accounting-activation\.py$|tests\/fixtures\/(accounting-agreement-history|accounting-alert-38644|accounting-delivery|agent-accounting-statements|browser-period-observer|cash-commission-sources|cash-rake-earning-evidence|cash-source-compatibility|cash-source-refusals|cashier-document-authority|club-weekly-summary|correction-document-authority|correction-writer-authority|credit-invoice-generation|credit-reduction-authority|credit-request-authority|full-weekly-accounting|legacy-fee-finality|sep8-spin-custody|messenger-private-accounting|mixed-rake-period|pnl-evidence|push-health-reader|push-subscription-ownership|push-subscription-rotation|rakeback-history-privacy|rakeback-write-authority|routed-accounting|scope-weekly-accounting|tournament-fee-lifecycle|tournament-fee-sources|unified-weekly-accounting|union-earned-close|union-weekly-accounting|weekly-accounting-coordinator|weekly-scheduler-fairness|weekly-scheduler-timing|weekly-union-continuation)\/)/;
 // Spin qualification and every reviewed input use the existing accounting job.
 const spinExpiry =
   /^(supabase\/components\/(?:spin-expiry-lock-order|spin-history-retention|spin-mixed-basis-(?:receipt-lane|current-receipt-lane|current-terminal))(?:\.rollback)?\.sql$|supabase\/components\/spin-mixed-basis-evidence\.sql$|scripts\/qualification\/(?:spin-mixed-basis-(?:shape\.sql|evidence\.preimage\.sql|pure\.(?:sql|hosted\.manifest\.json))$|spin-positive-fee-entry(?:-oracle)?\.py$|spin-positive-fee-entry\.(?:md|hosted\.manifest\.json)$|spin-mixed-positive-fee-entry\.sql$|spin-mixed-current(?:-(?:races|assertions))?\.py$|spin-mixed-current\.(?:md|hosted\.manifest\.json)$|spin-receipt-lane(?:-compactor)?\.(?:sql|py|md|hosted\.manifest\.json)$|spin-expiry-|spin-history-retention(?:-behavior\.sql|(?:-completed)?\.(?:sql|md|manifest\.json))$|fixtures\/(?:spin-history-retention|spin-receipt-lane|spin-mixed-current|spin-mixed-positive-fee)\/)|scripts\/ci\/(?:test-spin-expiry-postgres\.py$|test_spin_expiry_wrapper\.py$|probes\/spin-expiry\/)|tests\/unit\/fixtureNativeCi\.test\.ts$)/;
@@ -122,8 +127,10 @@ export function classifyChangedPaths(paths) {
       phase4Changed ||
       matches(mttPreparation) ||
       matches(satelliteQualifiers) ||
+      matches(breakfastWitness) ||
       matches(mttActivation) ||
       matches(f06HandAuthority) ||
+      matches(originalPaidCustody) ||
       commitmentAudit ||
       matches(accounting) ||
       nativeIsolationTool ||
@@ -144,6 +151,7 @@ export function classifyChangedPaths(paths) {
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||
       broad ||
       matches(satelliteQualifiers) ||
+      matches(breakfastWitness) ||
       buildProvenance ||
       diamondGames ||
       commitmentAudit ||
@@ -151,6 +159,7 @@ export function classifyChangedPaths(paths) {
       matches(mttPreparation) ||
       matches(mttActivation) ||
       matches(f06HandAuthority) ||
+      matches(originalPaidCustody) ||
       matches(/^scripts\/ci\/detect-silent-revert\.mjs$/) ||
       nativeIsolationTool ||
       spinRules ||

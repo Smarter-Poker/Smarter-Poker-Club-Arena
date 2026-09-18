@@ -1,0 +1,545 @@
+{
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s';\nSELECT c.oid::regclass::text relation,pg_get_userbyid(c.relowner) owner,c.relacl::text acl,c.relrowsecurity rls,c.relforcerowsecurity force_rls,\n(SELECT jsonb_agg(jsonb_build_object('name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'notnull',a.attnotnull,'default',pg_get_expr(d.adbin,d.adrelid)) ORDER BY a.attnum) FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) columns,\n(SELECT jsonb_agg(jsonb_build_object('name',t.tgname,'definition',pg_get_triggerdef(t.oid),'enabled',t.tgenabled) ORDER BY t.tgname) FROM pg_trigger t WHERE t.tgrelid=c.oid AND NOT t.tgisinternal) triggers\n,(SELECT jsonb_agg(jsonb_build_object('name',x.conname,'definition',pg_get_constraintdef(x.oid),'validated',x.convalidated) ORDER BY x.conname) FROM pg_constraint x WHERE x.conrelid=c.oid) constraints\nFROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='smarter_private' AND c.relname IN ('f06_operations','f06_members','f06_attempts','f06_dispatch','f06_hand_permits','f06_hand_dispatch') ORDER BY c.relname;ROLLBACK;",
+  "rows": [
+    {
+      "relation": "smarter_private.f06_attempts",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "break_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "revision",
+          "type": "integer",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "predecessor",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "amendment_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "amendment_payload",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "destination_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "destination_seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": "'active'::text",
+          "notnull": true
+        },
+        {
+          "name": "receipt",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "triggers": [
+        {
+          "name": "f06_attempts_immutable",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER f06_attempts_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_attempts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_immutable_identity()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "f06_attempts_amendment_id_key",
+          "validated": true,
+          "definition": "UNIQUE (amendment_id)"
+        },
+        {
+          "name": "f06_attempts_break_id_user_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (break_id, user_id) REFERENCES smarter_private.f06_members(break_id, user_id)"
+        },
+        {
+          "name": "f06_attempts_break_id_user_id_revision_key",
+          "validated": true,
+          "definition": "UNIQUE (break_id, user_id, revision)"
+        },
+        {
+          "name": "f06_attempts_check",
+          "validated": true,
+          "definition": "CHECK (((state = 'winner'::text) = (receipt IS NOT NULL)))"
+        },
+        {
+          "name": "f06_attempts_destination_seat_number_check",
+          "validated": true,
+          "definition": "CHECK (((destination_seat_number >= 1) AND (destination_seat_number <= 10)))"
+        },
+        {
+          "name": "f06_attempts_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (request_id)"
+        },
+        {
+          "name": "f06_attempts_predecessor_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (predecessor) REFERENCES smarter_private.f06_attempts(request_id)"
+        },
+        {
+          "name": "f06_attempts_predecessor_key",
+          "validated": true,
+          "definition": "UNIQUE (predecessor)"
+        },
+        {
+          "name": "f06_attempts_revision_check",
+          "validated": true,
+          "definition": "CHECK ((revision > 0))"
+        },
+        {
+          "name": "f06_attempts_state_check",
+          "validated": true,
+          "definition": "CHECK ((state = ANY (ARRAY['active'::text, 'fenced'::text, 'winner'::text])))"
+        }
+      ]
+    },
+    {
+      "relation": "smarter_private.f06_dispatch",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "request_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "xid",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "occupancy_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "source_seat_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "lifecycle",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        }
+      ],
+      "triggers": null,
+      "constraints": [
+        {
+          "name": "f06_dispatch_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (request_id)"
+        },
+        {
+          "name": "f06_dispatch_request_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (request_id) REFERENCES smarter_private.f06_attempts(request_id)"
+        }
+      ]
+    },
+    {
+      "relation": "smarter_private.f06_hand_dispatch",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "permit_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "xid",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        }
+      ],
+      "triggers": null,
+      "constraints": [
+        {
+          "name": "f06_hand_dispatch_permit_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (permit_id) REFERENCES smarter_private.f06_hand_permits(permit_id)"
+        },
+        {
+          "name": "f06_hand_dispatch_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (permit_id)"
+        }
+      ]
+    },
+    {
+      "relation": "smarter_private.f06_hand_permits",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "permit_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "lifecycle",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "custody_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": "'reserved'::text",
+          "notnull": true
+        },
+        {
+          "name": "evidence_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "triggers": [
+        {
+          "name": "f06_hand_permits_immutable",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER f06_hand_permits_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_hand_permits FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_immutable_identity()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "f06_hand_permits_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (permit_id)"
+        },
+        {
+          "name": "f06_hand_permits_state_check",
+          "validated": true,
+          "definition": "CHECK ((state = ANY (ARRAY['reserved'::text, 'accepted'::text, 'never_started'::text, 'aborted_unsettled'::text])))"
+        },
+        {
+          "name": "f06_hand_permits_table_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (table_id) REFERENCES tables(id)"
+        },
+        {
+          "name": "f06_hand_permits_table_id_hand_number_key",
+          "validated": true,
+          "definition": "UNIQUE (table_id, hand_number)"
+        }
+      ]
+    },
+    {
+      "relation": "smarter_private.f06_members",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "break_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "source_seat_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "source_seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "occupancy_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "f06_members_immutable",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER f06_members_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_members FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_immutable_identity()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "f06_members_break_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (break_id) REFERENCES smarter_private.f06_operations(break_id)"
+        },
+        {
+          "name": "f06_members_break_id_source_seat_id_key",
+          "validated": true,
+          "definition": "UNIQUE (break_id, source_seat_id)"
+        },
+        {
+          "name": "f06_members_occupancy_id_key",
+          "validated": true,
+          "definition": "UNIQUE (occupancy_id)"
+        },
+        {
+          "name": "f06_members_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (break_id, user_id)"
+        },
+        {
+          "name": "f06_members_source_seat_number_check",
+          "validated": true,
+          "definition": "CHECK (((source_seat_number >= 1) AND (source_seat_number <= 10)))"
+        }
+      ]
+    },
+    {
+      "relation": "smarter_private.f06_operations",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "break_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "ordinal",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "source_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "lifecycle",
+          "type": "bigint",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "boundary_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "origin_generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": "'park_requested'::text",
+          "notnull": true
+        },
+        {
+          "name": "manifest",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "revision",
+          "type": "bigint",
+          "default": "0",
+          "notnull": true
+        },
+        {
+          "name": "custody_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "custody_generation",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "cleanup_kind",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "close_receipt",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true
+        },
+        {
+          "name": "abort_receipt_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "triggers": [
+        {
+          "name": "f06_operations_immutable",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER f06_operations_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_operations FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_immutable_identity()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "f06_operations_boundary_id_key",
+          "validated": true,
+          "definition": "UNIQUE (boundary_id)"
+        },
+        {
+          "name": "f06_operations_check",
+          "validated": true,
+          "definition": "CHECK (((state = ANY (ARRAY['close_confirmed'::text, 'acknowledged'::text])) = (close_receipt IS NOT NULL)))"
+        },
+        {
+          "name": "f06_operations_ordinal_key",
+          "validated": true,
+          "definition": "UNIQUE (ordinal)"
+        },
+        {
+          "name": "f06_operations_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (break_id)"
+        },
+        {
+          "name": "f06_operations_source_table_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (source_table_id) REFERENCES tables(id)"
+        },
+        {
+          "name": "f06_operations_state_check",
+          "validated": true,
+          "definition": "CHECK ((state = ANY (ARRAY['park_requested'::text, 'begun'::text, 'close_confirmed'::text, 'acknowledged'::text, 'withdrawn_before_manifest'::text])))"
+        },
+        {
+          "name": "f06_withdrawal_receipt",
+          "validated": true,
+          "definition": "CHECK (((state = 'withdrawn_before_manifest'::text) = (abort_receipt_id IS NOT NULL)))"
+        }
+      ]
+    }
+  ]
+}

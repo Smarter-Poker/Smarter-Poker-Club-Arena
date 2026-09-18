@@ -1,0 +1,22 @@
+{
+  "_owner": "agent/codex/hand-submission-durability-20260918",
+  "_comment": "Installed once by the owning release task as provider20260918124935, exact source SHA256 4bdbcf3fb80e7111c5b951bee5d83c31695a3cf19916c72c041ca99ba9dfc268. Independent 2026-09-18T12:50:04Z readback: all eight new function full definitions/body/owner/ACL/config match native0031; changed twelve-argument settlement wrapper full MD5 c5f1e51d639f29e6650ae4560af5fb24 and body927bcb4d0d313591e2034a8cc17dd2f4; twelve enabled triggers and six private postgres-owned RLS tables, zero policies and foreign keys. Source reservation20260918092329, never replay. Engine publication and natural successor behavior are separate pending evidence.",
+  "tables": [
+    "smarter_private.hand_submissions",
+    "smarter_private.hand_submission_dispositions",
+    "smarter_private.hand_submission_failures",
+    "smarter_private.hand_submission_handoffs",
+    "smarter_private.hand_submission_handoff_results",
+    "smarter_private.hand_submission_dispatch"
+  ],
+  "functions": [
+    "fn_ca_commit_hand_submission",
+    "fn_ca_resume_hand_submission",
+    "fn_ca_retain_hand_submission",
+    "smarter_private.acknowledge_hand_submission",
+    "smarter_private.assert_retained_hand_submission",
+    "smarter_private.f06_retained_submission_guard",
+    "smarter_private.hand_submission_immutable",
+    "smarter_private.hand_submission_snapshot_guard"
+  ]
+}

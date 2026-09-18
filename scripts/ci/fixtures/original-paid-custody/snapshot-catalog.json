@@ -1,0 +1,259 @@
+{
+  "rls": true,
+  "name": "hand_state_snapshots",
+  "owner": "postgres",
+  "grants": [
+    {
+      "role": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "role": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "role": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "role": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "role": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    }
+  ],
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "default": "gen_random_uuid()",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "hand_number",
+      "type": "integer",
+      "default": null,
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "state_json",
+      "type": "jsonb",
+      "default": null,
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "config_json",
+      "type": "jsonb",
+      "default": null,
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "dealer_seat",
+      "type": "integer",
+      "default": null,
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "players_json",
+      "type": "jsonb",
+      "default": null,
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "stage",
+      "type": "text",
+      "default": "'preflop'::text",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "is_complete",
+      "type": "boolean",
+      "default": "false",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "default": "now()",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "default": "now()",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "pending_deadlines",
+      "type": "jsonb",
+      "default": "'[]'::jsonb",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    },
+    {
+      "name": "disconnect_states",
+      "type": "jsonb",
+      "default": "'{}'::jsonb",
+      "notnull": true,
+      "identity": "",
+      "generated": ""
+    }
+  ],
+  "indexes": [
+    {
+      "name": "hand_state_snapshots_pkey",
+      "constraint": true,
+      "definition": "CREATE UNIQUE INDEX hand_state_snapshots_pkey ON public.hand_state_snapshots USING btree (id)"
+    },
+    {
+      "name": "idx_hand_snapshots_one_active_per_table",
+      "constraint": false,
+      "definition": "CREATE UNIQUE INDEX idx_hand_snapshots_one_active_per_table ON public.hand_state_snapshots USING btree (table_id) WHERE (is_complete = false)"
+    },
+    {
+      "name": "idx_hand_state_snapshots_created_at",
+      "constraint": false,
+      "definition": "CREATE INDEX idx_hand_state_snapshots_created_at ON public.hand_state_snapshots USING btree (created_at DESC)"
+    }
+  ],
+  "policies": [
+    {
+      "name": "hand_state_snapshots_service_only",
+      "qual": "true",
+      "check": "true",
+      "roles": ["service_role"],
+      "command": "*",
+      "permissive": true
+    }
+  ],
+  "triggers": [
+    {
+      "name": "a00_f06_cancelled_preparation",
+      "enabled": "O",
+      "function": "smarter_private.f06_cancelled_preparation_writer_guard()",
+      "definition": "CREATE TRIGGER a00_f06_cancelled_preparation BEFORE INSERT OR UPDATE ON public.hand_state_snapshots FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()"
+    }
+  ],
+  "force_rls": true,
+  "constraints": [
+    {
+      "name": "hand_state_snapshots_pkey",
+      "type": "p",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "hand_state_snapshots_table_id_fkey",
+      "type": "f",
+      "validated": true,
+      "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+    }
+  ]
+}

@@ -292,6 +292,7 @@ function cohortManager(
     qualifier_ids: raw.qualifier_ids,
   };
   fixture.rpc.mockImplementation(async (name: string) => {
+    if (name === 'fn_ca_resume_hand_submission') return { data: { found: false }, error: null };
     if (name === 'fn_f06_hand_number_state')
       return {
         data: {

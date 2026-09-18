@@ -1,0 +1,48 @@
+{
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT jsonb_build_object('captured_at',clock_timestamp(),'functions',(SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'definition_md5',md5(pg_get_functiondef(p.oid)),'body_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'config',p.proconfig)) FROM pg_proc p WHERE p.oid IN ('public.fn_platform_frozen()'::regprocedure,'public.fn_active_maintenance_release_boundary()'::regprocedure,'public.fn_serialize_engine_maintenance_break_write()'::regprocedure)),'triggers',(SELECT jsonb_agg(jsonb_build_object('name',tgname,'definition',pg_get_triggerdef(oid),'enabled',tgenabled)) FROM pg_trigger WHERE tgrelid='public.engine_maintenance_break'::regclass AND NOT tgisinternal)) AS capture; COMMIT;",
+  "capture": {
+    "triggers": [
+      {
+        "name": "aa_serialize_maintenance_break_write",
+        "enabled": "O",
+        "definition": "CREATE TRIGGER aa_serialize_maintenance_break_write BEFORE INSERT OR DELETE OR UPDATE OR TRUNCATE ON public.engine_maintenance_break FOR EACH STATEMENT EXECUTE FUNCTION fn_serialize_engine_maintenance_break_write()"
+      }
+    ],
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "body_md5": "112b1265824ee082b8adc67ea367d826",
+        "signature": "fn_platform_frozen()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_platform_frozen()\n RETURNS boolean\n LANGUAGE sql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT EXISTS (\n           SELECT 1\n             FROM public.engine_maintenance_break b\n            WHERE b.enforce_freeze\n              AND b.announced_at < clock_timestamp() + INTERVAL '30 seconds'\n              AND (\n                (\n                  b.phase = 'last_hand'\n                  AND b.break_started_at IS NULL\n                  AND b.break_ends_at IS NULL\n                  AND b.announced_at + INTERVAL '2 minutes' <= clock_timestamp()\n                )\n                OR (\n                  b.phase = 'counting_down'\n                  AND b.break_started_at IS NOT NULL\n                  AND b.break_ends_at IS NOT NULL\n                  AND b.break_started_at >= b.announced_at\n                  AND b.break_ends_at > b.break_started_at\n                  AND b.break_ends_at < b.announced_at + INTERVAL '15 minutes'\n                )\n              )\n         )\n         OR COALESCE(\n           public.fn_active_maintenance_release_boundary() > clock_timestamp(),\n           false\n         );\n$function$\n",
+        "definition_md5": "ec683805e052fceeae74789e82dce4cc"
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "body_md5": "084ed24f99e9d08765bd86ff8b920284",
+        "signature": "fn_serialize_engine_maintenance_break_write()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_serialize_engine_maintenance_break_write()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  /* PostgreSQL takes ACCESS EXCLUSIVE before firing a TRUNCATE trigger. Waiting\n     for the advisory boundary from there would invert the canonical order\n     against an admitted entry that next reads this table. This singleton has\n     no legitimate truncate path, so refuse immediately instead of deadlocking. */\n  IF TG_OP = 'TRUNCATE' THEN\n    RAISE EXCEPTION 'engine_maintenance_break may not be truncated'\n      USING ERRCODE = '0A000';\n  END IF;\n  /* One exclusive writer boundary. The matching entry paths take this key in\n     shared mode, so purchases stay concurrent with each other but can never\n     straddle a maintenance-row commit. Transaction scope prevents a pooled\n     connection from retaining the lock. */\n  PERFORM pg_advisory_xact_lock(530090, 1);\n  RETURN NULL;\nEND;\n$function$\n",
+        "definition_md5": "6d62a5f9ad5e8fa615e3eac9396266a3"
+      },
+      {
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, auth, pg_temp"
+        ],
+        "body_md5": "66f0ca0e4ebf27a74dd4b7c211c4fd0f",
+        "signature": "fn_active_maintenance_release_boundary()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_active_maintenance_release_boundary()\n RETURNS timestamp with time zone\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'auth', 'pg_temp'\nAS $function$\nDECLARE\n  c_required_steps CONSTANT text[] := ARRAY[\n    'sit_out_at','hold_expires_at','addon_period_ends_at','reversible_until',\n    'reveal_deadline_at','rebuy_prompt_until','bomb_pot_next_due_at',\n    'cash_stay_last_tick_at','cash_rejoin_expires_at','level_started_at',\n    'cluster_break_eligible_since','cluster_move_expires_at',\n    'reconnect_presence','reconnect_snapshots'\n  ];\n  v_request_role text := NULLIF(btrim(COALESCE(auth.role(), '')), '');\n  v_trusted_database_actor boolean;\n  v_release_target timestamptz;\nBEGIN\n  -- supabase_auth_admin added 2026-09-10: it is GoTrue's own database role\n  -- (the signup triggers run as it), never a browser. Without it every signup\n  -- wallet trigger raised 42501 here (signup_errors id 9318).\n  SELECT session_user IN ('postgres', 'supabase_admin', 'service_role', 'supabase_auth_admin')\n         OR COALESCE(r.rolsuper, false)\n    INTO v_trusted_database_actor\n    FROM (SELECT session_user AS role_name) s\n    LEFT JOIN pg_catalog.pg_roles r ON r.rolname = s.role_name;\n\n  IF v_request_role IS NOT NULL\n     AND v_request_role NOT IN ('anon', 'authenticated', 'service_role') THEN\n    RAISE EXCEPTION 'MAINTENANCE_RELEASE_CERTIFICATE_CALLER_REFUSED'\n      USING ERRCODE = '42501';\n  END IF;\n  IF v_request_role IS NULL AND NOT COALESCE(v_trusted_database_actor, false) THEN\n    RAISE EXCEPTION 'MAINTENANCE_RELEASE_CERTIFICATE_CALLER_REQUIRED'\n      USING ERRCODE = '42501';\n  END IF;\n\n  -- PERF (2026-09-10, swarm A): OFFSET 0 is an optimisation fence. Without it\n  -- the planner evaluated `shifted ?& c_required_steps` first on every row of\n  -- engine_maintenance_thaws (167 rows, 0 of them contract_version 3) on every\n  -- money write that reaches fn_platform_frozen: 229 us -> 32 us per call.\n  -- Same four quals, same max(); the jsonb quals now only see rows that already\n  -- passed contract_version = 3 AND release_target_at > clock_timestamp().\n  SELECT max(t.release_target_at) INTO v_release_target\n    FROM (SELECT t.release_target_at, t.shifted\n            FROM public.engine_maintenance_thaws t\n           WHERE t.contract_version = 3\n             AND t.release_target_at > clock_timestamp()\n          OFFSET 0) t\n   WHERE COALESCE((t.shifted->>'complete')::boolean, false)\n     AND t.shifted ?& c_required_steps;\n  RETURN v_release_target;\nEND;\n$function$\n",
+        "definition_md5": "0d9548e27105b7172d83be4f7d10ea47"
+      }
+    ],
+    "captured_at": "2026-09-18T12:24:29.182011+00:00"
+  }
+}

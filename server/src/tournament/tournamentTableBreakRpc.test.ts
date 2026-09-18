@@ -176,3 +176,66 @@ describe('F06 typed durable operation transport', () => {
     );
   });
 });
+
+describe('exact no-start continuation receipt', () => {
+  const park = () =>
+    verifyTournamentTableBreakState(
+      {
+        ...state(),
+        state: 'park_requested',
+        members: [],
+        custody_id: id(10),
+        custody_generation: id(11),
+      },
+      id(1),
+      id(2)
+    );
+  const receipt = () => ({
+    ok: true,
+    state: 'continued_never_started',
+    receipt_id: id(12),
+    credit: 0,
+    tournament_id: id(1),
+    lease_generation: id(9),
+    original_generation: id(11),
+    table_id: id(3),
+    lifecycle: state().lifecycle,
+    break_id: id(2),
+    park_custody_id: id(10),
+    park_revision: state().revision,
+    permit_id: id(13),
+    hand_number: '12474062',
+  });
+  it.each([
+    { table_id: id(99) },
+    { lease_generation: id(99) },
+    { original_generation: id(99) },
+    { park_custody_id: id(99) },
+    { park_revision: '2' },
+    { credit: 1 },
+    { state: 'aborted_unsettled' },
+    { receipt_id: null },
+    { hand_number: '0' },
+  ])('refuses malformed or foreign continuation %j', async (change) => {
+    vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: { ...receipt(), ...change },
+      error: null,
+    } as never);
+    await expect(
+      new TournamentTableBreakRpc(id(1), id(9)).continueNoStartLastTable(park())
+    ).rejects.toThrow();
+  });
+  it('only authoritative typed noneligibility permits the ordinary movement fallback', async () => {
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: null,
+      error: { code: '55000', message: 'F06_CONTINUATION_LAST_TABLE_REQUIRED' },
+    } as never);
+    const client = new TournamentTableBreakRpc(id(1), id(9));
+    await expect(client.continueNoStartLastTable(park())).resolves.toBe(false);
+    rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'F06_CONTINUATION_LAST_TABLE_REQUIRED' },
+    } as never);
+    await expect(client.continueNoStartLastTable(park())).rejects.toThrow('outcome unproven');
+  });
+});

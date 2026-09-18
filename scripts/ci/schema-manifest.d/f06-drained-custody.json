@@ -1,0 +1,5 @@
+{
+  "_owner": "g8/f06-drained-manager-handoff-20260918",
+  "_comment": "Pending service-only read/assert authority for exact drained premanifest custody and immutable original dispositions. No database installation or production acceptance claim. No financial, lease, roster or park mutation.",
+  "functions": ["fn_f06_assert_drained_manager_custody"]
+}

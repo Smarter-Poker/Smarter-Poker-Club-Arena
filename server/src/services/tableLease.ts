@@ -41,7 +41,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mapLeaseHeartbeatBatches } from './leaseHeartbeatBatches.js';
+import {
+  mapLeaseHeartbeatBatches,
+  RetainedLeaseHeartbeatBatches,
+} from './leaseHeartbeatBatches.js';
 import { warnThrottled, _resetLeaseWarnThrottleForTests } from './leaseWarningThrottle.js';
 // Straight from the client module, never the `supabase.js` barrel: the barrel
 // re-exports every submodule, so importing it from here would pull the whole
@@ -350,7 +353,7 @@ export type TableLeaseHeartbeatOutcome =
     }
   | {
       status: 'uncertain';
-      reason: 'rpc_error' | 'rpc_threw';
+      reason: 'rpc_error' | 'rpc_threw' | 'pending';
     };
 
 /** Counters behind the /health lease block, so the split is visible remotely. */
@@ -368,8 +371,16 @@ let reclaimableHeartbeats = 0;
  * possible. That is deliberately stricter than the pre-deadline behavior,
  * which allowed an UNKNOWN heartbeat to keep a dealer alive forever.
  */
+const retainedTableHeartbeats = new RetainedLeaseHeartbeatBatches<
+  TableLeaseHeartbeatClaim,
+  TableLeaseHeartbeatOutcome
+>();
+
 export async function heartbeatTables(
-  claims: TableLeaseHeartbeatClaim[]
+  claims: TableLeaseHeartbeatClaim[],
+  onBatch?: (outcome: TableLeaseHeartbeatOutcome) => void,
+  ownerIsCurrent: () => boolean = () => true,
+  claimIsCurrent: (claim: TableLeaseHeartbeatClaim) => boolean = () => true
 ): Promise<TableLeaseHeartbeatOutcome> {
   if (claims.length === 0) {
     return { status: 'answered', proofs: [], lostTableIds: [] };
@@ -407,6 +418,27 @@ export async function heartbeatTables(
   }
   const capturedClaims = claims.map((claim) => ({ ...claim }));
   const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
+  if (onBatch) {
+    retainedTableHeartbeats.dispatch(
+      capturedClaims,
+      (claim) => `${claim.tableId.toLowerCase()}/${claim.leaseGeneration.toLowerCase()}`,
+      () => ownerIsCurrent() && tableLeaseMonotonicNow() < proofDeadlineMonotonicMs,
+      (batch) => {
+        const currentClaims = batch.filter(claimIsCurrent);
+        return currentClaims.length
+          ? heartbeatTableBatch(currentClaims, proofDeadlineMonotonicMs)
+          : Promise.resolve({ status: 'answered', proofs: [], lostTableIds: [] });
+      },
+      onBatch,
+      (error) =>
+        warnThrottled(
+          'batch_delivery_failed',
+          `[lease] heartbeat batch delivery failed: ${String(error)}`
+        )
+    );
+    // Dispatch is not a renewal. Only a validated batch callback proves one.
+    return { status: 'uncertain', reason: 'pending' };
+  }
   const outcomes = await mapLeaseHeartbeatBatches(capturedClaims, (batch) =>
     heartbeatTableBatch(batch, proofDeadlineMonotonicMs)
   );

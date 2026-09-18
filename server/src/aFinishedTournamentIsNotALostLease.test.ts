@@ -121,7 +121,13 @@ function bareServer(engines: Map<string, Generation>, lost: () => Map<string, Ge
 const leaseLostReports = (): string[] =>
   reportErrorMock.mock.calls
     .filter(([, context]) => context === 'GameServer.tournament_lease_lost')
-    .map(([error]) => String((error as Error).message).split(' ')[5]);
+    .map(([error]) => {
+      const match = /^Tournament (\S+) no longer proves its current lease generation$/.exec(
+        String((error as Error).message)
+      );
+      expect(match).not.toBeNull();
+      return match![1];
+    });
 
 const live: Generation[] = [];
 const generation = (tournamentId: string, proofDeadline = 20_000): Generation => {

@@ -1,0 +1,462 @@
+{
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s';\nSELECT n.nspname||'.'||c.relname AS relation,pg_get_userbyid(c.relowner) AS owner,c.relacl::text AS acl,c.relrowsecurity AS rls,c.relforcerowsecurity AS force_rls,\n(SELECT jsonb_agg(jsonb_build_object('name',a.attname,'type',format_type(a.atttypid,a.atttypmod),'notnull',a.attnotnull,'identity',a.attidentity,'generated',a.attgenerated,'default',pg_get_expr(d.adbin,d.adrelid)) ORDER BY a.attnum) FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped) AS columns,\n(SELECT jsonb_agg(jsonb_build_object('name',conname,'definition',pg_get_constraintdef(oid),'validated',convalidated) ORDER BY conname) FROM pg_constraint WHERE conrelid=c.oid) AS constraints,\n(SELECT jsonb_agg(jsonb_build_object('name',i.indexrelid::regclass::text,'definition',pg_get_indexdef(i.indexrelid),'valid',indisvalid,'ready',indisready,'constraint',EXISTS(SELECT 1 FROM pg_constraint k WHERE k.conindid=i.indexrelid)) ORDER BY i.indexrelid::regclass::text) FROM pg_index i WHERE i.indrelid=c.oid) AS indexes,\n(SELECT jsonb_agg(jsonb_build_object('name',t.tgname,'definition',pg_get_triggerdef(t.oid),'enabled',t.tgenabled,'function',pg_get_functiondef(p.oid),'signature',p.oid::regprocedure::text,'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'config',p.proconfig,'body_md5',md5(p.prosrc),'definition_md5',md5(pg_get_functiondef(p.oid))) ORDER BY t.tgname) FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid=c.oid AND NOT t.tgisinternal) AS triggers,\n(SELECT jsonb_agg(to_jsonb(x) ORDER BY policyname) FROM pg_policies x WHERE schemaname=n.nspname AND tablename=c.relname) AS policies\nFROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.oid IN ('public.hand_private_state'::regclass,'public.hand_state_snapshots'::regclass,'smarter_private.f06_mixed_aborts'::regclass);\nROLLBACK;",
+  "rows": [
+    {
+      "relation": "public.hand_private_state",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hole_cards",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_strength",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "private_data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_number",
+          "type": "integer",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "saved_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fk_hand_private_state_player_id_profiles",
+          "validated": true,
+          "definition": "FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "hand_private_state_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "hand_private_state_player_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (player_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "hand_private_state_pkey",
+          "ready": true,
+          "valid": true,
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX hand_private_state_pkey ON public.hand_private_state USING btree (id)"
+        },
+        {
+          "name": "uq_hand_private_state_table",
+          "ready": true,
+          "valid": true,
+          "constraint": false,
+          "definition": "CREATE UNIQUE INDEX uq_hand_private_state_table ON public.hand_private_state USING btree (table_id) WHERE (table_id IS NOT NULL)"
+        }
+      ],
+      "triggers": [
+        {
+          "acl": "{postgres=X/postgres}",
+          "name": "a00_f06_cancelled_preparation",
+          "owner": "postgres",
+          "config": ["search_path=pg_catalog, public, smarter_private"],
+          "enabled": "O",
+          "body_md5": "2e7bb0d5bdd6b540eb9974bb78743e46",
+          "function": "CREATE OR REPLACE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE t uuid;\nBEGIN\n -- Resolve the table even before BEGIN is visible; an absent permit cannot\n -- let an already-started writer cross cancellation's exclusive lane.\n SELECT tournament_id INTO t FROM public.tables WHERE id=NEW.table_id;\n IF t IS NOT NULL THEN\n IF NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1',0))\n OR NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1:'||t::text,0)) THEN\n RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'; END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.f06_prepared_hand_cancellations\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number)\n OR EXISTS(SELECT 1 FROM smarter_private.f06_no_start_continuations\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number) THEN\n RAISE EXCEPTION 'F06_CANCELLED_PREPARATION_FENCED' USING ERRCODE='55000'; END IF;\n END IF;\n RETURN NEW;\nEND $function$\n",
+          "signature": "smarter_private.f06_cancelled_preparation_writer_guard()",
+          "definition": "CREATE TRIGGER a00_f06_cancelled_preparation BEFORE INSERT OR UPDATE ON public.hand_private_state FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()",
+          "definition_md5": "a7467e2cb64bab202a359eed42432299"
+        }
+      ],
+      "policies": [
+        {
+          "cmd": "DELETE",
+          "qual": "(( SELECT auth.uid() AS uid) = player_id)",
+          "roles": ["public"],
+          "tablename": "hand_private_state",
+          "permissive": "PERMISSIVE",
+          "policyname": "users_delete_own_hands",
+          "schemaname": "public",
+          "with_check": null
+        },
+        {
+          "cmd": "INSERT",
+          "qual": null,
+          "roles": ["public"],
+          "tablename": "hand_private_state",
+          "permissive": "PERMISSIVE",
+          "policyname": "users_insert_own_hands",
+          "schemaname": "public",
+          "with_check": "(( SELECT auth.uid() AS uid) = player_id)"
+        },
+        {
+          "cmd": "SELECT",
+          "qual": "(( SELECT auth.uid() AS uid) = player_id)",
+          "roles": ["public"],
+          "tablename": "hand_private_state",
+          "permissive": "PERMISSIVE",
+          "policyname": "users_read_own_hands",
+          "schemaname": "public",
+          "with_check": null
+        },
+        {
+          "cmd": "UPDATE",
+          "qual": "(( SELECT auth.uid() AS uid) = player_id)",
+          "roles": ["public"],
+          "tablename": "hand_private_state",
+          "permissive": "PERMISSIVE",
+          "policyname": "users_update_own_hands",
+          "schemaname": "public",
+          "with_check": "(( SELECT auth.uid() AS uid) = player_id)"
+        }
+      ]
+    },
+    {
+      "relation": "public.hand_state_snapshots",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": true,
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hand_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "state_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "config_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "dealer_seat",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "players_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "stage",
+          "type": "text",
+          "default": "'preflop'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "is_complete",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "pending_deadlines",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "disconnect_states",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_state_snapshots_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "hand_state_snapshots_table_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "hand_state_snapshots_pkey",
+          "ready": true,
+          "valid": true,
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX hand_state_snapshots_pkey ON public.hand_state_snapshots USING btree (id)"
+        },
+        {
+          "name": "idx_hand_snapshots_one_active_per_table",
+          "ready": true,
+          "valid": true,
+          "constraint": false,
+          "definition": "CREATE UNIQUE INDEX idx_hand_snapshots_one_active_per_table ON public.hand_state_snapshots USING btree (table_id) WHERE (is_complete = false)"
+        },
+        {
+          "name": "idx_hand_state_snapshots_created_at",
+          "ready": true,
+          "valid": true,
+          "constraint": false,
+          "definition": "CREATE INDEX idx_hand_state_snapshots_created_at ON public.hand_state_snapshots USING btree (created_at DESC)"
+        }
+      ],
+      "triggers": [
+        {
+          "acl": "{postgres=X/postgres}",
+          "name": "a00_f06_cancelled_preparation",
+          "owner": "postgres",
+          "config": ["search_path=pg_catalog, public, smarter_private"],
+          "enabled": "O",
+          "body_md5": "2e7bb0d5bdd6b540eb9974bb78743e46",
+          "function": "CREATE OR REPLACE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE t uuid;\nBEGIN\n -- Resolve the table even before BEGIN is visible; an absent permit cannot\n -- let an already-started writer cross cancellation's exclusive lane.\n SELECT tournament_id INTO t FROM public.tables WHERE id=NEW.table_id;\n IF t IS NOT NULL THEN\n IF NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1',0))\n OR NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1:'||t::text,0)) THEN\n RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'; END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.f06_prepared_hand_cancellations\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number)\n OR EXISTS(SELECT 1 FROM smarter_private.f06_no_start_continuations\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number) THEN\n RAISE EXCEPTION 'F06_CANCELLED_PREPARATION_FENCED' USING ERRCODE='55000'; END IF;\n END IF;\n RETURN NEW;\nEND $function$\n",
+          "signature": "smarter_private.f06_cancelled_preparation_writer_guard()",
+          "definition": "CREATE TRIGGER a00_f06_cancelled_preparation BEFORE INSERT OR UPDATE ON public.hand_state_snapshots FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()",
+          "definition_md5": "a7467e2cb64bab202a359eed42432299"
+        }
+      ],
+      "policies": [
+        {
+          "cmd": "ALL",
+          "qual": "true",
+          "roles": ["service_role"],
+          "tablename": "hand_state_snapshots",
+          "permissive": "PERMISSIVE",
+          "policyname": "hand_state_snapshots_service_only",
+          "schemaname": "public",
+          "with_check": "true"
+        }
+      ]
+    },
+    {
+      "relation": "smarter_private.f06_mixed_aborts",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "receipt_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "expected",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "outcome",
+          "type": "text",
+          "default": "'aborted_unsettled'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "clock_timestamp()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "constraints": [
+        {
+          "name": "f06_mixed_aborts_outcome_check",
+          "validated": true,
+          "definition": "CHECK ((outcome = 'aborted_unsettled'::text))"
+        },
+        {
+          "name": "f06_mixed_aborts_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (receipt_id)"
+        },
+        {
+          "name": "f06_mixed_aborts_receipt_id_tournament_id_key",
+          "validated": true,
+          "definition": "UNIQUE (receipt_id, tournament_id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "smarter_private.f06_mixed_aborts_pkey",
+          "ready": true,
+          "valid": true,
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX f06_mixed_aborts_pkey ON smarter_private.f06_mixed_aborts USING btree (receipt_id)"
+        },
+        {
+          "name": "smarter_private.f06_mixed_aborts_receipt_id_tournament_id_key",
+          "ready": true,
+          "valid": true,
+          "constraint": true,
+          "definition": "CREATE UNIQUE INDEX f06_mixed_aborts_receipt_id_tournament_id_key ON smarter_private.f06_mixed_aborts USING btree (receipt_id, tournament_id)"
+        }
+      ],
+      "triggers": [
+        {
+          "acl": "{postgres=X/postgres}",
+          "name": "f06_mixed_receipt_immutable",
+          "owner": "postgres",
+          "config": ["search_path=pg_catalog"],
+          "enabled": "O",
+          "body_md5": "3ca19a36eb984823814e51042b56e2a3",
+          "function": "CREATE OR REPLACE FUNCTION smarter_private.f06_abort_receipt_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_ABORT_RECEIPT_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+          "signature": "smarter_private.f06_abort_receipt_immutable()",
+          "definition": "CREATE TRIGGER f06_mixed_receipt_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_mixed_aborts FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_abort_receipt_immutable()",
+          "definition_md5": "811127b67caea34bd7d3e5bc6c41ed94"
+        }
+      ],
+      "policies": null
+    }
+  ]
+}

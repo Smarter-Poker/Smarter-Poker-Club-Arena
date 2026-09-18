@@ -1315,6 +1315,8 @@ describe('restored provider accounting qualification', () => {
     'credit-reduction-authority',
     'credit-request-authority',
     'full-weekly-accounting',
+    'legacy-fee-finality',
+    'sep8-spin-custody',
     'messenger-private-accounting',
     'mixed-rake-period',
     'pnl-evidence',
@@ -1376,6 +1378,28 @@ describe('restored provider accounting qualification', () => {
     }
     expect(classifyChangedPaths([]).server).toBe(false);
     expect(Object.values(classifyChangedPaths([''])).every(Boolean)).toBe(true);
+  });
+
+  it('resolves the actual receipt compiler from the locked dependencies installed by accounting', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const install = steps.findIndex(
+      (step: { name?: string }) => step.name === 'Install server test dependencies'
+    );
+    const qualify = steps.findIndex(
+      (step: { name?: string }) =>
+        step.name === 'Full weekly accounting activation, rollback and concurrent authority'
+    );
+    expect(install).toBeGreaterThanOrEqual(0);
+    expect(install).toBeLessThan(qualify);
+    expect(steps[install]).toMatchObject({ 'working-directory': 'server', run: 'npm ci' });
+    const verifier = readFileSync(
+      join(root, 'tests/fixtures/legacy-fee-finality/verify-native-receipts.mjs'),
+      'utf8'
+    );
+    expect(verifier).toContain(
+      "createRequire(path.join(root, 'server/package.json'))('typescript')"
+    );
+    expect(verifier).not.toMatch(/import\s+.*from\s+['"]typescript['"]/);
   });
 
   it('runs each required source suite once on the original provider job', () => {

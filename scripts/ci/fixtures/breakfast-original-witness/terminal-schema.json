@@ -1,0 +1,553 @@
+{
+  "source_sha256": "bb2db82fc456c5c8201037f4d20d526037da653cfa5e5ee7ec4bb470e1de9be4",
+  "evidence": {
+    "at": "2026-09-18T09:04:55.98107+00:00",
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "winner_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "settlement_mode",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "started_status",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "prize_pool",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "bounty_pool",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "cash_payout_count",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "cash_payout_total",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "bounty_payout_total",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "mystery_was_active",
+        "type": "boolean",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "mystery_pool_cents",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "cash_receipt",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "mystery_receipt",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "bounty_receipt",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "closed_table_count",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "closed_table_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "source_seat_count",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "source_seat_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "released_seat_count",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "released_seat_ids",
+        "type": "uuid[]",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "rake_amount",
+        "type": "numeric(15,2)",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "rake_destination",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "rake_settled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "rake_attributed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "rake_attributed_users",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "escrow_closed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "escrow_close_note",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "settled_at",
+        "type": "timestamp with time zone",
+        "default": "transaction_timestamp()",
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "receipt_version",
+        "type": "integer",
+        "default": "1",
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "accounting_state",
+        "type": "text",
+        "default": "'legacy'::text",
+        "notnull": true,
+        "relation": "tournament_terminal_settlements"
+      },
+      {
+        "name": "xid",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "relation": "smarter_private.f06_elimination_dispatch"
+      },
+      {
+        "name": "relation_name",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "relation": "smarter_private.f06_elimination_dispatch"
+      },
+      {
+        "name": "row_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "relation": "smarter_private.f06_elimination_dispatch"
+      },
+      {
+        "name": "candidate_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "relation": "smarter_private.f06_elimination_dispatch"
+      },
+      {
+        "name": "old_record",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "relation": "smarter_private.f06_elimination_dispatch"
+      },
+      {
+        "name": "new_record",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "relation": "smarter_private.f06_elimination_dispatch"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "tournament_terminal_settlements_pkey",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "relation": "tournament_terminal_settlements",
+        "definition": "CREATE UNIQUE INDEX tournament_terminal_settlements_pkey ON public.tournament_terminal_settlements USING btree (tournament_id)"
+      },
+      {
+        "name": "smarter_private.f06_elimination_dispatch_pkey",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "relation": "smarter_private.f06_elimination_dispatch",
+        "definition": "CREATE UNIQUE INDEX f06_elimination_dispatch_pkey ON smarter_private.f06_elimination_dispatch USING btree (xid, relation_name, row_id)"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "terminal_rake_attribution_matches_accounting_state",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((((accounting_state = 'banked_accrual_deferred'::text) AND (rake_attributed_at IS NULL) AND (rake_attributed_users = 0)) OR ((accounting_state <> 'banked_accrual_deferred'::text) AND (rake_attributed_at IS NOT NULL))))"
+      },
+      {
+        "name": "terminal_receipt_version_matches_accounting_state",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((receipt_version =\nCASE\n    WHEN (accounting_state = 'legacy'::text) THEN 1\n    ELSE 2\nEND))"
+      },
+      {
+        "name": "tournament_terminal_settlements_accounting_state_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((accounting_state = ANY (ARRAY['legacy'::text, 'recognized'::text, 'cancelled'::text, 'banked_accrual_deferred'::text])))"
+      },
+      {
+        "name": "tournament_terminal_settlements_bounty_payout_total_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK (((bounty_payout_total >= (0)::numeric) AND (bounty_payout_total = round(bounty_payout_total, 2))))"
+      },
+      {
+        "name": "tournament_terminal_settlements_bounty_pool_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK (((bounty_pool >= (0)::numeric) AND (bounty_pool = round(bounty_pool, 2))))"
+      },
+      {
+        "name": "tournament_terminal_settlements_bounty_receipt_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((jsonb_typeof(bounty_receipt) = 'object'::text))"
+      },
+      {
+        "name": "tournament_terminal_settlements_cash_payout_count_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((cash_payout_count >= 0))"
+      },
+      {
+        "name": "tournament_terminal_settlements_cash_payout_total_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK (((cash_payout_total >= (0)::numeric) AND (cash_payout_total = round(cash_payout_total, 2))))"
+      },
+      {
+        "name": "tournament_terminal_settlements_cash_receipt_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((jsonb_typeof(cash_receipt) = 'object'::text))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((cash_payout_total = prize_pool))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check1",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((bounty_payout_total = bounty_pool))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check2",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK (((mystery_was_active AND (mystery_pool_cents > 0)) OR ((NOT mystery_was_active) AND (mystery_pool_cents = 0))))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check3",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((closed_table_count = cardinality(closed_table_ids)))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check4",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((source_seat_count = cardinality(source_seat_ids)))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check5",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((released_seat_count = cardinality(released_seat_ids)))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check6",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((released_seat_ids <@ source_seat_ids))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check7",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK (((rake_settled_at <= settled_at) AND (rake_attributed_at <= settled_at)))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check8",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((escrow_closed_at <= settled_at))"
+      },
+      {
+        "name": "tournament_terminal_settlements_check9",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((completed_at <= settled_at))"
+      },
+      {
+        "name": "tournament_terminal_settlements_closed_table_count_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((closed_table_count >= 0))"
+      },
+      {
+        "name": "tournament_terminal_settlements_closed_table_ids_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((array_position(closed_table_ids, NULL::uuid) IS NULL))"
+      },
+      {
+        "name": "tournament_terminal_settlements_escrow_close_note_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((length(btrim(escrow_close_note)) > 0))"
+      },
+      {
+        "name": "tournament_terminal_settlements_mystery_pool_cents_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((mystery_pool_cents >= 0))"
+      },
+      {
+        "name": "tournament_terminal_settlements_mystery_receipt_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((jsonb_typeof(mystery_receipt) = 'object'::text))"
+      },
+      {
+        "name": "tournament_terminal_settlements_pkey",
+        "type": "p",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "PRIMARY KEY (tournament_id)"
+      },
+      {
+        "name": "tournament_terminal_settlements_prize_pool_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK (((prize_pool >= (0)::numeric) AND (prize_pool = round(prize_pool, 2))))"
+      },
+      {
+        "name": "tournament_terminal_settlements_rake_amount_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK (((rake_amount >= (0)::numeric) AND (rake_amount = round(rake_amount, 2))))"
+      },
+      {
+        "name": "tournament_terminal_settlements_rake_attributed_users_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((rake_attributed_users >= 0))"
+      },
+      {
+        "name": "tournament_terminal_settlements_rake_destination_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((length(btrim(rake_destination)) > 0))"
+      },
+      {
+        "name": "tournament_terminal_settlements_released_seat_count_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((released_seat_count >= 0))"
+      },
+      {
+        "name": "tournament_terminal_settlements_released_seat_ids_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((array_position(released_seat_ids, NULL::uuid) IS NULL))"
+      },
+      {
+        "name": "tournament_terminal_settlements_settlement_mode_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((settlement_mode = ANY (ARRAY['places'::text, 'final_table_deal'::text])))"
+      },
+      {
+        "name": "tournament_terminal_settlements_source_seat_count_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((source_seat_count >= 0))"
+      },
+      {
+        "name": "tournament_terminal_settlements_source_seat_ids_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((array_position(source_seat_ids, NULL::uuid) IS NULL))"
+      },
+      {
+        "name": "tournament_terminal_settlements_started_status_check",
+        "type": "c",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "CHECK ((started_status = ANY (ARRAY['RUNNING'::text, 'COMPLETING'::text])))"
+      },
+      {
+        "name": "tournament_terminal_settlements_tournament_id_fkey",
+        "type": "f",
+        "relation": "tournament_terminal_settlements",
+        "validated": true,
+        "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+      },
+      {
+        "name": "f06_elimination_dispatch_pkey",
+        "type": "p",
+        "relation": "smarter_private.f06_elimination_dispatch",
+        "validated": true,
+        "definition": "PRIMARY KEY (xid, relation_name, row_id)"
+      },
+      {
+        "name": "f06_elimination_dispatch_relation_name_check",
+        "type": "c",
+        "relation": "smarter_private.f06_elimination_dispatch",
+        "validated": true,
+        "definition": "CHECK ((relation_name = ANY (ARRAY['tournament_players'::text, 'table_seats'::text])))"
+      }
+    ]
+  }
+}

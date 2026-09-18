@@ -1,0 +1,688 @@
+{
+  "source_sha256": "9e96093a1fba37fab1b4405d01912a1d7226afcf9b4cb35990fa3fd46f08dead",
+  "relations": [
+    {
+      "relation": "hand_history",
+      "evidence": {
+        "at": "2026-09-18T09:19:17.170292+00:00",
+        "columns": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "default": "gen_random_uuid()",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "winner_name",
+            "type": "text",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "pot_size",
+            "type": "numeric(12,2)",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "table_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "tournament_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "hand_number",
+            "type": "integer",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "game_variant",
+            "type": "text",
+            "default": "'nlh'::text",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "small_blind",
+            "type": "numeric(12,2)",
+            "default": "0",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "big_blind",
+            "type": "numeric(12,2)",
+            "default": "0",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "rake_amount",
+            "type": "numeric(12,2)",
+            "default": "0",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "community_cards",
+            "type": "text[]",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "winners",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "players",
+            "type": "jsonb",
+            "default": "'[]'::jsonb",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "actions",
+            "type": "jsonb",
+            "default": "'[]'::jsonb",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "summary",
+            "type": "text",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "bbj_amount",
+            "type": "numeric(12,2)",
+            "default": "0",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "source",
+            "type": "text",
+            "default": "'manual'::text",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "hand_name",
+            "type": "text",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "seed",
+            "type": "text",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "version",
+            "type": "text",
+            "default": "'v1'::text",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "started_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "ended_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "hole_cards",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "board",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "reported",
+            "type": "boolean",
+            "default": "false",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "reported_at",
+            "type": "timestamp with time zone",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "button_seat",
+            "type": "smallint",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "has_human",
+            "type": "boolean",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "community_cards2",
+            "type": "text[]",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "pots",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "showdown",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "rit_boards",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "community_cards3",
+            "type": "text[]",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "bomb_pot",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "daily_mission_events",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "winners_by_board",
+            "type": "jsonb",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE UNIQUE INDEX hand_history_pkey ON public.hand_history USING btree (id)"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_created ON public.hand_history USING btree (created_at DESC)"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_tournament_created ON public.hand_history USING btree (tournament_id, created_at DESC) WHERE (tournament_id IS NOT NULL)"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_table_handnum ON public.hand_history USING btree (table_id, hand_number DESC)"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE UNIQUE INDEX uq_hand_history_global_hand_number ON public.hand_history USING btree (hand_number) WHERE (hand_number >= 1000000)"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_hand_number_lookup ON public.hand_history USING btree (hand_number)"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_players_gin ON public.hand_history USING gin (players jsonb_path_ops) WITH (fastupdate='on', gin_pending_list_limit='32768')"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_cash_rake_unbanked ON public.hand_history USING btree (created_at) WHERE ((tournament_id IS NULL) AND (rake_amount > (0)::numeric))"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_human_created ON public.hand_history USING btree (created_at) WHERE has_human"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_table_created_id ON public.hand_history USING btree (table_id, created_at, id)"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX idx_hand_history_bomb_pot_created ON public.hand_history USING btree (created_at) WHERE (bomb_pot IS NOT NULL)"
+          }
+        ],
+        "triggers": [
+          {
+            "acl": null,
+            "body": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_cascade_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_cascade_del$function$\n",
+            "name": "RI_ConstraintTrigger_a_21978358",
+            "owner": "supabase_admin",
+            "state": "O",
+            "config": null,
+            "function": "\"RI_FKey_cascade_del\"()",
+            "internal": true,
+            "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_21978358\" AFTER DELETE ON public.hand_history FROM ca_hand_facts NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_cascade_del\"()"
+          },
+          {
+            "acl": null,
+            "body": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+            "name": "RI_ConstraintTrigger_a_21978359",
+            "owner": "supabase_admin",
+            "state": "O",
+            "config": null,
+            "function": "\"RI_FKey_noaction_upd\"()",
+            "internal": true,
+            "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_21978359\" AFTER UPDATE ON public.hand_history FROM ca_hand_facts NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()"
+          },
+          {
+            "acl": null,
+            "body": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_cascade_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_cascade_del$function$\n",
+            "name": "RI_ConstraintTrigger_a_22230512",
+            "owner": "supabase_admin",
+            "state": "O",
+            "config": null,
+            "function": "\"RI_FKey_cascade_del\"()",
+            "internal": true,
+            "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_22230512\" AFTER DELETE ON public.hand_history FROM ca_hand_notes NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_cascade_del\"()"
+          },
+          {
+            "acl": null,
+            "body": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+            "name": "RI_ConstraintTrigger_a_22230513",
+            "owner": "supabase_admin",
+            "state": "O",
+            "config": null,
+            "function": "\"RI_FKey_noaction_upd\"()",
+            "internal": true,
+            "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_22230513\" AFTER UPDATE ON public.hand_history FROM ca_hand_notes NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()"
+          },
+          {
+            "acl": null,
+            "body": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_cascade_del\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_cascade_del$function$\n",
+            "name": "RI_ConstraintTrigger_a_22297461",
+            "owner": "supabase_admin",
+            "state": "O",
+            "config": null,
+            "function": "\"RI_FKey_cascade_del\"()",
+            "internal": true,
+            "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_22297461\" AFTER DELETE ON public.hand_history FROM ca_hand_flags NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_cascade_del\"()"
+          },
+          {
+            "acl": null,
+            "body": "CREATE OR REPLACE FUNCTION pg_catalog.\"RI_FKey_noaction_upd\"()\n RETURNS trigger\n LANGUAGE internal\n PARALLEL SAFE STRICT\nAS $function$RI_FKey_noaction_upd$function$\n",
+            "name": "RI_ConstraintTrigger_a_22297462",
+            "owner": "supabase_admin",
+            "state": "O",
+            "config": null,
+            "function": "\"RI_FKey_noaction_upd\"()",
+            "internal": true,
+            "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_a_22297462\" AFTER UPDATE ON public.hand_history FROM ca_hand_flags NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_noaction_upd\"()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION smarter_private.f06_aborted_hand_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE t uuid;\nBEGIN\n SELECT tournament_id INTO t FROM smarter_private.f06_hand_permits\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number;\n IF FOUND THEN\n -- A direct SQL insert may already own its row. Never wait for an earlier lane.\n IF NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1',0))\n OR NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1:'||t::text,0)) THEN\n RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'; END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.f06_unsettled_hand_aborts\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number)\n OR EXISTS(SELECT 1 FROM smarter_private.f06_generation_abort_hands\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number)\n OR EXISTS(SELECT 1 FROM smarter_private.f06_mixed_abort_hands\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number) THEN\n RAISE EXCEPTION 'F06_ABORTED_HAND_FENCED' USING ERRCODE='55000'; END IF;\n END IF;\n RETURN NEW;\nEND $function$\n",
+            "name": "a00_f06_aborted_history",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=pg_catalog, public, smarter_private"
+            ],
+            "function": "smarter_private.f06_aborted_hand_guard()",
+            "internal": false,
+            "definition": "CREATE TRIGGER a00_f06_aborted_history BEFORE INSERT OR UPDATE ON public.hand_history FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_aborted_hand_guard()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE t uuid;\nBEGIN\n -- Resolve the table even before BEGIN is visible; an absent permit cannot\n -- let an already-started writer cross cancellation's exclusive lane.\n SELECT tournament_id INTO t FROM public.tables WHERE id=NEW.table_id;\n IF t IS NOT NULL THEN\n IF NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1',0))\n OR NOT pg_try_advisory_xact_lock_shared(hashtextextended('ca:tournament-terminal-settlement:v1:'||t::text,0)) THEN\n RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'; END IF;\n IF EXISTS(SELECT 1 FROM smarter_private.f06_prepared_hand_cancellations\n WHERE table_id=NEW.table_id AND hand_number=NEW.hand_number) THEN\n RAISE EXCEPTION 'F06_CANCELLED_PREPARATION_FENCED' USING ERRCODE='55000'; END IF;\n END IF;\n RETURN NEW;\nEND $function$\n",
+            "name": "a00_f06_cancelled_preparation",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=pg_catalog, public, smarter_private"
+            ],
+            "function": "smarter_private.f06_cancelled_preparation_writer_guard()",
+            "internal": false,
+            "definition": "CREATE TRIGGER a00_f06_cancelled_preparation BEFORE INSERT OR UPDATE ON public.hand_history FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_cancelled_preparation_writer_guard()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION public.trg_hand_history_club_member_stats()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE v_club uuid; v_date date; v_tourney boolean;\nBEGIN\n  IF coalesce(current_setting('app.atomic_hand_commit',true),'')='on' THEN RETURN NEW; END IF;\n  SELECT t.club_id,(t.tournament_id IS NOT NULL)\n    INTO v_club,v_tourney FROM public.tables t WHERE t.id=NEW.table_id;\n  IF v_club IS NULL THEN RETURN NEW; END IF;\n  v_tourney := coalesce(v_tourney,false) OR (NEW.tournament_id IS NOT NULL);\n  v_date := (NEW.created_at AT TIME ZONE 'UTC')::date;\n  WITH pl AS (\n    SELECT DISTINCT ON (p->>'userId') (p->>'userId')::uuid AS uid,\n           (p->>'stack')::numeric AS stack\n      FROM jsonb_array_elements(coalesce(NEW.players,'[]'::jsonb)) p\n     WHERE (p->>'userId') ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n       AND (p->>'stack') IS NOT NULL\n  ), wn AS (\n    SELECT (w->>'userId')::uuid AS uid,sum((w->>'amount')::numeric) AS won\n      FROM jsonb_array_elements(coalesce(NEW.winners,'[]'::jsonb)) w\n     WHERE (w->>'userId') ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n     GROUP BY 1\n  ), base AS (\n    SELECT pl.uid,pl.stack,coalesce(wn.won,0) AS won,st.last_stack,\n      (st.last_stack IS NOT NULL AND st.last_hand_number IS NOT NULL\n       AND NEW.hand_number IS NOT NULL AND NOT EXISTS (\n         SELECT 1 FROM public.hand_history h2 WHERE h2.table_id=NEW.table_id\n          AND h2.hand_number>st.last_hand_number AND h2.hand_number<NEW.hand_number)) AS adjacent\n      FROM pl LEFT JOIN wn ON wn.uid=pl.uid\n      LEFT JOIN public.club_member_table_state st\n        ON st.table_id=NEW.table_id AND st.user_id=pl.uid\n  ), agg AS (\n    SELECT count(*) AS seated,count(*) FILTER (WHERE last_stack IS NOT NULL) AS with_prior,\n           coalesce(sum(stack-last_stack) FILTER (WHERE last_stack IS NOT NULL),0) AS dsum\n      FROM base\n  ), calc AS (\n    SELECT b.uid,b.won,\n      CASE WHEN b.last_stack IS NOT NULL THEN b.stack-b.last_stack ELSE 0 END AS delta,\n      CASE WHEN a.seated=a.with_prior\n        THEN abs(a.dsum+coalesce(NEW.rake_amount,0)+coalesce(NEW.bbj_amount,0))<0.005\n        ELSE b.adjacent AND (b.stack-b.last_stack)<=b.won+0.001 END AS attributable\n      FROM base b CROSS JOIN agg a\n  )\n  INSERT INTO public.club_member_daily_stats AS s(\n    club_id,table_id,user_id,stat_date,hands_played,hands_attributed,hands_won,\n    total_won,profit,biggest_pot_won,biggest_pot,topup_total)\n  SELECT v_club,NEW.table_id,calc.uid,v_date,1,\n    CASE WHEN v_tourney THEN 0 WHEN calc.attributable THEN 1 ELSE 0 END,\n    CASE WHEN calc.won>0 THEN 1 ELSE 0 END,\n    CASE WHEN v_tourney THEN 0 ELSE calc.won END,\n    CASE WHEN v_tourney THEN 0 WHEN calc.attributable THEN calc.delta ELSE 0 END,\n    CASE WHEN v_tourney THEN 0 ELSE calc.won END,\n    CASE WHEN v_tourney THEN 0 ELSE coalesce(NEW.pot_size,0) END,\n    CASE WHEN v_tourney THEN 0 WHEN NOT calc.attributable AND calc.delta>calc.won\n      THEN calc.delta-calc.won ELSE 0 END\n    FROM calc\n  ON CONFLICT (club_id,table_id,user_id,stat_date) DO UPDATE SET\n    hands_played=s.hands_played+1,\n    hands_attributed=s.hands_attributed+EXCLUDED.hands_attributed,\n    hands_won=s.hands_won+EXCLUDED.hands_won,\n    total_won=s.total_won+EXCLUDED.total_won,\n    profit=s.profit+EXCLUDED.profit,\n    biggest_pot_won=greatest(s.biggest_pot_won,EXCLUDED.biggest_pot_won),\n    biggest_pot=greatest(s.biggest_pot,EXCLUDED.biggest_pot),\n    topup_total=s.topup_total+EXCLUDED.topup_total,\n    updated_at=now();\n  INSERT INTO public.club_member_table_state AS st(\n    table_id,user_id,last_stack,last_hand_number)\n  SELECT DISTINCT ON (p->>'userId') NEW.table_id,(p->>'userId')::uuid,\n         (p->>'stack')::numeric,NEW.hand_number\n    FROM jsonb_array_elements(coalesce(NEW.players,'[]'::jsonb)) p\n   WHERE (p->>'userId') ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n     AND (p->>'stack') IS NOT NULL\n  ON CONFLICT (table_id,user_id) DO UPDATE SET\n    last_stack=EXCLUDED.last_stack,last_hand_number=EXCLUDED.last_hand_number,\n    updated_at=now();\n  INSERT INTO public.club_hand_daily_shard AS d(\n    club_id,stat_date,shard,hands,rake,bbj,pot_total)\n  VALUES (v_club,v_date,(pg_backend_pid()%16)::smallint,1,\n    coalesce(NEW.rake_amount,0),coalesce(NEW.bbj_amount,0),coalesce(NEW.pot_size,0))\n  ON CONFLICT (club_id,stat_date,shard) DO UPDATE SET\n    hands=d.hands+1,rake=d.rake+EXCLUDED.rake,bbj=d.bbj+EXCLUDED.bbj,\n    pot_total=d.pot_total+EXCLUDED.pot_total,updated_at=now();\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'trg_hand_history_club_member_stats failed: %',SQLERRM;\n  RETURN NEW;\nEND;\n$function$\n",
+            "name": "hand_history_club_member_stats",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=public"
+            ],
+            "function": "trg_hand_history_club_member_stats()",
+            "internal": false,
+            "definition": "CREATE TRIGGER hand_history_club_member_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_hand_history_club_member_stats()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION public.fn_fold_hand_winnings()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_club uuid; v_bb numeric;\nBEGIN\n  IF coalesce(current_setting('app.atomic_hand_commit',true),'')='on' THEN RETURN NEW; END IF;\n  IF NEW.tournament_id IS NOT NULL OR NEW.players IS NULL\n     OR jsonb_typeof(NEW.players)<>'array' OR jsonb_array_length(NEW.players)=0 THEN\n    RETURN NEW;\n  END IF;\n  SELECT t.club_id INTO v_club FROM public.tables t WHERE t.id=NEW.table_id;\n  IF v_club IS NULL THEN RETURN NEW; END IF;\n  v_bb := greatest(coalesce(NEW.big_blind,0),0);\n  WITH seated AS (\n    SELECT DISTINCT (pl->>'userId') AS uid\n      FROM jsonb_array_elements(NEW.players) pl\n     WHERE (pl->>'userId') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n  ), won AS (\n    SELECT (w->>'userId') AS uid,sum((w->>'amount')::numeric) AS amt\n      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(NEW.winners)='array'\n        THEN NEW.winners ELSE '[]'::jsonb END) w\n     WHERE (w->>'userId') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n       AND coalesce((w->>'amount')::numeric,0)>0\n     GROUP BY 1\n  )\n  INSERT INTO public.player_stats\n    (id,user_id,club_id,hands_dealt,sum_big_blind,total_winnings,updated_at)\n  SELECT gen_random_uuid(),s.uid::uuid,v_club,1,v_bb,coalesce(wo.amt,0),now()\n    FROM seated s LEFT JOIN won wo ON wo.uid=s.uid\n   WHERE EXISTS (SELECT 1 FROM public.profiles p WHERE p.id=s.uid::uuid)\n  ON CONFLICT (user_id,club_id) DO UPDATE SET\n    hands_dealt=player_stats.hands_dealt+EXCLUDED.hands_dealt,\n    sum_big_blind=player_stats.sum_big_blind+EXCLUDED.sum_big_blind,\n    total_winnings=player_stats.total_winnings+EXCLUDED.total_winnings,\n    updated_at=now();\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN RETURN NEW;\nEND;\n$function$\n",
+            "name": "hand_history_fold_stats",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=public"
+            ],
+            "function": "fn_fold_hand_winnings()",
+            "internal": false,
+            "definition": "CREATE TRIGGER hand_history_fold_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_fold_hand_winnings()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION public.trg_hand_history_position_stats()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF coalesce(current_setting('app.atomic_hand_commit',true),'')='on' THEN RETURN NEW; END IF;\n  BEGIN\n    PERFORM public.fn_process_hand_position_stats(NEW.players,NEW.actions,NEW.winners);\n  EXCEPTION WHEN OTHERS THEN\n    RAISE WARNING 'position stats failed for hand %: %',NEW.id,SQLERRM;\n  END;\n  RETURN NEW;\nEND;\n$function$\n",
+            "name": "hand_history_position_stats",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=public"
+            ],
+            "function": "trg_hand_history_position_stats()",
+            "internal": false,
+            "definition": "CREATE TRIGGER hand_history_position_stats AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_hand_history_position_stats()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres",
+              "service_role=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION public.fn_ca_capture_hand_facts()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF COALESCE(OLD.rake_amount, 0) > 0 OR COALESCE(OLD.bbj_amount, 0) > 0\n     OR OLD.reported IS TRUE THEN\n    INSERT INTO public.ca_hand_financial_facts\n      (hand_id, table_id, tournament_id, hand_number, big_blind, pot_size,\n       rake_amount, bbj_amount, winners, hand_created_at)\n    VALUES (OLD.id, OLD.table_id, OLD.tournament_id, OLD.hand_number, OLD.big_blind,\n            OLD.pot_size, OLD.rake_amount, OLD.bbj_amount, OLD.winners, OLD.created_at)\n    ON CONFLICT (hand_id) DO NOTHING;\n  END IF;\n  RETURN OLD;\nEXCEPTION WHEN OTHERS THEN\n  -- never block a prune; count the miss\n  BEGIN\n    INSERT INTO public.ca_ledger_write_failures (source_table, message, sqlstate)\n    VALUES ('ca_hand_financial_facts', left(SQLERRM, 500), SQLSTATE);\n  EXCEPTION WHEN OTHERS THEN NULL; END;\n  RETURN OLD;\nEND $function$\n",
+            "name": "trg_ca_capture_hand_facts",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=public"
+            ],
+            "function": "fn_ca_capture_hand_facts()",
+            "internal": false,
+            "definition": "CREATE TRIGGER trg_ca_capture_hand_facts BEFORE DELETE ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_hand_facts()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION public.trg_ca_stats_live_from_hand()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF coalesce(current_setting('app.atomic_hand_commit',true),'')='on' THEN RETURN NEW; END IF;\n  INSERT INTO public.ca_hand_player_idx(user_id,created_at,hand_id)\n  SELECT DISTINCT (pl->>'userId')::uuid,NEW.created_at,NEW.id\n    FROM jsonb_array_elements(coalesce(NEW.players,'[]'::jsonb)) pl\n   WHERE pl->>'userId' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n  ORDER BY 1, 3\n  ON CONFLICT DO NOTHING;\n  INSERT INTO public.ca_hand_player_stat(\n    user_id,hand_id,created_at,is_cash,tournament_id,game_variant,\n    big_blind,small_blind,n_players,seat_position,my_blind,won_amt,is_winner,\n    invested_actions,aggro_cnt,call_cnt,vpip,pfr,folded,three_bet,\n    three_bet_opp,faced_three_bet,folded_to_three_bet,cbet_opp,cbet_made,\n    showdown,hand_secs,profit)\n  SELECT f.user_id,f.hand_id,f.created_at,f.is_cash,f.tournament_id,f.game_variant,\n    f.big_blind,f.small_blind,f.n_players,f.seat_position,f.my_blind,f.won_amt,f.is_winner,\n    f.invested_actions,f.aggro_cnt,f.call_cnt,f.vpip,f.pfr,f.folded,f.three_bet,\n    f.three_bet_opp,f.faced_three_bet,f.folded_to_three_bet,f.cbet_opp,f.cbet_made,\n    f.showdown,f.hand_secs,f.profit\n    FROM public.ca_hand_player_facts_one(NEW.id,NULL) f\n  ORDER BY f.user_id, f.hand_id\n  ON CONFLICT (user_id,hand_id) DO NOTHING;\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'trg_ca_stats_live_from_hand: % (hand %)',SQLERRM,NEW.id;\n  RETURN NEW;\nEND;\n$function$\n",
+            "name": "trg_ca_stats_live_from_hand",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=public"
+            ],
+            "function": "trg_ca_stats_live_from_hand()",
+            "internal": false,
+            "definition": "CREATE TRIGGER trg_ca_stats_live_from_hand AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION trg_ca_stats_live_from_hand()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION public.fn_enqueue_hand_daily_missions()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_event jsonb;\n  v_uid uuid;\nBEGIN\n  IF jsonb_typeof(NEW.daily_mission_events)<>'array' THEN RETURN NEW; END IF;\n  FOR v_event IN\n    SELECT value FROM jsonb_array_elements(NEW.daily_mission_events)\n     ORDER BY value->>'user_id',value::text\n  LOOP\n    BEGIN\n      v_uid := (v_event->>'user_id')::uuid;\n      IF v_uid IS NULL THEN CONTINUE; END IF;\n      INSERT INTO public.daily_challenge_event_outbox\n        (user_id,event_key,amounts,magnitudes,threshold_values,occurred_at)\n      VALUES (\n        v_uid,\n        'hand:'||NEW.id::text,\n        v_event->'amounts',\n        coalesce(v_event->'magnitudes','{}'::jsonb),\n        coalesce(v_event->'values','{}'::jsonb),\n        coalesce(NEW.ended_at,NEW.created_at,now())\n      )\n      ON CONFLICT (user_id,event_key) DO NOTHING;\n    EXCEPTION WHEN OTHERS THEN\n      RAISE WARNING 'Daily Missions hand event % could not be queued: %',NEW.id,SQLERRM;\n    END;\n  END LOOP;\n  RETURN NEW;\nEND;\n$function$\n",
+            "name": "trg_enqueue_hand_daily_missions",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=public, pg_temp"
+            ],
+            "function": "fn_enqueue_hand_daily_missions()",
+            "internal": false,
+            "definition": "CREATE TRIGGER trg_enqueue_hand_daily_missions AFTER INSERT ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_enqueue_hand_daily_missions()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres",
+              "service_role=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION public.fn_log_jackpot_hand_deleted()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_payout uuid;\nBEGIN\n  SELECT p.id INTO v_payout\n    FROM public.bbj_payouts p\n   WHERE p.table_id = OLD.table_id AND p.hand_number = OLD.hand_number\n   LIMIT 1;\n\n  IF v_payout IS NOT NULL THEN\n    INSERT INTO public.bbj_hand_evidence_log (kind, payout_id, hand_id, table_id, hand_number, detail)\n    VALUES ('hand_deleted', v_payout, OLD.id, OLD.table_id, OLD.hand_number,\n            jsonb_build_object('has_human', OLD.has_human, 'created_at', OLD.created_at));\n  END IF;\n\n  -- ALWAYS returns OLD. A guard that can refuse a delete here would stall the\n  -- pruner mid-batch, which is a worse outcome than the thing it is guarding.\n  RETURN OLD;\nEND;\n$function$\n",
+            "name": "trg_log_jackpot_hand_deleted",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=public"
+            ],
+            "function": "fn_log_jackpot_hand_deleted()",
+            "internal": false,
+            "definition": "CREATE TRIGGER trg_log_jackpot_hand_deleted BEFORE DELETE ON public.hand_history FOR EACH ROW EXECUTE FUNCTION fn_log_jackpot_hand_deleted()"
+          },
+          {
+            "acl": [
+              "postgres=X/postgres",
+              "service_role=X/postgres"
+            ],
+            "body": "CREATE OR REPLACE FUNCTION public.fn_ca_bomb_hand_keeps_its_award_units()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_distributable numeric;\n  v_units numeric;\n  v_n int;\nBEGIN\n  IF NEW.bomb_pot IS NULL THEN RETURN NULL; END IF;\n\n  v_distributable := round(COALESCE(NEW.pot_size,0)\n                           - COALESCE(NEW.rake_amount,0)\n                           - COALESCE(NEW.bbj_amount,0), 2);\n  /* Nothing to distribute means nothing to attribute: a folded-around bomb, or\n     a hand voided before showdown. Not every bomb row owes a breakdown. */\n  IF v_distributable <= 0 THEN RETURN NULL; END IF;\n\n  SELECT COALESCE(round(sum(amount),2),0), count(*)\n    INTO v_units, v_n\n    FROM public.bomb_pot_award_units\n   WHERE hand_history_id = NEW.id;\n\n  IF v_n = 0 THEN\n    RAISE EXCEPTION\n      'bomb pot hand #% (%) would commit with % chips distributed and no award units. '\n      'Write the hand and its units together through fn_ca_insert_hand_with_awards - '\n      'two separate writes is how 18 bomb pots lost their record in the week to '\n      '2026-09-06.',\n      NEW.hand_number, NEW.id, v_distributable\n      USING ERRCODE = 'integrity_constraint_violation';\n  END IF;\n\n  IF v_units <> v_distributable THEN\n    RAISE EXCEPTION\n      'bomb pot hand #% (%) distributes % chips but its % award unit(s) sum to %.',\n      NEW.hand_number, NEW.id, v_distributable, v_n, v_units\n      USING ERRCODE = 'integrity_constraint_violation';\n  END IF;\n\n  RETURN NULL;\nEND $function$\n",
+            "name": "zz_ca_bomb_hand_keeps_its_award_units",
+            "owner": "postgres",
+            "state": "O",
+            "config": [
+              "search_path=public"
+            ],
+            "function": "fn_ca_bomb_hand_keeps_its_award_units()",
+            "internal": false,
+            "definition": "CREATE CONSTRAINT TRIGGER zz_ca_bomb_hand_keeps_its_award_units AFTER INSERT ON public.hand_history DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.bomb_pot IS NOT NULL)) EXECUTE FUNCTION fn_ca_bomb_hand_keeps_its_award_units()"
+          }
+        ],
+        "constraints": [
+          {
+            "name": "hand_history_pkey",
+            "validated": true,
+            "definition": "PRIMARY KEY (id)"
+          },
+          {
+            "name": "zz_ca_bomb_hand_keeps_its_award_units",
+            "validated": true,
+            "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+          }
+        ]
+      }
+    },
+    {
+      "relation": "engine_table_leases",
+      "evidence": {
+        "at": "2026-09-18T09:19:17.170292+00:00",
+        "columns": [
+          {
+            "name": "table_id",
+            "type": "uuid",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "instance_id",
+            "type": "text",
+            "default": null,
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "engine_version",
+            "type": "text",
+            "default": null,
+            "notnull": false,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "acquired_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "heartbeat_at",
+            "type": "timestamp with time zone",
+            "default": "now()",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "lease_generation",
+            "type": "uuid",
+            "default": "gen_random_uuid()",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          },
+          {
+            "name": "protocol_version",
+            "type": "integer",
+            "default": "1",
+            "notnull": true,
+            "identity": "",
+            "generated": ""
+          }
+        ],
+        "indexes": [
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE UNIQUE INDEX engine_table_leases_pkey ON public.engine_table_leases USING btree (table_id)"
+          },
+          {
+            "ready": true,
+            "valid": true,
+            "definition": "CREATE INDEX engine_table_leases_instance_idx ON public.engine_table_leases USING btree (instance_id)"
+          }
+        ],
+        "triggers": null,
+        "constraints": [
+          {
+            "name": "engine_table_leases_pkey",
+            "validated": true,
+            "definition": "PRIMARY KEY (table_id)"
+          },
+          {
+            "name": "engine_table_leases_protocol_version_check",
+            "validated": true,
+            "definition": "CHECK ((protocol_version = ANY (ARRAY[1, 2])))"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1587,6 +1587,25 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Original Breakfast witness preserves paid standings and terminal ownership
+        id: breakfast_original_witness
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 -B scripts/ci/test-breakfast-original-witness.py --root . \
+            --evidence "$RUNNER_TEMP/breakfast-original-witness-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --pg-bin "$PG_BIN"
+
+      - name: Retain original Breakfast witness qualification
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.breakfast_original_witness.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: breakfast-original-witness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/breakfast-original-witness-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

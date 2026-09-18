@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import {
   TournamentTableBreakRpc,
   TournamentTableBreakCapacityError,
+  TournamentNoStartContinuationRefusedError,
   type TableBreakMemberInput,
   type TournamentTableBreakState,
 } from './tournamentTableBreakRpc.js';
@@ -590,6 +591,8 @@ export class TournamentManager extends TournamentManagerEliminations {
 
   /** One original admission decision per RUNNING sweep; never a dealer restart. */
   protected async recoverF06OriginalAdmissions(): Promise<void> {
+    const pendingContinuation = this.pendingNoStartContinuations.keys().next().value;
+    if (pendingContinuation && (await this.replayNoStartContinuation(pendingContinuation))) return;
     const entries = [...this.tableEngines.entries()];
     if (!entries.length || !this.eliminationMutationAllowed()) return;
     const [tableId, engine] = entries[this.originalAdmissionCursor++ % entries.length];
@@ -729,7 +732,153 @@ export class TournamentManager extends TournamentManagerEliminations {
     this.rememberTournamentBreak(state);
   }
 
+  private readonly pendingNoStartContinuations = new Map<
+    string,
+    {
+      state: TournamentTableBreakState;
+      engine: ServerTableEngine;
+      binding: BreakRetirementBinding;
+    }
+  >();
+
+  private forgetContinuedNoStartPark(
+    state: TournamentTableBreakState,
+    engine: ServerTableEngine
+  ): void {
+    if (
+      this.tableEngines.get(state.source_table_id) !== engine ||
+      !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine) ||
+      !engine.hasReleasedProcessOwnership() ||
+      engine.getF06RetainedPermit()
+    )
+      throw new Error('F06 continued dealer drain changed');
+    const retained = this.retainedTournamentBreakSources.get(state.source_table_id);
+    if (retained && retained.breakId !== state.break_id)
+      throw new Error('F06 continued source belongs to another break');
+    if (
+      [...this.pendingTournamentSeatMoveOutcomes.values()].some(
+        (item) => item.input.sourceTableId === state.source_table_id
+      )
+    )
+      throw new Error('F06 continued source has a pending move');
+    this.pendingNoStartContinuations.delete(state.break_id);
+    this.durableTournamentBreaks.delete(state.break_id);
+    this.resolvedTournamentBreakProposals.delete(state.break_id);
+    this.tournamentBreakArrivalWakes.delete(state.break_id);
+    this.pendingTournamentBreakCustodyIds.delete(state.break_id);
+    this.pendingTournamentCleanupKinds.delete(state.break_id);
+    this.stoppedOriginalBreaks.delete(state.break_id);
+    if (retained) this.retainedTournamentBreakSources.delete(state.source_table_id);
+    engine.releaseTournamentMovePause(this.tournamentMoveBoundaryOwner);
+  }
+
+  private async replayNoStartContinuation(breakId: string): Promise<boolean> {
+    const pending = this.pendingNoStartContinuations.get(breakId);
+    if (!pending) return false;
+    const { state, engine, binding } = pending;
+    const lifecycle = this.captureLifecycleToken();
+    const current = () =>
+      !!lifecycle &&
+      this.lifecycleIsCurrent(lifecycle) &&
+      this.eliminationMutationAllowed() &&
+      this.getTournamentLeaseGeneration() === binding.leaseGeneration &&
+      this.pendingNoStartContinuations.get(breakId) === pending &&
+      this.tableEngines.get(binding.tableId) === engine &&
+      this.gameServer.ownsTournamentTableEngine(binding.tableId, engine);
+    const host = this.gameServer as typeof this.gameServer & Partial<BreakRetirementHost>;
+    if (!host.withRetirementCustody) throw new Error('F06 retirement adapter unavailable');
+    await host.withRetirementCustody(
+      binding,
+      this.tableEngines,
+      current,
+      async (custody) => {
+        custody.assertCurrent();
+        if (custody.engine !== engine || engine.getF06RetainedPermit())
+          throw new Error('F06 no-start original disposition unresolved');
+        try {
+          if (!(await this.tableBreakRpc().continueNoStartLastTable(state))) {
+            this.pendingNoStartContinuations.delete(breakId);
+            throw new Error(
+              'F06 continuation is not eligible; ordinary retirement remains pending'
+            );
+          }
+        } catch (error) {
+          if (error instanceof TournamentNoStartContinuationRefusedError)
+            this.pendingNoStartContinuations.delete(breakId);
+          throw error;
+        }
+        custody.assertCurrent();
+      },
+      async () => {
+        // Only an already positively drained exact pending request reaches here.
+        // Re-claiming a withdrawn park would strand a committed lost reply.
+        if (!current() || !engine.hasReleasedProcessOwnership())
+          throw new Error('F06 continuation replay custody changed');
+      }
+    );
+    this.forgetContinuedNoStartPark(state, engine);
+    await this.readmitContinuedNoStartTable(state.source_table_id, engine);
+    return true;
+  }
+
+  protected async continueExcludedNoStartTable(
+    tableId: string,
+    engine: ServerTableEngine,
+    current: () => boolean
+  ): Promise<boolean> {
+    if (!current() || engine.getF06RetainedPermit()) return false;
+    // A read-only hint keeps ordinary multi-table movement admission intact.
+    // The RPC repeats the complete locked scope check before any transition.
+    const { data: openTables, error: tablesError } = await supabase
+      .from('tables')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .neq('status', 'closed')
+      .or('is_deleted.is.null,is_deleted.eq.false');
+    if (!current() || tablesError || !openTables) throw new Error('F06 open table scope unproven');
+    if (openTables.length !== 1 || openTables[0]?.id !== tableId) return false;
+    const rpc = this.tableBreakRpc();
+    const table = await rpc.tableState(tableId);
+    if (!current() || !table.ok || !table.excluded || !table.break_id) return false;
+    const state = await rpc.reconcile(table.break_id);
+    if (
+      !current() ||
+      state.state !== 'park_requested' ||
+      state.members.length ||
+      state.source_table_id !== tableId ||
+      state.lifecycle !== table.lifecycle ||
+      !state.custody_id
+    )
+      return false;
+    const continued = await this.gameServer.tournamentRetirementCustody.withAdmission(
+      tableId,
+      current,
+      async (assertCurrent) => {
+        try {
+          await engine.stop();
+        } catch (error) {
+          if (!engine.hasReleasedProcessOwnership()) throw error;
+        }
+        assertCurrent();
+        if (!engine.hasReleasedProcessOwnership() || engine.getF06RetainedPermit())
+          throw new Error('F06 continuation candidate not drained');
+        const continued = await rpc.continueNoStartLastTable(state);
+        assertCurrent();
+        return continued;
+      }
+    );
+    // The scope may change while stopping. A terminal candidate cannot fall
+    // through to movement start; ordinary exact-owner recovery must replace it.
+    if (!continued)
+      throw new TournamentNoStartContinuationRefusedError(
+        'F06 continuation eligibility changed after drain'
+      );
+    this.forgetContinuedNoStartPark(state, engine);
+    return true;
+  }
+
   protected async retireTournamentBreak(state: TournamentTableBreakState): Promise<void> {
+    if (await this.replayNoStartContinuation(state.break_id)) return;
     // Historical completion cannot select or stop whichever engine exists now.
     if (state.state === 'acknowledged') {
       await this.finishAcknowledgedTournamentBreak(state);
@@ -787,11 +936,13 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (!host.withRetirementCustody)
       throw new Error('F06 Lease withRetirementCustody adapter unavailable');
     let acknowledged = false;
+    let continued = false;
     const current = () =>
       (!stoppedOriginal || (!!managerLifecycle && this.lifecycleIsCurrent(managerLifecycle))) &&
       this.getTournamentLeaseGeneration() === generation &&
       this.eliminationMutationAllowed() &&
       (acknowledged ||
+        continued ||
         (this.durableTournamentBreaks.get(owned.break_id)?.revision === owned.revision &&
           this.durableTournamentBreaks.get(owned.break_id)?.lifecycle ===
             binding.tableIncarnation));
@@ -826,7 +977,29 @@ export class TournamentManager extends TournamentManagerEliminations {
             if (owned.state === 'park_requested') {
               const begun = await this.prepareParkedTournamentBreak(owned);
               custody.assertCurrent();
-              if (!begun || begun.state !== 'begun')
+              if (!begun) {
+                // The last physical table cannot move its roster elsewhere.
+                // SQL accepts only the original immutable never-started outcome.
+                this.pendingNoStartContinuations.set(owned.break_id, {
+                  state: owned,
+                  engine,
+                  binding,
+                });
+                try {
+                  if (!(await rpc.continueNoStartLastTable(owned))) {
+                    this.pendingNoStartContinuations.delete(owned.break_id);
+                    throw new Error('F06 original placement remains pending');
+                  }
+                } catch (error) {
+                  if (error instanceof TournamentNoStartContinuationRefusedError)
+                    this.pendingNoStartContinuations.delete(owned.break_id);
+                  throw error;
+                }
+                custody.assertCurrent();
+                continued = true;
+                return;
+              }
+              if (begun.state !== 'begun')
                 throw new Error('F06 original placement remains pending');
               owned = begun;
             }
@@ -915,6 +1088,13 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.rememberTournamentBreak(claimed);
       }
     );
+    if (continued) {
+      const engine = this.stoppedOriginalBreaks.get(owned.break_id);
+      if (!engine) throw new Error('F06 continued original missing');
+      this.forgetContinuedNoStartPark(owned, engine);
+      await this.readmitContinuedNoStartTable(owned.source_table_id, engine);
+      return;
+    }
     // Registry work is finished. Client reconstruction owns a lost broadcast.
     if (acknowledged && this.eliminationMutationAllowed())
       await this.broadcast('table_rebalance', {

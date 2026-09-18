@@ -44,6 +44,7 @@ export class TournamentTableBreakRefusedError extends Error {
     super(`F06 refused: ${reason}`);
   }
 }
+export class TournamentNoStartContinuationRefusedError extends Error {}
 export interface TournamentTableBreakState {
   ok: boolean;
   reason: string | null;
@@ -285,6 +286,58 @@ export class TournamentTableBreakRpc {
       excluded: boolean(row.excluded),
       break_id: nullableUuid(row.break_id),
     };
+  }
+  /** Exact terminal no-start receipt; it does not complete a move or abort a hand. */
+  async continueNoStartLastTable(state: TournamentTableBreakState): Promise<boolean> {
+    if (
+      state.tournament_id !== this.tournamentId ||
+      state.state !== 'park_requested' ||
+      state.members.length !== 0 ||
+      !state.custody_id ||
+      state.terminal_handoff_required
+    )
+      throw new Error('F06 continuation premanifest identity required');
+    const { data, error } = await supabase.rpc('fn_f06_continue_no_start_last_table', {
+      p_tournament_id: this.tournamentId,
+      p_lease_generation: this.leaseGeneration,
+      p_table_id: uuid(state.source_table_id),
+      p_lifecycle: decimal(state.lifecycle),
+      p_break_id: uuid(state.break_id),
+      p_park_custody_id: uuid(state.custody_id),
+      p_park_revision: decimal(state.revision),
+    });
+    if (error) {
+      if (
+        error.code === '55000' &&
+        [
+          'F06_CONTINUATION_LAST_TABLE_REQUIRED',
+          'F06_CONTINUATION_POSITIVE_ORIGINAL_REQUIRED',
+        ].includes(error.message)
+      )
+        return false;
+      if (['55000', '22023', '42501', '40001', '55P03'].includes(String(error.code)))
+        throw new TournamentNoStartContinuationRefusedError(error.message);
+      throw new Error(`F06 continuation outcome unproven: ${error.message}`);
+    }
+    const row = record(data);
+    if (
+      row.ok !== true ||
+      row.state !== 'continued_never_started' ||
+      row.credit !== 0 ||
+      uuid(row.tournament_id) !== this.tournamentId ||
+      uuid(row.lease_generation) !== this.leaseGeneration ||
+      uuid(row.table_id) !== state.source_table_id ||
+      decimal(row.lifecycle) !== state.lifecycle ||
+      uuid(row.break_id) !== state.break_id ||
+      uuid(row.park_custody_id) !== state.custody_id ||
+      decimal(row.park_revision) !== state.revision ||
+      uuid(row.original_generation) !== state.custody_generation
+    )
+      throw new Error('F06 no-start continuation identity mismatch');
+    uuid(row.receipt_id);
+    uuid(row.permit_id);
+    if (BigInt(decimal(row.hand_number)) < 1n) throw new Error('F06 continuation hand missing');
+    return true;
   }
   requestPark(breakId: string, tableId: string, lifecycle: string, boundaryId: string) {
     return this.operation('fn_f06_request_park', breakId, {

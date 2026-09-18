@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 72921,
-      "sha256": "6875c136af6dc06ac44cf70b125f2ef3f8439b505097515415c92f26f5f9a181"
+      "bytes": 73180,
+      "sha256": "98a593abab97df771e53477ceafc2d8eeeeb2869e5ac8e52335d4ca364f47f34"
     }
   },
   "nativePgCron": {
@@ -162,6 +162,7 @@
         }
       },
       "reason": "Preserves accepted elimination, Spin fee, PKO and cash-week routes while adding the same retained-submission route; exact merged workflow and selector bytes."
-    }
+    },
+    "noStartParent": "1d1a6cced3cd956e99dd94e3a63de159fcda1010"
   }
 }

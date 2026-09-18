@@ -21,6 +21,23 @@ const expectedCrash = normaliseCrash({
 beforeEach(() => rpc.mockReset());
 
 describe('a Diamond game continuation keeps its accepted round', () => {
+  it('sends the clicked hundredth unchanged to the authenticated cash-out endpoint', async () => {
+    rpc.mockResolvedValue({ data: crash, error: null });
+    await DiamondGamesService.crashSettle(crash.round_id, true, expectedCrash, 257);
+    expect(rpc).toHaveBeenCalledWith('fn_crash_cashout', {
+      p_round_id: crash.round_id,
+      p_multiplier_cents: 257,
+    });
+  });
+  it.each([100, 257.5, NaN, Infinity])(
+    'refuses an invalid clicked multiplier %s before sending',
+    async (cents) => {
+      await expect(
+        DiamondGamesService.crashSettle(crash.round_id, true, expectedCrash, cents)
+      ).rejects.toThrow('Cash Out Starts At 1.01x');
+      expect(rpc).not.toHaveBeenCalled();
+    }
+  );
   it('accepts the saved PostgreSQL Crash settlement for the same round', async () => {
     rpc.mockResolvedValue({ data: crash, error: null });
     const result = await DiamondGamesService.crashSettle(crash.round_id, true, expectedCrash);
@@ -105,4 +122,38 @@ describe('a Diamond game continuation keeps its accepted round', () => {
       }
     }
   );
+});
+
+it('retains the accepted Choice award identity and funding through every later action', async () => {
+  const raw = fixtures.receipts.mines;
+  const original = {
+    ...raw,
+    award_id: '00000000-0000-0000-0000-000000000071',
+    bet_diamonds: 200,
+    bet_chips: 2,
+    bonus: {
+      id: raw.id,
+      base_diamonds: 200,
+      added_diamonds: 0,
+      total_diamonds: 200,
+      entry_diamonds: 100,
+      boost_multiplier: 2,
+    },
+  };
+  const open = parseChoiceRound({ ...original, status: 'open', proof: null, payout_chips: 0 });
+  rpc.mockResolvedValueOnce({ error: null, data: original });
+  await expect(DiamondChoiceService.act(open, 'cashout', null)).resolves.toEqual(original);
+  rpc.mockResolvedValueOnce({
+    error: null,
+    data: {
+      ...original,
+      bonus: { ...original.bonus, base_diamonds: 100, added_diamonds: 100, boost_multiplier: 1 },
+    },
+  });
+  await expect(DiamondChoiceService.act(open, 'cashout', null)).rejects.toThrow('Does Not Match');
+  rpc.mockResolvedValueOnce({
+    error: null,
+    data: { ...original, award_id: '00000000-0000-0000-0000-000000000072' },
+  });
+  await expect(DiamondChoiceService.act(open, 'cashout', null)).rejects.toThrow('Does Not Match');
 });

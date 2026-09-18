@@ -73,6 +73,7 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
+import { HorseFleetMetrics } from './services/HorseFleetMetrics.js';
 import { seatFirstPrecheckPrometheusLines } from './services/seatFirstPrecheckMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
@@ -2171,6 +2172,7 @@ export class GameServer {
    */
   private tournamentMetrics = new TournamentMetrics();
   private spinMetrics = new SpinMetrics();
+  private horseFleetMetrics = new HorseFleetMetrics();
   private replicationMetrics = new ReplicationMetrics();
   /**
    * LISTEN hand_projection_outbox (2026-09-10). Wakes the projection worker
@@ -2765,6 +2767,7 @@ export class GameServer {
       // takes what it advertises, and until this collector shipped nothing had
       // ever checked it except a human typing SQL. Same fail-loud contract.
       this.spinMetrics.start();
+      this.horseFleetMetrics.start();
 
       // Step 3e: Replication gauges. The realtime slot was 136 MB behind on
       // 2026-09-04 and nothing on the platform could see it - logical decoding
@@ -2994,6 +2997,7 @@ export class GameServer {
         : null;
     this.tournamentMetrics.stop();
     this.spinMetrics.stop();
+    this.horseFleetMetrics.stop();
     this.replicationMetrics.stop();
     if (this.breakTimer) {
       clearTimeout(this.breakTimer);
@@ -4075,6 +4079,11 @@ export class GameServer {
       // EQUALITY the Spin format is sold on, and watch the punctuality of
       // the wheel that sells it. See services/SpinMetrics.ts.
       ...this.spinMetrics.toPrometheus(),
+      // ── THE FLEET REPORTS WHAT IT CANNOT FINISH (2026-09-17) ──────────
+      // Decided-but-unfinished tournaments, the horses committed to them,
+      // fees the accounting cannot reconcile, settlement lane waiters and
+      // database deadlocks. See services/HorseFleetMetrics.ts.
+      ...this.horseFleetMetrics.toPrometheus(now),
       // ── PARKED SPIN LAUNCHES (2026-09-10) ────────────────────────────
       // A Spin whose draw the atomic authority refused for a terminal
       // reason is parked instead of retried every second

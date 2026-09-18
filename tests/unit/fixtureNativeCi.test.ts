@@ -16,6 +16,23 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+it('runs the real Diamond playfields once with an isolated software-rendering worker', () => {
+  const beat = ci.jobs['css-beats-e2e'].steps.find(
+    (step: { name?: string }) => step.name === "Run the beats against this commit's CSS"
+  );
+  const commands = beat.run.split('\n').filter((line: string) => line.includes('playwright test'));
+  const playfields = commands.filter((line: string) =>
+    line.includes('tests/e2e/css/diamond-games-playfield.spec.ts')
+  );
+  expect(playfields).toHaveLength(1);
+  expect(playfields[0]).toContain('--workers=1');
+  expect(playfields[0]).toContain('--retries=0');
+  expect(playfields[0]).not.toContain('tests/e2e/multi-table.spec.ts');
+  expect(commands.some((line: string) => line.includes('tests/e2e/multi-table.spec.ts'))).toBe(
+    true
+  );
+});
+
 describe('cash lobby verification reaches the existing browser gate', () => {
   it.each([
     'tests/e2e/global-setup.ts',

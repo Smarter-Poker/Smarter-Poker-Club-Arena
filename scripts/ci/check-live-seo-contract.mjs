@@ -15,7 +15,7 @@
  * the deployed bundle itself says it published:
  *
  *   1. /hub/club-arena/build-info.json must serve the expected SHA (the
- *      publish that triggered this run), retried while the origin cuts over;
+ *      source publisher's selected artifact), retried while the origin cuts over;
  *   2. /hub/club-arena/prerender-manifest.json lists the prerendered routes
  *      and their titles - every one must serve 200 as static HTML carrying
  *      that title, an indexable robots meta, the exact canonical, no
@@ -172,7 +172,9 @@ async function checkShareImage(head) {
   const { status, headers } = await get(head.ogImage);
   const type = headers.get('content-type') || '';
   if (status !== 200 || !type.startsWith('image/'))
-    return fail(`share image ${head.ogImage}: HTTP ${status} ${type || '(no content-type)'}, expected 200 image/*`);
+    return fail(
+      `share image ${head.ogImage}: HTTP ${status} ${type || '(no content-type)'}, expected 200 image/*`
+    );
   notes.push(`share image ${head.ogImage}: ok (${type})`);
 }
 

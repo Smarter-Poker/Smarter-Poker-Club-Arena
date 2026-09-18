@@ -1,0 +1,4 @@
+{
+  "_owner": "Diamond Games: this dependency-free four-route predicate is needed synchronously by AppLayout and the footer before first paint, so selected games occupy the screen without flashing the global shell. It imports no game code. Required build measured 301 kB initial gzip and 2666 kB total, within unchanged budgets.",
+  "modules": ["src/utils/diamondGameRoute.ts"]
+}

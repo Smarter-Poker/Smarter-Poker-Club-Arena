@@ -11,6 +11,7 @@ const backend = vi.hoisted(() => ({
   crashSettle: vi.fn(),
   start: vi.fn(),
   navigate: vi.fn(),
+  awardState: vi.fn(),
   refresh: vi.fn(),
   verify: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -30,11 +31,16 @@ vi.mock('../../src/services/DiamondBonusService', () => ({
   DiamondBonusService: { start: backend.start },
   BonusRefusal: class extends Error {},
 }));
+vi.mock('../../src/services/WheelBonusEntryService', async (original) => ({
+  ...(await original<typeof import('../../src/services/WheelBonusEntryService')>()),
+  WheelBonusEntryService: { state: backend.awardState },
+}));
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'player-a' } }),
 }));
 vi.mock('react-router-dom', () => ({
   useNavigate: () => backend.navigate,
+  useLocation: () => ({ search: '' }),
   useParams: () => ({ clubId: '00000000-0000-0000-0000-000000000003' }),
 }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
@@ -105,8 +111,8 @@ const open = {
   ...settled,
   status: 'open',
   outcome: null,
-  elapsed_ms: 0,
-  multiplier_now_cents: 100,
+  elapsed_ms: 8000,
+  multiplier_now_cents: 257,
   fairness: {
     commit_id: settled.fairness.commit_id,
     client_seed: settled.fairness.client_seed,
@@ -158,6 +164,9 @@ async function mountOpen() {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  backend.awardState
+    .mockReset()
+    .mockResolvedValue({ enabled: false, award: null, gameState: null });
   backend.getState.mockReset().mockResolvedValue(state);
   backend.crashSettle.mockReset();
   backend.start.mockReset();
@@ -176,6 +185,24 @@ afterEach(() => {
 });
 
 describe('Crash settles one displayed round once', () => {
+  it('binds the visible hundredth to the click and freezes it while confirmation is pending', async () => {
+    backend.crashSettle.mockResolvedValueOnce(open);
+    await mountOpen();
+    const shown = screen.getByText('Climbing').nextElementSibling!.textContent!;
+    const cents = Math.round(Number(shown.replace('x', '')) * 100);
+    backend.crashSettle.mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Book The Win' }));
+    expect(backend.crashSettle).toHaveBeenCalledWith(
+      open.round_id,
+      true,
+      expect.objectContaining({ round_id: open.round_id }),
+      cents
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(screen.getByText('Climbing').nextElementSibling!.textContent).toBe(shown);
+  });
   it('does not apply a previous proof verdict while the next entry is pending', async () => {
     const proof = deferred<{
       fair: boolean;
@@ -186,6 +213,7 @@ describe('Crash settles one displayed round once', () => {
     backend.verify.mockReturnValue(proof.promise);
     backend.crashSettle.mockResolvedValueOnce(settled);
     await mountOpen();
+    fireEvent.click(screen.getByText('Check Any Round'));
     fireEvent.click(screen.getByRole('button', { name: 'Verify Round' }));
     expect(backend.verify).toHaveBeenCalledTimes(1);
     backend.start.mockReturnValue(new Promise(() => {}));
@@ -271,5 +299,58 @@ describe('Crash settles one displayed round once', () => {
     });
     expect(backend.crashSettle).toHaveBeenCalledTimes(1);
     expect(backend.toast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe('Crash uses its earned entry without blocking existing cashouts', () => {
+  it('admits the funded award with an empty wallet and binds Double Down to the original stake', async () => {
+    const award = {
+      id: '00000000-0000-0000-0000-000000000077',
+      game: 'crash',
+      base_diamonds: 200,
+      entry_diamonds: 100,
+      boost_multiplier: 2,
+      status: 'pending',
+    };
+    backend.getState.mockResolvedValue({
+      ...state,
+      player: { ...state.player, spendable: 0, diamonds: 0 },
+    });
+    backend.awardState.mockImplementation((_club, _game, doubled) =>
+      Promise.resolve({
+        enabled: true,
+        award,
+        gameState: {
+          ...state,
+          player: { ...state.player, spendable: doubled ? 100 : 0, diamonds: doubled ? 100 : 0 },
+          bets: [{ bet_diamonds: doubled ? 300 : 200, playable: true, cap_cents: 2000 }],
+        },
+      })
+    );
+    backend.start.mockReturnValue(new Promise(() => {}));
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Double Down · +100 Diamonds' }));
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Start 300' }));
+    expect(backend.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        budget: {
+          base: 200,
+          doubled: true,
+          denomination: 1,
+          award: { id: award.id, entryDiamonds: 100, boostMultiplier: 2 },
+        },
+      }),
+      'player-a'
+    );
+  });
+  it('keeps the existing open round cashout plate usable when no new award exists', async () => {
+    backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
+    backend.crashSettle.mockResolvedValueOnce(open);
+    await mountOpen();
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeEnabled();
+    expect(backend.start).not.toHaveBeenCalled();
   });
 });

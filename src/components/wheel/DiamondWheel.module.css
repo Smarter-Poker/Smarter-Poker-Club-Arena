@@ -1,107 +1,153 @@
-/*
- * DIAMOND WHEEL - the wheel's own sheet. CSS Module so nothing here can collide
- * with another page's class (tests/global-css-does-not-leak-across-pages).
- * No :hover anywhere (tests/no-hover-effects.law.test.ts): the wheel is a
- * phone-first surface and the spin button carries the press feedback.
- */
-
 .frame {
   position: relative;
   margin: 0 auto;
-  border-radius: 50%;
-  /* The wheel sits ON the console's glass. The cavity this used to draw
-     (its own radial fill and inset shadows) was a frame drawn in CSS inside
-     a painted frame - one background inside and another out. The rim's own
-     drop shadow is what grounds it now. */
-  background: transparent;
+  aspect-ratio: 1;
+  isolation: isolate;
 }
-
 .svg {
   display: block;
+  width: 100%;
+  height: auto;
   overflow: visible;
+  position: relative;
 }
-
-.segGlass {
-  fill: url(#dw-glass);
+.frame[data-presentation='cabinet'] {
+  aspect-ratio: 720 / 485;
+  overflow: hidden;
 }
-
-.segGoldHot {
-  fill: url(#dw-gold-hot);
+.frame[data-presentation='cabinet'][data-prize-scale='2'] {
+  aspect-ratio: 360 / 345;
 }
-
-.segBlue {
-  fill: url(#dw-blue);
+.frame[data-presentation='cabinet'] .svg {
+  overflow: hidden;
+  filter: drop-shadow(0 15px 6px #000);
 }
-
-.segDark {
-  fill: url(#dw-dark);
+.aura {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 55%, rgb(24 119 242 / 14%) 65%, transparent 74%);
+  filter: blur(16px);
+  animation: wheel-breathe calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
 }
-
-.segLocked {
-  opacity: 0.38;
-  filter: saturate(0.3);
+.frame[data-phase='spinning'] .aura {
+  background: radial-gradient(circle, transparent 50%, rgb(69 173 255 / 45%) 66%, transparent 75%);
 }
-
+.frame[data-upgraded] .aura {
+  background: radial-gradient(circle, transparent 50%, rgb(255 215 0 / 30%) 66%, transparent 75%);
+}
+.bonus,
+.chips,
+.reward,
+.upgrade {
+  isolation: isolate;
+}
+.locked {
+  opacity: 0.4;
+}
 .segText {
-  font-family: var(
-    --realism-font-display,
-    'Rajdhani',
-    'Roboto Condensed',
-    Inter,
-    system-ui,
-    sans-serif
-  );
-  font-size: 13.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  fill: #0b1017;
-  paint-order: stroke fill;
-  stroke: rgba(255, 255, 255, 0.35);
-  stroke-width: 0.6px;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  fill: #f4f7fb;
+  text-shadow:
+    0 2px 0 #000,
+    0 -1px 0 rgb(255 255 255 / 30%);
 }
-
-.segDark .segText,
-.segBlue .segText,
-.segGlass .segText {
-  fill: #eaf6ff;
-  stroke: rgba(0, 0, 0, 0.5);
+.upgrade .segText {
+  fill: #ffd700;
 }
-
-.segDark .segText {
-  fill: #9aa5b3;
+.hubLabel {
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  fill: #e4e7ec;
+  text-shadow: 0 2px 0 #000;
 }
-
-.segLock {
-  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  fill: #e6edf3;
+.hubStone {
+  transform-origin: 500px 490px;
+  animation: wheel-gem calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
 }
-
-/* The lamps are the frame's blue LEDs: dark steel studs at rest, lit in a
-   chase while the wheel turns. */
+.prizeFloat {
+  animation: wheel-prize calc(4s * var(--animation-speed, 1)) ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 7px 4px rgb(0 0 0 / 70%));
+}
+.sectorLight {
+  opacity: 0.55;
+}
+[data-winner] .sectorLight {
+  opacity: 1;
+  filter: drop-shadow(0 0 8px #45adff);
+  animation: wheel-breathe calc(1.4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+[data-winner] .prizeFloat {
+  animation: wheel-winning-prize calc(1.8s * var(--animation-speed, 1)) ease-in-out infinite;
+}
 .lamp {
-  fill: #2a3542;
-  stroke: rgba(0, 0, 0, 0.6);
-  stroke-width: 0.5;
+  opacity: 0.45;
+  animation: wheel-lamp calc(2.16s * var(--animation-speed, 1)) linear infinite;
 }
-
-.lampOn {
-  fill: #8fd4ff;
-  stroke: rgba(0, 0, 0, 0.6);
-  stroke-width: 0.5;
-  filter: drop-shadow(0 0 3px rgba(69, 173, 255, 0.9));
-  animation: dw-lamp-chase calc(0.28s * var(--animation-speed, 1)) steps(2) infinite;
+.frame[data-phase='spinning'] .lamp {
+  r: 8;
 }
-
-@keyframes dw-lamp-chase {
-  from {
+@keyframes wheel-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
     opacity: 1;
   }
-  to {
-    opacity: 0.25;
+}
+@keyframes wheel-gem {
+  0%,
+  100% {
+    transform: translateY(2px) scale(0.96);
   }
+  50% {
+    transform: translateY(-3px) scale(1.02);
+  }
+}
+@keyframes wheel-prize {
+  0%,
+  100% {
+    transform: translateY(1px) rotate(-1.5deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(1.5deg);
+  }
+}
+@keyframes wheel-winning-prize {
+  0%,
+  100% {
+    transform: scale(1.04);
+  }
+  50% {
+    transform: scale(1.13) translateY(-3px);
+  }
+}
+@keyframes wheel-lamp {
+  0%,
+  20%,
+  100% {
+    opacity: 0.15;
+  }
+  8%,
+  12% {
+    opacity: 1;
+  }
+}
+
+.frame[data-presentation='assembly'] {
+  aspect-ratio: 360 / 415;
+  overflow: hidden;
+}
+.frame[data-presentation='assembly'] .svg {
+  overflow: hidden;
+}
+.frame[data-presentation='assembly'] .aura {
+  display: none;
 }

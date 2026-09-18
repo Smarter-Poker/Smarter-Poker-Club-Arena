@@ -1,0 +1,196 @@
+{
+  "two_survivors": {
+    "ok": true,
+    "pool": 105.0,
+    "seats": [
+      {
+        "amount": 50.0,
+        "user_id": "56418309-40c1-ff39-2ab1-ebf9d95b6d67",
+        "position": null,
+        "award_slot": 1,
+        "registration_id": "1810bba6-629f-44f9-bd6e-14ccfbaf8a2d"
+      },
+      {
+        "amount": 50.0,
+        "user_id": "c7384b61-d080-f708-5267-143e4d83f9ab",
+        "position": null,
+        "award_slot": 2,
+        "registration_id": "1402b9ba-dba6-4b22-b29e-e4681ebc8ae5"
+      }
+    ],
+    "awards": [
+      {
+        "amount": 50.0,
+        "user_id": "56418309-40c1-ff39-2ab1-ebf9d95b6d67",
+        "position": null,
+        "payout_id": "144b1241-d592-4226-985a-cc2e76168c4c",
+        "ticket_id": null,
+        "award_slot": 1,
+        "delivery_kind": "seat",
+        "registration_id": "1810bba6-629f-44f9-bd6e-14ccfbaf8a2d"
+      },
+      {
+        "amount": 50.0,
+        "user_id": "c7384b61-d080-f708-5267-143e4d83f9ab",
+        "position": null,
+        "payout_id": "5dcf2a9c-4113-403c-a49a-6edc3a7cbea4",
+        "ticket_id": null,
+        "award_slot": 2,
+        "delivery_kind": "seat",
+        "registration_id": "1402b9ba-dba6-4b22-b29e-e4681ebc8ae5"
+      }
+    ],
+    "status": "COMPLETED",
+    "remainder": {
+      "amount": 5.0,
+      "user_id": "932ff0da-3901-aaea-b490-35eab488c7af",
+      "position": 3
+    },
+    "target_id": "e85a1495-5041-4bbe-efb2-7710b4c549ad",
+    "accounting": {
+      "reason": null,
+      "status": "cancelled",
+      "payable": false,
+      "banked_at": "2026-09-17T20:30:30.763081+00:00",
+      "bank_amount": 0,
+      "bank_club_id": "5b0f0a30-58f4-cab6-a07b-fefd45b7cac6",
+      "bank_union_id": null,
+      "tournament_id": "f21ad7f8-3030-29af-d95c-c76b83d6b8e4",
+      "bank_receipt_id": null,
+      "bank_receipt_kind": "none",
+      "accounting_version": 2,
+      "source_fingerprint": "d41d8cd98f00b204e9800998ecf8427e",
+      "recognized_source_count": 0
+    },
+    "field_size": 4,
+    "seat_count": 2,
+    "settled_at": "2026-09-17T20:30:30.763081+00:00",
+    "ticket_cost": 50.0,
+    "fully_settled": true,
+    "qualifier_ids": [
+      "56418309-40c1-ff39-2ab1-ebf9d95b6d67",
+      "c7384b61-d080-f708-5267-143e4d83f9ab"
+    ],
+    "tournament_id": "f21ad7f8-3030-29af-d95c-c76b83d6b8e4",
+    "receipt_version": 3,
+    "source_closeout": {
+      "closed_at": "2026-09-17T20:30:30.763081+00:00",
+      "source_seat_ids": [
+        "9098dcd1-3fbf-8a62-2043-6ca3f0b6b2ce",
+        "b218c29a-ae46-d9e8-716c-f24404e4a073",
+        "badd5711-5d2e-0e65-24b2-e5aa5c0c35f4",
+        "cd6c2b2e-522d-7192-3f4a-826da7043b5a"
+      ],
+      "escrow_closed_at": "2026-09-17T20:30:30.763081+00:00",
+      "source_table_ids": ["8cc976b0-d336-84ca-c61e-9d9adaa71074"],
+      "escrow_close_note": "atomic satellite terminal receipt: exact zero",
+      "released_seat_ids": [
+        "9098dcd1-3fbf-8a62-2043-6ca3f0b6b2ce",
+        "cd6c2b2e-522d-7192-3f4a-826da7043b5a"
+      ],
+      "source_seat_count": 4,
+      "source_table_count": 1,
+      "released_seat_count": 2
+    },
+    "cash_ticket_count": 0,
+    "source_seat_count": 4,
+    "entry_ticket_count": 0,
+    "source_table_count": 1,
+    "ticket_award_count": 2,
+    "released_seat_count": 2
+  },
+  "same_hand_overflow": {
+    "ok": true,
+    "pool": 105.0,
+    "seats": [
+      {
+        "amount": 50.0,
+        "user_id": "6155f0b5-ff4a-81cd-2662-4ef440089c1b",
+        "position": null,
+        "award_slot": 1,
+        "registration_id": "79b4b0bc-c156-4aaa-aaff-c5af4c55ecb5"
+      },
+      {
+        "amount": 50.0,
+        "user_id": "5bddc957-2be6-81de-4c9d-585bd8bbd046",
+        "position": 2,
+        "award_slot": 2,
+        "registration_id": "718c4a2e-48e9-4f97-9f03-91d08c6e6896"
+      }
+    ],
+    "awards": [
+      {
+        "amount": 50.0,
+        "user_id": "6155f0b5-ff4a-81cd-2662-4ef440089c1b",
+        "position": null,
+        "payout_id": "5c43f69c-af34-4173-957f-44f10edba1ed",
+        "ticket_id": null,
+        "award_slot": 1,
+        "delivery_kind": "seat",
+        "registration_id": "79b4b0bc-c156-4aaa-aaff-c5af4c55ecb5"
+      },
+      {
+        "amount": 50.0,
+        "user_id": "5bddc957-2be6-81de-4c9d-585bd8bbd046",
+        "position": 2,
+        "payout_id": "252769c1-32f7-4eff-aea1-b602c3e5a491",
+        "ticket_id": null,
+        "award_slot": 2,
+        "delivery_kind": "seat",
+        "registration_id": "718c4a2e-48e9-4f97-9f03-91d08c6e6896"
+      }
+    ],
+    "status": "COMPLETED",
+    "remainder": {
+      "amount": 5.0,
+      "user_id": "bd0b7dc7-f76c-4b77-6142-79cdf0077ea2",
+      "position": 3
+    },
+    "target_id": "43a26a6e-7e10-0278-1278-dfb6101614b0",
+    "accounting": {
+      "reason": null,
+      "status": "cancelled",
+      "payable": false,
+      "banked_at": "2026-09-17T20:30:30.763081+00:00",
+      "bank_amount": 0,
+      "bank_club_id": "ea5a34fe-7ad9-3404-bfa0-8ffe4641803b",
+      "bank_union_id": null,
+      "tournament_id": "22f81a82-9f82-9cb3-c356-307fa0282e7f",
+      "bank_receipt_id": null,
+      "bank_receipt_kind": "none",
+      "accounting_version": 2,
+      "source_fingerprint": "d41d8cd98f00b204e9800998ecf8427e",
+      "recognized_source_count": 0
+    },
+    "field_size": 4,
+    "seat_count": 2,
+    "settled_at": "2026-09-17T20:30:30.763081+00:00",
+    "ticket_cost": 50.0,
+    "fully_settled": true,
+    "qualifier_ids": ["6155f0b5-ff4a-81cd-2662-4ef440089c1b"],
+    "tournament_id": "22f81a82-9f82-9cb3-c356-307fa0282e7f",
+    "receipt_version": 3,
+    "source_closeout": {
+      "closed_at": "2026-09-17T20:30:30.763081+00:00",
+      "source_seat_ids": [
+        "2c4000af-14c9-13ce-45b5-3c3857af88d4",
+        "4b9032ba-2b7f-722d-8efb-a57296fa36c3",
+        "77cc2f39-3377-0234-0fec-a2445fd99eba",
+        "d82b0fb1-a554-b18b-994d-5419b5c9656e"
+      ],
+      "escrow_closed_at": "2026-09-17T20:30:30.763081+00:00",
+      "source_table_ids": ["9e8d6b56-8dc8-4c3d-4a19-6b545a45f40f"],
+      "escrow_close_note": "atomic satellite terminal receipt: exact zero",
+      "released_seat_ids": ["d82b0fb1-a554-b18b-994d-5419b5c9656e"],
+      "source_seat_count": 4,
+      "source_table_count": 1,
+      "released_seat_count": 1
+    },
+    "cash_ticket_count": 0,
+    "source_seat_count": 4,
+    "entry_ticket_count": 0,
+    "source_table_count": 1,
+    "ticket_award_count": 2,
+    "released_seat_count": 1
+  }
+}

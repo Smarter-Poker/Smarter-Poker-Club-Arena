@@ -114,6 +114,12 @@ import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import {
+  tournamentFinishRefusalAlertsSuppressedTotal,
+  classifyFinishRefusal,
+  finishRefusalRetryDelayMs,
+  type FinishRefusalReason,
+} from '../observability/engineInstruments.js';
+import {
   parsePlayedSpinLaunchRecoveryProof,
   type PlayedSpinLaunchRecoveryProof,
 } from './playedSpinLaunchRecovery.js';
@@ -431,6 +437,81 @@ export abstract class TournamentManagerBase {
   static readonly FINAL_TABLE_DEAL_POLL_MS = 10_000;
   /** Preserve fast recovery while a known zero-stack player is unresolved. */
   static readonly UNRESOLVED_BUST_RETRY_MS = 5_000;
+
+  /**
+   * WHY A REFUSED FINISH STOPPED ASKING EVERY FIVE SECONDS (2026-09-18)
+   *
+   * `releaseFinishGuard` hands a definitively refused finish back to the
+   * scheduler after UNRESOLVED_BUST_RETRY_MS, which is five seconds. That is
+   * right for a deadlock victim or a statement timeout, and it is what the
+   * 2026-09-09 law meant by "a refused finish asks for another pass".
+   *
+   * It is wrong for a refusal that is a rule. Measured on production at 03:46
+   * UTC on 2026-09-18: the elimination scheduler held 652 queued tournaments
+   * against four slots with its oldest wait at 469 seconds, because 547
+   * decided tournaments were asking, every five seconds, a question the
+   * database had already answered 1,462 times with
+   * tournament_fee_sources_require_reconciliation. Healthy tournaments waited
+   * nearly eight minutes behind them for an elimination to be recorded. Every
+   * one of those passes also raised its own critical money alert; 3,076 were
+   * open and unread.
+   *
+   * These two fields are the whole correction. The refusal stays eligible for
+   * a corrected retry. It stops re-asking on a five-second clock, and it tells
+   * an operator the same thing once instead of once a pass.
+   */
+  private finishRefusalStreak = 0;
+  private lastFinishRefusalReason: FinishRefusalReason | null = null;
+
+  /**
+   * Record a proven refusal and answer whether this is news: a reason this
+   * tournament has not already reported. An unproven (unknown-outcome) failure
+   * is always news, because it is never repeated on a clock.
+   */
+  protected noteFinishRefusal(provenRefusal: boolean, error: unknown): boolean {
+    if (!provenRefusal) return true;
+    const reason = classifyFinishRefusal(error instanceof Error ? error.message : String(error));
+    if (reason === this.lastFinishRefusalReason) {
+      this.finishRefusalStreak += 1;
+      return false;
+    }
+    this.lastFinishRefusalReason = reason;
+    this.finishRefusalStreak = 1;
+    return true;
+  }
+
+  /** The delay releaseFinishGuard hands the scheduler for the next pass. */
+  protected finishRetryDelayMs(): number {
+    const base = TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS;
+    const reason = this.lastFinishRefusalReason;
+    if (!reason || this.finishRefusalStreak < 1) return base;
+    return finishRefusalRetryDelayMs(reason, this.finishRefusalStreak, base);
+  }
+
+  /** A committed settlement ends the streak, so the next refusal is news. */
+  protected clearFinishRefusalStreak(): void {
+    this.finishRefusalStreak = 0;
+    this.lastFinishRefusalReason = null;
+  }
+
+  /**
+   * Raise a refusal's critical alert the first time this tournament reports
+   * this reason, and count the repeats instead of sending them.
+   */
+  protected async alertFinishRefusalOnce(
+    isNew: boolean,
+    severity: Parameters<typeof raiseFinancialAlert>[0],
+    source: string,
+    message: string,
+    context: Record<string, unknown> = {}
+  ): Promise<void> {
+    if (isNew) {
+      await raiseFinancialAlert(severity, source, message, context);
+      return;
+    }
+    const reason = this.lastFinishRefusalReason;
+    if (reason) tournamentFinishRefusalAlertsSuppressedTotal.inc(1, { reason });
+  }
   /**
    * How many times in a row the knockout door may refuse the SAME player
    * before the bust pass records the rest of the field without them.
@@ -815,7 +896,17 @@ export abstract class TournamentManagerBase {
       tournamentId: this.tournamentId,
       proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
     };
-    for (const engine of this.tableEngines.values()) {
+    for (const [tableId, engine] of this.tableEngines) {
+      // A drained original can remain in both registries until its F06/move
+      // outcome is known. Keep it retired; extending its proof is unnecessary
+      // and its old deadline is not evidence that this live manager lost lease.
+      if (engine.isTerminalDrainedForTournamentLease?.(tableId, authority)) {
+        if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
+          this.fenceForTournamentLeaseLoss();
+          return false;
+        }
+        continue;
+      }
       if (!engine.renewEngineLeaseProof(authority)) {
         this.fenceForTournamentLeaseLoss();
         return false;
@@ -972,6 +1063,56 @@ export abstract class TournamentManagerBase {
     }
     this.tableEngineRecoveryTimers.clear();
     this.tableEngineRecoveryAttempts.clear();
+  }
+
+  /** Only the recorded new format can complete with an unranked qualifier cohort. */
+  protected isCohortSatellite(): boolean {
+    return (
+      this.tournamentCache?.format_contract === 'mtt-v2' &&
+      Boolean(this.tournamentCache.satellite_target_id || this.tournamentCache.satellite_target)
+    );
+  }
+
+  protected satelliteQualifierBoundaryPending = false;
+  protected satelliteQualifierBoundaryGeneration = 0;
+  private readonly satelliteQualifierEngines = new Map<string, ServerTableEngine>();
+
+  private holdSatelliteQualifierEngine(tableId: string, engine: ServerTableEngine): void {
+    this.satelliteQualifierEngines.set(tableId, engine);
+    // This call arms the existing sticky next-hand fence synchronously. Zero
+    // is a nonblocking probe, never a claim that physical parking succeeded.
+    void engine
+      .parkForTerminalCloseout(0)
+      .catch((error) =>
+        reportError(error, 'Tournament.satellite_qualifier_boundary_failed', { tableId })
+      );
+  }
+
+  protected holdSatelliteQualifierBoundary(): void {
+    this.satelliteQualifierBoundaryPending = true;
+    this.satelliteQualifierBoundaryGeneration++;
+    for (const [tableId, engine] of this.tableEngines) {
+      this.holdSatelliteQualifierEngine(tableId, engine);
+    }
+  }
+
+  /** A positive authoritative continuation releases only this exact generation. */
+  protected releaseSatelliteQualifierBoundary(generation: number): boolean {
+    if (generation !== this.satelliteQualifierBoundaryGeneration || !this.isRunning()) return false;
+    for (const [tableId, engine] of this.satelliteQualifierEngines) {
+      if (
+        this.tableEngines.get(tableId) !== engine ||
+        this.gameServer.getTableEngine(tableId) !== engine ||
+        !engine.isRunning()
+      )
+        return false;
+    }
+    this.satelliteQualifierBoundaryPending = false;
+    for (const engine of this.satelliteQualifierEngines.values())
+      engine.releaseTerminalCloseoutPause();
+    this.satelliteQualifierEngines.clear();
+    this.advanceHandForHandBarrier();
+    return true;
   }
 
   /** A replacement inherits every pause authority before it can deal. */
@@ -1269,6 +1410,11 @@ export abstract class TournamentManagerBase {
     const lifecycle = this.lifecycleEpoch.current();
     const tableId = this.tableIdForManagedEngine(engine);
     this.holdManagedTableUntilBookedStart(engine);
+    if (tableId && this.isCohortSatellite()) {
+      // Adoption cannot infer that a previous manager left more players than
+      // tickets. Read the serialized state before this generation deals.
+      this.holdSatelliteQualifierBoundary();
+    }
     const operation = (async () => {
       if (!lifecycle || !tableId || !this.tournamentLeaseGeneration)
         throw new Error('f06_engine_admission_identity_missing');
@@ -1660,10 +1806,22 @@ export abstract class TournamentManagerBase {
   protected wireEliminationWake(engine: ServerTableEngine): void {
     engine.onHandComplete((_tableId, finalStacks) => {
       if (finalStacks.some((player) => Number(player.stack) <= 0)) {
+        if (this.isCohortSatellite()) {
+          const tableId = this.tableIdForManagedEngine(engine);
+          if (!tableId || !this.isRunning() || this.gameServer.getTableEngine(tableId) !== engine)
+            return;
+          // Stop the next deal before asynchronous elimination and HfH can
+          // release the boundary. Other hands may finish; none may start.
+          this.holdSatelliteQualifierBoundary();
+        }
         this.requestEliminationSweep();
       }
     });
-    engine.onPauseReady(() => this.advanceHandForHandBarrier());
+    engine.onPauseReady(() => {
+      if (this.satelliteQualifierBoundaryPending) {
+        this.requestEliminationSweep('satellite_qualifier_boundary');
+      } else this.advanceHandForHandBarrier();
+    });
     engine.onRestartRequired((reason) => {
       const lifecycle = this.captureLifecycleToken();
       const tableId = this.tableIdForManagedEngine(engine);
@@ -3072,7 +3230,13 @@ export abstract class TournamentManagerBase {
    */
   private advanceHandForHandBarrier(): void {
     // The tournament break owns this shared pause until its own end edge.
-    if (!this.handForHandActive || !this.running || this.isOnBreak()) return;
+    if (
+      !this.handForHandActive ||
+      !this.running ||
+      this.isOnBreak() ||
+      this.satelliteQualifierBoundaryPending
+    )
+      return;
     const expectedIds = [...this.handForHandTableIds];
     if (expectedIds.length === 0) return;
     const engines = expectedIds.map((tableId) => this.tableEngines.get(tableId));
@@ -3106,6 +3270,7 @@ export abstract class TournamentManagerBase {
    * successfully broken/closed table must not hold every survivor forever.
    */
   protected retireManagedTableFromHandForHand(tableId: string): void {
+    this.satelliteQualifierEngines.delete(tableId);
     if (!this.handForHandTableIds.delete(tableId)) return;
     this.advanceHandForHandBarrier();
   }

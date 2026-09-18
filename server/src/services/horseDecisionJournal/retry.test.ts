@@ -117,6 +117,57 @@ describe('bounded private Horse journal retry ownership', () => {
     b.emit({ type: 'UNAVAILABLE' });
     await p.stop();
   });
+  it.each(['recorded', 'replayed'] as const)(
+    'renews the retry budget only after a complete exact %s ACK',
+    async (status) => {
+      vi.useFakeTimers();
+      const writers = Array.from({ length: 6 }, () => new Writer()),
+        notes: string[] = [];
+      let index = 0;
+      const restart = vi.fn(() => writers[++index]!);
+      const p = new HorseDecisionJournalPublisher(writers[0]!, (key) => notes.push(key), {
+        restart,
+        now: () => Date.now(),
+      });
+      writers[0]!.emit({ type: 'READY' });
+      for (let episode = 0; episode < 3; episode++) {
+        const before = writers[index]!;
+        p.record('decision', 'hand', `turn-${episode}`, { episode });
+        const original = structuredClone(before.batch());
+        before.emit({ type: 'RETRYABLE' });
+        await tick(1000);
+        expect(restart).toHaveBeenCalledTimes(episode + 1);
+        const replacement = writers[index]!;
+        replacement.emit({ type: 'READY' });
+        expect(replacement.batch()).toEqual(original);
+        expect(notes.filter((key) => key === 'phase15_journal_retry_recovered')).toHaveLength(
+          episode
+        );
+        replacement.ack(status);
+      }
+      expect(notes.filter((key) => key === `phase15_journal_${status}`)).toHaveLength(3);
+      expect(notes.filter((key) => key === 'phase15_journal_retry_recovered')).toHaveLength(3);
+      expect(notes).not.toContain('phase15_journal_unavailable');
+
+      // A later batch that never receives its exact ACK still has only two
+      // replacements. READY alone must not replenish that batch's budget.
+      p.record('execution', 'hand', 'unacknowledged', {});
+      const unacknowledged = structuredClone(writers[index]!.batch());
+      for (const delay of [250, 1000]) {
+        writers[index]!.emit({ type: 'RETRYABLE' });
+        await tick(delay);
+        writers[index]!.emit({ type: 'READY' });
+        expect(writers[index]!.batch()).toEqual(unacknowledged);
+      }
+      writers[index]!.emit({ type: 'RETRYABLE' });
+      await tick(10000);
+      expect(restart).toHaveBeenCalledTimes(5);
+      expect(notes.filter((key) => key === 'phase15_journal_retry_exhausted')).toHaveLength(1);
+      expect(notes.filter((key) => key === 'phase15_journal_unavailable')).toHaveLength(1);
+      await p.stop();
+      expect(notes).toContain('phase15_journal_shutdown_unverified');
+    }
+  );
   it('allows at most two replacement workers even when each reports a transient lock', async () => {
     const { a, b, c, p, notes, restart } = fixture();
     a.emit({ type: 'RETRYABLE' });

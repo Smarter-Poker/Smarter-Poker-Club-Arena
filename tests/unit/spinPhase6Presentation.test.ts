@@ -29,8 +29,11 @@ describe('spin phase 6 wiring', () => {
 
   it('skips full siblings before Play Again navigation', () => {
     const host = read('src/components/tournament/TournamentRankingHost.tsx');
-    expect(host).toContain("select('id, current_players, max_players')");
-    expect(host).toContain('candidate.current_players ?? 0) < Number(candidate.max_players ?? 0');
+    expect(host).toMatch(/select\(\s*'format_contract, id, current_players, max_players/);
+    expect(host).toContain('isSeatFirstTournamentFormat(candidate)');
+    expect(host).toContain(
+      '!isTournamentEntryUnavailable(candidate, Number(candidate.current_players ?? 0))'
+    );
   });
 
   it('keeps the buy-in sheet keyboard-contained and usable on short screens', () => {

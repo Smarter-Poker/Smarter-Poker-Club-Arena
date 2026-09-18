@@ -1,4 +1,10 @@
 import { tournamentEntryWindowOpen } from '../utils/tournamentEntryWindow';
+import {
+  getTournamentEntryCapacity,
+  isTournamentEntryUnavailable,
+  getTournamentFormatKind,
+  readTournamentFormat,
+} from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * CLUB HOME PAGE — Premium-Style Club Dashboard
@@ -59,6 +65,7 @@ import {
   isHiddenClusterMember,
   tournamentEntry,
   classifyTournament,
+  isSeatFirstTournament,
   type LobbyEntry,
   type LobbyTableRow,
   type LobbyTournamentRow,
@@ -326,6 +333,7 @@ interface TableData {
 }
 
 interface TournamentData {
+  format_contract?: unknown;
   id: string;
   name: string;
   game_type: string;
@@ -335,7 +343,9 @@ interface TournamentData {
   start_time: string;
   status: string;
   current_players: number;
-  max_players: number;
+  max_players: number | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
   starting_chips: number;
   /**
    * Dan 2026-08-19: late-registration state is derived from these, not from a
@@ -1691,7 +1701,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            guess — we fall through to the honest "no longer open" message. */
         const { data: originRow, error: originErr } = await supabase
           .from('tournaments')
-          .select('club_id, buy_in_amount')
+          .select(
+            'format_contract, club_id, buy_in_amount, max_players, satellite_target_id, satellite_target'
+          )
           .eq('id', t.id)
           .maybeSingle();
         if (originErr) {
@@ -1702,23 +1714,31 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         const originClubId = (originRow as { club_id?: string } | null)?.club_id;
         const originBuyIn = Number((originRow as { buy_in_amount?: number } | null)?.buy_in_amount);
 
-        const { data: sibs, error: sibErr } = originClubId
-          ? await supabase
-              .from('tournaments')
-              .select('id')
-              .eq('status', 'REGISTERING')
-              .eq('variant', variant === 'sng' ? 'sng' : 'spin')
-              .eq('club_id', originClubId)
-              .eq('name', t.name)
-              .eq('buy_in_amount', Number.isFinite(originBuyIn) ? originBuyIn : t.buy_in_amount)
-              .neq('id', t.id)
-              .order('created_at', { ascending: false })
-              .limit(1)
-          : { data: null, error: null };
+        const { data: sibs, error: sibErr } =
+          originClubId && readTournamentFormat(originRow)
+            ? await supabase
+                .from('tournaments')
+                .select(
+                  'format_contract, id, max_players, current_players, satellite_target_id, satellite_target'
+                )
+                .eq('status', 'REGISTERING')
+                .eq('format_contract', readTournamentFormat(originRow))
+                .eq('club_id', originClubId)
+                .eq('name', t.name)
+                .eq('buy_in_amount', Number.isFinite(originBuyIn) ? originBuyIn : t.buy_in_amount)
+                .neq('id', t.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+            : { data: null, error: null };
         if (sibErr) {
           reportError?.(sibErr, 'ClubHomePage.spinQuickJoin_sibling_lookup');
         }
-        const sibId = (sibs || [])[0]?.id as string | undefined;
+        const targetId = originRow?.satellite_target_id ?? originRow?.satellite_target;
+        const sibId = (sibs || []).find(
+          (row) =>
+            !isTournamentEntryUnavailable(row, row.current_players) &&
+            (row.satellite_target_id ?? row.satellite_target ?? null) === (targetId ?? null)
+        )?.id as string | undefined;
         if (sibId && !spinJoinCancelRef.current) {
           const sibTableId = await tableService.resolveTournamentLiveTable(sibId);
           if (spinJoinCancelRef.current) return;
@@ -2791,7 +2811,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const clubTournamentQuery = supabase
         .from('tournaments')
         .select(
-          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
+          'format_contract, id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, tournament_type, satellite_target_id, satellite_target, variant, table_size, late_reg_mins, late_reg_levels, rebuy_levels, prize_pool_finalized, started_at, current_level, blind_structure, level_started_at, spin_multiplier, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty, is_pinned, is_vip_only, label_as_new, hide_club_name'
         )
         // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
         // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
@@ -3338,7 +3358,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           !rowPassesFilter(advSpec, advValue, {
             variant: t.game_type,
             price: total,
-            seats: Number(t.max_players) || 0,
+            seats: getTournamentEntryCapacity(t) ?? 0,
             // The "Table Size" slider filters on seats at a TABLE, not on the
             // size of the field. Null when the row does not carry it, which
             // skips the range rather than measuring an MTT against 2-9.
@@ -3866,6 +3886,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const handleRegister = useCallback(
     (t: LobbyTournamentRow) => {
+      if (isTournamentEntryUnavailable(t, t.current_players)) {
+        toast.error('Tournament entry is unavailable');
+        return;
+      }
       /* THE LAST DOOR A SEAT-FIRST GAME COULD SNEAK THROUGH (Dan 2026-08-28).
          A Spin or Heads-Up must never reach the Sign Up dialog: it charges
          the buy-in with no seat attached, and Dan's binding rule is the seat
@@ -3875,10 +3899,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          gate makes the wrong wiring land on the right flow instead of on a
          charge. Same definition as fn_take_seat_and_buy_in: variant spin,
          or a 2-seat sng. */
-      const variantWord = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
-      const seatFirst =
-        variantWord === 'spin' ||
-        (variantWord === 'sng' && Number(t.max_players) > 0 && Number(t.max_players) <= 2);
+      const variantWord = getTournamentFormatKind(t);
+      const seatFirst = isSeatFirstTournament(t);
       if (seatFirst) {
         spinQuickJoin(
           { id: t.id, name: t.name, buy_in_amount: Number(t.buy_in_amount) || 0 },

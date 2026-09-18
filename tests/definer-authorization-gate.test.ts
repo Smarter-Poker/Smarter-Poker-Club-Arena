@@ -28,6 +28,7 @@ let anonReadableDefiners: Verdict;
 let unrevokedClones: Verdict;
 let unscopedRosterDefiners: Verdict;
 let clonedFunctions: (sql: string) => string[];
+let stripComments: (sql: string) => string;
 let effectiveGrants: (
   sql: string,
   name: string
@@ -48,6 +49,7 @@ beforeAll(async () => {
   unscopedRosterDefiners = mod.unscopedRosterDefiners;
   clonedFunctions = mod.clonedFunctions;
   effectiveGrants = mod.effectiveGrants;
+  stripComments = mod.stripComments;
 });
 
 /** The shape that shipped nineteen times: no GRANT written at all, which
@@ -59,6 +61,93 @@ AS $function$
 BEGIN UPDATE clubs SET member_count = COALESCE(member_count, 0) + p_delta WHERE id = p_club_id; END;
 $function$;
 `;
+
+describe('SQL comment boundaries cannot erase or invent authorization', () => {
+  const revoke =
+    'REVOKE ALL ON FUNCTION public.increment_member_count(uuid, integer) FROM PUBLIC, anon, authenticated;';
+
+  it.each([
+    "SELECT 'an unfinished /* comment';",
+    'SELECT "an unfinished /* comment";',
+    'SELECT $payload${"old":"BEGIN\\n /* unfinished","new":"-- data"}$payload$;',
+    "SELECT 'it''s -- data /*';",
+    String.raw`SELECT E'it\'s -- data /*';`,
+  ])('keeps a real revoke after quoted comment markers: %s', (payload) => {
+    const sql = `${payload}\n${OPEN_WRITER}\n${revoke}\n/* a later migration comment */`;
+    expect(stripComments(sql)).toContain(revoke);
+    expect(unauthorisedWriters(OPEN_WRITER, new Set(), sql)).toEqual([]);
+    expect(anonReadableDefiners(OPEN_WRITER, new Set(), sql)).toEqual([]);
+    expect(
+      unauthorisedWriters(
+        OPEN_WRITER,
+        new Set(),
+        `${sql}\nGRANT EXECUTE ON FUNCTION public.increment_member_count(uuid, integer) TO authenticated;`
+      )
+    ).toEqual(['increment_member_count']);
+  });
+
+  it('strips nested real comments, including authorization claims in function bodies', () => {
+    const sql = OPEN_WRITER.replace(
+      'BEGIN UPDATE',
+      'BEGIN /* outer /* inner */ auth.uid() */ UPDATE'
+    );
+    expect(unauthorisedWriters(sql)).toEqual(['increment_member_count']);
+    expect(unauthorisedWriters(`${sql}\n/* outer /* inner */ ${revoke} */`)).toEqual([
+      'increment_member_count',
+    ]);
+  });
+
+  it.each(["'", '"', '$example$'])(
+    'does not accept a quoted %s revoke as an ACL change',
+    (quote) => {
+      expect(unauthorisedWriters(`${OPEN_WRITER}\nSELECT ${quote}${revoke}${quote};`)).toEqual([
+        'increment_member_count',
+      ]);
+    }
+  );
+
+  it('reads real ACL statements in a DO body without trusting quoted examples', () => {
+    expect(unauthorisedWriters(`${OPEN_WRITER}\nDO $acl$ BEGIN ${revoke} END $acl$;`)).toEqual([]);
+    expect(
+      unauthorisedWriters(`${OPEN_WRITER}\nDO $acl$ BEGIN RAISE NOTICE '${revoke}'; END $acl$;`)
+    ).toEqual(['increment_member_count']);
+  });
+
+  it('continues treating dynamic write and grant strings conservatively', () => {
+    const dynamic = OPEN_WRITER.replace(
+      /BEGIN UPDATE[\s\S]*?END;/,
+      "BEGIN EXECUTE 'UPDATE clubs SET member_count = 0'; END;"
+    );
+    expect(unauthorisedWriters(dynamic)).toEqual(['increment_member_count']);
+    expect(
+      unauthorisedWriters(
+        `${dynamic}\n${revoke}\nDO $$ BEGIN EXECUTE 'GRANT EXECUTE ON FUNCTION public.increment_member_count(uuid, integer) TO authenticated;'; END $$;`
+      )
+    ).toEqual(['increment_member_count']);
+  });
+
+  it('keeps the recorded-format ACL in the actual combined migration payload', () => {
+    const migration = (name: string) =>
+      readFileSync(resolve(__dirname, '..', 'supabase/migrations', name), 'utf8');
+    const payload = migration('20260917061000_mtt_dual_capacity_admission_preparation.sql');
+    const declaration = migration(
+      '20260917064000_mtt_recorded_format_seat_consumers_preparation.sql'
+    );
+    const later = migration(
+      '20260917233447_tournament_original_funding_and_obligation_receipts.sql'
+    );
+    const combined = [payload, declaration, later].join('\n');
+    expect(anonReadableDefiners(declaration, new Set(), combined)).toEqual([]);
+    const missingRevoke = combined.replace(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_tournament_recorded_seat_first\([^;]+;/,
+      ''
+    );
+    expect(missingRevoke).not.toEqual(combined);
+    expect(anonReadableDefiners(declaration, new Set(), missingRevoke)).toEqual([
+      'fn_ca_tournament_recorded_seat_first',
+    ]);
+  });
+});
 
 describe('the checker catches the shape that shipped', () => {
   it('applies a multi-function revoke to every signature, including multi-argument functions', () => {

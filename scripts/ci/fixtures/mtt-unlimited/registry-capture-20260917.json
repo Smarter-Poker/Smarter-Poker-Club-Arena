@@ -1,0 +1,22 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "captured_at": "2026-09-17 05:22:51.945297+00",
+  "table": "public.ca_chip_store_coverage",
+  "query": "SELECT current_timestamp AS captured_at, to_jsonb(c) AS row FROM public.ca_chip_store_coverage c WHERE c.store IN ('escrow','prize_liability') ORDER BY c.store",
+  "rows": [
+    {
+      "notes": "Outstanding tournament tickets. ADDED 2026-09-11: it was in no list at all, which is the whole of the five supply incidents of that morning",
+      "store": "escrow",
+      "added_at": "2026-09-11T16:10:27.128168+00:00",
+      "treatment": "counted",
+      "counted_by": "ticket_escrow"
+    },
+    {
+      "notes": "tournament_escrow prize_balance, or the counters where an event has no escrow row yet",
+      "store": "prize_liability",
+      "added_at": "2026-09-11T16:10:27.128168+00:00",
+      "treatment": "counted",
+      "counted_by": "tournament_liability"
+    }
+  ]
+}

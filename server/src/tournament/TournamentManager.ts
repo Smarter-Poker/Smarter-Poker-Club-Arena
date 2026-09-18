@@ -603,7 +603,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       this.tableEngines.get(tableId) === engine &&
       this.gameServer.ownsTournamentTableEngine(tableId, engine);
     if (!current()) return;
-    const permit = engine.getF06RetainedPermit?.();
+    const permit = engine.getF06RecoverablePermit?.();
     if (permit) {
       if (!['unknown', 'reserved', 'terminated'].includes(permit.phase)) return;
       if (
@@ -658,7 +658,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (!engine || !this.gameServer.ownsTournamentTableEngine(state.source_table_id, engine))
       return false;
     if (this.stoppedOriginalBreaks.get(state.break_id) === engine) return true;
-    const permit = engine.getF06RetainedPermit?.();
+    const permit = engine.getF06RecoverablePermit?.();
     if (!permit || !['unknown', 'reserved', 'terminated'].includes(permit.phase)) return false;
     const b = permit.binding;
     if (

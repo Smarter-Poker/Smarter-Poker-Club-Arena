@@ -59,8 +59,8 @@
       "bytes": 5738
     },
     "scripts/qualification/spin-receipt-lane.py": {
-      "sha256": "084ff96a7ee4fc6f624d4fe5e869d720d9c13577fd6ce7eff870c06f72b60008",
-      "bytes": 18128
+      "sha256": "4a1780865e06c5577ae230605d5f0b6d1d14390348a4eb143f6e6b9fea3b1df0",
+      "bytes": 17798
     },
     "scripts/qualification/spin-receipt-lane.sql": {
       "sha256": "cccbba45bb171919ae12be892493556c7d45f46bb5596ebb525a4ae992a2bf71",

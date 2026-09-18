@@ -43,6 +43,7 @@
  * quickJoinRanking and satelliteAwardPlan.
  */
 
+import { isUnlimitedTournamentFormat } from './tournamentPresentation';
 import { isInLateRegistration, isRunning } from './tournamentFilters';
 
 /**
@@ -94,6 +95,7 @@ export type OverlayTier = 'potential' | 'live';
 
 /** The `tournaments` columns this needs. Anything wider is accepted. */
 export interface OverlayCandidate {
+  format_contract?: unknown;
   id: string;
   name?: string | null;
   status?: string | null;
@@ -165,6 +167,7 @@ export function overlayFor(
   t: OverlayCandidate,
   now: number = Date.now()
 ): OverlayAnnouncement | null {
+  if (!isUnlimitedTournamentFormat(t)) return null;
   const guarantee = num(t.guaranteed_prize);
   if (guarantee <= 0) return null; // no guarantee, no overlay, ever
 
@@ -190,7 +193,9 @@ export function overlayFor(
   if (!running) return null;
 
   // The registration door must still be open, or there is nothing to sell.
-  if (!isInLateRegistration({ ...t, name: t.name || '', max_players: t.max_players ?? 0 }, now)) {
+  if (
+    !isInLateRegistration({ ...t, name: t.name || '', max_players: t.max_players ?? null }, now)
+  ) {
     return null;
   }
 

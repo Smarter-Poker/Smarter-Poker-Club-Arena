@@ -1,3 +1,8 @@
+import {
+  getTournamentFormatKind,
+  getTournamentEntryCapacity,
+  isSeatFirstTournamentFormat,
+} from '../utils/tournamentPresentation';
 import { uuid } from '../utils/uuid';
 import { isUUID } from '../utils/clubIdResolver';
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
@@ -76,6 +81,10 @@ import { useState, useEffect, useCallback, useRef, startTransition, useMemo } fr
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
+import {
+  readMySatelliteQualifierResult,
+  type SatelliteQualifierResult,
+} from '../services/satelliteQualifierResult';
 import {
   clearSessionPurchaseRequestId,
   readOrCreateSessionPurchaseRequestId,
@@ -323,7 +332,6 @@ import BombPotWheel, {
 import { spinRevealToDealMs, spinRevealTotalMs } from '../config/spinSpec';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
-import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
 import {
   tournamentService,
@@ -533,14 +541,14 @@ async function fetchTournamentResult(
         .maybeSingle(),
       supabase
         .from('tournaments')
-        /* variant + tournament_type: the two columns isSpinTournament reads.
-           Either one may carry it, which is why the helper checks both and
-           nothing here re-derives it. Without them the ranking card branded
-           EVERY finished event a Spin.
+        /* format_contract identifies a known settled format. Unmarked historical
+           rows keep their results without claiming a Spin format.
 
            is_mystery_bounty gates the second read below, so an ordinary
            freezeout makes no extra RPC calls on the way out of the table. */
-        .select('name, current_players, variant, tournament_type, is_mystery_bounty')
+        .select(
+          'format_contract, name, current_players, variant, tournament_type, is_mystery_bounty'
+        )
         .eq('id', tournamentId)
         .maybeSingle(),
       supabase
@@ -574,7 +582,18 @@ async function fetchTournamentResult(
       }
     }
 
+    const qualification =
+      entry?.status === 'winner' && entry.position === null
+        ? await readMySatelliteQualifierResult(tournamentId, userId)
+        : null;
     return {
+      satelliteQualification: qualification?.qualified
+        ? {
+            targetId: qualification.targetId,
+            deliveryKind: qualification.deliveryKind as 'seat' | 'ticket' | 'cash',
+            amount: qualification.amount,
+          }
+        : undefined,
       name: tourney?.name || undefined,
       finishPlace: entry?.position ?? null,
       entrants: entryCount ?? tourney?.current_players ?? null,
@@ -589,7 +608,7 @@ async function fetchTournamentResult(
       // "how many add-ons", so coerce rather than trusting the column type.
       addOns:
         typeof entry?.add_on === 'boolean' ? (entry.add_on ? 1 : 0) : Number(entry?.add_on) || 0,
-      isSpin: isSpinTournament(tourney as SpinRevealSubject | null),
+      isSpin: getTournamentFormatKind(tourney) === 'spin',
     };
   } catch (err) {
     reportError(err, 'TablePage.fetchTournamentResult');
@@ -12525,7 +12544,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized'
+              'format_contract, is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -12652,36 +12671,14 @@ function LiveTablePage({
                 durationSec: durSec,
               });
             }
-            /* THE VARIANT DECIDES A SIT-AND-GO, NOT ONLY THE TYPE (2026-09-03).
-               The spin arm reads BOTH columns; the sng arm read only
-               tournament_type, and every ordinary duel carries 'SNG' there so
-               nothing showed. The satellite heads-up added today carries
-               tournament_type 'SATELLITE' (its finish awards a seat) with
-               variant 'sng' and two seats - and fell through to 'mtt', which
-               is not cosmetic: it picks the player's MTT felt, deck and button
-               art instead of their Heads Up set, prints "Poker Tournament" on
-               the masthead, labels the tab MTT, and arms the FINAL TABLE
-               announcement on a two-handed game.
-
-               Seat count is the last word: a table with two seats is a duel
-               whatever its columns say, which is the same rule buyIn.ts
-               rakeRateFor and the seat-first gates already use. */
-            const maxSeatsForFmt = Number(tournData.max_players ?? 0);
-            const fmt =
-              String(tournData.variant ?? '').toLowerCase() === 'spin' ||
-              String(tournData.tournament_type ?? '').toUpperCase() === 'SPIN'
-                ? ('spin' as const)
-                : String(tournData.variant ?? '').toLowerCase() === 'sng' ||
-                    String(tournData.tournament_type ?? '').toUpperCase() === 'SNG' ||
-                    (maxSeatsForFmt > 0 && maxSeatsForFmt <= 2)
-                  ? ('sng' as const)
-                  : ('mtt' as const);
+            const formatKind = getTournamentFormatKind(tournData);
+            const fmt = formatKind === 'unknown' ? null : formatKind;
             setTournamentFormat(fmt);
             // Seat-first = a Spin (3 seats) or a Heads-Up (2 seats) that has
             // not started. Once it is RUNNING the seats are no longer for
             // sale and the normal tournament table rules apply.
             {
-              const maxP = Number(tournData.max_players ?? 0);
+              const maxP = getTournamentEntryCapacity(tournData);
               const openForSeats =
                 String(tournData.status ?? '') === 'REGISTERING' ||
                 String(tournData.status ?? '') === 'ANNOUNCED';
@@ -12692,13 +12689,13 @@ function LiveTablePage({
                  small field"), which then offered seat-first buy-ins on a
                  table whose RPC answers not_a_seat_first_game. A cap only
                  means something when it is a real number. */
-              const isSeatFirst = fmt === 'spin' || (maxP > 0 && maxP <= 2);
+              const isSeatFirst = isSeatFirstTournamentFormat(tournData) && maxP !== null;
               if (isSeatFirst && openForSeats) {
                 const cost =
                   Number(tournData.buy_in_amount ?? 0) + Number(tournData.buy_in_fee ?? 0);
                 setSeatFirstBuyIn({
                   cost,
-                  seats: maxP || (fmt === 'spin' ? 3 : 2),
+                  seats: maxP!,
                   label: fmt === 'spin' ? 'Spin' : 'Heads Up',
                   startingChips: Number(tournData.starting_chips ?? 0),
                 });
@@ -12820,20 +12817,9 @@ function LiveTablePage({
               }
             }
           } else {
-            /**
-             * The tournament row could not be read - deleted, denied by RLS, or
-             * a transient failure. `tournamentFormat` would otherwise stay null
-             * for the life of the table, and useUserThemeSettings deliberately
-             * WAITS on a null format rather than guessing MTT, so the player
-             * would sit on the default felt permanently instead of their own.
-             *
-             * 'mtt' is the honest fallback: it is what getThemeGameType already
-             * answers for any tournament it cannot identify, so this restores
-             * the pre-2026-08-22 behaviour for the one case where the format is
-             * genuinely unknowable, without reintroducing the guess for the
-             * 99.9% of tables where it is known.
-             */
-            setTournamentFormat((prev) => prev ?? 'mtt');
+            // Missing authoritative format does not identify an MTT.
+            setTournamentFormat(null);
+            setSeatFirstBuyIn(null);
           }
 
           if (
@@ -12945,6 +12931,7 @@ function LiveTablePage({
         // Subscribe to tournament break + add-on events via Realtime
         if (table.tournament_id) {
           const durableTournamentId = table.tournament_id;
+          let committedSatelliteQualification: SatelliteQualifierResult | null = null;
           const durableTournamentName = table.name;
           const breakChanKey = `t-break-${durableTournamentId}`;
 
@@ -13055,7 +13042,19 @@ function LiveTablePage({
                     /* The broadcast is authoritative for these two: it is what
                        the engine just decided, whereas the row may not have
                        been written yet when we read it. */
-                    finishPlace: position || full?.finishPlace || null,
+                    finishPlace: committedSatelliteQualification?.qualified
+                      ? null
+                      : position || full?.finishPlace || null,
+                    satelliteQualification: committedSatelliteQualification?.qualified
+                      ? {
+                          targetId: committedSatelliteQualification.targetId,
+                          deliveryKind: committedSatelliteQualification.deliveryKind as
+                            | 'seat'
+                            | 'ticket'
+                            | 'cash',
+                          amount: committedSatelliteQualification.amount,
+                        }
+                      : full?.satelliteQualification,
                     /* Round 12: lets the ranking card's Play Again seat the
                        player into the open same-stake sibling game. */
                     tournamentId: tid || undefined,
@@ -13207,43 +13206,66 @@ function LiveTablePage({
                 lastError = resultError ?? new Error('Tournament result row is unavailable');
                 if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
               }
+              if (!isMounted) return;
+              if (lastError || !result) {
+                if (!durableCompletionFailureReported) {
+                  durableCompletionFailureReported = true;
+                  reportError(lastError, 'TablePage.durable_tournament_result_unreadable', {
+                    tournamentId: durableTournamentId,
+                    userId,
+                  });
+                }
+                scheduleDurableCompletionRetry();
+                return;
+              }
+              if (!['winner', 'eliminated'].includes(String(result.status))) {
+                scheduleDurableCompletionRetry();
+                return;
+              }
+              if (result.status === 'winner' && result.position === null) {
+                try {
+                  const qualification = await readMySatelliteQualifierResult(
+                    durableTournamentId,
+                    userId
+                  );
+                  if (!isMounted) return;
+                  if (qualification?.qualified) {
+                    committedSatelliteQualification = qualification;
+                    durableCompletionHandled = true;
+                    if (durableCompletionRetryTimer) {
+                      clearTimeout(durableCompletionRetryTimer);
+                      durableCompletionRetryTimer = null;
+                    }
+                    goToLobbyWithResult(0, qualification.amount, 2500);
+                    return;
+                  }
+                } catch (error) {
+                  reportError(error, 'TablePage.satellite_qualifier_result_unreadable', {
+                    tournamentId: durableTournamentId,
+                  });
+                }
+              }
+              const position = Number(result.position);
+              if (!Number.isInteger(position) || position < 1) {
+                scheduleDurableCompletionRetry();
+                return;
+              }
+              const prize = Number(result.prize) || 0;
+              durableCompletionHandled = true;
+              if (durableCompletionRetryTimer) {
+                clearTimeout(durableCompletionRetryTimer);
+                durableCompletionRetryTimer = null;
+              }
+              if (position === 1) {
+                setTournamentWinner({
+                  prize,
+                  name: formatGameTitle(durableTournamentName) || 'Tournament',
+                });
+              }
+              goToLobbyWithResult(position, prize, position === 1 ? 7000 : 2500);
             } finally {
               durableCompletionLookupInFlight = false;
             }
-            if (!isMounted) return;
-            if (lastError || !result) {
-              if (!durableCompletionFailureReported) {
-                durableCompletionFailureReported = true;
-                reportError(lastError, 'TablePage.durable_tournament_result_unreadable', {
-                  tournamentId: durableTournamentId,
-                  userId,
-                });
-              }
-              scheduleDurableCompletionRetry();
-              return;
-            }
-            if (!['winner', 'eliminated'].includes(String(result.status))) {
-              scheduleDurableCompletionRetry();
-              return;
-            }
-            const position = Number(result.position);
-            if (!Number.isInteger(position) || position < 1) {
-              scheduleDurableCompletionRetry();
-              return;
-            }
-            const prize = Number(result.prize) || 0;
-            durableCompletionHandled = true;
-            if (durableCompletionRetryTimer) {
-              clearTimeout(durableCompletionRetryTimer);
-              durableCompletionRetryTimer = null;
-            }
-            if (position === 1) {
-              setTournamentWinner({
-                prize,
-                name: formatGameTitle(durableTournamentName) || 'Tournament',
-              });
-            }
-            goToLobbyWithResult(position, prize, position === 1 ? 7000 : 2500);
           }
 
           async function verifyDurableCompletion(): Promise<void> {
@@ -13746,6 +13768,15 @@ function LiveTablePage({
                       seat?.id === elimData.userId ? { ...seat, status: 'eliminated' } : seat
                     ),
                   }));
+                }
+              } else if (data?.type === 'satellite_qualifiers') {
+                // Never infer a rank or payment from the announcement. The
+                // same per-entrant immutable receipt owns initial/reconnect.
+                if (
+                  data.payload?.tournamentId === durableTournamentId &&
+                  data.payload?.receiptVersion === 3
+                ) {
+                  void exitFromDurableCompletion();
                 }
               } else if (data?.type === 'final_table_deal') {
                 // The deal broadcast describes the whole chop, but this
@@ -19894,7 +19925,7 @@ function LiveTablePage({
       const { data, error } = await supabase
         .from('tournaments')
         .select(
-          'status, variant, tournament_type, max_players, buy_in_amount, buy_in_fee, starting_chips'
+          'format_contract, status, variant, tournament_type, satellite_target_id, satellite_target, max_players, buy_in_amount, buy_in_fee, starting_chips'
         )
         .eq('id', tournId)
         .maybeSingle();
@@ -19914,6 +19945,8 @@ function LiveTablePage({
         status?: string;
         variant?: string;
         tournament_type?: string;
+        satellite_target_id?: string | null;
+        satellite_target?: string | null;
         max_players?: number;
         buy_in_amount?: number;
         buy_in_fee?: number;
@@ -19929,12 +19962,11 @@ function LiveTablePage({
         return;
       }
 
-      const isSpin =
-        String(row.variant ?? '').toLowerCase() === 'spin' ||
-        String(row.tournament_type ?? '').toUpperCase() === 'SPIN';
-      const maxP = Number(row.max_players ?? 0);
+      const formatKind = getTournamentFormatKind(row);
+      const isSpin = formatKind === 'spin';
+      const maxP = getTournamentEntryCapacity(row);
       // Same seat-first test as fn_take_seat_and_buy_in and the engine's gate.
-      const isSeatFirst = isSpin || (maxP > 0 && maxP <= 2);
+      const isSeatFirst = isSeatFirstTournamentFormat(row) && maxP !== null;
       if (!isSeatFirst) {
         seatFirstRecoveryDoneRef.current = tournId;
         return;
@@ -19958,10 +19990,10 @@ function LiveTablePage({
              thing its own comment says must never happen.
 
          The row we just read carries the answer, so use it. */
-      setTournamentFormat(isSpin ? 'spin' : maxP > 0 && maxP <= 2 ? 'sng' : 'mtt');
+      setTournamentFormat(isSpin ? 'spin' : 'sng');
       setSeatFirstBuyIn({
         cost: Number(row.buy_in_amount ?? 0) + Number(row.buy_in_fee ?? 0),
-        seats: maxP || (isSpin ? 3 : 2),
+        seats: maxP!,
         label: isSpin ? 'Spin' : 'Heads Up',
         startingChips: Number(row.starting_chips ?? 0),
       });

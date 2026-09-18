@@ -1,0 +1,317 @@
+{
+  "columns": [
+    [
+      "union_pnl_inventory_events",
+      "event_id",
+      "bigint",
+      true,
+      null,
+      null,
+      "a"
+    ],
+    [
+      "union_pnl_inventory_events",
+      "source_name",
+      "text",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_inventory_events",
+      "row_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_inventory_events",
+      "observed_at",
+      "timestamp with time zone",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_inventory_events",
+      "transaction_id",
+      "xid8",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_inventory_events",
+      "operation",
+      "text",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_inventory_events",
+      "before_row",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_inventory_events",
+      "after_row",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_original_flows",
+      "ledger_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_original_flows",
+      "transaction_id",
+      "xid8",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_original_flows",
+      "recognized_at",
+      "timestamp with time zone",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_original_flows",
+      "game_scope",
+      "jsonb",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_original_flows",
+      "ledger_snapshot",
+      "jsonb",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_transaction_frames",
+      "transaction_id",
+      "xid8",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_transaction_frames",
+      "observed_at",
+      "timestamp with time zone",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "union_pnl_transaction_frames",
+      "book_start",
+      "timestamp with time zone",
+      true,
+      null,
+      null,
+      ""
+    ]
+  ],
+  "indexes": [
+    [
+      "union_pnl_inventory_boundary",
+      "CREATE INDEX union_pnl_inventory_boundary ON public.union_pnl_inventory_events USING btree (observed_at, event_id)",
+      true,
+      true
+    ],
+    [
+      "union_pnl_inventory_events_pkey",
+      "CREATE UNIQUE INDEX union_pnl_inventory_events_pkey ON public.union_pnl_inventory_events USING btree (event_id)",
+      true,
+      true
+    ],
+    [
+      "union_pnl_inventory_identity",
+      "CREATE INDEX union_pnl_inventory_identity ON public.union_pnl_inventory_events USING btree (source_name, row_id, event_id DESC)",
+      true,
+      true
+    ],
+    [
+      "union_pnl_inventory_transaction",
+      "CREATE INDEX union_pnl_inventory_transaction ON public.union_pnl_inventory_events USING btree (transaction_id, source_name)",
+      true,
+      true
+    ],
+    [
+      "union_pnl_original_flows_expr_recognized_at_idx",
+      "CREATE INDEX union_pnl_original_flows_expr_recognized_at_idx ON public.union_pnl_original_flows USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at)",
+      true,
+      true
+    ],
+    [
+      "union_pnl_original_flows_pkey",
+      "CREATE UNIQUE INDEX union_pnl_original_flows_pkey ON public.union_pnl_original_flows USING btree (ledger_id)",
+      true,
+      true
+    ],
+    [
+      "union_pnl_transaction_frames_pkey",
+      "CREATE UNIQUE INDEX union_pnl_transaction_frames_pkey ON public.union_pnl_transaction_frames USING btree (transaction_id)",
+      true,
+      true
+    ]
+  ],
+  "policies": [],
+  "triggers": [
+    [
+      "union_pnl_inventory_events",
+      "original_pnl_inventory_events_immutable",
+      "CREATE TRIGGER original_pnl_inventory_events_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_inventory_events FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ],
+    [
+      "union_pnl_original_flows",
+      "original_pnl_immutable",
+      "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_original_flows FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ],
+    [
+      "union_pnl_transaction_frames",
+      "original_pnl_immutable",
+      "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_transaction_frames FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()",
+      "O"
+    ]
+  ],
+  "relations": [
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "union_pnl_inventory_events",
+      "owner": "postgres",
+      "force_rls": false
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "union_pnl_original_flows",
+      "owner": "postgres",
+      "force_rls": false
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "union_pnl_transaction_frames",
+      "owner": "postgres",
+      "force_rls": false
+    }
+  ],
+  "captured_at": "2026-09-18T00:58:35.731245+00:00",
+  "constraints": [
+    [
+      "union_pnl_inventory_events",
+      "union_pnl_inventory_events_check",
+      "CHECK (((before_row IS NOT NULL) OR (after_row IS NOT NULL)))",
+      true
+    ],
+    [
+      "union_pnl_inventory_events",
+      "union_pnl_inventory_events_check1",
+      "CHECK ((((before_row IS NULL) OR ((jsonb_typeof(before_row) = 'object'::text) AND ((before_row ->> 'id'::text) = (row_id)::text))) IS TRUE))",
+      true
+    ],
+    [
+      "union_pnl_inventory_events",
+      "union_pnl_inventory_events_check2",
+      "CHECK ((((after_row IS NULL) OR ((jsonb_typeof(after_row) = 'object'::text) AND ((after_row ->> 'id'::text) = (row_id)::text))) IS TRUE))",
+      true
+    ],
+    [
+      "union_pnl_inventory_events",
+      "union_pnl_inventory_events_check3",
+      "CHECK ((((operation = ANY (ARRAY['baseline'::text, 'INSERT'::text])) AND (before_row IS NULL) AND (after_row IS NOT NULL)) OR ((operation = 'UPDATE'::text) AND (before_row IS NOT NULL) AND (after_row IS NOT NULL)) OR ((operation = 'DELETE'::text) AND (before_row IS NOT NULL) AND (after_row IS NULL))))",
+      true
+    ],
+    [
+      "union_pnl_inventory_events",
+      "union_pnl_inventory_events_observed_at_check",
+      "CHECK (isfinite(observed_at))",
+      true
+    ],
+    [
+      "union_pnl_inventory_events",
+      "union_pnl_inventory_events_operation_check",
+      "CHECK ((operation = ANY (ARRAY['baseline'::text, 'INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))",
+      true
+    ],
+    [
+      "union_pnl_inventory_events",
+      "union_pnl_inventory_events_pkey",
+      "PRIMARY KEY (event_id)",
+      true
+    ],
+    [
+      "union_pnl_inventory_events",
+      "union_pnl_inventory_events_source_name_check",
+      "CHECK ((source_name = ANY (ARRAY['union_clubs'::text, 'tables'::text, 'table_seats'::text, 'tournaments'::text, 'tournament_players'::text])))",
+      true
+    ],
+    [
+      "union_pnl_original_flows",
+      "union_pnl_original_flows_pkey",
+      "PRIMARY KEY (ledger_id)",
+      true
+    ],
+    [
+      "union_pnl_original_flows",
+      "union_pnl_original_flows_transaction_id_fkey",
+      "FOREIGN KEY (transaction_id) REFERENCES union_pnl_transaction_frames(transaction_id)",
+      true
+    ],
+    [
+      "union_pnl_transaction_frames",
+      "union_pnl_transaction_frames_observed_at_check",
+      "CHECK (isfinite(observed_at))",
+      true
+    ],
+    [
+      "union_pnl_transaction_frames",
+      "union_pnl_transaction_frames_pkey",
+      "PRIMARY KEY (transaction_id)",
+      true
+    ]
+  ]
+}

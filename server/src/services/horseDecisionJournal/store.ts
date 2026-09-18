@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import type { DatabaseSync as Database } from 'node:sqlite';
+import type { DatabaseSync as Database, SQLOutputValue } from 'node:sqlite';
 // Native Node resolution also works with the repository's older Vite builtin
 // inventory; this is the bundled Node implementation, not an added dependency.
 const { DatabaseSync } = createRequire(import.meta.url)(
@@ -576,10 +576,10 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       records: segment.records.length,
     });
   }
-  /** Caller holds the catalog transaction. Validate every pending segment before
-   * publishing or deciding whether a selected hand is affected; this is at most
-   * one original batch (two segments, sixteen records), never a catalog scan. */
-  private readPendingSegments(): Segment[] {
+  /** Copy at most one pending batch while the caller holds its catalog snapshot.
+   * Decode/hashing may then run outside a read transaction without changing the
+   * pending custody observed by that snapshot. */
+  private capturePendingRows() {
     const db = this.catalog!;
     const sizes = db
       .prepare('SELECT length(compressed) AS bytes FROM archive_pending LIMIT 3')
@@ -592,6 +592,11 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       throw Error('Horse archive pending exceeds bounds');
     const pending = db.prepare('SELECT * FROM archive_pending ORDER BY id LIMIT 3').all();
     if (pending.length > 2) throw Error('Horse archive pending exceeds bounds');
+    return pending;
+  }
+  /** Validate every captured pending segment before publishing or deciding
+   * whether a selected hand is affected; never authorize from a partial batch. */
+  private readPendingSegments(pending = this.capturePendingRows()): Segment[] {
     const segments: Segment[] = [];
     let total = 0,
       records = 0;
@@ -760,16 +765,18 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
     this.assertLegacy();
     const old = super.readHand(handKey);
     if (!this.archive) return old;
+    const oldBytes = old.reduce((n, r) => n + Buffer.byteLength(horseJournalJson(r)), 0);
     const db = this.catalog!;
+    let snapshot: {
+      pending: ReturnType<HorseDecisionJournalStore['capturePendingRows']>;
+      segments: Array<{
+        meta: Record<string, SQLOutputValue>;
+        rows: Array<Record<string, SQLOutputValue>>;
+      }>;
+    };
     db.exec('BEGIN');
     try {
-      // Validate all pending custody in this same snapshot. A valid unrelated
-      // batch does not invalidate already committed evidence for this hand.
-      // Pending evidence for the selected hand remains explicitly unavailable.
-      const pending = this.readPendingSegments();
-      let decodedBytes = pending.reduce((total, segment) => total + segment.decodedBytes, 0);
-      if (pending.some((segment) => segment.records.some((record) => record.handKey === handKey)))
-        throw Error('Horse archive custody pending');
+      const pending = this.capturePendingRows();
       const rows = db
         .prepare(
           'SELECT * FROM archive_events WHERE hand_key=? ORDER BY producer_id,sequence LIMIT 257'
@@ -777,15 +784,9 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         .all(handKey);
       if (
         old.length + rows.length > 256 ||
-        old.reduce((n, r) => n + Buffer.byteLength(horseJournalJson(r)), 0) +
-          rows.reduce((n, r) => n + Number(r.record_bytes), 0) >
-          8 * 1024 * 1024
+        oldBytes + rows.reduce((n, r) => n + Number(r.record_bytes), 0) > 8 * 1024 * 1024
       )
         throw Error('Horse journal read exceeds bounds');
-      const records = [...old],
-        seen = new Set(old.map((r) => r.eventId));
-      // Bound total decoding independently of selected-record bytes. An
-      // unusually dispersed hand is explicitly unavailable, never truncated.
       const grouped = new Map<string, typeof rows>();
       for (const row of rows) {
         const key = String(row.segment_sha);
@@ -793,39 +794,53 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
         group.push(row);
         grouped.set(key, group);
       }
-      for (const [sha, group] of grouped) {
+      const segments = [...grouped].map(([sha, rows]) => {
         const meta = db.prepare('SELECT * FROM archive_segments WHERE sha=?').get(sha);
         if (!meta) throw Error('Horse archive index corruption');
-        decodedBytes += Number(meta.decoded_bytes);
-        if (!Number.isSafeInteger(decodedBytes) || decodedBytes > 32 * 1024 * 1024)
-          throw Error('Horse journal archive read exceeds decode bounds');
-        const segment = this.readSegment(meta);
-        for (const row of group) {
-          const record = segment.records[Number(row.ordinal)];
-          if (
-            !record ||
-            record.eventId !== row.event_id ||
-            record.producerId !== row.producer_id ||
-            record.sequence !== row.sequence ||
-            record.handKey !== handKey ||
-            digest(horseJournalJson(record)) !== row.record_sha ||
-            Buffer.byteLength(horseJournalJson(record)) !== row.record_bytes ||
-            seen.has(record.eventId)
-          )
-            throw Error('Horse archive index corruption');
-          seen.add(record.eventId);
-          records.push(Object.freeze(record));
-        }
-      }
-      this.assertLegacy();
+        return { meta, rows };
+      });
       db.exec('COMMIT');
-      return records.sort(
-        (a, b) => a.producerId.localeCompare(b.producerId) || a.sequence - b.sequence
-      );
+      snapshot = { pending, segments };
     } catch (e) {
       rollback(db);
       throw e;
     }
+    // Immutable segments and copied pending bytes remain bound to that one
+    // snapshot. Release the SQLite shared lock before file I/O, decompression
+    // and hashing, so an observer cannot hold up the writer's durable COMMIT.
+    const pending = this.readPendingSegments(snapshot.pending);
+    let decodedBytes = pending.reduce((total, segment) => total + segment.decodedBytes, 0);
+    if (pending.some((segment) => segment.records.some((record) => record.handKey === handKey)))
+      throw Error('Horse archive custody pending');
+    const records = [...old],
+      seen = new Set(old.map((r) => r.eventId));
+    for (const { meta, rows } of snapshot.segments) {
+      // Keep the cumulative bound independent of selected-record bytes.
+      decodedBytes += Number(meta.decoded_bytes);
+      if (!Number.isSafeInteger(decodedBytes) || decodedBytes > 32 * 1024 * 1024)
+        throw Error('Horse journal archive read exceeds decode bounds');
+      const segment = this.readSegment(meta);
+      for (const row of rows) {
+        const record = segment.records[Number(row.ordinal)];
+        if (
+          !record ||
+          record.eventId !== row.event_id ||
+          record.producerId !== row.producer_id ||
+          record.sequence !== row.sequence ||
+          record.handKey !== handKey ||
+          digest(horseJournalJson(record)) !== row.record_sha ||
+          Buffer.byteLength(horseJournalJson(record)) !== row.record_bytes ||
+          seen.has(record.eventId)
+        )
+          throw Error('Horse archive index corruption');
+        seen.add(record.eventId);
+        records.push(Object.freeze(record));
+      }
+    }
+    this.assertLegacy();
+    return records.sort(
+      (a, b) => a.producerId.localeCompare(b.producerId) || a.sequence - b.sequence
+    );
   }
   /** Aggregate-only private operational output. Reserved includes the sole
    * pending batch; no IDs, cards, paths or record bodies are returned. */

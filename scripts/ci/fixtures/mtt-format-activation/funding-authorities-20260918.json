@@ -1,0 +1,899 @@
+{
+  "columns": [
+    [
+      "tournament_accounting_credit_receipts",
+      "transaction_id",
+      "xid8",
+      true,
+      null,
+      "pg_current_xact_id()",
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "id",
+      "uuid",
+      true,
+      null,
+      "gen_random_uuid()",
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "observed_at",
+      "timestamp with time zone",
+      true,
+      null,
+      "clock_timestamp()",
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "idempotency_key",
+      "text",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "user_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "asset",
+      "text",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "amount",
+      "numeric",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "ledger_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "wallet_transaction_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "payout_id",
+      "uuid",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "credited_club_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "ledger_snapshot",
+      "jsonb",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "wallet_snapshot",
+      "jsonb",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "payout_snapshot",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "registration_snapshot",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_snapshot",
+      "jsonb",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "entry_receipt_ids",
+      "uuid[]",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "transaction_id",
+      "xid8",
+      true,
+      null,
+      "pg_current_xact_id()",
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "event_id",
+      "bigint",
+      true,
+      null,
+      null,
+      "a"
+    ],
+    [
+      "tournament_obligation_events",
+      "observed_at",
+      "timestamp with time zone",
+      true,
+      null,
+      "clock_timestamp()",
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "obligation_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "asset",
+      "text",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "tournament_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "user_id",
+      "uuid",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "operation",
+      "text",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "before_row",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "after_row",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "tournament_snapshot",
+      "jsonb",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "registration_snapshot",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "entry_receipt_ids",
+      "uuid[]",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "credit_receipt_id",
+      "uuid",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_obligation_events",
+      "refund_tranche_ids",
+      "uuid[]",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "id",
+      "uuid",
+      true,
+      null,
+      "gen_random_uuid()",
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "transaction_id",
+      "xid8",
+      true,
+      null,
+      "pg_current_xact_id()",
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "observed_at",
+      "timestamp with time zone",
+      true,
+      null,
+      "clock_timestamp()",
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "registration_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "user_id",
+      "uuid",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "operation",
+      "text",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "purchase_key",
+      "text",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "asset",
+      "text",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "amount",
+      "numeric",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "entitlement_id",
+      "uuid",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "ledger_id",
+      "uuid",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "wallet_transaction_id",
+      "uuid",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "funding_club_id",
+      "uuid",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "registration_snapshot",
+      "jsonb",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_snapshot",
+      "jsonb",
+      true,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "entitlement_snapshot",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "ledger_snapshot",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "wallet_snapshot",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "custody_result",
+      "jsonb",
+      false,
+      null,
+      null,
+      ""
+    ]
+  ],
+  "indexes": [
+    [
+      "tournament_accounting_credit_receipts_idempotency_key_key",
+      "CREATE UNIQUE INDEX tournament_accounting_credit_receipts_idempotency_key_key ON public.tournament_accounting_credit_receipts USING btree (idempotency_key)",
+      true,
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts_ledger_id_key",
+      "CREATE UNIQUE INDEX tournament_accounting_credit_receipts_ledger_id_key ON public.tournament_accounting_credit_receipts USING btree (ledger_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts_payout_id_key",
+      "CREATE UNIQUE INDEX tournament_accounting_credit_receipts_payout_id_key ON public.tournament_accounting_credit_receipts USING btree (payout_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts_pkey",
+      "CREATE UNIQUE INDEX tournament_accounting_credit_receipts_pkey ON public.tournament_accounting_credit_receipts USING btree (id)",
+      true,
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts_wallet_transaction_id_key",
+      "CREATE UNIQUE INDEX tournament_accounting_credit_receipts_wallet_transaction_id_key ON public.tournament_accounting_credit_receipts USING btree (wallet_transaction_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_obligation_events_obligation_id_event_id_idx",
+      "CREATE INDEX tournament_obligation_events_obligation_id_event_id_idx ON public.tournament_obligation_events USING btree (obligation_id, event_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_obligation_events_pkey",
+      "CREATE UNIQUE INDEX tournament_obligation_events_pkey ON public.tournament_obligation_events USING btree (event_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_obligation_events_tournament_id_observed_at_even_idx",
+      "CREATE INDEX tournament_obligation_events_tournament_id_observed_at_even_idx ON public.tournament_obligation_events USING btree (tournament_id, observed_at, event_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_participant_fundin_tournament_id_registration_id_idx",
+      "CREATE INDEX tournament_participant_fundin_tournament_id_registration_id_idx ON public.tournament_participant_funding_receipts USING btree (tournament_id, registration_id, observed_at)",
+      true,
+      true
+    ],
+    [
+      "tournament_participant_funding_receip_wallet_transaction_id_key",
+      "CREATE UNIQUE INDEX tournament_participant_funding_receip_wallet_transaction_id_key ON public.tournament_participant_funding_receipts USING btree (wallet_transaction_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts_entitlement_id_key",
+      "CREATE UNIQUE INDEX tournament_participant_funding_receipts_entitlement_id_key ON public.tournament_participant_funding_receipts USING btree (entitlement_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts_ledger_id_key",
+      "CREATE UNIQUE INDEX tournament_participant_funding_receipts_ledger_id_key ON public.tournament_participant_funding_receipts USING btree (ledger_id)",
+      true,
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts_pkey",
+      "CREATE UNIQUE INDEX tournament_participant_funding_receipts_pkey ON public.tournament_participant_funding_receipts USING btree (id)",
+      true,
+      true
+    ]
+  ],
+  "policies": [],
+  "triggers": [
+    [
+      "chip_ledger",
+      "zz_tournament_accounting_credit_ledger",
+      "CREATE TRIGGER zz_tournament_accounting_credit_ledger AFTER INSERT ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_tournament_credit_ledger()",
+      "O"
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "original_evidence_immutable",
+      "CREATE TRIGGER original_evidence_immutable BEFORE DELETE OR UPDATE ON public.tournament_accounting_credit_receipts FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()",
+      "O"
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "original_evidence_no_truncate",
+      "CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.tournament_accounting_credit_receipts FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()",
+      "O"
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_accounting_credit_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "tournament_obligation_events",
+      "original_evidence_immutable",
+      "CREATE TRIGGER original_evidence_immutable BEFORE DELETE OR UPDATE ON public.tournament_obligation_events FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()",
+      "O"
+    ],
+    [
+      "tournament_obligation_events",
+      "original_evidence_no_truncate",
+      "CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.tournament_obligation_events FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()",
+      "O"
+    ],
+    [
+      "tournament_obligation_events",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_obligation_events FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ],
+    [
+      "tournament_obligations",
+      "zz_tournament_accounting_obligation_event",
+      "CREATE TRIGGER zz_tournament_accounting_obligation_event AFTER INSERT OR DELETE OR UPDATE ON public.tournament_obligations FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_tournament_obligation_event()",
+      "O"
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "original_evidence_immutable",
+      "CREATE TRIGGER original_evidence_immutable BEFORE DELETE OR UPDATE ON public.tournament_participant_funding_receipts FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()",
+      "O"
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "original_evidence_no_truncate",
+      "CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.tournament_participant_funding_receipts FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_tournament_accounting_evidence_immutable()",
+      "O"
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "original_union_pnl_frame",
+      "CREATE TRIGGER original_union_pnl_frame BEFORE INSERT ON public.tournament_participant_funding_receipts FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_receipt_frame()",
+      "O"
+    ]
+  ],
+  "functions": [
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_ca_capture_tournament_charge_entitlement()",
+      "source_md5": "60d612df39b72866c8b654a46250ce14",
+      "definition_md5": "9ec1394628e0c6291963d5f76801a3d1"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_ca_capture_tournament_credit_ledger()",
+      "source_md5": "e3079c21c65834dfa82c202bde37b837",
+      "definition_md5": "81b1abbedb544e2fca0f8edec7d27cae"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_ca_capture_tournament_obligation_event()",
+      "source_md5": "5526d02f3f05c5d19b3c23a4c7841cad",
+      "definition_md5": "d6e1f4f7b4a93df535d3b4d4bce925bf"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_ca_guard_mtt_admission_contract()",
+      "source_md5": "c7656b0d33a730e39d9ad22dd10d497d",
+      "definition_md5": "fcc387285004f30705c61e91f315d523"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)",
+      "source_md5": "e9e4ff539983228b5c899e5fd922ffa4",
+      "definition_md5": "9ff346ac60f760311d884c6d63d9001d"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_ca_record_tournament_accounting_credit(text,uuid,uuid,numeric,uuid,uuid,uuid)",
+      "source_md5": "0e4ac3f0660247eaf90fb21bc82815ea",
+      "definition_md5": "cb13485c0ff8bdc787d0c6aff9f22c37"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb)",
+      "source_md5": "dfca9d975b3f9b674c48ad6d592279b4",
+      "definition_md5": "6cfd4af7307ce31460fd62c5b3f38bef"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_ca_tournament_accounting_evidence_immutable()",
+      "source_md5": "45d556a440dc8cb930ef48f291a395dd",
+      "definition_md5": "9bcc5b1f5fc9b9c036b617c36473d290"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_credit_and_log(uuid,numeric,text,text,text,uuid,text,uuid,uuid,integer,text)",
+      "source_md5": "98f371756c07106f7787b5c613405554",
+      "definition_md5": "e1c4ca5fd66536cc90adc9af106e3068"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)",
+      "source_md5": "c4caaea72c474bf4b678b06130b07845",
+      "definition_md5": "591867b92e0749eb0e493c56707ae328"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_register_horse_for_tournament_before_maintenance_gate(uuid,uuid)",
+      "source_md5": "fc8f192f3844b2e1d14fed610c6db4fd",
+      "definition_md5": "33de93271803a28f46c0a259bb2c01c4"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
+      "source_md5": "d4022ba78ab4dcc7ab085495df16386d",
+      "definition_md5": "df387bd37001630d94ab2e380144ccab"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "owner": "postgres",
+      "signature": "log_wallet_transaction(uuid,text,numeric,text,text,text,uuid,uuid,uuid)",
+      "source_md5": "3d8d2d68b7b7eb24defeb3b7ff32c8d0",
+      "definition_md5": "8316c567cd3517cc391c11f7b7059c4b"
+    }
+  ],
+  "relations": [
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "service_role=r/postgres"
+      ],
+      "rls": true,
+      "name": "tournament_accounting_credit_receipts",
+      "owner": "postgres",
+      "force_rls": false
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "service_role=r/postgres"
+      ],
+      "rls": true,
+      "name": "tournament_obligation_events",
+      "owner": "postgres",
+      "force_rls": false
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "service_role=r/postgres"
+      ],
+      "rls": true,
+      "name": "tournament_participant_funding_receipts",
+      "owner": "postgres",
+      "force_rls": false
+    }
+  ],
+  "captured_at": "2026-09-18T00:57:08.268531+00:00",
+  "constraints": [
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_accounting_credit_receipts_amount_check",
+      "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))",
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_accounting_credit_receipts_asset_check",
+      "CHECK ((asset = 'chips'::text))",
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_accounting_credit_receipts_idempotency_key_key",
+      "UNIQUE (idempotency_key)",
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_accounting_credit_receipts_ledger_id_key",
+      "UNIQUE (ledger_id)",
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_accounting_credit_receipts_payout_id_key",
+      "UNIQUE (payout_id)",
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_accounting_credit_receipts_pkey",
+      "PRIMARY KEY (id)",
+      true
+    ],
+    [
+      "tournament_accounting_credit_receipts",
+      "tournament_accounting_credit_receipts_wallet_transaction_id_key",
+      "UNIQUE (wallet_transaction_id)",
+      true
+    ],
+    [
+      "tournament_obligation_events",
+      "tournament_obligation_events_asset_check",
+      "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text, 'unknown'::text])))",
+      true
+    ],
+    [
+      "tournament_obligation_events",
+      "tournament_obligation_events_check",
+      "CHECK ((((operation = 'INSERT'::text) AND (before_row IS NULL) AND (after_row IS NOT NULL)) OR ((operation = 'UPDATE'::text) AND (before_row IS NOT NULL) AND (after_row IS NOT NULL)) OR ((operation = 'DELETE'::text) AND (before_row IS NOT NULL) AND (after_row IS NULL))))",
+      true
+    ],
+    [
+      "tournament_obligation_events",
+      "tournament_obligation_events_operation_check",
+      "CHECK ((operation = ANY (ARRAY['INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))",
+      true
+    ],
+    [
+      "tournament_obligation_events",
+      "tournament_obligation_events_pkey",
+      "PRIMARY KEY (event_id)",
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_participant_funding_receip_wallet_transaction_id_key",
+      "UNIQUE (wallet_transaction_id)",
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_participant_funding_receipts_amount_check",
+      "CHECK (((amount >= (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))",
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_participant_funding_receipts_asset_check",
+      "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text])))",
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_participant_funding_receipts_check",
+      "CHECK ((((asset = 'chips'::text) AND (amount > (0)::numeric) AND (entitlement_id IS NOT NULL) AND (ledger_id IS NOT NULL) AND (wallet_transaction_id IS NOT NULL) AND (funding_club_id IS NOT NULL)) OR ((asset = 'chips'::text) AND (amount = (0)::numeric) AND (entitlement_id IS NULL) AND (ledger_id IS NULL)) OR ((asset = 'diamonds'::text) AND (entitlement_id IS NULL) AND (ledger_id IS NULL))))",
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_participant_funding_receipts_entitlement_id_key",
+      "UNIQUE (entitlement_id)",
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_participant_funding_receipts_ledger_id_key",
+      "UNIQUE (ledger_id)",
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_participant_funding_receipts_operation_check",
+      "CHECK ((operation = ANY (ARRAY['entry'::text, 'rebuy'::text, 'reentry'::text, 'addon'::text])))",
+      true
+    ],
+    [
+      "tournament_participant_funding_receipts",
+      "tournament_participant_funding_receipts_pkey",
+      "PRIMARY KEY (id)",
+      true
+    ]
+  ]
+}

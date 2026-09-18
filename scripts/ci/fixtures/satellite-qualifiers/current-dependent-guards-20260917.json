@@ -1,0 +1,222 @@
+{
+  "rows": [
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_accounting_agreement_history_immutable",
+      "proconfig": ["search_path=public"],
+      "signature": "fn_accounting_agreement_history_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_agreement_history_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN RAISE EXCEPTION 'accounting_agreement_history_is_immutable' USING ERRCODE='55000'; END $function$\n",
+      "source_md5": "fcb90de00cac2deb0cb820deca47a002",
+      "definition_md5": "3fa4099435ff1e9d5c48fa1934b63549"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_accounting_tournament_fee_receipt_immutable",
+      "proconfig": ["search_path=public"],
+      "signature": "fn_accounting_tournament_fee_receipt_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_fee_receipt_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$BEGIN\n RAISE EXCEPTION 'accounting_tournament_fee_receipt_is_immutable' USING ERRCODE='55000';\nEND$function$\n",
+      "source_md5": "deb73c1027b2b2d6f863a1a8febd16e4",
+      "definition_md5": "bdc4ee4b75e3471cd33a5ed4b250ec0f"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_ca_capture_satellite_seat_entitlement",
+      "proconfig": ["search_path=public"],
+      "signature": "fn_ca_capture_satellite_seat_entitlement()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_capture_satellite_seat_entitlement()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_h public.tournament_satellite_settlements%ROWTYPE;\n  v_l public.chip_ledger%ROWTYPE;\n  v_rows integer;\nBEGIN\n  IF NEW.delivery_kind IS DISTINCT FROM 'seat' THEN\n    RETURN NULL;\n  END IF;\n  SELECT * INTO v_h FROM public.tournament_satellite_settlements h\n   WHERE h.tournament_id=NEW.tournament_id;\n  SELECT * INTO v_l FROM public.chip_ledger l\n   WHERE l.idempotency_key=NEW.idempotency_key||':pool_transfer'\n     AND l.from_type='prize_liability'\n     AND l.from_entity_id=NEW.tournament_id\n     AND l.to_type='prize_liability'\n     AND l.to_entity_id=v_h.target_id\n     AND l.amount=NEW.amount;\n  IF v_h.tournament_id IS NULL OR v_l.id IS NULL OR v_l.club_id IS NULL\n     OR NEW.registration_id IS NULL\n     OR v_h.ticket_cost IS DISTINCT FROM NEW.amount\n     OR v_h.ticket_cost IS DISTINCT FROM\n          round(v_h.target_buy_in+v_h.target_fee,2) THEN\n    RAISE EXCEPTION\n      'satellite seat award has no exact target contract and pool-transfer source'\n      USING ERRCODE = 'P0404';\n  END IF;\n  INSERT INTO public.tournament_refund_entitlements(\n    tournament_id,user_id,entitlement_kind,charge_category,\n    refund_wallet_club_id,gross,refund_prize,refund_bounty,refund_fee,\n    source_ledger_id,registration_id,source_satellite_id,source_award_place,\n    escrow_bucket,evidence_kind,created_at)\n  VALUES(\n    v_h.target_id,NEW.user_id,'satellite_seat','satellite_seat',\n    v_l.club_id,NEW.amount,v_h.target_buy_in,0,v_h.target_fee,\n    v_l.id,NEW.registration_id,NEW.tournament_id,NEW.place,\n    'satellite_in','atomic_satellite_seat',transaction_timestamp())\n  ON CONFLICT(source_ledger_id) DO NOTHING;\n  SELECT count(*) INTO v_rows\n    FROM public.tournament_refund_entitlements e\n   WHERE e.source_ledger_id=v_l.id\n     AND e.tournament_id=v_h.target_id AND e.user_id=NEW.user_id\n     AND e.entitlement_kind='satellite_seat'\n     AND e.charge_category='satellite_seat'\n     AND e.refund_wallet_club_id=v_l.club_id\n     AND e.gross=NEW.amount\n     AND e.refund_prize=v_h.target_buy_in\n     AND e.refund_bounty=0 AND e.refund_fee=v_h.target_fee\n     AND e.registration_id=NEW.registration_id\n     AND e.source_satellite_id=NEW.tournament_id\n     AND e.source_award_place=NEW.place;\n  IF v_rows <> 1 THEN\n    RAISE EXCEPTION 'satellite seat entitlement identity conflicts with its source'\n      USING ERRCODE = 'P0404';\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n",
+      "source_md5": "d0ec5c348f062b27f5f3f51583084723",
+      "definition_md5": "43bd57fdb0a21738e5b1e5d833c94a57"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_refuse_zero_chip_field_elimination",
+      "proconfig": ["search_path=public"],
+      "signature": "fn_refuse_zero_chip_field_elimination()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_refuse_zero_chip_field_elimination()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_live int;\n  v_zero int;\n  v_status text;\nBEGIN\n  -- Only a transition INTO elimination, from a live seat, at zero chips.\n  IF NEW.status <> 'eliminated' OR OLD.status <> 'playing' THEN\n    RETURN NEW;\n  END IF;\n  IF COALESCE(OLD.chips, 0) > 0 THEN\n    RETURN NEW;\n  END IF;\n\n  SELECT count(*), count(*) FILTER (WHERE COALESCE(chips, 0) <= 0)\n    INTO v_live, v_zero\n    FROM public.tournament_players\n   WHERE tournament_id = NEW.tournament_id\n     AND status = 'playing';\n\n  -- More than one player left and NONE of them has a chip: the table has not\n  -- been credited. Bust nobody. (At exactly one remaining player this is the\n  -- legitimate \"everybody busted in the same hand\" tail, which the engine\n  -- resolves by naming the last one out the winner - leave that alone.)\n  IF v_live > 1 AND v_zero = v_live THEN\n    SELECT upper(COALESCE(t.status, '')) INTO v_status\n      FROM public.tournaments t WHERE t.id = NEW.tournament_id;\n\n    -- ...unless the event is already over. Nothing is going to credit those\n    -- stacks now, and holding the write means the place stays unowned and\n    -- unpayable forever. Refusing to bust somebody in a finished tournament\n    -- does not protect them; it withholds their money.\n    IF v_status IN ('COMPLETED', 'CANCELLED', 'CANCELED') THEN\n      RAISE WARNING\n        'allowing elimination in % (%): all % live player(s) read 0 chips, but the event is terminal - recording the finish',\n        NEW.tournament_id, v_status, v_live;\n      RETURN NEW;\n    END IF;\n\n    RAISE WARNING\n      'refused elimination in %: all % live player(s) read 0 chips - uncredited stacks, not a bust',\n      NEW.tournament_id, v_live;\n    RETURN NULL;\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "a1ace9ea11d0c3b1536d171d19da4dee",
+      "definition_md5": "97d03afb414b95e0f3bd959df6075c2c"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_satellite_settlement_receipts_are_append_only",
+      "proconfig": ["search_path=public"],
+      "signature": "fn_satellite_settlement_receipts_are_append_only()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_satellite_settlement_receipts_are_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  RAISE EXCEPTION\n    'satellite settlement evidence is immutable; % is refused for tournament %',\n    TG_OP, OLD.tournament_id USING ERRCODE = '55000';\nEND;\n$function$\n",
+      "source_md5": "37b49d2bcd18b8eddeb160c1cfed5050",
+      "definition_md5": "ec03d8976766c413a35a1e29fffd2654"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_satellite_target_player_provenance_is_immutable",
+      "proconfig": ["search_path=public"],
+      "signature": "fn_satellite_target_player_provenance_is_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_satellite_target_player_provenance_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_source_ids uuid[] := ARRAY[]::uuid[];\n  v_source_id uuid;\n  v_status text;\n  v_acquisition_key bigint:=hashtextextended(\n    'ca:tournament-terminal-settlement:v1',0);\n  v_target_key bigint;\n  v_owns_acquisition_root boolean:=false;\nBEGIN\n  IF TG_OP = 'UPDATE'\n     AND (NEW.id IS DISTINCT FROM OLD.id\n       OR NEW.tournament_id IS DISTINCT FROM OLD.tournament_id\n       OR NEW.user_id IS DISTINCT FROM OLD.user_id\n       OR NEW.is_satellite_qualifier IS DISTINCT FROM OLD.is_satellite_qualifier\n       OR NEW.source_satellite_id IS DISTINCT FROM OLD.source_satellite_id) THEN\n    RAISE EXCEPTION 'tournament player ownership and entry provenance are immutable'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP <> 'INSERT' AND OLD.source_satellite_id IS NOT NULL THEN\n    v_source_ids := array_append(v_source_ids,OLD.source_satellite_id);\n  END IF;\n  IF TG_OP <> 'DELETE' AND NEW.source_satellite_id IS NOT NULL THEN\n    v_source_ids := array_append(v_source_ids,NEW.source_satellite_id);\n  END IF;\n  IF TG_OP <> 'INSERT' THEN\n    SELECT a.tournament_id INTO v_source_id\n      FROM public.tournament_satellite_awards a\n     WHERE a.registration_id = OLD.id;\n    IF v_source_id IS NOT NULL THEN\n      v_source_ids := array_append(v_source_ids,v_source_id);\n    END IF;\n  END IF;\n  IF TG_OP <> 'DELETE' THEN\n    SELECT a.tournament_id INTO v_source_id\n      FROM public.tournament_satellite_awards a\n     WHERE a.registration_id = NEW.id;\n    IF v_source_id IS NOT NULL THEN\n      v_source_ids := array_append(v_source_ids,v_source_id);\n    END IF;\n  END IF;\n  -- Ticket admission and an exact pre-start ticket return are the only\n  -- lifecycle edges that may respectively add or remove provenance after the\n  -- source satellite has closed. Both are authorities of the TARGET event,\n  -- the row's own tournament, and hold its lane: T(target) exclusively for\n  -- the rolling admission and unregistration doors, G exclusively for the\n  -- terminal satellite delivery and ticket-return authorities. Either\n  -- exclusive hold is the proof (2026-09-10); a shared hold of either key is\n  -- not, and no canonical writer holds T(source) in place of T(target).\n  -- Holding G shared, an admission still waits for the source satellite's\n  -- terminal settlement, so the committed-receipt read below stays stable.\n  -- The unregistration wrapper additionally exposes its exact operation while\n  -- the owner-only core is active; a raw DELETE therefore cannot masquerade as\n  -- a ticket return merely by reaching this trigger.\n  IF TG_OP IN ('INSERT','DELETE') THEN\n    v_target_key:=hashtextextended(\n      'ca:tournament-terminal-settlement:v1:'||(CASE WHEN TG_OP='INSERT'\n        THEN NEW.tournament_id ELSE OLD.tournament_id END)::text,0);\n    SELECT EXISTS(\n      SELECT 1 FROM pg_catalog.pg_locks l\n       WHERE l.pid=pg_backend_pid()\n         AND l.locktype='advisory'\n         AND l.database=(\n           SELECT d.oid FROM pg_catalog.pg_database d\n            WHERE d.datname=current_database())\n         AND ((l.classid=(((v_acquisition_key>>32)&4294967295)::oid)\n               AND l.objid=((v_acquisition_key&4294967295)::oid))\n           OR (l.classid=(((v_target_key>>32)&4294967295)::oid)\n               AND l.objid=((v_target_key&4294967295)::oid)))\n         AND l.objsubid=1\n         AND l.mode='ExclusiveLock'\n         AND l.granted)\n      INTO v_owns_acquisition_root;\n  END IF;\n  IF TG_OP = 'INSERT' AND NEW.tournament_id IS NOT NULL THEN\n    -- The rolling satellite authority owns target before source. Take both\n    -- roots in that same order so a direct provenance insert cannot invert\n    -- the pair across its specialized and generic guards.\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = NEW.tournament_id FOR SHARE;\n    IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN\n      RAISE EXCEPTION 'terminal target tournament cannot gain satellite provenance'\n        USING ERRCODE = '55000';\n    END IF;\n  END IF;\n  IF TG_OP = 'INSERT' THEN\n    FOREACH v_source_id IN ARRAY v_source_ids LOOP\n      IF v_source_id IS DISTINCT FROM NEW.tournament_id THEN\n        SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n          FROM public.tournaments t\n         WHERE t.id = v_source_id FOR SHARE;\n        IF v_status IN ('COMPLETED','CANCELLED','CANCELED')\n           AND NOT COALESCE(v_owns_acquisition_root,false) THEN\n          RAISE EXCEPTION 'completed satellite target provenance is immutable'\n            USING ERRCODE = '55000';\n        END IF;\n      END IF;\n    END LOOP;\n  END IF;\n  IF NOT (\n       (TG_OP='INSERT' AND COALESCE(v_owns_acquisition_root,false))\n       OR (TG_OP='DELETE'\n           AND COALESCE(v_owns_acquisition_root,false)\n           AND COALESCE(current_setting(\n                 'app.tournament_seat_exit_operation',true),'')='unregister')\n     )\n     AND EXISTS (\n    SELECT 1 FROM unnest(v_source_ids) source(id)\n     WHERE public.fn_ca_has_committed_tournament_receipt(source.id)\n  ) THEN\n    RAISE EXCEPTION 'completed satellite target provenance is immutable'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "266a6b06f5cc44bc953ca4c31933d7db",
+      "definition_md5": "68f98d4ec2cb186aae11787f1666cffc"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_stamp_tournament_elimination_sequence",
+      "proconfig": ["search_path=public"],
+      "signature": "fn_stamp_tournament_elimination_sequence()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_stamp_tournament_elimination_sequence()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    IF NEW.status::text = 'eliminated' THEN\n      NEW.elimination_sequence := nextval(\n        'public.tournament_player_elimination_sequence'::regclass);\n    ELSE\n      NEW.elimination_sequence := NULL;\n    END IF;\n  ELSIF OLD.status::text IS DISTINCT FROM 'eliminated'\n        AND NEW.status::text = 'eliminated' THEN\n    NEW.elimination_sequence := nextval(\n      'public.tournament_player_elimination_sequence'::regclass);\n  ELSIF OLD.status::text = 'eliminated'\n        AND NEW.status::text IS DISTINCT FROM 'eliminated' THEN\n    NEW.elimination_sequence := NULL;\n  ELSIF NEW.elimination_sequence IS DISTINCT FROM OLD.elimination_sequence THEN\n    RAISE EXCEPTION 'elimination_sequence is database-owned'\n      USING ERRCODE = '42501';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "78943d7a0d060e33830281500f08dfca",
+      "definition_md5": "08b7c99698e411f85b5b6afe8090fae3"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_terminal_tournament_evidence_is_immutable",
+      "proconfig": ["search_path=public"],
+      "signature": "fn_terminal_tournament_evidence_is_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_terminal_tournament_evidence_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\n  v_status text;\n  v_receipted boolean := false;\n  v_old_marker timestamptz;\n  v_new_marker timestamptz;\nBEGIN\n  IF TG_OP = 'INSERT' THEN\n    v_tournament_id := NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;\n  ELSIF TG_OP = 'UPDATE' THEN\n    IF NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid IS DISTINCT FROM\n       NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid THEN\n      RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME\n        USING ERRCODE = '55000';\n    END IF;\n    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  ELSE\n    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;\n  END IF;\n\n  IF v_tournament_id IS NULL THEN\n    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n    RETURN NEW;\n  END IF;\n  IF TG_OP <> 'INSERT' AND to_jsonb(OLD) ? 'terminal_closed_at' THEN\n    v_old_marker := NULLIF(to_jsonb(OLD)->>'terminal_closed_at','')::timestamptz;\n  END IF;\n  IF TG_OP <> 'DELETE' AND to_jsonb(NEW) ? 'terminal_closed_at' THEN\n    v_new_marker := NULLIF(to_jsonb(NEW)->>'terminal_closed_at','')::timestamptz;\n  END IF;\n  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN\n    RAISE EXCEPTION '% rows cannot supply a terminal marker',TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN\n    RAISE EXCEPTION 'terminal tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN\n    IF public.fn_ca_terminal_marker_transition_is_exact(\n         to_jsonb(OLD),to_jsonb(NEW),v_tournament_id) THEN\n      RETURN NEW;\n    END IF;\n    RAISE EXCEPTION '% terminal marker transition is not canonical',TG_TABLE_NAME\n      USING ERRCODE = '55000';\n  END IF;\n  -- A journal row is durable testimony from the instant it names a\n  -- tournament. Refuse its UPDATE/DELETE without taking a child-to-parent\n  -- lock; a row trigger already owns the child tuple at this point. INSERT is\n  -- the only operation that takes the root lock, which preserves the\n  -- parent-to-child order used by both terminal authorities.\n  IF TG_TABLE_NAME = 'chip_ledger' AND TG_OP <> 'INSERT' THEN\n    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'\n      USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'INSERT' THEN\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id\n     FOR SHARE;\n  ELSE\n    SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n      FROM public.tournaments t\n     WHERE t.id = v_tournament_id;\n  END IF;\n  SELECT EXISTS (\n           SELECT 1 FROM public.tournament_terminal_settlements h\n            WHERE h.tournament_id = v_tournament_id)\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_satellite_settlements h\n            WHERE h.tournament_id = v_tournament_id)\n      OR EXISTS (\n           SELECT 1 FROM public.tournament_cancellation_receipts h\n            WHERE h.tournament_id = v_tournament_id)\n    INTO v_receipted;\n  IF v_status IN ('COMPLETED','CANCELLED','CANCELED')\n     AND (TG_OP = 'INSERT' OR v_receipted) THEN\n    RAISE EXCEPTION\n      'terminal tournament % has immutable % evidence',\n      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';\n  END IF;\n  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "e6fbb738a0528aa0f32e33d004bf2045",
+      "definition_md5": "a129e4214f59e7f95ffe397e2245bbd0"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "fn_tournament_elimination_has_a_place",
+      "proconfig": ["search_path=public, pg_temp"],
+      "signature": "fn_tournament_elimination_has_a_place()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_elimination_has_a_place()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_status text;\n  v_position integer;\n  v_tournament text;\nBEGIN\n  /* THE KNOCKOUT DOOR OWNS EVERY BUST A HAND TOOK (2026-09-10). An eliminated\n     row is a finishing place: fn_complete_tournament_entry_reprice reads a row\n     without one as an unfinished reprice and refuses the event for ever, and\n     the engine's elimination sweep will not run until that proof passes.\n\n     A DEFERRED CHECK READS THE ROW AT COMMIT, NOT THE STATEMENT. NEW is the\n     tuple the firing statement produced, so a settlement that writes the status\n     first and the place second would be refused on a row that is about to be\n     correct - which is what happened to five satellites between 07:24 and\n     07:52. Re-read; if the row is gone, there is nothing to judge. */\n  SELECT tp.status, tp.position INTO v_status, v_position\n    FROM public.tournament_players tp\n   WHERE tp.id = NEW.id;\n  IF NOT FOUND THEN RETURN NULL; END IF;\n\n  IF v_status = 'eliminated' AND v_position IS NULL THEN\n    SELECT t.status INTO v_tournament FROM public.tournaments t WHERE t.id = NEW.tournament_id;\n    IF v_tournament IN ('RUNNING', 'COMPLETING', 'COMPLETED') THEN\n      RAISE EXCEPTION 'tournament % player % was recorded eliminated with no finishing place; a bust is recorded through the knockout door, which assigns the place',\n        NEW.tournament_id, NEW.user_id USING ERRCODE = '23514';\n    END IF;\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n",
+      "source_md5": "1d00219cefe6de725da5d33fe0b38002",
+      "definition_md5": "8995e4364a00e5bae077701c1185bf8b"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "trg_freeze_batched_tournament_result",
+      "proconfig": ["search_path=public"],
+      "signature": "trg_freeze_batched_tournament_result()",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_freeze_batched_tournament_result()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_old_batched boolean := false;\n  v_new_batched boolean := false;\nBEGIN\n  IF TG_OP IN ('UPDATE', 'DELETE') THEN\n    SELECT EXISTS (\n      SELECT 1 FROM public.tournament_place_settlement_batches b\n       WHERE b.tournament_id = OLD.tournament_id\n      UNION ALL\n      SELECT 1 FROM public.tournament_final_table_deal_batches b\n       WHERE b.tournament_id = OLD.tournament_id\n    ) INTO v_old_batched;\n  END IF;\n  IF TG_OP IN ('INSERT', 'UPDATE') THEN\n    SELECT EXISTS (\n      SELECT 1 FROM public.tournament_place_settlement_batches b\n       WHERE b.tournament_id = NEW.tournament_id\n      UNION ALL\n      SELECT 1 FROM public.tournament_final_table_deal_batches b\n       WHERE b.tournament_id = NEW.tournament_id\n    ) INTO v_new_batched;\n  END IF;\n  IF NOT v_old_batched AND NOT v_new_batched THEN\n    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;\n  END IF;\n  IF TG_OP = 'DELETE'\n     AND NOT EXISTS (SELECT 1 FROM public.tournaments t WHERE t.id = OLD.tournament_id) THEN\n    RETURN OLD;\n  END IF;\n  IF TG_OP <> 'UPDATE' THEN\n    RAISE EXCEPTION 'a result frozen by an atomic settlement batch cannot be %', lower(TG_OP)\n      USING ERRCODE = 'check_violation';\n  END IF;\n  IF ROW(NEW.id, NEW.tournament_id, NEW.user_id, NEW.club_id, NEW.status,\n         NEW.position, NEW.prize, NEW.eliminated_at, NEW.chips,\n         NEW.registered_at, NEW.rebuys, NEW.add_on)\n     IS DISTINCT FROM\n     ROW(OLD.id, OLD.tournament_id, OLD.user_id, OLD.club_id, OLD.status,\n         OLD.position, OLD.prize, OLD.eliminated_at, OLD.chips,\n         OLD.registered_at, OLD.rebuys, OLD.add_on) THEN\n    RAISE EXCEPTION\n      'a result frozen by an atomic settlement batch cannot change identity, payout club, status, position, prize, bust time or deal input'\n      USING ERRCODE = 'check_violation';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "99c79afbc4ee613690a957cd0e903b8e",
+      "definition_md5": "14222acda7118db82f77f831afd8d1a6"
+    },
+    {
+      "owner": "postgres",
+      "grants": [
+        {
+          "role": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "role": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "proname": "trg_tournament_place_collision",
+      "proconfig": ["search_path=public"],
+      "signature": "trg_tournament_place_collision()",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_tournament_place_collision()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_existing uuid;\nBEGIN\n  IF NEW.position IS NULL THEN\n    RETURN NEW;\n  END IF;\n  IF TG_OP = 'UPDATE' AND NEW.position IS NOT DISTINCT FROM OLD.position THEN\n    RETURN NEW;\n  END IF;\n\n  SELECT tp.user_id INTO v_existing\n    FROM tournament_players tp\n   WHERE tp.tournament_id = NEW.tournament_id\n     AND tp.position = NEW.position\n     AND tp.user_id <> NEW.user_id\n   LIMIT 1;\n\n  IF v_existing IS NOT NULL THEN\n    -- Keep the forensic row: it is how the next reader learns this happened\n    -- and which two players raced. Written before the raise so the INSERT is\n    -- in a separate autonomous-ish path? It is not - it rolls back with the\n    -- statement. That is acceptable: the RAISE below carries both user ids and\n    -- the elimination path reports it as elimination_write_failed, which is a\n    -- louder signal than a row in a table nobody queries.\n    INSERT INTO tournament_place_collisions\n      (tournament_id, place, user_id, existing_user_id, db_role, application)\n    VALUES\n      (NEW.tournament_id, NEW.position, NEW.user_id, v_existing,\n       current_user, current_setting('application_name', true));\n\n    RAISE EXCEPTION\n      'finishing place % in tournament % is already held by % - refusing to stamp % on it (a contested place is paid TWICE, the prize idempotency key includes the user id)',\n      NEW.position, NEW.tournament_id, v_existing, NEW.user_id\n      USING ERRCODE = '23505';\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n",
+      "source_md5": "5269c4504db2708b7f34efc8a99eb253",
+      "definition_md5": "f27ba41503d58160618395dc24ebeb93"
+    }
+  ],
+  "observed_at": "2026-09-17T20:00:51.388525+00:00"
+}

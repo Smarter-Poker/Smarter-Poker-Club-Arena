@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "scope": "L03 two-RPC new MTT blind-break authoring refusal",
+  "files": {
+    "scripts/ci/fixtures/mtt-break-authoring/authority-capture-0002.json": "f4475d65b71099a4ef3e379c48ba9a91742c92dfaf0376d5e11c75222f98d676",
+    "scripts/ci/fixtures/mtt-break-authoring/authority-catalog-0002.json": "cbd46c5d72ce4217ac105c74481ea6f5473566d29bb5db5bc02c3bc7cebf8120",
+    "scripts/ci/fixtures/mtt-break-authoring/catalog-supplement.sql": "49f69b9ed21c7745125123fbe9684b7dc8009661afaa0822c66fa4f401bb2d48",
+    "scripts/ci/fixtures/mtt-break-authoring/scope-authority.json": "dca58f92022e114d48d8521f8e2d5e1b1a451cdecbb503676826ea49b6740cab",
+    "scripts/dev/fixtures/mtt-blind-contract/authoring-native.sql": "fd991bcadb1252ab98e5114b30c566d1790c84a1973c8aebbfd4604635bf6248",
+    "supabase/migrations/20260917204152_mtt_authored_ladders_only_contain_playing_levels.sql": "3f9e1807b384b803e4e33cab9c85126039274f2300bc0f251c04b104d3070882"
+  },
+  "native_assertions": 25,
+  "marker": "MTT_AUTHORING_BREAK_NATIVE_PASS",
+  "limits": [
+    "Qualification requires all eight exact R46 preparations under legacy-capacity-v1. It does not certify unlimited ABI activation or installed production state.",
+    "Synthetic fixture seeds have zero balances; actual RPC calls use authenticated SESSION AUTHORIZATION and origin triggers.",
+    "All case data and catalog changes roll back, then the existing Execution owner disposes its private database/cluster.",
+    "No engine runtime, maintenance timing, whole financial journey or concurrent schedule editing is certified by these cases."
+  ]
+}

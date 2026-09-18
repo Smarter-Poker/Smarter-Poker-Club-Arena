@@ -851,6 +851,62 @@ for (const reason of FINISH_REFUSAL_REASONS) {
 }
 
 /**
+ * Which of those reasons a retry can clear on its own.
+ *
+ * A deadlock victim and a statement timeout are the database saying "not
+ * now": the same call can succeed on the next pass, so it should be tried on
+ * the next pass. Every other reason is the database saying "not like this". A
+ * missing accounting batch, an uncertifiable prize set and an incomplete
+ * attribution do not become true because the engine asked again five seconds
+ * later. They stay eligible for a corrected retry; the correction simply does
+ * not arrive on a five-second clock.
+ */
+export const TRANSIENT_FINISH_REFUSALS: readonly FinishRefusalReason[] = ['deadlock', 'timeout'];
+
+export function finishRefusalIsTransient(reason: FinishRefusalReason): boolean {
+  return TRANSIENT_FINISH_REFUSALS.includes(reason);
+}
+
+/**
+ * Fifteen minutes. A rule refusal that has stood for fifteen minutes will not
+ * fall over in five seconds, and a corrected one waits at most this long to be
+ * noticed - which is well inside the hour between maintenance breaks.
+ */
+export const FINISH_REFUSAL_BACKOFF_CAP_MS = 900_000;
+
+/**
+ * The delay a refused finish waits before it asks again: the unchanged base
+ * for a transient reason, and a doubling from that base to the cap for a rule.
+ * `streak` is how many times in a row THIS tournament has been refused for
+ * THIS reason, so the first refusal of any kind still retries immediately at
+ * the base delay.
+ */
+export function finishRefusalRetryDelayMs(
+  reason: FinishRefusalReason,
+  streak: number,
+  baseMs: number
+): number {
+  if (!Number.isFinite(baseMs) || baseMs <= 0) return 0;
+  if (finishRefusalIsTransient(reason)) return baseMs;
+  const steps = Math.max(0, Math.min(20, Math.floor(streak) - 1));
+  return Math.min(FINISH_REFUSAL_BACKOFF_CAP_MS, baseMs * 2 ** steps);
+}
+
+/**
+ * Repeat critical alerts that were counted instead of raised, because the
+ * same tournament had already reported the same refusal reason. The refusal
+ * RATE belongs to poker_tournament_finish_refusals_total; this series exists
+ * so the suppression is auditable and never silent.
+ */
+export const tournamentFinishRefusalAlertsSuppressedTotal: Counter = alwaysOnRegistry.counter(
+  'poker_tournament_finish_refusal_alerts_suppressed_total',
+  'Repeat critical finish-refusal alerts counted instead of raised because this tournament had already reported this reason (label: reason=fee_reconciliation|rake_attribution|prize_set|deadlock|timeout|other)'
+);
+for (const reason of FINISH_REFUSAL_REASONS) {
+  tournamentFinishRefusalAlertsSuppressedTotal.inc(0, { reason });
+}
+
+/**
  * Duplicate suppression on `POST /action` (Phase 3 - 2026-09-05). Three
  * series, no table and no user: `stored` is one intent reaching the engine,
  * `replay` is a retry answered from memory instead of moving chips twice, and

@@ -1,0 +1,78 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "query": "SELECT transaction_timestamp() AS captured_at,p.oid::regprocedure::text AS signature,p.proname,pg_get_functiondef(p.oid) AS definition,md5(p.prosrc) AS source_md5,md5(pg_get_functiondef(p.oid)) AS definition_md5,pg_get_userbyid(p.proowner) AS owner,p.proconfig,\n(SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege_type',a.privilege_type,'is_grantable',a.is_grantable) ORDER BY a.grantee::regrole::text,a.privilege_type) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner)))a) AS grants\nFROM pg_proc p WHERE p.oid IN ('public.fn_freeroll_fill_targets(uuid)'::regprocedure,'public.fn_overlay_at_risk(uuid)'::regprocedure,'public.fn_tournament_progress_metrics(integer,integer)'::regprocedure) ORDER BY p.proname;",
+  "rows": [
+    {
+      "captured_at": "2026-09-17 06:35:58.42424+00",
+      "signature": "fn_freeroll_fill_targets(uuid)",
+      "proname": "fn_freeroll_fill_targets",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_freeroll_fill_targets(p_union uuid DEFAULT NULL::uuid)\n RETURNS TABLE(tournament_id uuid, name text, status text, current_players integer, max_players integer, minutes_to_start numeric)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  select t.id, t.name, t.status,\n         coalesce(t.current_players, 0),\n         coalesce(t.max_players, 0),\n         round(extract(epoch from (t.start_time - now())) / 60.0, 1)\n  from tournaments t\n  left join clubs c on c.id = t.club_id\n  where coalesce(t.buy_in_amount, 0) = 0\n    and upper(t.status) in ('SCHEDULED', 'REGISTERING', 'ANNOUNCED', 'RUNNING')\n    -- Registration is realistically open in this band: an hour before the\n    -- start (the same pre-start ramp window humans browse in) through late\n    -- registration shortly after it begins.\n    and t.start_time > now() - interval '20 minutes'\n    and t.start_time < now() + interval '90 minutes'\n    and coalesce(t.max_players, 0) > coalesce(t.current_players, 0)\n    and (p_union is null or c.union_id = p_union or c.id = p_union)\n  order by t.start_time asc;\n$function$\n",
+      "source_md5": "ed7ffb085c67cbe299dd754738ae279f",
+      "definition_md5": "a36ac7392bb71a1ad589d3a9cd8bac3b",
+      "owner": "postgres",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "captured_at": "2026-09-17 06:35:58.42424+00",
+      "signature": "fn_overlay_at_risk(uuid)",
+      "proname": "fn_overlay_at_risk",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_overlay_at_risk(p_union uuid DEFAULT NULL::uuid)\n RETURNS TABLE(tournament_id uuid, name text, club_id uuid, status text, start_time timestamp with time zone, buy_in numeric, guaranteed_prize numeric, entries_needed integer, current_players integer, shortfall integer, max_players integer, minutes_to_start numeric)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  select t.id, t.name, t.club_id, t.status, t.start_time,\n         t.buy_in_amount, t.guaranteed_prize,\n         ceil(t.guaranteed_prize / nullif(t.buy_in_amount, 0))::int,\n         coalesce(t.current_players, 0),\n         greatest(\n           least(\n             ceil(t.guaranteed_prize / nullif(t.buy_in_amount, 0))::int\n               - coalesce(t.current_players, 0),\n             coalesce(t.max_players, 0) - coalesce(t.current_players, 0)\n           ), 0)::int,\n         coalesce(t.max_players, 0),\n         round(extract(epoch from (t.start_time - now())) / 60.0, 1)\n  from tournaments t\n  left join clubs c on c.id = t.club_id\n  where t.guaranteed_prize > 0\n    and t.buy_in_amount > 0\n    and upper(t.status) in ('SCHEDULED', 'REGISTERING', 'ANNOUNCED', 'RUNNING')\n    and t.start_time > now() - interval '30 minutes'\n    and t.start_time < now() + interval '3 hours'\n    and (p_union is null or c.union_id = p_union or c.id = p_union)\n    and ceil(t.guaranteed_prize / nullif(t.buy_in_amount, 0))::int > coalesce(t.current_players, 0)\n  order by t.start_time asc;\n$function$\n",
+      "source_md5": "5ccfc992bb8c775dd528843a71b52fdc",
+      "definition_md5": "4d0721c8ee7f542ad3ed1cad65542c6d",
+      "owner": "postgres",
+      "proconfig": ["search_path=public"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    },
+    {
+      "captured_at": "2026-09-17 06:35:58.42424+00",
+      "signature": "fn_tournament_progress_metrics(integer,integer)",
+      "proname": "fn_tournament_progress_metrics",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_progress_metrics(p_stalled_minutes integer DEFAULT 15, p_break_grace_minutes integer DEFAULT 10)\n RETURNS TABLE(stalled_running integer, overdue_breaks integer)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  WITH bounds AS (\n    SELECT statement_timestamp() - make_interval(mins =>\n             LEAST(1440, GREATEST(1, COALESCE(p_stalled_minutes,15)))) AS hand_cutoff,\n           statement_timestamp() - make_interval(mins =>\n             LEAST(1440, GREATEST(1, COALESCE(p_break_grace_minutes,10)))) AS break_cutoff\n  )\n  SELECT\n    count(*) FILTER (\n      WHERE NOT COALESCE(t.on_break,false)\n        -- A recently completed add-on is a legitimate interval without hands.\n        AND COALESCE(t.addon_period_ends_at,'-infinity'::timestamptz) < b.hand_cutoff\n        AND NOT EXISTS (\n          SELECT 1 FROM public.hand_history h\n           WHERE h.tournament_id=t.id AND h.created_at>b.hand_cutoff\n        )\n    )::integer,\n    count(*) FILTER (\n      WHERE COALESCE(t.on_break,false)\n        -- A missing end timestamp is the pre-countdown state, not an unlimited\n        -- exemption. Give it the normal five-minute break plus the grace.\n        AND GREATEST(\n          COALESCE(t.break_ends_at,\n                   t.break_started_at + interval '5 minutes',\n                   COALESCE(t.started_at,t.start_time,t.created_at) + interval '5 minutes'),\n          COALESCE(t.addon_period_ends_at,'-infinity'::timestamptz)\n        ) < b.break_cutoff\n    )::integer\n  FROM public.tournaments t CROSS JOIN bounds b\n  WHERE t.status='RUNNING'\n    AND upper(COALESCE(t.tournament_type,'')) IN ('MTT','SATELLITE')\n    -- Heads-up satellites use the seat-first product, not the scheduled MTT.\n    AND COALESCE(t.max_players,0)>2\n    AND COALESCE(t.started_at,t.start_time,t.created_at)<b.hand_cutoff;\n$function$\n",
+      "source_md5": "2f2aa9b7f1647d3840c78475ea9616b5",
+      "definition_md5": "48fbeb982336d4303a6eb503e999d064",
+      "owner": "postgres",
+      "proconfig": ["search_path=public, pg_temp"],
+      "grants": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "is_grantable": false,
+          "privilege_type": "EXECUTE"
+        }
+      ]
+    }
+  ]
+}

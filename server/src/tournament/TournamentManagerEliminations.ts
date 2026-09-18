@@ -46,6 +46,11 @@ import {
   TerminalSettlementRefusedError,
 } from './terminalSettlementRpc.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
+import type { VerifiedSatelliteQualifierReceipt } from './satelliteQualifierReceipt.js';
+import {
+  readSatelliteQualifierState,
+  requestSatelliteQualifierReceipt,
+} from './satelliteQualifierRpc.js';
 import { TournamentSweepWorkCursor } from './TournamentSweepWorkCursor.js';
 import {
   reconcileTournamentManagerWakeAcknowledgement,
@@ -147,6 +152,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * the next admission never restarts the same prefix forever.
    */
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
+  /** A queued continuation can finish later stages without revisiting these busts. */
+  private unresolvedBustsInSweepCycle = false;
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
   /**
@@ -500,6 +507,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
           return; // the finally block clears isProcessingEliminations
         }
+
+        this.unresolvedBustsInSweepCycle = (busted?.length ?? 0) > 0;
 
         // Re-drive only tournaments that currently contain an unresolved
         // zero-stack player. The retired five-second interval also retried a
@@ -1174,6 +1183,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
       finishStage: {
         if (this.eliminationSweepCursor.nextStage > 2) break finishStage;
+        const satelliteFinish = await this.checkSatelliteQualifierCompletion();
+        if (sweepStopped() || satelliteFinish === 'complete') return;
+        if (satelliteFinish === 'pending') {
+          // A second hand may have committed while the first bust was being
+          // resolved. Re-enter the causal elimination stage, not just finish.
+          this.eliminationSweepCursor.reset();
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          return;
+        }
+        if (satelliteFinish === 'continue') {
+          if (completedStage(3)) return;
+          break finishStage;
+        }
         // Check remaining players AFTER all eliminations processed
         const { count: remainingCount, error: remainingErr } = await supabase
           .from('tournament_players')
@@ -1622,6 +1644,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (completedStage(8)) return;
       }
       this.eliminationSweepCursor.reset();
+      // A shared slot may admit peers before this cursor resumes. Both the
+      // immediate and delayed bust wakes can then coalesce into that same
+      // queued continuation, which skips the already completed bust stage.
+      // Retain the known obligation until a fresh bust read proves it empty.
+      if (this.unresolvedBustsInSweepCycle && !sweepStopped()) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      }
       completedWholeSweep = true;
     } catch (err) {
       reportError(err, 'Tournament.elimination_check_error');
@@ -3856,6 +3885,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private committedFinalTableDealReceipt: VerifiedTournamentCompletionReceipt | null = null;
   private committedFinishReceipt: VerifiedTournamentCompletionReceipt | null = null;
   private committedSatelliteReceipt: VerifiedSatelliteSettlementReceipt | null = null;
+  private committedSatelliteQualifierReceipt: VerifiedSatelliteQualifierReceipt | null = null;
   /** A terminal result is important, but it may never hold seats/tables open. */
   private static readonly COMMITTED_BROADCAST_ATTEMPTS = 3;
   /** Long enough for a full live hand plus the guarantee and settlement calls. */
@@ -3888,6 +3918,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       cleaned = await this.cleanupCommittedTournament(this.committedFinishReceipt);
     } else if (this.committedSatelliteReceipt) {
       cleaned = await this.cleanupCommittedSatellite(this.committedSatelliteReceipt);
+    } else if (this.committedSatelliteQualifierReceipt) {
+      cleaned = await this.cleanupCommittedSatelliteQualifiers(
+        this.committedSatelliteQualifierReceipt
+      );
     } else {
       return false;
     }
@@ -4098,6 +4132,149 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     );
     if (cleaned) this.committedSatelliteReceipt = null;
     return cleaned;
+  }
+
+  private async cleanupCommittedSatelliteQualifiers(
+    receipt: VerifiedSatelliteQualifierReceipt
+  ): Promise<boolean> {
+    this.retireBlindClockAfterCommittedTerminal();
+    this.tournamentFinished = true;
+    this.committedSatelliteQualifierReceipt = receipt;
+    await this.broadcastCommittedOutcome('satellite_qualifiers', {
+      tournamentId: this.tournamentId,
+      receiptVersion: receipt.receiptVersion,
+      qualifierIds: receipt.qualifierIds,
+      awards: receipt.awards,
+      remainder: receipt.remainder,
+      targetId: receipt.targetId,
+    });
+    const cleaned = await this.cleanupCommittedTablesAndManager(
+      receipt.sourceCloseout.sourceTableIds
+    );
+    if (cleaned) this.committedSatelliteQualifierReceipt = null;
+    else if (this.running)
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+    return cleaned;
+  }
+
+  /** The frozen full-ticket plan, not cash-remainder depth, owns this finish. */
+  private async checkSatelliteQualifierCompletion(): Promise<
+    'legacy' | 'continue' | 'pending' | 'complete'
+  > {
+    if (!this.isCohortSatellite()) return 'legacy';
+    if (!this.isRunning() || isMaintenanceFrozen() || !this.eliminationMutationAllowed())
+      return 'pending';
+    try {
+      let state = await readSatelliteQualifierState(this.tournamentId);
+      const cleanCommitted = async (): Promise<boolean> => {
+        if (state.state === 'completed') {
+          await this.cleanupCommittedSatelliteQualifiers(state.receipt);
+          return true;
+        }
+        if (state.state === 'completed_single_winner') {
+          await this.cleanupCommittedSatellite(state.receipt);
+          return true;
+        }
+        return false;
+      };
+      if (await cleanCommitted()) return 'complete';
+      if (!this.isRunning() || isMaintenanceFrozen() || !this.eliminationMutationAllowed())
+        return 'pending';
+      if (state.state === 'qualifying' && !this.satelliteQualifierBoundaryPending)
+        this.holdSatelliteQualifierBoundary();
+
+      if (this.satelliteQualifierBoundaryPending) {
+        const generation = this.satelliteQualifierBoundaryGeneration;
+        const { data: tables, error } = await supabase
+          .from('tables')
+          .select('id')
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['running', 'waiting']);
+        if (error || !tables?.length) return 'pending';
+        const owned = tables.map((table: { id: string }) => ({
+          tableId: table.id,
+          engine: this.tableEngines.get(table.id),
+        }));
+        for (const { tableId, engine } of owned) {
+          if (
+            !this.isRunning() ||
+            isMaintenanceFrozen() ||
+            !this.eliminationMutationAllowed() ||
+            !engine?.isRunning() ||
+            this.gameServer.getTableEngine(tableId) !== engine ||
+            !(await engine.parkForTerminalCloseout(0))
+          )
+            return 'pending';
+        }
+        // All accepted writers and in-flight hands are drained now. The
+        // second serialized read owns cohort membership for this boundary.
+        state = await readSatelliteQualifierState(this.tournamentId);
+        if (await cleanCommitted()) return 'complete';
+        if (
+          !this.isRunning() ||
+          isMaintenanceFrozen() ||
+          !this.eliminationMutationAllowed() ||
+          generation !== this.satelliteQualifierBoundaryGeneration ||
+          owned.some(
+            ({ tableId, engine }) =>
+              this.tableEngines.get(tableId) !== engine ||
+              this.gameServer.getTableEngine(tableId) !== engine ||
+              !engine?.isRunning()
+          )
+        )
+          return 'pending';
+        if (state.state === 'unresolved') return 'pending';
+        if (state.state === 'qualifying') {
+          this.tournamentFinished = true;
+          try {
+            const receipt = await requestSatelliteQualifierReceipt(
+              this.tournamentId,
+              state.qualifierIds
+            );
+            await this.cleanupCommittedSatelliteQualifiers(receipt);
+            return 'complete';
+          } catch (error) {
+            if (error instanceof SatelliteSettlementRefusedError) {
+              this.tournamentFinished = false;
+              reportError(error, 'Tournament.satellite_qualifiers_refused');
+              return 'pending';
+            }
+            reportError(error, 'Tournament.satellite_qualifiers_outcome_unknown');
+            this.fenceUnknownTerminalOutcome('Tournament.satellite_qualifiers_stop_failed');
+            try {
+              await raiseFinancialAlert(
+                'critical',
+                'Tournament.satellite_qualifiers_outcome_unknown',
+                'Satellite qualifier settlement outcome is unknown; the owning dealers remain fenced',
+                { tournament_id: this.tournamentId, qualifier_ids: state.qualifierIds }
+              );
+            } catch (alertError) {
+              reportError(alertError, 'Tournament.satellite_qualifiers_alert_failed');
+            }
+            return 'pending';
+          }
+        }
+        // A single-ticket event keeps the proven v2 payer and remains parked
+        // while that payer certifies the last player. No fictitious cohort.
+        if (
+          state.state === 'continuing' &&
+          state.fullTicketCount < 2 &&
+          state.qualifierIds.length <= 1
+        )
+          return 'legacy';
+        if (!this.releaseSatelliteQualifierBoundary(generation)) return 'pending';
+      }
+      if (state.state === 'unresolved') {
+        this.holdSatelliteQualifierBoundary();
+        return 'pending';
+      }
+      return state.state === 'continuing' && state.fullTicketCount < 2 ? 'legacy' : 'continue';
+    } catch (error) {
+      // An unreadable state can neither select winners nor release a bust
+      // boundary. The existing manager continuation retains its work.
+      reportError(error, 'Tournament.satellite_qualifiers_state_unavailable');
+      return 'pending';
+    }
   }
 
   /**
@@ -4972,7 +5149,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     this.tournamentFinished = true;
     const releaseFinishGuard = (): void => {
       this.tournamentFinished = false;
-      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      // The classified refusal chooses the delay. A deadlock or a timeout keeps
+      // TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS; a rule refusal doubles
+      // away from it to a cap, because asking again in five seconds cannot
+      // change a rule. See noteFinishRefusal.
+      this.requestUrgentEliminationSweepAfter(this.finishRetryDelayMs());
     };
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] FINALIZING... candidate winner: ${winnerId.slice(0, 8)}`
@@ -4991,6 +5172,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         const provenRefusal = satErr instanceof SatelliteSettlementRefusedError;
         const outcomeUnknown =
           satErr instanceof SatelliteSettlementOutcomeUnknownError || !provenRefusal;
+        const alertIsNew = this.noteFinishRefusal(provenRefusal, satErr);
         const message =
           `[Satellite:${this.tournamentId.slice(0, 8)}] atomic terminal settlement ` +
           `${provenRefusal ? 'refused' : 'has an unresolved outcome'}: ` +
@@ -5002,7 +5184,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             : 'Tournament.atomic_satellite_finish_refused'
         );
         try {
-          await raiseFinancialAlert(
+          await this.alertFinishRefusalOnce(
+            alertIsNew,
             'critical',
             outcomeUnknown
               ? 'Tournament.atomic_satellite_finish_outcome_unknown'
@@ -5028,6 +5211,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
 
       this.committedSatelliteReceipt = receipt;
+      this.clearFinishRefusalStreak();
       await this.cleanupCommittedSatellite(receipt);
       return;
     }
@@ -5049,6 +5233,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;
       const outcomeUnknown =
         settlementErr instanceof TerminalSettlementOutcomeUnknownError || !provenRefusal;
+      const alertIsNew = this.noteFinishRefusal(provenRefusal, settlementErr);
       if (provenRefusal) {
         // Counted by a bounded reason so a rule can say WHY finishes are
         // failing, not only that they are (see engineInstruments).
@@ -5063,7 +5248,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           : 'Tournament.atomic_finish_refused'
       );
       try {
-        await raiseFinancialAlert(
+        await this.alertFinishRefusalOnce(
+          alertIsNew,
           'critical',
           outcomeUnknown
             ? 'Tournament.atomic_finish_outcome_unknown'
@@ -5089,6 +5275,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
 
     this.committedFinishReceipt = receipt;
+    this.clearFinishRefusalStreak();
     if (receipt.winnerId.toLowerCase() !== winnerId.toLowerCase()) {
       // The stored receipt was adopted over this manager's own observation.
       // The money is already right (the receipt is the immutable settlement);

@@ -40,7 +40,12 @@ def decode(raw):
         return result
     def bad(value):
         raise ValueError('nonfinite JSON: ' + value)
-    return json.loads(raw, object_pairs_hook=unique, parse_constant=bad, parse_float=Decimal)
+    def number(value):
+        result = Decimal(value)
+        require(result.is_finite() and abs(result.adjusted()) <= 128
+                and len(result.as_tuple().digits) <= 128, 'bounded finite JSON decimal')
+        return result
+    return json.loads(raw, object_pairs_hook=unique, parse_constant=bad, parse_float=number)
 
 
 def observations(raw):
@@ -111,7 +116,9 @@ def body_plan(PG, source, execution, ordinary, tournament, fee, mixed):
         sql('paid_actual_terminal', BASE + 'execute.sql', rules=True)]
 
 
-def validate_observations(values, execution, tournament, rules):
+def validate_observations(values, execution, tournament, rules, capture, oracle):
+    money = oracle.money
+    same = lambda a, b: oracle._jsonb_text(a) == oracle._jsonb_text(b)
     require([v.get('stage') for v in values] == list(STAGES), 'missing or reordered original observations')
     for v in values:
         require(v['execution'] == execution and v['tournament'] == tournament and v['rules'] == rules,
@@ -142,8 +149,13 @@ def validate_observations(values, execution, tournament, rules):
     paid = rows(before, 'tournament_refund_entitlements')
     require(len(paid) == 3 and len({p['user_id'] for p in paid}) == 3, 'three genuine paid identities missing')
     receipt = one(draw, 'spin_draw_receipts'); launch = one(running, 'tournament_launch_receipts')
+    draw_authority, = [f for f in capture['functions']
+                      if f['signature'] == 'fn_spin_draw_multiplier(uuid,numeric,jsonb,numeric,integer)']
+    # The captured real draw binds its own function body to the supplied rules.
+    bound_rules = dict(rules, draw_function_md5=draw_authority['definition_md5'])
     require(receipt['tournament_id'] == tournament and receipt['launch_id'] == before['launch']
-            and receipt['lease_generation'] == before['generation'] and receipt['rule_manifest'] == rules,
+            and receipt['lease_generation'] == before['generation'] and same(receipt['rule_manifest'], bound_rules)
+            and receipt['rule_sha256'] == sha(oracle._jsonb_text(bound_rules).encode()),
             'draw has wrong launch, lease or rules')
     require(launch['tournament_id'] == tournament and launch['launch_id'] == before['launch']
             and launch['lease_generation'] == before['generation'] and launch['completed_at'] is not None
@@ -152,24 +164,96 @@ def validate_observations(values, execution, tournament, rules):
     require(draw['estate'] == obs['paid_draw_replay']['estate'], 'draw replay changed durable state')
     require(final['estate'] == replay['estate'] and replay['calls']['terminal_replay'] == final['calls']['terminal'],
             'terminal replay changed durable state or receipt')
-    for v in values:
+    original_ledger = {r['id']:r for r in rows(before, 'chip_ledger')}
+    original_debits = {r['id']:r for r in rows(before, 'wallet_transactions')}
+    require(len(original_debits) == 3 and all(r['type'] == 'debit' and money(r['amount']) == 1
+            and r['terminal_closed_at'] is None for r in original_debits.values()), 'original paid debits absent')
+    expected_status = ('REGISTERING','REGISTERING','REGISTERING','REGISTERING','RUNNING','RUNNING',
+                       'COMPLETING','COMPLETED','COMPLETED')
+    for index, v in enumerate(values):
+        terminal = index >= 7
         require(not rows(v, 'hand_history') and not rows(v, 'hand_atomic_commits'), 'invented hand evidence')
-        require(len(rows(v, 'tournament_refund_entitlements')) == 3, 'paid identity lost')
+        require(same(rows(v, 'tournament_refund_entitlements'), paid), 'paid identity changed')
+        require(one(v, 'tournaments')['status'] == expected_status[index], 'lifecycle stage differs')
+        ledger = {r['id']:r for r in rows(v, 'chip_ledger')}
+        require(len(ledger) == len(rows(v,'chip_ledger')), 'duplicate financial journal identity')
+        require(all(k in ledger and same(r, ledger[k]) for k,r in original_ledger.items()),
+                'original financial journal changed')
+        transactions = {r['id']:r for r in rows(v, 'wallet_transactions')}
+        require(len(transactions) == len(rows(v,'wallet_transactions')) == (4 if terminal else 3),
+                'unexpected wallet transaction count')
+        for k, r in original_debits.items():
+            expected = dict(r, terminal_closed_at=one(v,'tournament_terminal_settlements')['completed_at']) if terminal else r
+            require(k in transactions and same(expected, transactions[k]), 'original wallet debit changed')
         mint = one(v, 'ca_mint_ledger')
-        require(mint['amount'] == 100 and mint['action'] == 'mint', 'original isolated issue changed')
+        require(money(mint['amount']) == 100 and same(mint, one(before,'ca_mint_ledger')), 'original isolated issue changed')
         club = one(v, 'clubs'); pool = one(v, 'spin_bonus_pools'); escrow = one(v, 'tournament_escrow')
         # Tournament chips are intentionally excluded from this cash equation.
-        total = Decimal(str(club['chip_treasury'])) + sum(Decimal(str(x['chip_balance'])) for x in rows(v, 'club_members'))
-        total += Decimal(str(pool['balance'])) + sum(Decimal(str(escrow[k])) for k in ('prize_balance','bounty_balance','fee_balance'))
-        total += sum(Decimal(str(u[k])) for u in rows(v, 'unions') for k in ('chip_balance','rake_wallet','bbj_wallet','promo_wallet'))
+        total = money(club['chip_treasury']) + sum(money(x['chip_balance']) for x in rows(v, 'club_members'))
+        total += money(pool['balance']) + sum(money(escrow[k]) for k in ('prize_balance','bounty_balance','fee_balance'))
+        total += sum(money(u[k]) for u in rows(v, 'unions') for k in ('chip_balance','rake_wallet','bbj_wallet','promo_wallet'))
+        total += sum(money(u[k]) for u in rows(v, 'union_wallets') for k in
+                     ('chip_balance','rake_wallet','bbj_wallet','promo_wallet','insurance_wallet','spin_reserve_wallet'))
+        total += sum(money(c[k]) for c in rows(v,'club_wallets') for k in ('chip_balance','insurance_balance'))
         require(total == 100, 'independent cash conservation differs')
+        balances = {p['user_id']: money(p['chip_balance']) for p in rows(v,'club_members')}
+        require(balances == {p['user_id']: Decimal(2 if terminal and p['user_id']==winner else 0) for p in paid},
+                'member cash distribution differs')
+        require(money(club['chip_treasury']) == 97 and money(pool['balance']) == Decimal('2.76' if index < 2 else '.76'),
+                'treasury or reserve distribution differs')
+        require([money(escrow[k]) for k in ('prize_balance','fee_balance','bounty_balance')]
+                == [Decimal(0 if terminal or index<2 else 2), Decimal(0 if terminal else '.24'), Decimal(0)],
+                'escrow custody differs')
+        require(same(rows(v,'unions'), rows(before,'unions')), 'legacy Union balance changed')
+        require(not rows(v,'union_wallets') if not terminal else money(one(v,'union_wallets')['rake_wallet']) == Decimal('.24'),
+                'fee banking timing differs')
+        require(all(not rows(v, n) for n in ('wallets','tournament_refund_tranches','tournament_refund_authorizations','agents',
+                'ca_spin_mixed_dispatch_v1','ca_spin_mixed_basis_v1','ca_spin_mixed_completion_v1')),
+                'unexpected alternate custody or mixed admission')
     h = one(final, 'tournament_terminal_settlements'); t = one(final, 'tournaments')
     payout = one(final, 'tournament_payouts'); rake = one(final, 'tournament_rake_settlements')
+    oracle.fields(h, tournament_id=tournament, winner_id=winner, cash_payout_count=1,
+                  cash_payout_total=2, rake_amount=Decimal('.24'), rake_attributed_users=3,
+                  source_seat_count=3, released_seat_count=3, closed_table_count=1)
+    oracle.fields(payout, user_id=winner, amount=2, tournament_id=tournament)
+    oracle.fields(rake, amount=Decimal('.24'), tournament_id=tournament)
     require(t['status'] == 'COMPLETED' and h['winner_id'] == winner and h['cash_payout_count'] == 1
             and h['cash_payout_total'] == 2 and h['rake_amount'] == Decimal('.24'), 'final award or fee differs')
     require(payout['user_id'] == winner and payout['amount'] == 2 and payout['tournament_id'] == tournament,
             'one exact winner payment absent')
     require(rake['amount'] == Decimal('.24') and rake['settled_at'] is not None, 'fee settlement absent')
+    require(h['accounting_state'] == 'recognized' and h['rake_attributed_users'] == 3
+            and h['rake_attributed_at'] is not None and h['rake_destination'] == 'union:'+execution,
+            'complete fee attribution absent')
+    union = one(final,'union_wallets'); bank = one(final,'union_wallet_transactions')
+    recognition = one(final,'accounting_tournament_fee_recognitions')
+    require(union['union_id'] == execution and money(union['rake_wallet']) == Decimal('.24')
+            and money(union['total_rake_collected']) == Decimal('.24')
+            and all(money(union[k]) == 0 for k in ('chip_balance','bbj_wallet','promo_wallet','insurance_wallet','spin_reserve_wallet')),
+            'bank custody differs')
+    require(bank['union_id'] == execution and bank['club_id'] == execution and bank['wallet'] == 'rake_wallet'
+            and bank['direction'] == 'credit' and bank['tx_type'] == 'rake'
+            and money(bank['amount']) == Decimal('.24') and money(bank['balance_after']) == Decimal('.24'),
+            'fee bank transaction differs')
+    require(recognition['tournament_id'] == tournament and recognition['status'] == 'recognized'
+            and recognition['union_id'] == execution and recognition['bank_club_id'] == execution
+            and recognition['union_wallet_transaction_id'] == bank['id'] and money(recognition['net_rake']) == Decimal('.24'),
+            'recognition does not bind actual bank receipt')
+    sources = rows(final,'accounting_tournament_fee_sources'); recognized = rows(final,'accounting_tournament_recognized_sources')
+    require(same(sources, rows(before,'accounting_tournament_fee_sources')) and len(sources) == 3
+            and len(recognized) == 3 and {r['source_id'] for r in recognized} == {s['id'] for s in sources}
+            and all(r['tournament_id'] == tournament and r['disposition'] == 'earned'
+                    and money(r['rake_credit']) == Decimal('.08') for r in recognized), 'per-player fee recognition differs')
+    credit, = [r for r in rows(final,'wallet_transactions') if r['id'] not in original_debits]
+    require(credit['user_id'] == winner and credit['type'] == 'credit' and credit['category'] == 'prize'
+            and credit['related_entity_id'] == tournament and money(credit['amount']) == 2
+            and money(credit['balance_after']) == 2, 'winner wallet credit differs')
+    additions = [r for r in rows(final,'chip_ledger') if r['id'] not in original_ledger]
+    require(len(additions) == 3 and {(r['from_type'],r['to_type'],money(r['amount'])) for r in additions}
+            == {('spin_reserve','prize_liability',Decimal(2)),('prize_liability','player_wallet',Decimal(2)),
+                ('prize_liability','union_wallet',Decimal('.24'))}
+            and all(r['tournament_id'] == tournament and r['status'] == 'posted' for r in additions),
+            'draw prize and fee journals differ')
     require(one(final, 'spin_bonus_pools')['balance'] == Decimal('.76')
             and one(final, 'clubs')['chip_treasury'] == 97, 'reserve or treasury differs')
     require({p['position'] for p in rows(final, 'tournament_players')} == {1,2,3}
@@ -186,6 +270,78 @@ def validate_observations(values, execution, tournament, rules):
             'full_financial_qualification': False, 'historical_qualification': False, 'production_qualification': False}
 
 
+def negative_controls(values, execution, tournament, rules, capture, oracle):
+    """Reject corruptions of the actual native observations, never seeded proof.
+
+    Mutate both terminal observations together so replay equality cannot hide
+    a missing independent invariant. No original evidence is changed.
+    """
+    controls = [
+        ('clubs','chip_treasury',Decimal('96.99')),
+        ('club_members','chip_balance','0.00'),
+        ('club_members','chip_balance',False),
+        ('spin_bonus_pools','balance',Decimal('.77')),
+        ('tournament_escrow','prize_balance',Decimal('.01')),
+        ('union_wallets','rake_wallet',Decimal('.23')),
+        ('union_wallets','insurance_wallet',Decimal('.01')),
+        ('union_wallets','union_id',tournament),
+        ('union_wallets','total_rake_collected',Decimal('.23')),
+        ('union_wallet_transactions','amount',Decimal('.23')),
+        ('union_wallet_transactions','direction','debit'),
+        ('union_wallet_transactions','wallet','promo_wallet'),
+        ('union_wallet_transactions','club_id',tournament),
+        ('accounting_tournament_fee_recognitions','union_wallet_transaction_id',tournament),
+        ('accounting_tournament_fee_recognitions','status','unknown'),
+        ('accounting_tournament_recognized_sources','rake_credit',Decimal('.07')),
+        ('accounting_tournament_recognized_sources','source_id',tournament),
+        ('accounting_tournament_recognized_sources','disposition','refunded'),
+        ('tournament_refund_entitlements','gross',Decimal('.99')),
+        ('chip_ledger','amount',Decimal('.01')),
+        ('wallet_transactions','amount',Decimal('.01')),
+        ('tournament_terminal_settlements','cash_payout_count',True),
+        ('tournament_terminal_settlements','rake_attributed_users',2),
+        ('tournament_terminal_settlements','rake_attributed_at',None),
+        ('tournament_terminal_settlements','source_seat_count',2),
+        ('tournament_payouts','user_id',tournament),
+        ('tournament_payouts','amount',Decimal('1.99')),
+        ('tournament_rake_settlements','settled_at',None),
+        ('table_seats','left_at',None),
+        ('tables','status','active'),
+    ]
+    rejected = []
+    def must_refuse(label, changed):
+        try:
+            validate_observations(changed, execution, tournament, rules, capture, oracle)
+        except ValueError:
+            rejected.append(label)
+            return
+        raise AssertionError('corrupt paid terminal evidence accepted: '+label)
+    for table, key, value in controls:
+        changed = deepcopy(values)
+        for v in changed[-2:]:
+            v['estate']['public.'+table][0][key] = value
+        must_refuse(table+'.'+key+':'+str(value), changed)
+    for table in ('union_wallet_transactions','accounting_tournament_recognized_sources',
+                  'tournament_payouts','wallet_transactions'):
+        for duplicate in (False,True):
+            changed = deepcopy(values)
+            for v in changed[-2:]:
+                rows = v['estate']['public.'+table]
+                if duplicate: rows.append(deepcopy(rows[0]))
+                else: rows.pop()
+            must_refuse(table+(':duplicate' if duplicate else ':missing'), changed)
+    for field, value in (('rule_sha256','f'*64),('rule_manifest',rules),('lease_generation',tournament)):
+        changed = deepcopy(values)
+        for v in changed[2:]:
+            v['estate']['public.spin_draw_receipts'][0][field] = value
+        must_refuse('draw.'+field, changed)
+    for index in range(len(values)):
+        changed = deepcopy(values); changed.pop(index)
+        must_refuse('missing:'+values[index]['stage'], changed)
+    require(len(rejected) == 50, 'negative control count differs')
+    return rejected
+
+
 def validate_outputs(source, work, execution, tournament, fee):
     provider_raw = (work / 'paid_launch_provider.stdout').read_bytes()
     provider, = observations(provider_raw)
@@ -197,8 +353,11 @@ def validate_outputs(source, work, execution, tournament, fee):
     raw = (work / 'paid_actual_terminal.stdout').read_bytes()
     values = observations(raw)
     rules = decode((source / BASE / 'rules.json').read_bytes())
-    summary = validate_observations(values, execution, tournament, rules)
-    return {'summary': summary, 'stdout_sha256': sha(raw), 'provider_stdout_sha256': sha(provider_raw)}
+    oracle = fee.load_oracle(source)
+    summary = validate_observations(values, execution, tournament, rules, capture, oracle)
+    rejected = negative_controls(values, execution, tournament, rules, capture, oracle)
+    return {'summary': summary, 'negative_controls': rejected,
+            'stdout_sha256': sha(raw), 'provider_stdout_sha256': sha(provider_raw)}
 
 
 def validate_stages(receipt, PG, source, execution, ordinary, tournament, fee, mixed):

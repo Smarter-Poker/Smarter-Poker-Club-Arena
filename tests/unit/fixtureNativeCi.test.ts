@@ -204,6 +204,19 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/ci/test-f06-shared-hand-lane.py',
+    'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/unsettled-preimages.json',
+    'scripts/ci/probes/f06-shared-hand-lane/unsettled-authority.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/unsettled-bindings.json',
+    'scripts/ci/probes/f06-shared-hand-lane/unsettled-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/unsettled-freeze-preimages.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/build-unsettled-migration.py',
+  ])('runs the existing accounting job for F06 input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it.each([
     'scripts/ci/test-satellite-qualifiers.py',
     'scripts/ci/satellite_qualifier_fixture.py',
     'scripts/ci/satellite_qualifier_concurrency.py',

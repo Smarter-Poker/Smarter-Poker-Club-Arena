@@ -1,0 +1,23 @@
+{
+  "scope": "Read-only compatibility source bindings. No decoder change or claim of live retirement; actual certified engine activation remains required.",
+  "revisions": {
+    "2bbc5d5cc6950178c237d38a1aa279f1b05b4f87": {
+      "server/src/services/supabase/dataActorContext.ts": "adfcb782154fd1991068464792a076161b9af2c0d7918dd1c4767d2e470aaf18",
+      "server/src/services/supabase/client.ts": "4c55b138b3cdc3ff6fa267bfe6acf40d905e32e75abff9406e089466b0186479",
+      "server/src/services/TournamentRetirementCustody.ts": "c5354e0c1dc9f6c4c2f736797f99a4a93a5894bba0918d78ad27b71ede176fe7",
+      "server/src/tournament/TournamentManagerBase.ts": "755e817f5a28cf4e3aef278d02d3f66a0bb67c0c83167bea37eb42fb0e3977a7",
+      "server/src/GameServer.ts": "7d6299bd3d3d7f36753609e6e69ec31256436e6e3e8a92c7d28152c080c4cf24",
+      "server/src/engine/ServerTableEngineBase.ts": "731db31b390596b8bfaa628e609f33cb1af7b12637f03811ba80613dd2b4a7ee",
+      "server/src/maintenance/MaintenanceBreak.ts": "4a9a27c54dc9fd1998c34fa241c55bfd2f2e736b0a76151f39df5a6e86ffce9d"
+    },
+    "2adbb2e85dfaf6f3a85ff0a721d26262162ad95c": {
+      "server/src/services/supabase/dataActorContext.ts": "adfcb782154fd1991068464792a076161b9af2c0d7918dd1c4767d2e470aaf18",
+      "server/src/services/supabase/client.ts": "4c55b138b3cdc3ff6fa267bfe6acf40d905e32e75abff9406e089466b0186479",
+      "server/src/services/TournamentRetirementCustody.ts": "c5354e0c1dc9f6c4c2f736797f99a4a93a5894bba0918d78ad27b71ede176fe7",
+      "server/src/tournament/TournamentManagerBase.ts": "755e817f5a28cf4e3aef278d02d3f66a0bb67c0c83167bea37eb42fb0e3977a7",
+      "server/src/GameServer.ts": "7d6299bd3d3d7f36753609e6e69ec31256436e6e3e8a92c7d28152c080c4cf24",
+      "server/src/engine/ServerTableEngineBase.ts": "731db31b390596b8bfaa628e609f33cb1af7b12637f03811ba80613dd2b4a7ee",
+      "server/src/maintenance/MaintenanceBreak.ts": "4a9a27c54dc9fd1998c34fa241c55bfd2f2e736b0a76151f39df5a6e86ffce9d"
+    }
+  }
+}

@@ -270,15 +270,35 @@ describe('required CI owns native fixture verification', () => {
     expect(artifact.with['retention-days']).toBe(7);
   });
 
-  it('declares only the pending movement RPC without an installed-schema claim', () => {
+  it('declares qualified pending movement objects without a production installation claim', () => {
     const fragment = JSON.parse(
       readFileSync(join(root, 'scripts/ci/schema-manifest.d/f06-movement-admission.json'), 'utf8')
     );
-    expect(fragment.functions).toEqual(['fn_f06_admit_parked_movement']);
-    expect(fragment.tables).toBeUndefined();
-    expect(fragment.columns).toBeUndefined();
+    expect(fragment.functions).toEqual([
+      'fn_f06_admit_parked_movement',
+      'smarter_private.f06_movement_immutable',
+      'smarter_private.f06_movement_permits',
+      'smarter_private.f06_movement_prior',
+      'smarter_private.f06_assert_movement',
+      'smarter_private.f06_movement_transition_guard',
+    ]);
+    expect(fragment.tables).toEqual(['smarter_private.f06_movement_admissions']);
+    expect(fragment.columns['smarter_private.f06_movement_admissions']).toEqual([
+      'admission_id',
+      'tournament_id',
+      'lease_generation',
+      'table_id',
+      'lifecycle',
+      'break_id',
+      'custody_id',
+      'revision',
+      'requested_revision',
+      'proof',
+      'proof_hash',
+      'created_at',
+    ]);
     expect(fragment._comment).toContain('Pending');
-    expect(fragment._comment).toContain('not an installed-production claim');
+    expect(fragment._comment).toContain('not a production installation claim');
   });
 
   it.each([

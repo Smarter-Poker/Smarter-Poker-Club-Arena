@@ -49,7 +49,7 @@ class Results(unittest.TestCase):
     def test_nonzero_exit(self):
         with self.assertRaises(RuntimeError):owner.validate_race(1,transcript('commit'),'','commit')
     def test_missing_completed_caller_result(self):
-        with self.assertRaises(RuntimeError):owner.validate_race(0,transcript('commit').replace('step b_claim_commit: <... completed>\nclaim\n-----\n     \n(1 row)','step b_claim_commit: <... completed>'),'','commit')
+        with self.assertRaises(RuntimeError):owner.validate_race(0,transcript('commit').replace('step b_claim_commit: <... completed>\nclaim\n-----\n\n(1 row)','step b_claim_commit: <... completed>'),'','commit')
     def test_duplicate_claim_notice(self):
         with self.assertRaises(RuntimeError):owner.validate_race(0,transcript('commit')+'b: NOTICE: MOVEMENT_RACE_CLAIM_PROVEN\n','','commit')
     def test_wrong_permutation(self):

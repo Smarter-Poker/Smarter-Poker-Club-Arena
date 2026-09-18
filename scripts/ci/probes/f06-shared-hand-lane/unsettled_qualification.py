@@ -195,8 +195,13 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     # Interleave a new permit reader before it drains to exercise re-admission.
     reader=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
     with held('LOCK TABLE public.ca_declared_money_triggers IN ACCESS EXCLUSIVE MODE;'):
-        admitted=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-        admitted.stdin.write("SET application_name='f06-corrected-installer';"+installer);admitted.stdin.close()
+        # The 70KB migration exceeds Linux's stdin pipe capacity. Feeding it
+        # synchronously can block this parent until admission times out, before
+        # the parent reaches the reader-release barrier. psql owns the file read.
+        admitted_sql=out/'abort-concurrent-installer.sql'
+        admitted_sql.write_text("SET application_name='f06-corrected-installer';"+installer)
+        admitted=subprocess.Popen(cmd+['-f',str(admitted_sql)],stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         barrier("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='f06-corrected-installer' AND wait_event='PgSleep');",admitted,'corrected installer releases partial lock set')
         reader.stdin.write("BEGIN;SET lock_timeout='1s'; LOCK TABLE smarter_private.f06_hand_permits IN ACCESS SHARE MODE; SELECT count(*) FROM smarter_private.f06_operations; SELECT pg_advisory_lock(18092029);\n")
         reader.stdin.flush()

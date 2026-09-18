@@ -63,7 +63,7 @@ def original_acl_sql():
   out.append(f"REVOKE ALL ON FUNCTION public.{r['signature']} FROM PUBLIC,anon,authenticated,service_role;\nGRANT EXECUTE ON FUNCTION public.{r['signature']} TO {roles};")
  return '\n'.join(out)
 def render():
- out=["-- Original tournament financial identities and liability transitions, prospectively captured.\n-- No historical seed, new payer, commercial ownership assumption or gameplay policy.\nBEGIN;\nSET LOCAL lock_timeout='3s';\nSET LOCAL search_path=public,pg_temp;\n"]
+ out=["-- Original tournament financial identities and liability transitions, prospectively captured.\n-- No historical seed, new payer, commercial ownership assumption or gameplay policy.\nBEGIN;\nSET LOCAL lock_timeout='3s';\nSET LOCAL search_path=public,pg_temp;\n-- Refuse conflicting live owners before any trigger DDL, including batched applies.\nLOCK TABLE public.chip_ledger,public.tournament_obligations IN SHARE ROW EXCLUSIVE MODE NOWAIT;\n"]
  # Every original owner/config/ACL is checked before any changes.
  for r in rows:
   acl=r['acl']

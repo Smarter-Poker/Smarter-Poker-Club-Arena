@@ -1,5 +1,5 @@
 """Two real PostgreSQL sessions; no mocked lock or accounting implementation."""
-import json, os, subprocess, sys, time
+import json, os, pathlib, re, subprocess, sys, time
 psql, socket, port = sys.argv[1:]
 env = dict(os.environ, PGAPPNAME='union_inventory_native')
 base = [psql, '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', socket, '-p', port, '-d', 'postgres']
@@ -21,6 +21,54 @@ def finish(proc):
     proc.stdin.close()
     code=proc.wait(timeout=5)
     assert code==0, proc.stderr.read()
+
+def waiting_for_relation(name):
+    deadline=time.monotonic()+5
+    while time.monotonic()<deadline:
+        if query("SELECT count(*) FROM pg_stat_activity WHERE application_name='"+name+"' AND wait_event_type='Lock' AND wait_event='relation';")=='1': return
+        time.sleep(.02)
+    raise AssertionError('expected original relation lock wait: '+name)
+
+# Reproduce the measured installation cycle on real owner tables. No money
+# moves: these no-op updates acquire the same PostgreSQL relation lock modes.
+writer=connection('inventory_install_old_writer')
+write(writer,"BEGIN; UPDATE table_seats SET stack=stack; SELECT 'seat-owned';")
+until(writer,'seat-owned')
+installer=connection('inventory_install_old_ddl')
+write(installer,"BEGIN; SET LOCAL deadlock_timeout='50ms'; SET LOCAL lock_timeout='2s'; LOCK TABLE tables IN SHARE ROW EXCLUSIVE MODE; SELECT 'table-owned'; LOCK TABLE table_seats IN SHARE ROW EXCLUSIVE MODE; COMMIT;")
+until(installer,'table-owned')
+waiting_for_relation('inventory_install_old_ddl')
+write(writer,'UPDATE tables SET is_private=is_private; COMMIT;')
+writer.stdin.close();installer.stdin.close()
+codes=[p.wait(timeout=5) for p in (writer,installer)]
+errors='\n'.join(p.stderr.read() for p in (writer,installer))
+assert sum(code!=0 for code in codes)==1 and 'deadlock detected' in errors,(codes,errors)
+print('PASS: original tables-before-seats installation reproduces the actual owner deadlock')
+
+root=pathlib.Path(__file__).resolve().parents[3]
+migration=(root/'supabase/migrations/20260917233148_union_pnl_inventory_preserves_original_boundaries.sql').read_text()
+admission=re.findall(r'^LOCK TABLE .+?;$',migration,re.M)
+assert len(admission)==2 and admission[0]=='LOCK TABLE public.table_seats IN SHARE ROW EXCLUSIVE MODE;'
+assert admission[1].endswith(' NOWAIT;')
+writer=connection('inventory_install_fixed_writer')
+write(writer,"BEGIN; UPDATE table_seats SET stack=stack; SELECT 'seat-owned';")
+until(writer,'seat-owned')
+installer=connection('inventory_install_fixed_ddl')
+write(installer,"BEGIN; SET LOCAL lock_timeout='2s'; "+' '.join(admission)+" SELECT 'admitted'; ROLLBACK;")
+waiting_for_relation('inventory_install_fixed_ddl')
+write(writer,'UPDATE tables SET is_private=is_private; COMMIT;');finish(writer)
+until(installer,'admitted');finish(installer)
+print('PASS: exact migration admission lets the original seat-then-table writer finish before DDL')
+
+# A different original owner can already hold a later source. NOWAIT must
+# retire only this migration attempt and promptly release its first lock.
+writer=connection('inventory_install_competing_owner')
+write(writer,"BEGIN; UPDATE tournaments SET status=status; SELECT 'tournament-owned';")
+until(writer,'tournament-owned')
+refusal=subprocess.run(base+['-c',"BEGIN; SET LOCAL lock_timeout='2s'; "+' '.join(admission)+" ROLLBACK;"],text=True,capture_output=True,env=env,timeout=5)
+assert refusal.returncode!=0 and 'could not obtain lock on relation' in refusal.stderr,refusal.stderr
+write(writer,'UPDATE table_seats SET stack=stack; COMMIT;');finish(writer)
+print('PASS: competing later owner refuses only installation and releases its seat lock')
 
 # The real original trigger owns a shared transaction lock until commit.
 w=connection('union_inventory_actual_writer')

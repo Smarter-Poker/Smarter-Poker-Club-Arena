@@ -6,6 +6,12 @@ BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
 
+-- The live hand owner writes seats before tables. Drain that first relation
+-- before holding another source lock; refuse competing later owners immediately
+-- instead of forming a DDL/gameplay lock cycle. All locks end with this apply.
+LOCK TABLE public.table_seats IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE public.tables,public.tournaments,public.tournament_players,public.union_clubs IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+
 CREATE TABLE public.union_pnl_inventory_capture (
  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
  captured_at timestamptz NOT NULL CHECK(isfinite(captured_at)),

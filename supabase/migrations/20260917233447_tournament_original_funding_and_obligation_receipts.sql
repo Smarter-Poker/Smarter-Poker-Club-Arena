@@ -3,6 +3,8 @@
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL search_path=public,pg_temp;
+-- Refuse conflicting live owners before any trigger DDL, including batched applies.
+LOCK TABLE public.chip_ledger,public.tournament_obligations IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 
 DO $precondition$
 BEGIN

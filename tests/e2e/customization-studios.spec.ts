@@ -357,11 +357,15 @@ test.describe('real Table Studio browser flows', () => {
         await shell.scrollIntoViewIfNeeded();
         const bounds = await shell.boundingBox();
         expect(bounds, `preview bounds for ${name}`).not.toBeNull();
+        // Derive the output dimensions from the element itself so fractional
+        // viewport scroll alignment cannot add or remove an edge pixel in CI.
+        const width = Math.ceil(bounds!.width);
+        const height = Math.ceil(bounds!.height);
         const clip = {
-          x: Math.floor(bounds!.x),
-          y: Math.floor(bounds!.y),
-          width: Math.ceil(bounds!.x + bounds!.width) - Math.floor(bounds!.x),
-          height: Math.ceil(bounds!.y + bounds!.height) - Math.floor(bounds!.y),
+          x: bounds!.x - (width - bounds!.width) / 2,
+          y: bounds!.y - (height - bounds!.height) / 2,
+          width,
+          height,
         };
         const screenshot = await page.screenshot({
           animations: 'disabled',

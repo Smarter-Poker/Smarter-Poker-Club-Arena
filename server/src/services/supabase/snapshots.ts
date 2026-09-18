@@ -219,6 +219,7 @@ export interface ParkedTimeBank {
   initialSeconds: number;
   baseSeconds: number;
   dbConsumedSeconds: number;
+  unlimitedActivations?: boolean;
 }
 
 export async function savePresenceAtPark(params: {

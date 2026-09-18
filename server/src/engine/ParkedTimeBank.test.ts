@@ -126,6 +126,46 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
     expect(data.rpc).not.toHaveBeenCalled();
   });
 
+  it.each([true, undefined])(
+    'preserves unlimited-use metadata through repeated startup and roster checkpoints (%s)',
+    async (unlimitedActivations) => {
+      const old = engine();
+      old.timeBankEngine.initializePlayer(table, user, {
+        remainingSeconds: 0,
+        usesRemaining: 0,
+        unlimitedActivations,
+      });
+      old.timeBankMeta.set(user, {
+        initialSeconds: 80,
+        baseSeconds: 40,
+        dbConsumedSeconds: 40,
+        ...(unlimitedActivations ? { unlimitedActivations: true } : {}),
+      });
+      await old.persistPresenceForRestart('parked');
+      const originalBank = structuredClone(data.row.time_bank_snapshot.players[user]);
+
+      for (let generation = 0; generation < 2; generation++) {
+        const next = freshStartup();
+        await next.start();
+        expect(next.killForRestart).not.toHaveBeenCalled();
+        next.running = true;
+        next.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
+        expect(next.timeBankEngine.isUnlimited(table, user)).toBe(unlimitedActivations === true);
+        await next.persistPresenceForRestart('parked');
+        next.running = false;
+        expect(data.row.time_bank_snapshot.handNumber).toBe(12);
+        expect(data.row.time_bank_snapshot.players[user]).toEqual(originalBank);
+        expect(next.timeBankMeta.get(user)).toEqual({
+          initialSeconds: 80,
+          baseSeconds: 40,
+          dbConsumedSeconds: 40,
+          ...(unlimitedActivations ? { unlimitedActivations: true } : {}),
+        });
+      }
+      expect(data.rpc).not.toHaveBeenCalled();
+    }
+  );
+
   it.each(['refused', 'thrown', 'invalid'])(
     'refuses startup before overwriting a saved bank when hand history is %s',
     async (outcome) => {

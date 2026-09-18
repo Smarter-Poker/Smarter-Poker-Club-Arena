@@ -130,6 +130,12 @@ export interface PausableTableEngine {
   isBetweenHands(): boolean;
   /** Initialized time banks have reached the durable park row. */
   isMaintenanceStateDurable?(): boolean;
+  /**
+   * Which durability condition is false, or null when none is. Optional: an
+   * engine that does not answer is reported under `unknown` rather than
+   * silently folded into the total.
+   */
+  maintenanceDurabilityReason?(): string | null;
   isRunning(): boolean;
   /**
    * Cash or tournament. Optional: an engine that does not say is treated as
@@ -1754,18 +1760,35 @@ export class MaintenanceBreak {
    *
    * A stopped engine is not counted: it has no hand to protect.
    */
+  /** Last reason breakdown computed by `unparkedTables`, for /health. */
+  private unparkedReasonCounts: Record<string, number> = {};
+
   private unparkedTables(): string[] {
     const out: string[] = [];
+    const reasons: Record<string, number> = {};
+    const count = (reason: string) => {
+      reasons[reason] = (reasons[reason] ?? 0) + 1;
+    };
     for (const [tableId, engine] of this.deps.engines()) {
       try {
         if (!engine.isRunning()) continue;
-        if (!engine.isBetweenHands() || engine.isMaintenanceStateDurable?.() === false)
+        if (!engine.isBetweenHands()) {
           out.push(tableId);
+          count('cards_in_air');
+          continue;
+        }
+        if (engine.isMaintenanceStateDurable?.() === false) {
+          out.push(tableId);
+          // The engine's own answer when it has one; an engine that only
+          // publishes the boolean is counted, not guessed at.
+          count(engine.maintenanceDurabilityReason?.() ?? 'unknown');
+        }
       } catch {
         // Unreadable engines are not counted against the gate; an engine that
         // throws on inspection is already being handled by the reapers.
       }
     }
+    this.unparkedReasonCounts = reasons;
     if (this.phase === 'counting_down' && out.length > this.peakUnparked) {
       this.peakUnparked = out.length;
     }
@@ -2245,6 +2268,8 @@ export class MaintenanceBreak {
       breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,
       remainingMs: this.remainingMs(),
       unparkedTables: unparked.length,
+      // Why, not just how many: see maintenanceDurabilityReason on the engine.
+      unparkedReasons: { ...this.unparkedReasonCounts },
       readyForRestart: this.readyForRestart(),
       reason: this.reason,
       resumeWaves: this.resumeWaves,

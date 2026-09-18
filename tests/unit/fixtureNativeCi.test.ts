@@ -263,6 +263,18 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-fixture.sql',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-freeze-preimages.sql',
     'scripts/ci/probes/f06-shared-hand-lane/build-unsettled-migration.py',
+    'scripts/ci/probes/f06-shared-hand-lane/build-spin-prior-migration.py',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-boundary.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-current-guard.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin_prior_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-ended-dispatch.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-refusal-preimages.json',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-retention-prefix.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-current-journal.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-continuation-dependency.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/spin-prior-continuation-postimages.json',
+    'supabase/migrations/20260918092117_spin_interrupted_hands_retain_their_prior_committed_stacks.sql',
   ])('runs the existing accounting job for F06 input %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });

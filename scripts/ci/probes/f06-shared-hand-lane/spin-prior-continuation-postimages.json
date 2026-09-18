@@ -1,0 +1,50 @@
+{
+  "source_sha256": "57bdce8ed60155806193cfc728bf5e92e97964ffff48106c70c064ca968ba608",
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "974e426ede5bd86fa3410fc98f5461f9",
+      "full_md5": "939baec6716d7540281a2ed6073e69e9",
+      "signature": "fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "2e7bb0d5bdd6b540eb9974bb78743e46",
+      "full_md5": "a7467e2cb64bab202a359eed42432299",
+      "signature": "smarter_private.f06_cancelled_preparation_writer_guard()",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog"],
+      "body_md5": "31329a1df4bec9c92e0517b38fd42b93",
+      "full_md5": "0fe40a0711ef6d196c6883d3b9e8b86f",
+      "signature": "smarter_private.f06_immutable_identity()",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog"],
+      "body_md5": "a180b238189c1c47641a787c989b22b1",
+      "full_md5": "2c87da2a00030dcc36ecb62bf51b2a89",
+      "signature": "smarter_private.f06_no_start_continuation_immutable()",
+      "security_definer": false
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "body_md5": "a3dc8a8721c6c0f466aa4ee3a164bc64",
+      "full_md5": "7d3ad2c3da0832cac282f21a83cb5e0f",
+      "signature": "smarter_private.f06_no_start_prior_committed_stacks(uuid,jsonb,jsonb)",
+      "security_definer": true
+    }
+  ]
+}

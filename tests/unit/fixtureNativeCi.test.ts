@@ -1474,3 +1474,33 @@ it('the actual replay condition executes for missing output and non-instruction 
   expect(ci.jobs.typecheck_compile.needs).toBeUndefined();
   expect(ci.jobs.typecheck_compile.if).toBe("github.event_name == 'pull_request'");
 });
+
+describe('original Breakfast witness reaches its existing accounting gate', () => {
+  it.each([
+    'scripts/ci/test-breakfast-original-witness.py',
+    'scripts/ci/breakfast_fixture.py',
+    'scripts/ci/breakfast_original_witness.py',
+    'scripts/ci/breakfast_qualification.py',
+    'scripts/ci/breakfast_concurrency.py',
+    'scripts/ci/fixtures/breakfast-original-witness/installed-terminal.json',
+    'scripts/ci/probes/breakfast-original-witness/authority.sql',
+  ])('selects accounting and source tests for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+  it('runs one real qualifier with no conditional or failure suppression', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const run = steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-breakfast-original-witness.py')
+    );
+    expect(run).toHaveLength(1);
+    expect(run[0].if).toBeUndefined();
+    expect(run[0]['continue-on-error']).toBeUndefined();
+    expect(run[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(run[0].env.PG_ISOLATION_TESTER).toContain('postgresql-17-isolationtester');
+    const artifact = steps.find(
+      (step: { name?: string }) => step.name === 'Retain original Breakfast witness qualification'
+    );
+    expect(artifact.if).toContain('steps.breakfast_original_witness.outcome');
+    expect(artifact.with['if-no-files-found']).toBe('error');
+  });
+});

@@ -200,3 +200,7 @@ tests/components/cashier-cashout-generations.test.tsx
 tests/unit/FinancialAlertServiceRead.test.ts
 tests/unit/CreditReductionContract.test.ts
 tests/helpers/creditReductionReceipt.ts
+
+# Original Breakfast financial captures and frozen dependency seals. Preserve
+# PostgreSQL numeric scale inside JSON, which participates in source hashes.
+scripts/ci/fixtures/breakfast-original-witness/*.json

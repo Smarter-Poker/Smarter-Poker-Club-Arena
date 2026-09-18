@@ -18,7 +18,7 @@ a: NOTICE:  MOVEMENT_RACE_CLAIM_PROVEN
 step a_claim: SELECT pg_temp.claim(false);
 claim
 -----
-     
+
 (1 row)
 step b_claim_{mode}: SELECT pg_temp.claim(true); <waiting ...>
 observer: NOTICE:  MOVEMENT_RACE_WAIT_PROVEN
@@ -28,7 +28,7 @@ b: NOTICE:  MOVEMENT_RACE_CLAIM_PROVEN
 step b_claim_{mode}: <... completed>
 claim
 -----
-     
+
 (1 row)
 observer: NOTICE:  MOVEMENT_RACE_EFFECTS_PROVEN
 step final_state: SELECT verify_actual_rows();

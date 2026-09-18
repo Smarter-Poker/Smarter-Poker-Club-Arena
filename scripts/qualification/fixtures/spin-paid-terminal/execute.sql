@@ -108,9 +108,11 @@ UPDATE public.tournament_players p SET chips=3000 FROM paid_q q
  WHERE p.tournament_id=q.tournament AND p.user_id=q.winner;
 UPDATE public.table_seats s SET stack=CASE WHEN s.user_id=q.winner THEN 3000 ELSE 0 END
  FROM paid_q q,public.tables t WHERE t.tournament_id=q.tournament AND s.table_id=t.id;
-COMMIT;
+-- The modeled final busts and actual finish claim share a transaction.
+-- The deferred live-seat/roster guard sees COMPLETING at commit, before
+-- the actual terminal owner releases all seats in the next transaction.
+-- This intermediate observation is explicitly uncommitted synthetic input.
 SELECT pg_temp.paid_observe('paid_synthetic_finish');
-BEGIN;
 SELECT set_config('request.jwt.claims','{"role":"service_role"}',true),
  set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','service_role',true);
 SET LOCAL ROLE service_role;

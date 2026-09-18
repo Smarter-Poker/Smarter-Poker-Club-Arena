@@ -19,8 +19,8 @@
       "sha256": "1b17500f439fa5c623380f00faf350663ba70c35adacd13552ff30049213f341"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/execute.sql": {
-      "bytes": 9481,
-      "sha256": "34fa485f7d71d9c361cd244d2ab1187eda12f64c8ada05903e1db78cf1c9f68f"
+      "bytes": 9760,
+      "sha256": "8d95d637523647750565be39ba1e518db6d4f45f7699317de90589b5b1c16fea"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/rules.json": {
       "bytes": 18511,

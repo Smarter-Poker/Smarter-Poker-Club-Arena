@@ -1348,6 +1348,24 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-departure-postgres.sh
+      - name: Accepted eliminations preserve parked source custody
+        id: f06_accepted_elimination
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: |
+          python3 tests/operations/f06-elimination-results.test.py
+          python3 scripts/ci/test-f06-accepted-elimination.py \
+            --root "$GITHUB_WORKSPACE" --pg-bin "$PG_BIN" \
+            --evidence "$RUNNER_TEMP/f06-accepted-elimination"
+      - name: Retain accepted elimination custody evidence
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_accepted_elimination.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: f06-accepted-elimination-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/f06-accepted-elimination/
+          if-no-files-found: error
+          retention-days: 7
       - name: Horse profile authority, API roles and concurrent writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

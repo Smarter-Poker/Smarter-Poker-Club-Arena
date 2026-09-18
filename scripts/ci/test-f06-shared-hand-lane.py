@@ -174,6 +174,9 @@ try:
     retention = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/snapshot_retention_qualification.py'))
     retention['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('snapshotRetention', {}).get('passed') is True, 'Unresolved snapshot retention did not qualify')
+    projected = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/earlybird_projected_qualification.py'))
+    projected['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('earlybirdProjected', {}).get('passed') is True, 'Original projected witness did not qualify')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

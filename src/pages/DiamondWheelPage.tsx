@@ -723,7 +723,7 @@ export default function DiamondWheelPage() {
         ? 'gold'
         : 'green'
       : 'red';
-  const wheelSize = Math.max(240, Math.min(1000, stageWidth));
+  const wheelSize = Math.max(240, stageWidth);
   /* The welcome spin is once and for all, so the idle line says so rather than
      promising another one tomorrow (Dan 2026-09-10). */
   const welcomeNote =
@@ -770,13 +770,83 @@ export default function DiamondWheelPage() {
         pillInk={pillInk}
         aria-labelledby="diamond-wheel-title"
         setup={
-          state.contract_version === 2 || state.contract_version === 3 ? (
-            <WheelEntry
-              value={freeMode ? 100 : entryDiamonds}
-              disabled={freeMode || spinning || running || Boolean(recovery)}
-              onChange={setEntryDiamonds}
+          <>
+            <nav aria-label="Spin Entry" className={styles.rows}>
+              <button
+                type="button"
+                className={styles.back}
+                disabled={spinning || running || Boolean(recovery)}
+                aria-pressed={mode === 'paid'}
+                onClick={() => {
+                  setMode('paid');
+                  setAutoSize(0);
+                }}
+              >
+                Paid Spin
+              </button>
+              {welcome?.available && (
+                <button
+                  type="button"
+                  className={styles.back}
+                  disabled={spinning || running || Boolean(recovery)}
+                  aria-pressed={welcomeMode}
+                  onClick={() => {
+                    setMode('welcome');
+                    setAutoSize(0);
+                  }}
+                >
+                  Welcome Spin
+                </button>
+              )}
+              {(dailyBonus?.ticket_count ?? 0) > 0 && (
+                <button
+                  type="button"
+                  className={styles.back}
+                  disabled={spinning || running || Boolean(recovery)}
+                  aria-pressed={dailyBonusMode}
+                  onClick={() => {
+                    setMode('daily_bonus');
+                    setAutoSize(0);
+                  }}
+                >
+                  Bonus Spins ({dailyBonus?.ticket_count})
+                </button>
+              )}
+              {dailyBonusError && (
+                <button
+                  type="button"
+                  className={styles.back}
+                  disabled={spinning || Boolean(recovery)}
+                  onClick={() => clubUuid && void loadDailyBonus(clubUuid)}
+                >
+                  Retry Bonus Spins
+                </button>
+              )}
+              <button
+                type="button"
+                className={styles.back}
+                disabled={spinning || Boolean(recovery)}
+                onClick={() => navigate('/bonuses')}
+              >
+                Daily Bonus Rewards
+              </button>
+            </nav>
+            <TodayLine
+              used={player?.spins_today ?? 0}
+              cap={cfg?.max_spins_per_player_per_day ?? 0}
+              spentDiamonds={player?.diamonds_today ?? 0}
+              noun="Spins"
+              /* The Today bay already prints the count; this line carries the cost. */
+              showCount={false}
             />
-          ) : undefined
+            {(state.contract_version === 2 || state.contract_version === 3) && (
+              <WheelEntry
+                value={freeMode ? 100 : entryDiamonds}
+                disabled={freeMode || spinning || running || Boolean(recovery)}
+                onChange={setEntryDiamonds}
+              />
+            )}
+          </>
         }
         bays={[
           { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
@@ -821,74 +891,6 @@ export default function DiamondWheelPage() {
                   }
         }
       >
-        <nav aria-label="Spin Entry" className={styles.rows}>
-          <button
-            type="button"
-            className={styles.back}
-            disabled={spinning || running || Boolean(recovery)}
-            aria-pressed={mode === 'paid'}
-            onClick={() => {
-              setMode('paid');
-              setAutoSize(0);
-            }}
-          >
-            Paid Spin
-          </button>
-          {welcome?.available && (
-            <button
-              type="button"
-              className={styles.back}
-              disabled={spinning || running || Boolean(recovery)}
-              aria-pressed={welcomeMode}
-              onClick={() => {
-                setMode('welcome');
-                setAutoSize(0);
-              }}
-            >
-              Welcome Spin
-            </button>
-          )}
-          {(dailyBonus?.ticket_count ?? 0) > 0 && (
-            <button
-              type="button"
-              className={styles.back}
-              disabled={spinning || running || Boolean(recovery)}
-              aria-pressed={dailyBonusMode}
-              onClick={() => {
-                setMode('daily_bonus');
-                setAutoSize(0);
-              }}
-            >
-              Bonus Spins ({dailyBonus?.ticket_count})
-            </button>
-          )}
-          {dailyBonusError && (
-            <button
-              type="button"
-              className={styles.back}
-              disabled={spinning || Boolean(recovery)}
-              onClick={() => clubUuid && void loadDailyBonus(clubUuid)}
-            >
-              Retry Bonus Spins
-            </button>
-          )}
-          <button
-            type="button"
-            className={styles.back}
-            disabled={spinning || Boolean(recovery)}
-            onClick={() => navigate('/bonuses')}
-          >
-            Daily Bonus Rewards
-          </button>
-        </nav>
-        <TodayLine
-          used={player?.spins_today ?? 0}
-          cap={cfg?.max_spins_per_player_per_day ?? 0}
-          spentDiamonds={player?.diamonds_today ?? 0}
-          noun="Spins"
-          /* The Today bay already prints the count; this line carries the cost. */
-          showCount={false}
-        />
         <div className={styles.stage} ref={stageRef}>
           <WheelExperience
             key={spinKey}

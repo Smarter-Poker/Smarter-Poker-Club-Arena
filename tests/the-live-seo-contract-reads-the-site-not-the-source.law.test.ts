@@ -73,8 +73,10 @@ describe('the live SEO contract checker', () => {
     expect(body).toContain('needs: publication-gate');
     expect(body).toContain("needs.publication-gate.outputs.should_run == 'true'");
     expect(body).toContain(
-      'node scripts/ci/check-live-seo-contract.mjs --sha "${{ github.event.workflow_run.head_sha }}"'
+      'node scripts/ci/check-live-seo-contract.mjs --sha "${{ needs.publication-gate.outputs.client_target_sha }}"'
     );
+    expect(body).toContain('ref: ${{ needs.publication-gate.outputs.client_target_sha }}');
+    expect(body).not.toContain('github.event.workflow_run.head_sha');
     expect(body).not.toContain('engine.smarter.poker');
   });
 });

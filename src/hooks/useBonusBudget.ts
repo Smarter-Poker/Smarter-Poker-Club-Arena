@@ -4,7 +4,7 @@ import {
   bonusTotal,
   defaultBonusBudget,
   PLINKO_DIAMONDS_PER_DROP,
-  validSpinAmount,
+  validBonusBudget,
   type BonusBudget,
 } from '../utils/bonusGameBudget';
 
@@ -17,7 +17,7 @@ export function useBonusBudget(clubId: string | undefined, game: string) {
       const v = JSON.parse(sessionStorage.getItem(scope) ?? 'null') as BonusBudget | null;
       if (
         v &&
-        validSpinAmount(v.base) &&
+        validBonusBudget(v) &&
         typeof v.doubled === 'boolean' &&
         PLINKO_DIAMONDS_PER_DROP.includes(v.denomination as 1) &&
         bonusTotal(v) % v.denomination === 0

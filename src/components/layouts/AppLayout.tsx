@@ -1,3 +1,4 @@
+import { isDiamondGameRoute } from '../../utils/diamondGameRoute';
 /**
  *  CLUB ENGINE — App Layout
  * Main shell layout with navigation
@@ -66,7 +67,8 @@ function AppLayoutContent() {
   const isTablePage =
     location.pathname.startsWith('/table') ||
     (location.pathname.startsWith('/tournaments/') && location.pathname.endsWith('/play'));
-  const showGlobalHeader = !isTablePage;
+  const immersiveGame = isDiamondGameRoute(location.pathname);
+  const showGlobalHeader = !isTablePage && !immersiveGame;
 
   /**
    * Full-bleed routes: pages that render their own edge-to-edge chrome and
@@ -76,7 +78,7 @@ function AppLayoutContent() {
    */
   const normalizedPath = location.pathname.replace(/\/+$/, '');
   const isClubLobbyPage = /^\/clubs\/[^/]+(?:\/lobby)?$/.test(normalizedPath);
-  const isFlushPage = normalizedPath.endsWith('/notifications') || isClubLobbyPage;
+  const isFlushPage = immersiveGame || normalizedPath.endsWith('/notifications') || isClubLobbyPage;
 
   // Daily, Weekly, and Monthly Challenges are tabs within one accessible
   // page, even though each cycle has a bookmarkable URL. Their roving-tab
@@ -131,7 +133,7 @@ function AppLayoutContent() {
       {showGlobalHeader && <div className={styles.pinnedActionBarClearance} aria-hidden="true" />}
 
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
-      <ClubAnnouncementBanner />
+      {!immersiveGame && <ClubAnnouncementBanner />}
 
       {/* Route-family navigation keeps global sibling pages reachable without
           reopening the hamburger or duplicating the exhaustive route registry. */}
@@ -148,9 +150,11 @@ function AppLayoutContent() {
         id="main-content"
         tabIndex={-1}
         className={
-          isFlushPage
-            ? `${styles.main} ${styles.mainFlush} ${styles.casinoStage}`
-            : `${styles.main} ${styles.casinoStage}`
+          immersiveGame
+            ? `${styles.main} ${styles.immersiveGame}`
+            : isFlushPage
+              ? `${styles.main} ${styles.mainFlush} ${styles.casinoStage}`
+              : `${styles.main} ${styles.casinoStage}`
         }
       >
         <RouteErrorBoundary>

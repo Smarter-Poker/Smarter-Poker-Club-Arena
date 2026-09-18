@@ -6,7 +6,6 @@ import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext
 import PageSkeleton from '../common/PageSkeleton';
 import DiamondCustodyBalance from './DiamondCustodyBalance';
 import DiamondArenaWallet from './DiamondArenaWallet';
-import PokerArenaNavigation from './PokerArenaNavigation';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { ArenaAccessProvider } from './arenaAccess';
 import './DiamondArenaShell.css';
@@ -142,7 +141,6 @@ export default function ArenaAccessBoundary({
        player is told why there is nothing to sit down at. */
     return showCashLobby ? (
       <ArenaAccessProvider value={state.context}>
-        <PokerArenaNavigation />
         {state.context.cashGamesEnabled !== true && (
           <>
             <p className="diamond-arena-notice">Diamond Games Are Not Open For Play Yet.</p>
@@ -160,7 +158,6 @@ export default function ArenaAccessBoundary({
     ) : (
       <ArenaAccessProvider value={state.context}>
         <section className="club-home diamond-arena-shell" aria-label="Diamond Arena">
-          <PokerArenaNavigation />
           <SpadeConsole
             eyebrow="Welcome To"
             title="Diamond Arena"
@@ -183,7 +180,6 @@ export default function ArenaAccessBoundary({
   if (!state.context.member)
     return (
       <section className="club-home error">
-        <PokerArenaNavigation />
         <SpadeConsole
           eyebrow="Poker Arena"
           title="Join This Club To Enter"
@@ -204,10 +200,5 @@ export default function ArenaAccessBoundary({
         </SpadeConsole>
       </section>
     );
-  return (
-    <ArenaAccessProvider value={state.context}>
-      <PokerArenaNavigation />
-      {children}
-    </ArenaAccessProvider>
-  );
+  return <ArenaAccessProvider value={state.context}>{children}</ArenaAccessProvider>;
 }

@@ -250,3 +250,10 @@
 /* The reduced-motion override is gone with the parallax it was correcting:
    `background-attachment: fixed` is what made the stage drift under the
    content, and a flat colour cannot drift. */
+
+.immersiveGame {
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+}

@@ -4170,8 +4170,7 @@ export class GameServer {
           if (!reasons.includes(reason)) reasons.push(reason);
         }
         return reasons.map(
-          (reason) =>
-            `poker_maintenance_unparked_tables{reason="${reason}"} ${counts[reason] ?? 0}`
+          (reason) => `poker_maintenance_unparked_tables{reason="${reason}"} ${counts[reason] ?? 0}`
         );
       })(),
       '# HELP poker_db_clock_skew_ms Engine clock minus database clock, ms; 0 when unmeasured',
@@ -4518,6 +4517,7 @@ export class GameServer {
            writing. The drain then reported "N/N parked", the process exited,
            and whatever had not been written was not written. At :55 every
            hour. */
+        if (e.hasUnresolvedF06Preparation?.()) return false;
         if (e.hasSettlementInFlight()) return false;
         return e.isWaitingForHandForHand() || e.isPausedByDesign() || !e.isRunning();
       } catch {

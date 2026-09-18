@@ -1,0 +1,22 @@
+{
+  "_owner": "codex/mtt-f06-pause-reservation-20260918",
+  "_comment": "Actual scoped catalog readback 2026-09-18T07:49:11.183211+00:00 after provider migration 20260918074842; source reservation20260918071546, qualified migration SHA256 c8fe53556d98e5238bf2428b77a8a935d54f98ab21d004a14ea40cbb462ad2e4. Root installation readback separately verified all three function bodies/owners/permissions, six enabled bindings and private receipt RLS. Records schema installation only; engine publication and natural runtime proof remain separate.",
+  "tables": ["smarter_private.f06_prepared_hand_cancellations"],
+  "functions": [
+    "fn_f06_cancel_prepared_hand",
+    "smarter_private.f06_cancelled_preparation_writer_guard",
+    "smarter_private.f06_prepared_cancellation_immutable"
+  ],
+  "columns": {
+    "smarter_private.f06_prepared_hand_cancellations": [
+      "permit_id",
+      "tournament_id",
+      "generation",
+      "table_id",
+      "lifecycle",
+      "hand_number",
+      "custody_id",
+      "created_at"
+    ]
+  }
+}

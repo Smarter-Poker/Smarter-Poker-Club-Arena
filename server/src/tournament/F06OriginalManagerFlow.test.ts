@@ -115,6 +115,11 @@ async function fixture(failure = '', beginOutcome = 'committed', prepareThroughD
         excluded: !!durable,
         break_id: durable?.break_id ?? null,
       });
+    if (name === 'fn_f06_cancel_prepared_hand') {
+      expect(originalRow?.state).toBe('reserved');
+      originalRow = { ...originalRow, state: 'never_started', evidence_id: p.p_permit_id };
+      return ok({ ...originalRow, ok: true });
+    }
     if (name === 'fn_f06_request_park') {
       durable ??= {
         ok: true,
@@ -823,10 +828,22 @@ it.each(['continue', 'fail', 'pause', 'unknown_reply'])(
         if (outcome === 'fail') expect(String(dealError)).toContain('original preparation failed');
         else expect(dealError).toBeUndefined();
         expect(handEvents.some((event) => event.type === 'HAND_START')).toBe(false);
-        // A genuinely exited preparation remains eligible under the same permit.
-        await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow('outcome unproven');
-        expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(1);
-        expect(f.engine.getF06RetainedPermit().binding.permit_id).toBe(id(8));
+        if (outcome === 'pause') {
+          // A paused original preparation is durably cancelled by its own
+          // exact permit, without manufacturing a table-retirement operation.
+          await f.manager.recoverF06OriginalAdmissions();
+          expect(
+            f.calls.filter((call) => call.name === 'fn_f06_cancel_prepared_hand')
+          ).toHaveLength(1);
+          expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(0);
+          expect(f.engine.getF06RetainedPermit()).toBeNull();
+        } else {
+          await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow(
+            'outcome unproven'
+          );
+          expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(1);
+          expect(f.engine.getF06RetainedPermit().binding.permit_id).toBe(id(8));
+        }
       }
     } finally {
       release();
@@ -837,3 +854,43 @@ it.each(['continue', 'fail', 'pause', 'unknown_reply'])(
     }
   }
 );
+
+it('a replacement Manager admission cannot reconstruct an unresolved original permit to cancel it', async () => {
+  const f = await fixture('', 'committed');
+  const original = f.engine.getF06RetainedPermit();
+  const replacement = new ServerTableEngine(source) as any;
+  Object.defineProperty(replacement, 'ready', { value: Promise.resolve(false) });
+  vi.spyOn(replacement, 'start').mockResolvedValue(undefined);
+  f.manager.tableEngines.set(source, replacement);
+  f.server.tableEngines.set(source, replacement);
+  const recovery = vi.spyOn(f.manager, 'recoverManagedTableEngine').mockResolvedValue(undefined);
+  f.rpc.mockImplementation((async (name: string) => {
+    expect(name).toBe('fn_f06_hand_number_state');
+    return {
+      data: {
+        ok: true,
+        table_id: source,
+        lifecycle: '1',
+        can_reserve: false,
+        blocked_reason: 'hand_permit_unresolved',
+        used_hand_number_max: '1000001',
+        next_hand_number_candidate: '1000002',
+        unresolved_permit: original,
+      },
+      error: null,
+    };
+  }) as any);
+  try {
+    f.manager.startManagedTableEngine(replacement, 'test replacement');
+    await Promise.allSettled([...f.manager.tableEngineRunJobs, ...f.manager.tableEngineStartJobs]);
+    expect(replacement.start).not.toHaveBeenCalled();
+    expect(replacement.getF06RetainedPermit()).toBeNull();
+    expect(recovery).toHaveBeenCalledOnce();
+    expect(f.engine.getF06RetainedPermit()).toEqual(original);
+    expect(f.calls.some((call) => call.name === 'fn_f06_cancel_prepared_hand')).toBe(false);
+  } finally {
+    f.engine.running = false;
+    f.engine.preciseTimer.dispose();
+    replacement.preciseTimer.dispose();
+  }
+});

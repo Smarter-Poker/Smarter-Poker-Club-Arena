@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT BUY-INS — one whole-dollar total, split into prize + fee
@@ -81,6 +82,8 @@ export const SPIN_RAKE_RATE = 0;
 export interface RakeSubject {
   /** tournaments.tournament_type — 'MTT' | 'SNG' | 'SPIN'. Any case. */
   tournamentType?: string | null;
+  satellite_target_id?: string | null;
+  satelliteTarget?: { tournamentId?: string } | null;
   /** tournaments.variant, or a creation form's format string. Any case. */
   variant?: string | null;
   /** Seats in the game. tournaments.max_players, or a form's field size. */
@@ -107,19 +110,17 @@ export interface RakeSubject {
  * `buy_in_fee` DIRECTLY, bypassing the RPC entirely, so a schedule row with
  * `type: 'sng'` produced a real 10% heads-up game.
  *
- * The rule is keyed on SEATS, not on the word "SNG". A two-handed game is a
- * duel whatever its label says, and a label is exactly the thing that varies
- * between six writers.
+ * MTTs have unlimited entry fields. Only fixed formats can receive the
+ * heads-up rate from their seat count.
  */
 export function rakeRateFor(subject: RakeSubject): number {
+  if (isUnlimitedMtt(subject)) return DEFAULT_RAKE_RATE;
   const type = String(subject?.tournamentType ?? '').toUpperCase();
   const variant = String(subject?.variant ?? '').toLowerCase();
   if (type === 'SPIN' || variant === 'spin') return SPIN_RAKE_RATE;
 
   const seats = Number(subject?.maxPlayers);
-  // `> 0` matters: the modal sends 0 for "unlimited" on an MTT, and 0 is not a
-  // heads-up game. An unknown seat count falls through to the default rate —
-  // never to the cheaper one, so a misconfigured writer cannot hand away margin.
+  // Unknown fixed-format capacity falls through to the default rate.
   if (Number.isFinite(seats) && seats > 0 && seats <= 2) return HEADS_UP_RAKE_RATE;
 
   return DEFAULT_RAKE_RATE;

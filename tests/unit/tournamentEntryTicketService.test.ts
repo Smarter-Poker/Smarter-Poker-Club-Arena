@@ -1,9 +1,11 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
-const { mockEmit, mockRpc, mockUuid } = vi.hoisted(() => ({
+const { mockEmit, mockRpc, mockUuid, formatProjection, mockTournamentUpdate } = vi.hoisted(() => ({
   mockEmit: vi.fn(),
   mockRpc: vi.fn(),
   mockUuid: vi.fn(),
+  formatProjection: {} as Record<string, unknown>,
+  mockTournamentUpdate: vi.fn(),
 }));
 
 vi.mock('../../src/lib/supabase', () => {
@@ -15,6 +17,7 @@ vi.mock('../../src/lib/supabase', () => {
     current_players: 1,
     max_players: 100,
     variant: 'mtt',
+    format_contract: 'mtt-v1',
   };
   const player = {
     id: 'registration-1',
@@ -29,7 +32,10 @@ vi.mock('../../src/lib/supabase', () => {
     const query: any = {
       select: vi.fn(() => query),
       eq: vi.fn(() => query),
-      update: vi.fn(() => query),
+      update: vi.fn((patch) => {
+        mockTournamentUpdate(patch);
+        return query;
+      }),
       maybeSingle: vi.fn(async () => ({ data: row, error: null })),
       then: (resolve: (value: unknown) => unknown) =>
         resolve({ data: Array.isArray(row) ? row : row ? [row] : [], error: null }),
@@ -42,7 +48,13 @@ vi.mock('../../src/lib/supabase', () => {
     supabase: {
       rpc: mockRpc,
       from: vi.fn((table: string) =>
-        chain(table === 'tournaments' ? tournament : table === 'tournament_players' ? player : null)
+        chain(
+          table === 'tournaments'
+            ? { ...tournament, ...formatProjection }
+            : table === 'tournament_players'
+              ? player
+              : null
+        )
       ),
     },
   };
@@ -81,6 +93,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe('tournament-entry ticket client service', () => {
   beforeEach(() => {
     mockEmit.mockReset();
+    mockTournamentUpdate.mockReset();
+    for (const key of Object.keys(formatProjection)) delete formatProjection[key];
     mockRpc.mockReset();
     mockUuid.mockReset();
     mockUuid.mockReturnValue('00000000-0000-4000-8000-000000000001');
@@ -218,6 +232,53 @@ describe('tournament-entry ticket client service', () => {
       userId: 'user-1',
     });
   });
+
+  it.each([
+    [undefined, false],
+    [null, false],
+    ['unknown-v9', false],
+    ['mtt-v1', false],
+    ['mtt-v2', false],
+    ['sng-v1', true],
+    ['spin-v1', true],
+    ['seat-first-satellite-v1', true],
+  ] as const)(
+    'preserves a committed registration and nudges only the recorded fixed format %s',
+    async (format_contract, shouldNudge) => {
+      const capacity = format_contract === 'spin-v1' ? 3 : 2;
+      Object.assign(formatProjection, {
+        current_players: capacity,
+        max_players: capacity,
+        variant: format_contract === 'spin-v1' ? 'spin' : 'sng',
+        format_contract,
+        ...(format_contract === 'seat-first-satellite-v1'
+          ? { tournament_type: 'SATELLITE', satellite_target_id: 'target-1' }
+          : {}),
+      });
+      mockRpc.mockResolvedValue({
+        data: {
+          ok: true,
+          registration_id: 'registration-1',
+          request_id: '00000000-0000-4000-8000-000000000001',
+          tournament_id: 'tournament-1',
+          user_id: 'user-1',
+        },
+        error: null,
+      });
+      await expect(
+        tournamentService.registerPlayer('tournament-1', 'user-1', 'Player')
+      ).resolves.toMatchObject({ id: 'registration-1' });
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockTournamentUpdate).toHaveBeenCalledTimes(shouldNudge ? 1 : 0);
+      if (shouldNudge) {
+        expect(mockTournamentUpdate).toHaveBeenCalledWith({ start_time: expect.any(String) });
+      }
+      expect(
+        mockEmit.mock.calls.filter(([event]) => event === 'TOURNAMENT_REGISTERED')
+      ).toHaveLength(1);
+      expect(mockEmit.mock.calls.filter(([event]) => event === 'BALANCE_UPDATED')).toHaveLength(1);
+    }
+  );
 
   it('retains an initial wallet registration request after exhausted transport attempts', async () => {
     mockRpc.mockRejectedValue(new Error('commit response lost'));

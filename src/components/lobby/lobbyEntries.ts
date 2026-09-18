@@ -1,3 +1,10 @@
+import {
+  getTournamentEntryCapacity,
+  getTournamentFormatKind,
+  isSeatFirstTournamentFormat,
+  isKnownTournamentFormat,
+  isTournamentEntryUnavailable,
+} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * LOBBY ENTRIES — the thin view-model layer for the line-based lobby (V2)
@@ -85,6 +92,7 @@ export interface LobbyTableRow extends CashFeatureSource {
 }
 
 export interface LobbyTournamentRow {
+  format_contract?: unknown;
   id: string;
   name: string;
   game_type: string;
@@ -94,7 +102,11 @@ export interface LobbyTournamentRow {
   start_time: string;
   status: string;
   current_players: number;
-  max_players: number;
+  max_players: number | null;
+  tournament_type?: string | null;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
+  type?: string | null;
   starting_chips: number;
   late_reg_mins?: number | null;
   late_reg_levels?: number | null;
@@ -140,7 +152,7 @@ export interface LobbyTournamentRow {
 }
 
 // ─── View model ────────────────────────────────────────────────────────────
-export type LobbyEntryKind = 'cash' | 'mtt' | 'spin' | 'sng';
+export type LobbyEntryKind = 'cash' | 'mtt' | 'spin' | 'sng' | 'unknown';
 
 export type LobbyStatusKey =
   | 'open'
@@ -881,13 +893,16 @@ export function tournamentMedallions(
   )
     rules.push({ key: 'freezeout', label: 'FREEZEOUT', tip: 'One entry, no rebuys' });
 
+  const formatKind = classifyTournament(t);
   const speed =
-    classifyTournament(t) === 'mtt'
-      ? (
-          structureFacts ??
-          describeStoredMttStructure(parseBlindStructure(t.blind_structure), t.starting_chips)
-        ).speedLabel
-      : tournamentSpeed(t.name);
+    formatKind === 'unknown'
+      ? null
+      : formatKind === 'mtt'
+        ? (
+            structureFacts ??
+            describeStoredMttStructure(parseBlindStructure(t.blind_structure), t.starting_chips)
+          ).speedLabel
+        : tournamentSpeed(t.name);
   if (speed === 'Turbo') rules.push({ key: 'turbo', label: 'TURBO', tip: 'Fast blind levels' });
   if (speed === 'Hyper' || speed === 'Hyper Turbo')
     rules.push({ key: 'hyper', label: 'HYPER', tip: 'Very fast blind levels' });
@@ -955,6 +970,11 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
   const status = String(t.status || '').toUpperCase();
   if (status === 'COMPLETED') return { key: 'completed', label: 'Completed' };
   if (status === 'CANCELLED') return { key: 'closed', label: 'Cancelled' };
+  if (!isKnownTournamentFormat(t)) {
+    return ['RUNNING', 'LATE_REG', 'LATE_REGISTRATION', 'COMPLETING'].includes(status)
+      ? { key: 'running', label: status === 'COMPLETING' ? 'Finishing' : 'Running' }
+      : { key: 'closed', label: 'Entry Unavailable' };
+  }
   if (status === 'RUNNING') {
     if (
       isInLateRegistration(
@@ -1260,7 +1280,10 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   };
 }
 
-export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 'sng'): LobbyEntry {
+export function tournamentEntry(
+  t: LobbyTournamentRow,
+  kind: 'mtt' | 'spin' | 'sng' | 'unknown'
+): LobbyEntry {
   const v = variantDisplay(t.game_type);
   const st = tournamentStatus(t);
   const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
@@ -1293,11 +1316,16 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
         : null,
     guaranteeValue: Number(t.guaranteed_prize) || 0,
     players: t.current_players || 0,
-    capacity: t.max_players || 0,
+    capacity: getTournamentEntryCapacity(t) ?? 0,
     startTime: t.start_time || null,
     startValue: Number.isFinite(startMs) ? startMs : Infinity,
     structureFacts,
-    speedLabel: structureFacts ? structureFacts.speedLabel : tournamentSpeed(t.name) || 'When Full',
+    speedLabel:
+      kind === 'unknown'
+        ? null
+        : structureFacts
+          ? structureFacts.speedLabel
+          : tournamentSpeed(t.name) || 'When Full',
     status: st.key,
     statusLabel: st.label,
     /* ITEM E audit, 2026-08-26: derived from the SAME status the surfaces
@@ -1315,9 +1343,7 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
 }
 
 /**
- * The same spin / heads-up classification the card grid used — now asking the
- * ROW what it is, and only guessing from the name when the column is absent.
- * See tournamentVariant in src/utils/tournamentFilters.ts for why.
+ * Format classification is shared with the persisted database contract.
  */
 // ─── MTT title helpers (pure — LobbyTable renders them, tests pin them) ────
 
@@ -1431,6 +1457,7 @@ export function spinPrizeLabel(entry: LobbyEntry): string | null {
  * joinable ones at the same price, which is the row a player taps by mistake.
  */
 export function seatFirstJoinable(entry: LobbyEntry): boolean {
+  if (entry.kind !== 'cash' && isTournamentEntryUnavailable(entry.raw, entry.players)) return false;
   if (entry.kind !== 'spin' && entry.kind !== 'sng') return true;
   if (entry.status === 'running' || entry.status === 'completed' || entry.status === 'closed')
     return false;
@@ -1454,7 +1481,7 @@ export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
 /** Starting depth in big blinds, or zero when unavailable. MTTs use the
  * engine's opening playing level. Seat-first legacy display remains separate. */
 export function stackDepthBB(entry: LobbyEntry): number {
-  if (entry.kind === 'cash') return 0;
+  if (entry.kind === 'cash' || entry.kind === 'unknown') return 0;
   if (entry.kind === 'mtt') {
     const t = entry.raw as LobbyTournamentRow;
     return (
@@ -1472,7 +1499,7 @@ export function stackDepthBB(entry: LobbyEntry): number {
 }
 
 export function stackDepthLabel(entry: LobbyEntry): string | null {
-  if (entry.kind === 'cash') return null;
+  if (entry.kind === 'cash' || entry.kind === 'unknown') return null;
   // MTT clock speed never comes from a title or starting-stack bucket.
   if (entry.kind === 'mtt') {
     const t = entry.raw as LobbyTournamentRow;
@@ -1697,52 +1724,12 @@ export function mttTitleLine(entry: LobbyEntry): string {
     : `${name} (${entry.gameLabel})`;
 }
 
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- *  SEAT-FIRST MEANS WHAT THE SERVER MEANS BY IT (2026-08-31, Phase 3)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * The server has one definition, in TournamentRecurringService:
- *
- *     isSeatFirstFormat(variant, maxPlayers) =
- *       variant === 'spin' || maxPlayers <= 2
- *
- * and `fn_take_seat_and_buy_in` honours the same rule. The lobby had a
- * different one: anything `classifyTournament` called an 'sng', which is every
- * capped field up to TEN seats. A six- or nine-max SNG therefore rendered a Sit
- * Down affordance for a seat the server will not sell -- the player clicks and
- * the buy-in is refused.
- *
- * No such row is created today ("WE AREN'T DOING ANY OTHER SIT N GO'S", Dan
- * 2026-08-21), which is exactly why this is worth pinning rather than leaving:
- * the day one is, the lobby lies about it and nothing fails first.
- *
- * classifyTournament keeps its own job -- it decides the TAB and the label, and
- * a 6-max SNG genuinely belongs on the sit-n-go tab. What it must not decide,
- * alone, is whether a seat can be taken.
- */
+/** Format metadata preserves funded seat-first satellites and fixed SNG/Spin
+ * entry. Table size, old caps and labels never promote an MTT to seat-first. */
 export function isSeatFirstTournament(t: LobbyTournamentRow): boolean {
-  if (classifyTournament(t) === 'spin') return true;
-  const seats = Number((t as { max_players?: unknown }).max_players);
-  return Number.isFinite(seats) && seats > 0 && seats <= 2;
+  return isSeatFirstTournamentFormat(t);
 }
 
-export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng' {
-  const v = String((t as { variant?: unknown }).variant ?? '').toLowerCase();
-  if (v === 'spin') return 'spin';
-  if (v === 'sng') return 'sng';
-  // Present and not a spin means NOT A SPIN, whatever the name says.
-  /* A MISSING cap is not a small field. Dan 2026-08-24: "THERE ARE NO
-     LIMITATIONS ON THE AMOUNT OF PLAYERS THAT CAN REGISTER", so an unlimited
-     MTT carries max_players null — and `(null || 0) <= 10` called every one of
-     them a Heads-Up: wrong tab, seat-first status text, "12/-" for the field,
-     and Sit Down instead of Register. A cap only means something when it is a
-     real number. */
-  if (v) return t.max_players != null && t.max_players > 0 && t.max_players <= 10 ? 'sng' : 'mtt';
-
-  const n = (t.name || '').toLowerCase();
-  if (n.includes('spin')) return 'spin';
-  if (n.includes('sng') || (t.max_players != null && t.max_players > 0 && t.max_players <= 10))
-    return 'sng';
-  return 'mtt';
+export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng' | 'unknown' {
+  return getTournamentFormatKind(t);
 }

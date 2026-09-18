@@ -432,16 +432,11 @@ describe('One card, one carrier', () => {
      */
     expect(card).not.toMatch(/'SPIN'/);
     expect(card).toMatch(/!result\.isSpin && <span className="trc2__brand-mark">TOURNAMENT/);
-    expect(tablePage).toMatch(/isSpin: isSpinTournament\(/);
-    // isSpinTournament reads both columns; both must be selected or it is
-    // always false.
-    //
-    // 2026-08-25: the same select now also carries `is_mystery_bounty`, which
-    // gates the mystery bounty read that fills the card's chest figures
-    // (Dan section 43). What this test guards is unchanged and is asserted on
-    // the two columns by name rather than on the whole literal, so the next
-    // column added here does not fail a spec about Spin branding.
-    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type/);
-    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type[^']*'\)/);
+    expect(tablePage).toContain("isSpin: getTournamentFormatKind(tourney) === 'spin'");
+    // The persisted format identifies Spin; the mystery flag independently
+    // controls the chest receipt read. Both must reach the result mapper.
+    expect(tablePage).toMatch(
+      /select\(\s*'format_contract, name, current_players, variant, tournament_type, is_mystery_bounty'\s*\)/
+    );
   });
 });

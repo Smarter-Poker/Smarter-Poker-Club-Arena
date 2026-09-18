@@ -20,6 +20,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
 
 export interface TournamentScheduleRow {
   id: string;
@@ -88,7 +89,9 @@ class TournamentScheduleService {
         daysOfWeek: draft.daysOfWeek,
         startTimesUtc: draft.startTimesUtc,
         intervalMinutes: draft.intervalMinutes ?? null,
-        config: draft.config,
+        config: isUnlimitedMtt({ ...draft.config, type: draft.config.type ?? 'mtt' })
+          ? { ...draft.config, maxPlayers: null, max_players: null }
+          : draft.config,
       },
     });
     if (error) {

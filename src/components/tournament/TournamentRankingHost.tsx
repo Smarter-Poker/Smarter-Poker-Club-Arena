@@ -1,3 +1,8 @@
+import {
+  readTournamentFormat,
+  isSeatFirstTournamentFormat,
+  isTournamentEntryUnavailable,
+} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT RANKING HOST — app-root owner of the bust card (2026-08-20)
@@ -231,16 +236,15 @@ export function TournamentRankingHost() {
       try {
         const { data: origin, error: originErr } = await supabase
           .from('tournaments')
-          .select('club_id, buy_in_amount, game_type, variant, max_players')
+          .select(
+            'format_contract, club_id, buy_in_amount, game_type, variant, tournament_type, satellite_target_id, satellite_target, max_players'
+          )
           .eq('id', tournamentId)
           .maybeSingle();
         if (originErr) throw originErr;
 
         /* Seat-first games only: an MTT's "again" genuinely is the list. */
-        const seatFirst =
-          origin &&
-          (String(origin.variant) === 'spin' ||
-            (Number(origin.max_players) > 0 && Number(origin.max_players) <= 2));
+        const seatFirst = origin && isSeatFirstTournamentFormat(origin);
         if (!origin || !seatFirst) {
           fallback();
           return;
@@ -252,7 +256,9 @@ export function TournamentRankingHost() {
            own primary-table election bias. */
         let q = supabase
           .from('tournaments')
-          .select('id, current_players, max_players')
+          .select(
+            'format_contract, id, current_players, max_players, variant, tournament_type, satellite_target_id'
+          )
           .eq('status', 'REGISTERING')
           .eq('buy_in_amount', origin.buy_in_amount)
           .eq('game_type', origin.game_type)
@@ -260,15 +266,16 @@ export function TournamentRankingHost() {
           .order('created_at', { ascending: true })
           .limit(6);
         if (origin.club_id) q = q.eq('club_id', origin.club_id);
-        q =
-          String(origin.variant) === 'spin'
-            ? q.eq('variant', 'spin')
-            : q.gt('max_players', 0).lte('max_players', 2);
+        q = q.eq('format_contract', readTournamentFormat(origin));
+        const target = origin.satellite_target_id ?? origin.satellite_target;
+        if (target) q = q.or(`satellite_target_id.eq.${target},satellite_target.eq.${target}`);
         const { data: siblings, error: siblingErr } = await q;
         if (siblingErr) throw siblingErr;
 
         const sibling = siblings?.find(
-          (candidate) => Number(candidate.current_players ?? 0) < Number(candidate.max_players ?? 0)
+          (candidate) =>
+            isSeatFirstTournamentFormat(candidate) &&
+            !isTournamentEntryUnavailable(candidate, Number(candidate.current_players ?? 0))
         );
         if (!sibling) {
           fallback();

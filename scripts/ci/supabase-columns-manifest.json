@@ -13601,6 +13601,7 @@
     ],
     "tournaments": [
       "id",
+      "format_contract",
       "name",
       "description",
       "game_type",

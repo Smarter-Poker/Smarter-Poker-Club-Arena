@@ -61,7 +61,8 @@ export interface TournamentFormInput {
   sngPlayerCount: number;
   isSpins: boolean;
   minPlayers: number;
-  maxPlayersRange: number;
+  /** Legacy saved-draft field. MTT entry counts are unlimited; ignored. */
+  maxPlayersRange?: number;
   lateRegistrationLevel: number;
   numberOfRebuysReentries: number;
   addOnMultiplier: number;
@@ -140,17 +141,13 @@ export function buildTournamentConfig(
      the Spins board has no chip for and the tier table was never tuned for. */
   const isSpins = isSng && config.isSpins && gameTypeCanRunAsSpin(gameType);
 
-  // Field size. For an SNG the engine starts the tournament only when it is
-  // FULL (GameServer: isSngOrSpin ? maxReached : ...), so min must equal max
-  // or it would sit in REGISTERING until the stale-SNG sweeper cancels it.
-  // Clamped, not trusted: fn_create_tournament rejects a non-positive field
-  // with max_players_must_be_positive, and 0 is not "unlimited" — registration
-  // is refused once current_players >= max_players, so 0 locks everyone out.
-  const rawMax = isSng ? config.sngPlayerCount : config.maxPlayersRange;
-  const maxPlayers = Math.max(2, Math.floor(Number(rawMax) || 0) || 2);
+  // SNGs start when their fixed seats fill. MTTs and satellites have no entry
+  // ceiling, including drafts saved when maxPlayersRange was still offered.
+  const sngSeats = Math.max(2, Math.floor(Number(config.sngPlayerCount) || 0) || 2);
+  const maxPlayers = isSng ? sngSeats : null;
   const minPlayers = isSng
-    ? maxPlayers
-    : Math.min(maxPlayers, Math.max(2, Math.floor(Number(config.minPlayers) || 0) || 2));
+    ? sngSeats
+    : Math.max(3, Math.floor(Number(config.minPlayers) || 0) || 3);
 
   // Blind ramp from the shared presets, with the owner's level length applied
   // to a new MTT playing-only draft. Legacy preset data is retained for stored
@@ -192,7 +189,7 @@ export function buildTournamentConfig(
       }))
     : config.gameMode === 'mtt'
       ? provisionalMttPayoutStructure()
-      : payoutEngine.payoutsForChoice(config.payoutStructure, maxPlayers);
+      : payoutEngine.payoutsForChoice(config.payoutStructure, sngSeats);
 
   // WHOLE-DOLLAR BUY-IN (Dan 2026-08-20): "Sit and Go and any tournament
   // buy-ins must never be decimal buy-ins, whole numbers only." The Buy-in
@@ -339,7 +336,7 @@ export function buildTournamentConfig(
     // are actually reduced.
     tableSize: Math.min(
       isSng
-        ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
+        ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), sngSeats)
         : clampInt(config.tableSize ?? 9, 2, 10),
       maxSeatsTheDeckAllows(gameType)
     ),

@@ -211,7 +211,6 @@ interface TableConfig {
   bubbleProtection: boolean;
   featuredTournament: boolean;
   minPlayers: number;
-  maxPlayersRange: number;
   multiDayMtt: boolean;
   saveStartTime: boolean;
   startTime: string;
@@ -386,8 +385,7 @@ const DEFAULT_CONFIG: TableConfig = {
   earlyBirdRegistration: false,
   bubbleProtection: false,
   featuredTournament: false,
-  minPlayers: 30,
-  maxPlayersRange: 300,
+  minPlayers: 3,
   multiDayMtt: false,
   saveStartTime: false,
   startTime: '',
@@ -1632,32 +1630,13 @@ export default function TableConfigPage({
               </span>
               <span className="toggle-status off">NOT AVAILABLE YET</span>
             </div>
-            {/* Player Number Range */}
-            <div className="config-slider">
-              <div className="slider-header">
-                <span className="slider-label">
-                  Player Number: {config.minPlayers} - {config.maxPlayersRange}
-                </span>
-              </div>
-              <div className="buyin-sliders">
-                <input
-                  type="range"
-                  min={2}
-                  max={config.maxPlayersRange}
-                  value={config.minPlayers}
-                  onChange={(e) => updateConfig('minPlayers', Number(e.target.value))}
-                  className="slider-input"
-                />
-                <input
-                  type="range"
-                  min={config.minPlayers}
-                  max={1000}
-                  value={config.maxPlayersRange}
-                  onChange={(e) => updateConfig('maxPlayersRange', Number(e.target.value))}
-                  className="slider-input"
-                />
-              </div>
-            </div>
+            <NumberField
+              label="Minimum Players To Start"
+              value={config.minPlayers}
+              onChange={(value) => updateConfig('minPlayers', value)}
+              min={3}
+              tooltip="Minimum Registrations Needed To Start. Tournament Entries Are Unlimited."
+            />
 
             {/* Start Time */}
             <div className="config-toggle">

@@ -1,3 +1,4 @@
+import { getTournamentEntryCapacity } from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  COMMUNITY SEARCH — /search
@@ -96,10 +97,12 @@ export interface TableHit {
 }
 
 export interface TournamentHit {
+  format_contract?: unknown;
   id: string;
   name: string;
   status: string;
   tournament_type: string | null;
+  satellite_target_id?: string | null;
   variant: string | null;
   buy_in_amount: number;
   buy_in_fee: number;
@@ -1270,7 +1273,7 @@ export default function SearchPage() {
                               <span>
                                 <strong>
                                   {formatCount(tournament.current_players)}
-                                  {tournament.max_players
+                                  {getTournamentEntryCapacity(tournament) !== null
                                     ? `/${formatCount(tournament.max_players)}`
                                     : ''}
                                 </strong>{' '}

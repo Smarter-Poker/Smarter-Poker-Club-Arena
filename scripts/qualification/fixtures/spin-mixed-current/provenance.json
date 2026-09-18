@@ -1,0 +1,560 @@
+{
+  "schema_version": 1,
+  "prepared_at": "2026-09-18T00:25:05.508885+00:00",
+  "owner": "alert_sources",
+  "worktree_head": "83b66727f51d5d642e23a1f8f4cee547d77b75d0",
+  "scope": "Maintained isolated fixture inputs for existing Spin qualification driver. Captured current accounting definitions plus explicitly synthetic zero-fee starting estate; no production installation.",
+  "state": "source_prepared_native_unrun",
+  "qualification_flags": {
+    "full_financial_qualification": false,
+    "historical_qualification": false,
+    "production_qualification": false,
+    "production_mutation": false,
+    "incident_closed": false
+  },
+  "sources": [
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/catalog-restore.sql",
+      "sha256": "35cb39829a29393ffd27b326ee65e7567826cd31d1dda28c8b0b48d533eea2cf",
+      "bytes": 232918,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/catalog-restore.sql",
+      "source_sha256": "654972314e67197bdd39e83e322a761cbc1a206f2b26696fa17b8fd1aaf9d93b",
+      "source_bytes": 232915,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 3
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/catalog-readback.sql",
+      "sha256": "fbcf7f7b888519923327dc8840337585047554257ce9ce8ae8ca151bbd9e6aff",
+      "bytes": 36896,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/catalog-readback.sql",
+      "source_sha256": "e1f082984411b2021e3ab6a5564e7b1b831e6c6e17d2339c0d81c319271ee29c",
+      "source_bytes": 36894,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 2
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/recognition-restore.sql",
+      "sha256": "78e383e6139ca0573c99e9f614881ebc8ead534d91f68c686c9a917425c2aab1",
+      "bytes": 28211,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/recognition-restore.sql",
+      "source_sha256": "bf7983b0b7c510d051a3c905cf80cc0cf20b972a6154460b5b632a55f115e0a3",
+      "source_bytes": 28209,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 2
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/recognition-readback.sql",
+      "sha256": "763f7f2fb52b038723bda699dcd2fbc1743412798ccbcb520b896feefeeee982",
+      "bytes": 9383,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/recognition-readback.sql",
+      "source_sha256": "aa4c8af7036ceecfaf244894e966be8a6feac657c7600f9f5cd6ade02dca6efe",
+      "source_bytes": 9382,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/authority.json",
+      "sha256": "193d8f25921068b2e4402d4d4b3861195917542b67a95fc854d6844842a29bd2",
+      "bytes": 151700,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/authority.json",
+      "source_sha256": "193d8f25921068b2e4402d4d4b3861195917542b67a95fc854d6844842a29bd2",
+      "source_bytes": 151700,
+      "transformations": [],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/catalog.json",
+      "sha256": "329b95dfe4489c1099502e517005904d014d1e6fe2630f66433361aaec99b418",
+      "bytes": 47834,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/catalog.json",
+      "source_sha256": "329b95dfe4489c1099502e517005904d014d1e6fe2630f66433361aaec99b418",
+      "source_bytes": 47834,
+      "transformations": [],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/net-plan.json",
+      "sha256": "2a0f15c69396fc10dd9e5b8137ba61bb819df8f1c00bc4ebd53e9f83eb808fbd",
+      "bytes": 8504,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/net-plan.json",
+      "source_sha256": "2a0f15c69396fc10dd9e5b8137ba61bb819df8f1c00bc4ebd53e9f83eb808fbd",
+      "source_bytes": 8504,
+      "transformations": [],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/recognizer.json",
+      "sha256": "2c3ad8931db2aaef037cbb827da4ebac544e33768dd7a3754377175bfe771fdf",
+      "bytes": 5514,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/recognizer.json",
+      "source_sha256": "2c3ad8931db2aaef037cbb827da4ebac544e33768dd7a3754377175bfe771fdf",
+      "source_bytes": 5514,
+      "transformations": [],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/period-requests.json",
+      "sha256": "81a582b185e763782e68fc8fe24d3c9870c32e3d1266e8d31cdb45106312860d",
+      "bytes": 4686,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/current-terminal-accounting-provider-20260917/period-requests.json",
+      "source_sha256": "81a582b185e763782e68fc8fe24d3c9870c32e3d1266e8d31cdb45106312860d",
+      "source_bytes": 4686,
+      "transformations": [],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/synthetic-model.json",
+      "sha256": "8259b713348b95c85247044443e6b32b0f0db76110af44ef3a32a929ce6edd79",
+      "bytes": 9716,
+      "source": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-fifo5-mixed-basis-20260917/scripts/qualification/spin-mixed-basis-synthetic-model.json",
+      "source_sha256": "8259b713348b95c85247044443e6b32b0f0db76110af44ef3a32a929ce6edd79",
+      "source_bytes": 9716,
+      "transformations": [],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/synthetic-seed.sql",
+      "sha256": "d2dd861f03c8a0311c01b331672c9ff15f3597fd8002742b5e6aa8efa7cd3162",
+      "bytes": 13167,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/seed.sql",
+      "source_sha256": "f2e9765836b673fe0eadc69726845431ebdaf7197e9b51da49267bcd36c1e419",
+      "source_bytes": 13166,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/actor-identity.sql",
+      "sha256": "5836845bff01cd9826d43d5d8c5a593793c454f41249c8ab66b27f9fa6b44957",
+      "bytes": 1288,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/actor-identity.sql",
+      "source_sha256": "864f5e68afbfccd40cb78339b0f022ed14dbca39709c8230acc80ae85e8c9504",
+      "source_bytes": 1287,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/store-policy.sql",
+      "sha256": "2e4d9019aa3593d2b2e65f792d32688690414cc10339faf55e18d51f1030edaa",
+      "bytes": 1431,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/store-policy.sql",
+      "source_sha256": "c8575cfc61d4d61f69b3d8983d3f46c5dc293e50f83cc8a8ced1315c356180ea",
+      "source_bytes": 1430,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/synthetic-provider.sql",
+      "sha256": "7ffa9e9603f89d51d8a4d34ef1584b4927d8bba86b8ac87eb9be07e8b713354b",
+      "bytes": 51742,
+      "source": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-fifo5-mixed-basis-20260917/scripts/qualification/spin-mixed-basis-synthetic-provider.sql",
+      "source_sha256": "07b9a0e22b65272b2e819bdf31245300d30d959b2b923dca5dd53e74acfa05e2",
+      "source_bytes": 51741,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/synthetic-entry-close.sql",
+      "sha256": "df9a9b1f73863d300f98a802c179a4c9135c0fdeb3ae1b94af98c50c6418a32c",
+      "bytes": 1604,
+      "source": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-fifo5-mixed-basis-20260917/scripts/qualification/spin-mixed-basis-synthetic-entry-close.sql",
+      "source_sha256": "29df4b32cb0de62b349786b4aef6487b3362688ee56ec47e85134addb7524414",
+      "source_bytes": 1603,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/synthetic-input-check.sql",
+      "sha256": "f8f3b27e7235f5cf7845a57d5215612689dc9238f8064164e0f6b8de27e42835",
+      "bytes": 4266,
+      "source": "/Volumes/SmarterWork/.agent-trees/Smarter-Poker-Club-Arena/codex-fifo5-mixed-basis-20260917/scripts/qualification/spin-mixed-basis-synthetic-input-check.sql",
+      "source_sha256": "d415c4d3d3bcaa373cd615c538f013562c1394540989235e894592dfa7f80409",
+      "source_bytes": 4265,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/observer.sql",
+      "sha256": "2261a61b6b08a8408b4c9a3b7fc2e0a5c8e6a88ceacd08edc9d985158812a56c",
+      "bytes": 4170,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/observer.sql",
+      "source_sha256": "4f93f312eed9d8c7911beed6b0c5e2a6b1ecc663b61544a519d49aa6c9673d9b",
+      "source_bytes": 4169,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/replay.sql",
+      "sha256": "1421c7c0e7ee6089993730c2c786260defa5c2fad10eaef725601245df6ba8c2",
+      "bytes": 1775,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/replay.sql",
+      "source_sha256": "7881b4db92f16f7403695fd108e7020a70d356c5be1ba24e2e90d7db7d9b750c",
+      "source_bytes": 1554,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        },
+        {
+          "kind": "insert_before_final_commit",
+          "count": 1,
+          "text": "SELECT jsonb_build_object('stage','replay_timezone_restored','pid',pg_backend_pid(),'backend_start',(SELECT backend_start FROM replay_backend_identity WHERE pid=pg_backend_pid()),'timezone',current_setting('TimeZone'));\n",
+          "purpose": "Separate post-call session-timezone observation from function evaluation in the receipt SELECT."
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/wrapper-refusals.sql",
+      "sha256": "092666c8cf033a8547d8f6a3181a5ce9d0c8d8c3575d1d14bcc65c0dde14626e",
+      "bytes": 3690,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/wrapper-refusals.sql",
+      "source_sha256": "6e3b3ab250a48ec00de020500a89af3f57254644aa4d1c09d2c9cc9ba982d413",
+      "source_bytes": 3689,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/narrow-refusal.sql",
+      "sha256": "16a14e3b4aa4a568e632a696ee74f292b4adde3e719cf704fa51a2e8d13d1cf0",
+      "bytes": 1719,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/narrow-refusal.sql",
+      "source_sha256": "16a14e3b4aa4a568e632a696ee74f292b4adde3e719cf704fa51a2e8d13d1cf0",
+      "source_bytes": 1719,
+      "transformations": [],
+      "source_copied_without_other_change": true
+    },
+    {
+      "path": "scripts/qualification/fixtures/spin-mixed-current/rollback-refusals.sql",
+      "sha256": "c77cf88d827c01fdcb45a651aacc44fb767bace06913159d6d0314a5312ef630",
+      "bytes": 4096,
+      "source": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/rollback-refusals.sql",
+      "source_sha256": "3bceeb8561b1c4e1896bea4affed0b04d376ab84fdddc824f86e399c7937666e",
+      "source_bytes": 4095,
+      "transformations": [
+        {
+          "kind": "literal_replace",
+          "old": "qual_spin_mixed_",
+          "new": "qual_spin_expiry_",
+          "count": 1
+        }
+      ],
+      "source_copied_without_other_change": true
+    }
+  ],
+  "exact_captured_functions": [
+    {
+      "signature": "fn_accounting_tournament_bank_proof(uuid,timestamp with time zone,uuid,uuid,numeric,uuid,uuid)",
+      "full_md5": "e56aa8c8280c59e2f0406ea6c504dc4e",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_accounting_tournament_fee_fingerprint(rake_records)",
+      "full_md5": "dd55cceba87b1578472171e1c80ba1fb",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_accounting_tournament_terminal_fee_receipt(uuid)",
+      "full_md5": "6e446f6d6d19ec8b28b31d124a8c6ac3",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_ca_lock_settlement_lane_for_finish(uuid)",
+      "full_md5": "76e4c6b5291bab20f0cfc65dd060022b",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_ca_lock_settlement_lane_global()",
+      "full_md5": "7c759bb7a639c3124de2607bdbf12577",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_ca_settlement_lane_doctrine()",
+      "full_md5": "8dd361600c8facb1cbb99b3df853e5b9",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_ca_tournament_terminal_receipt(uuid,uuid)",
+      "full_md5": "787eb9a718a648ac29753dfc9234f4c3",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
+      "full_md5": "6a45fe9bf30c94f9366ec88f0863087e",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_complete_tournament_terminal(uuid,uuid,text)",
+      "full_md5": "c64e049911fd99c1d784cdb042ca714b",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_lock_accounting_tournament_recognition_week(uuid,timestamp with time zone)",
+      "full_md5": "d5339cec8b0e00be748c4c15bc3dba83",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_settle_tournament_places(uuid,uuid)",
+      "full_md5": "c412c8b17186976df139f73a706175f2",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_settle_tournament_rake(uuid,text)",
+      "full_md5": "0492f5a78bc3c84d54c24fd45549a0be",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_union_week_start(timestamp with time zone)",
+      "full_md5": "103f192a228084dad0e4268c36c82c4b",
+      "source_capture": "authority.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_accounting_agreement_history_immutable()",
+      "full_md5": "3fa4099435ff1e9d5c48fa1934b63549",
+      "source_capture": "catalog.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_accounting_tournament_fee_receipt_immutable()",
+      "full_md5": "bdc4ee4b75e3471cd33a5ed4b250ec0f",
+      "source_capture": "catalog.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_tournament_terminal_receipts_are_append_only()",
+      "full_md5": "618843a6d0646709dac2a9c3b24a7652",
+      "source_capture": "catalog.json",
+      "restored_by": "catalog-restore.sql"
+    },
+    {
+      "signature": "fn_accounting_tournament_fee_net_plan(uuid)",
+      "full_md5": "d8231a3f9219ecacb5ae68ee3aebe435",
+      "source_capture": "net-plan.json",
+      "restored_by": "recognition-restore.sql"
+    },
+    {
+      "signature": "fn_recognize_accounting_tournament_fees(uuid,timestamp with time zone,uuid,uuid,uuid)",
+      "full_md5": "195878da781227b47753a28dbc7bc978",
+      "source_capture": "recognizer.json",
+      "restored_by": "recognition-restore.sql"
+    }
+  ],
+  "synthetic_provider_captured_definition_md5": [
+    "1c93d532cd49329e3c7e11ee7f6de48b",
+    "8c0acda3b19e958ecd5bbbc07c845afe"
+  ],
+  "preservation": {
+    "capture_json_bytes_unchanged": true,
+    "financial_function_bodies_unchanged": true,
+    "only_database_namespace_and_separate_replay_observation_changed": true,
+    "original_source_files_unmodified": true,
+    "no_existing_base_provider_modules_copied": true,
+    "relative_include_graph_empty": true
+  },
+  "execution_contract": {
+    "database": "qual_spin_expiry_<execution UUID without hyphens>",
+    "postgres_major": 17,
+    "transport": "Private Unix socket; listen_addresses empty; inet_server_addr NULL. No TCP fallback.",
+    "session_settings": {
+      "spin_mixed_qualification.execution_uuid": "Exact execution UUID, same as qualification.execution_uuid",
+      "qualification.execution_uuid": "Exact execution UUID",
+      "spin_mixed_qualification.tournament_id": "10000000-0000-4000-8000-000000000001",
+      "spin_mixed_qualification.winner_id": "00000000-0000-4000-8000-000000000003"
+    },
+    "psql_variables": {
+      "synthetic_model_json": "Exact parsed synthetic-model.json input supplied to synthetic-seed.sql",
+      "execution_uuid": "Exact execution UUID for catalog restore/readback",
+      "rollback_body": "Exact maintained current-terminal rollback with only its first BEGIN and final COMMIT removed; expected MD5 6745474610e2ef2693f151feeaf65bdb"
+    },
+    "pre_trigger": {
+      "files": [
+        "synthetic-seed.sql",
+        "actor-identity.sql"
+      ],
+      "session_user": "fixture_bootstrap",
+      "current_user": "fixture_bootstrap",
+      "note": "After original schema prefix, before original trigger suffix. Replaces generic preexisting-principal restore only for this synthetic image; no later trigger disable."
+    },
+    "after_original_provider": {
+      "files": [
+        "synthetic-provider.sql",
+        "synthetic-entry-close.sql",
+        "synthetic-input-check.sql"
+      ],
+      "session_user": "fixture_bootstrap",
+      "current_user": "postgres",
+      "note": "Existing authentic base, Spin, entry, retention and lane modules remain at their maintained paths; owning driver controls exact original stage order. Input check also requires installed pure evidence component."
+    },
+    "nonsuper_postgres_session_files": [
+      "store-policy.sql",
+      "catalog-restore.sql",
+      "catalog-readback.sql",
+      "recognition-restore.sql",
+      "recognition-readback.sql",
+      "observer.sql",
+      "replay.sql",
+      "wrapper-refusals.sql",
+      "narrow-refusal.sql"
+    ],
+    "rollback_faults": {
+      "file": "rollback-refusals.sql",
+      "injecting_session": "fixture_bootstrap superuser",
+      "actual_reverse_role": "postgres nonsuperuser",
+      "faults": 8,
+      "outer_outcome": "ROLLBACK"
+    },
+    "observer": "Exactly two pg_temp functions with function-local UTC; 18 financial relation full-state projection; does not change caller timezone.",
+    "replay": "Actual service_role canonical completion under Pacific/Honolulu, then separate replay_timezone_restored JSON with same saved backend identity before COMMIT.",
+    "disposal": "Committed synthetic receipts require disposal of the entire owned allocation. Never DELETE-clean immutable financial/history evidence."
+  },
+  "evidence_limits": [
+    "R6 diagnostic behavior supported; actual HERE/provider execution-time custody was incomplete. This packet itself has not run through the maintained native driver.",
+    "Synthetic seeded buy-ins, histories, draw and launch inputs are declared starting data, not authentic historical proof or evidence those preceding business calls occurred.",
+    "Zero-fee terminal/recognition behavior does not qualify fee-bearing branches, full paid-entry/gameplay lifecycle, current production targets or missing historical rows."
+  ],
+  "prior_diagnostic_review": {
+    "path": "/Volumes/SmarterArchives/agent-evidence/production-alerts-fifo5-source-hardening-20260917/synthetic-current-terminal-consumer-r6-20260917/helper-independent-acceptance.json",
+    "sha256": "6a8645070881ffb7d7904ba897b6d660a218ee2ff04fdf919997586a71d4cde3"
+  },
+  "policy_read": {
+    "read_at": "2026-09-18T00:25:05.509203+00:00",
+    "version": "2.9",
+    "canonical": [
+      {
+        "path": "/Users/smarter.poker/Documents/AGENTS.md",
+        "sha256": "76228d75677eb76ca9dcfbf65fd68ddb7aac3941f61154acc456ae8230a9a4fa"
+      },
+      {
+        "path": "/Users/smarter.poker/Documents/AGENT-HARDENING-STANDARD.md",
+        "sha256": "d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e"
+      },
+      {
+        "path": "/Users/smarter.poker/Documents/AGENT-OPERATING-LAW.md",
+        "sha256": "a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5"
+      },
+      {
+        "path": "/Users/smarter.poker/Documents/AGENT-REFERENCE-INDEX.md",
+        "sha256": "adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555"
+      }
+    ],
+    "worktree_instructions": [
+      {
+        "path": "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/AGENTS.md",
+        "sha256": "16b43babdab68cd31c12ed31acc4bc6050efeede88929526c3d299771d2fdbb9"
+      },
+      {
+        "path": "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/CLAUDE.md",
+        "sha256": "2626cc85a36b80cbecaf39f345d79f3773ebe359b4f8765a77c512654d7674ca"
+      },
+      {
+        "path": "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/AGENT-PLAYBOOK.md",
+        "sha256": "ba53d7d7697dfedd6f91222c7ec682bf4f7bca360c14dabfc05344537bab69b6"
+      },
+      {
+        "path": "/Volumes/SmarterWork/agent-work/production-alerts-mixed-terminal-20260918/.agent-trees/terminal/PUBLISHING.md",
+        "sha256": "0bb04df7fceb599a64354b7d5a797169556c091d6b52f3d9df0d4ad63ff62d85"
+      }
+    ],
+    "direct_reader_command": "node docs/agent-policy/agent-policy.mjs read",
+    "direct_reader_outcome": "MODULE_NOT_FOUND: named reader not present in this exact worktree; canonical policies and worktree instructions read directly. No source/tool substituted."
+  }
+}

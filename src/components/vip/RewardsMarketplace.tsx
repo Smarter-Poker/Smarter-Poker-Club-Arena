@@ -1,5 +1,5 @@
 /**
- * RewardsMarketplace — Spend VIP points on exclusive rewards
+ * RewardsMarketplace - Spend VIP points on exclusive rewards
  * Categorized rewards with filtering, sorting, and redemption
  *
  * ── 2026-08-25, cosmetics purchase/ownership audit ──────────────────────────
@@ -27,9 +27,15 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../common/Toast';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
+import { resolveCosmetic } from '../../cosmetics/avatarCosmetics';
 import { supabase } from '../../lib/supabase';
+import { normalizeThemePresetId, resolveSkin } from '../../lib/tableTheme';
 import { reportError } from '../../utils/errorReporter';
+import { formatPopupText } from '../../utils/popupStyle';
 import './RewardsMarketplace.css';
+
+const REWARD_AVATAR_PREVIEW = `${import.meta.env.BASE_URL}default-avatar.png`;
 
 export interface Reward {
   id: string;
@@ -37,18 +43,20 @@ export interface Reward {
   description: string;
   category: 'tournament' | 'avatar' | 'theme' | 'bonus' | 'merch';
   pointsCost: number;
-  icon: string;
+  grantType: 'theme' | 'avatar' | 'manual';
+  grantRef?: string;
   imageUrl?: string;
   stock?: number;
   featured?: boolean;
 }
 
 /**
- * OFFLINE FALLBACK ONLY. `vip_reward_catalog` is the price. These values match
- * the seed in migration 20260825_vip_reward_catalog, so a failed catalog read
- * shows the right numbers rather than nothing — but the server re-decides the
- * charge from the reward id either way, so a stale entry here can misinform a
- * member and can never mischarge one.
+ * OFFLINE FALLBACK ONLY. `vip_reward_catalog` is the price. The prices match
+ * the original catalog seed, while the cosmetic references match the later
+ * entitlement-delivery migration that made each grant renderable. A failed
+ * catalog read therefore shows a useful bundled list, but the server still
+ * re-decides the charge and grant from the reward id. A stale entry here can
+ * misinform a member and can never mischarge one.
  */
 const FALLBACK_REWARDS: Reward[] = [
   {
@@ -57,7 +65,8 @@ const FALLBACK_REWARDS: Reward[] = [
     description: 'Exclusive Gold Avatar Frame',
     category: 'avatar',
     pointsCost: 1500,
-    icon: '★',
+    grantType: 'avatar',
+    grantRef: 'frame_gold',
     featured: true,
   },
   {
@@ -66,7 +75,8 @@ const FALLBACK_REWARDS: Reward[] = [
     description: 'Vibrant Neon-Style Table Theme',
     category: 'theme',
     pointsCost: 2000,
-    icon: '◆',
+    grantType: 'theme',
+    grantRef: 'neon-blue',
   },
   {
     id: 'avatar-royal-crown',
@@ -74,7 +84,8 @@ const FALLBACK_REWARDS: Reward[] = [
     description: 'Animated Premium Hellfire Avatar Frame',
     category: 'avatar',
     pointsCost: 2500,
-    icon: '♛',
+    grantType: 'avatar',
+    grantRef: 'frame_hellfire',
   },
   {
     id: 'theme-midnight',
@@ -82,7 +93,8 @@ const FALLBACK_REWARDS: Reward[] = [
     description: 'Dark Elegant Casino-Inspired Theme',
     category: 'theme',
     pointsCost: 1800,
-    icon: '◐',
+    grantType: 'theme',
+    grantRef: 'carbon-ion',
   },
   {
     id: 'avatar-diamond-halo',
@@ -90,7 +102,8 @@ const FALLBACK_REWARDS: Reward[] = [
     description: 'Premium Faceted Diamond Avatar Frame',
     category: 'avatar',
     pointsCost: 3000,
-    icon: '◆',
+    grantType: 'avatar',
+    grantRef: 'frame_diamond',
   },
   {
     id: 'theme-cosmic',
@@ -98,7 +111,8 @@ const FALLBACK_REWARDS: Reward[] = [
     description: 'Futuristic Space-Themed Table',
     category: 'theme',
     pointsCost: 2200,
-    icon: '▲',
+    grantType: 'theme',
+    grantRef: 'amethyst-night',
   },
 ];
 
@@ -124,6 +138,62 @@ interface CatalogRow {
   stock: number | null;
   featured: boolean;
   grant_type: 'theme' | 'avatar' | 'manual';
+  grant_ref: string | null;
+}
+
+function RewardPreview({ reward, featured = false }: { reward: Reward; featured?: boolean }) {
+  const [themePreviewFailed, setThemePreviewFailed] = useState(false);
+  const themeId = reward.grantType === 'theme' ? normalizeThemePresetId(reward.grantRef) : null;
+  const frame = reward.grantType === 'avatar' ? resolveCosmetic(reward.grantRef, 'frame') : null;
+
+  if (themeId && !themePreviewFailed) {
+    return (
+      <div
+        className={`reward-preview reward-preview--theme ${featured ? 'reward-preview--featured' : ''}`}
+      >
+        <img
+          src={resolveSkin(themeId)}
+          alt=""
+          aria-hidden="true"
+          className="reward-preview__theme-art"
+          draggable={false}
+          decoding="async"
+          onError={() => setThemePreviewFailed(true)}
+        />
+        <span className="reward-preview__caption">Table Skin Preview</span>
+      </div>
+    );
+  }
+
+  if (frame) {
+    return (
+      <div
+        className={`reward-preview reward-preview--avatar ${featured ? 'reward-preview--featured' : ''}`}
+      >
+        <span className="reward-preview__avatar" aria-hidden="true">
+          <img
+            src={REWARD_AVATAR_PREVIEW}
+            alt=""
+            className="reward-preview__avatar-art"
+            draggable={false}
+            decoding="async"
+          />
+          <AvatarCosmetics frame={frame.id} still />
+        </span>
+        <span className="reward-preview__caption">
+          {formatPopupText(`${frame.label} Frame Preview`)}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`reward-preview reward-preview--unavailable ${featured ? 'reward-preview--featured' : ''}`}
+    >
+      <span>Preview Unavailable</span>
+    </div>
+  );
 }
 
 export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
@@ -143,7 +213,9 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
   const loadCatalog = useCallback(async () => {
     const { data, error } = await supabase
       .from('vip_reward_catalog')
-      .select('id, name, description, category, points_cost, stock, featured, grant_type')
+      .select(
+        'id, name, description, category, points_cost, stock, featured, grant_type, grant_ref'
+      )
       .eq('is_active', true)
       .order('sort_order', { ascending: true });
     if (error) {
@@ -154,7 +226,6 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
       setLoadFailed(true);
       return;
     }
-    const iconById = new Map(FALLBACK_REWARDS.map((r) => [r.id, r.icon]));
     setRewards(
       ((data || []) as CatalogRow[])
         // Manual rewards had no fulfillment surface. A paid claim that merely
@@ -166,7 +237,8 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
           description: row.description,
           category: row.category,
           pointsCost: Number(row.points_cost),
-          icon: iconById.get(row.id) || '◆',
+          grantType: row.grant_type,
+          grantRef: row.grant_ref || undefined,
           stock: row.stock ?? undefined,
           featured: row.featured,
         }))
@@ -237,7 +309,8 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
     if (inFlightRef.current) return;
     if (currentPoints < reward.pointsCost) {
       toast.error(
-        `You Need ${(reward.pointsCost - currentPoints).toLocaleString()} More Points To Redeem This Reward.`
+        `You Need ${(reward.pointsCost - currentPoints).toLocaleString()} More Points ` +
+          'To Redeem This Reward.'
       );
       return;
     }
@@ -278,20 +351,22 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
           <p>Spend Your VIP Points On Exclusive Rewards</p>
         </div>
         <div className="points-balance">
-          <span className="balance-label">Your Points</span>
-          <span className="balance-value">{currentPoints.toLocaleString()}</span>
+          <span className="points-balance__copy">
+            <span className="balance-label">Your Points</span>
+            <span className="balance-value">{currentPoints.toLocaleString()}</span>
+          </span>
         </div>
       </div>
 
       {/* Featured Reward */}
       {featuredReward && (
         <div className="featured-reward">
-          <div className="featured-badge">FEATURED</div>
+          <div className="featured-badge">Featured</div>
           <div className="featured-content">
-            <div className="featured-icon">{featuredReward.icon}</div>
+            <RewardPreview reward={featuredReward} featured />
             <div className="featured-info">
-              <h4>{featuredReward.name}</h4>
-              <p>{featuredReward.description}</p>
+              <h4>{formatPopupText(featuredReward.name)}</h4>
+              <p>{formatPopupText(featuredReward.description)}</p>
               <div className="featured-meta">
                 <span className="points-cost">
                   {featuredReward.pointsCost.toLocaleString()} Points
@@ -302,7 +377,9 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
               </div>
             </div>
             <button
-              className={`featured-redeem-btn ${!canRedeem(featuredReward) ? 'disabled' : ''} ${redeemingId === featuredReward.id ? 'redeeming' : ''}`}
+              className={`featured-redeem-btn ${
+                !canRedeem(featuredReward) ? 'disabled' : ''
+              } ${redeemingId === featuredReward.id ? 'redeeming' : ''}`}
               onClick={() => handleRedeem(featuredReward)}
               disabled={
                 !canRedeem(featuredReward) ||
@@ -310,18 +387,20 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
                 isOutOfStock(featuredReward)
               }
             >
-              {redeemingId === featuredReward.id ? '...' : 'Redeem'}
+              {redeemingId === featuredReward.id ? 'Redeeming' : 'Redeem'}
             </button>
           </div>
         </div>
       )}
 
       {/* Category Tabs */}
-      <div className="category-tabs">
+      <div className="category-tabs" role="group" aria-label="Filter Rewards By Category">
         {categories.map((cat) => (
           <button
             key={cat.id}
+            type="button"
             className={`category-tab ${activeCategory === cat.id ? 'active' : ''}`}
+            aria-pressed={activeCategory === cat.id}
             onClick={() => setActiveCategory(cat.id as CategoryFilter)}
           >
             <span className="tab-label">{cat.label}</span>
@@ -349,21 +428,20 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
       {/* Rewards Grid */}
       <div className="rewards-grid">
         {filteredRewards.length > 0 ? (
-          filteredRewards.map((reward, idx) => (
+          filteredRewards.map((reward) => (
             <div
               key={reward.id}
-              className={`reward-card ${canRedeem(reward) ? 'available' : 'insufficient'} ${isOutOfStock(reward) ? 'out-of-stock' : ''}`}
-              style={{ '--reveal-delay': `${idx * 0.05}s` } as React.CSSProperties}
+              className={`reward-card ${canRedeem(reward) ? 'available' : 'insufficient'} ${
+                isOutOfStock(reward) ? 'out-of-stock' : ''
+              }`}
             >
               {isOutOfStock(reward) && <div className="out-of-stock-overlay">Out Of Stock</div>}
 
-              <div className="reward-icon-box">
-                <span className="reward-icon">{reward.icon}</span>
-              </div>
+              <RewardPreview reward={reward} />
 
               <div className="reward-info">
-                <h4 className="reward-name">{reward.name}</h4>
-                <p className="reward-desc">{reward.description}</p>
+                <h4 className="reward-name">{formatPopupText(reward.name)}</h4>
+                <p className="reward-desc">{formatPopupText(reward.description)}</p>
 
                 <div className="reward-footer">
                   <div className="reward-meta">
@@ -380,27 +458,18 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
                       !canRedeem(reward) || redeemingId === reward.id || isOutOfStock(reward)
                     }
                   >
-                    {redeemingId === reward.id ? '...' : 'Redeem'}
+                    {redeemingId === reward.id ? 'Redeeming' : 'Redeem'}
                   </button>
                 </div>
               </div>
-
-              {canRedeem(reward) && (
-                <div
-                  className="card-glow"
-                  style={{ boxShadow: `0 0 12px rgba(255, 215, 0, 0.3)` }}
-                />
-              )}
             </div>
           ))
         ) : rewards === null ? (
           <div className="no-rewards">
-            <span className="no-rewards-icon">◈</span>
             <p>Loading Rewards...</p>
           </div>
         ) : (
           <div className="no-rewards">
-            <span className="no-rewards-icon">◈</span>
             {/* A read that failed is a different statement from a category
                 that is empty, and this told the member the second one. */}
             <p>

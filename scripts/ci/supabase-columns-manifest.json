@@ -1,5 +1,5 @@
 {
-  "_comment": "Live public schema COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.",
+  "_comment": "Live public and complete smarter_private COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.",
   "columns": {
     "_pps_backfill_state": [
       "id",
@@ -20,6 +20,306 @@
       "fingerprint",
       "resolved",
       "created_at"
+    ],
+    "accounting_agreement_history": [
+      "id",
+      "entity_type",
+      "entity_key",
+      "club_id",
+      "subject_user_id",
+      "event_type",
+      "observed_at",
+      "transaction_id",
+      "actor_id",
+      "before_terms",
+      "after_terms"
+    ],
+    "accounting_cash_accrual_batches": [
+      "rake_record_id",
+      "hand_id",
+      "earned_at",
+      "source_fingerprint",
+      "status",
+      "plan",
+      "recorded_at"
+    ],
+    "accounting_cash_accrual_cutover": [
+      "singleton",
+      "starts_at"
+    ],
+    "accounting_cash_bank_receipts": [
+      "rake_record_id",
+      "union_id",
+      "club_id",
+      "union_transaction_id",
+      "club_ledger_id",
+      "banked_at",
+      "amount"
+    ],
+    "accounting_cash_rake_sources": [
+      "id",
+      "rake_record_id",
+      "player_id",
+      "club_id",
+      "union_id",
+      "coordinator_union_id",
+      "earned_at",
+      "rake_credit",
+      "contract",
+      "recorded_at"
+    ],
+    "accounting_cash_source_receipts": [
+      "id",
+      "rake_record_id",
+      "attempt",
+      "earned_at",
+      "source_fingerprint",
+      "status",
+      "reason",
+      "sqlstate",
+      "error_detail",
+      "scope",
+      "result",
+      "recorded_at"
+    ],
+    "accounting_cash_source_work": [
+      "rake_record_id",
+      "receipt_id",
+      "source_fingerprint",
+      "status",
+      "attempts",
+      "next_attempt_at"
+    ],
+    "accounting_cashier_events": [
+      "id",
+      "contract_version",
+      "cashout_id",
+      "escrow_id",
+      "source_transaction_id",
+      "source_ledger_id",
+      "invoice_id",
+      "event_slot",
+      "event_kind",
+      "hold_event_id",
+      "hold_invoice_id",
+      "club_id",
+      "player_id",
+      "assigned_agent_id",
+      "actor_user_id",
+      "actor_role",
+      "ledger_actor_user_id",
+      "issuer_representative_id",
+      "issuer_name",
+      "player_name",
+      "audience_user_ids",
+      "op_id",
+      "operation_fingerprint",
+      "accepted_note",
+      "transaction_note",
+      "amount",
+      "ledger_from_type",
+      "ledger_from_entity_id",
+      "ledger_to_type",
+      "ledger_to_entity_id",
+      "wallet_owner_id",
+      "wallet_before",
+      "wallet_after",
+      "occurred_at",
+      "issued_at"
+    ],
+    "accounting_conversations": [
+      "scope_id",
+      "issuer_type",
+      "issuer_id",
+      "sender_id",
+      "recipient_id",
+      "conversation_id",
+      "last_discussion_at"
+    ],
+    "accounting_correction_documents": [
+      "id",
+      "contract_version",
+      "source_ledger_id",
+      "invoice_id",
+      "club_id",
+      "union_id",
+      "source_club_id",
+      "source_union_id",
+      "source_row",
+      "amount",
+      "issuer_type",
+      "issuer_id",
+      "payee_type",
+      "payee_id",
+      "issuer_representative_id",
+      "issuer_name",
+      "payee_name",
+      "audience_user_ids",
+      "incident_id",
+      "write_failure_id",
+      "recorded_at",
+      "issued_at"
+    ],
+    "accounting_credit_change_documents_v1": [
+      "id",
+      "invoice_id",
+      "operation_receipt_id",
+      "issuer_name",
+      "recipient_name",
+      "audience_user_ids",
+      "issued_at"
+    ],
+    "accounting_credit_reduction_operations_v1": [
+      "id",
+      "contract_version",
+      "actor_user_id",
+      "operation_id",
+      "club_id",
+      "agent_id",
+      "target_user_id",
+      "action",
+      "requested_reduction",
+      "reason",
+      "assignment_reason",
+      "before_limit",
+      "after_limit",
+      "credit_used",
+      "before_prepaid",
+      "after_prepaid",
+      "before_revision",
+      "after_revision",
+      "applied_reduction",
+      "assignment_id",
+      "document_id",
+      "invoice_id",
+      "recorded_at"
+    ],
+    "accounting_credit_reduction_retirements_v1": [
+      "id",
+      "contract_version",
+      "actor_user_id",
+      "operation_id",
+      "club_id",
+      "retired_at"
+    ],
+    "accounting_invoice_counters": [
+      "year",
+      "next_number"
+    ],
+    "accounting_invoice_deliveries": [
+      "invoice_id",
+      "recipient_id",
+      "message_id",
+      "notification_id",
+      "delivered_at",
+      "delivery_mode"
+    ],
+    "accounting_payable_earning_sources": [
+      "source_type",
+      "source_id",
+      "rake_record_id",
+      "tournament_id",
+      "player_id",
+      "club_id",
+      "union_id",
+      "coordinator_union_id",
+      "earned_at",
+      "rake_credit",
+      "contract"
+    ],
+    "accounting_period_recompute_requests": [
+      "id",
+      "club_id",
+      "period_start",
+      "period_end",
+      "status",
+      "reason",
+      "requested_at",
+      "last_requested_at",
+      "attempted_at",
+      "attempts",
+      "last_result"
+    ],
+    "accounting_rakeback_period_calculations": [
+      "id",
+      "period_id",
+      "accounting_version",
+      "source_fingerprint",
+      "club_id",
+      "player_id",
+      "coordinator_union_id",
+      "period_start",
+      "period_end",
+      "rake_generated",
+      "rakeback_amount",
+      "display_rate",
+      "payer_kind",
+      "payer_user_id",
+      "source_allocations",
+      "recorded_at"
+    ],
+    "accounting_routed_settlement_runs": [
+      "union_id",
+      "period_start",
+      "period_end",
+      "round_no",
+      "routing_version",
+      "source_fingerprint",
+      "result",
+      "completed_at",
+      "standalone_club_id",
+      "scope_kind",
+      "scope_id"
+    ],
+    "accounting_tournament_fee_batches": [
+      "rake_record_id",
+      "tournament_id",
+      "source_fingerprint",
+      "status",
+      "source_version",
+      "source_manifest",
+      "rake_amount",
+      "captured_at"
+    ],
+    "accounting_tournament_fee_cutover": [
+      "singleton",
+      "starts_at"
+    ],
+    "accounting_tournament_fee_recognitions": [
+      "tournament_id",
+      "recognized_at",
+      "status",
+      "net_rake",
+      "union_id",
+      "bank_club_id",
+      "union_wallet_transaction_id",
+      "bank_journal_id",
+      "source_fingerprint",
+      "plan"
+    ],
+    "accounting_tournament_fee_sources": [
+      "id",
+      "rake_record_id",
+      "tournament_id",
+      "player_id",
+      "club_id",
+      "union_id",
+      "coordinator_union_id",
+      "game_type",
+      "registration_id",
+      "source_charge_ledger_id",
+      "source_entitlement_id",
+      "charged_at",
+      "rake_credit",
+      "contract",
+      "recorded_at"
+    ],
+    "accounting_tournament_recognized_sources": [
+      "source_id",
+      "tournament_id",
+      "recognized_at",
+      "disposition",
+      "rake_credit"
     ],
     "action_audit_logs": [
       "id",
@@ -69,7 +369,8 @@
       "contact_email",
       "status",
       "created_at",
-      "updated_at"
+      "updated_at",
+      "self_serve"
     ],
     "ad_campaign": [
       "id",
@@ -98,7 +399,13 @@
       "external_url",
       "click_code",
       "pacing",
-      "goal_impressions"
+      "goal_impressions",
+      "poster_url",
+      "quoted_cents",
+      "invoiced_at",
+      "paid_at",
+      "billed_by",
+      "countries"
     ],
     "ad_catalog": [
       "id",
@@ -120,7 +427,8 @@
       "image_url",
       "advertiser_id",
       "campaign_id",
-      "priority"
+      "priority",
+      "poster_url"
     ],
     "ad_event": [
       "id",
@@ -159,7 +467,8 @@
       "is_open",
       "label",
       "blurb",
-      "updated_at"
+      "updated_at",
+      "sponsor_cents_per_day"
     ],
     "admin_audit_log": [
       "id",
@@ -250,7 +559,8 @@
       "agent_wallet_balance",
       "player_wallet_balance",
       "promo_wallet_balance",
-      "lifetime_rake_generated"
+      "lifetime_rake_generated",
+      "credit_control_revision"
     ],
     "anti_cheat_events": [
       "id",
@@ -727,7 +1037,8 @@
       "armed_by",
       "armed_at",
       "fired_at",
-      "fired_hand_number"
+      "fired_hand_number",
+      "kind"
     ],
     "bbj_hand_evidence_log": [
       "id",
@@ -834,7 +1145,8 @@
       "last_loser_id",
       "merged_into_pool_id",
       "alloc_cum_amount",
-      "mini_reserve_floor"
+      "mini_reserve_floor",
+      "mini_enabled"
     ],
     "bbj_qualifying_hands": [
       "variant",
@@ -997,7 +1309,8 @@
       "settlement_window_days",
       "note",
       "updated_at",
-      "cash_games_enabled"
+      "cash_games_enabled",
+      "tournaments_enabled"
     ],
     "ca_bbj_alloc_state": [
       "pool_id",
@@ -1111,6 +1424,50 @@
       "reason",
       "recorded_at"
     ],
+    "ca_cash_failed_run_outcomes": [
+      "jobid",
+      "runid",
+      "snapshot_md5",
+      "run_snapshot",
+      "outcome",
+      "receipt_id",
+      "receipt_source",
+      "receipt_key",
+      "receipt_payload",
+      "intake_sqlstate",
+      "intake_message",
+      "observed_at"
+    ],
+    "ca_cash_pot_check_anomalies": [
+      "check_id",
+      "ordinal",
+      "condition_kind",
+      "hand_id",
+      "table_id",
+      "hand_number",
+      "created_at",
+      "pot",
+      "rake",
+      "bbj",
+      "recorded_awarded",
+      "winner_count",
+      "winner_state",
+      "signed_residual",
+      "absolute_residual",
+      "evidence_bytes"
+    ],
+    "ca_cash_pot_check_evidence": [
+      "check_id",
+      "schema_version",
+      "source_contract",
+      "summary",
+      "anomalies",
+      "anomaly_rows",
+      "detail_bytes",
+      "header_bytes",
+      "evidence_bytes",
+      "created_at"
+    ],
     "ca_cert_accounts": [
       "user_id",
       "reason",
@@ -1129,6 +1486,13 @@
       "ledger_at_baseline",
       "unledgered_gap",
       "taken_at"
+    ],
+    "ca_chip_store_coverage": [
+      "store",
+      "treatment",
+      "counted_by",
+      "notes",
+      "added_at"
     ],
     "ca_club_bomb_pot_complete": [
       "club_id",
@@ -1243,6 +1607,12 @@
       "direction_ratio",
       "both_cert",
       "detail"
+    ],
+    "ca_correction_request_intents_v1": [
+      "linkage_key",
+      "ledger_id",
+      "request_intent",
+      "recorded_at"
     ],
     "ca_currency_meter": [
       "id",
@@ -2137,6 +2507,10 @@
       "notes",
       "added_at"
     ],
+    "ca_mtt_admission_contract": [
+      "singleton",
+      "abi"
+    ],
     "ca_noop_update_stats": [
       "tbl",
       "suppressed",
@@ -2288,7 +2662,6 @@
       "heads_up_cap_factor",
       "short_handed_cap_factor",
       "short_handed_max_players",
-      "short_handed_min_seats",
       "no_flop_no_drop",
       "bbj_min_players_dealt",
       "bbj_min_pot_bb",
@@ -2296,7 +2669,8 @@
       "max_rake_cap_bb",
       "bbj_ineligible_variants",
       "tier_priced_big_blinds",
-      "updated_at"
+      "updated_at",
+      "short_handed_min_seats"
     ],
     "ca_rake_schedule": [
       "sb",
@@ -2486,7 +2860,9 @@
       "club_promo",
       "club_insurance",
       "agent_promo",
-      "basis_version"
+      "basis_version",
+      "ticket_escrow",
+      "pending_addons"
     ],
     "ca_test_account_audit_archive": [
       "audit_id",
@@ -2495,6 +2871,15 @@
       "audit_row",
       "archived_at",
       "archive_reason"
+    ],
+    "ca_ticker_usage_daily": [
+      "day",
+      "user_id",
+      "source",
+      "shown",
+      "opened",
+      "dismissed",
+      "updated_at"
     ],
     "ca_tournament_conservation_samples": [
       "tournament_id",
@@ -5893,7 +6278,10 @@
       "amount",
       "payment_method",
       "transaction_id",
-      "created_at"
+      "created_at",
+      "operation_id",
+      "payer_user_id",
+      "payment_reference"
     ],
     "credit_requests": [
       "id",
@@ -5907,7 +6295,8 @@
       "reviewer_notes",
       "created_at",
       "reviewed_at",
-      "reviewed_by"
+      "reviewed_by",
+      "decision_authority_version"
     ],
     "crew_members": [
       "id",
@@ -6193,6 +6582,70 @@
       "metadata",
       "created_at"
     ],
+    "diamond_bonus_entries": [
+      "id",
+      "user_id",
+      "club_id",
+      "host_id",
+      "host_kind",
+      "game",
+      "commit_id",
+      "base_diamonds",
+      "added_diamonds",
+      "total_diamonds",
+      "request",
+      "result",
+      "is_fixture",
+      "created_at",
+      "wheel_award_id"
+    ],
+    "diamond_bonus_spin_tickets": [
+      "id",
+      "user_id",
+      "claim_id",
+      "bonus_date",
+      "streak",
+      "entry_diamonds",
+      "created_at",
+      "club_id",
+      "host_id",
+      "host_kind",
+      "owner_id",
+      "commit_id",
+      "client_seed",
+      "mint_op_id",
+      "funded_at",
+      "redeemed_spin_id",
+      "redeemed_at"
+    ],
+    "diamond_choice_rounds": [
+      "id",
+      "host_id",
+      "host_kind",
+      "club_id",
+      "user_id",
+      "game",
+      "mode",
+      "bet_diamonds",
+      "bet_chips",
+      "diamonds_per_chip",
+      "commit_id",
+      "server_seed",
+      "server_seed_hash",
+      "client_seed",
+      "nonce",
+      "mine_cells",
+      "road_roll",
+      "picked",
+      "max_steps",
+      "prizes",
+      "reserved_chips",
+      "is_fixture",
+      "status",
+      "payout_chips",
+      "created_at",
+      "settled_at"
+    ],
     "diamond_debts": [
       "id",
       "user_id",
@@ -6258,7 +6711,25 @@
       "chips_paid",
       "reserved_chips",
       "constrained_rounds",
-      "updated_at"
+      "updated_at",
+      "wheel_allocated_diamonds"
+    ],
+    "diamond_game_round_book": [
+      "id",
+      "host_id",
+      "club_id",
+      "user_id",
+      "game",
+      "bet_diamonds",
+      "bet_chips",
+      "payout_chips",
+      "created_at",
+      "settled_at",
+      "status",
+      "is_fixture",
+      "multiplier_cents",
+      "table_version",
+      "constrained"
     ],
     "diamond_ledger": [
       "id",
@@ -6356,6 +6827,14 @@
       "claim_date",
       "metadata"
     ],
+    "diamond_spins_owner_consents": [
+      "host_id",
+      "owner_id",
+      "host_kind",
+      "terms_version",
+      "accepted_at",
+      "terms_text"
+    ],
     "diamond_transactions": [
       "id",
       "user_id",
@@ -6396,6 +6875,11 @@
       "lifetime_earned",
       "lifetime_spent",
       "updated_at"
+    ],
+    "diamond_wheel_release": [
+      "singleton",
+      "enabled",
+      "contract_version"
     ],
     "digital_purchase_receipts": [
       "user_id",
@@ -6439,6 +6923,12 @@
       "updated_at",
       "mode",
       "achieved_at"
+    ],
+    "engine_alert_delivery_receipts": [
+      "event_id",
+      "engine_alert_id",
+      "payload",
+      "received_at"
     ],
     "engine_alerts": [
       "id",
@@ -7365,6 +7855,43 @@
       "user_id",
       "created_at"
     ],
+    "horse_adaptive_journal_work": [
+      "batch_key",
+      "batch_digest",
+      "observations",
+      "payload",
+      "state",
+      "attempts",
+      "lease_token",
+      "lease_until",
+      "available_at",
+      "created_at",
+      "completed_at"
+    ],
+    "horse_adaptive_observation_batches": [
+      "batch_key",
+      "batch_digest",
+      "actor_key",
+      "source_digest",
+      "from_ms",
+      "through_ms",
+      "observation_count",
+      "rejected",
+      "recorded_at",
+      "canonical_payload"
+    ],
+    "horse_adaptive_observation_journal": [
+      "observation_id",
+      "hand_id",
+      "actor_key",
+      "session_key",
+      "observed_at_ms",
+      "partition",
+      "scope_key",
+      "origin",
+      "payload",
+      "recorded_at"
+    ],
     "horse_analytics": [
       "id",
       "horse_id",
@@ -7372,6 +7899,18 @@
       "metric_value",
       "details",
       "recorded_at"
+    ],
+    "horse_brain_flush_receipts": [
+      "batch_id",
+      "payload_sha256",
+      "worker_id",
+      "sequence",
+      "source_release",
+      "day",
+      "collected_at",
+      "accepted_at",
+      "fires",
+      "latency"
     ],
     "horse_brain_telemetry": [
       "day",
@@ -7396,6 +7935,47 @@
       "resolved_at",
       "resolved_by",
       "created_at"
+    ],
+    "horse_commitment_audit_days": [
+      "day",
+      "pass",
+      "after_created_at",
+      "after_hand_id",
+      "started_at",
+      "last_batch_at",
+      "finished_at",
+      "scanned_hands",
+      "horse_hands",
+      "flagged_horse_hands",
+      "unknown_horse_hands",
+      "hand_gaps",
+      "source_coverage",
+      "identity_basis"
+    ],
+    "horse_commitment_audit_gaps": [
+      "hand_id",
+      "played_at",
+      "reasons",
+      "observed_at"
+    ],
+    "horse_commitment_reviews": [
+      "hand_id",
+      "horse_user_id",
+      "table_id",
+      "played_at",
+      "captured_at",
+      "source_payload_hash",
+      "game_variant",
+      "format",
+      "seats",
+      "big_blind",
+      "net_contribution",
+      "returned_uncalled",
+      "committed_amount",
+      "committed_bb",
+      "eligibility",
+      "gto_verdict",
+      "reasons"
     ],
     "horse_daily_audit": [
       "day",
@@ -7516,6 +8096,32 @@
       "claimed_at",
       "claimed_by"
     ],
+    "horse_journaled_model_sweep": [
+      "singleton",
+      "cursor_actor",
+      "cursor_scope",
+      "lease_token",
+      "lease_until",
+      "actor_key",
+      "scope_key",
+      "from_ms",
+      "to_ms",
+      "snapshot_id",
+      "evidence_digest",
+      "population_status",
+      "completed_token",
+      "completed_digest",
+      "capacity_refusals",
+      "last_capacity_actor",
+      "last_capacity_scope"
+    ],
+    "horse_journaled_opponent_models": [
+      "actor_key",
+      "scope_key",
+      "report_digest",
+      "report_payload",
+      "recorded_at"
+    ],
     "horse_league_results": [
       "id",
       "run_date",
@@ -7621,6 +8227,77 @@
       "tank_bet_sd",
       "tank_bet_sd_strong",
       "updated_at"
+    ],
+    "horse_observation_capture_receipts": [
+      "request_key",
+      "lease_token",
+      "from_ms",
+      "through_ms",
+      "payload_digest",
+      "acknowledgment",
+      "recorded_at",
+      "source_witness",
+      "source_witness_digest"
+    ],
+    "horse_observation_capture_work": [
+      "request_key",
+      "actor_id",
+      "from_ms",
+      "through_ms",
+      "state",
+      "created_at",
+      "available_at",
+      "lease_token",
+      "lease_until",
+      "attempts",
+      "reason",
+      "batch_key",
+      "batch_digest",
+      "observations",
+      "admitted_at",
+      "cursor_ms",
+      "slice_through_ms",
+      "segments",
+      "captured_observations"
+    ],
+    "horse_observation_discovery_epochs": [
+      "epoch_key",
+      "from_ms",
+      "through_ms",
+      "cursor_ms",
+      "slice_through_ms",
+      "state",
+      "segments",
+      "actors",
+      "evidence_bytes",
+      "failures",
+      "available_at",
+      "created_at",
+      "finished_at",
+      "previous_through_ms",
+      "skipped_epochs",
+      "reason"
+    ],
+    "horse_observation_discovery_members": [
+      "epoch_key",
+      "actor_id",
+      "request_key",
+      "source_from_ms",
+      "admitted_at"
+    ],
+    "horse_observation_discovery_segments": [
+      "epoch_key",
+      "from_ms",
+      "through_ms",
+      "snapshot_id",
+      "read_at_ms",
+      "source_digest",
+      "hands",
+      "source_actors",
+      "actor_digest",
+      "novel_actors",
+      "admitted_actors",
+      "recorded_at"
     ],
     "horse_opponent_journals": [
       "horse_id",
@@ -7923,6 +8600,28 @@
       "finish_pct_sum",
       "best_finish",
       "updated_at"
+    ],
+    "horse_tuner_study_completions": [
+      "run_date",
+      "request_hash",
+      "eligible_horses",
+      "studied",
+      "completed_at"
+    ],
+    "horse_tuner_study_rosters": [
+      "run_date",
+      "request_hash",
+      "request_payload",
+      "created_at"
+    ],
+    "horse_tuner_write_receipts": [
+      "horse_id",
+      "run_date",
+      "request_hash",
+      "request_payload",
+      "profile_changed",
+      "audit_id",
+      "created_at"
     ],
     "iap_events": [
       "event_id",
@@ -9007,6 +9706,30 @@
       "link",
       "read_at"
     ],
+    "operational_alert_events": [
+      "id",
+      "source",
+      "event_key",
+      "alertname",
+      "status",
+      "severity",
+      "payload",
+      "received_at",
+      "last_received_at",
+      "delivery_count",
+      "investigation_status",
+      "investigation"
+    ],
+    "operational_notification_destinations": [
+      "notification_id",
+      "recipient_user_id",
+      "target_task_id",
+      "original_notification",
+      "inbox_event_id",
+      "captured_at",
+      "last_attempt_at",
+      "last_error"
+    ],
     "opponent_profiles": [
       "id",
       "user_id",
@@ -9256,6 +9979,23 @@
       "resolved_at",
       "rake_method",
       "returned_uncalled"
+    ],
+    "personal_notifications": [
+      "id",
+      "user_id",
+      "type",
+      "title",
+      "message",
+      "data",
+      "read",
+      "created_at",
+      "updated_at",
+      "is_read",
+      "action_url",
+      "metadata",
+      "actor_id",
+      "link",
+      "read_at"
     ],
     "personas": [
       "id",
@@ -9585,6 +10325,24 @@
       "wallet_journal_id",
       "request",
       "receipt",
+      "created_at"
+    ],
+    "poker_diamond_tournament_ledger": [
+      "id",
+      "tournament_id",
+      "arena_id",
+      "user_id",
+      "custody_id",
+      "kind",
+      "amount",
+      "prize_part",
+      "bounty_part",
+      "fee_part",
+      "idempotency_key",
+      "wallet_journal_id",
+      "obligation_id",
+      "registration_id",
+      "request",
       "created_at"
     ],
     "poker_events": [
@@ -10367,7 +11125,9 @@
       "created_at",
       "sent_at",
       "claimed_at",
-      "image_url"
+      "image_url",
+      "accounting_notification_id",
+      "next_attempt_at"
     ],
     "push_subscriptions": [
       "id",
@@ -10386,7 +11146,8 @@
       "updated_at",
       "device_id",
       "transport",
-      "platform"
+      "platform",
+      "rotation_revision"
     ],
     "pwa_prompt_log": [
       "id",
@@ -10931,33 +11692,6 @@
       "original_source_name",
       "scheduled_for"
     ],
-    "sentry_error_log": [
-      "id",
-      "sentry_issue_id",
-      "snapshot_date",
-      "title",
-      "culprit",
-      "level",
-      "first_seen",
-      "last_seen",
-      "user_count",
-      "event_count",
-      "page_url",
-      "category",
-      "is_new",
-      "sentry_link",
-      "metadata",
-      "created_at"
-    ],
-    "sentry_event_budget": [
-      "day",
-      "sent"
-    ],
-    "sentry_event_fingerprints": [
-      "day",
-      "fingerprint",
-      "sent"
-    ],
     "session_chat_messages": [
       "id",
       "session_id",
@@ -11027,7 +11761,11 @@
       "adjusts_invoice_id",
       "overdue_at",
       "reminders_sent",
-      "last_reminder_at"
+      "last_reminder_at",
+      "source_ledger_id",
+      "source_credit_invoice_id",
+      "source_credit_payment_id",
+      "source_credit_reduction_operation_id"
     ],
     "settlement_journal": [
       "id",
@@ -11176,6 +11914,71 @@
       "new_slug",
       "reason",
       "changed_at"
+    ],
+    "smarter_private.f06_attempts": [
+      "request_id",
+      "break_id",
+      "user_id",
+      "revision",
+      "predecessor",
+      "amendment_id",
+      "amendment_payload",
+      "destination_table_id",
+      "destination_seat_number",
+      "generation",
+      "state",
+      "receipt"
+    ],
+    "smarter_private.f06_cursors": [
+      "tournament_id",
+      "ordinal",
+      "revision"
+    ],
+    "smarter_private.f06_dispatch": [
+      "request_id",
+      "xid",
+      "occupancy_id",
+      "source_seat_id",
+      "lifecycle"
+    ],
+    "smarter_private.f06_hand_dispatch": [
+      "permit_id",
+      "xid"
+    ],
+    "smarter_private.f06_hand_permits": [
+      "permit_id",
+      "tournament_id",
+      "table_id",
+      "lifecycle",
+      "hand_number",
+      "custody_id",
+      "generation",
+      "state",
+      "evidence_id"
+    ],
+    "smarter_private.f06_members": [
+      "break_id",
+      "user_id",
+      "source_seat_id",
+      "source_seat_number",
+      "occupancy_id"
+    ],
+    "smarter_private.f06_operations": [
+      "break_id",
+      "ordinal",
+      "tournament_id",
+      "source_table_id",
+      "lifecycle",
+      "boundary_id",
+      "origin_generation",
+      "state",
+      "manifest",
+      "revision",
+      "custody_id",
+      "custody_generation",
+      "cleanup_kind",
+      "close_receipt",
+      "created_at"
     ],
     "sms_otp_codes": [
       "id",
@@ -12324,7 +13127,8 @@
       "observer_show_cards",
       "terminal_closed_at",
       "seat_game_scope",
-      "seat_admission_key"
+      "seat_admission_key",
+      "f06_lifecycle"
     ],
     "theme_asset_unlocks": [
       "user_id",
@@ -12886,6 +13690,13 @@
       "counter_prize_gap",
       "counter_bounty_gap",
       "counter_fee_gap"
+    ],
+    "tournament_felt_supply_acknowledgements": [
+      "tournament_id",
+      "chips",
+      "incident_id",
+      "reason",
+      "recorded_at"
     ],
     "tournament_final_table_deal_batches": [
       "tournament_id",
@@ -13540,7 +14351,8 @@
       "escrow_close_note",
       "completed_at",
       "settled_at",
-      "receipt_version"
+      "receipt_version",
+      "accounting_state"
     ],
     "tournament_ticket_admission_authorizations": [
       "token",
@@ -13711,7 +14523,12 @@
       "addon_from_start",
       "spin_reveal_at",
       "mystery_bounty_activation_generation",
-      "entry_contract_locked"
+      "entry_contract_locked",
+      "blind_level_state",
+      "payout_math_version",
+      "payout_unit_cents",
+      "format_contract",
+      "restart_source_id"
     ],
     "tours_due_for_refresh": [
       "tour_code",
@@ -14873,6 +15690,21 @@
       "latitude",
       "longitude",
       "logo_url"
+    ],
+    "union_accounting_runs": [
+      "union_id",
+      "period_start",
+      "period_end",
+      "scheduled_at",
+      "status",
+      "attempts",
+      "started_at",
+      "finished_at",
+      "result",
+      "standalone_club_id",
+      "scope_kind",
+      "scope_id",
+      "last_scheduler_visit_at"
     ],
     "union_admins": [
       "id",
@@ -16644,6 +17476,25 @@
       "updated_at",
       "created_at"
     ],
+    "wheel_bonus_awards": [
+      "id",
+      "spin_id",
+      "user_id",
+      "club_id",
+      "host_id",
+      "host_kind",
+      "game",
+      "entry_diamonds",
+      "boost_multiplier",
+      "base_diamonds",
+      "cap_cents",
+      "reserved_chips",
+      "status",
+      "commit_id",
+      "request",
+      "result",
+      "created_at"
+    ],
     "wheel_config_history": [
       "id",
       "at",
@@ -16774,7 +17625,9 @@
       "member_chips_after",
       "is_fixture",
       "created_at",
-      "is_welcome"
+      "is_welcome",
+      "bonus_ticket_id",
+      "receipt_v2"
     ],
     "wishlists": [
       "id",

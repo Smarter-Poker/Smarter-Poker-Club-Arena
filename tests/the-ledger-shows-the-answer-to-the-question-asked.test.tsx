@@ -29,7 +29,11 @@ vi.mock('../src/components/common/confirmDialog', () => ({ confirmDialog: vi.fn(
 vi.mock('../src/services/clubArenaApi', () => ({ callClubArenaApi: vi.fn() }));
 vi.mock('../src/lib/supabase', () => ({
   supabase: {
-    auth: { getSession: async () => ({ data: { session: { access_token: 'token' } } }) },
+    auth: {
+      getSession: async () => ({
+        data: { session: { access_token: 'token', user: { id: 'user-a' } } },
+      }),
+    },
   },
 }));
 
@@ -65,7 +69,7 @@ describe('the purchase ledger shows the answer to the question actually asked', 
   });
 
   const openLedger = async () => {
-    render(<PurchaseLedger clubId="club-a" />);
+    render(<PurchaseLedger clubId="club-a" userId="user-a" />);
     fireEvent.click(screen.getByRole('button', { name: /Purchase Ledger/i }));
   };
 

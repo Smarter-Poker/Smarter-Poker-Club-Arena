@@ -290,7 +290,7 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(REVEAL_PATH).toMatch(/setPackRemaining\(result\.usesRemaining\)/);
     // And it has somewhere to land: the corner count falls back to the pack
     // when there is no VIP pool, or the number would be set and never drawn.
-    expect(COMPONENT).toMatch(/vipRemaining \?\? packRemaining/);
+    expect(COMPONENT).toMatch(/visibleVipRemaining \?\? packRemaining/);
   });
 
   it('never pops up a running count of hunts left', () => {
@@ -395,7 +395,7 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(TABLE_PAGE).toMatch(/vipRemaining: result\.vip_remaining/);
     expect(COMPONENT).toMatch(/vipRemaining/);
     // And the label must stop claiming FREE once the pool is spent.
-    expect(COMPONENT).toMatch(/vipRemaining === 0/);
+    expect(COMPONENT).toMatch(/visibleVipRemaining === 0/);
     // That only works if the count is known BEFORE the press. The first attempt
     // set it from the reveal response — which arrives after the press, and the
     // button is unmounted the moment it has been pressed — so the state was

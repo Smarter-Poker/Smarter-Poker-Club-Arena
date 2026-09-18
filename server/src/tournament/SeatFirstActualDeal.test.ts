@@ -373,7 +373,16 @@ function fixture(
   // No prefetched number: exercise the manager-installed allocator and permit.
   engine.takePreparedHandNumber = () => null;
   engine.refreshRakeConfig = async () => {};
-  engine.fetchTimeBankExtras = async () => new Map([[seats[0].user_id, 20]]);
+  engine.fetchTimeBankExtras = async () =>
+    new Map([
+      [
+        seats[0].user_id,
+        {
+          extraSeconds: 20,
+          unlimitedActivations: false,
+        },
+      ],
+    ]);
   engine.restoreSitOutsFromSeats = () => {};
   engine.evictExpiredSitOuts = async () => {};
   engine.announcePendingSeatMoves = async () => true;

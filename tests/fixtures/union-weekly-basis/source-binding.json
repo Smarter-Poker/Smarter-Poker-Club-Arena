@@ -13,7 +13,7 @@
     "supabase/migrations/20260917233148_union_pnl_inventory_preserves_original_boundaries.sql": "12de87bee4c2eb432a1182db19b3d3fca7b3a58de4fd7cd3980f444ffe2dcb25",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "supabase/migrations/20260918002654_horse_tournament_entry_retains_original_funding.sql": "c72a730fbb650982a09d17d261099c6f5e86187f1e689f706ca6d5f7b1e77a90",
-    "tests/fixtures/cash-participant-funding/bootstrap.sql": "81f4e3142b21feff3b555853b05e5cc292a40de5994c155cd5acd6e36cfc8817",
+    "tests/fixtures/cash-participant-funding/bootstrap.sql": "81364abd399d53ecdc1e652c5b17a22e309b7cf9abc0eed3909b7eb954797c99",
     "tests/fixtures/cash-participant-funding/build-candidate.py": "59301e6fffacf5202097af0d1932c91d62923eb10b0aa83fbc0eceb73493c97c",
     "tests/fixtures/cash-participant-funding/captured-hand-preimages.json": "36d6a19b84bd6ab825164300a23e29afda084595496a9976dc660c2dd2e19626",
     "tests/fixtures/cash-participant-funding/captured-integration-preimages.json": "8cdb72fd836a59c769c4fa7b8748f37934b71dcb2a129f4eecfc3de9be916d6f",

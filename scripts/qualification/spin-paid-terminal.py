@@ -75,7 +75,7 @@ def validate_sources(files, fee):
     for name, pin in manifest['files'].items():
         require(pin == {'bytes': len(files[name]), 'sha256': sha(files[name])}, 'source changed: ' + name)
     capture = fee.decode(files[BASE + 'capture.json'])
-    require(len(capture['functions']) == 24 and len(capture['preimage']) == 24
+    require(len(capture['functions']) == 25 and len(capture['preimage']) == 25
             and sum(x['present'] is True for x in capture['preimage']) == 8,
             'captured provider inventory differs')
     for f in capture['functions']:

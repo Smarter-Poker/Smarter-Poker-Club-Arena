@@ -1,0 +1,7 @@
+# F06 original hand preparation retains its owner
+
+A tournament sweep could read a reserved original permit while `dealHand` was awaiting time-bank allowances, classify that ordinary preparation as recovery, and request a whole-table break. Its later custody acquisition could then stop a controller that had started during the park request.
+
+The original dealer now retains an exact preparation token until its preparation exits through the existing `finally`. Manager admission recovery and durable-break binding consult that owner before selecting the permit. The ordinary retained-permit view remains unchanged for release safeguards. Failed preparation, a pre-start pause return, and genuinely retained unknown outcomes remain recoverable through the same original custody path; no permit, history, or financial evidence is discarded.
+
+Verification: the direct Manager/dealer race fails against the previous source by issuing a park request during a pending preparation. The existing Manager flow suite passes 42 tests after the repair, including delayed BEGIN, delayed allowances, real controller start, failure and pause exits. Five connected F06 suites pass 47 tests; server TypeScript passes. The existing required server CI runs these test files. Production installation and disposition of previously stalled original objects require separate owning-operation evidence; missing hand history does not establish non-actuation.

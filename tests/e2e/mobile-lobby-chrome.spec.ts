@@ -24,8 +24,34 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { dismissClubEntryMessage } from './global-setup';
 
 const css = (p: string) => readFileSync(p, 'utf8');
+
+test('production setup persists the club message through an eligible Diamond invitation', async ({
+  page,
+}) => {
+  await page.route('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ ok: true }),
+    });
+  });
+  await page.setContent(`
+    <div role="dialog" aria-label="Club Message From Fixture">
+      <button onclick="fetch('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', {method:'POST'}).then(() => this.parentElement.remove())">Do Not Show Me This Message Again</button>
+    </div>
+    <output id="declines">0</output>
+    <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">
+      <button id="decline" disabled onclick="document.getElementById('declines').textContent='1';this.parentElement.remove()">Not Now</button>
+    </div>
+    <script>setTimeout(() => document.getElementById('decline').disabled = false, 3000)</script>
+  `);
+  await expect(dismissClubEntryMessage(page)).resolves.toBe(true);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('#declines')).toHaveText('1');
+});
 
 for (const clubMessage of [false, true]) {
   test(`cash lobby dismissal survives a delayed offer control with club message ${clubMessage}`, async ({

@@ -1,3 +1,4 @@
+import { useTournamentHandForHand } from '../../hooks/useTournamentHandForHand';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT HUD — Compact in-game heads-up display (felt overlay)
@@ -82,6 +83,11 @@ export function TournamentHUD({
 }: TournamentHUDProps) {
   const { user } = useAuthUser();
   const [tournament, setTournament] = useState<Tournament | null>(null);
+  const handForHand = useTournamentHandForHand(
+    tournamentId,
+    user?.id,
+    tournament?.status === 'RUNNING'
+  );
   const [tick, setTick] = useState(0); // forces a 1s re-render for the countdown
   const [derivedRemaining, setDerivedRemaining] = useState<number | null>(null);
   const [derivedAvgStack, setDerivedAvgStack] = useState<number | null>(null);
@@ -318,7 +324,7 @@ export function TournamentHUD({
     tRow.is_reentry === true;
   const sellsAddon = Number(tRow.addon_cost ?? 0) > 0 || Number(tRow.addon_chips ?? 0) > 0;
   const addonWindow = Number(tRow.addon_levels ?? 1);
-  const windowBanner =
+  const purchaseWindowBanner =
     tournament.status === 'RUNNING' && rebuyCap > 0
       ? sellsRebuys && displayLevel === rebuyCap
         ? 'Last Rebuy Level'
@@ -326,6 +332,10 @@ export function TournamentHUD({
           ? 'Add-On Period'
           : null
       : null;
+
+  const windowBanner = [handForHand === true ? 'Hand For Hand' : null, purchaseWindowBanner]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div

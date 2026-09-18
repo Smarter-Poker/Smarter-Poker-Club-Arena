@@ -19,6 +19,7 @@ const table = (n: number, overrides: Partial<PublicTableLiveness> = {}) => ({
   msSinceProgress: 100,
   loopPhase: 'dealing+100ms',
   paused: false,
+  running: true,
   privateLease: 'must-not-leave-process',
   hiddenCards: ['As', 'Ad'],
   ...overrides,
@@ -75,6 +76,7 @@ describe('explicit public table progress scope', () => {
       msSinceProgress: 100,
       loopPhase: 'dealing+100ms',
       paused: false,
+      running: true,
     });
     expect(JSON.stringify(selected)).not.toMatch(/privateLease|hiddenCards|As|Ad/);
     rows[2].handCount = 999;
@@ -102,5 +104,36 @@ describe('explicit public table progress scope', () => {
     expect(selected.every((r) => r.loopPhase.length === 160)).toBe(true);
     expect(Buffer.byteLength(JSON.stringify(selected))).toBeLessThan(16000);
     expect(select(rows, { kind: 'tables', tableIds: rows.map((r) => r.tableId) })).toHaveLength(32);
+  });
+
+  it('carries whether the engine ever started, which no other field can say', () => {
+    /**
+     * A table whose engine was registered and never started reports
+     * `dealable: 0` - it never loaded a seat - and `paused: false`, because no
+     * authority ever held it. Every stall filter needs `dealable >= 2`, so
+     * without this field the payload describes such a table in terms that
+     * cannot distinguish it from a quiet, healthy, empty one.
+     *
+     * Measured 2026-09-18: 9 of 10 sampled dark tables the engine still held
+     * were exactly this, aged 1.4 to 5.9 hours.
+     */
+    const dark = table(1, {
+      running: false,
+      dealable: 0,
+      seated: 0,
+      paused: false,
+      loopPhase: 'not_started+21357s',
+    });
+    const healthyEmpty = table(2, { dealable: 0, seated: 0 });
+    const [a, b] = select([dark, healthyEmpty], {
+      kind: 'tables',
+      tableIds: [id(1), id(2)],
+    });
+    expect(a.running, 'a never-started engine must not read as running').toBe(false);
+    expect(b.running).toBe(true);
+    // The two are otherwise indistinguishable in this payload, which is the
+    // whole reason the field exists.
+    expect(a.dealable).toBe(b.dealable);
+    expect(a.paused).toBe(b.paused);
   });
 });

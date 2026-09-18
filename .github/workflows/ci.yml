@@ -1525,6 +1525,7 @@ jobs:
       - name: PKO heads follow exact accepted knockout dependencies
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
         run: |
           python3 -B tests/operations/pko-probe-cleanup.test.py
           bash scripts/dev/probe-causal-pko-predecessors-pg17.sh

@@ -73,3 +73,36 @@ entry/settlement, replay, welcome-independence and private-permission assertions
 The existing CI classifier sends changes to all three probes, their financial
 client callers, and this fixture to the existing accounting PostgreSQL job. No
 new workflow, scheduled task or alternative financial implementation is added.
+
+The wheel-v2 extension loads `wheel-v2-dependencies.sql` and the thirteen exact
+current production preimages in `wheel-v2-current-preimages.sql` before the new
+inactive migration. The migration checks all thirteen definition hashes before
+replacing them. `wheel-v2-provenance.json` records the read-only catalog captures,
+ACLs, source hashes, trigger definitions and pricing schema. The Choice immutable
+trigger and actual inventory delivery triggers execute; cosmetic-only trigger
+branches remain intact but unexercised. The three inventory price rows are
+synthetic copies of the approved 1/5/5 per-use model.
+
+`diamond-wheel-funded-awards.sql` activates v2 only inside its rolled-back
+transaction. It selects deterministic, production-shaped 64-hex seeds for all
+twelve primary slots and four Upgrade outcomes, then executes real authenticated
+starts, replay and actions for all four games, including 7,500-diamond upgraded
+Double Down budgets. It independently sums the immutable model at all 2,476
+entry sizes, verifies the configured funding boundary, canonical custody and
+inventory spending, protected prize reservations, failed-start rollback, foreign
+award refusal, exact request identity, claimed Mint entry and separate welcome.
+The 40x ordinary / 30x upgraded reservation threshold covers Steady's complete
+20x table including one original-entry Double Down. `WHEEL_SAMPLE` notices are
+actual RPC receipts for the client parser integration, never production records.
+All prior probes still run, and the runner again requires exact all-table rollback.
+
+The additive v3 migration follows the preserved v2 probe, with a new baseline
+snapshot for its inactive release row. `diamond-wheel-upgrade-eight.sql` proves
+all twelve primary slots and eight weighted Upgrade slots, the independent 80%
+model across every 25–2500 entry, 2500 chips from the 100x prize (Promo 100 plus
+Main Bank 2400), exposure/real-cover refusal before payment, prepaid four-game
+Double Down, claimed Daily 100x with Mint entry only, Welcome 100x with no entry
+transfer, and unchanged historical v2 replay. The actual captured history RPC in
+`wheel-v3-history-dependency.sql` returns the mixed version receipts. Its source
+hash/ACL and exact candidate qualification are in `wheel-v3-provenance.json`.
+All monetary probe effects are rolled back, with the maintained all-row check.

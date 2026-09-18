@@ -85,6 +85,9 @@ scripts/qualification/fixtures/spin-history-retention/social-alias-reference-aut
 scripts/ci/fixtures/mtt-break-authoring/authority-catalog-0002.json
 scripts/ci/fixtures/mtt-break-authoring/scope-authority.json
 
+# Incoming accounting captures and their exact-byte provenance seals.
+# The capture generator owns serialization; formatting breaks qualification.
+scripts/ci/schema-manifest.d/weekly-union-accounting.json
 # Exact captured receipt-lane authority and reviewed qualification seals.
 scripts/qualification/fixtures/spin-receipt-lane/authority.json
 scripts/qualification/spin-receipt-lane.hosted.manifest.json
@@ -102,9 +105,9 @@ supabase/accounting/credit-reduction-v1/guard-function-sources.json
 supabase/accounting/credit-reduction-v1/guard-installed-function-sources.json
 supabase/accounting/credit-reduction-v1/guard-payment-relation-sources.json
 supabase/accounting/credit-reduction-v1/guard-relation-sources.json
-tests/fixtures/browser-period-observer/README.md
 tests/fixtures/browser-period-observer/captured-dependencies.json
 tests/fixtures/browser-period-observer/captured-legacy.json
+tests/fixtures/browser-period-observer/README.md
 tests/fixtures/cashier-document-authority/README.md
 tests/fixtures/cashier-document-authority/captured-cashier-catalog.json
 tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json
@@ -138,6 +141,9 @@ tests/fixtures/messenger-private-accounting/captured-catalog.json
 tests/fixtures/pnl-evidence/captured-pnl-metadata.json
 tests/fixtures/rakeback-history-privacy/policy-preimage.json
 tests/fixtures/tournament-fee-lifecycle/full-lifecycle-terminal-receipts.json
+
+# Byte-bound accounting fixture documents and regression inputs.
+# Keep reviewed bytes intact; intentional test repairs update their binding.
 tests/fixtures/weekly-union-continuation/RUNNER.md
 
 # Exact captured installed money-DDL authority; byte-bound by the native fixture.
@@ -153,3 +159,24 @@ scripts/ci/fixtures/mtt-format-activation/funding-frame-relations-20260918.json
 scripts/ci/fixtures/mtt-format-activation/funding-prepared-authorities.json
 scripts/ci/fixtures/mtt-format-activation/funding-tranche-column-20260918.json
 scripts/ci/fixtures/mtt-format-activation/funding-trigger-declarations-20260918.json
+tests/credit-admin-data.test.ts
+tests/super-agent-credit-routing.test.tsx
+tests/components/agent-cashout-scope.test.tsx
+tests/unit/leaveClubReleasesEscrow.test.ts
+tests/components/cashout-scope.test.tsx
+tests/helpers/cashoutV2Receipt.ts
+tests/components/agent-dashboard-durable-transfers.test.tsx
+tests/unit/CashoutRequestModal.test.tsx
+tests/helpers/clubWeeklyStatement.ts
+tests/unit/ClubWeeklyAccountingReader.test.ts
+tests/unit/SettlementCronService.test.ts
+tests/unit/ServiceBootstrap.test.ts
+tests/unit/FinancialCronService.test.ts
+tests/components/ClubWeeklyAccountingSummary.test.tsx
+tests/unit/AccountingObservationService.test.ts
+tests/unit/anApprovalCanBeRetried.test.ts
+tests/helpers/accountingObservation.ts
+tests/components/cashier-cashout-generations.test.tsx
+tests/unit/FinancialAlertServiceRead.test.ts
+tests/unit/CreditReductionContract.test.ts
+tests/helpers/creditReductionReceipt.ts

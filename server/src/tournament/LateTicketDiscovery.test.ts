@@ -16,6 +16,7 @@ const target = (id = T) => ({
   id,
   name: 'Late Target',
   status: 'RUNNING',
+  format_contract: 'mtt-v1',
   tournament_type: 'MTT',
   variant: 'freezeout',
   max_players: 200,
@@ -63,7 +64,7 @@ function harness(rows = [target()]) {
               error: null,
             }
           : fields ===
-              'id, name, status, tournament_type, variant, max_players, prize_pool_finalized'
+              'format_contract, id, name, status, tournament_type, variant, max_players, prize_pool_finalized'
             ? board(ids)
             : { data: [], error: null, count: 0 }
       ).then(resolve);
@@ -135,7 +136,10 @@ describe('awarded ticket delivery during the actual late registration window', (
     async (kind) => {
       const row = target();
       if (kind === 'finalized') row.prize_pool_finalized = true;
-      if (kind === 'seat-first') row.max_players = 2;
+      if (kind === 'seat-first') {
+        row.max_players = 2;
+        row.format_contract = 'seat-first-satellite-v1';
+      }
       if (kind === 'finished') row.status = 'COMPLETED';
       const { window, run } = harness([row]);
       await run();

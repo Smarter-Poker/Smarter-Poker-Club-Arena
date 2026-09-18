@@ -1,0 +1,124 @@
+.setup {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  color: #dbe8f6;
+  font:
+    400 13px/1.4 Inter,
+    system-ui,
+    sans-serif;
+}
+.entry {
+  display: grid;
+  gap: 7px;
+  color: #aabdd0;
+}
+.entry input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  background: #071321;
+  color: #f4faff;
+  border: 1px solid #48637e;
+  border-radius: 7px;
+  padding: 8px 12px;
+  font:
+    700 22px 'Roboto Condensed',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 2px 5px #0007;
+}
+.double {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  cursor: pointer;
+}
+.double input {
+  width: 20px;
+  height: 20px;
+  accent-color: #30b9ff;
+  flex: none;
+}
+.drops {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.drops legend {
+  color: #b9cce1;
+  padding: 0 0 8px;
+}
+.choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.choices button {
+  display: grid;
+  gap: 2px;
+  min-height: 54px;
+  min-width: 0;
+  padding: 7px 3px;
+  border-radius: 6px;
+  border: 1px solid #3c526d;
+  background: linear-gradient(#24374d, #152437);
+  color: #d5e3f3;
+  cursor: pointer;
+  box-shadow: inset 0 1px #ffffff17;
+}
+.choices button[aria-pressed='true'] {
+  background: linear-gradient(#124e76, #0c314e);
+  border-color: #52c8ff;
+  box-shadow:
+    inset 0 0 0 1px #52c8ff,
+    0 0 14px #168ec12b;
+  color: #fff;
+}
+.choices strong {
+  font-size: 17px;
+}
+.choices strong span {
+  color: #68ceff;
+  font-size: 10px;
+}
+.choices small {
+  font-size: 11px;
+}
+.total {
+  margin: 0;
+  font-size: 12px;
+  color: #c6d8e9;
+}
+.short {
+  margin: 0;
+  color: #ffc68a;
+}
+.links {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.links button {
+  min-height: 36px;
+  color: #74cdff;
+  border: 0;
+  background: transparent;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.setup :is(button, input):focus-visible {
+  outline: 3px solid #e4f6ff;
+  outline-offset: 2px;
+}
+.setup :disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (max-width: 760px) {
+  .choices {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

@@ -158,6 +158,32 @@ def authority(observer,lib):
     return {'B':base,'R2':results,'policy_role_bindings':role_rows}
 
 
+def observe_original_backend_cleanup(verifier, backend_ids, clients_verified,
+                                     cleanup_deadline, journal):
+    # A terminal psql process does not synchronously remove its server backend.
+    # Observe that original shutdown within the already-owned cleanup budget;
+    # never replay cancellation, expiry, or any other business operation.
+    ids=','.join(str(pid) for pid in backend_ids) or '0'
+    while time.monotonic()<cleanup_deadline:
+        remaining=verifier.json("SELECT jsonb_build_object('backends',"
+            "(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()),"
+            f"'locks',(SELECT count(*) FROM pg_locks WHERE pid IN ({ids})));" )
+        journal.append('original_backend_cleanup_sample',backend_pids=backend_ids,
+                       remaining=remaining,client_terminal_verified=clients_verified)
+        if (not isinstance(remaining,dict) or set(remaining)!={'backends','locks'}
+                or any(type(value) is not int or value<0 for value in remaining.values())):
+            raise RuntimeError('invalid original backend cleanup observation')
+        if not clients_verified:
+            raise RuntimeError('original clients did not all reach terminal exit')
+        budget=cleanup_deadline-time.monotonic()
+        if budget<=0:
+            break
+        if remaining=={'backends':0,'locks':0}:
+            return remaining
+        time.sleep(min(.02,budget))
+    raise TimeoutError('original server backends or locks not gone before cleanup deadline')
+
+
 def main():
     for path,expected in FROZEN.items():
         if digest(path)!=expected:
@@ -313,12 +339,9 @@ def main():
             verifier=lib.Session(args.psql,database,'spin5_R2_cleanup_'+args.execution,cleanup_deadline)
             verifier.pid=verifier.json('SELECT to_jsonb(pg_backend_pid());')
             lib.require(type(verifier.pid) is int and verifier.pid>0,'invalid cleanup backend identity')
-            ids=','.join(str(s.pid) for s in sessions if type(s.pid) is int and s.pid>0) or '0'
-            remaining=verifier.json("SELECT jsonb_build_object('backends',"
-                "(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()),"
-                f"'locks',(SELECT count(*) FROM pg_locks WHERE pid IN ({ids})));" )
-            lib.require(remaining=={'backends':0,'locks':0} and clients_verified,
-                        'client/server termination requirements did not both hold')
+            remaining=observe_original_backend_cleanup(verifier,
+                [s.pid for s in sessions if type(s.pid) is int and s.pid>0],
+                clients_verified,cleanup_deadline,journal)
             cleanup=True
             journal.append('original_backend_cleanup',clients=clients,remaining=remaining,
                            client_terminal_verified=clients_verified,allocation_disposed=False)

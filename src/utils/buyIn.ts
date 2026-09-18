@@ -1,3 +1,4 @@
+import { isUnlimitedMtt } from '../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT BUY-INS — one whole-dollar total, split into prize + fee
@@ -85,6 +86,10 @@ export interface RakeSubject {
   variant?: string | null;
   /** Seats in the game. tournaments.max_players, or a form's field size. */
   maxPlayers?: number | null;
+  satelliteTargetId?: string | null;
+  satellite_target_id?: string | null;
+  satellite_target?: unknown;
+  satelliteTarget?: unknown;
 }
 
 /**
@@ -107,11 +112,13 @@ export interface RakeSubject {
  * `buy_in_fee` DIRECTLY, bypassing the RPC entirely, so a schedule row with
  * `type: 'sng'` produced a real 10% heads-up game.
  *
- * The rule is keyed on SEATS, not on the word "SNG". A two-handed game is a
- * duel whatever its label says, and a label is exactly the thing that varies
- * between six writers.
+ * New MTT-family and satellite quotes use the MTT rate. Only a genuine fixed
+ * format may use its seat count to select the heads-up rate; booked events
+ * retain their stored amounts.
  */
 export function rakeRateFor(subject: RakeSubject): number {
+  // New quotes never inherit a historical purchased-format exemption.
+  if (isUnlimitedMtt(subject)) return DEFAULT_RAKE_RATE;
   const type = String(subject?.tournamentType ?? '').toUpperCase();
   const variant = String(subject?.variant ?? '').toLowerCase();
   if (type === 'SPIN' || variant === 'spin') return SPIN_RAKE_RATE;

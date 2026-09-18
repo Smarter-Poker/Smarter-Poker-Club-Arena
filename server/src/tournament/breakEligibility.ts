@@ -1,3 +1,4 @@
+import { isPersistedUnlimitedMtt } from './tournamentEntryCapacity.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  BREAK ELIGIBILITY — which formats may ever take the platform :55 break
@@ -57,14 +58,14 @@ export function isShortFormat(tournamentType: unknown, variant: unknown): boolea
  *   2. `synchronized_breaks = false` (2026-08-22 parity) — the tournament
  *      opted out of the platform break and keeps dealing through it.
  *
- * A row we could not read at all (`null`) is treated as an ordinary MTT, which
- * is the pre-existing default and the only safe direction for a format we
- * cannot identify: an MTT that misses a break loses nothing but synchrony,
- * while a Spin that takes one loses the game.
+ * Active events use their recorded format. A missing row cannot authorize a
+ * break; an unknown marker refuses the affected operation. Historical seat-first
+ * satellites retain their short-game contract even when their labels disagree.
  */
 export function mayTakeSynchronizedBreak(
   row:
     | {
+        format_contract?: unknown;
         tournament_type?: unknown;
         variant?: unknown;
         synchronized_breaks?: unknown;
@@ -72,6 +73,8 @@ export function mayTakeSynchronizedBreak(
     | null
     | undefined
 ): boolean {
-  if (isShortFormat(row?.tournament_type, row?.variant)) return false;
-  return row?.synchronized_breaks !== false;
+  // An unreadable format cannot authorize pausing an active event.
+  if (!row) return false;
+  if (!isPersistedUnlimitedMtt(row)) return false;
+  return row.synchronized_breaks !== false;
 }

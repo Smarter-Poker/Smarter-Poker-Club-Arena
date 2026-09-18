@@ -478,6 +478,7 @@ describe('blind rows at manager recovery', () => {
       ];
       const row: Record<string, any> = {
         id: 'level-restart',
+        format_contract: 'mtt-v1',
         status: 'RUNNING',
         current_level: 0,
         level_started_at: '2026-09-10T12:00:00.000Z',

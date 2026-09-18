@@ -1,0 +1,16 @@
+.stack {
+  position: relative;
+  width: 100%;
+  isolation: isolate;
+}
+.upgradeStage {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+}
+.mainStage {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  pointer-events: none;
+}

@@ -13,11 +13,14 @@ DO $$ DECLARE c record;before jsonb;err text;mode text;BEGIN
  BEGIN PERFORM public.fn_complete_sep8_spin_original_standings(c.operation_id,jsonb_set(c.expected,'{tournament_id}','"00000000-0000-4000-8000-000000000001"'));
  EXCEPTION WHEN SQLSTATE '22023' THEN err:=SQLERRM;END;
  PERFORM sep8_spin_fixture.assert(err='SPIN_ORIGINAL_EVENT_NOT_NAMED' AND before=sep8_spin_fixture.snapshot(),'Unlisted standings cohort cannot be admitted');
- FOREACH mode IN ARRAY ARRAY['rank','candidate','manager','later_authority'] LOOP
+ FOREACH mode IN ARRAY ARRAY['rank','candidate','manager','later_authority','big_blind','small_blind','ante'] LOOP
   err:=NULL;
   BEGIN
    SET LOCAL session_replication_role=replica;
    CASE mode
+    WHEN 'big_blind' THEN UPDATE public.tournaments SET blind_level_state=jsonb_set(blind_level_state,'{big_blind}',to_jsonb((blind_level_state->>'big_blind')::numeric+1)) WHERE id=c.tournament_id;
+    WHEN 'small_blind' THEN UPDATE public.tournaments SET blind_level_state=jsonb_set(blind_level_state,'{small_blind}',to_jsonb((blind_level_state->>'small_blind')::numeric+1)) WHERE id=c.tournament_id;
+    WHEN 'ante' THEN UPDATE public.tournaments SET blind_level_state=jsonb_set(blind_level_state,'{ante}',to_jsonb((blind_level_state->>'ante')::numeric+1)) WHERE id=c.tournament_id;
     WHEN 'rank' THEN UPDATE public.tournament_players SET position=4 WHERE tournament_id=c.tournament_id AND position=3;
     WHEN 'candidate' THEN DELETE FROM public.tournament_knockout_candidates WHERE tournament_id=c.tournament_id;
     WHEN 'manager' THEN UPDATE public.engine_tournament_leases SET lease_generation=gen_random_uuid() WHERE tournament_id=c.tournament_id;

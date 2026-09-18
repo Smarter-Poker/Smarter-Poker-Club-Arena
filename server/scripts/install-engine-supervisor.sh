@@ -40,6 +40,9 @@ REQUIRED_FILES=(
   collect-monitoring-health.sh
   engine-release-database-proof.py
   engine-release-transaction.sh
+  legacy-engine-checkpoint.sh
+  legacy-engine-checkpoint.mjs
+  legacy-engine-checkpoint-guard.mjs
   engine-release-recover.sh
   engine-release-unit-wrapper.sh
   observe-engine-release.sh
@@ -309,6 +312,7 @@ else
     engine-supervisor.sh engine-up.sh build-engine-image.sh verify-recovery-stack.sh \
     collect-monitoring-health.sh \
     engine-release-transaction.sh engine-release-recover.sh engine-release-unit-wrapper.sh \
+    legacy-engine-checkpoint.sh \
     observe-engine-release.sh launch-engine-release.sh engine-release-intake.sh \
     install-engine-intake.sh retain-engine-images.sh install-engine-supervisor.sh; do
     bash -n "$GENERATION_STAGE/$script"

@@ -1,0 +1,114 @@
+{
+  "history": {
+    "name": "cash_funding_retains_original_participant_custody",
+    "version": "20260917230925",
+    "statement_count": 1,
+    "statement_sha256": "febab308160e36d6adabe8a3cf7e33afe77d06cabfe799ea25e389d957f023a3"
+  },
+  "baseline": {
+    "proname": "fn_club_members_ledger_writer",
+    "def_hash": "e7cae5f2fc19ef0d2c47e528764abd5a",
+    "updated_at": "2026-09-18T00:25:00.494479+00:00",
+    "declared_at": null,
+    "declared_ref": null
+  },
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "fn_club_members_ledger_writer()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_club_members_ledger_writer()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_original_ledger uuid;\n  d     numeric;\n  actor uuid;\n  cat   text;\n  tid   uuid;\n  st    text;\n  msg   text;\n  cp    text;\n  cpid  uuid;\nBEGIN\n  /* THE AUTOSKIP CONTRACT IS ONE CONTRACT (2026-09-09). Every other journal\n     writer on this platform stands down when the caller sets\n     app.ledger_autoskip_<table>, because the caller is writing the leg itself\n     with the period, the key and the metadata that only it knows. This writer\n     never learned that clause. So a settlement that suppressed the clubs\n     trigger and wrote its own named leg still got an anonymous twin from this\n     side, and the movement reached the journal twice: on 2026-09-09 round 2\n     moved 20,377.49 of commission and recorded 40,754.98 of legs. Standing\n     down here is what makes one movement, one leg true for the busiest\n     balance column on the platform. */\n  IF current_setting('app.ledger_autoskip_club_members', true) = '1' THEN\n    RETURN NEW;\n  END IF;\n\n  d := COALESCE(NEW.chip_balance, 0) - COALESCE(OLD.chip_balance, 0);\n\n  IF d = 0 THEN\n    RETURN NEW;\n  END IF;\n\n  actor := COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid);\n\n  cat := COALESCE(NULLIF(current_setting('app.ledger_category', true), ''), 'adjustment');\n\n  BEGIN\n    tid := NULLIF(current_setting('app.ledger_tournament', true), '')::uuid;\n  EXCEPTION WHEN OTHERS THEN\n    tid := NULL;\n  END;\n\n  /* THE COUNTERPARTY IS DECLARED, NEVER INFERRED (2026-08-31). */\n  cp := COALESCE(NULLIF(current_setting('app.ledger_counterparty', true), ''), 'settlement_suspense');\n  BEGIN\n    cpid := NULLIF(current_setting('app.ledger_counterparty_entity', true), '')::uuid;\n  EXCEPTION WHEN OTHERS THEN\n    cpid := NULL;\n  END;\n\n  BEGIN\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, tournament_id, description)\n    VALUES (\n      actor,\n      CASE WHEN d > 0 THEN cp              ELSE 'player_wallet' END,\n      CASE WHEN d > 0 THEN cpid            ELSE NEW.user_id     END,\n      CASE WHEN d > 0 THEN 'player_wallet' ELSE cp              END,\n      CASE WHEN d > 0 THEN NEW.user_id     ELSE cpid            END,\n      abs(d), cat, NEW.club_id, tid,\n      'auto-audited club_members.chip_balance delta ' || d::text)\n    RETURNING id INTO v_original_ledger;\n    -- Private original-debit callers read this immediately after their UPDATE.\n    PERFORM set_config('app.cash_original_debit_ledger',v_original_ledger::text,true);\n\n  EXCEPTION WHEN OTHERS THEN\n      -- A journal failure must abort the enclosing chip movement.\n      -- Preserve SQLSTATE so the existing caller can retry the whole operation.\n      RAISE;\n    END;\n\n  RETURN NEW;\nEND;\n$function$\n",
+      "definition_md5": "e7cae5f2fc19ef0d2c47e528764abd5a"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "fn_ca_declare_guard_redefinition(text,text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_declare_guard_redefinition(p_proname text, p_ref text)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_hash text;\n  v_def text;\nBEGIN\n  /* A DECLARED GUARD CHANGE IS RECORDED, NOT RAISED (2026-09-10).\n     Call this from a migration that deliberately redefines a watched guard,\n     in the SAME transaction as the redefinition, passing the migration name.\n     It moves the baseline to the definition this transaction just produced,\n     so fn_ca_guard_defs_watch has nothing to report. A change nobody declares\n     still moves the hash away from the baseline and still raises. */\n  IF COALESCE(btrim(p_ref), '') = '' THEN\n    RAISE EXCEPTION 'a guard redefinition must name the migration that made it';\n  END IF;\n  IF NOT (p_proname = ANY (public.fn_ca_guard_watchlist())) THEN\n    RAISE EXCEPTION 'fn_ca_declare_guard_redefinition called for %, which is not on the guard watchlist', p_proname;\n  END IF;\n\n  SELECT md5(string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)),\n         string_agg(pg_get_functiondef(p.oid), '|' ORDER BY p.oid)\n    INTO v_hash, v_def\n    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace\n   WHERE n.nspname = 'public' AND p.proname = p_proname;\n\n  IF v_hash IS NULL THEN\n    RAISE EXCEPTION 'guard function % does not exist; a declaration cannot baseline an absent guard', p_proname;\n  END IF;\n\n  -- keep the text so any later notice still has something to diff against\n  INSERT INTO public.ca_guard_def_history (proname, def_hash, def_text)\n  VALUES (p_proname, v_hash, v_def)\n  ON CONFLICT (proname, def_hash) DO NOTHING;\n\n  INSERT INTO public.ca_guard_defs (proname, def_hash, declared_ref, declared_at)\n  VALUES (p_proname, v_hash, p_ref, now())\n  ON CONFLICT (proname) DO UPDATE\n    SET def_hash = EXCLUDED.def_hash,\n        declared_ref = EXCLUDED.declared_ref,\n        declared_at = EXCLUDED.declared_at,\n        updated_at = now();\n\n  RETURN v_hash;\nEND;\n$function$\n",
+      "definition_md5": "3a3746dc6e0a5b7a1db97805588c0eb8"
+    }
+  ],
+  "watchlist": "CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist()\n RETURNS text[]\n LANGUAGE sql\n STABLE\n SET search_path TO 'public'\nAS $function$\n  SELECT ARRAY(\n    SELECT DISTINCT x FROM unnest(ARRAY[\n      'fn_ca_raise_drift_incident','fn_ca_incident_notify','fn_ca_incident_action',\n      'fn_ca_incident_escalation_tick','fn_ca_incident_recipient_ids',\n      'fn_ca_quick_reconcile','fn_ca_supply_snapshot','fn_ca_diamond_snapshot',\n      'fn_ca_suspense_regression_check','fn_ca_settlement_correctness_check',\n      'fn_ca_autoledger','fn_ca_autoledger_delete','fn_ca_chip_ledger_enrich',\n      'fn_ca_journal_append_only','fn_ca_is_midway_scope',\n      'fn_ca_negative_balance_watch','fn_ca_mint_velocity_watch',\n      'fn_ca_cron_failure_watch','fn_ca_burnin_gate_tick','fn_ca_midway_burnin_gate',\n      'fn_ca_epoch3_preflight','fn_ca_execute_epoch3_reset',\n      'fn_club_members_ledger_writer','fn_ca_financial_alert_to_incident',\n      'fn_ca_settlement_transition_guard','fn_ca_guard_defs_watch',\n      'fn_ca_post_correction','fn_ca_repair_write_failure',\n      -- The Diamond money doors (2026-09-12).\n      'fn_poker_diamond_reserve','fn_poker_diamond_release',\n      'fn_poker_diamond_cashout','fn_poker_diamond_settle_cash_hand',\n      'fn_poker_diamond_buyin','fn_poker_diamond_top_up',\n      'fn_poker_diamond_seat_keeps_custody','fn_poker_diamond_plain_cash_table',\n      -- The unit rules (2026-09-12).\n      'fn_ca_unit_floor_cents','fn_ca_tournament_unit_cents',\n      'fn_ca_prize_ladder','fn_ca_recovery_fee_cents',\n      -- The seat guards that know a tournament seat (2026-09-13).\n      'fn_poker_guard_chip_seat','fn_poker_bind_diamond_seat',\n      'fn_poker_diamond_entry_custody_is_the_entry',\n      -- The Diamond tournament money doors (Phase 8, 2026-09-14): an entry\n      -- into custody, an add to it, its refund, its unregistration and\n      -- cancellation, the drain, the prize, the fee, the close, the shadow.\n      'fn_poker_diamond_tournament_charge','fn_poker_diamond_tournament_custody_add',\n      'fn_poker_diamond_tournament_refund','fn_poker_diamond_tournament_unregister',\n      'fn_poker_diamond_tournament_cancel','fn_poker_diamond_tournament_drain',\n      'fn_poker_diamond_tournament_pay','fn_poker_diamond_tournament_settle_fee',\n      'fn_poker_diamond_tournament_close_custody','fn_poker_diamond_tournament_open_shadow',\n      -- The two guards Phase 8 taught new names, and the two chip readers it\n      -- routes by asset. The wallet guard is the one thing between a browser\n      -- and profiles.diamonds.\n      'fn_guard_profile_privileged_columns','fn_poker_guard_arena_structure',\n      'fn_ca_escrow_can_pay','fn_ca_tournament_escrow',\n      -- And the list itself.\n      'fn_ca_guard_watchlist'\n    ]) x)\n$function$\n",
+  "columns": [
+    {
+      "udt": "int8",
+      "type": "bigint",
+      "table": "ca_guard_def_history",
+      "column": "id",
+      "default": "nextval('ca_guard_def_history_id_seq'::regclass)",
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "ca_guard_def_history",
+      "column": "proname",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "ca_guard_def_history",
+      "column": "def_hash",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "ca_guard_def_history",
+      "column": "def_text",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "timestamptz",
+      "type": "timestamp with time zone",
+      "table": "ca_guard_def_history",
+      "column": "captured_at",
+      "default": "now()",
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "ca_guard_defs",
+      "column": "proname",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "ca_guard_defs",
+      "column": "def_hash",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "udt": "timestamptz",
+      "type": "timestamp with time zone",
+      "table": "ca_guard_defs",
+      "column": "updated_at",
+      "default": "now()",
+      "nullable": "NO"
+    },
+    {
+      "udt": "text",
+      "type": "text",
+      "table": "ca_guard_defs",
+      "column": "declared_ref",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "udt": "timestamptz",
+      "type": "timestamp with time zone",
+      "table": "ca_guard_defs",
+      "column": "declared_at",
+      "default": null,
+      "nullable": "YES"
+    }
+  ]
+}

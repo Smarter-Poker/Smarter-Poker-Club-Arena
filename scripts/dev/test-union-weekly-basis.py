@@ -107,6 +107,10 @@ try:
  (base/'final-atomic-qualification.log').write_text(result.stdout+result.stderr)
  if result.returncode:raise AssertionError(result.stdout+result.stderr)
  print(result.stdout,flush=True)
+ result=subprocess.run(['python3',str(root/'scripts/dev/qualify-installed-funding-guard-declaration.py'),str(pg/'psql'),str(socket),port,str(base)],capture_output=True,text=True)
+ (base/'guard-declaration-qualification.log').write_text(result.stdout+result.stderr)
+ if result.returncode:raise AssertionError(result.stdout+result.stderr)
+ print(result.stdout,flush=True)
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True)
  print('Evidence retained: '+str(base),flush=True)

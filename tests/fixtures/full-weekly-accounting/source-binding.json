@@ -313,7 +313,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "5f989d7d1c77325a1690909c3824be00b90708d7426e028d46a811ae3f924c76",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "cd55b1a8120a67fc0e585f9b2a187ead170b4d9c60416f3883428858da7fc40b",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -334,7 +334,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "9fa3cb30ec88131083e8ff61c3a4a059c270e8c6634b1fd908bb4f6557daf507",
+    "scripts/dev/test-union-weekly-basis.py": "21dc8b8377674103d56b2a797b5fe999cf0235e144989bdfcd67822c4e93053d",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -371,7 +371,10 @@
     "tests/fixtures/tournament-accounting-provenance/new-authority.sql": "44399c2cc4dabbcc8f921650d21a344edfbab2055e1ce6163287c461559b787a",
     "tests/fixtures/union-weekly-basis/captured-final-atomic-preimages.json": "c4a0cdd043a3ed83a7a64945cfb53e6a023393b970ed5b17b1619be45256ac68",
     "tests/fixtures/union-weekly-basis/final-atomic-after.sql": "f09eefabb5d4a2368127f38afb8540256973b6163b11968e50bc668481912e7d",
-    "tests/fixtures/union-weekly-basis/final-atomic-before.sql": "1701c060c8ddbc3c074326f7e3c6eda3d4f0ebeb16573f03ef28d5c57ebca7e4"
+    "tests/fixtures/union-weekly-basis/final-atomic-before.sql": "1701c060c8ddbc3c074326f7e3c6eda3d4f0ebeb16573f03ef28d5c57ebca7e4",
+    "scripts/dev/qualify-installed-funding-guard-declaration.py": "24e797cfd439595df4da95aa0aeeac6d3e2d1d8fc071d78f8ea7f35679a22123",
+    "supabase/migrations/20260918014359_declare_the_installed_original_club_funding_guard.sql": "a4f3438b9cfdd57052ea45a463dcced91c442041aa0746ccab442b278d9c5d71",
+    "tests/fixtures/installed-funding-guard-declaration/captured-contract.json": "f2bd3120a212a894c00815b96dc1e2e610912dec5edf30dbd2be0ad6e704fa54"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",

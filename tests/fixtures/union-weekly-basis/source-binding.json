@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "9fa3cb30ec88131083e8ff61c3a4a059c270e8c6634b1fd908bb4f6557daf507",
+    "scripts/dev/test-union-weekly-basis.py": "21dc8b8377674103d56b2a797b5fe999cf0235e144989bdfcd67822c4e93053d",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
@@ -59,6 +59,9 @@
     "supabase/migrations/20260918004443_cash_pnl_validates_the_finalized_original_atomic_receipt.sql": "bab5a8ec252141f258c999c06d6a67b2060b3a5a387150daed34d8491871862d",
     "tests/fixtures/union-weekly-basis/captured-final-atomic-preimages.json": "c4a0cdd043a3ed83a7a64945cfb53e6a023393b970ed5b17b1619be45256ac68",
     "tests/fixtures/union-weekly-basis/final-atomic-after.sql": "f09eefabb5d4a2368127f38afb8540256973b6163b11968e50bc668481912e7d",
-    "tests/fixtures/union-weekly-basis/final-atomic-before.sql": "1701c060c8ddbc3c074326f7e3c6eda3d4f0ebeb16573f03ef28d5c57ebca7e4"
+    "tests/fixtures/union-weekly-basis/final-atomic-before.sql": "1701c060c8ddbc3c074326f7e3c6eda3d4f0ebeb16573f03ef28d5c57ebca7e4",
+    "scripts/dev/qualify-installed-funding-guard-declaration.py": "24e797cfd439595df4da95aa0aeeac6d3e2d1d8fc071d78f8ea7f35679a22123",
+    "supabase/migrations/20260918014359_declare_the_installed_original_club_funding_guard.sql": "a4f3438b9cfdd57052ea45a463dcced91c442041aa0746ccab442b278d9c5d71",
+    "tests/fixtures/installed-funding-guard-declaration/captured-contract.json": "f2bd3120a212a894c00815b96dc1e2e610912dec5edf30dbd2be0ad6e704fa54"
   }
 }

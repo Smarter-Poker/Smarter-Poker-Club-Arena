@@ -4,9 +4,10 @@ The serving `758610f3f844406bbbaee2f5100ced36d84fb943` engine can enter its paus
 gate from the next-hand rest without writing the final parked time-bank snapshot.
 The 2026-09-18 02:55 UTC break reported 17 unparked tables. Five sampled cash
 tables had already settled before the announcement and retained only an
-`:announced` presence row with a null time-bank snapshot. The runtime owner
-repairs the missing native pause-entry calls separately; both changes must be
-included in the replacement release.
+`:announced` presence row with a null time-bank snapshot. This same change
+repairs all three missing native pause-entry calls in the dealing loop, so the
+replacement release both checkpoints its predecessor and preserves the final
+bank at subsequent maintenance pauses.
 
 The existing first-install checkpoint path now recognizes one additional closed
 profile: that exact source and immutable image
@@ -34,3 +35,12 @@ pending or unknown accounting, retained custody, changed generation/registry,
 and false snapshot readback. The isolated native transport suite verifies the
 unchanged inspector invocation and cleanup. These local checks do not certify
 the production checkpoint or replacement; the owning release must verify them.
+
+The runtime regression executes the actual post-rest edge and native checkpoint
+with an isolated storage boundary. It proves all six bank fields survive a
+successful checkpoint and fresh-engine adoption; a refused write leaves the
+bank intact, blocks restart readiness and never deals another hand. Existing
+two-second rest and rabbit-hunt contracts require the exact guarded checkpoint
+calls. The pause-authority test now reads enclosing syntax conditions rather
+than a preceding text window, preserving both explicit maintenance gates and
+the terminal-only gates without misclassifying a sibling checkpoint condition.

@@ -916,6 +916,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           continue;
         }
         if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
+          if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
           await this.awaitPauseGate();
           if (!this.running) break;
           continue;
@@ -930,6 +931,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // A pause may arrive while the roster, rest or blind read is pending.
         // Return through the owner's gate before using the prepared hand.
         if (this.isNextHandPaused()) {
+          if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
           if (!this.adminPauseLock && !this.maintenanceLock) await this.awaitPauseGate();
           if (!this.running) break;
           continue;
@@ -941,6 +943,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            move the button, post blinds, or deal one more card. */
         if (!this.lifecycleCanMutate()) return;
         if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
+          if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
           await this.awaitPauseGate();
           if (!this.running) break;
           continue;

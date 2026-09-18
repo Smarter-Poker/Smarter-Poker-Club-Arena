@@ -36,7 +36,7 @@ export default function HelpPage() {
           <span className={styles.eyebrow}>Player Support Circuit</span>
           <h1 id="help-title">Help Center</h1>
           <p>
-            Search Verified Club Arena Guidance, Check The Live Data Circuit, Or Send A Request
+            Search Verified Poker Arena Guidance, Check The Live Data Circuit, Or Send A Request
             Directly To Support.
           </p>
           <div className={styles.heroActions}>

@@ -1,4 +1,5 @@
 import { F06HandPermit } from '../services/F06HandPermit.js';
+import { channelHub } from '../hub/ChannelHub.js';
 import {
   LifecycleDiagnostics,
   type LifecycleDetail,
@@ -1676,6 +1677,39 @@ export abstract class TournamentManagerBase {
     return this.running;
   }
 
+  /** Display-only observation. Reading it never renews, fences or advances play. */
+  getHandForHandPresentation(): boolean | null {
+    if (
+      !this.running ||
+      this.stopFenceApplied ||
+      this.shutdownDrainFenceApplied ||
+      !this.tournamentLeaseAuthorityIsCurrent()
+    )
+      return null;
+    return this.handForHandActive;
+  }
+
+  private publishHandForHandPresentation(): void {
+    try {
+      channelHub.broadcastToTournament(this.tournamentId, {
+        type: 'TOURNAMENT_EVENT',
+        tournamentId: this.tournamentId,
+        event: {
+          type: 'tournament_presentation',
+          // A retiring continuation must never overwrite its replacement's
+          // presentation. Read the slot GameServer currently owns.
+          payload: {
+            handForHand: this.gameServer?.getTournamentHandForHand?.(this.tournamentId) ?? null,
+          },
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      // Disclosure cannot delay a hand barrier or prevent terminal teardown.
+      reportError(error, 'TournamentManager.hand_for_hand_presentation_failed');
+    }
+  }
+
   /** Generation GameServer must prove on every ownership heartbeat. */
   getTournamentLeaseGeneration(): string | null {
     return this.tournamentLeaseGeneration;
@@ -1759,6 +1793,11 @@ export abstract class TournamentManagerBase {
    * `t-break-<tournamentId>` and still receive `tournament_event`.
    */
   protected async broadcast(eventType: string, payload: any): Promise<boolean> {
+    // Legacy announcements remain; the authenticated channel also carries the
+    // exact manager observation used by join/reconnect snapshots.
+    if (eventType === 'hand_for_hand' || eventType === 'bubble_burst') {
+      this.publishHandForHandPresentation();
+    }
     try {
       if (!this.broadcastChannel) {
         this.broadcastChannel = supabase.channel(`t-break-${this.tournamentId}`);
@@ -5351,6 +5390,7 @@ export abstract class TournamentManagerBase {
     const lifecycleOperation = this.lifecycleOperation;
     if (this.stopFenceApplied) return lifecycleOperation;
     this.stopFenceApplied = true;
+    this.publishHandForHandPresentation();
     this.unregisterDatabaseFenceHandler?.();
     this.unregisterDatabaseFenceHandler = null;
     return this.applyManagerMutationFence(true);

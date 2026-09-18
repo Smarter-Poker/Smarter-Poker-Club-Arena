@@ -9419,6 +9419,11 @@ export class GameServer {
     return this.dealerAdmissionIsCurrent(generation) ? readiness : 'not_wakeable';
   }
 
+  /** Current manager only; missing or retired authority is explicitly unknown. */
+  getTournamentHandForHand(tournamentId: string): boolean | null {
+    return this.tournamentEngines.get(tournamentId)?.getHandForHandPresentation() ?? null;
+  }
+
   /**
    * Get a table engine by ID (used by HTTP action endpoint)
    */

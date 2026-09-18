@@ -36,6 +36,7 @@ it('runs the real Diamond playfields once with an isolated software-rendering wo
 describe('cash lobby verification reaches the existing browser gate', () => {
   it.each([
     'tests/e2e/global-setup.ts',
+    'tests/e2e/live-animations.spec.ts',
     'tests/e2e/mobile-lobby-chrome.spec.ts',
     'tests/e2e/production-live-table-realtime.spec.ts',
     'tests/e2e/support/cashLobbyOverlays.ts',
@@ -48,6 +49,7 @@ describe('cash lobby verification reaches the existing browser gate', () => {
   it('does not route unrelated unit tests or similarly named notes to the browser build', () => {
     expect(classifyChangedPaths(['tests/unit/unrelated.test.ts']).src).toBe(false);
     expect(classifyChangedPaths(['tests/e2e/support/cashLobbyOverlays.ts.md']).src).toBe(false);
+    expect(classifyChangedPaths(['tests/e2e/live-animations.spec.ts.md']).src).toBe(false);
   });
 });
 

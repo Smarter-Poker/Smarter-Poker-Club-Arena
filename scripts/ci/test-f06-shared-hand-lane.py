@@ -91,6 +91,9 @@ try:
     r = command([pg / 'pg_ctl', '-D', cluster / 'data', '-l', cluster / 'server.log', '-w', 'start'])
     require(r.returncode == 0, r.stderr)
     run('fixture', (ROOT / 'scripts/ci/probes/f06-shared-hand-lane/fixture.sql').read_text())
+    index = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/snapshot_index_qualification.py'))
+    index['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('snapshotIndex', {}).get('passed') is True, 'Snapshot access-path qualification did not complete')
     before = run('snapshot-before', snapshot)
     with holder():
         probe('pure-stack-column-does-not-fire', 'UPDATE table_seats SET stack=101 WHERE id=2 RETURNING stack;', '101')

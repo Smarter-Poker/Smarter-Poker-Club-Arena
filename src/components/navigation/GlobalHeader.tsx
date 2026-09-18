@@ -7,6 +7,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { MEDIA_BASE } from '../../utils/mediaBase';
+import { sizedStorageUrl } from '../../utils/avatarGenerator';
 const HamburgerMenu = lazyWithRetry(() => import('./HamburgerMenu'));
 import { Link, useNavigate } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
@@ -93,6 +94,12 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
     clearUnreadNotifications,
     clearUnreadMessages,
   } = useHeaderDataStore();
+  // The portrait is at most 57 CSS px in the 96px desktop band and 44px
+  // on mobile. A 64px bound preserves retina detail without a full-size JPEG.
+  const portraitSource = avatarUrl || DEFAULT_AVATAR;
+  const portraitImage = /\.jpe?g(?:\?|$)/i.test(portraitSource)
+    ? sizedStorageUrl(portraitSource, 64)
+    : portraitSource;
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
 
@@ -404,11 +411,17 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
               <img src={`${APPROVED_HEADER_ASSET}profile.png`} alt="Profile" />
               <span className={styles.profileAvatarSlot} aria-hidden="true">
                 <img
-                  src={avatarUrl || DEFAULT_AVATAR}
+                  src={portraitImage}
                   alt=""
                   className={styles.profileAvatar}
                   onError={(event) => {
-                    event.currentTarget.src = DEFAULT_AVATAR;
+                    const image = event.currentTarget;
+                    if (image.getAttribute('src') === DEFAULT_AVATAR) return;
+                    image.src =
+                      portraitImage !== portraitSource &&
+                      image.getAttribute('src') === portraitImage
+                        ? portraitSource
+                        : DEFAULT_AVATAR;
                   }}
                 />
               </span>

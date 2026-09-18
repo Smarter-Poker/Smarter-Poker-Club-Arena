@@ -109,9 +109,10 @@ def render():
             d=once(d,seam,seam+GUARD)
         else:
             continue
-        # CREATE OR REPLACE preserves current owner/ACL. Authenticate both below.
+        # Preserve the captured postgres-only ACL explicitly for source guards
+        # as well as catalog readers; never grant a service/browser entry door.
         verified=checks[-1].replace('$preimage$','$postimage$').replace(r['definition_md5'],hashlib.md5(d.encode()).hexdigest()).replace('AUTHORITY_DRIFT','POSTIMAGE_DRIFT')
-        post.append(d.rstrip().rstrip(';')+';\n'+verified)
+        post.append(d.rstrip().rstrip(';')+';\nREVOKE ALL ON FUNCTION '+sig+' FROM PUBLIC,anon,authenticated,service_role;\n'+verified)
     header="""-- Exact accepted elimination may finish before a source manifest is frozen.
 -- No park withdrawal, money formula, candidate proof or public API change.
 -- money-trigger-ok: table_seats.a00_f06_source_seat because its exact enabled trigger definition is checked and retained; only the private owning function is composed below.

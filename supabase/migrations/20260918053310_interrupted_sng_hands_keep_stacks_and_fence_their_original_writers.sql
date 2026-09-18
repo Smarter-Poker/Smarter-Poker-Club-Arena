@@ -11,6 +11,17 @@
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='8s';
+-- BEGIN installer relation admission
+-- Acquire every existing relation's eventual DDL/write mode before any DDL.
+-- Never queue while holding a partial set: ordinary readers may acquire these
+-- relations in another order. NOWAIT rolls back admission on any contention.
+LOCK TABLE public.engine_tournament_leases IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE smarter_private.f06_hand_permits IN ACCESS EXCLUSIVE MODE NOWAIT;
+LOCK TABLE smarter_private.f06_operations IN ACCESS EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.hand_history IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.ca_declared_money_triggers IN ROW EXCLUSIVE MODE NOWAIT;
+-- END installer relation admission
 DO $preimages$ BEGIN
  IF md5(pg_get_functiondef('public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure))<>'c451a6859a15bf62fea00fb31ef7ffa0' OR (SELECT pg_get_userbyid(proowner)<>'postgres' OR proacl::text IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' FROM pg_proc WHERE oid='public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'::regprocedure) THEN RAISE EXCEPTION 'F06_ABORT_PREIMAGE_CHANGED public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid)'; END IF;
  IF md5(pg_get_functiondef('public.fn_f06_discover_breaks(uuid,uuid,bigint,integer)'::regprocedure))<>'37d4e80dff9e31034559675e1cc14008' OR (SELECT pg_get_userbyid(proowner)<>'postgres' OR proacl::text IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' FROM pg_proc WHERE oid='public.fn_f06_discover_breaks(uuid,uuid,bigint,integer)'::regprocedure) THEN RAISE EXCEPTION 'F06_ABORT_PREIMAGE_CHANGED public.fn_f06_discover_breaks(uuid,uuid,bigint,integer)'; END IF;

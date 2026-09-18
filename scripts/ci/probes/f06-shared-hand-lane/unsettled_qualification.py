@@ -104,7 +104,89 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     DELETE FROM engine_tournament_leases WHERE tournament_id=md5('t1')::uuid;
     SELECT granted FROM claim_tournament_lease_v2(md5('t1')::uuid,'original','2bbc5d5c',md5('g1')::uuid);
     """, 't')
+    @contextmanager
+    def held(sql, finish='ROLLBACK'):
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            p.stdin.write("BEGIN; SET statement_timeout='6s';" + sql + " SELECT pg_advisory_lock(18092026);\n")
+            p.stdin.flush()
+            deadline = time.monotonic()+5
+            while command(cmd,"SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=18092026 AND granted);").stdout.strip()!='t':
+                require(p.poll() is None and time.monotonic()<deadline,'Abort native holder failed')
+                time.sleep(.02)
+            yield p
+        finally:
+            if p.poll() is None:
+                p.stdin.write(finish+';\n');p.stdin.close();p.wait(timeout=8)
+            stdout=p.stdout.read();stderr=p.stderr.read()
+            require(p.returncode==0,'Abort native holder: '+stdout+stderr)
     installer = (root / 'supabase/migrations/20260918053310_interrupted_sng_hands_keep_stacks_and_fence_their_original_writers.sql').read_text()
+    # The failed production installer held operations while a permit reader
+    # needed operations. Reproduce that exact DDL prefix in two real sessions.
+    admission=re.search(r'-- BEGIN installer relation admission\n[\s\S]*?-- END installer relation admission\n',installer)
+    require(admission is not None,'Installer lost relation admission')
+    old_installer=installer.replace(admission.group(0),'').rsplit('COMMIT;',1)[0]+'ROLLBACK;'
+    prefix,suffix=old_installer.split('ALTER TABLE smarter_private.f06_hand_permits DROP CONSTRAINT',1)
+    suffix='ALTER TABLE smarter_private.f06_hand_permits DROP CONSTRAINT'+suffix
+    catalog="""SELECT md5(jsonb_build_object(
+      'functions',(SELECT jsonb_agg(jsonb_build_array(p.oid::regprocedure::text,pg_get_functiondef(p.oid),p.proacl::text,p.proowner) ORDER BY p.oid)
+        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private') AND p.prokind='f'),
+      'columns',(SELECT jsonb_agg(jsonb_build_array(c.oid,a.attname,a.atttypid,a.attnotnull,a.attnum) ORDER BY c.oid,a.attnum)
+        FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname IN('public','smarter_private') AND a.attnum>0 AND NOT a.attisdropped),
+      'constraints',(SELECT jsonb_agg(jsonb_build_array(c.conrelid,c.conname,pg_get_constraintdef(c.oid)) ORDER BY c.oid)
+        FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname IN('public','smarter_private')),
+      'triggers',(SELECT jsonb_agg(pg_get_triggerdef(t.oid) ORDER BY t.oid) FROM pg_trigger t WHERE NOT t.tgisinternal),
+      'indexes',(SELECT jsonb_agg(indexdef ORDER BY schemaname,indexname) FROM pg_indexes WHERE schemaname IN('public','smarter_private'))
+      )::text);"""
+    catalog_before=run('abort-installer-original-catalog',catalog)
+    reader=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    old_ddl=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    def barrier(sql,process,label):
+        deadline=time.monotonic()+5
+        while command(cmd,sql).stdout.strip()!='t':
+            require(process.poll() is None and time.monotonic()<deadline,'Installer barrier missing: '+label)
+            time.sleep(.02)
+    try:
+        reader.stdin.write("BEGIN; SET application_name='f06-install-reader'; SET statement_timeout='8s'; SET deadlock_timeout='5s'; LOCK TABLE smarter_private.f06_hand_permits IN ACCESS SHARE MODE; SELECT pg_advisory_lock(18092027);\n")
+        reader.stdin.flush()
+        barrier("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=18092027 AND granted);",reader,'original permit reader')
+        old_ddl.stdin.write(prefix+"SET deadlock_timeout='100ms'; SELECT pg_advisory_lock(18092028);\n")
+        old_ddl.stdin.flush()
+        barrier("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=18092028 AND granted);",old_ddl,'old installer owns operations')
+        reader.stdin.write('SELECT count(*) FROM smarter_private.f06_operations; ROLLBACK;\n');reader.stdin.close()
+        barrier("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='f06-install-reader' AND wait_event_type='Lock');",reader,'permit reader needs operations')
+        old_ddl.stdin.write(suffix);old_ddl.stdin.close()
+        old_ddl.wait(timeout=8);reader.wait(timeout=8)
+        failure=old_ddl.stdout.read()+old_ddl.stderr.read()
+        (out/'abort-baseline-installer-deadlock.log').write_text(failure)
+        require(old_ddl.returncode!=0 and '40P01' in failure,'Original installer deadlock not reproduced: '+failure)
+        require(reader.returncode==0,'Original reader failed: '+reader.stderr.read())
+        results['cases'].append({'name':'abort-baseline-installer-deadlock','passed':True})
+    finally:
+        for process in [reader,old_ddl]:
+            if process.poll() is None:
+                process.terminate();process.wait(timeout=5)
+    require(command(cmd,catalog).stdout.strip()==catalog_before,'Baseline deadlock leaked catalog changes')
+    # Exercise the full installer, not only isolated LOCK statements. Every
+    # acquired subset must unwind; the server error proves NOWAIT, not timeout.
+    for relation,mode in [
+      ('public.engine_tournament_leases','ROW EXCLUSIVE'),
+      ('smarter_private.f06_hand_permits','ACCESS SHARE'),
+      ('smarter_private.f06_operations','ACCESS SHARE'),
+      ('public.hand_atomic_commits','ROW EXCLUSIVE'),
+      ('public.hand_history','ROW EXCLUSIVE'),
+      ('public.ca_declared_money_triggers','ACCESS EXCLUSIVE')]:
+        with held('LOCK TABLE '+relation+' IN '+mode+' MODE;'):
+            failed=command(cmd,installer)
+            text=failed.stdout+failed.stderr
+            name='abort-installer-nowait-'+relation.split('.')[-1]
+            (out/(name+'.log')).write_text(text)
+            require(failed.returncode!=0 and '55P03' in text and 'could not obtain lock on relation' in text,
+                    'Installer waited or changed schema under contention: '+text)
+        require(command(cmd,catalog).stdout.strip()==catalog_before,'Refused installer leaked catalog changes: '+relation)
+        require(command(cmd,money).stdout.strip()==before,'Refused installer changed money: '+relation)
+        results['cases'].append({'name':name,'passed':True})
     run('abort-refuses-disabled-original-trigger',"BEGIN; ALTER TABLE public.hand_atomic_commits DISABLE TRIGGER zzzz_f06_accepted_hand;"+installer,error='F06_ABORT_BINDING_CHANGED')
     run('abort-refuses-uninstalled-request-hook',"BEGIN; ALTER ROLE authenticator RESET pgrst.db_pre_request;"+installer,error='F06_ABORT_PRE_REQUEST_NOT_INSTALLED')
     run('abort-install', installer)
@@ -157,22 +239,6 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     """)
     # Exact lane holders prove abort never waits lease-first behind a T/G-first
     # owner. Real PostgreSQL locks, not mocked ordering assertions.
-    @contextmanager
-    def held(sql, finish='ROLLBACK'):
-        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        try:
-            p.stdin.write("BEGIN; SET statement_timeout='6s';" + sql + " SELECT pg_advisory_lock(18092026);\n")
-            p.stdin.flush()
-            deadline = time.monotonic()+5
-            while command(cmd,"SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=18092026 AND granted);").stdout.strip()!='t':
-                require(p.poll() is None and time.monotonic()<deadline,'Abort native holder failed')
-                time.sleep(.02)
-            yield p
-        finally:
-            if p.poll() is None:
-                p.stdin.write(finish+';\n');p.stdin.close();p.wait(timeout=8)
-            stdout=p.stdout.read();stderr=p.stderr.read()
-            require(p.returncode==0,'Abort native holder: '+stdout+stderr)
     for name, lane in [('global','ca:tournament-terminal-settlement:v1'),('tournament',"ca:tournament-terminal-settlement:v1:"+hashlib.md5(b't1').hexdigest()[0:8]+'-'+hashlib.md5(b't1').hexdigest()[8:12]+'-'+hashlib.md5(b't1').hexdigest()[12:16]+'-'+hashlib.md5(b't1').hexdigest()[16:20]+'-'+hashlib.md5(b't1').hexdigest()[20:])]:
         with held("SELECT pg_advisory_xact_lock(hashtextextended('"+lane+"',0));"):
             probe('abort-'+name+'-first-refuses-without-deadlock',service+abort(),error='F06_RETRY_CANONICAL_LANE')

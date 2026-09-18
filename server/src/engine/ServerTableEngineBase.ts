@@ -4177,6 +4177,7 @@ export abstract class ServerTableEngineBase {
         initialSeconds: bank.initialSeconds,
         baseSeconds: bank.baseSeconds,
         dbConsumedSeconds: bank.dbConsumedSeconds,
+        ...(bank.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
       });
     }
     this.parkedTimeBanks = {};

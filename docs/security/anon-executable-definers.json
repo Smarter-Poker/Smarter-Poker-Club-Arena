@@ -1,0 +1,66 @@
+{
+  "_why": "Every SECURITY DEFINER function in public that a logged-out visitor may EXECUTE. A definer function runs with its owner's privileges, so this list is the anonymous attack surface of the database and it should only ever shrink by accident. scripts/ci/check-anon-definer-grants.mjs compares the live grants to this file.",
+  "_measured": "2026-09-18. 2,571 SECURITY DEFINER functions in public; 35 were anon-executable, 772 authenticated-executable. 2 of the 2,571 leave search_path mutable and neither is anon-executable, so the exploitable combination is empty. Thirteen inert grants were revoked by migration 20260918121836.",
+  "_reasons": {
+    "anon-policy": "Named by an RLS policy that anon evaluates. A policy expression runs as the QUERYING role, so this grant is load-bearing: revoking it breaks anonymous reads of the table.",
+    "invoker-view": "Named by a security_invoker view that anon may SELECT, which evaluates as the caller for the same reason.",
+    "public-read": "A read deliberately offered to logged-out visitors - the signed-out marketing, SEO and sign-up surface."
+  },
+  "allowed": [
+    {
+      "fn": "fn_can_view_post(p_author_id uuid, p_audience_mode text, p_audience_list text[])",
+      "reason": "anon-policy"
+    },
+    {
+      "fn": "fn_is_public_video_playback_eligible(p_playback_type text, p_rights_status text, p_playback_url text, p_author_id uuid, p_youtube_video_id text, p_canonical_asset_key text)",
+      "reason": "anon-policy"
+    },
+    { "fn": "fn_is_video_library_asset_eligible(p_asset_id uuid)", "reason": "anon-policy" },
+    {
+      "fn": "fn_is_video_library_lineage_eligible(p_asset_id uuid, p_youtube_video_id text, p_canonical_asset_key text, p_publication_key text, p_playback_url text)",
+      "reason": "anon-policy"
+    },
+    { "fn": "legacy_transition_eligible(p_post social_posts)", "reason": "anon-policy" },
+    { "fn": "legacy_transition_eligible(p_reel social_reels)", "reason": "anon-policy" },
+    { "fn": "fn_home_is_group_staff(p_caller uuid, p_group_id uuid)", "reason": "invoker-view" },
+    { "fn": "check_username_available(p_username text)", "reason": "public-read" },
+    { "fn": "check_username_with_suggestions(p_username text)", "reason": "public-read" },
+    { "fn": "fn_club_name_available(p_name text)", "reason": "public-read" },
+    {
+      "fn": "find_live_games_nearby(p_lat double precision, p_lng double precision, p_radius_miles numeric, p_game_type text, p_stakes text)",
+      "reason": "public-read"
+    },
+    {
+      "fn": "find_similar_questions(search_query text, similarity_threshold numeric, max_results integer)",
+      "reason": "public-read"
+    },
+    { "fn": "fn_active_maintenance_release_boundary()", "reason": "public-read" },
+    {
+      "fn": "fn_club_leaderboard_period_v2(p_club_id uuid, p_metric text, p_period text, p_limit integer, p_offset integer)",
+      "reason": "public-read"
+    },
+    {
+      "fn": "fn_global_leaderboard_period(p_metric text, p_period text, p_limit integer, p_offset integer)",
+      "reason": "public-read"
+    },
+    {
+      "fn": "fn_user_rank_global_period(p_user_id uuid, p_metric text, p_period text)",
+      "reason": "public-read"
+    },
+    {
+      "fn": "fn_resolve_ads(p_slot text, p_club_id uuid, p_limit integer, p_country text)",
+      "reason": "public-read"
+    },
+    { "fn": "fn_tournament_fee_names_its_player()", "reason": "public-read" },
+    { "fn": "get_daily_challenge()", "reason": "public-read" },
+    {
+      "fn": "get_home_group_public_detail(p_slug_or_id text, p_viewer_id uuid, p_inactivity_days integer)",
+      "reason": "public-read"
+    },
+    { "fn": "get_public_profile_by_username(p_username text)", "reason": "public-read" },
+    {
+      "fn": "get_venue_public_detail(p_venue_slug text, p_venue_id integer, p_caller_user_id uuid)",
+      "reason": "public-read"
+    }
+  ]
+}

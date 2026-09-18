@@ -624,6 +624,60 @@ describe('bounded immutable Horse archive custody', () => {
     });
     expect(readFileSync(join(dir, 'archive', 'segments', files[0]!))).toEqual(bytes);
   });
+  it('allocates catalog headroom for the existing archive without allocating the file eagerly', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) });
+    const writer = (s as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    // Production exhausted 524288 pages at only 262387 of 500000 segments.
+    // At the observed density, the full segment allocation needs ~4.09 GB.
+    const allocation = 4 * 1024 * 1024 * 1024;
+    expect(Number(writer.prepare('PRAGMA max_page_count').get()!.max_page_count) * 4096).toBe(
+      allocation
+    );
+    expect(s.storageStats().archive?.maxCatalogBytes).toBe(allocation);
+    expect(statSync(join(dir, 'archive', 'horse-journal-archive.sqlite')).size).toBeLessThan(
+      1024 * 1024
+    );
+  });
+  it('recovers exact pending custody after real SQLite catalog exhaustion on writer reopen', () => {
+    const dir = folder(),
+      s = store(dir, { archive: options(dir) });
+    const writer = (s as unknown as { catalog: InstanceType<typeof DatabaseSync> }).catalog;
+    // A test-only index trigger consumes physical pages during publication,
+    // after the compressed batch has been reserved. No fake SQLite error.
+    writer.exec(`CREATE TABLE capacity_fixture(bytes BLOB);
+      CREATE TRIGGER exhaust_index BEFORE INSERT ON archive_events BEGIN
+        INSERT INTO capacity_fixture VALUES(zeroblob(524288)); END;`);
+    const pages = Number(writer.prepare('PRAGMA page_count').get()!.page_count);
+    writer.exec(`PRAGMA max_page_count=${pages + 8};`);
+    let capacityError: unknown;
+    try {
+      s.appendBatch([record(), record(2)]);
+    } catch (error) {
+      capacityError = error;
+    }
+    expect(capacityError).toMatchObject({ errcode: 13 });
+    expect(horseJournalCapacityReason(capacityError)).toBe('archive_storage_capacity');
+    expect(s.storageStats().archive).toMatchObject({ records: 2, segments: 1, pendingSegments: 1 });
+    expect(() => s.readHand(record().handKey)).toThrow('custody pending');
+    const files = readdirSync(join(dir, 'archive', 'segments'));
+    expect(files).toHaveLength(1);
+    const bytes = readFileSync(join(dir, 'archive', 'segments', files[0]!));
+    s.close();
+    // The normal source-configured writer opening restores allocation before
+    // finishPending. Leave the trigger in place to prove real space is usable.
+    const recovered = store(dir, { archive: options(dir) });
+    expect(recovered.appendBatch([record(), record(2)])).toEqual(['replayed', 'replayed']);
+    expect(recovered.readHand(record().handKey)).toEqual([record(), record(2)]);
+    expect(recovered.storageStats().archive).toMatchObject({
+      records: 2,
+      segments: 1,
+      pendingSegments: 0,
+    });
+    expect(readFileSync(join(dir, 'archive', 'segments', files[0]!))).toEqual(bytes);
+    expect(recovered.append(record(3))).toBe('recorded');
+    expect(recovered.readHand(record().handKey)).toEqual([record(), record(2), record(3)]);
+  });
   it('recovers publication interrupted between hard-link creation and staging unlink', () => {
     const dir = folder(),
       s = store(dir, { archive: options(dir) }),

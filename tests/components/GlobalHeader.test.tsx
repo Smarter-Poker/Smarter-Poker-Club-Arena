@@ -47,11 +47,72 @@ vi.mock('@/hooks/useMasterBusSubscription', () => ({
 
 describe('GlobalHeader Component', () => {
   beforeEach(() => {
+    headerData.avatarUrl = '/avatars/test-user.png';
     headerData.notificationCount = 0;
     headerData.unreadMessages = 0;
     headerData.isVipActive = false;
     headerData.clearUnreadNotifications.mockClear();
     headerData.clearUnreadMessages.mockClear();
+  });
+
+  const photo = 'https://example.supabase.co/storage/v1/object/public/avatars/player/avatar.jpg';
+  const sized =
+    'https://example.supabase.co/storage/v1/render/image/public/avatars/player/avatar.jpg?width=128&height=128&resize=cover&quality=80';
+  const headerPortrait = () =>
+    screen
+      .getByRole('button', { name: 'My Profile' })
+      .querySelector('span > img') as HTMLImageElement;
+  const header = () => (
+    <MemoryRouter>
+      <GlobalHeader />
+    </MemoryRouter>
+  );
+
+  it('loads a retina-sized JPEG while preserving the existing portrait slot', () => {
+    headerData.avatarUrl = photo;
+    render(header());
+    expect(headerPortrait()).toHaveAttribute('src', sized);
+    expect(headerPortrait().parentElement).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it.each([
+    '/avatars/table/free_owl@2x.webp',
+    'https://example.supabase.co/storage/v1/object/public/avatars/a.png',
+    'https://example.supabase.co/storage/v1/object/public/avatars/a.gif',
+    'https://example.supabase.co/storage/v1/object/public/avatars/a.webp',
+    'https://example.supabase.co/storage/v1/object/sign/avatars/a.jpg?token=test',
+    'https://example.com/a.jpg',
+    'data:image/jpeg;base64,dGVzdA==',
+  ])('preserves artwork and non-transformable URL %s', (url) => {
+    headerData.avatarUrl = url;
+    render(header());
+    expect(headerPortrait()).toHaveAttribute('src', url);
+  });
+
+  it('uses the original on transform failure, then the existing fallback without a loop', () => {
+    headerData.avatarUrl = photo;
+    render(header());
+    const portrait = headerPortrait();
+    fireEvent.error(portrait);
+    expect(portrait).toHaveAttribute('src', photo);
+    fireEvent.error(portrait);
+    expect(portrait.getAttribute('src')).toMatch(/default-avatar\.png$/);
+    const fallback = portrait.getAttribute('src');
+    const assignSource = vi.spyOn(portrait, 'src', 'set');
+    fireEvent.error(portrait);
+    expect(assignSource).not.toHaveBeenCalled();
+    expect(portrait.getAttribute('src')).toBe(fallback);
+    assignSource.mockRestore();
+  });
+
+  it('loads the new sized photo after a previous photo failed', () => {
+    headerData.avatarUrl = photo;
+    const { rerender } = render(header());
+    fireEvent.error(headerPortrait());
+    fireEvent.error(headerPortrait());
+    headerData.avatarUrl = photo.replace('avatar.jpg', 'replacement.jpg');
+    rerender(header());
+    expect(headerPortrait()).toHaveAttribute('src', sized.replace('avatar.jpg', 'replacement.jpg'));
   });
 
   it('keeps the approved Smarter.Poker wordmark unobstructed', () => {

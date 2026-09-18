@@ -2931,6 +2931,11 @@ export abstract class TournamentManagerBase {
     return operation;
   }
 
+  /** Implemented by the receipt owner; a status/refusal alone cannot stop a dealer. */
+  protected async adoptCommittedTerminalOutcome(): Promise<boolean> {
+    return false;
+  }
+
   private async reconcileTournamentEntryWindowOnce(source: string): Promise<boolean> {
     const lifecycle = this.captureLifecycleToken();
     if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return false;
@@ -2950,6 +2955,13 @@ export abstract class TournamentManagerBase {
     if (!this.lifecycleIsCurrent(lifecycle)) return false;
 
     const result = (data ?? {}) as TournamentEntryWindowResult;
+    if (!error && result.ok === false && result.reason === 'tournament_not_running') {
+      // An external terminal transaction can commit while this manager still
+      // owns a stale entry-reprice wake. Adopt its verified receipt before
+      // that obsolete work prevents the ordinary finish stage from running.
+      if (await this.adoptCommittedTerminalOutcome()) return false;
+      if (!this.lifecycleIsCurrent(lifecycle)) return false;
+    }
     if (error || result.ok !== true || typeof result.entry_closed !== 'boolean') {
       reportError(
         new Error(

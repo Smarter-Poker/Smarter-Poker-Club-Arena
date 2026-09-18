@@ -53,6 +53,13 @@ does not fail on a listed grant that has been tightened away, because a guard
 that punishes tightening teaches people to skip it. It refuses rather than pass
 when it cannot reach the database, and it carries no credential of its own.
 
+It runs in the `Live drift and BBJ rebuild coverage remain clean` job of
+`production-integrity-audit.yml`, beside the realtime, BBJ and cosmetic drift
+readers, and its exit code is carried into that job's verdict - so an
+unreachable database reads as unknown rather than clean. A first draft of this
+change shipped the detector with no reader at all; `every-guard-has-a-reader`
+caught it, which is the law working exactly as written.
+
 Pinned by `tests/anon-executes-only-what-it-needs.law.test.ts`, which fails on a
 trigger function in the list, an entry with no reason, a duplicate signature,
 an empty list, and a migration that touches `authenticated` or does not check

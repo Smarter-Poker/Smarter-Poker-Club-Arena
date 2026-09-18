@@ -5138,7 +5138,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     this.tournamentFinished = true;
     const releaseFinishGuard = (): void => {
       this.tournamentFinished = false;
-      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      // The classified refusal chooses the delay. A deadlock or a timeout keeps
+      // TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS; a rule refusal doubles
+      // away from it to a cap, because asking again in five seconds cannot
+      // change a rule. See noteFinishRefusal.
+      this.requestUrgentEliminationSweepAfter(this.finishRetryDelayMs());
     };
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] FINALIZING... candidate winner: ${winnerId.slice(0, 8)}`
@@ -5157,6 +5161,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         const provenRefusal = satErr instanceof SatelliteSettlementRefusedError;
         const outcomeUnknown =
           satErr instanceof SatelliteSettlementOutcomeUnknownError || !provenRefusal;
+        const alertIsNew = this.noteFinishRefusal(provenRefusal, satErr);
         const message =
           `[Satellite:${this.tournamentId.slice(0, 8)}] atomic terminal settlement ` +
           `${provenRefusal ? 'refused' : 'has an unresolved outcome'}: ` +
@@ -5168,7 +5173,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             : 'Tournament.atomic_satellite_finish_refused'
         );
         try {
-          await raiseFinancialAlert(
+          await this.alertFinishRefusalOnce(
+            alertIsNew,
             'critical',
             outcomeUnknown
               ? 'Tournament.atomic_satellite_finish_outcome_unknown'
@@ -5194,6 +5200,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
 
       this.committedSatelliteReceipt = receipt;
+      this.clearFinishRefusalStreak();
       await this.cleanupCommittedSatellite(receipt);
       return;
     }
@@ -5215,6 +5222,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;
       const outcomeUnknown =
         settlementErr instanceof TerminalSettlementOutcomeUnknownError || !provenRefusal;
+      const alertIsNew = this.noteFinishRefusal(provenRefusal, settlementErr);
       if (provenRefusal) {
         // Counted by a bounded reason so a rule can say WHY finishes are
         // failing, not only that they are (see engineInstruments).
@@ -5229,7 +5237,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           : 'Tournament.atomic_finish_refused'
       );
       try {
-        await raiseFinancialAlert(
+        await this.alertFinishRefusalOnce(
+          alertIsNew,
           'critical',
           outcomeUnknown
             ? 'Tournament.atomic_finish_outcome_unknown'
@@ -5255,6 +5264,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
 
     this.committedFinishReceipt = receipt;
+    this.clearFinishRefusalStreak();
     if (receipt.winnerId.toLowerCase() !== winnerId.toLowerCase()) {
       // The stored receipt was adopted over this manager's own observation.
       // The money is already right (the receipt is the immutable settlement);

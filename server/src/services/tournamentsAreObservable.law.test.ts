@@ -234,7 +234,13 @@ describe('a failed tournament payout escalates as money, not just as an error', 
     ]) {
       expect(finish, `${source} is named`).toContain(source);
     }
-    expect(finish.match(/await raiseFinancialAlert\(/g) ?? []).toHaveLength(2);
+    // 2026-09-18: both refusal boundaries raise their critical alert through
+    // alertFinishRefusalOnce, which awaits raiseFinancialAlert the first time
+    // this tournament reports this reason and counts the repeats in
+    // poker_tournament_finish_refusal_alerts_suppressed_total. Still awaited,
+    // still two boundaries, no longer once a pass.
+    expect(finish.match(/await this\.alertFinishRefusalOnce\(/g) ?? []).toHaveLength(2);
+    expect(finish).not.toMatch(/await raiseFinancialAlert\(/);
 
     expect(deal).toContain('Tournament.final_table_deal_outcome_unknown');
     expect(deal).toContain('await raiseFinancialAlert(');

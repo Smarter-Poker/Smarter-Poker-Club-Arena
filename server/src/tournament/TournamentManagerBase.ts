@@ -114,6 +114,12 @@ import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import {
+  tournamentFinishRefusalAlertsSuppressedTotal,
+  classifyFinishRefusal,
+  finishRefusalRetryDelayMs,
+  type FinishRefusalReason,
+} from '../observability/engineInstruments.js';
+import {
   parsePlayedSpinLaunchRecoveryProof,
   type PlayedSpinLaunchRecoveryProof,
 } from './playedSpinLaunchRecovery.js';
@@ -431,6 +437,81 @@ export abstract class TournamentManagerBase {
   static readonly FINAL_TABLE_DEAL_POLL_MS = 10_000;
   /** Preserve fast recovery while a known zero-stack player is unresolved. */
   static readonly UNRESOLVED_BUST_RETRY_MS = 5_000;
+
+  /**
+   * WHY A REFUSED FINISH STOPPED ASKING EVERY FIVE SECONDS (2026-09-18)
+   *
+   * `releaseFinishGuard` hands a definitively refused finish back to the
+   * scheduler after UNRESOLVED_BUST_RETRY_MS, which is five seconds. That is
+   * right for a deadlock victim or a statement timeout, and it is what the
+   * 2026-09-09 law meant by "a refused finish asks for another pass".
+   *
+   * It is wrong for a refusal that is a rule. Measured on production at 03:46
+   * UTC on 2026-09-18: the elimination scheduler held 652 queued tournaments
+   * against four slots with its oldest wait at 469 seconds, because 547
+   * decided tournaments were asking, every five seconds, a question the
+   * database had already answered 1,462 times with
+   * tournament_fee_sources_require_reconciliation. Healthy tournaments waited
+   * nearly eight minutes behind them for an elimination to be recorded. Every
+   * one of those passes also raised its own critical money alert; 3,076 were
+   * open and unread.
+   *
+   * These two fields are the whole correction. The refusal stays eligible for
+   * a corrected retry. It stops re-asking on a five-second clock, and it tells
+   * an operator the same thing once instead of once a pass.
+   */
+  private finishRefusalStreak = 0;
+  private lastFinishRefusalReason: FinishRefusalReason | null = null;
+
+  /**
+   * Record a proven refusal and answer whether this is news: a reason this
+   * tournament has not already reported. An unproven (unknown-outcome) failure
+   * is always news, because it is never repeated on a clock.
+   */
+  protected noteFinishRefusal(provenRefusal: boolean, error: unknown): boolean {
+    if (!provenRefusal) return true;
+    const reason = classifyFinishRefusal(error instanceof Error ? error.message : String(error));
+    if (reason === this.lastFinishRefusalReason) {
+      this.finishRefusalStreak += 1;
+      return false;
+    }
+    this.lastFinishRefusalReason = reason;
+    this.finishRefusalStreak = 1;
+    return true;
+  }
+
+  /** The delay releaseFinishGuard hands the scheduler for the next pass. */
+  protected finishRetryDelayMs(): number {
+    const base = TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS;
+    const reason = this.lastFinishRefusalReason;
+    if (!reason || this.finishRefusalStreak < 1) return base;
+    return finishRefusalRetryDelayMs(reason, this.finishRefusalStreak, base);
+  }
+
+  /** A committed settlement ends the streak, so the next refusal is news. */
+  protected clearFinishRefusalStreak(): void {
+    this.finishRefusalStreak = 0;
+    this.lastFinishRefusalReason = null;
+  }
+
+  /**
+   * Raise a refusal's critical alert the first time this tournament reports
+   * this reason, and count the repeats instead of sending them.
+   */
+  protected async alertFinishRefusalOnce(
+    isNew: boolean,
+    severity: Parameters<typeof raiseFinancialAlert>[0],
+    source: string,
+    message: string,
+    context: Record<string, unknown> = {}
+  ): Promise<void> {
+    if (isNew) {
+      await raiseFinancialAlert(severity, source, message, context);
+      return;
+    }
+    const reason = this.lastFinishRefusalReason;
+    if (reason) tournamentFinishRefusalAlertsSuppressedTotal.inc(1, { reason });
+  }
   /**
    * How many times in a row the knockout door may refuse the SAME player
    * before the bust pass records the rest of the field without them.

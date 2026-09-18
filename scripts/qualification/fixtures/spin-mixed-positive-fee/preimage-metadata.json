@@ -1,0 +1,3626 @@
+{
+  "functions": [
+    {
+      "signature": "enforce_chip_ledger_performed_by()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "ce4ab3013be283d66ab9afd1e861b552",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_accounting_agent_terms_at(uuid,uuid,timestamp with time zone)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "90aec8c54e892a4d6977a232c5d50342",
+      "volatility": "s",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_accounting_agreement_capture()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "746fab25cd56f6ad761325e7c0d525d5",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_accounting_agreement_history_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "3fa4099435ff1e9d5c48fa1934b63549",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_accounting_cash_commission_source_guard()",
+      "absent": true
+    },
+    {
+      "signature": "fn_accounting_cash_source_immutable()",
+      "absent": true
+    },
+    {
+      "signature": "fn_accounting_earning_contract(uuid,uuid,numeric,uuid,timestamp with time zone)",
+      "absent": true
+    },
+    {
+      "signature": "fn_accounting_terms_at(text,text,timestamp with time zone)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "7ce22d801a2020499695febf374adabb",
+      "volatility": "s",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_accounting_tournament_commission_source_guard()",
+      "absent": true
+    },
+    {
+      "signature": "fn_accounting_tournament_fee_commit_capture()",
+      "absent": true
+    },
+    {
+      "signature": "fn_accounting_tournament_fee_receipt_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "bdc4ee4b75e3471cd33a5ed4b250ec0f",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_accounting_tournament_fee_source_immutable()",
+      "absent": true
+    },
+    {
+      "signature": "fn_accounting_tournament_recognized_evidence_immutable()",
+      "absent": true
+    },
+    {
+      "signature": "fn_accounting_transfer_document_on_insert()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "bf9d870bfc52d44c1d2cc33860dfd71a",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_admin_holds_no_player_wallet()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "3c54c86c548917606c846febfadf704b",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_agent_credit_control_revision_v1()",
+      "absent": true
+    },
+    {
+      "signature": "fn_agents_staff_earn_no_rakeback()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "17346b77ec8f5a1d6d42dca3eb06e061",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_audit_club_entry_mutation()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "d26149a3b10aa00618a98f5076ebf079",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_audit_club_member_change()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "06515aa426034c1174450e2dc37204ef",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_award_vip_points_from_rake()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "23ee9b47483898b695bbdf7afea48b01",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_block_browser_balance_inserts()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "88e61c03b82bedcdc67113f795355d4a",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_block_browser_balance_writes()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "c7390598f411e7d6bc4b8daf00e12c6e",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_attested_day_is_restated()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public",
+        "TimeZone=UTC"
+      ],
+      "full_md5": "268e0f244b2df7f88b933530b1cad822",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_autoledger()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "2ff8923b4c2d8fd3d343cf37acce0f2c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_autoledger_delete()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "c6d7e02df8b654fbccc3e8844418bd01",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_capture_tournament_charge_entitlement()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "01e84bcd7825d2e905fef3ec220b3a47",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_capture_tournament_credit_ledger()",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_chip_ledger_enrich()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "5931f47d922eea26ab1ea2b12f3f7c8c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_chip_store_declared()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "d5b08956826e56a0d414db4bfd022d3b",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_escrow_on_overlay_leg()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "1b916fb576271d94c481099c11ca8b93",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_escrow_on_rake_record()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "0dc096bb5615758ed945365a45997c8c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_escrow_on_reserve_leg()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "0d7f735d58aadeb6fe03e9daf5e21a92",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_escrow_on_seat_transfer_leg()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "e9c56f9c21635b21c7cf0d456eb18b8a",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_fund_overlay_on_lock()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "a18b13b709dc1e4d37b38f55a00eb6f4",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_guard_mtt_admission_contract()",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_guard_new_satellite_target()",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_guard_tournament_format()",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_guard_tournament_restart_source()",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_is_new_mtt(jsonb)",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_issuance_leg_is_registered()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "7a41ac630bad489e02f05f47ff5ffa1e",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_journal_append_only()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "ac9d66e60d077d886981c428c71e5c3c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_legacy_tournament_format(jsonb)",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_lock_mtt_admission_contract()",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "24fc93502f66beb34c31e1a16c87a147",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_new_tournament_is_unlimited(jsonb)",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_normalize_new_mtt_capacity()",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_reject_automated_user_club_row()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "7c73094df30c90f94a78cbbd5d24f504",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_ca_tournament_format_identity(jsonb)",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_tournament_recorded_format(uuid)",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_tournament_recorded_seat_first(uuid,boolean)",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_tournament_seat_cap(uuid)",
+      "absent": true
+    },
+    {
+      "signature": "fn_ca_unregistration_rake_evidence_is_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "4d035b0d2f169db1cdbe987078448e99",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_caller_session_is_live()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=pg_catalog, public, auth"
+      ],
+      "full_md5": "23ffeea99f9d9e76102ecbf6185222c0",
+      "volatility": "s",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_cancelled_tournament_evidence_is_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "55061034adb7416d401622572397c7d2",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_cancelled_tournament_parent_is_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "45afe1986ef3e5a382aab017dcf3689c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_capture_accounting_tournament_fee(uuid,jsonb)",
+      "absent": true
+    },
+    {
+      "signature": "fn_capture_managed_game_contract()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, extensions, pg_temp"
+      ],
+      "full_md5": "28e259c9fd0c76f39c5ca5b5f0328777",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_clear_seats_on_game_end()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, extensions"
+      ],
+      "full_md5": "9660c076fa2d1739a01ed360933f3c26",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "162eba07a4e75f16ae21e5ca809ee595",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_club_member_notes_guard()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "cc7bae672aea44a800052d2aba490360",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_club_members_bot_follows_horse()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "02033ded814911b9a5a74ecf91dfa2e9",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_club_members_ledger_writer()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "1f8bc3e17233defa23ebfda4e30015db",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_club_members_no_agent_cycle()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "a7ad3c53fcab80a15831e71544b53c56",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_club_members_role_guard()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "2374cfedbbe89d3a69c75cdfdb240fe6",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_club_members_staff_earn_no_rakeback()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "09ae811a57faa517720d493d89262f31",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_create_seat_first_game_atomic(uuid,jsonb)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp",
+        "statement_timeout=30s"
+      ],
+      "full_md5": "92cbf5680d78bdbaa4309412b3d19dfd",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_deep_stack_society_cannot_be_deleted_by_accident()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "213a7fa40330c703cb23dc001a99d31e",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_emit_managed_game_row_event()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "2042d20f7a0f3951352069a279e75362",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_emit_management_access_event()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "9963925e6cd6da557b9de6f1749db0fd",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_enforce_agent_commission_bounds()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "3e4f5df422b121391cc40f711ae5b5ee",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_enforce_club_enters_union_empty()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "23c5f3b77830234a6c0181474fe8caee",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_enforce_four_club_limit()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "4c27b1c5f7b438dfa569699d19f2200a",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_enforce_tournament_union_ownership_update()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "5c7ea135e9566b108e96ed3af5a9f5d2",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_enforce_whole_dollar_buyin()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, extensions"
+      ],
+      "full_md5": "652e99519fb365b9ed5fb23e70519e49",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_freerolls_are_free_buy()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "b4cd5955cb813a63b6364b9b9f1de844",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_agent_agreement()",
+      "absent": true
+    },
+    {
+      "signature": "fn_guard_managed_game_delete()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "bef4392e9fa3124cecaaf74a739e465b",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_managed_game_lifecycle()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "16d4a93cbee7574608e18287bf555f24",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_membership_lifecycle_write()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "bb2eca3ab004597dbd9137f78951e943",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_new_mtt_blind_contract()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "15dd4f5521cfc9a285bef1cfc97931cd",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_rake_belongs_to_club()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "04f17832e28e53b2ca5b33eb3b8e0982",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_registered_tournament_contract()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "8c110d7334b93cc527b6d4dfe8bb5fcb",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_retired_club_mutation()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "b82be212e7ccf2a15637c231861ff993",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_tournament_completed_certificate()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "8a05956d1fd25d649f1f80b133ed3ed0",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_tournament_completing_claim()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "311ed77e7726f0c7515859a9140d526c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_tournament_mystery_creation_contract()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "07d896448e45728a89fc46eafc2a0eeb",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_tournament_prize_math_contract()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "9db38ea56f880456fdbbc29394c4cb27",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_tournament_publish_readiness()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "0aa1e473750e160884700c441d3953e2",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_guard_tournament_start_readiness()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "f2ee43657b769c37527ae2974101bb06",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_membership_approval_gate()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "b5edea413fa87af75f47b925a23b1d10",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_membership_starts_with_zero_chips()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "e865fa31892646611ec011821a9fd219",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_non_satellite_completed_requires_terminal_receipt()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "f2da9a0bcf45eec68489fe51fd6f224b",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_poker_guard_arena_structure()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "f17675dd0b647abda7b0b9d8772c9c0e",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_poker_reject_diamond_hierarchy()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "49037a2bf4322d2a327bc9141a7a7a89",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_post_accounting_commission_source(uuid,text,timestamp with time zone,jsonb)",
+      "absent": true
+    },
+    {
+      "signature": "fn_receipt_mystery_activation()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "222c1ea113b7df08cdfad43078022074",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_receipted_tournament_is_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "961aa627ed8cb88d11b4750ef3464be5",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_recompute_club_level_on_member_change()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "0a761d5d6027c26ddbe4a7760d23d434",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_recompute_union_level_on_club_change()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "102d867367cdc4e88cba99ecc53763c9",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_refuse_completed_with_pending_bounties()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "36b386279189cbd1e5a5a9541ba3ec94",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_refuse_mystery_activation_with_pending_heads()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "b9be582a1a903cf71e2e32795dd1527e",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_refuse_new_entries_while_frozen()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "0af4299f549c144ce93b2f37914f6b4e",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_refuse_while_frozen()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "3a866372172806a8a69cc3d37413f0cc",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_release_seats_on_tournament_finish()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "7e9ab84b48a96dda6029414f889ab39f",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_require_explicit_club_membership_source()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "3c4e9aa515a8b8c8226fdf18332156a3",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_retire_manager_wakes_after_terminal_status()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "2fa4c2d4bb63ece41ed78c3f11cd770c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_satellite_feeds_only_a_deliverable_target()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "4251f65adfd51a29967a346af7ae98f1",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_satellite_target_contract_is_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "68f353273fb27d0eee5021481192e902",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_satellite_target_rake_is_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "42499ae4d7edff6b56e2211a9149a64a",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_satellite_transfer_ledger_is_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "b2affe52c4e95101c985c30c483d5127",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_seat_change_syncs_seat_first_count()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "f5b45635a8203fc8fbd95282d4770dc8",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_short_formats_never_break()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "c1a3d79a8fd639618e81ec1b2f25abe7",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_spin_book_entry(uuid)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "3e861cfde0bda50d16bc836a665bf4ab",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_spin_ladder_is_the_drawn_one()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "2a2786ee7663657383c4930c90842051",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_spin_rake_rate(numeric)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "dad580a8513512273e6109b4fea19edd",
+      "volatility": "i",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_spin_reserve_pool(uuid)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "d3596faa39ba012e437d769386f8a057",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_spin_tournament_contract_is_draw()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "747fc99476b082256141d42003a6c478",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_stamp_accounting_tournament_fee(uuid)",
+      "absent": true
+    },
+    {
+      "signature": "fn_stamp_tournament_terminal_evidence_markers()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "eeec4e4610901fe4b44b0b8f270d1ef7",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_stamp_tournament_union_ownership()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "feb3b58d1e4af815e6d499d8ed8d6c6c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_sync_agent_player_counts()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, extensions"
+      ],
+      "full_md5": "76a5848cfdb6c1674b48cb62ae1f22dd",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_sync_club_member_count()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "2abaebf91e89f56487f01b25d7e3ac98",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_sync_club_union_mirror()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "119b0030a566ae5701cdecfa81aee13e",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_sync_mfa_required_on_club_role()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "b09cbcddc87075221d72aee3899e97b4",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_sync_seat_first_player_count(uuid)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "6ca19586d771591fb674d07e4b0c323c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_sync_union_membership_table_counts()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "d0f49fa15340884a978759cfaf54ab88",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_take_seat_and_buy_in(uuid,integer)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, extensions, pg_temp",
+        "statement_timeout=30s"
+      ],
+      "full_md5": "a965493d4837187d433b3cdd40c5da81",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, extensions"
+      ],
+      "full_md5": "d5ec9bc535b1a0b84140af8a48da8640",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_terminal_tournament_evidence_is_immutable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "a129e4214f59e7f95ffe397e2245bbd0",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_tournament_fee_names_its_player()",
+      "owner": "postgres",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "a34e26b81ceeda38237b739245ff11f6",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_tournaments_creation_guard()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "625347745f78aca51aaa83bb769072a7",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_tournaments_refuse_unbuilt_multi_day()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "c52fa39e800b18f319a8171cb52ab637",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "fn_union_pnl_capture_original_flow()",
+      "absent": true
+    },
+    {
+      "signature": "fn_union_pnl_inventory_immutable()",
+      "absent": true
+    },
+    {
+      "signature": "fn_union_pnl_inventory_observe()",
+      "absent": true
+    },
+    {
+      "signature": "fn_union_pnl_inventory_project(text,jsonb)",
+      "absent": true
+    },
+    {
+      "signature": "fn_union_pnl_original_frame()",
+      "absent": true
+    },
+    {
+      "signature": "fn_union_week_start(timestamp with time zone)",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, extensions"
+      ],
+      "full_md5": "103f192a228084dad0e4268c36c82c4b",
+      "volatility": "i",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "guard_agent_wallet_direct_update()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "736aa9e92265453c3015223562108141",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "lock_club_cashier_hierarchy_mutation()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "2bf2e0dc1876c5b1238603fc18558907",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "sync_agent_wallet_columns()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, extensions"
+      ],
+      "full_md5": "3a3d351dd05b5dc13b525b7eb4635e5c",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_agent_commission_rollup_change()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "4ec76190867a2fe990abddeb01b8cad5",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_agent_commission_rollup_insert()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "50cb43eb54b7924b39c25b9816f450a0",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_atomic_final_table_deal_completion_guard()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "38bf96ba348994fd40264584c26107d8",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_auto_recompute_club_level()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "91f239bc0f5b75e5147ef6bd19ff761b",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_ca_club_rake_daily_change()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "0eff9721f6fb1f9d0295184eaafab2f2",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_ca_club_rake_daily_insert()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "4bb7c4d64021796803829faacbcddbb0",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_ca_reporting_rake_insert()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "77a5bc5c710f2dbc04b547cab55672a0",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_ca_reporting_repair_changed_days()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "601c605e44856e42ee0d00e72a0fdb1e",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_capture_satellite_economics_on_start()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "9a39bb425387ade0232c76f78267d598",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_freeze_finalized_tournament_prize_pool()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "d58236d778465cfd5f4c1e25933f77f4",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_freeze_registered_tournament_settlement_contract()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "caf4aedb5da06e764930e61d9ed7158e",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_guard_atomic_satellite_completion()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "8ac917a51ecde732a1f9c27527c87219",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_lock_atomic_final_table_deal_status()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "b16256830158e669defcff8751cb5be7",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_lock_atomic_place_tournament_status()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "0923d477f8cbb2c11eaa7c6acf0f8f5d",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_lock_tournament_start_time_during_launch()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "41d41eef67325a9e463043269d19b9bf",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_refuse_normal_tournament_completed_insert()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "b1ed0b6d633f570d0c5038edce75b62c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_spin_completed_guard()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "47439a8a8cde90ed307f9f79f4eb3a95",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_tournament_atomic_place_completion_guard()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "18cf8159e315f322ac7cc09e1f913671",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_tournament_completed_stats()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "074f801970b6e6e90c2370a63816ba28",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_tournament_pool_finalization_window_guard()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "6ba00817ea7d386e3c1d37212b9c9866",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_tournaments_cancel_must_refund()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "a4643c9ed980e3008369884e3ac2a96c",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_tournaments_guarantee_affordable()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "91f977eaec85de7f6b478d37184e9732",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_tournaments_rank_before_complete()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "89f80b8b181cf7717fcdee2a94d161ed",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "trg_union_rake_weekly()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public"
+      ],
+      "full_md5": "e3dacea902d1b1e3053326c07ec90b56",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    },
+    {
+      "signature": "update_updated_at_column()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, extensions"
+      ],
+      "full_md5": "54801f8bc343c4928383a3e7a1d57d61",
+      "volatility": "v",
+      "security_definer": false,
+      "kind": "f"
+    },
+    {
+      "signature": "zz_chip_ledger_key_is_claimed_once()",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": [
+        "search_path=public, pg_temp"
+      ],
+      "full_md5": "57a2b2eb1bc5b1c5ac36394c2ac23bcd",
+      "volatility": "v",
+      "security_definer": true,
+      "kind": "f"
+    }
+  ],
+  "relations": [
+    {
+      "name": "accounting_agreement_history",
+      "kind": "r",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "not_null": true,
+          "identity": "d",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": "public.accounting_agreement_history_id_seq",
+          "sequence": {
+            "owner": "postgres",
+            "acl": "{postgres=rwU/postgres,anon=rwU/postgres,authenticated=rwU/postgres,service_role=rwU/postgres}",
+            "type": "bigint",
+            "start": "1",
+            "increment": "1",
+            "max": "9223372036854775807",
+            "min": "1",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        {
+          "name": "entity_type",
+          "type": "text",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "entity_key",
+          "type": "text",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "subject_user_id",
+          "type": "uuid",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "event_type",
+          "type": "text",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "clock_timestamp()",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "transaction_id",
+          "type": "bigint",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "txid_current()",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "actor_id",
+          "type": "uuid",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "before_terms",
+          "type": "jsonb",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "after_terms",
+          "type": "jsonb",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "accounting_agreement_history_check",
+          "type": "c",
+          "definition": "CHECK (((before_terms IS NOT NULL) OR (after_terms IS NOT NULL)))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "accounting_agreement_history_entity_type_check",
+          "type": "c",
+          "definition": "CHECK ((entity_type = ANY (ARRAY['agents'::text, 'club_members'::text, 'union_clubs'::text])))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "accounting_agreement_history_event_type_check",
+          "type": "c",
+          "definition": "CHECK ((event_type = ANY (ARRAY['baseline'::text, 'INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "accounting_agreement_history_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        }
+      ],
+      "indexes": [
+        {
+          "live": true,
+          "name": "accounting_agreement_history_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": true,
+          "definition": "CREATE UNIQUE INDEX accounting_agreement_history_pkey ON public.accounting_agreement_history USING btree (id)",
+          "nulls_not_distinct": false
+        }
+      ],
+      "policies": [],
+      "triggers": [
+        {
+          "name": "accounting_agreement_history_immutable",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER accounting_agreement_history_immutable BEFORE DELETE OR UPDATE ON public.accounting_agreement_history FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_history_immutable()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_accounting_agreement_history_immutable()"
+        },
+        {
+          "name": "accounting_agreement_history_no_truncate",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER accounting_agreement_history_no_truncate BEFORE TRUNCATE ON public.accounting_agreement_history FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_agreement_history_immutable()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_accounting_agreement_history_immutable()"
+        }
+      ]
+    },
+    {
+      "name": "agents",
+      "kind": "r",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,anon=xtm/postgres,authenticated=rxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "gen_random_uuid()",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "membership_id",
+          "type": "uuid",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "role",
+          "type": "text",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "'active'::text",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "parent_agent_id",
+          "type": "uuid",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "commission_rate",
+          "type": "numeric(5,4)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "player_rakeback_rate",
+          "type": "numeric(5,4)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "credit_limit",
+          "type": "numeric(15,2)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "credit_used",
+          "type": "numeric(15,2)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "is_prepaid",
+          "type": "boolean",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "false",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "business_balance",
+          "type": "numeric(15,2)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "player_balance",
+          "type": "numeric(15,2)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "promo_balance",
+          "type": "numeric(15,2)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "total_players",
+          "type": "integer",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "active_player_count",
+          "type": "integer",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "sub_agent_count",
+          "type": "integer",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "weekly_rake_generated",
+          "type": "numeric(15,2)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "lifetime_earnings",
+          "type": "numeric(15,2)",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "joined_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "now()",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "last_active_at",
+          "type": "timestamp with time zone",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "now()",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "now()",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "auto_rakeback_enabled",
+          "type": "boolean",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "true",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "rakeback_percentage",
+          "type": "numeric(5,4)",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0.0000",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "agent_wallet_balance",
+          "type": "numeric(18,2)",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "player_wallet_balance",
+          "type": "numeric(18,4)",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "promo_wallet_balance",
+          "type": "numeric(18,2)",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "lifetime_rake_generated",
+          "type": "numeric(18,4)",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "0",
+          "owned_sequence": null,
+          "sequence": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "agents_agent_wallet_balance_nonneg",
+          "type": "c",
+          "definition": "CHECK ((agent_wallet_balance >= (0)::numeric))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_club_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_club_id_user_id_key",
+          "type": "u",
+          "definition": "UNIQUE (club_id, user_id)",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_commission_rate_check",
+          "type": "c",
+          "definition": "CHECK (((commission_rate >= (0)::numeric) AND (commission_rate <= 0.70)))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_credit_used_check",
+          "type": "c",
+          "definition": "CHECK ((credit_used >= (0)::numeric))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_player_rakeback_rate_check",
+          "type": "c",
+          "definition": "CHECK (((player_rakeback_rate >= (0)::numeric) AND (player_rakeback_rate <= 0.50)))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_promo_wallet_balance_nonneg",
+          "type": "c",
+          "definition": "CHECK ((promo_wallet_balance >= (0)::numeric))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_role_check",
+          "type": "c",
+          "definition": "CHECK ((role = ANY (ARRAY['super_agent'::text, 'agent'::text, 'sub_agent'::text])))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "agents_status_check",
+          "type": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text, 'frozen'::text])))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "check_credit",
+          "type": "c",
+          "definition": "CHECK (((credit_used <= credit_limit) OR (is_prepaid = true)))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "chk_player_wallet_balance_is_two_decimal_places",
+          "type": "c",
+          "definition": "CHECK (((player_wallet_balance IS NULL) OR (player_wallet_balance = round(player_wallet_balance, 2))))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "fk_agents_parent",
+          "type": "f",
+          "definition": "FOREIGN KEY (parent_agent_id) REFERENCES agents(id)",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "fk_agents_user_id_profiles",
+          "type": "f",
+          "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        }
+      ],
+      "indexes": [
+        {
+          "live": true,
+          "name": "agents_club_id_user_id_key",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": false,
+          "definition": "CREATE UNIQUE INDEX agents_club_id_user_id_key ON public.agents USING btree (club_id, user_id)",
+          "nulls_not_distinct": false
+        },
+        {
+          "live": true,
+          "name": "agents_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": true,
+          "definition": "CREATE UNIQUE INDEX agents_pkey ON public.agents USING btree (id)",
+          "nulls_not_distinct": false
+        }
+      ],
+      "policies": [
+        {
+          "name": "agents_cashier_scoped_read",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "((user_id = ( SELECT auth.uid() AS uid)) OR (fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'all'::text) OR ((fn_club_cashier_scope(club_id, ( SELECT auth.uid() AS uid)) = 'downline'::text) AND fn_club_cashier_can_transact(club_id, ( SELECT auth.uid() AS uid), user_id)))",
+          "command": "r",
+          "permissive": true
+        },
+        {
+          "name": "agents_svc",
+          "check": null,
+          "roles": [
+            "service_role"
+          ],
+          "using": "true",
+          "command": "*",
+          "permissive": true
+        },
+        {
+          "name": "union_overseer_read",
+          "check": null,
+          "roles": [
+            "authenticated"
+          ],
+          "using": "(( SELECT fn_is_any_union_overseer(( SELECT auth.uid() AS uid)) AS fn_is_any_union_overseer) AND fn_union_oversees_club(club_id, ( SELECT auth.uid() AS uid)))",
+          "command": "r",
+          "permissive": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "accounting_agreement_history",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER accounting_agreement_history AFTER INSERT OR DELETE OR UPDATE OF id, club_id, user_id, parent_agent_id, role, status, commission_rate, player_rakeback_rate, is_prepaid ON public.agents FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_capture()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_accounting_agreement_capture()"
+        },
+        {
+          "name": "guard_agent_wallet_direct_update",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER guard_agent_wallet_direct_update BEFORE INSERT OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION guard_agent_wallet_direct_update()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "guard_agent_wallet_direct_update()"
+        },
+        {
+          "name": "poker_arena_no_hierarchy",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_poker_reject_diamond_hierarchy()"
+        },
+        {
+          "name": "trg_agents_commission_bounds",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_agents_commission_bounds BEFORE INSERT OR UPDATE OF commission_rate ON public.agents FOR EACH ROW EXECUTE FUNCTION fn_enforce_agent_commission_bounds()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_enforce_agent_commission_bounds()"
+        },
+        {
+          "name": "trg_agents_human_user_club_only",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_agents_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id ON public.agents FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_ca_reject_automated_user_club_row()"
+        },
+        {
+          "name": "trg_agents_staff_earn_no_rakeback",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_agents_staff_earn_no_rakeback BEFORE INSERT OR UPDATE OF role, commission_rate, player_rakeback_rate ON public.agents FOR EACH ROW WHEN (((COALESCE(new.commission_rate, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.player_rakeback_rate, (0)::numeric) <> (0)::numeric))) EXECUTE FUNCTION fn_agents_staff_earn_no_rakeback()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_agents_staff_earn_no_rakeback()"
+        },
+        {
+          "name": "trg_ca_autoledger",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF agent_wallet_balance, promo_wallet_balance ON public.agents FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_ca_autoledger()"
+        },
+        {
+          "name": "trg_ca_autoledger_delete",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON public.agents FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_ca_autoledger_delete()"
+        },
+        {
+          "name": "trg_ca_autoledger_insert",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON public.agents FOR EACH ROW WHEN (((COALESCE(new.agent_wallet_balance, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.promo_wallet_balance, (0)::numeric) <> (0)::numeric))) EXECUTE FUNCTION fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_ca_autoledger()"
+        },
+        {
+          "name": "trg_deep_stack_agents_are_protected",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_deep_stack_agents_are_protected BEFORE DELETE ON public.agents FOR EACH ROW WHEN ((old.club_id = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid)) EXECUTE FUNCTION fn_deep_stack_society_cannot_be_deleted_by_accident()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_deep_stack_society_cannot_be_deleted_by_accident()"
+        },
+        {
+          "name": "trg_guard_retired_club_mutation",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "fn_guard_retired_club_mutation()"
+        },
+        {
+          "name": "trg_sync_agent_wallets",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_sync_agent_wallets BEFORE UPDATE ON public.agents FOR EACH ROW EXECUTE FUNCTION sync_agent_wallet_columns()",
+          "deferrable": false,
+          "deferred": false,
+          "handler": "sync_agent_wallet_columns()"
+        }
+      ]
+    },
+    {
+      "name": "ca_chip_store_coverage",
+      "kind": "r",
+      "owner": "postgres",
+      "acl": "{postgres=arwdDxtm/postgres,anon=rxt/postgres,authenticated=rxt/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "force_rls": false,
+      "columns": [
+        {
+          "name": "store",
+          "type": "text",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "treatment",
+          "type": "text",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "counted_by",
+          "type": "text",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "not_null": false,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": null,
+          "owned_sequence": null,
+          "sequence": null
+        },
+        {
+          "name": "added_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "identity": "",
+          "generated": "",
+          "acl": null,
+          "default": "now()",
+          "owned_sequence": null,
+          "sequence": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_chip_store_coverage_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (store)",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        },
+        {
+          "name": "ca_chip_store_coverage_treatment_check",
+          "type": "c",
+          "definition": "CHECK ((treatment = ANY (ARRAY['counted'::text, 'noncirculating'::text, 'uncounted'::text])))",
+          "validated": true,
+          "deferrable": false,
+          "deferred": false
+        }
+      ],
+      "indexes": [
+        {
+          "live": true,
+          "name": "ca_chip_store_coverage_pkey",
+          "ready": true,
+          "valid": true,
+          "unique": true,
+          "primary": true,
+          "definition": "CREATE UNIQUE INDEX ca_chip_store_coverage_pkey ON public.ca_chip_store_coverage USING btree (store)",
+          "nulls_not_distinct": false
+        }
+      ],
+      "policies": [],
+      "triggers": []
+    }
+  ],
+  "bindings": [
+    {
+      "relation": "accounting_agreement_history",
+      "name": "accounting_agreement_history_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER accounting_agreement_history_immutable BEFORE DELETE OR UPDATE ON accounting_agreement_history FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_history_immutable()"
+    },
+    {
+      "relation": "accounting_agreement_history",
+      "name": "accounting_agreement_history_no_truncate",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER accounting_agreement_history_no_truncate BEFORE TRUNCATE ON accounting_agreement_history FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_agreement_history_immutable()"
+    },
+    {
+      "relation": "agent_commissions",
+      "name": "poker_arena_no_hierarchy",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON agent_commissions FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()"
+    },
+    {
+      "relation": "agent_commissions",
+      "name": "trg_agent_commission_rollup_del",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_agent_commission_rollup_del AFTER DELETE ON agent_commissions REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_agent_commission_rollup_change()"
+    },
+    {
+      "relation": "agent_commissions",
+      "name": "trg_agent_commission_rollup_ins",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_agent_commission_rollup_ins AFTER INSERT ON agent_commissions REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_agent_commission_rollup_insert()"
+    },
+    {
+      "relation": "agent_commissions",
+      "name": "trg_agent_commission_rollup_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_agent_commission_rollup_upd AFTER UPDATE ON agent_commissions REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_agent_commission_rollup_change()"
+    },
+    {
+      "relation": "agent_commissions",
+      "name": "trg_ca_append_only",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON agent_commissions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()"
+    },
+    {
+      "relation": "agents",
+      "name": "accounting_agreement_history",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER accounting_agreement_history AFTER INSERT OR DELETE OR UPDATE OF id, club_id, user_id, parent_agent_id, role, status, commission_rate, player_rakeback_rate, is_prepaid ON agents FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_capture()"
+    },
+    {
+      "relation": "agents",
+      "name": "guard_agent_wallet_direct_update",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER guard_agent_wallet_direct_update BEFORE INSERT OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION guard_agent_wallet_direct_update()"
+    },
+    {
+      "relation": "agents",
+      "name": "poker_arena_no_hierarchy",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_agents_commission_bounds",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_agents_commission_bounds BEFORE INSERT OR UPDATE OF commission_rate ON agents FOR EACH ROW EXECUTE FUNCTION fn_enforce_agent_commission_bounds()"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_agents_human_user_club_only",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_agents_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_agents_staff_earn_no_rakeback",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_agents_staff_earn_no_rakeback BEFORE INSERT OR UPDATE OF role, commission_rate, player_rakeback_rate ON agents FOR EACH ROW WHEN (COALESCE(new.commission_rate, 0::numeric) <> 0::numeric OR COALESCE(new.player_rakeback_rate, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_agents_staff_earn_no_rakeback()"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_ca_autoledger",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF agent_wallet_balance, promo_wallet_balance ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_ca_autoledger_delete",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_ca_autoledger_insert",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON agents FOR EACH ROW WHEN (COALESCE(new.agent_wallet_balance, 0::numeric) <> 0::numeric OR COALESCE(new.promo_wallet_balance, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_deep_stack_agents_are_protected",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_deep_stack_agents_are_protected BEFORE DELETE ON agents FOR EACH ROW WHEN (old.club_id = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid) EXECUTE FUNCTION fn_deep_stack_society_cannot_be_deleted_by_accident()"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_guard_retired_club_mutation",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+    },
+    {
+      "relation": "agents",
+      "name": "trg_sync_agent_wallets",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_sync_agent_wallets BEFORE UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION sync_agent_wallet_columns()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "aa_ca_capture_tournament_charge_entitlement",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER aa_ca_capture_tournament_charge_entitlement AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.tournament_id IS NOT NULL AND new.from_type = 'player_wallet'::text AND new.to_type = 'prize_liability'::text) EXECUTE FUNCTION fn_ca_capture_tournament_charge_entitlement()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "ab_ca_chip_store_declared",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER ab_ca_chip_store_declared BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_store_declared()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "accounting_transfer_document",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER accounting_transfer_document AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.status = 'posted'::text AND ((new.from_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text])) OR new.from_type = 'settlement_suspense'::text AND new.category = 'rakeback'::text) AND (new.to_type = ANY (ARRAY['union_wallet'::text, 'union_bank'::text, 'club_treasury'::text, 'player_wallet'::text, 'agent_wallet'::text]))) EXECUTE FUNCTION fn_accounting_transfer_document_on_insert()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "satellite_transfer_ledger_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_transfer_ledger_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_satellite_transfer_ledger_is_immutable()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "terminal_tournament_evidence_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "trg_ca_append_only",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "trg_ca_chip_ledger_enrich",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_chip_ledger_enrich BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_ca_chip_ledger_enrich()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "trg_chip_ledger_performed_by",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_chip_ledger_performed_by BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION enforce_chip_ledger_performed_by()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "zz_ca_attested_day_is_restated_del",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_del AFTER DELETE ON chip_ledger REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "zz_ca_attested_day_is_restated_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_ca_attested_day_is_restated_upd AFTER UPDATE ON chip_ledger REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_attested_day_is_restated()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "zz_ca_escrow_overlay_leg",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_ca_escrow_overlay_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.to_type = 'prize_liability'::text AND (new.category = 'overlay'::text OR new.category = 'correction'::text AND (new.from_type = ANY (ARRAY['union_bank'::text, 'club_treasury'::text])))) EXECUTE FUNCTION fn_ca_escrow_on_overlay_leg()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "zz_ca_escrow_reserve_leg",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_ca_escrow_reserve_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.category = ANY (ARRAY['spin_entry'::text, 'spin_prize'::text])) EXECUTE FUNCTION fn_ca_escrow_on_reserve_leg()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "zz_ca_escrow_seat_transfer_leg",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_ca_escrow_seat_transfer_leg AFTER INSERT ON chip_ledger FOR EACH ROW WHEN (new.to_type = 'prize_liability'::text AND new.idempotency_key ~~ 'tourney:%:seat:%:pool_transfer'::text) EXECUTE FUNCTION fn_ca_escrow_on_seat_transfer_leg()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "zz_ca_issuance_leg_is_registered",
+      "enabled": "O",
+      "definition": "CREATE CONSTRAINT TRIGGER zz_ca_issuance_leg_is_registered AFTER INSERT ON chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.from_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text])) OR (new.to_type = ANY (ARRAY['system_mint'::text, 'system_burn'::text, 'issuance_reserve'::text, 'chip_retirement'::text]))) EXECUTE FUNCTION fn_ca_issuance_leg_is_registered()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "zz_chip_ledger_key_is_claimed_once",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_chip_ledger_key_is_claimed_once BEFORE INSERT ON chip_ledger FOR EACH ROW EXECUTE FUNCTION zz_chip_ledger_key_is_claimed_once()"
+    },
+    {
+      "relation": "chip_ledger",
+      "name": "zz_freeze_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen()"
+    },
+    {
+      "relation": "club_members",
+      "name": "accounting_agreement_history",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER accounting_agreement_history AFTER INSERT OR DELETE OR UPDATE OF club_id, user_id, agent_id, parent_agent_id, role, status, is_active, commission_rate, rakeback_rate, player_rakeback_pct ON club_members FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_capture()"
+    },
+    {
+      "relation": "club_members",
+      "name": "club_members_updated_at",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER club_members_updated_at BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()"
+    },
+    {
+      "relation": "club_members",
+      "name": "lock_cashier_hierarchy_insert_delete",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER lock_cashier_hierarchy_insert_delete BEFORE INSERT OR DELETE ON club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()"
+    },
+    {
+      "relation": "club_members",
+      "name": "lock_cashier_hierarchy_update",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER lock_cashier_hierarchy_update BEFORE UPDATE OF club_id, agent_id, role, status ON club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()"
+    },
+    {
+      "relation": "club_members",
+      "name": "poker_arena_membership_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER poker_arena_membership_guard BEFORE INSERT OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_admin_holds_no_player_wallet",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_admin_holds_no_player_wallet BEFORE INSERT OR UPDATE OF role, chip_balance ON club_members FOR EACH ROW EXECUTE FUNCTION fn_admin_holds_no_player_wallet()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_approval_gate_ins",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_approval_gate_ins BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_approval_gate_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_approval_gate_upd BEFORE UPDATE OF status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_audit_club_join",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_audit_club_join AFTER INSERT OR UPDATE OF status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_entry_mutation()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_audit_club_member_delete",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_audit_club_member_delete AFTER DELETE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_member_change()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_audit_club_member_update",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_audit_club_member_update AFTER UPDATE OF role, status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_member_change()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_block_browser_balance_inserts",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_block_browser_balance_inserts BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_inserts()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_block_browser_balance_writes",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_block_browser_balance_writes BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_writes()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_ca_autoledger",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF promo_balance ON club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('promo_balance=promo_wallet')"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_ca_autoledger_delete",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('chip_balance=player_wallet', 'promo_balance=promo_wallet')"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_ca_autoledger_insert",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON club_members FOR EACH ROW WHEN (COALESCE(new.chip_balance, 0::numeric) <> 0::numeric OR COALESCE(new.promo_balance, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_ca_autoledger('chip_balance=player_wallet', 'promo_balance=promo_wallet')"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_member_notes_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_member_notes_guard BEFORE UPDATE OF nickname, notes ON club_members FOR EACH ROW EXECUTE FUNCTION fn_club_member_notes_guard()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_audit_chip_movement",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_audit_chip_movement AFTER UPDATE OF chip_balance ON club_members FOR EACH ROW WHEN (old.chip_balance IS DISTINCT FROM new.chip_balance) EXECUTE FUNCTION fn_club_members_ledger_writer()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_bot_follows_horse",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_bot_follows_horse BEFORE INSERT OR UPDATE OF user_id, is_bot ON club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_bot_follows_horse()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_emit_management_access",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_emit_management_access AFTER INSERT OR DELETE OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_emit_management_access_event()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_guard_lifecycle_write",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_guard_lifecycle_write BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_membership_lifecycle_write()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_human_user_club_only",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id, is_bot ON club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_level_sync",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_level_sync AFTER INSERT OR DELETE OR UPDATE OF role, status ON club_members FOR EACH ROW EXECUTE FUNCTION trg_auto_recompute_club_level()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_no_agent_cycle_ins",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_ins BEFORE INSERT ON club_members FOR EACH ROW WHEN (new.agent_id IS NOT NULL) EXECUTE FUNCTION fn_club_members_no_agent_cycle()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_no_agent_cycle_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_upd BEFORE UPDATE OF agent_id ON club_members FOR EACH ROW WHEN (new.agent_id IS NOT NULL AND new.agent_id IS DISTINCT FROM old.agent_id) EXECUTE FUNCTION fn_club_members_no_agent_cycle()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_require_explicit_join",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_require_explicit_join BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_require_explicit_club_membership_source()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_role_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_role_guard BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_role_guard()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_club_members_staff_earn_no_rakeback",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_members_staff_earn_no_rakeback BEFORE INSERT OR UPDATE ON club_members FOR EACH ROW WHEN ((new.role = ANY (ARRAY['co_owner'::text, 'admin'::text])) AND (COALESCE(new.player_rakeback_pct, 0::numeric) <> 0::numeric OR COALESCE(new.rakeback_rate, 0::numeric) <> 0::numeric OR COALESCE(new.commission_rate, 0::numeric) <> 0::numeric)) EXECUTE FUNCTION fn_club_members_staff_earn_no_rakeback()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_deep_stack_members_are_protected",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_deep_stack_members_are_protected BEFORE DELETE ON club_members FOR EACH ROW WHEN (old.club_id = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid) EXECUTE FUNCTION fn_deep_stack_society_cannot_be_deleted_by_accident()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_four_club_limit_ins",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_four_club_limit_ins BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_four_club_limit_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_four_club_limit_upd BEFORE UPDATE OF status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_guard_retired_club_mutation",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_membership_starts_with_zero_chips",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_membership_starts_with_zero_chips BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_starts_with_zero_chips()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_recompute_club_level_on_member_change",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_recompute_club_level_on_member_change AFTER INSERT OR DELETE OR UPDATE OF role, status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_recompute_club_level_on_member_change()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_sync_agent_player_counts",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_sync_agent_player_counts AFTER INSERT OR DELETE OR UPDATE OF agent_id, club_id, is_active ON club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_agent_player_counts()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_sync_club_member_count",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_sync_club_member_count AFTER INSERT OR DELETE OR UPDATE OF status, club_id, role ON club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_club_member_count()"
+    },
+    {
+      "relation": "club_members",
+      "name": "trg_sync_mfa_required_on_club_role",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_sync_mfa_required_on_club_role AFTER INSERT OR UPDATE OF role, user_id ON club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_mfa_required_on_club_role()"
+    },
+    {
+      "relation": "club_members",
+      "name": "zz_freeze_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('chip_balance')"
+    },
+    {
+      "relation": "rake_records",
+      "name": "ca_reporting_rake_change_del",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER ca_reporting_rake_change_del AFTER DELETE ON rake_records REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "ca_reporting_rake_change_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER ca_reporting_rake_change_upd AFTER UPDATE ON rake_records REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "ca_reporting_rake_insert",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER ca_reporting_rake_insert AFTER INSERT ON rake_records FOR EACH ROW EXECUTE FUNCTION trg_ca_reporting_rake_insert()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "cancelled_tournament_evidence_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "satellite_target_rake_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_target_rake_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_rake_is_immutable()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "terminal_tournament_evidence_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "tournament_unregistration_rake_evidence_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournament_unregistration_rake_evidence_is_immutable BEFORE DELETE OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_ca_unregistration_rake_evidence_is_immutable()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "trg_award_vip_points_from_rake",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_award_vip_points_from_rake AFTER INSERT ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_award_vip_points_from_rake()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "trg_ca_club_rake_daily_del",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_del AFTER DELETE ON rake_records REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_change()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "trg_ca_club_rake_daily_ins",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON rake_records REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_insert()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "trg_ca_club_rake_daily_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_club_rake_daily_upd AFTER UPDATE ON rake_records REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_change()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "trg_guard_rake_belongs_to_club",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_guard_rake_belongs_to_club BEFORE INSERT OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_guard_rake_belongs_to_club()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "trg_tournament_fee_names_its_player",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournament_fee_names_its_player BEFORE INSERT ON rake_records FOR EACH ROW WHEN (new.is_tournament IS TRUE AND new.player_contributions IS NULL AND new.rake_amount > 0::numeric) EXECUTE FUNCTION fn_tournament_fee_names_its_player()"
+    },
+    {
+      "relation": "rake_records",
+      "name": "zz_ca_escrow_rake_record",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_ca_escrow_rake_record AFTER INSERT ON rake_records FOR EACH ROW WHEN (new.is_tournament IS TRUE AND new.tournament_id IS NOT NULL) EXECUTE FUNCTION fn_ca_escrow_on_rake_record()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "aa_guard_tournament_completing_claim",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER aa_guard_tournament_completing_claim BEFORE UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_completing_claim()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "aaa_guard_atomic_satellite_completion",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER aaa_guard_atomic_satellite_completion BEFORE UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_guard_atomic_satellite_completion()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "cancelled_tournament_parent_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER cancelled_tournament_parent_is_immutable BEFORE DELETE OR UPDATE OF status, variant, tournament_type, satellite_target_id, satellite_target, satellite_seats, prize_pool, prize_pool_finalized, bounty_pool, bounty_pool_paid, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_pool_cents, club_id, ended_at, total_rake, current_players, on_break, break_started_at, break_ends_at ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_parent_is_immutable()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "non_satellite_completed_requires_terminal_receipt",
+      "enabled": "O",
+      "definition": "CREATE CONSTRAINT TRIGGER non_satellite_completed_requires_terminal_receipt AFTER INSERT OR UPDATE OF status ON tournaments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_non_satellite_completed_requires_terminal_receipt()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "poker_arena_tournament_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER poker_arena_tournament_guard BEFORE INSERT OR UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "receipted_tournament_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER receipted_tournament_is_immutable BEFORE DELETE OR UPDATE OF status, variant, tournament_type, satellite_target_id, satellite_target, satellite_seats, prize_pool, prize_pool_finalized, bounty_pool, bounty_pool_paid, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, mystery_bounty_pool_cents, club_id, ended_at, current_players, on_break, break_started_at, break_ends_at ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_receipted_tournament_is_immutable()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "satellite_feeds_only_a_deliverable_target",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_feeds_only_a_deliverable_target BEFORE INSERT OR UPDATE OF satellite_target_id, satellite_target, is_bounty, is_pko, is_mystery_bounty, is_premium_spin, variant, tournament_type ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_satellite_feeds_only_a_deliverable_target()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "satellite_target_contract_is_immutable",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_target_contract_is_immutable BEFORE UPDATE OF buy_in_amount, buy_in_fee, bounty_amount, rebuy_cost, addon_cost, is_bounty, is_pko, is_mystery_bounty, is_premium_spin, variant, tournament_type, club_id, entry_contract_locked ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_contract_is_immutable()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "spin_tournament_contract_is_draw",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER spin_tournament_contract_is_draw BEFORE UPDATE OF spin_multiplier, prize_pool, spin_locked_tiers ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_spin_tournament_contract_is_draw()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "stamp_tournament_terminal_evidence_markers",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER stamp_tournament_terminal_evidence_markers AFTER INSERT OR UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_stamp_tournament_terminal_evidence_markers()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournament_completed_stats",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournament_completed_stats AFTER UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_tournament_completed_stats()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournament_prize_math_contract",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournament_prize_math_contract BEFORE INSERT OR UPDATE OF payout_math_version, payout_unit_cents, club_id ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_prize_math_contract()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournament_start_time_locked_during_launch",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournament_start_time_locked_during_launch BEFORE UPDATE OF start_time ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_lock_tournament_start_time_during_launch()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_cancel_must_refund",
+      "enabled": "O",
+      "definition": "CREATE CONSTRAINT TRIGGER tournaments_cancel_must_refund AFTER UPDATE ON tournaments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((upper(COALESCE(new.status, ''::text)) = ANY (ARRAY['CANCELLED'::text, 'CANCELED'::text])) AND upper(COALESCE(old.status, ''::text)) IS DISTINCT FROM upper(COALESCE(new.status, ''::text))) EXECUTE FUNCTION trg_tournaments_cancel_must_refund()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_creation_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournaments_creation_guard BEFORE INSERT ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_tournaments_creation_guard()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_guarantee_affordable_ins",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournaments_guarantee_affordable_ins BEFORE INSERT ON tournaments FOR EACH ROW WHEN (COALESCE(new.guaranteed_prize, 0::numeric) > 0::numeric) EXECUTE FUNCTION trg_tournaments_guarantee_affordable()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_guarantee_affordable_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournaments_guarantee_affordable_upd BEFORE UPDATE ON tournaments FOR EACH ROW WHEN (COALESCE(new.guaranteed_prize, 0::numeric) > 0::numeric AND new.guaranteed_prize IS DISTINCT FROM old.guaranteed_prize) EXECUTE FUNCTION trg_tournaments_guarantee_affordable()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_mystery_creation_contract",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournaments_mystery_creation_contract BEFORE INSERT OR UPDATE OF is_mystery_bounty, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_mystery_creation_contract()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_new_mtt_blind_contract",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournaments_new_mtt_blind_contract BEFORE INSERT OR UPDATE OF blind_structure, starting_chips, tournament_type, variant, max_players ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_new_mtt_blind_contract()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_rank_before_complete",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournaments_rank_before_complete BEFORE UPDATE ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text AND old.status IS DISTINCT FROM 'COMPLETED'::text) EXECUTE FUNCTION trg_tournaments_rank_before_complete()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_short_formats_never_break",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournaments_short_formats_never_break BEFORE INSERT OR UPDATE OF tournament_type, variant, synchronized_breaks ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_short_formats_never_break()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "tournaments_spin_completed_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tournaments_spin_completed_guard BEFORE UPDATE ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text AND old.status IS DISTINCT FROM 'COMPLETED'::text) EXECUTE FUNCTION trg_spin_completed_guard()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_clear_seats_on_game_end",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_clear_seats_on_game_end AFTER UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_clear_seats_on_game_end()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_guard_retired_club_mutation",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_receipt_mystery_activation",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_receipt_mystery_activation AFTER UPDATE OF mystery_bounty_stage ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_receipt_mystery_activation()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_refuse_completed_with_pending_bounties",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_refuse_completed_with_pending_bounties BEFORE UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_refuse_completed_with_pending_bounties()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_refuse_mystery_activation_with_pending_heads",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_refuse_mystery_activation_with_pending_heads BEFORE UPDATE OF mystery_bounty_stage, mystery_bounty_activation_generation ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_refuse_mystery_activation_with_pending_heads()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_release_seats_on_tournament_finish",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_release_seats_on_tournament_finish AFTER UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_release_seats_on_tournament_finish()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_retire_manager_wakes_after_terminal_status",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_retire_manager_wakes_after_terminal_status AFTER UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_retire_manager_wakes_after_terminal_status()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_capture_management_contract",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_capture_management_contract AFTER INSERT OR UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_capture_managed_game_contract()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_emit_game_management_event",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_emit_game_management_event AFTER INSERT OR DELETE OR UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_emit_managed_game_row_event()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_managed_delete_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_managed_delete_guard BEFORE DELETE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_delete()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_managed_lifecycle_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_managed_lifecycle_guard BEFORE UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_lifecycle()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_publish_readiness",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_publish_readiness AFTER INSERT OR UPDATE OF guaranteed_prize, club_id, union_id, is_private, variant, tournament_type, satellite_target_id, satellite_target, satellite_seats ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_publish_readiness()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_refuse_unbuilt_multi_day",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_refuse_unbuilt_multi_day BEFORE INSERT OR UPDATE OF is_multi_day, total_days, day_number, parent_tournament_id, survivors_advance_to, flight_number, flight_end_chips_snapshot ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_tournaments_refuse_unbuilt_multi_day()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_registered_contract_lock",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_registered_contract_lock BEFORE UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_registered_tournament_contract()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_start_readiness",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_start_readiness BEFORE UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_tournament_start_readiness()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_union_ownership",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_union_ownership BEFORE INSERT ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_stamp_tournament_union_ownership()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_tournaments_union_ownership_upd",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_tournaments_union_ownership_upd BEFORE UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_enforce_tournament_union_ownership_update()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "trg_whole_dollar_buyin",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_whole_dollar_buyin BEFORE INSERT OR UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_enforce_whole_dollar_buyin()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zz_ca_fund_overlay_on_lock",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_ca_fund_overlay_on_lock BEFORE UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_fund_overlay_on_lock()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zz_freerolls_are_free_buy",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_freerolls_are_free_buy BEFORE INSERT OR UPDATE OF buy_in_amount, buy_in_fee, tournament_type, variant, is_rebuy, add_on_available, rebuy_cost, addon_cost, rebuy_chips, addon_chips, rebuy_levels, addon_levels, max_rebuys ON tournaments FOR EACH ROW WHEN (COALESCE(new.buy_in_amount, 0::numeric) = 0::numeric) EXECUTE FUNCTION fn_freerolls_are_free_buy()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zz_freeze_launch_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zz_freeze_launch_guard BEFORE UPDATE OF status ON tournaments FOR EACH ROW WHEN (new.status = 'RUNNING'::text AND old.status IS DISTINCT FROM new.status) EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzz_spin_ladder_is_the_drawn_one",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzz_spin_ladder_is_the_drawn_one BEFORE INSERT OR UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_spin_ladder_is_the_drawn_one()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzy_lock_atomic_place_tournament_status",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzy_lock_atomic_place_tournament_status BEFORE UPDATE OF status ON tournaments FOR EACH ROW WHEN (new.status IS DISTINCT FROM old.status) EXECUTE FUNCTION trg_lock_atomic_place_tournament_status()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzz_capture_satellite_economics_on_start",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzz_capture_satellite_economics_on_start BEFORE INSERT OR UPDATE OF status ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_capture_satellite_economics_on_start()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzz_freeze_finalized_tournament_prize_pool",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzz_freeze_finalized_tournament_prize_pool BEFORE UPDATE OF prize_pool, guaranteed_prize, prize_pool_finalized, payout_structure, spin_multiplier ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_freeze_finalized_tournament_prize_pool()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzz_freeze_registered_tournament_settlement_contract",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzz_freeze_registered_tournament_settlement_contract BEFORE UPDATE OF variant, tournament_type, satellite_target_id, bubble_protection, buy_in_amount, guaranteed_prize ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_freeze_registered_tournament_settlement_contract()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzz_refuse_normal_tournament_completed_insert",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzz_refuse_normal_tournament_completed_insert BEFORE INSERT ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text) EXECUTE FUNCTION trg_refuse_normal_tournament_completed_insert()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzz_tournament_pool_finalization_window_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzz_tournament_pool_finalization_window_guard BEFORE UPDATE OF prize_pool_finalized ON tournaments FOR EACH ROW EXECUTE FUNCTION trg_tournament_pool_finalization_window_guard()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzz_tournaments_atomic_place_completion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzz_tournaments_atomic_place_completion_guard BEFORE UPDATE ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text AND old.status IS DISTINCT FROM 'COMPLETED'::text) EXECUTE FUNCTION trg_tournament_atomic_place_completion_guard()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzzy_lock_atomic_final_table_deal_status",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzzy_lock_atomic_final_table_deal_status BEFORE UPDATE OF status ON tournaments FOR EACH ROW WHEN (new.status IS DISTINCT FROM old.status) EXECUTE FUNCTION trg_lock_atomic_final_table_deal_status()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzzz_tournaments_atomic_final_table_deal_completion_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard BEFORE UPDATE OF status ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text AND old.status IS DISTINCT FROM 'COMPLETED'::text) EXECUTE FUNCTION trg_atomic_final_table_deal_completion_guard()"
+    },
+    {
+      "relation": "tournaments",
+      "name": "zzzzzz_tournaments_financial_certificate",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER zzzzzz_tournaments_financial_certificate BEFORE UPDATE OF status ON tournaments FOR EACH ROW WHEN (new.status = 'COMPLETED'::text AND old.status IS DISTINCT FROM 'COMPLETED'::text) EXECUTE FUNCTION fn_guard_tournament_completed_certificate()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "accounting_agreement_history",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER accounting_agreement_history AFTER INSERT OR DELETE OR UPDATE OF id, club_id, union_id, club_commission_rate, rate_cash, rate_mtt, rate_sng, rate_spin, rate_satellite ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_capture()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "poker_arena_union_guard",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER poker_arena_union_guard BEFORE INSERT OR UPDATE ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "trg_club_enters_a_union_empty",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_club_enters_a_union_empty BEFORE INSERT ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_enforce_club_enters_union_empty()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "trg_guard_retired_club_mutation",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "trg_recompute_union_level_on_club_change",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_recompute_union_level_on_club_change AFTER INSERT OR DELETE OR UPDATE OF union_id, club_id ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_recompute_union_level_on_club_change()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "trg_union_clubs_emit_management_access",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_union_clubs_emit_management_access AFTER INSERT OR DELETE ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_emit_management_access_event()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "trg_union_clubs_reassignment_management_access",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_union_clubs_reassignment_management_access AFTER UPDATE OF union_id, club_id ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_emit_management_access_event()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "trg_union_clubs_sync_mirror",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_union_clubs_sync_mirror AFTER INSERT OR DELETE ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_sync_club_union_mirror()"
+    },
+    {
+      "relation": "union_clubs",
+      "name": "trg_union_clubs_sync_table_counts",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_union_clubs_sync_table_counts AFTER INSERT OR DELETE OR UPDATE ON union_clubs FOR EACH ROW EXECUTE FUNCTION fn_sync_union_membership_table_counts()"
+    },
+    {
+      "relation": "union_wallet_transactions",
+      "name": "trg_ca_append_only",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON union_wallet_transactions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()"
+    },
+    {
+      "relation": "union_wallet_transactions",
+      "name": "union_rake_weekly_maintain",
+      "enabled": "O",
+      "definition": "CREATE TRIGGER union_rake_weekly_maintain AFTER INSERT ON union_wallet_transactions FOR EACH ROW EXECUTE FUNCTION trg_union_rake_weekly()"
+    }
+  ],
+  "targeted_tournament": {
+    "columns": [
+      {
+        "acl": null,
+        "name": "max_players",
+        "type": "integer",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "tournament_prize_math_contract_valid",
+        "type": "c",
+        "definition": "CHECK ((((payout_math_version = 1) AND (payout_unit_cents = 1)) OR ((payout_math_version = 2) AND (payout_unit_cents = ANY (ARRAY[1, 100])) AND (upper(COALESCE(tournament_type, ''::text)) = 'MTT'::text) AND (COALESCE(max_players, 0) > 2) AND (lower(COALESCE(variant, ''::text)) <> ALL (ARRAY['spin'::text, 'sng'::text, 'satellite'::text])) AND (NOT COALESCE(is_premium_spin, false)) AND (satellite_target_id IS NULL) AND (satellite_target IS NULL))))",
+        "validated": true,
+        "deferrable": false,
+        "deferred": false
+      },
+      {
+        "name": "tournaments_heads_up_rake_within_5_pct",
+        "type": "c",
+        "definition": "CHECK (((max_players IS NULL) OR (max_players > 2) OR (COALESCE(buy_in_fee, (0)::numeric) <= (round(((COALESCE(buy_in_amount, (0)::numeric) + COALESCE(buy_in_fee, (0)::numeric)) * 0.05), 2) + 0.005)))) NOT VALID",
+        "validated": false,
+        "deferrable": false,
+        "deferred": false
+      }
+    ],
+    "indexes": []
+  }
+}

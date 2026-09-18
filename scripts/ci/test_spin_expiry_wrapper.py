@@ -1,6 +1,6 @@
 """Source-specific hosted adapter controls; not native financial qualification.
 
-The normal wrapper runs these controls before all five separate PG17 images.
+The normal wrapper runs these controls before all six separate PG17 images.
 No successful mocked protocol receipt establishes that SQL or refunds passed.
 """
 import copy
@@ -32,6 +32,214 @@ def mixed_source_files():
     files={name:(root/name).read_bytes() for name in W.MIXED.INPUTS}
     files['inputs/captured-financial-store-policy.sql']=(root/'scripts/ci/probes/spin-expiry/inputs/captured-financial-store-policy.sql').read_bytes()
     return files
+
+
+class PositiveFeeEntryTests(unittest.TestCase):
+    def allocation_receipt(self, source):
+        # Protocol-only evidence. The independent baseline below mirrors actual
+        # successful allocator 8ce73e0b, not FEE's validation-plan implementation.
+        work = source.parent / 'work'
+        work.mkdir()
+        (source / 'inputs').mkdir(parents=True)
+        prefix = b'-- authentic schema prefix\n'
+        suffix = W.MARKER + b'\n-- authentic trigger suffix\n'
+        (source / 'inputs/schema.sql').write_bytes(prefix + suffix)
+        (work / 'schema-prefix.sql').write_bytes(prefix)
+        (work / 'schema-suffix.sql').write_bytes(suffix)
+        data = work / 'data'
+        db = 'qual_spin_expiry_' + EXECUTION.replace('-', '')
+        bootstrap = [str(PG/'psql'), '-X', '-w', '-h', str(work/'socket'), '-p', '5432',
+                     '-U', 'fixture_bootstrap', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1']
+        extension = "SELECT json_build_object('pgcrypto',EXISTS(SELECT 1 FROM pg_available_extensions WHERE name='pgcrypto'),'uuid-ossp',EXISTS(SELECT 1 FROM pg_available_extensions WHERE name='uuid-ossp'),'pg_trgm_1_6',EXISTS(SELECT 1 FROM pg_available_extension_versions WHERE name='pg_trgm' AND version='1.6'));"
+        plan = [('pg_version', [str(PG/'postgres'), '--version']),
+                ('initdb', [str(PG/'initdb'), '-D', str(data), '-U', 'fixture_bootstrap',
+                            '--auth-local=trust', '--auth-host=reject', '--no-locale', '--encoding=UTF8']),
+                ('pg_start', [str(PG/'pg_ctl'), '-D', str(data), '-l', str(work/'postgres.log'), '-w', '-t', '12', 'start']),
+                ('server_endpoint_readback', W.server_endpoint_command(PG, work/'socket')),
+                ('extension_availability', bootstrap + ['-qAt', '-c', extension]),
+                ('create_sql_owner', bootstrap + ['-c', 'CREATE ROLE postgres NOSUPERUSER INHERIT LOGIN CREATEDB CREATEROLE REPLICATION BYPASSRLS']),
+                ('create_database', [str(PG/'createdb'), '-w', '-h', str(work/'socket'), '-p', '5432',
+                                     '-U', 'fixture_bootstrap', '-O', 'postgres', db])]
+        sql = [('schema_prefix', work/'schema-prefix.sql'),
+               ('restore_preexisting_principals', source/'principals.sql'),
+               ('schema_suffix_all_real_triggers', work/'schema-suffix.sql'),
+               ('authentic_access', source/'inputs/access.sql'),
+               ('authentic_policies', source/'inputs/policies.sql'),
+               ('current_notification_supplement', source/'provider-supplement.sql'),
+               ('current_tested_roles', source/'provider-roles.sql'),
+               ('tested_role_readback', source/'provider-roles-check.sql'),
+               ('current_catalog_readback', source/'provider-check.sql'),
+               ('empty_provider_readback', source/'empty-provider-check.sql'),
+               ('authentic_spin_catalog_supplement', source/'inputs/spin-catalog-supplement.sql'),
+               ('authentic_entry_provider_supplement', source/'inputs/entry-provider-supplement.sql'),
+               ('authentic_entry_sequence_authority', source/'inputs/entry-sequence-authority.sql'),
+               ('authentic_settlement_source_authority', source/'inputs/settle-source-authority.sql'),
+               ('retention_provider_authority', source/W.RETENTION_STAGES['retention_provider_authority'][1])]
+        for name, path in sql:
+            argv = W.qualification_sql_argv(PG, source, EXECUTION, ORDINARY, TOURNAMENT,
+                                            'fixture_bootstrap', str(path))
+            plan.append((name, argv))
+        plan += W.FEE.body_plan(PG, source, EXECUTION, ORDINARY, TOURNAMENT)
+        plan += [('pg_stop_fast', [str(PG/'pg_ctl'), '-D', str(data), '-w', '-t', '10', '-m', 'fast', 'stop']),
+                 ('pg_stopped_readback', [str(PG/'pg_ctl'), '-D', str(data), 'status'])]
+        receipt = {'stages': [], 'positive_fee_entry_qualification': {'mocked_output_only': True},
+                   'work_deadline_seconds': 240, 'cleanup_deadline_seconds': 30,
+                   'cleanup_verified': True, 'cleanup_errors': [], 'hosted_cleanup_observed': True,
+                   'original_clients_terminal': True, 'source_stable': True}
+        for ordinal, (name, argv) in enumerate(plan):
+            code = 3 if name=='pg_stopped_readback' else 0
+            stage = {'stage': name, 'argv': argv, 'returncode': code,
+                     'terminal_returncode': code, 'pid': 1000+ordinal}
+            for stream in ('stdout', 'stderr'):
+                content = (name + ':' + stream + '\n').encode()
+                (work/(name+'.'+stream)).write_bytes(content)
+                stage[stream+'_sha256'] = W.digest(content)
+            receipt['stages'].append(stage)
+        return receipt
+
+    def validate_allocation(self, receipt, source):
+        # Monetary-output behavior has its separate actual oracle controls; only
+        # this receipt-protocol unit boundary is mocked here, never SQL execution.
+        with patch.object(W.FEE, 'validate_outputs', return_value={'mocked_output_only': True}):
+            return W.FEE.validate_stages(receipt, PG, source, EXECUTION, ORDINARY, TOURNAMENT)
+
+    def test_paid_entry_requires_every_successful_baseline_and_cleanup_stage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)/'source'
+            receipt = self.allocation_receipt(source)
+            self.assertEqual(len(receipt['stages']), 31)
+            self.assertEqual(self.validate_allocation(receipt, source), [])
+            for original in receipt['stages']:
+                for mutation in ('missing', 'failed', 'unterminated', 'deadline'):
+                    changed = copy.deepcopy(receipt)
+                    stage = next(s for s in changed['stages'] if s['stage']==original['stage'])
+                    if mutation=='missing': changed['stages'].remove(stage)
+                    elif mutation=='failed': stage['returncode']=7
+                    elif mutation=='unterminated': stage['terminal_returncode']=None
+                    else: stage['client_deadline_exceeded']=True
+                    with self.subTest(stage=original['stage'], mutation=mutation), self.assertRaises((ValueError, KeyError)):
+                        self.validate_allocation(changed, source)
+
+    def test_paid_entry_rejects_reordered_extra_or_replaced_baseline_authority(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)/'source'
+            receipt = self.allocation_receipt(source)
+            for name in ['authentic_access','authentic_policies','current_tested_roles','tested_role_readback',
+                         'authentic_entry_sequence_authority','authentic_settlement_source_authority','fee_actual_paid_entry']:
+                for option in ['-U','-h','-d','-f','-v']:
+                    changed = copy.deepcopy(receipt)
+                    stage = next(s for s in changed['stages'] if s['stage']==name)
+                    stage['argv'][stage['argv'].index(option)+1]='wrong-authority-or-identity'
+                    with self.subTest(stage=name, option=option), self.assertRaises(ValueError):
+                        self.validate_allocation(changed, source)
+                for variable in ('execution_uuid=', 'ordinary_user_uuid=', 'tournament_uuid='):
+                    changed = copy.deepcopy(receipt)
+                    stage = next(s for s in changed['stages'] if s['stage']==name)
+                    index = next(i for i, value in enumerate(stage['argv']) if value.startswith(variable))
+                    stage['argv'][index] = variable + '00000000-0000-0000-0000-000000000000'
+                    with self.subTest(stage=name, variable=variable), self.assertRaises(ValueError):
+                        self.validate_allocation(changed, source)
+            for mutation in ('reordered', 'extra', 'duplicate'):
+                changed = copy.deepcopy(receipt)
+                if mutation=='reordered': changed['stages'][10:12]=reversed(changed['stages'][10:12])
+                elif mutation=='extra': changed['stages'].insert(22, {'stage':'unclaimed_sql'})
+                else: changed['stages'].insert(22, copy.deepcopy(changed['stages'][10]))
+                with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                    self.validate_allocation(changed, source)
+
+    def test_paid_entry_binds_all_baseline_and_cleanup_streams_and_schema_split(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)/'source'
+            receipt = self.allocation_receipt(source)
+            for original in receipt['stages']:
+                for stream in ('stdout','stderr'):
+                    changed=copy.deepcopy(receipt)
+                    next(s for s in changed['stages'] if s['stage']==original['stage'])[stream+'_sha256']='a'*64
+                    with self.subTest(stage=original['stage'], stream=stream), self.assertRaises(ValueError):
+                        self.validate_allocation(changed, source)
+            for name in ('schema-prefix.sql','schema-suffix.sql','authentic_access.stdout','pg_stopped_readback.stderr'):
+                path=source.parent/'work'/name
+                old=path.read_bytes()
+                path.write_bytes(old+b'changed')
+                try:
+                    with self.subTest(file=name), self.assertRaises(ValueError):
+                        self.validate_allocation(receipt, source)
+                finally: path.write_bytes(old)
+
+    def test_paid_entry_preserves_budget_and_terminal_cleanup_contract(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'source'; receipt=self.allocation_receipt(source)
+            for key, value in [('work_deadline_seconds',241),('cleanup_deadline_seconds',31),
+                               ('cleanup_verified',False),('cleanup_errors',['unobserved']),
+                               ('hosted_cleanup_observed',False),('original_clients_terminal',False),
+                               ('source_stable',False),('fast_stop_failure','failed')]:
+                changed=copy.deepcopy(receipt);changed[key]=value
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    self.validate_allocation(changed,source)
+
+    def test_paid_entry_context_initialization_has_no_uuid_scalar_output(self):
+        argv=W.FEE.sql_argv(PG,SOURCE,EXECUTION,ORDINARY,TOURNAMENT,W.FEE.FIXTURE)
+        self.assertEqual(argv[argv.index('-c')+1],
+            "DO $entry_context$ BEGIN PERFORM set_config('spin_mixed_qualification.execution_uuid','"+EXECUTION+
+            "',false); PERFORM set_config('qualification.execution_uuid','"+EXECUTION+"',false); END $entry_context$;")
+
+    def test_independent_paid_entry_oracle_rejects_corrupted_original_evidence(self):
+        root = Path(__file__).resolve().parents[2]
+        self.assertEqual(W.FEE.load_oracle(root).run_negative_controls(), 38)
+
+    def files(self):
+        root = Path(__file__).resolve().parents[2]
+        files = {name: (root / name).read_bytes() for name in W.FEE.INPUTS}
+        files['inputs/captured-financial-store-policy.sql'] = (
+            root / 'scripts/ci/probes/spin-expiry/inputs/captured-financial-store-policy.sql').read_bytes()
+        name = 'scripts/qualification/fixtures/spin-history-retention/database-state.sql'
+        files[name] = (root / name).read_bytes()
+        return files
+
+    def test_missing_and_changed_paid_entry_inputs_are_refused(self):
+        files = self.files()
+        W.FEE.validate_sources(files)
+        for name in W.FEE.INPUTS:
+            for missing in (False, True):
+                changed = dict(files)
+                if missing:
+                    del changed[name]
+                else:
+                    changed[name] += b'changed'
+                with self.subTest(name=name, missing=missing), self.assertRaises((ValueError, KeyError)):
+                    W.FEE.validate_sources(changed)
+
+    def test_paid_entry_cannot_load_historical_or_synthetic_estates(self):
+        plan = W.FEE.body_plan(PG, SOURCE, EXECUTION, ORDINARY, TOURNAMENT)
+        self.assertEqual([name for name, _ in plan], ['fee_current_catalog_restore',
+            'fee_current_catalog_readback', 'fee_current_recognition_restore',
+            'fee_current_recognition_readback', 'fee_provider_restore',
+            'fee_provider_readback', 'fee_actual_paid_entry'])
+        for name, argv in plan:
+            self.assertEqual(argv[argv.index('-U') + 1], 'postgres')
+            self.assertEqual(argv[argv.index('-h') + 1], str(SOURCE.parent / 'work/socket'))
+            self.assertEqual(argv[argv.index('-d') + 1], 'qual_spin_expiry_' + EXECUTION.replace('-', ''))
+            self.assertIn('ordinary_user_uuid=' + ORDINARY, argv)
+            self.assertIn('tournament_uuid=' + TOURNAMENT, argv)
+            self.assertNotIn('synthetic-', argv[-1])
+        self.assertTrue(set(W.FEE.INPUTS) <= set(W.REPLACEMENTS))
+        self.assertEqual(W.CASES[W.FEE.IMAGE], ())
+
+    def test_paid_entry_observer_does_not_modify_sealed_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder).resolve()
+            leaf = source / W.FEE.ORACLE
+            leaf.parent.mkdir(parents=True)
+            leaf.write_text('value = 42\n')
+            before = sorted(str(p.relative_to(source)) for p in source.rglob('*'))
+            with patch.object(sys, 'dont_write_bytecode', False):
+                self.assertEqual(W.FEE.load_oracle(source).value, 42)
+            self.assertEqual(sorted(str(p.relative_to(source)) for p in source.rglob('*')), before)
+
+    def test_paid_entry_catalog_reader_refuses_ambiguous_json(self):
+        for raw in (b'{"a":1,"a":2}', b'{"a":NaN}', b'{"a":Infinity}', b'{"a":-Infinity}'):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                W.FEE.decode(raw)
 
 
 class MixedCurrentTests(unittest.TestCase):
@@ -133,13 +341,13 @@ class MixedCurrentTests(unittest.TestCase):
                     b'{"amount":NaN}', b'{"amount":Infinity}', b'{"amount":-Infinity}'):
             with self.subTest(raw=raw), self.assertRaises(ValueError): W.MIXED.decode_races(raw)
 
-    def test_all_five_images_and_original_cases_remain_required(self):
+    def test_all_six_images_and_original_cases_remain_required(self):
         self.assertEqual(W.IMAGES, ('preimage', 'candidate', 'retention-completed',
-                                   'mixed-current-completion', 'mixed-current-source-change'))
+                                   'mixed-current-completion', 'mixed-current-source-change', 'positive-fee-entry'))
         self.assertEqual(W.CASES, {'preimage': ('order',),
             'candidate': ('order', 'timeout', 'committed-refund'),
             'retention-completed': (), 'mixed-current-completion': (),
-            'mixed-current-source-change': ()})
+            'mixed-current-source-change': (), 'positive-fee-entry': ()})
         self.assertTrue(set(W.MIXED.INPUTS) <= set(W.REPLACEMENTS))
 
     def test_exact_sources_and_executed_provider_paths_are_pinned(self):
@@ -1173,6 +1381,8 @@ class FixtureSourceTests(unittest.TestCase):
         files.update(pure_source_files())
         files.update(lane_source_files())
         files.update(mixed_source_files())
+        files.update({name: (Path(__file__).resolve().parents[2] / name).read_bytes()
+                      for name in W.FEE.INPUTS})
         manifest = {'files': {name: W.pin(data) for name,data in files.items()}}
         allocation = self.root / 'attempt'; allocation.mkdir(mode=0o700)
         raw = W.stage_packet(allocation, manifest, files)

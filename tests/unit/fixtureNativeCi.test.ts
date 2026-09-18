@@ -454,6 +454,17 @@ describe('required CI owns native fixture verification', () => {
 // Keep the full current qualification closure explicit: no manifest read is
 // needed to classify its own removal, or a source renamed outside the scope.
 const spinExpiryAccountingPaths = [
+  'scripts/qualification/spin-positive-fee-entry.py',
+  'scripts/qualification/spin-positive-fee-entry-oracle.py',
+  'scripts/qualification/spin-mixed-positive-fee-entry.sql',
+  'scripts/qualification/spin-positive-fee-entry.hosted.manifest.json',
+  'scripts/qualification/spin-positive-fee-entry.md',
+  'scripts/qualification/fixtures/spin-mixed-positive-fee/provider-supplement.sql',
+  'scripts/qualification/fixtures/spin-mixed-positive-fee/catalog-readback.sql',
+  'scripts/qualification/fixtures/spin-mixed-positive-fee/reference-data.sql',
+  'scripts/qualification/fixtures/spin-mixed-positive-fee/expected-metadata.json',
+  'scripts/qualification/fixtures/spin-mixed-positive-fee/preimage-metadata.json',
+  'scripts/qualification/fixtures/spin-mixed-positive-fee/provenance.json',
   'supabase/components/spin-mixed-basis-current-terminal.sql',
   'supabase/components/spin-mixed-basis-current-terminal.rollback.sql',
   'scripts/qualification/spin-mixed-current.py',
@@ -613,6 +624,10 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     'docs/spin-expiry-plan.md',
     'supabase/components/spin-mixed-basis-current-terminal.sql.bak',
     'supabase/components/spin-mixed-basis-current-terminal.rollback.sql.bak',
+    'scripts/qualification/spin-positive-fee-entry.py.bak',
+    'scripts/qualification/spin-positive-fee-entry-unrelated.py',
+    'scripts/qualification/spin-mixed-positive-fee-entry.sql.bak',
+    'scripts/qualification/fixtures/spin-mixed-positive-fee-notes/input.sql',
     'scripts/qualification/spin-mixed-current.py.bak',
     'scripts/qualification/spin-mixed-current-races.py.bak',
     'scripts/qualification/spin-mixed-current-assertions.py.bak',

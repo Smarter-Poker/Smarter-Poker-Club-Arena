@@ -1,0 +1,691 @@
+-- SOURCE ONLY / UNRUN. Genuine three-seat positive-fee ENTRY qualification.
+-- An admitted, disposable PG17 allocation only; never production.
+-- Baseline: notification PG17 0013's successful zero Union-host + real Mint.
+-- Current entry/bank/session/inner authority: mixed-positive-fee-entry-authority
+-- and entry-inner captures of 2026-09-18, after authentic provider supplements. No replacement
+-- financial functions, balance seeding, trigger disabling or historical IDs.
+--
+-- Parent restores three synthetic zero principals and the captured canonical
+-- cancellation actor's auth-only identity before real triggers (four auth rows,
+-- three profiles; the actor has no credentials, profile or live session),
+-- supplies execution_uuid, ordinary_user_uuid and a fresh v4 tournament_uuid,
+-- and installs the pinned current provider/entry supplement. This is not signup.
+-- Run from its maintained scripts/qualification path in the staged allocation;
+-- the parent supplies the exact four captured store-policy rows under inputs/.
+-- All subsequent requests below commit independently. On any failure retain
+-- stdout/stderr and the allocation: earlier COMMITs are not rolled back. Unknown
+-- commit outcomes must not be retried. Dispose the whole allocation after proof.
+-- ENTRY ONLY: no draw, launch, gameplay, mixed history, completion or historical
+-- recovery is qualified. No aging wait or timestamp backdating is performed.
+-- Session timeouts are settings, not proof that nested function-local timeouts
+-- cannot supersede them; the admitted outer allocation deadline remains required.
+\set ON_ERROR_STOP on
+\if :{?execution_uuid}
+\else
+  \quit 3
+\endif
+\if :{?ordinary_user_uuid}
+\else
+  \quit 3
+\endif
+\if :{?tournament_uuid}
+\else
+  \quit 3
+\endif
+
+SET statement_timeout='8s';
+SET lock_timeout='2s';
+SET idle_in_transaction_session_timeout='20s';
+SET timezone='UTC';
+SET datestyle='ISO,YMD';
+SET search_path=public,pg_temp;
+BEGIN;
+CREATE TEMP TABLE spin_q_inputs AS SELECT
+  :'execution_uuid'::uuid execution,
+  :'tournament_uuid'::uuid tournament,
+  '47965354-0e56-43ef-931c-ddaab82af765'::uuid owner_user,
+  '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid refund_actor,
+  :'ordinary_user_uuid'::uuid player1,
+  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-player-2') player2,
+  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-owner-session') owner_session,
+  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-session-1') session1,
+  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-session-2') session2,
+  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-bank-1') bank1,
+  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-bank-2') bank2,
+  extensions.uuid_generate_v5(:'execution_uuid'::uuid,'spin-bank-3') bank3,
+  clock_timestamp() preparation_started_at;
+CREATE TEMP TABLE spin_q_calls(stage text PRIMARY KEY,result jsonb NOT NULL);
+CREATE TEMP TABLE spin_q_trigger_modes AS
+  SELECT tgrelid,tgname,tgenabled FROM pg_trigger WHERE NOT tgisinternal;
+CREATE FUNCTION pg_temp.spin_q_assert(ok boolean,message text) RETURNS void
+LANGUAGE plpgsql AS $$BEGIN
+  IF ok IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'Spin real funded fixture: %',message;
+  END IF;
+END$$;
+DO $admission$
+DECLARE q record; relation_name text; occupied boolean;
+BEGIN
+  SELECT * INTO STRICT q FROM spin_q_inputs;
+  PERFORM pg_temp.spin_q_assert(current_user='postgres' AND session_user='postgres'
+    AND NOT (SELECT rolsuper FROM pg_roles WHERE rolname=current_user)
+    AND current_database()='qual_spin_expiry_'||replace(q.execution::text,'-','')
+    AND current_setting('qualification.execution_uuid',true)=q.execution::text
+    AND current_setting('port')='5432' AND inet_server_addr() IS NULL
+    AND current_setting('session_replication_role')='origin'
+    AND current_setting('server_version_num')::integer BETWEEN 170000 AND 179999,
+    'exact non-superuser private PG17 allocation required');
+  PERFORM pg_temp.spin_q_assert(q.tournament::text ~
+    '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    AND (SELECT count(DISTINCT id)=6 FROM unnest(ARRAY[q.execution,q.tournament,
+      q.owner_user,q.player1,q.player2,q.refund_actor]) id),
+    'distinct fixture, refund actor and canonical v4 tournament identities');
+  PERFORM pg_temp.spin_q_assert((SELECT count(*)=4 FROM auth.users)
+    AND (SELECT count(*)=3 FROM public.profiles)
+    AND (SELECT count(*)=3 FROM auth.users WHERE id IN(q.owner_user,q.player1,q.player2))
+    AND (SELECT count(*)=3 FROM public.profiles WHERE id IN(q.owner_user,q.player1,q.player2)
+      AND diamonds IS NOT DISTINCT FROM 0 AND diamond_balance IS NOT DISTINCT FROM 0
+      AND is_horse IS FALSE AND role='user') AND NOT EXISTS(SELECT 1 FROM auth.sessions),
+    'exact three pre-restored zero synthetic principals plus auth-only refund actor, no sessions');
+  PERFORM pg_temp.spin_q_assert((SELECT count(*)=1 FROM auth.users u
+    WHERE u.id=q.refund_actor AND u.aud='authenticated' AND u.role='authenticated'
+      AND u.email IS NULL AND u.encrypted_password IS NULL AND u.phone IS NULL
+      AND u.raw_app_meta_data='{}'::jsonb AND u.raw_user_meta_data='{}'::jsonb
+      AND u.is_sso_user=false AND u.is_anonymous=false AND u.email_change_confirm_status=0
+      AND NOT EXISTS(SELECT 1 FROM jsonb_each_text(to_jsonb(u)) f
+        WHERE f.key NOT IN('id','aud','role','raw_app_meta_data','raw_user_meta_data',
+          'is_sso_user','is_anonymous','email_change_confirm_status')
+          AND f.value IS NOT NULL AND f.value<>''))
+    AND NOT EXISTS(SELECT 1 FROM public.profiles WHERE id=q.refund_actor)
+    AND to_regclass('auth.identities') IS NULL,
+    'captured canonical refund actor is identity-only, without profile or credentials');
+  -- Exact bodies here complement the parent's full owner/ACL/trigger/provider
+  -- readback; these hashes alone do not establish that larger authority closure.
+  PERFORM pg_temp.spin_q_assert(
+    md5(pg_get_functiondef('public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure))
+      ='162eba07a4e75f16ae21e5ca809ee595'
+    AND md5(pg_get_functiondef('public.fn_create_seat_first_game_atomic(uuid,jsonb)'::regprocedure))
+      ='0669e34f1376e42d734f7632ea35eb6a'
+    AND md5(pg_get_functiondef('public.fn_take_seat_and_buy_in(uuid,integer)'::regprocedure))
+      ='a965493d4837187d433b3cdd40c5da81'
+    AND md5(pg_get_functiondef('public.fn_caller_session_is_live()'::regprocedure))
+      ='23ffeea99f9d9e76102ecbf6185222c0'
+    AND md5(pg_get_functiondef('public.fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)'::regprocedure))
+      ='67a6b85f00a785e22c4d89c6168253d3', 'captured current entry/session/bank endpoints');
+  PERFORM pg_temp.spin_q_assert(
+    md5(pg_get_functiondef('public.fn_spin_book_entry(uuid)'::regprocedure))='3e861cfde0bda50d16bc836a665bf4ab'
+    AND md5(pg_get_functiondef('public.fn_spin_rake_rate(numeric)'::regprocedure))='dad580a8513512273e6109b4fea19edd'
+    AND md5(pg_get_functiondef('public.fn_spin_reserve_pool(uuid)'::regprocedure))='d3596faa39ba012e437d769386f8a057'
+    AND public.fn_spin_rake_rate(1)=0.08,
+    'captured booking, reserve and independently specified fixed eight-percent rate');
+
+  FOREACH relation_name IN ARRAY ARRAY['clubs','unions','union_clubs','union_creators',
+    'club_members','chip_ledger','chip_transactions','wallet_transactions','ca_mint_ledger',
+    'ca_mint_policy','ca_chip_store_coverage','spin_fill_policy','tournaments','tables',
+    'table_seats','tournament_players','tournament_escrow','tournament_refund_entitlements',
+    'tournament_refund_tranches','tournament_refund_authorizations','tournament_obligations',
+    'tournament_cancellation_receipts','tournament_tickets','spin_bonus_pools',
+    'spin_reserve_ledger','spin_draw_receipts','tournament_launch_receipts','hand_history',
+    'tournament_spin_cancellation_unwinds','rake_records','wallet_credit_idempotency'] LOOP
+    EXECUTE format('SELECT EXISTS(SELECT 1 FROM public.%I)',relation_name) INTO occupied;
+    PERFORM pg_temp.spin_q_assert(NOT occupied,'nonempty initial relation: '||relation_name);
+  END LOOP;
+END $admission$;
+
+-- Exact current chip_treasury/player_wallet/mint/prize_liability policy inputs.
+\ir ../../inputs/captured-financial-store-policy.sql
+-- Include-only captured reference data; retains exact empty game/financial estate.
+\ir fixtures/spin-mixed-positive-fee/reference-data.sql
+SET LOCAL statement_timeout='8s';
+SET LOCAL lock_timeout='2s';
+INSERT INTO public.ca_mint_policy(id,per_operation_cap_chips,rolling_24h_cap_chips,
+  per_operation_cap_diamonds,rolling_24h_cap_diamonds,note)
+VALUES(1,100,100,1,1,'Isolated Spin positive-fee entry qualification: one genuine 100-chip Mint');
+-- Root-approved private positive policy. Real joined_at values remain untouched.
+INSERT INTO public.spin_fill_policy(id,unfilled_timeout_minutes) VALUES(true,1);
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','service_role')::text,true),
+  set_config('request.jwt.claim.sub',owner_user::text,true),
+  set_config('request.jwt.claim.role','service_role',true) FROM spin_q_inputs;
+INSERT INTO public.union_creators(user_id,note)
+SELECT owner_user,'Isolated real-funded Spin qualification' FROM spin_q_inputs;
+INSERT INTO public.unions(id,name,owner_id,slug,chip_balance,rake_wallet,bbj_wallet,promo_wallet,total_rake)
+SELECT execution,'Spin expiry qualification '||execution,owner_user,'spin-expiry-'||execution,
+  0,0,0,0,0 FROM spin_q_inputs;
+-- The proven Union host path has no opening grant; no money is directly seeded.
+INSERT INTO public.clubs(id,name,owner_id,is_union,chip_treasury,chip_pool,asset)
+SELECT execution,'Spin expiry host '||execution,owner_user,true,0,0,'chips' FROM spin_q_inputs;
+INSERT INTO public.union_clubs(union_id,club_id) SELECT execution,execution FROM spin_q_inputs;
+SELECT set_config('app.club_membership_source','join_club',true);
+INSERT INTO public.club_members(club_id,user_id,role,status,chip_balance)
+SELECT q.execution,u.id,'player','active',0 FROM spin_q_inputs q
+CROSS JOIN LATERAL (VALUES(q.owner_user),(q.player1),(q.player2)) u(id);
+SELECT set_config('app.club_membership_source','',true);
+INSERT INTO auth.sessions(id,user_id,created_at,updated_at,not_after)
+SELECT u.session_id,u.user_id,clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '1 hour'
+FROM spin_q_inputs q CROSS JOIN LATERAL
+  (VALUES(q.owner_session,q.owner_user),(q.session1,q.player1),(q.session2,q.player2)) u(session_id,user_id);
+GRANT SELECT ON spin_q_inputs TO service_role,authenticated;
+GRANT INSERT ON spin_q_calls TO service_role,authenticated;
+SELECT pg_temp.spin_q_assert((SELECT count(*)=1 AND bool_and((chip_treasury=0 AND chip_pool=0) IS TRUE)
+  FROM public.clubs) AND (SELECT count(*)=3 AND bool_and(chip_balance IS NOT DISTINCT FROM 0) FROM public.club_members)
+  AND NOT EXISTS(SELECT 1 FROM public.chip_ledger) AND NOT EXISTS(SELECT 1 FROM public.ca_mint_ledger),
+  'structural setup must not mint, credit or debit anything');
+COMMIT;
+SELECT pg_temp.spin_q_assert((SELECT count(*)=3 FROM auth.sessions)
+  AND (SELECT count(*)=3 FROM spin_q_inputs q CROSS JOIN LATERAL
+    (VALUES(q.owner_session,q.owner_user),(q.session1,q.player1),(q.session2,q.player2)) expected(sid,uid)
+    JOIN auth.sessions s ON s.id=expected.sid AND s.user_id=expected.uid
+    WHERE s.not_after>clock_timestamp() AND s.created_at>=q.preparation_started_at),
+  'three committed live sessions belong to their exact synthetic principals');
+SELECT jsonb_build_object('stage','structural_setup_committed','execution',execution,
+  'tournament',tournament,'club',execution,'owner',owner_user,'players',jsonb_build_array(player1,player2,owner_user))
+FROM spin_q_inputs;
+
+SELECT jsonb_build_object('stage','mint_intent','execution',execution,'idempotency_key','spin-expiry-fixture:'||execution)
+FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','service_role')::text,true),
+  set_config('request.jwt.claim.sub',owner_user::text,true),
+  set_config('request.jwt.claim.role','service_role',true) FROM spin_q_inputs;
+SET LOCAL ROLE service_role;
+INSERT INTO spin_q_calls SELECT 'mint',public.fn_ca_mint('chips','club',execution,100,
+  'Isolated Spin positive-fee entry qualification','spin-expiry-fixture:'||execution,'admin') FROM spin_q_inputs;
+RESET ROLE;
+SELECT pg_temp.spin_q_assert((SELECT result->>'ok'='true' AND result->>'replayed'='false'
+  AND (result->>'balance_before')::numeric=0 AND (result->>'balance_after')::numeric=100
+  FROM spin_q_calls WHERE stage='mint'),'real Mint response');
+COMMIT;
+SELECT pg_temp.spin_q_assert((SELECT count(*)=1 AND sum(amount)=100 FROM public.ca_mint_ledger)
+  AND (SELECT count(*)=1 FROM public.ca_mint_ledger m JOIN public.chip_ledger l ON l.id=m.chip_ledger_id
+    JOIN spin_q_inputs q ON m.holder_id=q.execution JOIN spin_q_calls c ON c.stage='mint'
+    WHERE m.op_id='spin-expiry-fixture:'||q.execution AND m.action='mint' AND m.asset='chips'
+      AND m.holder_type='club' AND m.amount=100 AND m.balance_before=0 AND m.balance_after=100
+      AND l.id=(c.result->>'ledger_id')::uuid AND l.idempotency_key='mint:'||m.op_id
+      AND l.category='mint' AND l.from_type='issuance_reserve' AND l.to_type='club_treasury'
+      AND l.to_entity_id=q.execution AND l.status='posted' AND l.amount=100)
+  AND (SELECT count(*)=1 AND sum(amount)=100 AND bool_and((status='posted') IS TRUE) FROM public.chip_ledger)
+  AND (SELECT count(*)=1 FROM public.chip_transactions c JOIN spin_q_inputs q ON c.club_id=q.execution
+    WHERE c.transaction_type='treasury_mint' AND c.from_user_id=q.owner_user
+      AND c.to_user_id IS NULL AND c.amount=100 AND c.balance_after=100)
+  AND (SELECT count(*)=1 FROM public.chip_transactions)
+  AND (SELECT chip_treasury=100 FROM public.clubs)
+  AND (SELECT count(*)=3 AND bool_and(chip_balance IS NOT DISTINCT FROM 0) FROM public.club_members),
+  'committed real issuance and still-empty wallets');
+SELECT jsonb_build_object('stage','mint_committed','receipt',result) FROM spin_q_calls WHERE stage='mint';
+
+-- Read-only assertion over an actual bank request, never a replacement writer.
+CREATE FUNCTION pg_temp.spin_q_bank_receipt(stage_name text,recipient uuid,operation uuid,remaining numeric)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE response jsonb; q record;
+BEGIN
+  SELECT * INTO STRICT q FROM spin_q_inputs;
+  SELECT result INTO STRICT response FROM spin_q_calls WHERE stage=stage_name;
+  PERFORM pg_temp.spin_q_assert(response->>'success'='true' AND response->>'replayed'='false'
+    AND response->>'op_id'=operation::text AND response->>'destination'='player_wallet'
+    AND (response->>'amount')::numeric=1 AND (response->>'bank_before')::numeric=remaining+1
+    AND (response->>'bank_after')::numeric=remaining AND (response->>'recipient_balance_after')::numeric=1,
+    stage_name||' fresh response');
+  PERFORM pg_temp.spin_q_assert((SELECT count(*)=1 FROM public.chip_transactions
+    WHERE id=(response->>'transaction_id')::uuid AND club_id=q.execution
+      AND from_user_id=q.owner_user AND to_user_id=recipient AND amount=1
+      AND transaction_type='club_bank_send' AND metadata->>'op_id'=operation::text
+      AND metadata->>'destination'='player_wallet' AND balance_after=remaining)
+    AND (SELECT count(*)=1 FROM public.chip_transactions WHERE metadata->>'op_id'=operation::text)
+    AND (SELECT count(*)=1 FROM public.chip_ledger WHERE correlation_id=operation
+      AND idempotency_key='club_bank_send:'||operation AND club_id=q.execution
+      AND from_type='club_treasury' AND from_entity_id=q.execution
+      AND to_type='player_wallet' AND to_entity_id=recipient AND category='club_bank_send'
+      AND status='posted' AND amount=1)
+    AND (SELECT count(*)=1 FROM public.chip_ledger WHERE correlation_id=operation)
+    AND (SELECT chip_treasury=remaining FROM public.clubs WHERE id=q.execution)
+    AND (SELECT chip_balance=1 FROM public.club_members WHERE club_id=q.execution AND user_id=recipient),
+    stage_name||' committed transaction, exact journal and wallet');
+END$$;
+
+SELECT jsonb_build_object('stage','bank1_intent','execution',execution,'operation',bank1,'recipient',player1)
+FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','authenticated','session_id',owner_session)::text,true),
+  set_config('request.jwt.claim.sub',owner_user::text,true),set_config('request.jwt.claim.role','authenticated',true)
+FROM spin_q_inputs;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.spin_q_assert(auth.uid()=(SELECT owner_user FROM spin_q_inputs)
+  AND auth.role()='authenticated' AND public.fn_caller_session_is_live()
+  AND NOT public.fn_caller_is_engine(),'bank1 genuine authenticated owner session');
+INSERT INTO spin_q_calls SELECT 'bank1',public.fn_club_bank_send(execution,player1,1,'player_wallet',
+  'Isolated Spin expiry paid-entry capital',bank1) FROM spin_q_inputs;
+RESET ROLE;
+COMMIT;
+SELECT pg_temp.spin_q_bank_receipt('bank1',player1,bank1,99) FROM spin_q_inputs;
+SELECT jsonb_build_object('stage','bank1_committed','receipt',result) FROM spin_q_calls WHERE stage='bank1';
+
+SELECT jsonb_build_object('stage','bank2_intent','execution',execution,'operation',bank2,'recipient',player2)
+FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','authenticated','session_id',owner_session)::text,true),
+  set_config('request.jwt.claim.sub',owner_user::text,true),set_config('request.jwt.claim.role','authenticated',true)
+FROM spin_q_inputs;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.spin_q_assert(auth.uid()=(SELECT owner_user FROM spin_q_inputs)
+  AND auth.role()='authenticated' AND public.fn_caller_session_is_live()
+  AND NOT public.fn_caller_is_engine(),'bank2 genuine authenticated owner session');
+INSERT INTO spin_q_calls SELECT 'bank2',public.fn_club_bank_send(execution,player2,1,'player_wallet',
+  'Isolated Spin expiry paid-entry capital',bank2) FROM spin_q_inputs;
+RESET ROLE;
+COMMIT;
+SELECT pg_temp.spin_q_bank_receipt('bank2',player2,bank2,98) FROM spin_q_inputs;
+SELECT pg_temp.spin_q_assert((SELECT count(*)=3 AND sum(amount)=102 FROM public.chip_ledger)
+  AND (SELECT count(*)=3 AND sum(amount)=102 FROM public.chip_transactions)
+  AND (SELECT count(*)=3 AND sum(chip_balance)=2 FROM public.club_members),
+  'one Mint and exactly two genuine bank transfers');
+SELECT jsonb_build_object('stage','bank2_committed','receipt',result) FROM spin_q_calls WHERE stage='bank2';
+
+-- Real bank authority expressly permits recipient=caller; no fourth principal.
+SELECT jsonb_build_object('stage','bank3_intent','execution',execution,'operation',bank3,'recipient',owner_user)
+FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','authenticated','session_id',owner_session)::text,true),
+  set_config('request.jwt.claim.sub',owner_user::text,true),set_config('request.jwt.claim.role','authenticated',true)
+FROM spin_q_inputs;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.spin_q_assert(auth.uid()=(SELECT owner_user FROM spin_q_inputs)
+  AND auth.role()='authenticated' AND public.fn_caller_session_is_live()
+  AND NOT public.fn_caller_is_engine(),'bank3 genuine authenticated owner session');
+INSERT INTO spin_q_calls SELECT 'bank3',public.fn_club_bank_send(execution,owner_user,1,'player_wallet',
+  'Isolated Spin expiry paid-entry capital',bank3) FROM spin_q_inputs;
+RESET ROLE;
+COMMIT;
+SELECT pg_temp.spin_q_bank_receipt('bank3',owner_user,bank3,97) FROM spin_q_inputs;
+SELECT pg_temp.spin_q_assert((SELECT count(*)=4 AND sum(amount)=103 FROM public.chip_ledger)
+  AND (SELECT count(*)=4 AND sum(amount)=103 FROM public.chip_transactions)
+  AND (SELECT count(*)=3 AND bool_and(chip_balance IS NOT DISTINCT FROM 1) FROM public.club_members),
+  'one Mint and three real bank transfers, including the permitted owner self-send');
+SELECT jsonb_build_object('stage','bank3_committed','receipt',result) FROM spin_q_calls WHERE stage='bank3';
+
+SELECT jsonb_build_object('stage','creator_intent','execution',execution,'tournament',tournament) FROM spin_q_inputs;
+BEGIN;
+-- The genuine zero-opening-grant Union host is canonically union-owned: the
+-- tournament/table BEFORE INSERT stampers retain this exact fixture union.
+CREATE TEMP TABLE spin_q_create_config AS SELECT jsonb_build_object(
+  'club_id',execution,'union_id',execution,'name','Spin expiry qualification '||execution,
+  'game_type','NLH','variant','spin','tournament_type','SPIN','buy_in_amount',1,'buy_in_fee',0,
+  'guaranteed_prize',0,'starting_chips',1000,'max_players',3,'min_players',3,'table_size',3,
+  'current_players',0,'status','REGISTERING',
+  'blind_structure',jsonb_build_array(jsonb_build_object('level',1,'smallBlind',10,'bigBlind',20,'ante',0,'duration',180)),
+  'payout_structure',jsonb_build_array(jsonb_build_object('place',1,'percentage',100)),
+  'start_time',clock_timestamp()+interval '1 day','late_reg_levels',0,'late_reg_mins',0,
+  'satellite_target_id',NULL,'satellite_seats',NULL,'short_description',NULL,
+  'spin_multiplier',NULL,'spin_locked_tiers',NULL) config FROM spin_q_inputs;
+GRANT SELECT ON spin_q_create_config TO service_role;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','service_role')::text,true),
+  set_config('request.jwt.claim.sub',owner_user::text,true),set_config('request.jwt.claim.role','service_role',true)
+FROM spin_q_inputs;
+SET LOCAL ROLE service_role;
+INSERT INTO spin_q_calls SELECT 'create',public.fn_create_seat_first_game_atomic(q.tournament,c.config)
+FROM spin_q_inputs q CROSS JOIN spin_q_create_config c;
+RESET ROLE;
+SELECT pg_temp.spin_q_assert((SELECT result->>'ok'='true' AND result->>'replayed'='false'
+  AND result->'tournament'->>'id'=(SELECT tournament::text FROM spin_q_inputs)
+  AND result->>'table_id' IS NOT NULL FROM spin_q_calls WHERE stage='create'),'canonical fresh creator response');
+COMMIT;
+CREATE TEMP TABLE spin_q_table AS SELECT (result->>'table_id')::uuid id FROM spin_q_calls WHERE stage='create';
+GRANT SELECT ON spin_q_table TO authenticated,service_role;
+SELECT pg_temp.spin_q_assert((SELECT count(*)=1 FROM public.tournaments t JOIN spin_q_inputs q ON t.id=q.tournament
+  WHERE t.club_id=q.execution AND t.union_id=q.execution AND t.variant='spin' AND t.status='REGISTERING'
+    AND t.started_at IS NULL AND t.max_players=3 AND t.buy_in_amount=1 AND t.buy_in_fee=0)
+  AND (SELECT count(*)=1 FROM public.tournaments)
+  AND (SELECT count(*)=1 FROM public.tables b JOIN spin_q_table x ON b.id=x.id CROSS JOIN spin_q_inputs q
+    WHERE b.tournament_id=q.tournament AND b.club_id=q.execution AND b.union_id=q.execution
+      AND b.status='waiting' AND b.max_players=3)
+  AND (SELECT count(*)=1 FROM public.tables)
+  AND public.fn_poker_diamond_tournament((SELECT tournament FROM spin_q_inputs)) IS FALSE,
+  'committed single ordinary-chip parent/table pair');
+SELECT jsonb_build_object('stage','creator_committed','receipt',result) FROM spin_q_calls WHERE stage='create';
+
+-- The per-seat observation binds the genuine purchase, not merely an RPC flag.
+CREATE FUNCTION pg_temp.spin_q_paid_receipt(stage_name text,player uuid,seat_no integer)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE response jsonb; q record; table_id_value uuid;
+BEGIN
+  SELECT * INTO STRICT q FROM spin_q_inputs;
+  SELECT id INTO STRICT table_id_value FROM spin_q_table;
+  SELECT result INTO STRICT response FROM spin_q_calls WHERE stage=stage_name;
+  PERFORM pg_temp.spin_q_assert(response->>'ok'='true' AND response->>'table_id'=table_id_value::text
+    AND (response->>'seat_number')::integer=seat_no AND (response->>'stack')::numeric=1000
+    AND response->>'seat_reserved'='true' AND (response->>'seats_taken')::integer=seat_no
+    AND (response->>'seats_needed')::integer=3 AND (response->>'starts_now')::boolean=(seat_no=3)
+    AND (response->>'cost')::numeric=1 AND response->>'asset'='chips',stage_name||' fresh paid-seat response');
+  PERFORM pg_temp.spin_q_assert((SELECT count(*)=1 FROM public.table_seats s WHERE s.table_id=table_id_value
+      AND s.user_id=player AND s.seat_number=seat_no AND s.stack=1000 AND s.left_at IS NULL
+      AND s.joined_at>=q.preparation_started_at AND s.joined_at<=clock_timestamp())
+    AND (SELECT count(*)=1 FROM public.tournament_players WHERE tournament_id=q.tournament AND user_id=player)
+    AND (SELECT chip_balance=0 FROM public.club_members WHERE club_id=q.execution AND user_id=player)
+    AND (SELECT count(*)=1 FROM public.tournament_refund_entitlements e JOIN public.chip_ledger l ON l.id=e.source_ledger_id
+      WHERE e.tournament_id=q.tournament AND e.user_id=player AND e.entitlement_kind='wallet_charge'
+        AND e.registration_id IS NULL AND e.charge_category='tournament_buyin'
+        AND e.refund_wallet_club_id=q.execution AND e.gross=1 AND e.refund_prize=1
+        AND e.refund_bounty=0 AND e.refund_fee=0 AND l.tournament_id=q.tournament
+        AND l.club_id=q.execution AND l.from_type='player_wallet' AND l.from_entity_id=player
+        AND l.to_type='prize_liability' AND l.to_entity_id=q.tournament
+        AND l.category='tournament_buyin' AND l.status='posted' AND l.amount=1)
+    AND (SELECT count(*)=1 FROM public.wallet_transactions WHERE user_id=player
+      AND related_entity_id=q.tournament AND wallet_type='PLAYER' AND type='debit'
+      AND category='tournament_buyin' AND amount=1 AND balance_after=0),
+    stage_name||' committed seat, roster, wallet debit and paid entitlement');
+END$$;
+
+SELECT jsonb_build_object('stage','seat1_intent','execution',execution,'user',player1,'session',session1,
+  'table',(SELECT id FROM spin_q_table),'seat',1) FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',player1,'role','authenticated','session_id',session1)::text,true),
+  set_config('request.jwt.claim.sub',player1::text,true),set_config('request.jwt.claim.role','authenticated',true)
+FROM spin_q_inputs;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.spin_q_assert(auth.uid()=(SELECT player1 FROM spin_q_inputs) AND auth.role()='authenticated'
+  AND public.fn_caller_session_is_live() AND NOT public.fn_caller_is_engine(),'seat1 actual authenticated live session');
+INSERT INTO spin_q_calls SELECT 'seat1',public.fn_take_seat_and_buy_in(id,1) FROM spin_q_table;
+RESET ROLE;
+COMMIT;
+SELECT pg_temp.spin_q_paid_receipt('seat1',player1,1) FROM spin_q_inputs;
+SELECT jsonb_build_object('stage','seat1_committed','receipt',result) FROM spin_q_calls WHERE stage='seat1';
+
+SELECT jsonb_build_object('stage','seat2_intent','execution',execution,'user',player2,'session',session2,
+  'table',(SELECT id FROM spin_q_table),'seat',2) FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',player2,'role','authenticated','session_id',session2)::text,true),
+  set_config('request.jwt.claim.sub',player2::text,true),set_config('request.jwt.claim.role','authenticated',true)
+FROM spin_q_inputs;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.spin_q_assert(auth.uid()=(SELECT player2 FROM spin_q_inputs) AND auth.role()='authenticated'
+  AND public.fn_caller_session_is_live() AND NOT public.fn_caller_is_engine(),'seat2 actual authenticated live session');
+INSERT INTO spin_q_calls SELECT 'seat2',public.fn_take_seat_and_buy_in(id,2) FROM spin_q_table;
+RESET ROLE;
+COMMIT;
+SELECT pg_temp.spin_q_paid_receipt('seat2',player2,2) FROM spin_q_inputs;
+SELECT jsonb_build_object('stage','seat2_committed','receipt',result) FROM spin_q_calls WHERE stage='seat2';
+
+-- The third actual paid seat invokes booking and deferred fee capture.
+SELECT jsonb_build_object('stage','seat3_intent','execution',execution,'user',owner_user,'session',owner_session,
+  'table',(SELECT id FROM spin_q_table),'seat',3) FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','authenticated','session_id',owner_session)::text,true),
+  set_config('request.jwt.claim.sub',owner_user::text,true),set_config('request.jwt.claim.role','authenticated',true)
+FROM spin_q_inputs;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.spin_q_assert(auth.uid()=(SELECT owner_user FROM spin_q_inputs) AND auth.role()='authenticated'
+  AND public.fn_caller_session_is_live() AND NOT public.fn_caller_is_engine(),'seat3 actual authenticated live session');
+INSERT INTO spin_q_calls SELECT 'seat3',public.fn_take_seat_and_buy_in(id,3) FROM spin_q_table;
+RESET ROLE;
+COMMIT;
+SELECT pg_temp.spin_q_paid_receipt('seat3',owner_user,3) FROM spin_q_inputs;
+SELECT jsonb_build_object('stage','seat3_committed','receipt',result) FROM spin_q_calls WHERE stage='seat3';
+
+-- Independent expectations: 3 x 1 chip at the captured fixed 8% rate yields
+-- 0.24 fee, 2.76 reserve, 0.08 attributable to each of three paid principals.
+-- Do not derive these expected amounts by invoking the function under test.
+-- All observations follow the successful COMMIT, including deferred capture.
+BEGIN READ ONLY;
+SELECT pg_temp.spin_q_assert((SELECT count(*)=3 FROM public.table_seats)
+  AND (SELECT count(*)=3 FROM public.tournament_players)
+  AND (SELECT count(*)=3 AND count(DISTINCT user_id)=3 AND count(DISTINCT source_ledger_id)=3
+    FROM public.tournament_refund_entitlements)
+  AND (SELECT count(*)=3 AND sum(amount)=3 FROM public.wallet_transactions)
+  AND (SELECT count(*)=8 AND bool_and((status='posted') IS TRUE) FROM public.chip_ledger)
+  AND (SELECT count(*)=7 FROM public.chip_transactions)
+  AND (SELECT count(*)=3 AND count(DISTINCT c.from_user_id)=3 FROM public.chip_transactions c
+    CROSS JOIN spin_q_inputs q WHERE c.club_id=q.execution
+      AND c.from_user_id IN(q.player1,q.player2,q.owner_user)
+      AND c.transaction_type='tournament_buyin' AND c.amount=1)
+  AND (SELECT count(*)=3 AND bool_and(chip_balance IS NOT DISTINCT FROM 0) FROM public.club_members)
+  AND (SELECT chip_treasury=97 AND chip_pool=0 FROM public.clubs)
+  AND (SELECT status='REGISTERING' AND started_at IS NULL AND current_players=3 AND prize_pool=3
+    AND bounty_pool=0 AND total_rake=0 AND COALESCE(spin_multiplier,0)=0
+    AND format_contract='spin-v1' AND restart_source_id IS NULL FROM public.tournaments)
+  AND (SELECT status='waiting' AND current_players=3 FROM public.tables),
+  'three real paid seats, exact wallets/journals and unlaunched parent; starts_now is not launch proof');
+SELECT pg_temp.spin_q_assert((SELECT count(*)=1 AND bool_and((enforced AND closed_at IS NULL
+  AND terminal_closed_at IS NULL AND gross_in=3 AND prize_balance=0 AND bounty_balance=0 AND fee_balance=.24
+  AND fee_entries_in=.24 AND satellite_fee_in=0 AND bounty_in=0 AND overlay_in=0 AND satellite_in=0
+  AND prize_out=0 AND bounty_out=0 AND fee_out=0 AND refund_prize=0 AND refund_bounty=0 AND refund_fee=0
+  AND reserve_out=2.76 AND reserve_in=0) IS TRUE) FROM public.tournament_escrow),
+  'open booked-entry escrow: 3 gross minus 2.76 reserve minus .24 fee leaves zero prize liability');
+SELECT pg_temp.spin_q_assert((SELECT count(*)=1 FROM public.spin_bonus_pools p CROSS JOIN spin_q_inputs q
+    WHERE p.club_id=q.execution AND p.balance=2.76 AND p.total_deposited=2.76
+      AND p.total_drawn=0 AND p.spin_count=1 AND p.bonus_count=0 AND p.seeded_amount=0
+      AND p.highest_stake=1 AND p.surplus_returned=0 AND p.seed_returned_amount=0)
+  AND (SELECT count(*)=1 FROM public.spin_bonus_pools)
+  AND (SELECT count(*)=1 FROM public.spin_reserve_ledger r CROSS JOIN spin_q_inputs q
+    WHERE r.club_id=q.execution AND r.tournament_id=q.tournament AND r.kind='contribution'
+      AND r.amount=2.76 AND r.balance_after=2.76 AND r.multiplier IS NULL
+      AND r.buy_in=1 AND r.seats=3 AND r.house_rake=.24 AND r.terminal_closed_at IS NULL)
+  AND (SELECT count(*)=1 FROM public.spin_reserve_ledger)
+  AND (SELECT count(*)=1 FROM public.chip_ledger l CROSS JOIN spin_q_inputs q
+    JOIN public.spin_bonus_pools p ON p.club_id=q.execution
+    WHERE l.category='spin_entry' AND l.status='posted' AND l.amount=2.76
+      AND l.tournament_id=q.tournament AND l.from_type='prize_liability'
+      AND l.from_entity_id=q.tournament AND l.to_type='spin_reserve' AND l.to_entity_id=p.id
+      AND l.idempotency_key='spin:'||q.tournament::text||':entry'),
+  'one real contribution and one exact keyed reserve journal, without an invented draw or seeded reserve');
+SELECT pg_temp.spin_q_assert((SELECT count(*)=1 FROM public.rake_records r CROSS JOIN spin_q_inputs q
+    WHERE r.tournament_id=q.tournament AND r.club_id=q.execution AND r.source='fn_spin_book_entry'
+      AND r.hand_id IS NULL AND r.table_id IS NULL AND r.is_tournament IS TRUE
+      AND r.rake_amount=.24 AND r.pot_size=3 AND r.num_players=3 AND r.bbj_contribution=0
+      AND r.player_contributions=jsonb_build_object(q.player1::text,1,q.player2::text,1,q.owner_user::text,1)
+      AND r.metadata->>'kind'='spin_rake' AND (r.metadata->>'buy_in')::numeric=1
+      AND (r.metadata->>'rake_rate')::numeric=.08 AND r.metadata->>'booked_at'='third_paid_seat'
+      AND r.metadata->>'reserve_owner'=q.execution::text AND r.metadata->>'treasury_credited'='false'
+      AND (r.metadata->>'rake_per_player')::numeric=.08 AND (r.metadata->>'seats_attributed')::integer=3)
+  AND (SELECT count(*)=1 FROM public.rake_records),
+  'one actual positive fee with exactly the three charged entrants and independently expected eight-percent attribution');
+SELECT pg_temp.spin_q_assert((SELECT count(*)=1 FROM public.accounting_tournament_fee_batches b
+    JOIN public.rake_records r ON r.id=b.rake_record_id CROSS JOIN spin_q_inputs q
+    JOIN public.spin_reserve_ledger reserve ON reserve.tournament_id=q.tournament
+    WHERE b.tournament_id=q.tournament AND b.status='captured' AND b.source_version=2
+      AND b.rake_amount=.24 AND b.captured_at=r.created_at
+      AND b.source_fingerprint=public.fn_accounting_tournament_fee_fingerprint(r)
+      AND b.source_manifest->>'union_id'=q.execution::text
+      AND b.source_manifest->>'game_type'='spin'
+      AND b.source_manifest->>'spin_reserve_id'=reserve.id::text
+      AND jsonb_array_length(b.source_manifest->'contributors')=3)
+  AND (SELECT count(*)=1 FROM public.accounting_tournament_fee_batches)
+  AND (SELECT count(*)=3 AND count(DISTINCT player_id)=3 AND count(DISTINCT registration_id)=3
+    AND count(DISTINCT source_charge_ledger_id)=3 AND count(DISTINCT source_entitlement_id)=3
+    AND sum(rake_credit)=.24 AND bool_and(rake_credit IS NOT DISTINCT FROM .08)
+    FROM public.accounting_tournament_fee_sources),
+  'actual deferred COMMIT capture is version 2 captured, never legacy_unverified or a fallback success');
+SELECT pg_temp.spin_q_assert((SELECT count(*)=3 FROM public.accounting_tournament_fee_sources s
+    JOIN public.accounting_tournament_fee_batches b ON b.rake_record_id=s.rake_record_id
+    JOIN public.rake_records r ON r.id=s.rake_record_id
+    JOIN public.tournament_refund_entitlements e ON e.id=s.source_entitlement_id
+    JOIN public.chip_ledger l ON l.id=s.source_charge_ledger_id
+    JOIN public.tournament_players tp ON tp.id=s.registration_id
+    CROSS JOIN spin_q_inputs q
+    JOIN public.accounting_tournament_fee_cutover cut ON cut.singleton
+    WHERE s.tournament_id=q.tournament AND s.player_id IN(q.player1,q.player2,q.owner_user)
+      AND s.club_id=q.execution AND s.union_id=q.execution AND s.coordinator_union_id=q.execution
+      AND s.game_type='spin' AND s.rake_credit=.08 AND s.recorded_at=b.captured_at
+      AND tp.tournament_id=q.tournament AND tp.user_id=s.player_id AND tp.club_id=q.execution
+      AND tp.registered_at=s.charged_at AND e.tournament_id=q.tournament AND e.user_id=s.player_id
+      AND e.source_ledger_id=l.id AND e.created_at=s.charged_at AND e.gross=1
+      AND l.created_at=s.charged_at AND l.amount=1 AND l.status='posted'
+      AND s.charged_at>=cut.starts_at AND s.charged_at<=r.created_at
+      AND s.contract->>'player_id'=s.player_id::text AND s.contract->>'club_id'=q.execution::text
+      AND s.contract->>'union_id'=q.execution::text AND s.contract->>'coordinator_union_id'=q.execution::text
+      AND (s.contract->>'rake_credit')::numeric=.08 AND (s.contract->>'club_residual')::numeric=.08
+      AND (s.contract->>'terms_at')::timestamptz=s.charged_at
+      AND s.contract->>'is_union_house'='true' AND s.contract->'tiers'='[]'::jsonb
+      AND s.contract->'union_agreement'='null'::jsonb
+      AND EXISTS(SELECT 1 FROM public.accounting_agreement_history h
+        WHERE h.id=(s.contract->'membership'->>'history_id')::bigint
+          AND h.entity_type='club_members' AND h.club_id=q.execution AND h.subject_user_id=s.player_id
+          AND h.observed_at<=s.charged_at AND h.after_terms->>'status'='active'
+          AND s.contract->'membership'=jsonb_build_object('history_id',h.id,
+            'observed_at',h.observed_at,'terms',h.after_terms))
+      AND EXISTS(SELECT 1 FROM jsonb_array_elements(b.source_manifest->'contributors') c
+        WHERE c->>'player_id'=s.player_id::text AND c->>'club_id'=q.execution::text
+          AND c->>'registration_id'=tp.id::text AND c->>'entitlement_id'=e.id::text
+          AND c->>'charge_ledger_id'=l.id::text AND (c->>'charged_at')::timestamptz=s.charged_at
+          AND (c->>'weight')::numeric=1)),
+  'each .08 source is bound to its actual charge, roster, immutable entitlement and membership-at-charge contract');
+SELECT pg_temp.spin_q_assert((SELECT count(*)=3 FROM public.union_pnl_original_flows)
+  AND (SELECT count(*)=3 FROM public.union_pnl_original_flows f
+    JOIN public.chip_ledger l ON l.id=f.ledger_id
+    JOIN public.union_pnl_transaction_frames frame ON frame.transaction_id=f.transaction_id
+    CROSS JOIN spin_q_inputs q
+    WHERE l.category='tournament_buyin' AND l.tournament_id=q.tournament AND l.amount=1
+      AND f.ledger_snapshot=to_jsonb(l) AND f.recognized_at=frame.observed_at
+      AND f.game_scope=jsonb_build_object('game_union_id',q.execution,'host_club_id',q.execution,
+        'tournament_id',q.tournament,'is_private',false,'asset','chips','unit_scale',2))
+  AND (SELECT count(*)=3 AND count(DISTINCT f.transaction_id)=3 FROM public.union_pnl_original_flows f),
+  'three exact original entry journals were captured by actual current producer triggers in three committed transactions');
+-- Every current ownership/inventory row has its actual trigger projection in
+-- retained history; no expected exact event count is fabricated for delegates.
+DO $inventory$
+DECLARE relation_name text; missing boolean;
+BEGIN
+  FOREACH relation_name IN ARRAY ARRAY['union_clubs','tournaments','tables','tournament_players','table_seats'] LOOP
+    EXECUTE format('SELECT EXISTS(SELECT 1 FROM public.%I x WHERE NOT EXISTS(
+      SELECT 1 FROM public.union_pnl_inventory_events e
+      JOIN public.union_pnl_transaction_frames f ON f.transaction_id=e.transaction_id
+      WHERE e.source_name=$1 AND e.row_id=x.id AND e.observed_at=f.observed_at
+        AND e.after_row=public.fn_union_pnl_inventory_project($1,to_jsonb(x))))',relation_name)
+      INTO missing USING relation_name;
+    PERFORM pg_temp.spin_q_assert(NOT missing,'missing current producer inventory projection: '||relation_name);
+  END LOOP;
+END $inventory$;
+SELECT pg_temp.spin_q_assert((SELECT chip_treasury FROM public.clubs)
+  +(SELECT sum(chip_balance) FROM public.club_members)
+  +(SELECT balance FROM public.spin_bonus_pools)
+  +(SELECT prize_balance+bounty_balance+fee_balance FROM public.tournament_escrow)=100
+  AND (SELECT chip_balance=0 AND rake_wallet=0 AND bbj_wallet=0 AND promo_wallet=0 AND total_rake=0 FROM public.unions),
+  '100 genuine issued chips = 97 treasury + 0 player wallets + 2.76 reserve + .24 open fee liability');
+SELECT pg_temp.spin_q_assert((SELECT count(*)=4 FROM auth.users)
+  AND (SELECT count(*)=3 AND bool_and((diamonds=0 AND diamond_balance=0 AND is_horse=false) IS TRUE)
+    FROM public.profiles)
+  AND (SELECT count(*)=3 FROM auth.sessions)
+  AND (SELECT count(*)=3 FROM spin_q_inputs q CROSS JOIN LATERAL
+    (VALUES(q.owner_session,q.owner_user),(q.session1,q.player1),(q.session2,q.player2)) expected(sid,uid)
+    JOIN auth.sessions s ON s.id=expected.sid AND s.user_id=expected.uid
+    WHERE s.not_after>clock_timestamp() AND s.created_at>=q.preparation_started_at),
+  'three exact live synthetic sessions remain, with no Diamond issuance or extra user/profile');
+DO $no_completion$
+DECLARE relation_name text; occupied boolean;
+BEGIN
+  FOREACH relation_name IN ARRAY ARRAY['tournament_refund_tranches','tournament_refund_authorizations',
+    'tournament_obligations','tournament_cancellation_receipts','tournament_tickets',
+    'spin_draw_receipts','tournament_launch_receipts','hand_history','hand_atomic_commits',
+    'tournament_spin_cancellation_unwinds','wallet_credit_idempotency','tournament_terminal_settlements',
+    'tournament_payouts','accounting_tournament_fee_recognitions','accounting_tournament_recognized_sources',
+    'accounting_cash_accrual_batches','accounting_cash_rake_sources','agent_commissions',
+    'union_wallet_transactions','ca_ledger_write_failures'] LOOP
+    EXECUTE format('SELECT EXISTS(SELECT 1 FROM public.%I)',relation_name) INTO occupied;
+    PERFORM pg_temp.spin_q_assert(NOT occupied,'entry-only boundary violated: '||relation_name);
+  END LOOP;
+  PERFORM pg_temp.spin_q_assert(NOT EXISTS(
+    (SELECT tgrelid,tgname,tgenabled FROM pg_trigger WHERE NOT tgisinternal
+     EXCEPT SELECT * FROM spin_q_trigger_modes)
+    UNION ALL (SELECT * FROM spin_q_trigger_modes
+     EXCEPT SELECT tgrelid,tgname,tgenabled FROM pg_trigger WHERE NOT tgisinternal)),
+    'all original trigger identities/enabled states preserved');
+END $no_completion$;
+SELECT jsonb_build_object('stage','positive_fee_entry_committed_observation','execution',q.execution,
+  'tournament',q.tournament,'club',q.execution,'owner',q.owner_user,
+  'players',jsonb_build_array(q.player1,q.player2,q.owner_user),'table',(SELECT id FROM spin_q_table),
+  'preparation_started_at',q.preparation_started_at,'observed_at',clock_timestamp(),
+  'entry_amount',3,'fee_amount',.24,'reserve_amount',2.76,'credit_per_player',.08,
+  'financial_business_qualification_passed',false,'mixed_history_qualification',false,
+  'terminal_qualification',false,'historical_qualification',false,'production_qualification',false,
+  'request_receipts',(SELECT jsonb_object_agg(stage,result ORDER BY stage) FROM spin_q_calls),
+  'club_row',(SELECT to_jsonb(c) FROM public.clubs c),
+  'union_row',(SELECT to_jsonb(u) FROM public.unions u),
+  'tournament_row',(SELECT to_jsonb(t) FROM public.tournaments t),
+  'table_row',(SELECT to_jsonb(t) FROM public.tables t),
+  'members',(SELECT jsonb_agg(to_jsonb(m) ORDER BY m.user_id) FROM public.club_members m),
+  'roster',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.user_id) FROM public.tournament_players p),
+  'wallet_transactions',(SELECT jsonb_agg(to_jsonb(w) ORDER BY w.id) FROM public.wallet_transactions w),
+  'chip_transactions',(SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM public.chip_transactions c),
+  'mint_ledger',(SELECT to_jsonb(m) FROM public.ca_mint_ledger m),
+  'pool',(SELECT to_jsonb(p) FROM public.spin_bonus_pools p),
+  'membership_history',(SELECT jsonb_agg(to_jsonb(h) ORDER BY h.id)
+    FROM public.accounting_agreement_history h WHERE h.entity_type='club_members'),
+  'sessions',(SELECT jsonb_agg(jsonb_build_object('id',s.id,'user_id',s.user_id,
+    'created_at',s.created_at,'not_after',s.not_after) ORDER BY s.id) FROM auth.sessions s),
+  'profiles',(SELECT jsonb_agg(jsonb_build_object('id',p.id,'diamonds',p.diamonds,
+    'diamond_balance',p.diamond_balance,'is_horse',p.is_horse) ORDER BY p.id) FROM public.profiles p),
+  'excluded_counts',jsonb_build_object(
+    'spin_draw_receipts',(SELECT count(*) FROM public.spin_draw_receipts),
+    'tournament_launch_receipts',(SELECT count(*) FROM public.tournament_launch_receipts),
+    'hand_history',(SELECT count(*) FROM public.hand_history),
+    'hand_atomic_commits',(SELECT count(*) FROM public.hand_atomic_commits),
+    'tournament_payouts',(SELECT count(*) FROM public.tournament_payouts),
+    'tournament_terminal_settlements',(SELECT count(*) FROM public.tournament_terminal_settlements),
+    'accounting_tournament_fee_recognitions',(SELECT count(*) FROM public.accounting_tournament_fee_recognitions),
+    'accounting_tournament_recognized_sources',(SELECT count(*) FROM public.accounting_tournament_recognized_sources)),
+  'seats',(SELECT jsonb_agg(to_jsonb(s) ORDER BY seat_number) FROM public.table_seats s),
+  'entitlements',(SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM public.tournament_refund_entitlements e),
+  'source_journals',(SELECT jsonb_agg(to_jsonb(l) ORDER BY l.id) FROM public.chip_ledger l),
+  'reserve',(SELECT to_jsonb(r) FROM public.spin_reserve_ledger r),
+  'fee',(SELECT to_jsonb(r) FROM public.rake_records r),
+  'fee_batch',(SELECT to_jsonb(b) FROM public.accounting_tournament_fee_batches b),
+  'fee_sources',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.player_id) FROM public.accounting_tournament_fee_sources s),
+  'original_flows',(SELECT jsonb_agg(to_jsonb(f) ORDER BY f.ledger_id) FROM public.union_pnl_original_flows f),
+  'escrow',(SELECT to_jsonb(e) FROM public.tournament_escrow e)) FROM spin_q_inputs q;
+COMMIT;
+
+-- These are explicit duplicate tests AFTER known successful COMMIT/readback,
+-- not retries of a failed or uncertain outcome. Reuse the existing bounded
+-- full-row estate oracle; no new financial model or replacement writer.
+\ir fixtures/spin-history-retention/database-state.sql
+CREATE TEMP TABLE spin_q_replay_before AS SELECT pg_temp.retention_database_state() estate;
+SELECT jsonb_build_object('stage','positive_fee_replay_baseline','execution',execution,
+  'estate_digest_md5',md5((SELECT estate::text FROM spin_q_replay_before))) FROM spin_q_inputs;
+SELECT jsonb_build_object('stage','seat3_replay_intent','execution',execution) FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims',jsonb_build_object('sub',owner_user,'role','authenticated','session_id',owner_session)::text,true),
+  set_config('request.jwt.claim.sub',owner_user::text,true),set_config('request.jwt.claim.role','authenticated',true)
+FROM spin_q_inputs;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.spin_q_assert(auth.uid()=(SELECT owner_user FROM spin_q_inputs) AND auth.role()='authenticated'
+  AND public.fn_caller_session_is_live() AND NOT public.fn_caller_is_engine(),'replay actual authenticated owner session');
+INSERT INTO spin_q_calls SELECT 'seat3_replay',public.fn_take_seat_and_buy_in(id,3) FROM spin_q_table;
+RESET ROLE;
+COMMIT;
+SELECT pg_temp.spin_q_assert((SELECT result=jsonb_build_object('ok',true,'already_seated',true,
+  'table_id',(SELECT id FROM spin_q_table),'seat_number',3) FROM spin_q_calls WHERE stage='seat3_replay')
+  AND pg_temp.retention_database_state()=(SELECT estate FROM spin_q_replay_before),
+  'confirmed third-seat replay returns exact existing-seat receipt and leaves all restored relation rows unchanged');
+SELECT jsonb_build_object('stage','seat3_replay_committed','receipt',result,
+  'all_relation_rows_unchanged',true,'estate_digest_md5',md5(pg_temp.retention_database_state()::text))
+FROM spin_q_calls WHERE stage='seat3_replay';
+
+SELECT jsonb_build_object('stage','book_replay_intent','execution',execution) FROM spin_q_inputs;
+BEGIN;
+SELECT set_config('request.jwt.claims','{"role":"service_role"}',true),
+  set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','service_role',true);
+SET LOCAL ROLE service_role;
+SELECT pg_temp.spin_q_assert(current_user='service_role' AND auth.role()='service_role' AND auth.uid() IS NULL,
+  'actual service-role booking replay boundary, without a user identity');
+INSERT INTO spin_q_calls SELECT 'book_replay',public.fn_spin_book_entry(tournament) FROM spin_q_inputs;
+RESET ROLE;
+COMMIT;
+SELECT pg_temp.spin_q_assert((SELECT c.result=jsonb_build_object('ok',true,'reason','already_booked',
+    'collected',3,'house_rake',.24,'reserve_in',2.76,'balance',2.76,
+    'owner_id',q.execution,'pool_id',p.id,'seats',3,'paid_users',3,
+    'entry_reserve_id',r.id,'entry_journal_id',l.id)
+  FROM spin_q_calls c CROSS JOIN spin_q_inputs q CROSS JOIN public.spin_bonus_pools p
+  CROSS JOIN public.spin_reserve_ledger r JOIN public.chip_ledger l
+    ON l.category='spin_entry' AND l.idempotency_key='spin:'||r.tournament_id::text||':entry'
+  WHERE c.stage='book_replay')
+  AND pg_temp.retention_database_state()=(SELECT estate FROM spin_q_replay_before),
+  'confirmed booking replay retains exact contribution/journal identities with all restored relation rows unchanged');
+SELECT jsonb_build_object('stage','book_replay_committed','receipt',result,
+  'all_relation_rows_unchanged',true,'estate_digest_md5',md5(pg_temp.retention_database_state()::text))
+FROM spin_q_calls WHERE stage='book_replay';
+SELECT jsonb_build_object('stage','positive_fee_entry_final_observation','execution',execution,
+  'tournament',tournament,'observed_at',clock_timestamp(),
+  'estate_digest_md5',md5((SELECT estate::text FROM spin_q_replay_before)),
+  'entry_slice_observed',true,'seat_replay_unchanged',true,'book_replay_unchanged',true,
+  'full_financial_qualification',false,'mixed_history_qualification',false,
+  'historical_qualification',false,'terminal_qualification',false,'production_qualification',false,
+  'next','retain every original stream; dispose the isolated allocation; no incident or release completion claim')
+FROM spin_q_inputs;

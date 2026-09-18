@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "kind": "genuine-positive-fee-entry",
+  "image": "positive-fee-entry",
+  "files": {
+    "scripts/qualification/spin-positive-fee-entry.py": {
+      "bytes": 13407,
+      "sha256": "7d0aae375ce2d64b38427ab0e0df3d48a35222013469389463eea7e0aafbb4fb"
+    },
+    "scripts/qualification/spin-positive-fee-entry-oracle.py": {
+      "bytes": 40902,
+      "sha256": "4d45eb62b66b75681c0688e1c38b30a555ed66fa4080921b5f8ec4512f1081a4"
+    },
+    "scripts/qualification/spin-mixed-positive-fee-entry.sql": {
+      "bytes": 49416,
+      "sha256": "2b291e44257b655cd92de11cbd4ca562dd583a9145b5b3bb350805a9065342cf"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/provider-supplement.sql": {
+      "bytes": 512502,
+      "sha256": "0e1da4dd74b8c8bc2b014302f93a33c9fcbaad5e004fc64eebc8345bfdcdfa9c"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/catalog-readback.sql": {
+      "bytes": 169568,
+      "sha256": "b5ec8e0b9287fa0d78d447fdb8dcb87c79d0efde08210f0ea29ab0f9f42f3e7e"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/reference-data.sql": {
+      "bytes": 6116,
+      "sha256": "47f02c70d09838f2108c324dcef4df0ac6067d10307799946c6b79a784904fa8"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/expected-metadata.json": {
+      "bytes": 207286,
+      "sha256": "01e965e47dcf60802073f00943529295789819c4e4adb193263c89ad32d4aa44"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/preimage-metadata.json": {
+      "bytes": 132521,
+      "sha256": "083d9a65e11d9ad471a0ea0dff2241f70964dde46a1f9189658d02479fa0e954"
+    },
+    "scripts/qualification/fixtures/spin-mixed-positive-fee/provenance.json": {
+      "bytes": 15284,
+      "sha256": "71a55254af9fc8a52101e6d9e3e613e3542f48796555c31c75b61c83770ce273"
+    }
+  },
+  "relative_include_graph": {
+    "scripts/qualification/spin-mixed-positive-fee-entry.sql": [
+      "inputs/captured-financial-store-policy.sql",
+      "scripts/qualification/fixtures/spin-mixed-positive-fee/reference-data.sql",
+      "scripts/qualification/fixtures/spin-history-retention/database-state.sql"
+    ]
+  },
+  "historical_qualification": false,
+  "full_financial_qualification": false,
+  "production_qualification": false
+}

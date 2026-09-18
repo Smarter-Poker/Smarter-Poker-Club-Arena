@@ -35,6 +35,15 @@ def mixed_source_files():
 
 
 class MixedCurrentTests(unittest.TestCase):
+    def test_loading_staged_observer_never_writes_bytecode_into_sealed_packet(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder).resolve()
+            leaf = source / 'observer.py'
+            leaf.write_text('value = 42\n')
+            with patch.object(sys, 'dont_write_bytecode', False):
+                self.assertEqual(W.MIXED.load_module(source, 'observer.py').value, 42)
+            self.assertEqual(list(source.iterdir()), [leaf])
+
     def race_receipt(self, image):
         # Protocol-only control: these tiny records do not simulate or qualify SQL.
         M = W.MIXED

@@ -56,7 +56,9 @@ def load_module(source, name):
     spec = importlib.util.spec_from_file_location('mixed_current_' + Path(name).stem,
                                                 source / name)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # The source packet is sealed. Loading its independent observer must not
+    # create a __pycache__ leaf and invalidate the final inventory readback.
+    exec(compile((source / name).read_bytes(), str(source / name), 'exec'), module.__dict__)
     return module
 
 

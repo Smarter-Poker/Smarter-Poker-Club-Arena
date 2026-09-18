@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 _mixed_spec = importlib.util.spec_from_file_location('spin_mixed_current', ROOT / 'scripts/qualification/spin-mixed-current.py')
 MIXED = importlib.util.module_from_spec(_mixed_spec)
 _mixed_spec.loader.exec_module(MIXED)
-MIXED_MANIFEST_SHA256 = '3abef5d4b85ef34e276f9f098813159a6c9509a184bc0f706a83ba438bf7e9b5'
+MIXED_MANIFEST_SHA256 = '15cfa1f2168d4c3cd9e6fc1b2e7d6319692fa44c6c5fd3c472821c2473bbd69c'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
 ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff580'
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'

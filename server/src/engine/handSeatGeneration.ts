@@ -2,6 +2,10 @@
 export interface HandSeatGeneration {
   seat_id: string;
   seat_joined_at: string;
+  /** Present only after the original pre-deal roster was retained by PostgreSQL. */
+  occupancy_id?: string;
+  funding_manifest_id?: string;
+  funding_stack_before?: number;
 }
 
 export function captureHandSeatGenerations(
@@ -37,4 +41,16 @@ export function requireHandSeatGeneration(
   const generation = generations.get(userId);
   if (!generation) throw new Error('atomic hand commit refused (missing_dealt_seat_generation)');
   return generation;
+}
+
+/** Compatibility fallback may never certify a missing original stack. */
+export function handStackBefore(
+  generations: ReadonlyMap<string, HandSeatGeneration>,
+  dealtStacks: ReadonlyMap<string, number>,
+  userId: string,
+  legacyEndingStack: number
+): number {
+  const dealt = dealtStacks.get(userId);
+  const original = generations.get(userId)?.funding_stack_before;
+  return original ?? dealt ?? legacyEndingStack;
 }

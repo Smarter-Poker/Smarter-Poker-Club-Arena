@@ -1,0 +1,7 @@
+# Original evidence drives weekly Union accounting
+
+Weekly P&L previously depended on current seats and membership while the qualification report correctly rejected missing original population evidence. The prospective successor captures one immutable transaction frame, original chip flow and accepted cash outcome, reconstructs full opening/closing populations, and passes qualified totals into the existing P&L payer, ECO calculation and weekly cascade. Open tournament entries preserve the existing deferred-result rule until original terminal realization.
+
+The close barrier now precedes every actual accounting period lock, preventing the reproduced producer/close deadlock. Original payer stages lock the real composite club membership key instead of nonexistent `club_members.id`. Retained Union-house rake is included in gross P&L and accepted in whole-hand validation only with its exact accrued original source; it does not create a house rake payout. Existing explicit ECO settings gain a truthful prospective observation rather than fabricated history.
+
+Direct native coverage includes cash and tournament original transactions, exact invoices/Messenger/notifications, weekly summaries, rollback and replay, two-session lock red/green, and a nonzero rake hand through the original waterfall. The maintained full weekly activation check invokes the new fixture. Production remains fail-closed for missing historical receipts and incomplete full-week coverage. No new timer, watcher, repair loop or alternative payer was introduced.

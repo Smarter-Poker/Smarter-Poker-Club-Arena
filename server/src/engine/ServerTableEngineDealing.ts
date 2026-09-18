@@ -13,6 +13,11 @@ import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import { captureHandSeatGenerations } from './handSeatGeneration.js';
+import {
+  bindCashHandManifest,
+  captureCashHandProvenance,
+} from '../services/supabase/cashHandProvenance.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { startHandSpan } from '../observability/Tracing.js';
@@ -2710,6 +2715,47 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandVariant = config.gameVariant;
 
       this.currentHandSeatGenerations = captureHandSeatGenerations(players);
+      // Capture the actual controller roster before a card is dealt, including
+      // horses and players who will later contribute zero. During a rolling
+      // migration, absent provenance stays uncertified under the existing hand
+      // protocol. It must never become a new failure at hand completion.
+      const fundingLease = this.getEngineLeaseAuthority();
+      if (!config.isTournament && fundingLease?.verified) {
+        try {
+          const originalParticipants = hcPlayers.map((player) => {
+            const original = players.find((seat) => seat.user_id === player.user_id);
+            const generation = this.currentHandSeatGenerations.get(player.user_id);
+            if (!original?.occupancy_id || !generation) {
+              throw new Error('Original cash occupancy unavailable');
+            }
+            return {
+              user_id: player.user_id,
+              ...generation,
+              occupancy_id: original.occupancy_id,
+              stack_before: player.stack,
+              is_horse: original.is_horse === true,
+            };
+          });
+          const manifestId = await captureCashHandProvenance(
+            this.tableId,
+            handNumber,
+            originalParticipants,
+            INSTANCE_ID,
+            fundingLease.generation
+          );
+          this.currentHandSeatGenerations = bindCashHandManifest(
+            this.currentHandSeatGenerations,
+            manifestId,
+            originalParticipants
+          );
+        } catch (error) {
+          reportError(error, 'Accounting.original_cash_manifest');
+        }
+        if (!this.running || !this.isCurrentEngine() || this.discardPreparedHandForPause()) return;
+        if (!this.hasCurrentEngineLeaseAuthority()) {
+          throw new Error('hand deal refused (lease_proof_expired)');
+        }
+      }
       // Bind the tournament identity to this hand. Each accepted action reads
       // only the existing cache; later table reassignment cannot change it.
       const observationTournamentId = this.tableInfo?.tournament_id;

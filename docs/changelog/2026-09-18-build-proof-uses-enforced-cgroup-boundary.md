@@ -1,0 +1,9 @@
+# Build proof uses the original enforced cgroup boundary
+
+The Union accounting release's resource job 35293429924 built and validated its image, then failed because `memory.peak` was 671092736 bytes, one 4096-byte page above the configured 671088640-byte limit. The same original build output confirmed `memory.max=671088640`, zero swap and one CPU. The receipt showed the neighboring process unchanged and cleanup complete; the proof had not yet reached its later forced-OOM checks.
+
+The [Linux cgroup-v2 documentation](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files) explicitly permits temporary usage above `memory.max`; `memory.peak` records the high-water value. Comparing those values as an absolute containment guarantee is incorrect. The proof now requires exactly one valid boundary report from the original successful build invocation, retains the raw peak and its observed excess, and still verifies kernel limits again before its real forced-OOM test. Missing, duplicate or changed boundary evidence refuses qualification. There is no arbitrary peak tolerance or normalized-away measurement.
+
+The production build wrapper, 640 MiB memory cap, zero swap, CPU limit, compiler heap and host reserve are unchanged. The real OOM-kill increment, full runtime equivalence, neighbor survival, failure/cancellation and cleanup gates remain required. The new direct evidence tests run in the existing resource workflow, which also triggers when those tests change.
+
+Local checks reproduced the old condition's failure using the retained job receipt and passed the corrected reader against the same original log. Five unittest groups cover valid peaks and refused cap/swap/CPU/missing/duplicate/unreadable evidence. This is parser validation, not a Linux containment certificate: the next exact-head provider run must still complete the real proof.

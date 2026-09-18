@@ -46,6 +46,8 @@ vi.stubGlobal(
 
 const { TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js');
 const { TournamentSweepWorkCursor } = await import('./TournamentSweepWorkCursor.js');
+const { TournamentEliminationScheduler } = await import('./TournamentEliminationScheduler.js');
+const { TournamentManagerBase } = await import('./TournamentManagerBase.js');
 
 /** Every request is answered this long after it is sent, never sooner. */
 const TRIP_MS = 100;
@@ -307,6 +309,56 @@ describe('PR4392 actual staged sweep fairness', () => {
     expect(manager.eliminationSweepCursor.nextStage).toBe(6);
     expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
     expect(manager.finishTournament).not.toHaveBeenCalled();
+  });
+  it('drains a backlog after later stages consume its coalesced wake, then becomes idle', async () => {
+    const { manager, pending, ranks } = backlog();
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    Object.assign(manager, {
+      eliminationWorkBudgetExpired: (TournamentManagerBase.prototype as any)
+        .eliminationWorkBudgetExpired,
+      tableEngines: new Map(),
+      refreshChipCapInputs: vi.fn().mockResolvedValue(undefined),
+      recoverPendingBountyObligations: vi.fn().mockResolvedValue(true),
+      checkDynamicTableExpansion: vi.fn(
+        () => new Promise((resolve) => setTimeout(() => resolve(true), TRIP_MS))
+      ),
+      requestEliminationSweep: vi.fn(() => scheduler.wake(tournamentId)),
+      requestUrgentEliminationSweepAfter: vi.fn((ms: number) =>
+        scheduler.wakeUrgentAfter(tournamentId, ms)
+      ),
+      checkTableBalance: vi
+        .fn()
+        .mockImplementationOnce(() => new Promise((resolve) => setTimeout(resolve, 6_000)))
+        .mockResolvedValue(undefined),
+    });
+    const run = vi.fn((signal: AbortSignal) => manager.runEliminationSweep(signal));
+    try {
+      scheduler.register({ tournamentId, run });
+      await vi.advanceTimersByTimeAsync(1);
+      // A waiting peer owns the slot between the yielded and resumed stages.
+      // Pending immediate/delayed wakes coalesce into the queued continuation.
+      scheduler.register({
+        tournamentId: 'peer',
+        run: () => new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
+      });
+      scheduler.wakeUrgentAfter('peer', 0);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(fixture.reportError).not.toHaveBeenCalled();
+      expect(pending.size).toBe(0);
+      expect(ranks).toHaveLength(25);
+      expect(new Set(ranks).size).toBe(25);
+      expect(manager.finishTournament).not.toHaveBeenCalled();
+      expect(scheduler.snapshot()).toMatchObject({ queued: 0, running: 0, pendingWakes: 0 });
+      const completedRuns = run.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(run).toHaveBeenCalledTimes(completedRuns);
+    } finally {
+      scheduler.stop();
+    }
   });
   it('maintenance still prevents balance dispatch at its reached stage', async () => {
     const { manager } = backlog();

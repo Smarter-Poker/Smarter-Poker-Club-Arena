@@ -2292,6 +2292,80 @@ class PureEvidenceTests(unittest.TestCase):
 
 
 class ReceiptLaneTests(unittest.TestCase):
+    def receipt_lane_main_cleanup(self, *, clears):
+        # Exercise the actual CLI cleanup caller and imported existing observer.
+        # Only the business schedule/psql transport are replaced; no DB proof.
+        spec = importlib.util.spec_from_file_location('lane_cleanup_caller', W.ROOT / W.LANE_PROGRAM)
+        lane = importlib.util.module_from_spec(spec); spec.loader.exec_module(lane)
+        with tempfile.TemporaryDirectory(prefix='spin-lane-cleanup-') as directory:
+            root = Path(directory) / 'source'
+            for name, data in lane_source_files().items():
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+            output = root.parent / 'work/receipt-lane.json'
+            output.parent.mkdir()
+            clock = [10.0]
+            verifier = Mock(spec=['json', 'close', 'raw', 'pid'])
+            verifier.raw, verifier.pid = bytearray(), None
+            samples = [{'backends': 1, 'locks': 8}, {'backends': 0, 'locks': 0}]
+            queries = []
+            def observe(sql):
+                queries.append(sql)
+                if sql == 'SELECT to_jsonb(pg_backend_pid());': return 104
+                if clears: return samples.pop(0)
+                clock[0] = 15.0
+                return {'backends': 1, 'locks': 8}
+            verifier.json.side_effect = observe
+            verifier.close.return_value = {'client_exit': 0, 'backend_pid': 104}
+            original = []
+            def schedule(args, events, sessions, deadline):
+                self.assertEqual(deadline, 30.0)
+                events['passed'] = True
+                for name, pid in [('observer', 101), ('holder', 102), ('writer', 103)]:
+                    session = Mock(spec=['close', 'raw', 'pid', 'name'])
+                    session.name, session.pid, session.raw = name, pid, bytearray()
+                    session.close.return_value = {'client_exit': 0, 'backend_pid': pid}
+                    sessions.append(session); original.append(session)
+                factory = patch.object(lane.R, 'Session', return_value=verifier)
+                factory.start(); self.addCleanup(factory.stop)
+            argv = ['lane', '--psql', sys.executable, '--execution', EXECUTION, '--output', str(output)]
+            with patch.object(lane, 'ROOT', root), patch.object(lane, 'run', side_effect=schedule) as run, \
+                 patch.object(sys, 'argv', argv), \
+                 patch.object(lane.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 patch.object(lane.time, 'sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)):
+                if clears:
+                    lane.main()
+                else:
+                    with self.assertRaises(SystemExit) as stopped: lane.main()
+                    self.assertEqual(stopped.exception.code, 1)
+            result = json.loads(output.read_text())
+            run.assert_called_once()
+            for session in original: session.close.assert_called_once_with(15.0)
+            verifier.close.assert_called_once_with(15.0)
+            self.assertTrue(result['passed'])
+            self.assertTrue(result['source_stable'])
+            self.assertTrue(all('pg_terminate_backend' not in query for query in queries))
+            self.assertIn('pid IN (101,102,103)', queries[-1])
+            return result, queries
+
+    def test_receipt_lane_main_waits_for_observed_backend_exit_with_original_budget(self):
+        result, queries = self.receipt_lane_main_cleanup(clears=True)
+        self.assertTrue(result['cleanup_verified'])
+        self.assertNotIn('cleanup_failure', result)
+        self.assertEqual(result['backend_cleanup_observations'],
+                         [{'backends': 1, 'locks': 8}, {'backends': 0, 'locks': 0}])
+        self.assertEqual(result['backend_cleanup'], {'backends': 0, 'locks': 0})
+        self.assertEqual(queries[1], queries[2])
+
+    def test_receipt_lane_main_retains_cleanup_failure_at_original_deadline(self):
+        result, queries = self.receipt_lane_main_cleanup(clears=False)
+        self.assertFalse(result['cleanup_verified'])
+        self.assertIn('before cleanup deadline', result['cleanup_failure'])
+        self.assertEqual(result['backend_cleanup_observations'], [{'backends': 1, 'locks': 8}])
+        self.assertEqual(result['backend_cleanup'], {'backends': 1, 'locks': 8})
+        self.assertEqual(len(queries), 2)
+
     def validate(self, value, image='candidate'):
         return W.validate_receipt(value,EXECUTION,ORDINARY,TOURNAMENT,image,MANIFEST_SHA,SOURCE,PG)
 

@@ -148,6 +148,11 @@ try:
     extension['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('unsettledAbort', {}).get('passed') is True, 'Interrupted-hand qualification did not complete')
     require(results.get('successorAbort', {}).get('passed') is True, 'Successor interrupted-hand qualification did not complete')
+    require(results.get('generationAbort', {}).get('passed') is True, 'Generation disposition qualification did not complete')
+    require(results.get('mixedAbort', {}).get('passed') is True, 'Mixed interrupted-hand qualification did not complete')
+    require(results.get('mixedCohorts', {}).get('passed') is True, 'Mixed post-cutover cohorts did not complete')
+    require(results.get('mixedHuPrior', {}).get('passed') is True, 'Mixed HU prior-commit qualification did not complete')
+    require(results.get('mixedHuPriorAbort', {}).get('passed') is True, 'Mixed HU original-abort qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

@@ -363,3 +363,9 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     import runpy
     successor = runpy.run_path(str(here / 'successor_qualification.py'))
     successor['qualify'](root, out, cmd, command, run, probe, require, results, seed, held, money, service)
+
+    generation = runpy.run_path(str(here / "generation_qualification.py"))
+    generation["qualify"](root, out, cmd, command, run, probe, require, results, held, money, service)
+
+    mixed = runpy.run_path(str(here / "mixed_qualification.py"))
+    mixed["qualify"](root, out, cmd, command, run, probe, require, results, held, money, service)

@@ -138,10 +138,13 @@ export async function hardReload(): Promise<void> {
  * error was recognized and recovery owns it; recognized errors are not sent
  * to the console as product failures while the document is being replaced.
  */
+function canOwnChunkRecovery(error: unknown): boolean {
+  return isChunkLoadError(error) && (recoveryStarted || getReloadCount() < MAX_RELOADS);
+}
+
 export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
-  if (!isChunkLoadError(error)) return false;
+  if (!canOwnChunkRecovery(error)) return false;
   if (recoveryStarted) return true;
-  if (getReloadCount() >= MAX_RELOADS) return false;
 
   recoveryStarted = true;
   incrementReloadCount();
@@ -157,7 +160,9 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
 export function installVitePreloadErrorRecovery(): () => void {
   const onPreloadError = (event: Event) => {
     const payload = (event as Event & { payload?: unknown }).payload;
-    if (!isChunkLoadError(payload)) return;
+    // Vite propagates the original import error only if this event remains
+    // uncancelled. An exhausted budget must reach the route's error boundary.
+    if (!canOwnChunkRecovery(payload)) return;
     event.preventDefault();
     void recoverFromStaleChunk(payload);
   };
@@ -173,8 +178,8 @@ export function lazyWithRetry<T extends ComponentType<any>>(
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         const module = await importFn();
-        // Success — clear any reload counter
-        clearChunkRecoveryState();
+        // Another lazy module succeeding does not prove the failed route
+        // recovered. Preserve the tab's budget across document replacements.
         return module;
       } catch (error: any) {
         /* SAFARI PHRASES IT DIFFERENTLY, AND THAT IS THE WHOLE BUG (Dan,
@@ -188,10 +193,12 @@ export function lazyWithRetry<T extends ComponentType<any>>(
 
         if (!isChunkError || attempt === retries - 1) {
           // Not a chunk error or final retry — try a full reload
-          if (isChunkError && getReloadCount() < MAX_RELOADS) {
-            console.warn(
-              `[lazyWithRetry] Chunk load failed after ${retries} retries. Reloading page (attempt ${getReloadCount() + 1}/${MAX_RELOADS})...`
-            );
+          if (canOwnChunkRecovery(error)) {
+            if (!recoveryStarted) {
+              console.warn(
+                `[lazyWithRetry] Chunk load failed after ${retries} retries. Reloading page (attempt ${getReloadCount() + 1}/${MAX_RELOADS})...`
+              );
+            }
             void recoverFromStaleChunk(error);
             // Return a never-resolving promise to prevent rendering during reload
             return new Promise<never>(() => {});

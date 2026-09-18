@@ -109,7 +109,7 @@ PURE_INPUTS = (PURE_COMPONENT, PURE_SHAPE, PURE_PREIMAGE, PURE_QUALIFIER, PURE_O
 PURE_STAGE = 'mixed_pure_evidence_rollback'
 REPLACEMENTS.update({name: name for name in PURE_INPUTS})
 LANE_MANIFEST = 'scripts/qualification/spin-receipt-lane.hosted.manifest.json'
-LANE_MANIFEST_SHA256 = 'dd9aa902babf99b596a6a422c545d6fc5caca92e54328dee5003503adf66facf'
+LANE_MANIFEST_SHA256 = '95131e46c9a984daecb5829918555878f0bc8eabc1c1315ce8d32c41d6884128'
 LANE_BASE = 'scripts/qualification/fixtures/spin-receipt-lane/'
 LANE_COMPONENT = 'supabase/components/spin-mixed-basis-receipt-lane.sql'
 LANE_ROLLBACK = 'supabase/components/spin-mixed-basis-receipt-lane.rollback.sql'

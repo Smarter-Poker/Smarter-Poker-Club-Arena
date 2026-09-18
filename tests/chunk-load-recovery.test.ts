@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   clearChunkRecoveryState,
@@ -7,9 +7,58 @@ import {
 } from '../src/utils/lazyWithRetry';
 
 describe('stale deployment chunk recovery', () => {
+  it('does not rearm document reloads when another lazy module succeeds', async () => {
+    const navigations = vi.fn();
+    // Keep the browser's durable tab storage across fresh module/document
+    // instances; the transport itself stays local and never navigates.
+    const browser = new EventTarget();
+    Object.assign(browser, {
+      location: {
+        href: 'https://example.test/notifications',
+        replace: navigations,
+        reload: navigations,
+      },
+    });
+    vi.stubGlobal('window', browser);
+    vi.stubGlobal('navigator', {});
+    vi.stubGlobal('caches', undefined);
+    // Exercise each real import factory without React's rendering scheduler.
+    vi.doMock('react', () => ({ lazy: (load: () => Promise<unknown>) => load }));
+    sessionStorage.clear();
+
+    for (let documentIndex = 0; documentIndex < 4; documentIndex += 1) {
+      vi.resetModules();
+      const recovery = await import('../src/utils/lazyWithRetry');
+      const loadNeighbor = recovery.lazyWithRetry(async () => ({ default: () => null }));
+      await (loadNeighbor as unknown as () => Promise<unknown>)();
+      const uninstall = recovery.installVitePreloadErrorRecovery();
+      const event = new Event('vite:preloadError', { cancelable: true }) as Event & {
+        payload?: unknown;
+      };
+      event.payload = new TypeError(
+        'Failed to fetch dynamically imported module: /assets/route.js'
+      );
+      browser.dispatchEvent(event);
+      // Concurrent preload failures in this same document share one recovery.
+      const concurrent = new Event('vite:preloadError', { cancelable: true }) as typeof event;
+      concurrent.payload = event.payload;
+      browser.dispatchEvent(concurrent);
+      await Promise.resolve();
+
+      expect(navigations).toHaveBeenCalledTimes(Math.min(documentIndex + 1, 2));
+      expect(event.defaultPrevented).toBe(documentIndex < 2);
+      expect(concurrent.defaultPrevented).toBe(documentIndex < 2);
+      uninstall();
+    }
+    expect(sessionStorage.getItem('club_arena_chunk_reload')).toBe('2');
+  });
+
   afterEach(() => {
     clearChunkRecoveryState();
     sessionStorage.clear();
+    vi.doUnmock('react');
+    vi.unstubAllGlobals();
+    vi.resetModules();
   });
 
   it.each([
@@ -25,7 +74,7 @@ describe('stale deployment chunk recovery', () => {
     expect(isChunkLoadError(new Error('wallet reconciliation failed'))).toBe(false);
   });
 
-  it('prevents Vite from surfacing a handled preload failure as uncaught', () => {
+  it('leaves an exhausted preload failure visible to the importing route', () => {
     // Keep recovery at its bounded ceiling so this unit test never navigates.
     sessionStorage.setItem('club_arena_chunk_reload', '2');
     const uninstall = installVitePreloadErrorRecovery();
@@ -36,7 +85,7 @@ describe('stale deployment chunk recovery', () => {
 
     window.dispatchEvent(event);
 
-    expect(event.defaultPrevented).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
     uninstall();
   });
 });

@@ -209,6 +209,18 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/test-f06-shared-hand-lane.py',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/successor_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/generation_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/mixed_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/mixed_cohort_qualification.py',
+    'scripts/ci/probes/f06-shared-hand-lane/mixed-cohort-fixtures.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/mixed-authority.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/mixed-fixture.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/build-mixed-migration.py',
+    'supabase/migrations/20260918065923_mixed_generation_disposition_preserves_committed_stacks.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/generation-authority.sql',
+    'scripts/ci/probes/f06-shared-hand-lane/generation-preimages.json',
+    'scripts/ci/probes/f06-shared-hand-lane/build-generation-migration.py',
+    'supabase/migrations/20260918064213_interrupted_tournament_generation_disposition.sql',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-preimages.json',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-authority.sql',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled-bindings.json',
@@ -217,6 +229,23 @@ describe('required CI owns native fixture verification', () => {
     'scripts/ci/probes/f06-shared-hand-lane/build-unsettled-migration.py',
   ])('runs the existing accounting job for F06 input %s', (path) => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('retains the actual F06 generation disposition result from the existing accounting owner', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const native = steps.filter((step: { run?: string }) =>
+      step.run?.includes('python3 scripts/ci/test-f06-shared-hand-lane.py')
+    );
+    expect(native).toHaveLength(1);
+    expect(native[0].id).toBe('f06_hand_authority');
+    expect(native[0]['continue-on-error']).not.toBe(true);
+    const artifact = steps.find((step: { with?: { path?: string } }) =>
+      step.with?.path?.includes('artifacts/f06-shared-hand-lane/')
+    );
+    expect(artifact).toBeDefined();
+    expect(artifact.if).toContain('always()');
+    expect(artifact.if).toContain('steps.f06_hand_authority.outcome');
+    expect(artifact.with['if-no-files-found']).toBe('error');
   });
 
   it.each([

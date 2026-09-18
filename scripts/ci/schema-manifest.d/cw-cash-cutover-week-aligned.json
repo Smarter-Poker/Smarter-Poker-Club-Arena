@@ -1,0 +1,5 @@
+{
+  "_owner": "cw-cash-cutover-week-aligned",
+  "_comment": "Migration 20260918091617 applied through the Supabase MCP and recorded. Read back from production on 2026-09-18: the BEFORE INSERT trigger ca_cash_cutover_is_week_aligned is installed and enabled on accounting_cash_accrual_cutover, and the observer reports the installed cutover splitting its union week by 83.4 hours. Both functions SECURITY DEFINER with EXECUTE revoked from PUBLIC, anon and authenticated.",
+  "functions": ["fn_ca_cash_cutover_week_split_by", "fn_ca_guard_cash_cutover_week_aligned"]
+}

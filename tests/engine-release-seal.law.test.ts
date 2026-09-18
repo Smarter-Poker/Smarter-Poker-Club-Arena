@@ -171,7 +171,13 @@ if [ "$kind" = image ]; then
   fi
 elif [ "$kind" = container ]; then
   [ "$ref" = club-arena-engine ] || exit 1
-  printf '{"Image":"%s","State":{"Status":"%s"}}\\n' "\${FAKE_CONTAINER_IMAGE:-${A_IMAGE}}" "\${FAKE_CONTAINER_STATUS:-running}"
+  image="\${FAKE_CONTAINER_IMAGE:-${A_IMAGE}}"
+  case "$image" in
+    ${B_IMAGE}) sha='${B_SHA}' ;;
+    ${C_IMAGE}) sha='${C_SHA}' ;;
+    *) sha='${A_SHA}' ;;
+  esac
+  printf '{"Id":"%s","Image":"%s","State":{"Status":"%s","StartedAt":"%s"},"Config":{"Labels":{"sp.release.sha":"%s"},"Env":["HORSE_DECISION_JOURNAL_DIR=/var/lib/club-arena/horse-decisions"]},"Mounts":[{"Type":"bind","Source":"${realpathSync('/var')}/lib/club-arena/horse-decisions","Destination":"/var/lib/club-arena/horse-decisions","RW":true}]}\\n' "\${FAKE_CONTAINER_ID:-${'d'.repeat(64)}}" "$image" "\${FAKE_CONTAINER_STATUS:-running}" "\${FAKE_CONTAINER_STARTED_AT:-2026-09-10T04:00:00.000000000Z}" "$sha"
 else
   exit 1
 fi
@@ -226,7 +232,17 @@ esac
     overrides: NodeJS.ProcessEnv = {},
     input?: string
   ): { status: number | null; stdout: string; stderr: string } => {
-    const result = spawnSync('python3', [sealScript, ...args], {
+    const command =
+      args[0] === 'commit'
+        ? [
+            ...args,
+            '--container-id',
+            'd'.repeat(64),
+            '--started-at',
+            '2026-09-10T04:00:00.000000000Z',
+          ]
+        : args;
+    const result = spawnSync('python3', [sealScript, ...command], {
       encoding: 'utf8',
       env: { ...baseEnv, ...overrides },
       input,
@@ -916,27 +932,30 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
       { FAKE_CONTAINER_IMAGE: B_IMAGE }
     );
     expect(
-      runSeal([
-        'record-result',
-        '--sha',
-        B_SHA,
-        '--image-id',
-        B_IMAGE,
-        '--result',
-        'sealed',
-        '--instance-id',
-        '20202-feedface',
-        '--container-id',
-        '2'.repeat(64),
-        '--started-at',
-        '2026-09-10T04:00:00.000000000Z',
-        '--run-id',
-        '202',
-        '--control-sha',
-        C_SHA,
-        '--invocation-id',
-        '2'.repeat(32),
-      ]).status
+      runSeal(
+        [
+          'record-result',
+          '--sha',
+          B_SHA,
+          '--image-id',
+          B_IMAGE,
+          '--result',
+          'sealed',
+          '--instance-id',
+          '20202-feedface',
+          '--container-id',
+          'd'.repeat(64),
+          '--started-at',
+          '2026-09-10T04:00:00.000000000Z',
+          '--run-id',
+          '202',
+          '--control-sha',
+          C_SHA,
+          '--invocation-id',
+          '2'.repeat(32),
+        ],
+        { FAKE_CONTAINER_IMAGE: B_IMAGE }
+      ).status
     ).toBe(0);
 
     const accidental = runSeal([
@@ -1160,27 +1179,30 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     const firstContainer = 'd'.repeat(64);
     const firstInvocation = 'e'.repeat(32);
     const firstStartedAt = '2026-09-10T04:00:00.000000000Z';
-    const record = runSeal([
-      'record-result',
-      '--sha',
-      B_SHA,
-      '--image-id',
-      B_IMAGE,
-      '--result',
-      'sealed',
-      '--instance-id',
-      '12345-deadbeef',
-      '--container-id',
-      firstContainer,
-      '--started-at',
-      firstStartedAt,
-      '--run-id',
-      '309-1',
-      '--control-sha',
-      C_SHA,
-      '--invocation-id',
-      firstInvocation,
-    ]);
+    const record = runSeal(
+      [
+        'record-result',
+        '--sha',
+        B_SHA,
+        '--image-id',
+        B_IMAGE,
+        '--result',
+        'sealed',
+        '--instance-id',
+        '12345-deadbeef',
+        '--container-id',
+        firstContainer,
+        '--started-at',
+        firstStartedAt,
+        '--run-id',
+        '309-1',
+        '--control-sha',
+        C_SHA,
+        '--invocation-id',
+        firstInvocation,
+      ],
+      { FAKE_CONTAINER_IMAGE: B_IMAGE }
+    );
     expect(record.status, record.stderr).toBe(0);
     expect(record.stdout).toBe('sealed');
     expect(state().finalization).toBeNull();
@@ -1190,27 +1212,34 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     // the exact retry invocation and refreshing only the live observation.
     const secondContainer = 'f'.repeat(64);
     const secondInvocation = '1'.repeat(32);
-    const replay = runSeal([
-      'record-result',
-      '--sha',
-      B_SHA,
-      '--image-id',
-      B_IMAGE,
-      '--result',
-      'sealed',
-      '--instance-id',
-      '23456-feedface',
-      '--container-id',
-      secondContainer,
-      '--started-at',
-      '2026-09-10T04:01:00.000000000Z',
-      '--run-id',
-      '309-1',
-      '--control-sha',
-      C_SHA,
-      '--invocation-id',
-      secondInvocation,
-    ]);
+    const replay = runSeal(
+      [
+        'record-result',
+        '--sha',
+        B_SHA,
+        '--image-id',
+        B_IMAGE,
+        '--result',
+        'sealed',
+        '--instance-id',
+        '23456-feedface',
+        '--container-id',
+        secondContainer,
+        '--started-at',
+        '2026-09-10T04:01:00.000000000Z',
+        '--run-id',
+        '309-1',
+        '--control-sha',
+        C_SHA,
+        '--invocation-id',
+        secondInvocation,
+      ],
+      {
+        FAKE_CONTAINER_IMAGE: B_IMAGE,
+        FAKE_CONTAINER_ID: secondContainer,
+        FAKE_CONTAINER_STARTED_AT: '2026-09-10T04:01:00.000000000Z',
+      }
+    );
     expect(replay.status, replay.stderr).toBe(0);
     expect(replay.stdout).toBe('sealed');
 
@@ -1654,6 +1683,9 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(promote).toBeGreaterThan(commit);
     expect(autoheal).toBeGreaterThan(promote);
     expect(transaction.slice(commit, promote)).toContain('--container "$CONTAINER"');
+    expect(transaction.slice(commit, promote)).toContain(
+      '--container-id "$CANDIDATE_CID" --started-at "$CANDIDATE_STARTED_AT"'
+    );
     expect(transaction.slice(prove, commit)).toContain('ACTUAL_STARTED_AT');
   });
 
@@ -3101,99 +3133,113 @@ printf '%s\n' '[engine-release-transaction] FATAL: target is stale; protected ma
     expect(releaseUnit).toContain('recover %i \\${SERVICE_RESULT} \\${EXIT_CODE} \\${EXIT_STATUS}');
   });
 
-  it('executes committed-run result reconstruction without consulting advanced protected main', () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'engine-committed-replay-'));
-    try {
-      const generation = join(sandbox, 'generation');
-      const requestRoot = join(sandbox, 'requests');
-      const bin = join(sandbox, 'bin');
-      const gitLog = join(sandbox, 'git.log');
-      const runKey = '991-2';
-      const controlSha = C_SHA;
-      const instanceId = '12345-deadbeef';
-      const containerId = 'd'.repeat(64);
-      mkdirSync(generation);
-      const canonicalGeneration = realpathSync(generation);
-      mkdirSync(requestRoot);
-      mkdirSync(bin);
-      // macOS still ships Bash 3.2 without mapfile. Adapt only the fixture's
-      // request reader; the committed-replay control flow remains byte-for-byte
-      // identical to the production script and is separately asserted above.
-      const executableFixture = transaction.replace(
-        'mapfile -t REQUEST_LINES < "$REQUEST_FILE" || die \'release request is missing\'',
-        'REQUEST_LINES=(); while IFS= read -r line; do REQUEST_LINES[${#REQUEST_LINES[@]}]="$line"; done < "$REQUEST_FILE"'
-      );
-      expect(executableFixture).not.toBe(transaction);
-      writeFileSync(join(generation, 'engine-release-transaction.sh'), executableFixture);
-      chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
-      writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
-      writeFileSync(
-        join(requestRoot, `${runKey}.request`),
-        [
-          B_SHA,
-          'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/991',
-          'release-test',
-          canonicalGeneration,
-          controlSha,
-          String(Math.floor(Date.now() / 1000) - 1),
-          '',
-        ].join('\n')
-      );
+  it.each([false, true])(
+    'executes committed-run result reconstruction without restart fallthrough when positive qualification refuses=%s',
+    (refusePositive) => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'engine-committed-replay-'));
+      try {
+        const generation = join(sandbox, 'generation');
+        const requestRoot = join(sandbox, 'requests');
+        const bin = join(sandbox, 'bin');
+        const gitLog = join(sandbox, 'git.log');
+        const replacementLog = join(sandbox, 'replacement.log');
+        const runKey = '991-2';
+        const controlSha = C_SHA;
+        const instanceId = '12345-deadbeef';
+        const containerId = 'd'.repeat(64);
+        mkdirSync(generation);
+        const canonicalGeneration = realpathSync(generation);
+        mkdirSync(requestRoot);
+        mkdirSync(bin);
+        // macOS still ships Bash 3.2 without mapfile. Adapt only the fixture's
+        // request reader; the committed-replay control flow remains byte-for-byte
+        // identical to the production script and is separately asserted above.
+        const executableFixture = transaction.replace(
+          'mapfile -t REQUEST_LINES < "$REQUEST_FILE" || die \'release request is missing\'',
+          'REQUEST_LINES=(); while IFS= read -r line; do REQUEST_LINES[${#REQUEST_LINES[@]}]="$line"; done < "$REQUEST_FILE"'
+        );
+        expect(executableFixture).not.toBe(transaction);
+        writeFileSync(join(generation, 'engine-release-transaction.sh'), executableFixture);
+        chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
+        writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
+        writeFileSync(
+          join(requestRoot, `${runKey}.request`),
+          [
+            B_SHA,
+            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/991',
+            'release-test',
+            canonicalGeneration,
+            controlSha,
+            String(Math.floor(Date.now() / 1000) - 1),
+            '',
+          ].join('\n')
+        );
 
-      writeFileSync(
-        join(generation, 'engine-release-seal.py'),
-        `#!/usr/bin/env bash
+        writeFileSync(
+          join(generation, 'engine-release-seal.py'),
+          `#!/usr/bin/env bash
 set -euo pipefail
 case "\${1:-}:\${2:-}" in
   pending-owner:) echo none ;;
   get:desired-sha) echo '${B_SHA}' ;;
   get:desired-image-id) echo '${B_IMAGE}' ;;
   attest-commit:*) echo '2 ${B_SHA} ${B_IMAGE} ${runKey}' ;;
-  record-result:*) echo sealed ;;
+  record-result:*)
+    if [ "\${REFUSE_POSITIVE_QUALIFICATION:-0}" = 1 ]; then
+      echo 'Horse journal is not on its durable writable host mount' >&2
+      exit 1
+    fi
+    echo sealed ;;
   abort:*) ;;
   *) exit 91 ;;
 esac
 `
-      );
-      writeFileSync(join(generation, 'engine-supervisor.sh'), '#!/usr/bin/env bash\nexit 0\n');
-      writeFileSync(
-        join(generation, 'engine-release-database-proof.py'),
-        '#!/usr/bin/env bash\nexit 0\n'
-      );
-      writeFileSync(join(generation, 'engine-up.sh'), '#!/usr/bin/env bash\nexit 92\n');
-      writeFileSync(join(generation, 'build-engine-image.sh'), '#!/usr/bin/env bash\nexit 93\n');
-      for (const name of [
-        'engine-release-seal.py',
-        'engine-supervisor.sh',
-        'engine-release-database-proof.py',
-        'engine-up.sh',
-        'build-engine-image.sh',
-      ]) {
-        chmodSync(join(generation, name), 0o755);
-      }
+        );
+        writeFileSync(join(generation, 'engine-supervisor.sh'), '#!/usr/bin/env bash\nexit 0\n');
+        writeFileSync(
+          join(generation, 'engine-release-database-proof.py'),
+          '#!/usr/bin/env bash\nexit 0\n'
+        );
+        writeFileSync(
+          join(generation, 'engine-up.sh'),
+          `#!/usr/bin/env bash\nprintf replacement >> '${replacementLog}'\nexit 92\n`
+        );
+        writeFileSync(
+          join(generation, 'build-engine-image.sh'),
+          `#!/usr/bin/env bash\nprintf build >> '${replacementLog}'\nexit 93\n`
+        );
+        for (const name of [
+          'engine-release-seal.py',
+          'engine-supervisor.sh',
+          'engine-release-database-proof.py',
+          'engine-up.sh',
+          'build-engine-image.sh',
+        ]) {
+          chmodSync(join(generation, name), 0o755);
+        }
 
-      writeFileSync(join(bin, 'id'), '#!/usr/bin/env bash\n[ "$1" = -u ] && echo 0\n');
-      writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
-      writeFileSync(
-        join(bin, 'timeout'),
-        '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
-      );
-      writeFileSync(
-        join(bin, 'curl'),
-        `#!/usr/bin/env bash
+        writeFileSync(join(bin, 'id'), '#!/usr/bin/env bash\n[ "$1" = -u ] && echo 0\n');
+        writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
+        writeFileSync(
+          join(bin, 'timeout'),
+          '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
+        );
+        writeFileSync(
+          join(bin, 'curl'),
+          `#!/usr/bin/env bash
 printf '%s\n%s' '{"running":true,"releaseSha":"${B_SHA}","liveness":"ok","instanceId":"${instanceId}"}' '200'
 `
-      );
-      writeFileSync(
-        join(bin, 'git'),
-        `#!/usr/bin/env bash
+        );
+        writeFileSync(
+          join(bin, 'git'),
+          `#!/usr/bin/env bash
 printf '%s\n' "$*" >> '${gitLog}'
 exit 99
 `
-      );
-      writeFileSync(
-        join(bin, 'docker'),
-        `#!/usr/bin/env bash
+        );
+        writeFileSync(
+          join(bin, 'docker'),
+          `#!/usr/bin/env bash
 set -euo pipefail
 [ "$1" = container ] && [ "$2" = inspect ] && [ "$3" = -f ]
 case "$4" in
@@ -3205,36 +3251,49 @@ case "$4" in
   *) exit 94 ;;
 esac
 `
-      );
-      for (const name of ['id', 'flock', 'timeout', 'curl', 'git', 'docker'])
-        chmodSync(join(bin, name), 0o755);
+        );
+        for (const name of ['id', 'flock', 'timeout', 'curl', 'git', 'docker'])
+          chmodSync(join(bin, name), 0o755);
 
-      const replay = spawnSync(
-        'bash',
-        [join(generation, 'engine-release-transaction.sh'), '--run-id', runKey],
-        {
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            PATH: `${bin}:${process.env.PATH ?? ''}`,
-            REPO_DIR: join(sandbox, 'repo-with-advanced-main'),
-            ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
-            ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
-            SOURCE_LOCK_FILE: join(sandbox, 'source.lock'),
-            ENV_FILE: join(sandbox, 'engine.env'),
-            INVOCATION_ID: 'e'.repeat(32),
-            ENGINE_RELEASE_MAX_RUNTIME_SECONDS: '1200',
-          },
+        const replay = spawnSync(
+          'bash',
+          [join(generation, 'engine-release-transaction.sh'), '--run-id', runKey],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              REPO_DIR: join(sandbox, 'repo-with-advanced-main'),
+              ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
+              ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
+              SOURCE_LOCK_FILE: join(sandbox, 'source.lock'),
+              ENV_FILE: join(sandbox, 'engine.env'),
+              INVOCATION_ID: 'e'.repeat(32),
+              ENGINE_RELEASE_MAX_RUNTIME_SECONDS: '1200',
+              REFUSE_POSITIVE_QUALIFICATION: refusePositive ? '1' : '0',
+            },
+          }
+        );
+        expect(replay.status, `${replay.stdout}\n${replay.stderr}`).toBe(refusePositive ? 1 : 0);
+        if (refusePositive) {
+          expect(replay.stderr).toContain(
+            'Horse journal is not on its durable writable host mount'
+          );
+          expect(replay.stderr).toContain('durable per-run release result could not be recorded');
+          expect(replay.stdout).not.toContain('ENGINE_RELEASE_RESULT=');
+        } else {
+          expect(replay.stdout).toContain('ENGINE_RELEASE_RESULT=sealed');
+          expect(replay.stdout).toContain(`ENGINE_RELEASE_SHA=${B_SHA}`);
         }
-      );
-      expect(replay.status, `${replay.stdout}\n${replay.stderr}`).toBe(0);
-      expect(replay.stdout).toContain('ENGINE_RELEASE_RESULT=sealed');
-      expect(replay.stdout).toContain(`ENGINE_RELEASE_SHA=${B_SHA}`);
-      expect(existsSync(gitLog), 'committed replay consulted mutable protected main').toBe(false);
-    } finally {
-      rmSync(sandbox, { recursive: true, force: true });
+        expect(existsSync(replacementLog), 'duplicate completion invoked replacement/build').toBe(
+          false
+        );
+        expect(existsSync(gitLog), 'committed replay consulted mutable protected main').toBe(false);
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
     }
-  });
+  );
 
   it('has no alternate workflow that can mutate the live engine outside the sealed cutover', () => {
     const workflowDir = resolve(ROOT, '.github/workflows');

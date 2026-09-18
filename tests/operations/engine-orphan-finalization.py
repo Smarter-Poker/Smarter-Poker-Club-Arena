@@ -58,7 +58,10 @@ class OrphanFinalization(unittest.TestCase):
             'MainPID': '0', 'ControlPID': '0', 'Job': '', 'InvocationID': '',
             'ControlGroup': '', 'UnitFileState': 'disabled'}
         self.container = {'Id': CID, 'Image': IMAGE, 'State': {'Status': 'running', 'StartedAt': START},
-                          'Config': {'Labels': {'sp.release.sha': SHA}}}
+                          'Config': {'Labels': {'sp.release.sha': SHA},
+                                     'Env': ['HORSE_DECISION_JOURNAL_DIR=/var/lib/club-arena/horse-decisions']},
+                          'Mounts': [{'Type': 'bind', 'Source': str(Path('/var/lib/club-arena/horse-decisions').resolve()),
+                                      'Destination': '/var/lib/club-arena/horse-decisions', 'RW': True}]}
         self.image = {'Id': IMAGE, 'Config': {'Labels': {'org.opencontainers.image.revision': SHA},
                                             'Env': ['GIT_COMMIT_SHA=' + SHA]}}
         self.health = {'releaseSha': SHA, 'instanceId': INSTANCE, 'running': True, 'liveness': 'ok'}

@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex/f06-accepted-elimination-20260918",
+  "_comment": "Installed once as provider20260918084433. Independent readback 2026-09-18T08:44:47.428336Z confirms exact migration SHA256 0443f6c9deca788e64dfd76eab210f4961e376319af83346ad0f764650ad829a, all three full function/body hashes and postgres-only ACLs, unchanged public wrappers and enabled source triggers. The new private table is postgres-owned with RLS, no foreign keys, no API-role privileges and zero retained dispatch rows. Source reservation20260918082449; never replay. Natural player progress is separate live evidence.",
+  "tables": ["smarter_private.f06_elimination_dispatch"]
+}

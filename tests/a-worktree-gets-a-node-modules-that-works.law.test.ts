@@ -31,6 +31,70 @@ const ROOT = process.cwd();
 const script = readFileSync(join(ROOT, 'scripts/agent-workspace.sh'), 'utf8');
 const code = script.replace(/^\s*#.*$/gm, '');
 
+describe('pre-push keeps its inherited-main boundary when another task advances main', () => {
+  it.each(['inherited', 'edited', 'deleted'])(
+    'selects the actual branch inputs for an %s engine file',
+    (scenario) => {
+      const temporary = mkdtempSync(join(tmpdir(), 'ca-prepush-main-boundary-'));
+      try {
+        const env = Object.fromEntries(
+          Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+        );
+        const git = (...args: string[]) =>
+          execFileSync('git', args, { cwd: temporary, env, encoding: 'utf8' }).trim();
+        git('init', '-q', '-b', 'main');
+        git('config', 'core.hooksPath', '/dev/null');
+        git('config', 'user.name', 'Isolated fixture');
+        git('config', 'user.email', 'fixture@example.invalid');
+        mkdirSync(join(temporary, 'server/src'), { recursive: true });
+        writeFileSync(join(temporary, 'server/src/engine.ts'), 'initial engine\n');
+        writeFileSync(join(temporary, 'policy.md'), 'initial policy\n');
+        git('add', '.');
+        git('commit', '-qm', 'initial');
+        git('checkout', '-qb', 'candidate');
+        writeFileSync(join(temporary, 'policy.md'), 'first submitted policy\n');
+        git('commit', '-qam', 'first submission');
+        const previous = git('rev-parse', 'HEAD');
+        git('checkout', '-q', 'main');
+        writeFileSync(join(temporary, 'server/src/engine.ts'), 'protected engine one\n');
+        git('commit', '-qam', 'protected engine');
+        git('checkout', '-q', 'candidate');
+        git('merge', '-q', '--no-edit', 'main');
+        writeFileSync(join(temporary, 'policy.md'), 'corrected policy\n');
+        if (scenario === 'edited')
+          writeFileSync(join(temporary, 'server/src/engine.ts'), 'candidate engine correction\n');
+        if (scenario === 'deleted') git('rm', '-q', 'server/src/engine.ts');
+        git('commit', '-qam', 'candidate correction');
+        git('checkout', '-q', 'main');
+        writeFileSync(join(temporary, 'server/src/engine.ts'), 'protected engine two\n');
+        git('commit', '-qam', 'concurrent protected engine');
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        git('checkout', '-q', 'candidate');
+
+        const hook = readFileSync(join(ROOT, '.husky/pre-push'), 'utf8');
+        const begin = hook.indexOf('  if [ -n "$FILES" ] && git rev-parse --verify');
+        const end = hook.indexOf('\n  ALL_FILES=', begin);
+        expect(begin).toBeGreaterThan(-1);
+        expect(end).toBeGreaterThan(begin);
+        const output = execFileSync(
+          'bash',
+          [
+            '-c',
+            `set -eu\nREMOTE=origin\nLOCAL_SHA="$(git rev-parse HEAD)"\nFILES="$(git diff --name-only "$PREVIOUS" HEAD)"\n${hook.slice(begin, end)}\nprintf '\\nSELECTED\\n%s\\n' "$FILES"`,
+          ],
+          { cwd: temporary, env: { ...env, PREVIOUS: previous }, encoding: 'utf8' }
+        );
+        const selected = output.split('SELECTED\n').at(-1)!.trim().split('\n').filter(Boolean);
+        expect(selected).toEqual(
+          scenario === 'inherited' ? ['policy.md'] : ['policy.md', 'server/src/engine.ts']
+        );
+      } finally {
+        rmSync(temporary, { recursive: true, force: true });
+      }
+    }
+  );
+});
+
 describe('Mac workspaces never recreate the purged dependencies', () => {
   for (const scenario of [
     'workspace',

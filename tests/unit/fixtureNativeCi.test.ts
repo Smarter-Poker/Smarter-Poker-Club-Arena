@@ -206,6 +206,102 @@ function withForeignGitContext(directory: string, extended: boolean, check: () =
 
 describe('required CI owns native fixture verification', () => {
   it.each([
+    'scripts/ci/test-f06-movement-admission.py',
+    'scripts/ci/probes/f06-movement-admission.sql',
+    'scripts/ci/probes/f06-movement-admission.spec',
+    'scripts/ci/probes/f06-movement-opening.sql',
+    'scripts/ci/fixtures/f06-movement-admission/current-movement-receipt.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-movement-authorities.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-public-f06.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-final-relations.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-control-relations.json',
+    'scripts/ci/fixtures/f06-movement-admission/current-private-authorities.json',
+    'scripts/ci/fixtures/f06-movement-admission/g8-generation-dependency-catalog-1234.json',
+    'scripts/ci/fixtures/f06-movement-admission/g8-generation-dependency-functions-1234.json',
+    'scripts/ci/schema-manifest.d/f06-movement-admission.json',
+    'tests/operations/f06-movement-results.test.py',
+    'supabase/migrations/20260918095135_parked_tournament_movement_requires_canonical_custody.sql',
+  ])('enforces movement custody qualification for fixture input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it.each([
+    'scripts/ci/test-f06-movement-admission.py.backup',
+    'scripts/ci/fixtures/f06-movement-admission-other/readme.json',
+    'scripts/ci/probes/f06-movement-opening.sql.notes',
+    'docs/changelog/movement-custody.md',
+  ])('does not widen movement qualification to unrelated input %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: false, tests: false });
+  });
+
+  it('runs native movement custody and retains failed qualification evidence', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const calls = steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-f06-movement-admission.py')
+    );
+    expect(calls).toHaveLength(1);
+    const movement = calls[0];
+    expect(movement.id).toBe('f06_movement_admission');
+    expect(movement.run).toContain('python3 tests/operations/f06-movement-results.test.py');
+    expect(movement.run).toContain('--root "$GITHUB_WORKSPACE"');
+    expect(movement.run).toContain('--pg-bin "$PG_BIN"');
+    expect(movement.run).toContain('--evidence "$RUNNER_TEMP/f06-movement-admission/native"');
+    expect(movement.run).toContain('set -euo pipefail');
+    expect(movement.run).toContain('mkdir -p "$RUNNER_TEMP/f06-movement-admission"');
+    expect(movement.run).toContain(
+      'tee "$RUNNER_TEMP/f06-movement-admission/result-validator.log"'
+    );
+    expect(movement.run).toContain('tee "$RUNNER_TEMP/f06-movement-admission/qualification.log"');
+    expect(movement.env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(movement.env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+    expect(movement['continue-on-error']).toBeUndefined();
+    expect(movement.if).toBeUndefined();
+    const artifact = steps.find(
+      (step: { name?: string }) => step.name === 'Retain parked movement custody evidence'
+    );
+    expect(artifact.uses).toBe('actions/upload-artifact@v4');
+    expect(artifact.if).toContain('always()');
+    expect(artifact.if).toContain('steps.f06_movement_admission.outcome');
+    expect(artifact.if).toContain('["success", "failure", "cancelled"]');
+    expect(artifact.with.path).toBe('${{ runner.temp }}/f06-movement-admission/');
+    expect(artifact.with['if-no-files-found']).toBe('error');
+    expect(artifact.with['retention-days']).toBe(7);
+  });
+
+  it('declares qualified pending movement objects without a production installation claim', () => {
+    const fragment = JSON.parse(
+      readFileSync(join(root, 'scripts/ci/schema-manifest.d/f06-movement-admission.json'), 'utf8')
+    );
+    expect(fragment.functions).toEqual([
+      'fn_f06_admit_parked_movement',
+      'smarter_private.f06_movement_immutable',
+      'smarter_private.f06_movement_permits',
+      'smarter_private.f06_movement_prior',
+      'smarter_private.f06_assert_movement',
+      'smarter_private.f06_movement_transition_guard',
+    ]);
+    expect(fragment.tables).toEqual(['smarter_private.f06_movement_admissions']);
+    expect(fragment.columns['smarter_private.f06_movement_admissions']).toEqual([
+      'admission_id',
+      'tournament_id',
+      'lease_generation',
+      'table_id',
+      'lifecycle',
+      'break_id',
+      'custody_id',
+      'revision',
+      'requested_revision',
+      'proof',
+      'proof_hash',
+      'created_at',
+    ]);
+    expect(fragment._comment).toContain('Pending');
+    expect(fragment._comment).toContain('not a production installation claim');
+  });
+
+  it.each([
     'scripts/ci/test-f06-accepted-elimination.py',
     'scripts/ci/build-f06-elimination-migration.py',
     'scripts/ci/probes/f06-accepted-elimination.sql',

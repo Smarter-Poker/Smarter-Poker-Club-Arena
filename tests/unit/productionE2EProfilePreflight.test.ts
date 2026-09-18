@@ -289,6 +289,12 @@ describe('authenticated production account preflight', () => {
     expect(lobby).toContain('.lt-row[data-kind="cash"]');
     expect(lobby).toContain("locator('.agc-action--primary')");
     expect(lobby).toContain('test.setTimeout(75_000)');
+    expect(lobby).toContain(
+      "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
+    );
+    expect(lobby).toMatch(
+      /async function lobbySettled\(page: Page\)[\s\S]*await prepareCashLobbyActions\(page\);/
+    );
 
     const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');
     expect(mobile).toContain("const CLUB_ARENA_PATH = '/hub/club-arena'");

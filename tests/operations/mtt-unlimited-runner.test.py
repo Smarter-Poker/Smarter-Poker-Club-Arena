@@ -75,6 +75,83 @@ def signal_child(driver_path, output, pg):
     driver.main()
 
 
+class RunnerDatabaseCleanupTest(unittest.TestCase):
+    def setUp(self):
+        self.driver = load_runner()
+        self.execution = object.__new__(self.driver.Execution)
+        self.execution.report = {}
+        self.execution.expires = 10.05
+        self.clock = 10.0
+        self.database = "r46_mtt_isolation_unit"
+
+    def discard(self, observations, *, elapsed=0.005, absent="0"):
+        samples = iter(observations)
+
+        def sql(_database, _query, *, label):
+            self.clock += elapsed
+            if label == "database-connections":
+                return 0, json.dumps(next(samples)), ""
+            return 0, absent if label == "database-absent" else "", ""
+
+        def pause(seconds):
+            self.clock += seconds
+
+        self.execution.sql = mock.Mock(side_effect=sql)
+        with mock.patch.object(self.driver.time, "monotonic", side_effect=lambda: self.clock), \
+                mock.patch.object(self.driver.time, "sleep", side_effect=pause):
+            self.execution.discard(self.database)
+
+    def assert_no_drop(self):
+        self.assertTrue(all(call.kwargs["label"] == "database-connections"
+                            for call in self.execution.sql.call_args_list))
+
+    def test_terminal_client_waits_for_fresh_zero_backends_and_locks_before_drop(self):
+        samples = [{"backends": 1, "locks": 5}, {"backends": 0, "locks": 2},
+                   {"backends": 0, "locks": 0}]
+        self.discard(samples)
+        calls = self.execution.sql.call_args_list
+        self.assertEqual([call.kwargs["label"] for call in calls],
+                         ["database-connections"] * 3 + ["drop-database", "database-absent"])
+        self.assertEqual(calls[0], calls[1])
+        self.assertEqual(calls[1], calls[2])
+        query = calls[0].args[1]
+        self.assertIn("FROM pg_stat_activity WHERE datname='" + self.database + "'", query)
+        self.assertIn("FROM pg_locks WHERE database=", query)
+        self.assertEqual(calls[3].args[1], 'DROP DATABASE "' + self.database + '";')
+        self.assertEqual(self.execution.report["database_cleanup"],
+                         [{"database": self.database, "observations": samples}])
+        self.assertEqual(self.execution.expires, 10.05)
+
+    def test_retained_backend_or_lock_times_out_without_drop_or_deadline_extension(self):
+        for sample in ({"backends": 1, "locks": 0}, {"backends": 0, "locks": 1}):
+            with self.subTest(sample=sample):
+                self.clock = 10.0
+                self.execution.expires = 10.015
+                with self.assertRaisesRegex(TimeoutError, "backends/locks not cleared"):
+                    self.discard([sample])
+                self.assert_no_drop()
+                self.assertEqual(self.execution.expires, 10.015)
+
+    def test_zero_observed_after_original_deadline_cannot_pass(self):
+        with self.assertRaisesRegex(TimeoutError, "backends/locks not cleared"):
+            self.discard([{"backends": 0, "locks": 0}], elapsed=0.06)
+        self.assert_no_drop()
+
+    def test_invalid_cleanup_observation_never_becomes_zero(self):
+        for value in ({}, [], {"backends": False, "locks": 0},
+                      {"backends": -1, "locks": 0}, {"backends": 0, "locks": "0"},
+                      {"backends": 0, "locks": 0, "extra": 0}):
+            with self.subTest(value=value):
+                self.clock = 10.0
+                with self.assertRaisesRegex(RuntimeError, "invalid database cleanup observation"):
+                    self.discard([value])
+                self.assert_no_drop()
+
+    def test_zero_connections_still_requires_database_absence_after_normal_drop(self):
+        with self.assertRaisesRegex(RuntimeError, "database was not removed"):
+            self.discard([{"backends": 0, "locks": 0}], absent="1")
+
+
 class QualificationInputTest(unittest.TestCase):
     def test_only_finite_unique_uuid_inputs_are_accepted(self):
         render = load_runner().qualification_sql

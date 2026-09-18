@@ -4,6 +4,8 @@
 -- and permanently fences the separately locked/drained current generation too.
 -- No wallet, seat, registration, prior hand, payout or played-stat writes occur.
 -- Qualified only for the existing heads-up SNG uncommitted-hand contract.
+-- money-trigger-ok: table_seats.a00_f06_source_seat because its CREATE TRIGGER text below is only an exact existing catalog preimage assertion; this migration never creates or replaces that trigger.
+-- money-trigger-ok: tournament_players.a00_f06_source_roster because its CREATE TRIGGER text below is only an exact existing catalog preimage assertion; this migration never creates or replaces that trigger.
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='8s';

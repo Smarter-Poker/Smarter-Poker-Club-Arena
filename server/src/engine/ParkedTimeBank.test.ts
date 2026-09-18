@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const data = vi.hoisted(() => ({
   row: null as any,
   rpc: vi.fn(),
+  historyRead: vi.fn(),
   readError: null as unknown,
   writeError: null as unknown,
   beforeWrite: null as (() => Promise<void>) | null,
@@ -9,18 +10,42 @@ const data = vi.hoisted(() => ({
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
     rpc: data.rpc,
-    from: () => ({
-      upsert: async (row: unknown) => {
-        await data.beforeWrite?.();
-        if (!data.writeError) data.row = row;
-        return { error: data.writeError };
-      },
-      select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: data.row, error: data.readError }) }),
-      }),
-    }),
+    from: (tableName: string) =>
+      tableName === 'hand_history'
+        ? {
+            select: () => ({
+              eq: () => ({
+                order: () => ({
+                  limit: () => ({
+                    maybeSingle: data.historyRead,
+                  }),
+                }),
+              }),
+            }),
+          }
+        : {
+            upsert: async (row: unknown) => {
+              await data.beforeWrite?.();
+              if (!data.writeError) data.row = row;
+              return { error: data.writeError };
+            },
+            select: () => ({
+              eq: () => ({ maybeSingle: async () => ({ data: data.row, error: data.readError }) }),
+            }),
+          },
   },
   maintenanceSupabase: {},
+}));
+vi.mock('../services/supabase.js', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('../services/supabase.js')),
+  loadTable: async () => ({
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    tournament_id: null,
+    small_blind: 1,
+    big_blind: 2,
+    max_players: 6,
+    game_variant: 'nlh',
+  }),
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 import { ServerTableEngine } from './ServerTableEngine.js';
@@ -53,8 +78,85 @@ beforeEach(() => {
   data.writeError = null;
   data.beforeWrite = null;
   data.rpc.mockReset();
+  data.historyRead.mockReset().mockResolvedValue({ data: { hand_number: 12 }, error: null });
 });
 describe('a marked parked bank survives only its own unchanged stay and hand boundary', () => {
+  function freshStartup() {
+    const next = new ServerTableEngine(table) as any;
+    expect(next.handCount).toBe(0);
+    // Keep the real start -> history seed -> bank read -> native park chain.
+    // No play or process-wide lease/timer is needed to reach its first pause.
+    next.lifecycleCanMutate = () => next.running;
+    next.claimProcessOwnership = () => true;
+    next.armEngineLeaseExpiryTimer = () => {};
+    next.restoreButtonFromHistory = async () => {};
+    next.checkCrashRecovery = async () => false;
+    next.awaitPauseGate = async () => {
+      next.running = false;
+    };
+    next.killForRestart = vi.fn(() => {
+      next.running = false;
+    });
+    next.pauseForMaintenance(300000);
+    return next;
+  }
+
+  it('restores the real startup hand identity before re-parking a saved bank', async () => {
+    await saved();
+    const previousBank = structuredClone(data.row.time_bank_snapshot.players[user]);
+    const next = freshStartup();
+    await next.start();
+    expect(next.killForRestart).not.toHaveBeenCalled();
+    expect(next.handCount).toBe(12);
+    expect(data.row.time_bank_snapshot.handNumber).toBe(12);
+    expect(data.row.time_bank_snapshot.players[user]).toEqual(previousBank);
+    // Continue the same generation after the harness stopped at its pause.
+    next.running = true;
+    next.adoptSeatRoster([{ user_id: user, occupancy_id: stay, seat_number: 2, stack: 25 }]);
+    next.running = false;
+    expect(next.timeBankEngine.getPlayerBank(table, user)).toMatchObject({
+      remainingSeconds: 7,
+      usesRemaining: 1,
+    });
+    expect(next.timeBankMeta.get(user)).toEqual({
+      initialSeconds: 80,
+      baseSeconds: 40,
+      dbConsumedSeconds: 33,
+    });
+    expect(data.rpc).not.toHaveBeenCalled();
+  });
+
+  it.each(['refused', 'thrown', 'invalid'])(
+    'refuses startup before overwriting a saved bank when hand history is %s',
+    async (outcome) => {
+      await saved();
+      const checkpoint = structuredClone(data.row);
+      if (outcome === 'thrown')
+        data.historyRead.mockRejectedValue(new Error('history unavailable'));
+      else
+        data.historyRead.mockResolvedValue({
+          data: outcome === 'invalid' ? { hand_number: -1 } : null,
+          error: outcome === 'refused' ? new Error('history unavailable') : null,
+        });
+      const next = freshStartup();
+      await expect(next.start()).rejects.toThrow(
+        /history unavailable|Invalid persisted hand number/
+      );
+      expect(next.killForRestart).toHaveBeenCalledTimes(1);
+      expect(data.row).toEqual(checkpoint);
+      expect(data.rpc).not.toHaveBeenCalled();
+    }
+  );
+
+  it('starts a genuinely new table at zero when history is empty', async () => {
+    data.historyRead.mockResolvedValue({ data: null, error: null });
+    const next = freshStartup();
+    await next.start();
+    expect(next.killForRestart).not.toHaveBeenCalled();
+    expect(next.handCount).toBe(0);
+    expect(data.row).toBeNull();
+    expect(data.rpc).not.toHaveBeenCalled();
+  });
   it('never bills an active allocation twice across its parked snapshot and restart', async () => {
     data.rpc.mockResolvedValue({ data: { success: true, shortfall_seconds: 0 }, error: null });
     const old = engine();

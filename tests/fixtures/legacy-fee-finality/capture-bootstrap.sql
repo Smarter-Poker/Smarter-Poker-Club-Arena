@@ -33,4 +33,3 @@ CREATE TRIGGER ca_stranded_fee_reconciliations_no_truncate
 
 ALTER TABLE public.ca_stranded_fee_reconciliations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.ca_stranded_fee_reconciliations FROM PUBLIC, anon, authenticated;
-

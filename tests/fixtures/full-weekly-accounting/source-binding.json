@@ -391,7 +391,7 @@
     "tests/fixtures/legacy-fee-finality/pko-binding.json": "8aefb53217efaedd7d5233cf93473c41df387f4c0143fbbbab2f82ecee9343ea",
     "tests/fixtures/legacy-fee-finality/resolution.sql": "50a6897d52a060b2aa87b7f6493c7fb8e8c33a3fcee354d1d1a70dd2954a3695",
     "tests/fixtures/legacy-fee-finality/fn_accounting_tournament_terminal_fee_receipt.sql": "5f64d87c72fd19b262acb31350a767aa1700f836f73b56cb8b949acd5442e4a5",
-    "tests/fixtures/legacy-fee-finality/capture-bootstrap.sql": "faf50075be170c410f6477ca9d5577d946ed735416e6245b32d0ffc5c5238b19",
+    "tests/fixtures/legacy-fee-finality/capture-bootstrap.sql": "031c69e47876e67eff9262a476ee3915c2fc1058cf18f62a4a2e6d4e46812903",
     "tests/fixtures/legacy-fee-finality/positive-restore-terms.sql": "25763351166caea11a2dfdeab18d2d9b4d52cad593ed019427fd0241860e7198",
     "tests/fixtures/legacy-fee-finality/fn_tournament_finish_readiness.sql": "edd0280b88c37410ce5e159f232d837ee7fcf94f4935fd2b3f6a911a819c302f",
     "tests/fixtures/legacy-fee-finality/fn_ca_supply_snapshot.sql": "9ae7b70e2db6a081801447edcba3e6e4ba6dfe289b7dd0ab75827b30cf735e35",
@@ -420,10 +420,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "b56525e26167f7eb3b1019f991a9df4990ac3eed31bb9bb6869bc44c7ed309c7",
-    "scripts/ci/classify-ci-changes.mjs": "bf8a270bccf7633dd982890b528f6a7a68a2a1c2e4348e52ec7e910052902727",
+    "scripts/ci/classify-ci-changes.mjs": "91d29218a4968dfcd108a1eca98ac82360bd5d7da58997cb4c234c0583cd1332",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "959086268b01cd36e9a6c43f404b74d23cf3b65eb4bb8aaf7f4ba178c4009fe1"
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "60d88e9126d388e2b7ecb07174a10d9c2a627ddcaf1f8f57ccecda6da47e4940"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",

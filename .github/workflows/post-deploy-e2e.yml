@@ -790,6 +790,12 @@ jobs:
             exit 1
           fi
 
+      - name: Wait for the same engine to resume gameplay
+        if: steps.live.outputs.ready == 'true'
+        env:
+          EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
+        run: node scripts/ci/await-engine-gameplay.mjs "$EXPECTED_ENGINE_SHA"
+
       - name: Provision an isolated production E2E account
         if: steps.live.outputs.ready == 'true'
         id: account

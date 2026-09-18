@@ -2527,6 +2527,7 @@ class PaidTerminalTests(unittest.TestCase):
             with self.assertRaises(ValueError):check(changed)
 
     def test_original_output_parser_rejects_nonfinite_duplicate_and_diagnostics(self):
-        for raw in (b'{"stage":"x","amount":NaN}\n',b'{"stage":"x","stage":"x"}\n',b'ERROR: failing SQL\n',b'{"ok":true}\n',b'{"stage":"x"}|unexpected\n'):
+        for raw in (b'{"stage":"x","amount":NaN}\n',b'{"stage":"x","stage":"x"}\n',b'ERROR: failing SQL\n',b'{"ok":true}\n',b'{"stage":"x"}|unexpected\n',
+                    b'{"stage":"x","amount":1e999}\n',b'{"stage":"x","amount":1e-999}\n'):
             with self.subTest(raw=raw),self.assertRaises(ValueError):W.TERMINAL.observations(raw)
         self.assertEqual(W.TERMINAL.observations(b'SET\n{"stage":"x","amount":0.24}\n')[0]['amount'],W.Decimal('.24'))

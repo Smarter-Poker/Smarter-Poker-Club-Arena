@@ -229,13 +229,36 @@ try:
     peer=child()
     send(peer, "BEGIN; UPDATE probe_locks SET n=n+1 WHERE id=2; SELECT 'held';")
     assert line(peer)=='held'
+    # Arm the existing lock-holder session before the caller. Starting a new
+    # psql for each poll can miss the 100ms first retry sleep on a busy runner.
+    send(peer, """SET application_name='rake-lock-release-observer';
+    DO $$
+    DECLARE deadline timestamptz := clock_timestamp()+interval '5 seconds';
+    BEGIN
+      LOOP
+        PERFORM pg_stat_clear_snapshot();
+        EXIT WHEN EXISTS(
+          SELECT 1 FROM pg_stat_activity
+          WHERE application_name='rake-atomic-release'
+            AND state='active'
+            AND wait_event='PgSleep'
+        );
+        IF clock_timestamp() >= deadline THEN
+          RAISE EXCEPTION 'first retry sleep not observed';
+        END IF;
+        PERFORM pg_sleep(0.001);
+      END LOOP;
+    END
+    $$;
+    COMMIT;
+    SELECT 'released';""")
+    deadline=time.monotonic()+5
+    while sql("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='rake-lock-release-observer' AND state='active' AND wait_event='PgSleep');")!='t':
+        assert time.monotonic()<deadline, 'retry observer did not become active'
+        time.sleep(.01)
     caller=child()
     send(caller, f"SET application_name='rake-atomic-release'; SET lock_timeout='50ms'; SELECT fn_settle_tournament_rake('{uid(1)}','native-lock-release');")
-    deadline=time.monotonic()+5
-    while sql("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='rake-atomic-release' AND wait_event='PgSleep');")!='t':
-        assert time.monotonic()<deadline, 'retry sleep not observed'
-        time.sleep(.01)
-    send(peer,'COMMIT;')
+    assert line(peer)=='released'
     finish(peer)
     result=json.loads(line(caller))
     finish(caller)

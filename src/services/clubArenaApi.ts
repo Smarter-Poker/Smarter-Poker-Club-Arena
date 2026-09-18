@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ARENA API CLIENT — the single client->server path for privileged actions
+ *  CLUB ARENA API CLIENT: the single client->server path for privileged actions
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * WHY THIS EXISTS
@@ -49,6 +49,15 @@ export interface ClubArenaApiOptions {
   method?: 'POST' | 'GET' | 'PATCH' | 'DELETE';
   /** Query-string parameters. DELETE carries its target in the URL, not a body. */
   query?: Record<string, string | number | undefined | null>;
+  /**
+   * Bind a privileged request to the account that opened the action. A React
+   * surface can remain mounted while auth changes; in that case using the new
+   * session for the old confirmation would mutate the wrong account.
+   */
+  expectedUserId?: string;
+  /** Abort stale work on unmount/account change. A canceled mutation remains
+   * ambiguous to its caller and must retain its durable idempotency key. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -68,6 +77,9 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
   } = await supabase.auth.getSession();
   const token = session?.access_token;
   if (!token) throw new Error('Not authenticated');
+  if (opts.expectedUserId && session?.user?.id !== opts.expectedUserId) {
+    throw new Error('The Signed-In Player Changed Before This Request Started.');
+  }
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -94,6 +106,7 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
   const response = await fetch(url, {
     method,
     headers,
+    signal: opts.signal,
     /* GET and DELETE carry no body. Sending one is a spec violation that some
        runtimes reject outright, and a GET with a body silently breaks caching
        proxies. */
@@ -104,18 +117,16 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
     .json()
     .catch(() => ({ success: false, error: `HTTP ${response.status}` }));
 
-  if (!data?.success) {
+  if (!response.ok || data?.success !== true) {
     // Preserve the server's machine-readable flags (soldOut, alreadyOwned,
     // hasSales, ...). Callers previously saw only the message and could not
-    // react — e.g. refresh the shop when an item turned out to be sold out.
+    // react, e.g. refresh the shop when an item turned out to be sold out.
     const err = new Error(data?.error || `Request failed (HTTP ${response.status})`) as Error & {
       status?: number;
       /** TERMINAL, so a money key may safely be retired and a fresh attempt
-       *  started (2026-09-09). 408/409/425/429, every 5xx and every transport
-       *  exception are deliberately AMBIGUOUS: the first command may still be
-       *  committing, and retrying one of those with a new key can charge the
-       *  player twice. Same rule, same list, as UnionApiService - which is
-       *  where this was already written down and not read. */
+       *  started. 408/409/425/429, every 5xx and transport exceptions remain
+       *  AMBIGUOUS because a conflict can describe an already-used command
+       *  identity and does not prove that the original mutation never wrote. */
       definitive?: boolean;
       data?: Record<string, unknown>;
     };

@@ -29,6 +29,7 @@ const bank = {
   initialSeconds: 40,
   baseSeconds: 30,
   dbConsumedSeconds: 4,
+  unlimitedActivations: false,
 };
 function deposit() {
   depositMovedPresence(player, table, {
@@ -172,6 +173,7 @@ describe('the destination adopts only the transfer that created this stay', () =
     expect(engine.timeBankEngine.initializePlayer).toHaveBeenCalledWith(table, player, {
       remainingSeconds: 11,
       usesRemaining: 1,
+      unlimitedActivations: false,
     });
     expect(engine.timeBankMeta.get(player)).toEqual({
       initialSeconds: 40,

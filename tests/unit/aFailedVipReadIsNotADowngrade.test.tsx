@@ -14,14 +14,16 @@
  * Both pins below fail on the pre-fix hook.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+
+const authState = vi.hoisted(() => ({ user: { id: 'u1' } }));
 
 vi.mock('../../src/services/VIPService', () => ({
   FEATURE_PRICING: {},
   vipService: { isVIP: vi.fn(), checkVIPStatus: vi.fn() },
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
-  useAuthUser: () => ({ user: { id: 'u1' } }),
+  useAuthUser: () => ({ user: authState.user }),
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 /* The bus handler is captured so a test can fire the REAL re-check path.
@@ -47,6 +49,7 @@ import { vipService } from '../../src/services/VIPService';
 const isVIPMock = vipService.isVIP as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  authState.user = { id: 'u1' };
   isVIPMock.mockReset();
 });
 afterEach(() => {
@@ -83,5 +86,37 @@ describe('useVIPStatus', () => {
     const { result } = renderHook(() => useVIPStatus());
     await waitFor(() => expect(result.current.isLoading).toBe(false), { timeout: 3000 });
     expect(result.current.isVIP, 'fail CLOSED on a perk never confirmed').toBe(false);
+  });
+
+  it('masks the old account immediately and ignores its late VIP result', async () => {
+    let resolveFirst!: (value: boolean) => void;
+    let resolveSecond!: (value: boolean) => void;
+    const first = new Promise<boolean>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise<boolean>((resolve) => {
+      resolveSecond = resolve;
+    });
+    isVIPMock.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    const { result, rerender } = renderHook(() => useVIPStatus());
+    await waitFor(() => expect(isVIPMock).toHaveBeenCalledWith('u1'));
+
+    authState.user = { id: 'u2' };
+    rerender();
+    expect(result.current).toEqual({ isVIP: false, isLoading: true });
+    await waitFor(() => expect(isVIPMock).toHaveBeenCalledWith('u2'));
+
+    await act(async () => {
+      resolveFirst(true);
+      await first;
+    });
+    expect(result.current).toEqual({ isVIP: false, isLoading: true });
+
+    await act(async () => {
+      resolveSecond(true);
+      await second;
+    });
+    await waitFor(() => expect(result.current).toEqual({ isVIP: true, isLoading: false }));
   });
 });

@@ -9,7 +9,7 @@ description: >
   Club Arena, or asks for before/after screenshots of a Club Arena surface.
   Every agent or subagent doing the work must read this file in full and pass it
   to any subagent it spawns.
-version: 1.1.0
+version: 1.3.0
 ---
 
 # #ClubArenaConsole — The Painted-Chassis Standard
@@ -35,6 +35,55 @@ that art — never to draw a button, a border, a gradient or a pill in CSS.
 If you catch yourself writing `border-radius`, `linear-gradient` or `box-shadow`
 to make something _look like_ a control, stop. The control exists in the art.
 Find its pixel coordinates and print into them.
+
+### 0.1 Marketplace adaptation: preserve the store, upgrade its parts
+
+When Dan asks a Marketplace, VIP, Rewards, Merch or Club Shop surface to share
+the #ClubArenaConsole **look and feel**, that is not permission to replace its
+information architecture with one Spade Console, attach every store to one
+display window, or invent destination-selector objects. Preserve the existing
+page layout, routes, labels, data, controls and purchase flow. Upgrade the real
+cards, filters, rows, buttons, frames and typography in their existing places
+with an appropriate approved painted family.
+
+The adaptation rules are strict:
+
+- Same visual language does not mean a one-to-one clone. Each store keeps its
+  own layout and function while sharing material quality, lighting, inks and
+  control craftsmanship.
+- Never create a selector, showcase frame or empty replacement card merely to
+  demonstrate the style. If the existing layout has no job for it, it does not
+  ship.
+- Approved product art stays approved. In particular, the existing gold VIP
+  card artwork and layout are immutable unless Dan explicitly asks to replace
+  them. Plan name, price, term, Diamond price and selection state remain live
+  DOM text in the artwork's established zones.
+- Keep Marketplace navigation on the current surface. Never add
+  `target="_blank"` or call `window.open`; use the existing in-app route, page,
+  modal or iframe contract.
+- Never stretch a fixed-height master to fit a variable-height product,
+  fulfillment or benefit card, and never 9-slice across a painted feature. Use
+  native-ratio top, middle and bottom slices. If no approved slice family can
+  fit the content, preserve a controlled existing frame, report the art gap
+  and do not fabricate a substitute.
+- Never trade commerce correctness for a visual upgrade. Preserve exact
+  account, request and offer ownership, idempotency and durable-intent
+  compare-and-swap guards, stale-async response rejection and unmount safety.
+  Verify every purchase from its UI trigger through the authoritative receipt.
+- Upgrade the real interactive element in place. A floating line icon, emoji,
+  generic font glyph or Lucide-style overlay is not an upgrade. Seat the icon
+  in the painted art or remove it and use a clear text label.
+- Marketplace surfaces do not use green. Success and available states use the
+  approved cyan, silver or gold inks; red remains reserved for refusals and
+  destructive actions. This Marketplace rule overrides the general green ink
+  token below when adapting a store surface.
+- Marketplace throwables are one all-access credit product, never separate
+  Tomato, Egg, Snowball, Water Gun or Boxing Glove listings. Its art is a
+  clean-alpha composite made from the actual in-game throwable assets; test it
+  on white, black, cyan and magenta before release.
+- When before-and-after proof is requested, the final after image comes from
+  the exact published production build. A local render is a development gate,
+  not release proof.
 
 ---
 
@@ -371,13 +420,14 @@ you, and rebuilding on a stale copy silently reverts somebody's fix.
 
 ### Step 4 — Choose the chassis
 
-| Surface shape                                     | Chassis                                              |
-| ------------------------------------------------- | ---------------------------------------------------- |
-| A message and two actions                         | `SpadeConsole` + `plates`                            |
-| A page of content and two staff actions           | `SpadeConsole` + `plates`                            |
-| A page of content, no actions                     | `SpadeConsole` with `foot="foot"`                    |
-| Sitting down or rebuying (the buy-in family ONLY) | the Buy-In deck: `BUY_IN_ZONES` + `BUY_IN_DECK_H`    |
-| A list of tables/games                            | the lobby's own `ArenaGameCard` — never invent a row |
+| Surface shape                                     | Chassis                                                                                                                        |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| A message and two actions                         | `SpadeConsole` + `plates`                                                                                                      |
+| A page of content and two staff actions           | `SpadeConsole` + `plates`                                                                                                      |
+| A page of content, no actions                     | `SpadeConsole` with `foot="foot"`                                                                                              |
+| Sitting down or rebuying (the buy-in family ONLY) | the Buy-In deck: `BUY_IN_ZONES` + `BUY_IN_DECK_H`                                                                              |
+| A list of tables/games                            | the lobby's own `ArenaGameCard` — never invent a row                                                                           |
+| An established Marketplace or store page          | its existing layout plus the approved painted family for each real control; never wrap the whole page in a replacement console |
 
 **One master per surface.** Never assemble a surface out of a rail from here, a
 plate from there and a CSS pill. That single mistake is what produced three
@@ -715,6 +765,13 @@ Write scoped evidence to the existing task checkpoint and a separate changelog w
 - [ ] No decimals forward-facing; `compactChips` everywhere outside the felt.
 - [ ] Title Case, no em dashes, no `:hover`, no unstyled class hooks, no unread errors.
 - [ ] Every handler, guard, timer, focus trap and test-pinned literal survived.
+- [ ] Established Marketplace layouts, routes, product art and purchase paths survived; the existing gold VIP artwork and layout remained intact.
+- [ ] Marketplace navigation remained on the current surface; no `target="_blank"` or `window.open` path was introduced.
+- [ ] Variable-height product, fulfillment and benefit cards use native-ratio top, middle and bottom slices, or retain a controlled existing frame with the art gap reported; no master was stretched.
+- [ ] Commerce visuals preserved exact account/request/offer ownership, idempotency, durable-intent compare-and-swap, stale-async and unmount guards; verification followed the trigger through the authoritative receipt.
+- [ ] No decorative selector object, connected display clone, empty replacement frame, floating glyph or generic icon overlay was introduced.
+- [ ] Any throwable offer is one all-access product backed by actual in-game art and durable database guards against item-specific listings.
 - [ ] Rendered at 393 px, every state, compared against the before.
+- [ ] Requested after screenshots were captured from the exact published production build.
 - [ ] `tsc` clean, all four copy gates OK, every covering test green **in the worktree**.
 - [ ] Changelog written; PR number reported; nobody sat watching CI.

@@ -76,6 +76,10 @@ import { useState, useEffect, useCallback, useRef, startTransition, useMemo } fr
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
+import {
+  clearSessionPurchaseRequestId,
+  readOrCreateSessionPurchaseRequestId,
+} from '../utils/sessionPurchaseRequest';
 
 /**
  * Two stamp maps hold the same answer.
@@ -399,6 +403,7 @@ import { reportError } from '../utils/errorReporter';
 import { retryAsync } from '../utils/retryAsync';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
+import { visibleTimeBankAllowance } from '../utils/timeBankAllowanceView';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
 import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
 import { ritAwardHighlights } from '../utils/ritAwardHighlights';
@@ -3132,10 +3137,47 @@ function LiveTablePage({
    *
    * `null` means "not known yet" and renders as such, rather than asserting a
    * number the player can see is wrong. The true value arrives from
-   * `fn_time_bank_allowance` (the effect below) and from the engine snapshot,
+   * `fn_time_bank_allowance_v2` (the effect below) and from the engine snapshot,
    * whichever lands first.
    */
-  const [timeBanksRemaining, setTimeBanksRemaining] = useState<number | null>(null);
+  const [timeBanksRemainingState, setTimeBanksRemaining] = useState<number | null>(null);
+  /** Guards the Diamond charge in handleBuyTimeBanks against a double-tap. */
+  const buyingTimeBankRef = useRef(false);
+  const timeBankPurchaseKeyRef = useRef<{
+    userId: string;
+    quantity: number;
+    key: string;
+  } | null>(null);
+  const timeBankPurchaseRequestRef = useRef(0);
+  const timeBankAllowanceRequestRef = useRef(0);
+  const activeTimeBankBuyerRef = useRef(userId);
+  if (activeTimeBankBuyerRef.current !== userId) {
+    activeTimeBankBuyerRef.current = userId;
+    timeBankPurchaseRequestRef.current += 1;
+    timeBankAllowanceRequestRef.current += 1;
+    // Drop only the in-memory owner. The session key survives so an ambiguous
+    // response is still replayed if that account returns later.
+    timeBankPurchaseKeyRef.current = null;
+    buyingTimeBankRef.current = false;
+  }
+  const [timeBankUnlimitedState, setTimeBankUnlimitedState] = useState(false);
+  const [timeBankEntitlementUserId, setTimeBankEntitlementUserId] = useState(userId);
+  const visibleTimeBanks = visibleTimeBankAllowance(
+    timeBankEntitlementUserId,
+    userId,
+    timeBanksRemainingState,
+    timeBankUnlimitedState
+  );
+  const timeBanksRemaining = visibleTimeBanks.remaining;
+  const timeBankUnlimited = visibleTimeBanks.unlimited;
+  const timeBankUnlimitedRef = useRef(false);
+  timeBankUnlimitedRef.current = timeBankUnlimited;
+  const setTimeBankUnlimitedForUser = useCallback((unlimited: boolean, ownerUserId: string) => {
+    if (activeTimeBankBuyerRef.current !== ownerUserId) return;
+    setTimeBankEntitlementUserId(ownerUserId);
+    setTimeBankUnlimitedState(unlimited);
+    timeBankUnlimitedRef.current = unlimited;
+  }, []);
   /**
    * Dan 2026-08-19, bug list item 6: "pot-push animation to the winner after
    * every hand showing chip amounts, not auto-advancing."
@@ -3247,8 +3289,7 @@ function LiveTablePage({
    */
   const [stackReleasedByPlayer, setStackReleasedByPlayer] = useState<Record<string, number>>({});
   const stackReleaseTimersRef = useRef<number[]>([]);
-  /** Guards the diamond charge in handleBuyTimeBank against a double-tap. */
-  const buyingTimeBankRef = useRef(false);
+  /** Purchase continuations are scoped to the account that started them. */
   /**
    * Real diamond price of one time-bank extension, read from `feature_pricing`
    * (the same row `fn_purchase_feature` prices from, so the button cannot
@@ -3285,27 +3326,28 @@ function LiveTablePage({
         if (!data || !data.type) return;
 
         if (data.type === 'time_bank_timeout') {
-          if (data.showBuyMore) {
+          if (data.showBuyMore && !timeBankUnlimitedRef.current) {
             toast.warning(
-              `You were auto-${data.timedOutAction === 'check' ? 'checked' : 'folded'} , no time banks remaining. Visit the Diamond Store to purchase more!`,
+              `You Were Auto-${data.timedOutAction === 'check' ? 'Checked' : 'Folded'}, No Time Banks Remaining. Visit The Diamond Store To Purchase More!`,
               2500
             );
           } else {
             toast.info(
-              `You were auto-${data.timedOutAction === 'check' ? 'checked' : 'folded'} (time expired)`,
+              `You Were Auto-${data.timedOutAction === 'check' ? 'Checked' : 'Folded'} (Time Expired)`,
               2500
             );
           }
         } else if (data.type === 'time_bank_low') {
+          if (timeBankUnlimitedRef.current) return;
           const usesLeft = data.usesLeft as number;
           if (usesLeft <= 0) {
             toast.warning(
-              `That was your last time bank! Visit the Diamond Store to purchase more.`,
+              'That Was Your Last Time Bank! Visit The Diamond Store To Purchase More.',
               2500
             );
           } else {
             toast.warning(
-              `Warning: Only ${usesLeft} time bank${usesLeft === 1 ? '' : 's'} remaining!`,
+              `Warning: Only ${usesLeft} Time Bank${usesLeft === 1 ? '' : 's'} Remaining!`,
               2500
             );
           }
@@ -11288,17 +11330,25 @@ function LiveTablePage({
       if (eventType === 'time_bank_timeout') {
         const targetPlayer = handState.player_id as string;
         if (targetPlayer === userId) {
-          const showBuyMore = handState.show_buy_more as boolean;
+          const eventUnlimitedValue = handState.unlimited_activations;
+          const eventUnlimited = eventUnlimitedValue === true;
+          if (typeof eventUnlimitedValue === 'boolean') {
+            setTimeBankUnlimitedForUser(eventUnlimited, targetPlayer);
+          }
+          const showBuyMore =
+            !eventUnlimited &&
+            !timeBankUnlimitedRef.current &&
+            (handState.show_buy_more as boolean);
           const timedOutAction = handState.timed_out_action as string;
           if (showBuyMore) {
             // Player has ZERO time banks left — prompt to buy more
             toast.warning(
-              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} , no time banks remaining. Visit the Diamond Store to purchase more!`,
+              `You Were Auto-${timedOutAction === 'check' ? 'Checked' : 'Folded'}, No Time Banks Remaining. Visit The Diamond Store To Purchase More!`,
               2500
             );
           } else {
             toast.info(
-              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} (time expired)`,
+              `You Were Auto-${timedOutAction === 'check' ? 'Checked' : 'Folded'} (Time Expired)`,
               2500
             );
           }
@@ -11322,15 +11372,20 @@ function LiveTablePage({
       if (eventType === 'time_bank_low') {
         const targetPlayer = handState.player_id as string;
         if (targetPlayer === userId) {
+          const eventUnlimitedValue = handState.unlimited_activations;
+          if (typeof eventUnlimitedValue === 'boolean') {
+            setTimeBankUnlimitedForUser(eventUnlimitedValue, targetPlayer);
+          }
+          if (eventUnlimitedValue === true || timeBankUnlimitedRef.current) return;
           const usesLeft = handState.uses_remaining as number;
           if (usesLeft <= 0) {
             toast.warning(
-              `That was your last time bank! Visit the Diamond Store to purchase more.`,
+              'That Was Your Last Time Bank! Visit The Diamond Store To Purchase More.',
               2500
             );
           } else {
             toast.warning(
-              `Warning: Only ${usesLeft} time bank${usesLeft === 1 ? '' : 's'} remaining!`,
+              `Warning: Only ${usesLeft} Time Bank${usesLeft === 1 ? '' : 's'} Remaining!`,
               2500
             );
           }
@@ -14594,6 +14649,15 @@ function LiveTablePage({
     const evtTableId = payload.tableId ?? payload.table_id;
     const evtPlayerId = payload.playerId ?? payload.player_id;
     if (evtTableId !== tableId) return;
+    const eventUnlimitedValue =
+      typeof payload.unlimitedActivations === 'boolean'
+        ? payload.unlimitedActivations
+        : typeof payload.unlimited_activations === 'boolean'
+          ? payload.unlimited_activations
+          : undefined;
+    if (evtPlayerId === userId && typeof eventUnlimitedValue === 'boolean') {
+      setTimeBankUnlimitedForUser(eventUnlimitedValue, evtPlayerId);
+    }
 
     // Bible V8 §6.2: one bank is 20 seconds (TimeBankEngine secondsPerUse).
     // The 15 that used to sit here was the DECISION clock, a different number.
@@ -14645,7 +14709,7 @@ function LiveTablePage({
       setTimeBankActive(true);
       setTimeBankTimeRemaining(seconds);
       setTimeBankGrantedSeconds(seconds);
-      setTimeBanksRemaining(payload.usesRemaining ?? 0);
+      if (!eventUnlimitedValue) setTimeBanksRemaining(payload.usesRemaining ?? 0);
     }
   });
 
@@ -20996,7 +21060,7 @@ function LiveTablePage({
          be PROMPTED before a bank is spent, that is a real feature with a
          countdown and a decision in it, and it belongs in the engine's hands,
          not bolted on here. */
-      if (tableId && userId && (timeBanksRemaining ?? 0) > 0) {
+      if (tableId && userId && (timeBankUnlimited || (timeBanksRemaining ?? 0) > 0)) {
         setTimeBankActive(true);
         if (!v8Settings.auto_time_bank) {
           toast?.info?.('Time Bank Used');
@@ -21062,7 +21126,9 @@ function LiveTablePage({
    * already use.
    */
   const handleActivateTimeBank = useCallback(async () => {
-    if (!tableId || !userId || (timeBanksRemaining ?? 0) <= 0) return;
+    if (!tableId || !userId || (!timeBankUnlimited && (timeBanksRemaining ?? 0) <= 0)) {
+      return;
+    }
     const result = await GameServerAPI.activateTimeBank(tableId, userId);
     if (!result?.success) {
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
@@ -21115,7 +21181,7 @@ function LiveTablePage({
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-  }, [tableId, userId, timeBanksRemaining, toast, heroPineappleCards]);
+  }, [tableId, userId, timeBanksRemaining, timeBankUnlimited, toast, heroPineappleCards]);
 
   /* An arm belongs to ONE turn. Hero acts, folds, times out or the hand moves
      on, and a leftover `true` would keep the pending indicator lit on a seat
@@ -21173,8 +21239,9 @@ function LiveTablePage({
   /**
    * THE TRUE BALANCE, READ FROM THE LEDGER THAT OWNS IT.
    *
-   * `fn_time_bank_allowance(p_user_ids uuid[])` returns, per user:
-   *   is_vip, vip_seconds_remaining, purchased_seconds, extra_seconds
+   * `fn_time_bank_allowance_v2(p_user_ids uuid[])` returns, per user:
+   *   is_vip, is_lifetime, unlimited_activations, vip_seconds_remaining,
+   *   purchased_seconds, extra_seconds
    * — all SECONDS (a bank is worth 20s, see 20260818_time_bank_20s_per_use),
    * which is why this divides. `extra_seconds` is the total the engine itself
    * consumes (`fetchTimeBankExtras`), so using it here means the tile and the
@@ -21194,31 +21261,76 @@ function LiveTablePage({
    * competing source.
    */
   useEffect(() => {
-    if (!userId || userId === 'guest') return;
+    const requestedUserId = userId;
+    const requestId = ++timeBankAllowanceRequestRef.current;
+    setTimeBankEntitlementUserId(requestedUserId);
+    setTimeBankUnlimitedState(false);
+    timeBankUnlimitedRef.current = false;
+    setTimeBanksRemaining(null);
+    setShowTimeBankStore(false);
+    setDiamondBalance(null);
+    if (!requestedUserId || requestedUserId === 'guest') return;
     let cancelled = false;
-    supabase.rpc('fn_time_bank_allowance', { p_user_ids: [userId] }).then(
-      ({ data, error }) => {
-        if (cancelled || error || !data) return;
-        const row = Array.isArray(data) ? data[0] : data;
-        const secs = Number((row as { extra_seconds?: number })?.extra_seconds);
+    const isCurrentRequest = () =>
+      !cancelled &&
+      activeTimeBankBuyerRef.current === requestedUserId &&
+      timeBankAllowanceRequestRef.current === requestId;
+
+    void (async () => {
+      try {
+        let response = await supabase.rpc('fn_time_bank_allowance_v2', {
+          p_user_ids: [requestedUserId],
+        });
+        if (!isCurrentRequest()) return;
+
+        if (response.error) {
+          const code = String((response.error as { code?: string }).code ?? '');
+          const message = String(response.error.message ?? '');
+          const v2Unavailable =
+            code === 'PGRST202' ||
+            code === '42883' ||
+            /fn_time_bank_allowance_v2[\s\S]*(not found|does not exist|schema cache)/i.test(
+              message
+            ) ||
+            /(not found|does not exist|schema cache)[\s\S]*fn_time_bank_allowance_v2/i.test(
+              message
+            );
+          if (!v2Unavailable) return;
+          response = await supabase.rpc('fn_time_bank_allowance', {
+            p_user_ids: [requestedUserId],
+          });
+        }
+
+        if (!isCurrentRequest() || response.error || !response.data) return;
+        const row = Array.isArray(response.data) ? response.data[0] : response.data;
+        const allowance = row as {
+          is_lifetime?: boolean;
+          unlimited_activations?: boolean;
+          extra_seconds?: number;
+        };
+        const unlimited =
+          allowance?.is_lifetime === true && allowance?.unlimited_activations === true;
+        setTimeBankUnlimitedForUser(unlimited, requestedUserId);
+        const secs = Number(allowance?.extra_seconds);
         if (!Number.isFinite(secs)) return;
         setTimeBanksRemaining((prev) => (prev === null ? Math.floor(secs / 20) : prev));
-      },
-      () => {
-        /* The tile falls back to the engine's number; never fatal.
-             `.then(onOk, onErr)` rather than `.catch` — the Supabase query
-             builder is a PromiseLike, not a Promise, so it has no `.catch`. */
+      } catch {
+        /* The tile falls back to the engine's number; never fatal. */
       }
-    );
+    })();
     return () => {
       cancelled = true;
+      if (timeBankAllowanceRequestRef.current === requestId) {
+        timeBankAllowanceRequestRef.current += 1;
+      }
     };
-  }, [userId]);
+  }, [setTimeBankUnlimitedForUser, userId]);
 
   // Club-shop time banks are delivered in the purchase transaction. Broadcast
   // the exact granted quantity so every mounted table (and every browser tab)
   // updates its counter without waiting for a re-seat or engine reconnect.
   useMasterBusSubscription('ENTITLEMENTS_CHANGED', (payload) => {
+    if (timeBankUnlimitedRef.current) return;
     if (
       payload.userId !== userId ||
       payload.category !== 'time_bank' ||
@@ -21278,10 +21390,10 @@ function LiveTablePage({
   }, []);
 
   // Diamond balance for the buy-more sheet. Display only — the purchase is
-  // priced and charged server-side by fn_purchase_time_banks either way; this
+  // priced and charged server-side by fn_purchase_time_banks_v2 either way; this
   // just lets the sheet say "you need N more" instead of failing at the tap.
   useEffect(() => {
-    if (!userId || userId === 'guest' || !showTimeBankStore) return;
+    if (!userId || userId === 'guest' || !showTimeBankStore || timeBankUnlimited) return;
     let alive = true;
     void supabase
       .from('profiles')
@@ -21295,7 +21407,7 @@ function LiveTablePage({
     return () => {
       alive = false;
     };
-  }, [userId, showTimeBankStore]);
+  }, [userId, showTimeBankStore, timeBankUnlimited]);
 
   /**
    * Dan 2026-08-21, item 3: buy N time banks in ONE charge.
@@ -21303,50 +21415,84 @@ function LiveTablePage({
    * The single-unit `fn_purchase_feature` call this replaced could only ever
    * buy one, so the 500 preset would have meant 500 round trips and 500
    * separate diamond deductions — any of which could fail halfway and leave
-   * the player part-charged for a pack they did not get. `fn_purchase_time_banks`
+   * the player part-charged for a pack they did not get. `fn_purchase_time_banks_v2`
    * does the whole quantity in one transaction and prices it server-side from
    * `feature_pricing`, so the client cannot name its own price.
    */
   const handleBuyTimeBanks = useCallback(
     async (quantity: number): Promise<boolean> => {
+      if (timeBankUnlimitedRef.current) {
+        setShowTimeBankStore(false);
+        return false;
+      }
       if (!userId || userId === 'guest') {
-        toast?.error?.('Sign in to buy time banks');
+        toast?.error?.('Sign In To Buy Time Banks');
         return false;
       }
       if (buyingTimeBankRef.current) return false; // no double-charge on a double-tap
       buyingTimeBankRef.current = true;
+      const requestedUserId = userId;
+      const requestId = ++timeBankPurchaseRequestRef.current;
+      const purchaseScope = `time-bank:${requestedUserId}:${quantity}`;
+      if (
+        !timeBankPurchaseKeyRef.current ||
+        timeBankPurchaseKeyRef.current.userId !== requestedUserId ||
+        timeBankPurchaseKeyRef.current.quantity !== quantity
+      ) {
+        timeBankPurchaseKeyRef.current = {
+          userId: requestedUserId,
+          quantity,
+          key: readOrCreateSessionPurchaseRequestId(purchaseScope),
+        };
+      }
+      const purchaseKey = timeBankPurchaseKeyRef.current.key;
+      const isCurrentRequest = () =>
+        activeTimeBankBuyerRef.current === requestedUserId &&
+        timeBankPurchaseRequestRef.current === requestId;
       try {
-        /* One request id per attempt (review D15, 2026-09-07): the server dedupes on it through
-           digital_purchase_receipts, so a retried or double-delivered call cannot charge twice.
-           The one-argument overload minted a fresh key per call and defeated that. */
-        const requestId =
-          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-                const r = Math.floor(Math.random() * 16);
-                return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-              });
         const { data, error } = await supabase.rpc('fn_purchase_time_banks_v2', {
           p_quantity: quantity,
-          p_request_id: requestId,
+          p_request_id: purchaseKey,
         });
+        if (!isCurrentRequest()) return false;
         if (error) throw error;
+        // Any structured response is authoritative. Transport failures keep
+        // the browser-session key so a retry cannot become another charge.
+        clearSessionPurchaseRequestId(purchaseScope);
+        timeBankPurchaseKeyRef.current = null;
         const result = (data ?? {}) as {
           success?: boolean;
           error?: string;
           total_cost?: number;
           quantity?: number;
           diamonds_remaining?: number | string | null;
+          included?: boolean;
+          unlimited?: boolean;
+          idempotent?: boolean;
+          granted?: boolean;
         };
         if (!result.success) {
-          toast?.error?.(result.error || 'Could not buy time banks');
+          toast?.error?.(result.error || 'Could Not Buy Time Banks');
           return false;
+        }
+        if (result.included === true && result.unlimited === true) {
+          setTimeBankUnlimitedForUser(true, requestedUserId);
+          setTimeBanksRemaining(null);
+          setShowTimeBankStore(false);
+          toast?.success?.('Unlimited Lifetime VIP Time Banks Are Active');
+          return true;
+        }
+        if (result.idempotent === true && result.granted === false) {
+          const remaining = Number(result.diamonds_remaining);
+          if (Number.isFinite(remaining)) setDiamondBalance(remaining);
+          toast?.success?.('Time Bank Purchase Already Processed');
+          return true;
         }
         const bought = result.quantity ?? quantity;
         /* `?? 0` because the count is null until the true balance loads —
            a purchase landing in that window must not turn it into NaN. */
         masterBus.emit('ENTITLEMENTS_CHANGED', {
-          userId,
+          userId: requestedUserId,
           category: 'time_bank',
           quantity: bought,
           source: 'diamond-purchase',
@@ -21359,18 +21505,21 @@ function LiveTablePage({
         );
         return true;
       } catch (err) {
-        reportError(err, 'TablePage.buyTimeBanks');
-        toast?.error?.('Could not buy time banks');
+        if (isCurrentRequest()) {
+          reportError(err, 'TablePage.buyTimeBanks');
+          toast?.error?.('Could Not Buy Time Banks');
+        }
         return false;
       } finally {
-        buyingTimeBankRef.current = false;
+        if (isCurrentRequest()) buyingTimeBankRef.current = false;
       }
     },
-    [userId, toast]
+    [userId, toast, setTimeBankUnlimitedForUser]
   );
 
   /** Legacy single-bank entry point (TimeBank's "+EXTENSION" button). */
   const handleBuyTimeBank = useCallback(() => {
+    if (timeBankUnlimitedRef.current) return;
     setShowTimeBankStore(true);
   }, []);
 
@@ -22540,7 +22689,7 @@ function LiveTablePage({
           the alarm-clock counter when the player is out, and from the TimeBank
           panel's extension button. */}
       <TimeBankStoreModal
-        open={showTimeBankStore}
+        open={showTimeBankStore && !timeBankUnlimited}
         onClose={() => setShowTimeBankStore(false)}
         diamondCost={timeBankDiamondCost}
         banksRemaining={timeBanksRemaining ?? 0}
@@ -23003,7 +23152,8 @@ function LiveTablePage({
                 /* null = not loaded yet. The tile renders a dash rather
                    than asserting a number, which is what showed a wrong 4. */
                 count={timeBanksRemaining}
-                low={(timeBanksRemaining ?? 99) <= 1}
+                low={!timeBankUnlimited && (timeBanksRemaining ?? 99) <= 1}
+                unlimited={timeBankUnlimited}
                 /* AUDIT 2026-08-25: the tile's accessible label and tooltip say
                    "N seconds each", and that number was the component's hard
                    default of 20 because nothing was ever passed. Meanwhile
@@ -23025,7 +23175,7 @@ function LiveTablePage({
                    which is worse than being sent somewhere. Both arms now open
                    the store, where the balance is shown and more can be
                    bought. */
-                onClick={() => setShowTimeBankStore(true)}
+                onClick={timeBankUnlimited ? undefined : () => setShowTimeBankStore(true)}
               />
             )}
             {/* The same slot, same tile, once the hand is over. It cannot
@@ -25130,9 +25280,11 @@ function LiveTablePage({
                 {/* Time Bank */}
                 <button
                   className="control-strip__btn control-strip__btn--icon-img"
-                  title="Time Bank"
+                  title={timeBankUnlimited ? 'Unlimited Lifetime VIP Time Banks' : 'Time Bank'}
                   onClick={handleActivateTimeBank}
-                  disabled={(timeBanksRemaining ?? 0) <= 0 || timeBankActive}
+                  disabled={
+                    (!timeBankUnlimited && (timeBanksRemaining ?? 0) <= 0) || timeBankActive
+                  }
                 >
                   <span className="control-strip__icon-wrap" aria-hidden="true">
                     <img
@@ -25145,7 +25297,7 @@ function LiveTablePage({
                           carried across is the null case — the count is null until the
                           TRUE balance loads and must not render a fabricated number. */}
                     <span className="control-strip__count-overlay">
-                      {timeBanksRemaining ?? '-'}
+                      {timeBankUnlimited ? 'VIP' : (timeBanksRemaining ?? '-')}
                     </span>
                   </span>
                 </button>
@@ -25967,7 +26119,7 @@ function LiveTablePage({
         /* The discard is a decision, so it can buy time like any other. The
            same endpoint and the same bank; the engine routes a press made
            during the round to this seat's own deadline. */
-        timeBanksRemaining={timeBanksRemaining ?? 0}
+        timeBanksRemaining={timeBankUnlimited ? 1 : (timeBanksRemaining ?? 0)}
         onTimeBank={handleActivateTimeBank}
         cards={heroPineappleCards ?? []}
         onDiscard={handlePineappleDiscard}

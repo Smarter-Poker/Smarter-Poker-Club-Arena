@@ -33,6 +33,7 @@ const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
 
 const ANALYTICS = 'src/pages/admin/AnalyticsDashboard.tsx';
 const VIP_PAGE = 'src/pages/VIPPage.tsx';
+const VIP_ACTIVITY = 'src/components/vip/VIPActivityHistory.tsx';
 const FRIEND_SUGGESTIONS = 'src/services/FriendSuggestionService.ts';
 
 /** Source with block and line comments removed, so prose about a retired bug
@@ -63,6 +64,27 @@ describe('LAW: diamonds are read from the ledger that has rows', () => {
       expect(source).toMatch(/\btype\b/);
     });
   }
+
+  it('labels the VIP ledger as bounded Diamond activity instead of VIP points or totals', () => {
+    const source = code(VIP_ACTIVITY);
+    expect(source).toContain('Diamond Activity');
+    expect(source).toContain('Showing Up To 10 Recent Diamond Transactions');
+    expect(source).toContain('Transactions Shown');
+    expect(source).toContain('Diamond Balance');
+    expect(source).not.toContain('VIP Points');
+    expect(source).not.toContain('Monthly Summary');
+    expect(source).not.toContain('Total Earned');
+    expect(source).not.toContain('Total Spent');
+  });
+
+  it('shows an explicit verification failure instead of an empty-history claim', () => {
+    const activity = code(VIP_ACTIVITY);
+    const page = code(VIP_PAGE);
+    expect(activity).toContain("state === 'error'");
+    expect(activity).toContain('Diamond Activity Could Not Be Verified.');
+    expect(page).toContain("setDiamondActivityState('error')");
+    expect(page).toContain('setRecentDiamondActivities([])');
+  });
 });
 
 describe('LAW: platform totals are aggregated in the database', () => {

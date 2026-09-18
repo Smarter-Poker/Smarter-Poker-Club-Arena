@@ -1673,27 +1673,47 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
     const { dirname, join } = await import('node:path');
+    const ts = await import('typescript');
     const here = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(join(here, '../engine/ServerTableEngineDealing.ts'), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^\s*\/\/.*$/gm, '');
-    const sites = [...src.matchAll(/await this\.awaitPauseGate\(\)/g)];
+    const src = readFileSync(join(here, '../engine/ServerTableEngineDealing.ts'), 'utf8');
+    const source = ts.createSourceFile(
+      'ServerTableEngineDealing.ts',
+      src,
+      ts.ScriptTarget.Latest,
+      true
+    );
+    const sites: string[] = [];
+    const visit = (node: import('typescript').Node): void => {
+      if (
+        ts.isAwaitExpression(node) &&
+        node.expression.getText(source) === 'this.awaitPauseGate()'
+      ) {
+        const guards: string[] = [];
+        // Only enclosing conditions own this call. A sibling checkpoint's
+        // maintenance guard must not relabel a terminal-only pause gate.
+        for (let child: import('typescript').Node = node; child.parent; child = child.parent) {
+          const parent = child.parent;
+          if (ts.isFunctionLike(parent)) break;
+          if (ts.isIfStatement(parent) && parent.thenStatement === child) {
+            guards.push(parent.expression.getText(source));
+          }
+        }
+        sites.push(guards.join(' && '));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
     expect(sites.length, 'the dealing loop has two park gates').toBeGreaterThanOrEqual(2);
     let maintenanceSites = 0;
     let terminalOnlySites = 0;
-    for (const m of sites) {
-      // Pause ownership gained an exact tournament-move owner in front of the
-      // existing maintenance condition. Inspect the complete local guard, not
-      // a formatting-sized fragment that can silently stop at a longer list
-      // of authorities while the runtime condition remains correctly wired.
-      const guard = src.slice(Math.max(0, m.index! - 500), m.index!);
+    for (const guard of sites) {
       const hasMaintenance = /maintenancePaused/.test(guard);
       const hasTerminalCloseout = /terminalCloseoutPaused/.test(guard);
       expect(
         guard,
         'an awaitPauseGate call without a named pause authority can park or release the wrong hand: ' +
           guard.trim().slice(-120)
-      ).toMatch(/maintenancePaused|terminalCloseoutPaused/);
+      ).toMatch(/maintenancePaused|terminalCloseoutPaused|this\.isNextHandPaused\(\)/);
       if (hasMaintenance) maintenanceSites++;
       if (hasTerminalCloseout && !hasMaintenance) terminalOnlySites++;
     }

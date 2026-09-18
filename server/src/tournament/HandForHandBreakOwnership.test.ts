@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { channelHub } from '../hub/ChannelHub.js';
+import { supabase } from '../services/supabase.js';
 import type { GameServer } from '../GameServer.js';
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
@@ -9,6 +11,7 @@ class BarrierHarness extends TournamentManagerBase {
     (this as any).lifecycleEpoch.begin();
     this.running = true;
     this.handForHandActive = true;
+    this.gameServer.getTournamentHandForHand = () => this.getHandForHandPresentation();
   }
 
   add(id: string, engine: ServerTableEngine): void {
@@ -156,5 +159,57 @@ describe('hand-for-hand respects tournament break ownership', () => {
     manager.edge();
     expect(a.released).toHaveBeenCalledOnce();
     expect(b.released).toHaveBeenCalledOnce();
+  });
+});
+
+describe('hand-for-hand public presentation remains an observation', () => {
+  it('observes the actual manager state without changing barrier ownership', () => {
+    const { manager, a, b } = field();
+    expect(manager.getHandForHandPresentation()).toBe(true);
+    (manager as any).handForHandActive = false;
+    expect(manager.getHandForHandPresentation()).toBe(false);
+    (manager as any).tournamentLeaseGeneration = 'expired';
+    (manager as any).tournamentLeaseProofDeadlineMonotonicMs = -1;
+    expect(manager.getHandForHandPresentation()).toBeNull();
+    expect((manager as any).stopFenceApplied).toBe(false);
+    expect(a.released).not.toHaveBeenCalled();
+    expect(b.released).not.toHaveBeenCalled();
+  });
+  it('cannot prevent the existing stop fence when presentation transport throws', () => {
+    const { manager } = field();
+    vi.spyOn(channelHub, 'broadcastToTournament').mockImplementation(() => {
+      throw new Error('display transport unavailable');
+    });
+    expect(() => (manager as any).applyStopFence()).not.toThrow();
+    expect((manager as any).running).toBe(false);
+    expect((manager as any).stopFenceApplied).toBe(true);
+  });
+  it('publishes actual transition state and unknown when the existing manager retires', async () => {
+    const { manager } = field();
+    const published = vi.spyOn(channelHub, 'broadcastToTournament');
+    vi.spyOn(supabase, 'channel').mockReturnValue({
+      httpSend: vi.fn().mockResolvedValue({ success: true }),
+    } as any);
+    const announce = (TournamentManagerBase.prototype as any).broadcast.bind(manager);
+    await announce('hand_for_hand', { active: true });
+    expect(published.mock.calls.at(-1)?.[1]).toMatchObject({
+      event: { type: 'tournament_presentation', payload: { handForHand: true } },
+    });
+    (manager as any).handForHandActive = false;
+    await announce('bubble_burst', {});
+    expect(published.mock.calls.at(-1)?.[1]).toMatchObject({
+      event: { payload: { handForHand: false } },
+    });
+    (manager as any).applyStopFence();
+    expect(published.mock.calls.at(-1)?.[1]).toMatchObject({
+      event: { payload: { handForHand: null } },
+    });
+    // The old manager may finish an awaited broadcast after its replacement
+    // owns the slot. It may only publish that current manager's observation.
+    (manager as any).gameServer.getTournamentHandForHand = () => true;
+    await announce('bubble_burst', {});
+    expect(published.mock.calls.at(-1)?.[1]).toMatchObject({
+      event: { payload: { handForHand: true } },
+    });
   });
 });

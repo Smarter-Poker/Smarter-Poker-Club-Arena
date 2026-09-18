@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { useDebounce } from '../../hooks/useDebounce';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
@@ -44,6 +45,10 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [query, setQuery] = useState('');
+  /* One request per pause in typing, not one per keystroke: every change to
+     the search box used to refetch /api/club-arena/shop-purchases through the
+     World Hub. 300 ms is the same window the roster and hand searches use. */
+  const debouncedQuery = useDebounce(query, 300);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
@@ -62,7 +67,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
       const url =
         `/api/club-arena/shop-purchases?clubId=${encodeURIComponent(clubId)}` +
         `&limit=${PAGE}&offset=${offset}` +
-        (query.trim() ? `&q=${encodeURIComponent(query.trim())}` : '');
+        (debouncedQuery.trim() ? `&q=${encodeURIComponent(debouncedQuery.trim())}` : '');
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({ success: false }));
       if (!data.success) throw new Error(data.error || 'Failed to load purchases');
@@ -75,7 +80,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [clubId, offset, query, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clubId, offset, debouncedQuery, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load();

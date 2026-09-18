@@ -24,7 +24,7 @@ export const FAQ_ITEMS: FAQItem[] = [
     category: 'Account',
     question: 'How Do I Change My Password?',
     answer:
-      'Open Settings, Find Account, And Choose Change Password. Club Arena Sends The Reset Through Your Verified Account Email.',
+      'Open Settings, Find Account, And Choose Change Password. Poker Arena Sends The Reset Through Your Verified Account Email.',
   },
   {
     category: 'Account',

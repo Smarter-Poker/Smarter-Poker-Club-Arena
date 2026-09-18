@@ -89,7 +89,7 @@ COMPLETED_CONSUMER = 'scripts/qualification/spin-history-retention-completed.sql
 COMPLETED_CAPTURE_TIME = '2026-09-17T07:35:54.523723+00:00'
 REPLACEMENTS.update({name: name for name in (*RETENTION_INPUTS, *COMPLETED_INPUTS)})
 PURE_MANIFEST = 'scripts/qualification/spin-mixed-basis-pure.hosted.manifest.json'
-PURE_MANIFEST_SHA256 = 'a35df0cdf919067a27646cf55272748a4feb6fd418a896156b57fd84a651cdfe'
+PURE_MANIFEST_SHA256 = 'eb2625364f0f6c9da966a171bed205329894c4a3aee0db95db7baaf96bd45f41'
 PURE_COMPONENT = 'supabase/components/spin-mixed-basis-evidence.sql'
 PURE_SHAPE = 'scripts/qualification/spin-mixed-basis-shape.sql'
 PURE_PREIMAGE = 'scripts/qualification/spin-mixed-basis-evidence.preimage.sql'

@@ -11,6 +11,8 @@ const fixture = vi.hoisted(() => ({
   reportError: vi.fn(),
   navigate: vi.fn(),
   channels: [] as any[],
+  tournamentEvents: new Map<string, Set<(event: any) => void>>(),
+  channelStatuses: new Set<(status: any) => void>(),
   bus: new Map<string, Set<(event: any) => void>>(),
   queries: [] as any[],
 }));
@@ -29,10 +31,23 @@ vi.mock('../../src/services/TournamentService', async (importOriginal) => {
 });
 vi.mock('../../src/services/GameServerAPI', () => ({ getServerStatus: fixture.health }));
 vi.mock('../../src/services/EngineStateClient', () => ({
-  engineChannelClient: { onStatusChange: () => () => {} },
+  engineChannelClient: {
+    onStatusChange: (cb: any) => {
+      fixture.channelStatuses.add(cb);
+      return () => fixture.channelStatuses.delete(cb);
+    },
+  },
 }));
 vi.mock('../../src/services/RealtimeChannelService', () => ({
-  realtimeChannelService: { subscribeToLobby: () => () => {} },
+  realtimeChannelService: {
+    subscribeToLobby: () => () => {},
+    subscribeToTournament: (id: string, callbacks: any) => {
+      const listeners = fixture.tournamentEvents.get(id) ?? new Set();
+      listeners.add(callbacks.onEvent);
+      fixture.tournamentEvents.set(id, listeners);
+      return () => listeners.delete(callbacks.onEvent);
+    },
+  },
 }));
 vi.mock('../../src/components/tournament/details/useSatellites', () => ({
   useSatellites: () => ({
@@ -47,9 +62,6 @@ vi.mock('../../src/components/tournament/RegistrationApprovalsPanel', () => ({
   default: () => null,
 }));
 vi.mock('../../src/components/tournament/TournamentDealReview', () => ({ default: () => null }));
-vi.mock('../../src/components/tournament/HandForHandBanner', () => ({
-  HandForHandBanner: () => null,
-}));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: fixture.user }) }));
 vi.mock('../../src/hooks/useTournamentRegistration', () => ({
@@ -217,6 +229,8 @@ beforeEach(() => {
   fixture.realOverview = false;
   fixture.health.mockReset().mockResolvedValue(null);
   fixture.channels.length = 0;
+  fixture.tournamentEvents.clear();
+  fixture.channelStatuses.clear();
   fixture.bus.clear();
   fixture.queries.length = 0;
   fixture.getTournament.mockReset().mockImplementation(async (id) => tournament(id));
@@ -494,5 +508,71 @@ describe('Tournament details snapshot recovery', () => {
     await flush();
     expect(snapshot().entries[0].chips).toBe(700);
     expect(fixture.getTournament).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('authoritative hand-for-hand disclosure', () => {
+  function presentation(id: string, active: unknown) {
+    act(() => {
+      for (const listener of fixture.tournamentEvents.get(id) ?? [])
+        listener({ type: 'tournament_presentation', payload: { handForHand: active } });
+    });
+  }
+
+  it('shows the manager snapshot on the actual detail banner and clears on bubble exit/reconnect', async () => {
+    fixture.realOverview = true;
+    render(<Page />);
+    await flush();
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    presentation('a', false);
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    act(() => {
+      for (const listener of fixture.channelStatuses) listener('reconnecting');
+    });
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    act(() => {
+      for (const listener of fixture.channelStatuses) listener('connected');
+    });
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+  });
+
+  it('fences old-account and old-tournament callbacks before accepting a new snapshot', async () => {
+    fixture.realOverview = true;
+    const view = render(<Page embedded id="a" />);
+    await flush();
+    presentation('a', true);
+    const old = [...fixture.tournamentEvents.get('a')!][0];
+    fixture.user = { id: 'second-viewer' };
+    view.rerender(<Page embedded id="a" />);
+    await flush();
+    act(() => old({ type: 'tournament_presentation', payload: { handForHand: true } }));
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    view.rerender(<Page embedded id="b" />);
+    await flush();
+    presentation('a', true);
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('b', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+  });
+
+  it('rejects unrelated/malformed state and releases the old event consumer on unmount', async () => {
+    fixture.realOverview = true;
+    const view = render(<Page />);
+    await flush();
+    presentation('other', true);
+    presentation('a', 'true');
+    expect(screen.queryByText('HAND FOR HAND')).toBeNull();
+    presentation('a', true);
+    expect(screen.getByText('HAND FOR HAND')).toBeTruthy();
+    view.unmount();
+    expect(fixture.tournamentEvents.get('a')?.size ?? 0).toBe(0);
+    presentation('a', true);
   });
 });

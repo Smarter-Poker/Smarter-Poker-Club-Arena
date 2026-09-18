@@ -66,7 +66,7 @@ export function classifyChangedPaths(paths) {
   // These maintained verification inputs execute in the existing CSS browser
   // job. A test-only correction must run its connected browser regressions.
   const cashLobbyBrowser = matches(
-    /^tests\/e2e\/(?:mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
+    /^tests\/e2e\/(?:global-setup\.ts|mobile-lobby-chrome\.spec\.ts|production-live-table-realtime\.spec\.ts|support\/(?:cashLobbyOverlays|observationDeadline|initialTableOwnership)\.ts)$/
   );
   // Both PR builds invoke this stamper; its own changes must reach them.
   const buildProvenance = paths.includes('scripts/stamp-build-provenance.mjs');

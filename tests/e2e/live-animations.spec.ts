@@ -541,11 +541,10 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     ).toBeUndefined();
   });
 
-  test('reduced motion is honoured — every animation collapses', async ({ browser }) => {
-    const ctx = await browser.newContext({ reducedMotion: 'reduce' });
-    const page = await ctx.newPage();
-    await loadLiveCss(page);
-    await mountTable(page);
+  test('reduced motion is honoured — every animation collapses', async ({ page }) => {
+    // beforeEach already loaded this build's CSS and mounted the real table fixture.
+    // Apply the preference to that same page before triggering the measured beat.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     const b = await beat(
       page,
       `$('cards').classList.add('seat__cards--dealing');
@@ -554,7 +553,6 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     for (const [name, ms] of Object.entries(b)) {
       expect(ms, `${name} must be flattened under prefers-reduced-motion`).toBeLessThanOrEqual(1);
     }
-    await ctx.close();
   });
 });
 

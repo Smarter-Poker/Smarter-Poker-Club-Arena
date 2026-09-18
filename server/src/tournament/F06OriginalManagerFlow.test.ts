@@ -17,7 +17,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-async function fixture(failure = '', beginOutcome = 'committed') {
+async function fixture(failure = '', beginOutcome = 'committed', prepareThroughDealer = false) {
   let releaseBegin: ((value: any) => void) | null = null;
   let originalRow: any = null;
   let beginReached = false;
@@ -91,6 +91,7 @@ async function fixture(failure = '', beginOutcome = 'committed') {
   const rpc = vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, p: any) => {
     calls.push({ name, p: structuredClone(p) });
     if (name === 'fn_f06_begin_hand') {
+      if (beginOutcome === 'live_reserved') return { data: canonicalBegin(), error: null };
       if (beginOutcome.startsWith('pending_')) {
         if (beginOutcome === 'pending_reserved') canonicalBegin();
         return new Promise<any>((resolve) => {
@@ -241,12 +242,14 @@ async function fixture(failure = '', beginOutcome = 'committed') {
     (n, p) => supabase.rpc(n, p) as any,
     () => true
   );
-  const beginResult = permit.reserve().then(
+  const beginResult = (prepareThroughDealer ? Promise.resolve() : permit.reserve()).then(
     () => ({ ok: true, error: null }),
     (error) => ({ ok: false, error })
   );
-  if (!beginOutcome.startsWith('pending_')) expect((await beginResult).ok).toBe(false);
-  engine.f06CurrentPermit = permit;
+  if (!prepareThroughDealer && !beginOutcome.startsWith('pending_'))
+    expect((await beginResult).ok).toBe(false);
+  if (prepareThroughDealer) engine.installF06HandAdmission(() => permit);
+  else engine.f06CurrentPermit = permit;
   engine.running = true;
   return {
     beginResult,
@@ -696,6 +699,140 @@ it.each(['committed', 'absent', 'pending_reserved'])(
       next.running = false;
       next.activeHandWaitRelease?.release('test_cleanup');
       next.preciseTimer.dispose();
+      await dealing;
+    }
+  }
+);
+
+it.each(['continue', 'fail', 'pause', 'unknown_reply'])(
+  'ordinary reserved preparation is not original recovery while its allowance read is pending: %s',
+  async (outcome) => {
+    const f = await fixture(
+      'fn_f06_request_park',
+      outcome === 'unknown_reply' ? 'pending_reserved' : 'live_reserved',
+      true
+    );
+    const roster = [
+      {
+        user_id: user,
+        seat_number: 1,
+        stack: 100,
+        occupancy_id: occupancy,
+        seat_id: seat,
+        seat_joined_at: '2026-09-12T00:00:00Z',
+        username: 'First player',
+        is_horse: false,
+      },
+      {
+        user_id: id(20),
+        seat_number: 2,
+        stack: 100,
+        occupancy_id: id(41),
+        seat_id: id(42),
+        seat_joined_at: '2026-09-12T00:00:00Z',
+        username: 'Second player',
+        is_horse: false,
+      },
+    ];
+    Object.assign(f.engine, {
+      tableInfo: {
+        id: source,
+        tournament_id: event,
+        game_type: 'tournament',
+        game_variant: 'nlh',
+        max_players: 2,
+        current_players: 2,
+        status: 'waiting',
+        small_blind: 10,
+        big_blind: 20,
+        ante: 0,
+        action_time_seconds: 15,
+      },
+      seatedPlayers: roster,
+      knownPlayerIds: new Set(roster.map((p) => p.user_id)),
+      lastButtonSeat: 2,
+      lastBigBlindSeat: 2,
+      dealtInUserIds: new Set(roster.map((p) => p.user_id)),
+      bombPotSchedPersistedJson: 'null',
+      eventShadowEnabled: false,
+      isCurrentEngine: () => true,
+      allocateGlobalHandNumber: async () => 1000001,
+      refreshRakeConfig: async () => {},
+      persistHoleCardsWithRetry: async () => {},
+      flushSnapshot: async () => {},
+    });
+    let release!: () => void;
+    const allowance = new Promise<Map<string, number>>((resolve, reject) => {
+      release = () =>
+        outcome === 'fail' ? reject(new Error('original preparation failed')) : resolve(new Map());
+    });
+    const allowanceRead = vi.fn(() => allowance);
+    f.engine.fetchTimeBankExtras = allowanceRead;
+    const handEvents: any[] = [];
+    f.engine.handleHandEvent = async (event: any) => {
+      handEvents.push(event);
+    };
+    let dealError: unknown;
+    const dealing = f.engine.dealHand(roster).catch((e: unknown) => {
+      dealError = e;
+    });
+    try {
+      if (outcome === 'unknown_reply') {
+        for (let i = 0; i < 100 && !f.calls.some((call) => call.name === 'fn_f06_begin_hand'); i++)
+          await Promise.resolve();
+        expect(f.engine.getF06RetainedPermit().phase).toBe('unknown');
+        await f.manager.recoverF06OriginalAdmissions();
+        expect(f.calls.some((call) => call.name === 'fn_f06_request_park')).toBe(false);
+        f.releaseBegin(f.lateBegin());
+      }
+      for (let i = 0; i < 100 && !allowanceRead.mock.calls.length && !dealError; i++)
+        await Promise.resolve();
+      expect(dealError).toBeUndefined();
+      expect(allowanceRead).toHaveBeenCalledOnce();
+      expect(f.engine.getF06RetainedPermit().phase).toBe('reserved');
+      expect(handEvents.some((event) => event.type === 'HAND_START')).toBe(false);
+      // This is the real scheduled recovery decision, during the real dealer's
+      // asynchronous gap after BEGIN and before its synchronous controller start.
+      await f.manager.recoverF06OriginalAdmissions();
+      expect(f.calls.some((call) => call.name === 'fn_f06_request_park')).toBe(false);
+      expect(f.engine.stop).not.toHaveBeenCalled();
+      expect(
+        f.manager.bindStoppedOriginalBreak({
+          source_table_id: source,
+          break_id: id(98),
+          state: 'park_requested',
+          lifecycle: '1',
+        })
+      ).toBe(false);
+      if (outcome === 'pause') f.engine.pauseAfterHand(120000, { beforeNextHand: true });
+      release();
+      for (
+        let i = 0;
+        i < 100 && !handEvents.some((event) => event.type === 'HAND_START') && !dealError;
+        i++
+      )
+        await Promise.resolve();
+      if (outcome === 'continue' || outcome === 'unknown_reply') {
+        expect(dealError).toBeUndefined();
+        expect(handEvents.some((event) => event.type === 'HAND_START')).toBe(true);
+        expect(f.engine.getF06RetainedPermit().phase).toBe('attempted');
+        await f.manager.recoverF06OriginalAdmissions();
+        expect(f.engine.stop).not.toHaveBeenCalled();
+      } else {
+        await dealing;
+        if (outcome === 'fail') expect(String(dealError)).toContain('original preparation failed');
+        else expect(dealError).toBeUndefined();
+        expect(handEvents.some((event) => event.type === 'HAND_START')).toBe(false);
+        // A genuinely exited preparation remains eligible under the same permit.
+        await expect(f.manager.recoverF06OriginalAdmissions()).rejects.toThrow('outcome unproven');
+        expect(f.calls.filter((call) => call.name === 'fn_f06_request_park')).toHaveLength(1);
+        expect(f.engine.getF06RetainedPermit().binding.permit_id).toBe(id(8));
+      }
+    } finally {
+      release();
+      f.engine.running = false;
+      f.engine.activeHandWaitRelease?.release('test_cleanup');
+      f.engine.preciseTimer.dispose();
       await dealing;
     }
   }

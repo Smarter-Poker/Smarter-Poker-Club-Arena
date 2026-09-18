@@ -152,6 +152,8 @@ BEGIN
  VALUES(p_permit_id,p_tournament_id,p_table_id,p_lifecycle,p_hand_number,p_custody_id,p_lease_generation) RETURNING * INTO h;
  RETURN to_jsonb(h)||jsonb_build_object('ok',true,'lifecycle',h.lifecycle::text,'hand_number',h.hand_number::text);
 END $function$;
+REVOKE ALL ON FUNCTION public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_f06_begin_hand(uuid,uuid,uuid,bigint,uuid,bigint,uuid) TO service_role;
 CREATE OR REPLACE FUNCTION public.fn_f06_discover_breaks(p_tournament_id uuid, p_lease_generation uuid, p_expected_cursor_revision bigint, p_limit integer)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -171,6 +173,8 @@ BEGIN
  UPDATE smarter_private.f06_cursors SET ordinal=COALESCE(last_id,0),revision=revision+1 WHERE tournament_id=p_tournament_id;
  RETURN jsonb_build_object('ok',true,'reason',NULL,'cursor_revision',(c.revision+1)::text,'wrapped',wrapped,'operations',COALESCE(items,'[]'::jsonb));
 END $function$;
+REVOKE ALL ON FUNCTION public.fn_f06_discover_breaks(uuid,uuid,bigint,integer) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_f06_discover_breaks(uuid,uuid,bigint,integer) TO service_role;
 CREATE OR REPLACE FUNCTION public.fn_f06_hand_number_state(p_tournament_id uuid, p_lease_generation uuid, p_table_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -199,6 +203,8 @@ BEGIN
  'used_hand_number_max',used::text,'next_hand_number_candidate',CASE WHEN blocked IS NULL THEN (used+1)::text ELSE NULL END,
  'can_reserve',blocked IS NULL,'blocked_reason',blocked,'unresolved_permit',pending);
 END $function$;
+REVOKE ALL ON FUNCTION public.fn_f06_hand_number_state(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_f06_hand_number_state(uuid,uuid,uuid) TO service_role;
 CREATE OR REPLACE FUNCTION public.fn_f06_table_state(p_tournament_id uuid, p_lease_generation uuid, p_table_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -217,6 +223,8 @@ BEGIN
  'unresolved_permits',CASE WHEN recovery->'unresolved_permit'='null'::jsonb THEN '[]'::jsonb ELSE jsonb_build_array(recovery->'unresolved_permit') END,
  'unresolved_overflow',false,'can_reserve',recovery->'can_reserve','blocked_reason',recovery->'blocked_reason');
 END $function$;
+REVOKE ALL ON FUNCTION public.fn_f06_table_state(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_f06_table_state(uuid,uuid,uuid) TO service_role;
 CREATE OR REPLACE FUNCTION smarter_private.f06_hand_dispatch_guard(tid uuid, hn bigint)
  RETURNS void
  LANGUAGE plpgsql
@@ -236,6 +244,7 @@ BEGIN
  RAISE EXCEPTION 'F06_UNPERMITTED_HAND' USING ERRCODE='55000';
  END IF;
 END $function$;
+REVOKE ALL ON FUNCTION smarter_private.f06_hand_dispatch_guard(uuid,bigint) FROM PUBLIC,anon,authenticated,service_role;
 CREATE OR REPLACE FUNCTION smarter_private.f06_immutable_identity()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -264,6 +273,7 @@ BEGIN
  RAISE EXCEPTION 'F06_IDENTITY_IMMUTABLE' USING ERRCODE='55000'; END IF;
  RETURN NEW;
 END $function$;
+REVOKE ALL ON FUNCTION smarter_private.f06_immutable_identity() FROM PUBLIC,anon,authenticated,service_role;
 CREATE OR REPLACE FUNCTION smarter_private.f06_move_guard(t uuid, u uuid, src uuid, dst uuid, chair integer, req uuid, mode text, seat uuid, occ uuid)
  RETURNS void
  LANGUAGE plpgsql
@@ -295,6 +305,7 @@ BEGIN
  RAISE EXCEPTION 'F06_ATTEMPT_FENCED_OR_SOURCE_CHANGED' USING ERRCODE='55000'; END IF;
  INSERT INTO smarter_private.f06_dispatch VALUES(req,txid_current(),occ,seat,o.lifecycle);
 END $function$;
+REVOKE ALL ON FUNCTION smarter_private.f06_move_guard(uuid,uuid,uuid,uuid,integer,uuid,text,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
 CREATE OR REPLACE FUNCTION smarter_private.f06_source_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -366,6 +377,7 @@ BEGIN
  IF NOT moving THEN RAISE EXCEPTION 'F06_SOURCE_EXCLUDED' USING ERRCODE='55000'; END IF;
  RETURN NEW;
 END $function$;
+REVOKE ALL ON FUNCTION smarter_private.f06_source_guard() FROM PUBLIC,anon,authenticated,service_role;
 CREATE OR REPLACE FUNCTION smarter_private.f06_table_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -387,6 +399,7 @@ BEGIN
  IF reopening THEN NEW.f06_lifecycle:=nextval('smarter_private.f06_lifecycle_seq'); END IF;
  RETURN NEW;
 END $function$;
+REVOKE ALL ON FUNCTION smarter_private.f06_table_guard() FROM PUBLIC,anon,authenticated,service_role;
 CREATE OR REPLACE FUNCTION smarter_private.f06_validate_destination(t uuid, src uuid, dst uuid, chair integer)
  RETURNS void
  LANGUAGE plpgsql
@@ -401,6 +414,7 @@ BEGIN
  OR EXISTS(SELECT 1 FROM smarter_private.f06_operations WHERE source_table_id=dst AND state NOT IN ('acknowledged','withdrawn_before_manifest')) THEN
  RAISE EXCEPTION 'F06_CAPACITY_UNAVAILABLE' USING ERRCODE='55000'; END IF;
 END $function$;
+REVOKE ALL ON FUNCTION smarter_private.f06_validate_destination(uuid,uuid,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
 CREATE OR REPLACE FUNCTION public.heartbeat_tournament_leases_v4(p_instance_id text, p_claims jsonb, p_stale_seconds integer DEFAULT 30)
  RETURNS TABLE(tournament_id uuid, state text, lease_generation uuid)
  LANGUAGE plpgsql
@@ -497,6 +511,8 @@ BEGIN
     LEFT JOIN public.engine_tournament_leases l ON l.tournament_id = a.id;
 END;
 $function$;
+REVOKE ALL ON FUNCTION public.heartbeat_tournament_leases_v4(text,jsonb,integer) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.heartbeat_tournament_leases_v4(text,jsonb,integer) TO service_role;
 CREATE OR REPLACE FUNCTION public.claim_tournament_lease_v2(p_tournament_id uuid, p_instance_id text, p_version text DEFAULT NULL::text, p_requested_generation uuid DEFAULT NULL::uuid, p_stale_seconds integer DEFAULT 30)
  RETURNS TABLE(granted boolean, holder text, holder_age_seconds numeric, lease_generation uuid, protocol_version integer)
  LANGUAGE plpgsql
@@ -598,6 +614,8 @@ BEGIN
              WHERE l.tournament_id = p_tournament_id);
 END;
 $function$;
+REVOKE ALL ON FUNCTION public.claim_tournament_lease_v2(uuid,text,text,uuid,integer) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.claim_tournament_lease_v2(uuid,text,text,uuid,integer) TO service_role;
 CREATE OR REPLACE FUNCTION public.heartbeat_tournament_leases_v3(p_instance_id text, p_claims jsonb, p_stale_seconds integer DEFAULT 30)
  RETURNS TABLE(tournament_id uuid, state text, lease_generation uuid)
  LANGUAGE plpgsql
@@ -676,6 +694,8 @@ BEGIN
     LEFT JOIN public.engine_tournament_leases l ON l.tournament_id = a.id;
 END;
 $function$;
+REVOKE ALL ON FUNCTION public.heartbeat_tournament_leases_v3(text,jsonb,integer) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.heartbeat_tournament_leases_v3(text,jsonb,integer) TO service_role;
 CREATE OR REPLACE FUNCTION smarter_private.fn_smarter_data_api_pre_request()
  RETURNS void
  LANGUAGE plpgsql
@@ -830,6 +850,10 @@ BEGIN
   );
 END;
 $function$;
+REVOKE ALL ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() TO anon;
+GRANT EXECUTE ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() TO authenticated;
+GRANT EXECUTE ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() TO service_role;
 -- New authoritative operation. Expected values are comparisons, never evidence
 -- supplied by a caller: every prerequisite below is re-read under its own locks.
 CREATE FUNCTION public.fn_f06_abort_unsettled_hand(p_receipt_id uuid,p_expected jsonb)

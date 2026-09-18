@@ -102,7 +102,16 @@ header+=""" IF md5(pg_get_functiondef('public.fn_ca_commit_hand_settlement(uuid,
 END $preimages$;
 """
 sql=header+(HERE/'unsettled-schema.sql').read_text()+"\n"
-sql+="\n".join(new.rstrip()+";" for row,new in changed)+"\n"
+for row,new in changed:
+    sig=row['signature']
+    if '.' not in sig.split('(')[0]: sig='public.'+sig
+    sql+=new.rstrip()+";\n"
+    # Restate the independently checked installed ACL in maintained source;
+    # CREATE OR REPLACE preserves it, but static migration checks must see it.
+    sql+=f"REVOKE ALL ON FUNCTION {sig} FROM PUBLIC,anon,authenticated,service_role;\n"
+    for role in ['anon','authenticated','service_role']:
+        if role+'=X/' in row['acl']:
+            sql+=f"GRANT EXECUTE ON FUNCTION {sig} TO {role};\n"
 sql+=(HERE/'unsettled-authority.sql').read_text()
 sql+="""
 REVOKE ALL ON FUNCTION public.fn_f06_abort_unsettled_hand(uuid,jsonb) FROM PUBLIC,anon,authenticated;

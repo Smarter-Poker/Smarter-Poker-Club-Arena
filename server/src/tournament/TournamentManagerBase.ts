@@ -47,7 +47,8 @@ import {
 import nodeCrypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
-import { supabase } from '../services/supabase.js';
+import { supabase, resumeRetainedHandSubmission } from '../services/supabase.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
 import {
@@ -1401,7 +1402,46 @@ export abstract class TournamentManagerBase {
     });
   }
 
+  /** Layer three owns the exact terminal park/receipt contract. */
+  protected async continueExcludedNoStartTable(
+    _tableId: string,
+    _engine: ServerTableEngine,
+    _current: () => boolean
+  ): Promise<boolean> {
+    return false;
+  }
+
+  protected async readmitContinuedNoStartTable(
+    tableId: string,
+    engine: ServerTableEngine
+  ): Promise<void> {
+    const lifecycle = this.captureLifecycleToken();
+    if (
+      !lifecycle ||
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.tableEngines.get(tableId) !== engine ||
+      !this.gameServer.ownsTournamentTableEngine(tableId, engine)
+    )
+      throw new Error('F06 continued source owner changed');
+    await this.recoverManagedTableEngine(
+      tableId,
+      engine,
+      lifecycle,
+      'f06_no_start_continued',
+      false
+    );
+  }
+
   /** A manager is not torn down until every table start it launched has settled. */
+  protected async startParkedMovementEngine(
+    _engine: ServerTableEngine,
+    _tableId: string,
+    _tableLifecycle: string,
+    _current: () => boolean
+  ): Promise<void> {
+    throw new Error('f06_movement_admission_unavailable');
+  }
+
   protected startManagedTableEngine(
     engine: ServerTableEngine,
     errorContext: string,
@@ -1426,6 +1466,11 @@ export abstract class TournamentManagerBase {
         this.gameServer.ownsTournamentTableEngine(tableId, engine);
       if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
         throw new Error('f06_engine_admission_fenced');
+      // Retained originals must finish before the existing unresolved-permit
+      // admission refusal. This never reconstructs or cancels a missing hand.
+      await resumeRetainedHandSubmission(tableId, INSTANCE_ID, leaseGeneration);
+      if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+        throw new Error('f06_engine_admission_fenced');
       const { data, error } = await supabase.rpc('fn_f06_hand_number_state', {
         p_tournament_id: this.tournamentId,
         p_lease_generation: leaseGeneration,
@@ -1441,6 +1486,28 @@ export abstract class TournamentManagerBase {
         unresolved_permit?: unknown;
         next_hand_number_candidate?: string | null;
       } | null;
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'source_excluded' &&
+        state.unresolved_permit === null &&
+        state.next_hand_number_candidate === null &&
+        typeof state.lifecycle === 'string' &&
+        /^[1-9][0-9]{0,18}$/.test(state.lifecycle) &&
+        BigInt(state.lifecycle) <= 9223372036854775807n
+      ) {
+        if (await this.continueExcludedNoStartTable(tableId, engine, current)) {
+          if (!current()) throw new Error('F06 continued startup owner changed');
+          await this.readmitContinuedNoStartTable(tableId, engine);
+          return;
+        }
+        // Ordinary multi-table custody remains reachable after explicit no-start noneligibility.
+        await this.startParkedMovementEngine(engine, tableId, state.lifecycle, current);
+        return;
+      }
       if (
         !current() ||
         error ||

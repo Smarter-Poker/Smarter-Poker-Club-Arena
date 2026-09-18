@@ -200,3 +200,23 @@ tests/components/cashier-cashout-generations.test.tsx
 tests/unit/FinancialAlertServiceRead.test.ts
 tests/unit/CreditReductionContract.test.ts
 tests/helpers/creditReductionReceipt.ts
+
+# Exact installed hand-submission dependencies, byte-bound by native qualification.
+scripts/ci/fixtures/hand-submission/current-authorities-20260918.json
+scripts/ci/fixtures/hand-submission/current-cash-lease-20260918.json
+scripts/ci/fixtures/hand-submission/current-cash-postcommit-20260918.json
+scripts/ci/fixtures/hand-submission/current-disposition-dependencies-20260918.json
+scripts/ci/fixtures/hand-submission/current-f06-20260918.json
+scripts/ci/fixtures/hand-submission/current-f06-tables-20260918.json
+scripts/ci/fixtures/hand-submission/current-hand-insert-20260918.json
+scripts/ci/fixtures/hand-submission/current-handoff-locks-20260918.json
+scripts/ci/fixtures/hand-submission/current-handoff-owners-20260918.json
+scripts/ci/fixtures/hand-submission/current-lease-claims-20260918.json
+scripts/ci/fixtures/hand-submission/current-lease-policy-20260918.json
+scripts/ci/fixtures/hand-submission/current-maintenance-boundary-20260918.json
+scripts/ci/fixtures/hand-submission/current-no-start-successor-20260918.json
+scripts/ci/fixtures/hand-submission/current-outbox-20260918.json
+scripts/ci/fixtures/hand-submission/current-outbox-dependencies-20260918.json
+scripts/ci/fixtures/hand-submission/current-postcommit-tables-20260918.json
+scripts/ci/fixtures/hand-submission/current-snapshots-20260918.json
+scripts/ci/fixtures/hand-submission/current-stack-authority-20260918.json

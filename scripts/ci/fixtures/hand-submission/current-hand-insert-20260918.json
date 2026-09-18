@@ -1,0 +1,19 @@
+{
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT jsonb_build_object('captured_at',clock_timestamp(),'functions',(SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'definition_md5',md5(pg_get_functiondef(p.oid)),'body_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),'acl',p.proacl::text,'config',p.proconfig)) FROM pg_proc p WHERE p.oid='public.fn_ca_insert_hand_with_awards(jsonb,jsonb)'::regprocedure)) AS capture; COMMIT;",
+  "capture": {
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres}",
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "body_md5": "b6eb532e40ba9820643616e70cdeb265",
+        "signature": "fn_ca_insert_hand_with_awards(jsonb,jsonb)",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_insert_hand_with_awards(p_row jsonb, p_units jsonb DEFAULT '[]'::jsonb)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_id   uuid;\n  v_cols text;\nBEGIN\n  /* Only the columns the caller named. Anything absent keeps its DEFAULT,\n     which is the entire point - see the header. */\n  SELECT string_agg(quote_ident(c.column_name), ', ' ORDER BY c.ordinal_position)\n    INTO v_cols\n    FROM information_schema.columns c\n   WHERE c.table_schema = 'public'\n     AND c.table_name   = 'hand_history'\n     AND p_row ? c.column_name;\n\n  IF v_cols IS NULL THEN\n    RAISE EXCEPTION\n      'fn_ca_insert_hand_with_awards: p_row names no hand_history column - refusing to insert a row of pure defaults';\n  END IF;\n\n  EXECUTE format(\n    'INSERT INTO public.hand_history (%1$s) '\n    'SELECT %1$s FROM jsonb_populate_record(null::public.hand_history, $1) '\n    'RETURNING id', v_cols)\n    USING p_row\n     INTO v_id;\n\n  IF jsonb_array_length(COALESCE(p_units, '[]'::jsonb)) > 0 THEN\n    INSERT INTO public.bomb_pot_award_units\n      (hand_history_id, table_id, hand_number, pot_index, board, side, user_id, amount, hand_name)\n    SELECT v_id,\n           (u->>'table_id')::uuid,\n           (u->>'hand_number')::bigint,\n           (u->>'pot_index')::int,\n           COALESCE((u->>'board')::int, 1),\n           COALESCE(u->>'side', 'high'),\n           (u->>'user_id')::uuid,\n           (u->>'amount')::numeric,\n           NULLIF(u->>'hand_name', '')\n      FROM jsonb_array_elements(p_units) u\n    ON CONFLICT (hand_history_id, pot_index, board, side, user_id) DO NOTHING;\n  END IF;\n\n  RETURN v_id;\nEND $function$\n",
+        "definition_md5": "e7f05bb7d61360be7424c5f429066047"
+      }
+    ],
+    "captured_at": "2026-09-18T09:42:31.650815+00:00"
+  }
+}

@@ -37,6 +37,12 @@ const PLAYER_A = '00000000-0000-4000-8000-000000000003';
 const PLAYER_B = '00000000-0000-4000-8000-000000000004';
 const HISTORY_ID = '00000000-0000-4000-8000-000000000005';
 const LEASE_GENERATION = '00000000-0000-4000-8000-000000000006';
+const SUBMISSION_HASH = 'b'.repeat(64);
+const retainedReceipt = {
+  retained: true,
+  submission_id: HISTORY_ID,
+  request_hash: SUBMISSION_HASH,
+};
 
 const stacks = [
   { user_id: PLAYER_A, stack: 0, stack_before: 1_000 },
@@ -47,6 +53,9 @@ const exactReceipt = {
   success: true,
   atomic_hand_commit: true,
   post_commit_obligations: true,
+  submission_id: HISTORY_ID,
+  submission_hash: SUBMISSION_HASH,
+  snapshot_completed: true,
   history_id: HISTORY_ID,
   written: { [PLAYER_A]: 0, [PLAYER_B]: 3_000 },
   tournament_id: TOURNAMENT_ID,
@@ -114,47 +123,73 @@ beforeEach(() => {
 });
 
 describe('the hand owns its exact tournament stack payload until one receipt is authoritative', () => {
-  it('replays only the identical atomic request after lost responses', async () => {
-    vi.useFakeTimers();
-    mock.rpc
-      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
-      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
-      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
-      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
-      .mockResolvedValueOnce({ data: exactReceipt, error: null });
+  it.each(['retention', 'commit'] as const)(
+    'replays only the identical atomic request after lost %s responses',
+    async (lostPhase) => {
+      vi.useFakeTimers();
+      let lostResponses = 0;
+      mock.rpc.mockImplementation(async (name: string) => {
+        expect(['fn_ca_retain_hand_submission', 'fn_ca_commit_hand_submission']).toContain(name);
+        const phase = name === 'fn_ca_retain_hand_submission' ? 'retention' : 'commit';
+        if (phase === lostPhase && lostResponses++ < 4) {
+          return { data: null, error: { message: 'response lost' } };
+        }
+        return { data: phase === 'retention' ? retainedReceipt : exactReceipt, error: null };
+      });
 
-    const pending = logHandHistory(request(7_001));
-    await vi.runAllTimersAsync();
-    await expect(pending).resolves.toMatchObject({
-      handId: HISTORY_ID,
-      settlementCommitted: true,
-      stackResult: exactReceipt,
-    });
+      const pending = logHandHistory(request(7_001));
+      const accepted = expect(pending).resolves.toMatchObject({
+        handId: HISTORY_ID,
+        settlementCommitted: true,
+        stackResult: exactReceipt,
+      });
+      await vi.runAllTimersAsync();
+      await accepted;
 
-    expect(mock.rpc).toHaveBeenCalledTimes(5);
-    expect(mock.observeCompletedHand).toHaveBeenCalledTimes(1);
-    expect(mock.observeCompletedHand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        committedHandId: HISTORY_ID,
-        handKey: `${TABLE_ID}:7001`,
-        generation: 7001,
-        actions: [],
-      })
-    );
-    const payloads = mock.rpc.mock.calls.map(([, payload]) => payload);
-    expect(payloads.every((payload) => payload === payloads[0])).toBe(true);
-    expect(payloads[0]).toMatchObject({
-      p_table_id: TABLE_ID,
-      p_hand_number: 7_001,
-      p_stacks: stacks,
-      p_rake: 0,
-      p_bbj: 0,
-      p_inflow: 0,
-    });
-  });
+      expect(mock.rpc).toHaveBeenCalledTimes(6);
+      expect(mock.observeCompletedHand).toHaveBeenCalledTimes(1);
+      expect(mock.observeCompletedHand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          committedHandId: HISTORY_ID,
+          handKey: `${TABLE_ID}:7001`,
+          generation: 7001,
+          actions: [],
+        })
+      );
+      const retained = mock.rpc.mock.calls.filter(
+        ([name]) => name === 'fn_ca_retain_hand_submission'
+      );
+      const committed = mock.rpc.mock.calls.filter(
+        ([name]) => name === 'fn_ca_commit_hand_submission'
+      );
+      expect(retained).toHaveLength(lostPhase === 'retention' ? 5 : 1);
+      expect(committed).toHaveLength(lostPhase === 'commit' ? 5 : 1);
+      const payloads = retained.map(([, payload]) => payload.p_request);
+      expect(payloads.every((payload) => payload === payloads[0])).toBe(true);
+      expect(payloads[0]).toMatchObject({
+        p_table_id: TABLE_ID,
+        p_hand_number: 7_001,
+        p_stacks: stacks,
+        p_rake: 0,
+        p_bbj: 0,
+        p_inflow: 0,
+        p_post_commit_obligations: request(7_001).atomicCommit.postCommitObligations,
+      });
+      expect(committed.every(([, payload]) => payload === committed[0][1])).toBe(true);
+      expect(committed[0][1]).toEqual({
+        p_submission_id: HISTORY_ID,
+        p_instance_id: 'engine-instance-1',
+        p_lease_generation: LEASE_GENERATION,
+      });
+      expect(mock.rpc.mock.calls.map(([name]) => name)).toEqual([
+        ...retained.map(() => 'fn_ca_retain_hand_submission'),
+        ...committed.map(() => 'fn_ca_commit_hand_submission'),
+      ]);
+    }
+  );
 
   it('rejects a success-shaped response whose tournament mirror is incomplete', async () => {
-    mock.rpc.mockResolvedValue({
+    mock.rpc.mockResolvedValueOnce({ data: retainedReceipt, error: null }).mockResolvedValueOnce({
       data: {
         ...exactReceipt,
         tournament_player_count: 1,
@@ -167,7 +202,10 @@ describe('the hand owns its exact tournament stack payload until one receipt is 
     await expect(logHandHistory(request(7_002))).rejects.toThrow(
       'atomic hand commit refused (tournament_stack_proof_invalid)'
     );
-    expect(mock.rpc).toHaveBeenCalledTimes(1);
+    expect(mock.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_ca_retain_hand_submission',
+      'fn_ca_commit_hand_submission',
+    ]);
     expect(mock.wakeProjection).not.toHaveBeenCalled();
     expect(mock.observeCompletedHand).not.toHaveBeenCalled();
   });

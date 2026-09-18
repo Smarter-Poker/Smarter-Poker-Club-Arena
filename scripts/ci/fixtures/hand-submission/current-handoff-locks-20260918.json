@@ -1,0 +1,32 @@
+{
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; SELECT jsonb_build_object('captured_at',clock_timestamp(),'functions',(SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'definition_md5',md5(pg_get_functiondef(p.oid)),'body_md5',md5(p.prosrc),'acl',p.proacl::text,'owner',pg_get_userbyid(p.proowner))) FROM pg_proc p WHERE p.oid IN ('smarter_private.f06_prefix(uuid,uuid,uuid[],uuid[])'::regprocedure,'smarter_private.f06_generation_aborted(uuid,uuid)'::regprocedure,'smarter_private.f06_aborted_generation_guard()'::regprocedure))) capture; COMMIT;",
+  "capture": {
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres}",
+        "owner": "postgres",
+        "body_md5": "d857e9d6270456d122ef385c751bc5f1",
+        "signature": "smarter_private.f06_prefix(uuid,uuid,uuid[],uuid[])",
+        "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_prefix(t uuid, g uuid, users uuid[], ids uuid[])\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'smarter_private'\nAS $function$\nDECLARE u uuid;\nBEGIN\n PERFORM smarter_private.f06_authority(t,g);\n PERFORM public.fn_ca_lock_settlement_lane_for_tournament(t);\n PERFORM smarter_private.f06_authority(t,g,false);\n FOR u IN SELECT DISTINCT x FROM unnest(users) x ORDER BY x LOOP\n PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:'||u::text,0)); END LOOP;\n PERFORM 1 FROM public.tournaments WHERE id=t FOR UPDATE;\n PERFORM 1 FROM public.tournament_players WHERE tournament_id=t AND user_id=ANY(users) ORDER BY user_id FOR UPDATE;\n PERFORM 1 FROM public.tables WHERE id=ANY(ids) ORDER BY id FOR UPDATE;\n PERFORM s.id FROM public.table_seats s JOIN public.tables tb ON tb.id=s.table_id\n WHERE tb.tournament_id=t AND (s.user_id=ANY(users) OR s.table_id=ANY(ids)) ORDER BY s.id FOR UPDATE OF s;\nEND $function$\n",
+        "definition_md5": "dae9d5b5f71a68362f202dfdf89c8fae"
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "owner": "postgres",
+        "body_md5": "76f64dfc5436d6208c6afbed3ad7da53",
+        "signature": "smarter_private.f06_generation_aborted(uuid,uuid)",
+        "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_generation_aborted(t uuid, g uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'smarter_private'\nAS $function$\nBEGIN\n -- Existing leases, heartbeats, request admission and resurrection triggers all\n -- use this VOLATILE authority after their row-lock waits.\n RETURN EXISTS(SELECT 1 FROM smarter_private.f06_unsettled_hand_aborts\n WHERE tournament_id=t AND (generation=g OR retired_lease_generation=g))\n OR EXISTS(SELECT 1 FROM smarter_private.f06_generation_aborts WHERE tournament_id=t AND generation=g)\n OR EXISTS(SELECT 1 FROM smarter_private.f06_mixed_abort_generations WHERE tournament_id=t AND generation=g);\nEND $function$\n",
+        "definition_md5": "3530559a94372866bf3baec006a8fd3c"
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "owner": "postgres",
+        "body_md5": "eb0c07cc05e03bc7d610c94ba5a4ac7a",
+        "signature": "smarter_private.f06_aborted_generation_guard()",
+        "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_aborted_generation_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'smarter_private'\nAS $function$\nBEGIN\n IF smarter_private.f06_generation_aborted(NEW.tournament_id,NEW.lease_generation) THEN\n RAISE EXCEPTION 'F06_ABORTED_GENERATION_FENCED' USING ERRCODE='42501'; END IF;\n RETURN NEW;\nEND $function$\n",
+        "definition_md5": "78bdb7fde133088800446a0da7dddc57"
+      }
+    ],
+    "captured_at": "2026-09-18T12:19:34.422462+00:00"
+  }
+}

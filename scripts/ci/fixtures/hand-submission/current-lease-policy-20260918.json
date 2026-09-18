@@ -1,0 +1,19 @@
+{
+  "source": "/Volumes/SmarterWork/agent-work/mtt-public-launch-20260917/r46-activation-integration-evidence/engine-lease-stale-catalog-0942.json",
+  "capture": {
+    "functions": [
+      {
+        "signature": "fn_engine_lease_stale_seconds()",
+        "definition": "CREATE OR REPLACE FUNCTION public.fn_engine_lease_stale_seconds()\n RETURNS integer\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT 30;\n$function$\n",
+        "full_md5": "483a7e0ee940744fd557f1f2144d9eba",
+        "body_md5": "32335e76e9c5680e0c9cfbcf9631375b",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "definition_md5": "483a7e0ee940744fd557f1f2144d9eba"
+      }
+    ]
+  }
+}

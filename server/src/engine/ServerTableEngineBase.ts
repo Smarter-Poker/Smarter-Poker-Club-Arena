@@ -2,6 +2,7 @@ import type { RetirementCustody } from '../services/TournamentRetirementCustody.
 import { AllocatorIssuerMeasurement } from '../services/AllocatorIssuerMeasurement.js';
 import { FinancialPublicationBoundary } from '../services/FinancialPublicationBoundary.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
+import type { F06MovementAdmission } from '../tournament/f06MovementAdmission.js';
 /**
  * ServerTableEngine, layer 1/8 — fields, construction, lifecycle, seat/rake helpers, crash recovery.
  *
@@ -70,6 +71,7 @@ import {
   saveHandStateSnapshot,
   completeHandSnapshot,
   getActiveHandSnapshotFull,
+  resumeRetainedHandSubmission,
   savePresenceAtPark,
   loadPresenceFromPark,
   loadTimeBanksFromPark,
@@ -1772,6 +1774,64 @@ export abstract class ServerTableEngineBase {
    */
   protected tournamentMovePauseOwners: Set<string> = new Set();
   protected claimedTournamentMovePauseOwners: Set<string> = new Set();
+  private f06MovementAdmission: {
+    ownerId: string;
+    receipt: F06MovementAdmission;
+    current: () => boolean;
+    revalidate: () => Promise<void>;
+  } | null = null;
+
+  /** Permanent for this fresh object: only its existing break may move seats. */
+  installF06MovementAdmission(
+    ownerId: string,
+    receipt: F06MovementAdmission,
+    current: () => boolean,
+    revalidate: () => Promise<void>
+  ): void {
+    if (
+      !ownerId ||
+      this.running ||
+      this.terminal ||
+      this.f06MovementAdmission ||
+      this.f06Allocator ||
+      this.f06PermitFactory ||
+      this.f06CurrentPermit ||
+      this.engineLeaseScope !== 'tournament' ||
+      !this.engineLeaseVerified ||
+      receipt.table_id !== this.tableId ||
+      receipt.tournament_id !== this.engineLeaseTournamentId ||
+      receipt.lease_generation !== this.engineLeaseGeneration ||
+      !current() ||
+      !this.engineLeaseAuthorityIsCurrent()
+    )
+      throw new Error('f06_movement_engine_identity_unproven');
+    this.f06MovementAdmission = Object.freeze({ ownerId, receipt, current, revalidate });
+    this.tournamentMovePauseOwners.add(ownerId);
+    this.holdBeforeNextHand = true;
+  }
+
+  private assertF06MovementOwner(stoppedQuarantine = false): void {
+    const admission = this.f06MovementAdmission;
+    // A drained original deliberately stops renewing its dealer deadline.
+    // Its captured Manager and the repeated SQL custody proof own replay;
+    // this predicate never restores process ownership or permits a new hand.
+    const physicalOwner = stoppedQuarantine
+      ? this.terminalTeardownComplete &&
+        this.terminal &&
+        !this.running &&
+        !ServerTableEngineBase.liveEngines.has(this.tableId) &&
+        this.dealingLoopPromise === null &&
+        this.handController === null &&
+        !this.hasSettlementInFlight() &&
+        this.postHandTasksPromise === null &&
+        this.readContinuationTasks.size === 0 &&
+        this.snapshotFlushPromise === null &&
+        this.terminalBoundaryPendingGenerations.size === 0
+      : this.engineLeaseAuthorityIsCurrent() && this.isCurrentEngine();
+    if (admission && (!admission.current() || !physicalOwner))
+      throw new Error('f06_movement_owner_changed');
+  }
+
   private f06Allocator: (() => Promise<number>) | null = null;
   private f06AllocationCurrent: (() => boolean) | null = null;
   protected f06AllocationEpoch: string | null = null;
@@ -1780,7 +1840,7 @@ export abstract class ServerTableEngineBase {
     allocate: () => Promise<number>,
     current: () => boolean
   ): void {
-    if (this.running || this.f06Allocator || !epoch)
+    if (this.running || this.f06Allocator || this.f06MovementAdmission || !epoch)
       throw new Error('f06_allocator_install_invalid');
     this.f06AllocationEpoch = epoch;
     this.f06Allocator = allocate;
@@ -1803,10 +1863,12 @@ export abstract class ServerTableEngineBase {
   installF06HandAdmission(
     factory: (handNumber: string) => F06HandPermit | Promise<F06HandPermit>
   ): void {
-    if (this.running || this.f06PermitFactory) throw new Error('f06_admission_install_too_late');
+    if (this.running || this.f06PermitFactory || this.f06MovementAdmission)
+      throw new Error('f06_admission_install_too_late');
     this.f06PermitFactory = factory;
   }
   protected async reserveF06Hand(handNumber: number): Promise<void> {
+    if (this.f06MovementAdmission) throw new Error('f06_movement_only_no_hand');
     if (!this.f06PermitFactory) return; // Unactivated overlay; SQL activation must require installation.
     if (this.f06CurrentPermit) throw new Error('f06_prior_hand_unresolved');
     if (!Number.isSafeInteger(handNumber) || handNumber < 0)
@@ -3037,7 +3099,15 @@ export abstract class ServerTableEngineBase {
       if (!this.lifecycleCanMutate()) return;
 
       // FIX 137: Bible V8 §7.17 — Check for interrupted hand from a server crash
-      const recovered = await this.checkCrashRecovery();
+      // Movement-only custody is based on a completed canonical predecessor.
+      // Revalidate it after claiming the process owner. Never invoke the legacy
+      // crash path, which can complete an unresolved snapshot as a side effect.
+      if (this.f06MovementAdmission) {
+        this.assertF06MovementOwner();
+        await this.f06MovementAdmission.revalidate();
+        this.assertF06MovementOwner();
+      }
+      const recovered = this.f06MovementAdmission ? false : await this.checkCrashRecovery();
       if (!this.lifecycleCanMutate()) return;
       if (recovered) {
         console.log(
@@ -3078,6 +3148,17 @@ export abstract class ServerTableEngineBase {
       // and the waiting snapshot can be published. On-demand callers may
       // return now; the wait for players below is this engine's business.
       this.settleReady(true);
+
+      if (this.f06MovementAdmission) {
+        this.assertF06MovementOwner();
+        this.setLoopPhase('parked_for_pause');
+        if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
+        await this.awaitPauseGate();
+        // Only teardown releases this gate. No resume, retry or arrival can
+        // turn this object into a dealer, including after the break completes.
+        if (this.running) throw new Error('f06_movement_only_gate_released');
+        return;
+      }
 
       // 2026-08-29: open the manual-bomb listener once the table row is loaded
       // (bomb_pot_enabled is known by now) and before any hand is dealt, so a
@@ -4809,6 +4890,7 @@ export abstract class ServerTableEngineBase {
     return 0;
   }
   protected async allocateGlobalHandNumber(): Promise<number> {
+    if (this.f06MovementAdmission) throw new Error('f06_movement_only_no_hand');
     const measurement = this.allocatorMeasurement;
     const epoch = measurement?.capture();
     return measurement
@@ -5181,6 +5263,10 @@ export abstract class ServerTableEngineBase {
    */
   async parkForTournamentMove(ownerId: string, maxWaitMs: number): Promise<boolean> {
     if (!ownerId) return false;
+    if (this.f06MovementAdmission) {
+      if (ownerId !== this.f06MovementAdmission.ownerId) return false;
+      if (this.running) this.assertF06MovementOwner();
+    }
     // Recovery may have stopped and fully drained this exact generation while
     // an earlier lost response remains unresolved. Its claimed owner survives
     // teardown, and the stopped object is then a safe quarantine for replay:
@@ -5247,6 +5333,7 @@ export abstract class ServerTableEngineBase {
 
   /** Release only the tournament-move owner named by the caller. */
   releaseTournamentMovePause(ownerId: string): void {
+    if (this.running && this.f06MovementAdmission?.ownerId === ownerId) return;
     // An early or duplicate release may not erase the physical fence beneath
     // an RPC that still owns this source. The awaited caller must release again
     // after executeTournamentMoveAtBoundary has removed its exact barrier.
@@ -5313,6 +5400,11 @@ export abstract class ServerTableEngineBase {
       this.tournamentMoveOperations.size === 0 &&
       !this.hasSettlementInFlight() &&
       this.postHandTasksPromise === null;
+    if (this.f06MovementAdmission) {
+      if (ownerId !== this.f06MovementAdmission.ownerId)
+        throw new Error('f06_movement_owner_changed');
+      this.assertF06MovementOwner(stoppedQuarantine);
+    }
     const livePhysicalBoundary =
       this.running &&
       this.handForHandResolve !== null &&
@@ -5333,7 +5425,15 @@ export abstract class ServerTableEngineBase {
 
     const f06Guard = this.f06StoppedMovementGuards.get(ownerId);
     f06Guard?.();
-    const result = operation();
+    const result = (async () => {
+      if (this.f06MovementAdmission && stoppedQuarantine) {
+        // This await belongs to the same tracked move barrier as the original
+        // mover. Unknown custody leaves its UUID pending and performs no move.
+        await this.f06MovementAdmission.revalidate();
+        this.assertF06MovementOwner(true);
+      }
+      return operation();
+    })();
     const barrier = result.then(
       () => undefined,
       () => undefined
@@ -5343,6 +5443,7 @@ export abstract class ServerTableEngineBase {
     this.notifyBoundaryPauseWaiters();
     try {
       const value = await result;
+      if (this.f06MovementAdmission) this.assertF06MovementOwner(stoppedQuarantine);
       f06Guard?.();
       return value;
     } finally {
@@ -5626,6 +5727,7 @@ export abstract class ServerTableEngineBase {
 
   /** Shared by both resume paths: wake the loop sitting on the gate. */
   private releasePauseGate(): void {
+    if (this.running && this.f06MovementAdmission) return;
     /**
      * ── THE PROGRESS CLOCK IS THAWED, NOT BURNED (2026-09-05) ──────────────
      *
@@ -5800,6 +5902,7 @@ export abstract class ServerTableEngineBase {
       this.pauseGateTimer = setTimeout(() => {
         if (this.handForHandResolve === resolve) {
           if (
+            this.f06MovementAdmission !== null ||
             this.pauseRequiresExplicitResume ||
             this.terminalCloseoutPaused ||
             this.claimedTournamentMovePauseOwners.size > 0
@@ -7999,6 +8102,24 @@ export abstract class ServerTableEngineBase {
    * from serialized state, which is a future enhancement.
    */
   async checkCrashRecovery(): Promise<boolean> {
+    if (this.f06MovementAdmission) throw new Error('f06_movement_only_no_snapshot_disposition');
+    const authority = this.getEngineLeaseAuthority();
+    // Tournament managers perform this before F06 admission. Cash enters here
+    // before legacy snapshot cleanup, under the current table generation.
+    if (authority?.scope === 'cash' && authority.verified && authority.generation) {
+      if (!this.hasCurrentEngineLeaseAuthority()) return false;
+      const retained = await resumeRetainedHandSubmission(
+        this.tableId,
+        INSTANCE_ID,
+        authority.generation
+      );
+      if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return false;
+      if (retained) {
+        this.handCount = Math.max(this.handCount, retained.handNumber);
+        await this.restoreButtonFromHistory();
+        if (!this.lifecycleCanMutate() || !this.hasCurrentEngineLeaseAuthority()) return false;
+      }
+    }
     // Phase 1.2 PR-D: use the extended snapshot reader so pending deadlines
     // and disconnect states come back with the hand state. Full HandController
     // reconstruction still waits for a later PR; for now we log visibility

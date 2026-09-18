@@ -58,7 +58,7 @@ def observations(raw):
             result.append(value)
         else:
             require(re.fullmatch(r'(?:BEGIN|COMMIT|SET|RESET|GRANT|REVOKE|DO|ALTER FUNCTION|'
-                                r'CREATE (?:TABLE|FUNCTION)|INSERT 0 [0-9]+|UPDATE [0-9]+|SELECT [0-9]+)', line),
+                                r'CREATE (?:TABLE|FUNCTION|INDEX)|INSERT 0 [0-9]+|UPDATE [0-9]+|SELECT [0-9]+)', line),
                     'unexpected stdout or SQL diagnostic')
     return result
 

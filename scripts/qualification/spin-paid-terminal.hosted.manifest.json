@@ -7,16 +7,16 @@
   "production_qualification": false,
   "files": {
     "scripts/qualification/spin-paid-terminal.py": {
-      "bytes": 14341,
-      "sha256": "26f08df30cc2e2c89a2601e829f05330f8f2e02390c19d6845c8bbaf8c6f4955"
+      "bytes": 14347,
+      "sha256": "90059dea94146cde15a905d67e86451e81326d084913914014ba5215009646a0"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/capture.json": {
       "bytes": 139011,
       "sha256": "e43cc9d9923cdeddca565f3c5e916e08446c0d1d3d2e5bca6389f4563ef44634"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/provider.sql": {
-      "bytes": 145965,
-      "sha256": "8447efcc738271909566f69fdb02ccc6943d8dd9aa4e9ad3d972b5b4d39acb72"
+      "bytes": 146680,
+      "sha256": "0d399a8f8a092570b1ea390d33ae70039f64d16c813d5d709099bbbe1d29eb0f"
     },
     "scripts/qualification/fixtures/spin-paid-terminal/execute.sql": {
       "bytes": 9481,

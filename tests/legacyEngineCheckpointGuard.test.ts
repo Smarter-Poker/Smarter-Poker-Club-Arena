@@ -3,6 +3,7 @@ import { legacyEngineCheckpointGuard } from '../server/scripts/legacy-engine-che
 import * as dataActorContext from '../server/src/services/supabase/dataActorContext';
 
 const release = '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5';
+const checkpoint758 = '758610f3f844406bbbaee2f5100ced36d84fb943';
 const instance = '1-c86a8f37';
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const pins = [
@@ -10,8 +11,14 @@ const pins = [
   'f5c8f4f814d7fd5649cea03698443c21c592e7db1ac6c1ac9fc756af5a72c407',
   'f129642e3ce48e26a84f3f7fa60c46d3ceabd67e35f0508c1711319bc95f56ad',
 ];
+const pins758 = [
+  'f8a4e646348fbd0209b9afde24658660dca0837f7720e04b47d37cff4fa2bea7',
+  'cc715650eca1b6cfbccadcef46a9f07f581549e75df6581cb8c32f3fbfffc0b3',
+  'f129642e3ce48e26a84f3f7fa60c46d3ceabd67e35f0508c1711319bc95f56ad',
+  '44a7c52ede31dd3a5600d6b648b0d34c9ecabc3e10f14a65830712b432dc62e9',
+];
 
-function fixture(count = 1) {
+function fixture(count = 1, predecessor = release) {
   const rows = new Map();
   const calls: string[] = [];
   let remaining = 300000;
@@ -70,6 +77,11 @@ function fixture(count = 1) {
     parkedTimeBanks = {};
     parkedBankSaveComplete = false;
     presenceSave = Promise.resolve();
+    maintenanceCheckpointGeneration = 1;
+    timeBankAccountingPending = new Set<Promise<void>>();
+    timeBankAccountingUnconfirmed = false;
+    f06CurrentPermit: object | null = null;
+    f06RecoveryInFlight = false;
     disconnectEngine = { getFsmStatesForTable: () => ({}) };
     constructor(n: number) {
       this.tableId = uuid(n);
@@ -156,19 +168,29 @@ function fixture(count = 1) {
     maintenance: { MaintenanceBreak: Maintenance },
     freezeState: { isMaintenanceFrozen: () => true },
     releaseIdentity: {
-      ENGINE_RELEASE_IDENTITY: { releaseSha: release, version: release.slice(0, 8) },
+      ENGINE_RELEASE_IDENTITY: { releaseSha: predecessor, version: predecessor.slice(0, 8) },
     },
     tableLease: { INSTANCE_ID: instance },
     fs: {
       statSync: () => ({ isFile: () => true, size: 1 }),
       readFileSync: (path: string) => {
         return Buffer.from([
-          path.endsWith('/GameServer.js') ? 0 : path.endsWith('/ServerTableEngineBase.js') ? 1 : 2,
+          path.endsWith('/GameServer.js')
+            ? 0
+            : path.endsWith('/ServerTableEngineBase.js')
+              ? 1
+              : path.endsWith('/ServerTableEngineDealing.js')
+                ? 3
+                : 2,
         ]);
       },
     },
     crypto: {
-      createHash: () => ({ update: (bytes: Buffer) => ({ digest: () => pins[bytes[0]] }) }),
+      createHash: () => ({
+        update: (bytes: Buffer) => ({
+          digest: () => (predecessor === checkpoint758 ? pins758 : pins)[bytes[0]],
+        }),
+      }),
     },
     client: {
       supabase: {
@@ -190,7 +212,7 @@ function fixture(count = 1) {
     },
   };
   const options = {
-    expectedReleaseSha: release,
+    expectedReleaseSha: predecessor,
     expectedInstanceId: instance,
     expectedPid: process.pid,
   };
@@ -216,6 +238,62 @@ function fixture(count = 1) {
 }
 
 describe('legacy checkpoint admission and exact persisted readback', () => {
+  it('checkpoints the exact758 original owner with tracked accounting already drained', async () => {
+    const f = fixture(1, checkpoint758);
+    expect(await f.run()).toMatchObject({
+      ok: true,
+      attemptedTables: 1,
+      verifiedTables: 1,
+      paidAccountingQualification: 'native_pending_registry_drained',
+      restartAuthorized: false,
+    });
+    expect(f.calls).toEqual(['parked']);
+  });
+
+  it.each([
+    'missing-accounting',
+    'pending-accounting',
+    'unconfirmed-accounting',
+    'retained-permit',
+    'recovery-in-flight',
+    'mixed-pins',
+  ])('refuses758 %s before any original write', async (cause) => {
+    const f = fixture(1, checkpoint758);
+    if (cause === 'missing-accounting')
+      Object.assign(f.first, { timeBankAccountingPending: undefined });
+    if (cause === 'pending-accounting') f.first.timeBankAccountingPending.add(Promise.resolve());
+    if (cause === 'unconfirmed-accounting') f.first.timeBankAccountingUnconfirmed = true;
+    if (cause === 'retained-permit') f.first.f06CurrentPermit = {};
+    if (cause === 'recovery-in-flight') f.first.f06RecoveryInFlight = true;
+    if (cause === 'mixed-pins')
+      f.modules.crypto.createHash = () => ({
+        update: (bytes: Buffer) => ({ digest: () => pins[bytes[0]] }),
+      });
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      attemptedTables: 0,
+      restartAuthorized: false,
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it.each(['accounting-registry', 'checkpoint-generation'])(
+    'refuses758 changed %s after joining original announcement and before writing',
+    async (cause) => {
+      const f = fixture(1, checkpoint758);
+      f.first.presenceSave = Promise.resolve().then(() => {
+        if (cause === 'accounting-registry') f.first.timeBankAccountingPending = new Set();
+        else f.first.maintenanceCheckpointGeneration++;
+      });
+      expect(await f.run()).toMatchObject({
+        ok: false,
+        attemptedTables: 0,
+        restartAuthorized: false,
+      });
+      expect(f.calls).toEqual([]);
+    }
+  );
+
   const stopEmpty = (f: ReturnType<typeof fixture>) => {
     Object.assign(f.first, {
       running: false,
@@ -231,6 +309,29 @@ describe('legacy checkpoint admission and exact persisted readback', () => {
     f.first.timeBankEngine.playerBanks.clear();
     f.first.seatedPlayers = [];
   };
+
+  it('does not drop retained758 F06 custody from an otherwise empty stopped engine', async () => {
+    const f = fixture(2, checkpoint758);
+    stopEmpty(f);
+    f.first.f06CurrentPermit = {};
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      attemptedTables: 0,
+      reason: 'f06_custody_not_drained',
+      paidAccountingQualification: 'native_pending_registry_unqualified',
+    });
+    expect(f.calls).toEqual([]);
+  });
+
+  it('does not accept758 readback from an announcement even after the native ready bit changes', async () => {
+    const f = fixture(1, checkpoint758);
+    f.onRead((rows) => {
+      rows[0].time_bank_snapshot = null;
+      return rows;
+    });
+    expect(await f.run()).toMatchObject({ ok: false, reason: 'checkpoint_readback_mismatch' });
+    expect(f.calls).toEqual(['parked']);
+  });
 
   it('joins an empty stopped owner and checkpoints the active owner only', async () => {
     const f = fixture(2);

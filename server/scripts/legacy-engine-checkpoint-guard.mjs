@@ -1,5 +1,5 @@
 /**
- * Exact-2f4 first-install checkpoint bridge. This function has no module-scoped
+ * Two exact-image first-install checkpoint profiles. This function has no module-scoped
  * dependencies: the publisher serializes it for Runtime.callFunctionOn, with
  * `this` bound to the discovered, already-running GameServer. It never creates
  * a server, opens an inspector, changes a pause/readiness flag, or retries a write.
@@ -10,9 +10,10 @@
  * client, dataActorContext, fs (node:fs), crypto (node:crypto). Loading/identity verification belongs
  * to that transport; the checks below additionally pin the three critical files.
  *
- * This preserves the OLD checkpoint's accounting semantics. Its fire-and-forget
- * paid-bank debits have no retained acknowledgment registry. No result here claims
- * the later accounting-drain repair, historical reconciliation, or restart approval.
+ * The 2f4 profile preserves its old untracked accounting semantics. The 758 profile
+ * additionally requires its native debit registry already drained and its exact
+ * checkpoint generation unchanged. Neither claims historical reconciliation or
+ * restart approval, and neither may settle or discard retained F06 custody.
  *
  * A disconnected/expired caller must retain an UNKNOWN operation, never retry it.
  * Started native writes are joined even after refusal; an RPC timeout remains an
@@ -21,7 +22,8 @@
  * a checked instant, not a new lock, a freeze extension, or a substitute certificate.
  */
 export async function legacyEngineCheckpointGuard(options, discoveredServers, modules) {
-  const release = '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5';
+  const release = options?.expectedReleaseSha;
+  const trackedAccounting = release === '758610f3f844406bbbaee2f5100ced36d84fb943';
   const reserveMs = 285000;
   // Refusal ceilings, not truncation or latency promises. The observed fleet has
   // 1379 tables, so the ordinary PostgREST 1000-row cap cannot bound the fleet.
@@ -29,7 +31,12 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
   const maxEntriesPerTable = 64;
   const concurrency = 32;
   const readPageSize = 100;
-  const filePins = [
+  const filePins = trackedAccounting ? [
+    ['/app/dist/GameServer.js', 'f8a4e646348fbd0209b9afde24658660dca0837f7720e04b47d37cff4fa2bea7'],
+    ['/app/dist/engine/ServerTableEngineBase.js', 'cc715650eca1b6cfbccadcef46a9f07f581549e75df6581cb8c32f3fbfffc0b3'],
+    ['/app/dist/services/supabase/client.js', 'f129642e3ce48e26a84f3f7fa60c46d3ceabd67e35f0508c1711319bc95f56ad'],
+    ['/app/dist/engine/ServerTableEngineDealing.js', '44a7c52ede31dd3a5600d6b648b0d34c9ecabc3e10f14a65830712b432dc62e9'],
+  ] : [
     ['/app/dist/GameServer.js', 'bfcb47c498c34408dd95047e90535c7ddc1ecc5fef14e41e1063ec72a1aad119'],
     [
       '/app/dist/engine/ServerTableEngineBase.js',
@@ -101,13 +108,15 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       : attemptedTables > 0
         ? 'unconfirmed'
         : 'not_started',
-    paidAccountingQualification: 'legacy_untracked',
+    paidAccountingQualification: trackedAccounting
+      ? (ok ? 'native_pending_registry_drained' : 'native_pending_registry_unqualified')
+      : 'legacy_untracked',
     restartAuthorized: false,
   });
 
   try {
     require(record(options) && record(modules), 'invalid_arguments');
-    require(options.expectedReleaseSha === release &&
+    require((trackedAccounting || release === '2f4e33560bcd23bfb5cc731f31816b2c2e2847e5') &&
       typeof options.expectedInstanceId === 'string' &&
       options.expectedInstanceId.length > 0 &&
       Number.isSafeInteger(options.expectedPid) &&
@@ -220,6 +229,17 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
       require(uuid(tableId) &&
         engine instanceof modules.base.ServerTableEngineBase &&
         engine.tableId === tableId, 'engine_identity_mismatch');
+      if (trackedAccounting) {
+        // These fields belong to the exact native 758 owner. Unknown or retained
+        // work is not an empty boundary, even when the map entry is stopped.
+        require(engine.timeBankAccountingPending instanceof Set &&
+          engine.timeBankAccountingPending.size === 0 &&
+          engine.timeBankAccountingUnconfirmed === false &&
+          Number.isSafeInteger(engine.maintenanceCheckpointGeneration) &&
+          engine.maintenanceCheckpointGeneration >= 0, 'native_accounting_not_drained');
+        require(engine.f06CurrentPermit === null &&
+          engine.f06RecoveryInFlight === false, 'f06_custody_not_drained');
+      }
       const stopped = engine.running === false;
       const methodNames = [
         'persistPresenceForRestart',
@@ -409,6 +429,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         bankEngine: engine.timeBankEngine,
         bankMeta: engine.timeBankMeta,
         presenceSave: engine.presenceSave,
+        accountingPending: trackedAccounting ? engine.timeBankAccountingPending : null,
+        checkpointGeneration: trackedAccounting ? engine.maintenanceCheckpointGeneration : null,
         requiresRow: Object.keys(states).length + Object.keys(expectedBanks).length > 0,
         writeStartedAt: null,
         writeEndedAt: null,
@@ -436,6 +458,8 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         current.bankMeta === captured.bankMeta &&
         current.signature === captured.signature, 'engine_state_changed');
       require(current.presenceSave === captured.presenceSave, 'presence_writer_changed');
+      require(current.accountingPending === captured.accountingPending &&
+        current.checkpointGeneration === captured.checkpointGeneration, 'native_checkpoint_owner_changed');
     };
     const checkAll = () => {
       const remaining = checkMaintenance();

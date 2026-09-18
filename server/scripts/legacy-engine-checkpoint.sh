@@ -5,8 +5,6 @@ set -euo pipefail
 CONTROL_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-requests}"
 CONTAINER="${CONTAINER:-club-arena-engine}"
-LEGACY_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
-LEGACY_IMAGE=sha256:3796b874331fee7d3b0824472df65e9fe613306a5175d3a211fdf8158bdab852
 
 die() { echo "[legacy-engine-checkpoint] $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die 'root-owned release required'
@@ -23,8 +21,18 @@ mapfile -t REQUEST < "$REQUEST_ROOT/$RUN_ID.request"
   && [ "${REQUEST[4]}" = "$(cat "$CONTROL_DIR/control-sha")" ] \
   || die 'immutable operation generation mismatch'
 [ "$(date +%s)" -lt "${REQUEST[5]}" ] || die 'owning operation expired'
-[ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-sha)" = "$LEGACY_SHA" ] \
-  && [ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
+LEGACY_SHA="$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-sha)" \
+  || die 'sealed predecessor unreadable'
+# Closed, measured predecessor profiles. Neither a caller nor an environment
+# variable can supply another source, image or compiled-code profile.
+case "$LEGACY_SHA" in
+  2f4e33560bcd23bfb5cc731f31816b2c2e2847e5)
+    LEGACY_IMAGE=sha256:3796b874331fee7d3b0824472df65e9fe613306a5175d3a211fdf8158bdab852 ;;
+  758610f3f844406bbbaee2f5100ced36d84fb943)
+    LEGACY_IMAGE=sha256:0190d49e394fd2b12b1462730bb22c4c4d1c4d49564e19b192bb07e3754c5561 ;;
+  *) die 'sealed predecessor has no qualified checkpoint profile' ;;
+esac
+[ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
   || die 'sealed predecessor is not the qualified legacy image'
 IDENTITY="$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}}' "$CONTAINER")"
 read -r CONTAINER_ID IMAGE RUNNING <<< "$IDENTITY"
@@ -36,18 +44,19 @@ const args = fs.readFileSync("/proc/1/cmdline", "utf8").split("\0").filter(Boole
 if (process.version !== "v22.23.2" ||
     JSON.stringify(args) !== JSON.stringify(["node", "dist/index.js"]) ||
     /--(?:inspect|debug)/.test(process.env.NODE_OPTIONS ?? "") ||
-    process.env.GIT_COMMIT_SHA !== "2f4e33560bcd23bfb5cc731f31816b2c2e2847e5") process.exit(1);
-' || die 'predecessor runtime or loopback inspector configuration refused'
+    process.env.GIT_COMMIT_SHA !== process.argv[1]) process.exit(1);
+' "$LEGACY_SHA" || die 'predecessor runtime or loopback inspector configuration refused'
 
 INSTANCE="$(curl -sS --max-time 2 http://127.0.0.1:8080/health | python3 -c '
 import json,re,sys
-d=json.load(sys.stdin); m=d.get("maintenance",{}); instance=d.get("instanceId","")
-ok=(d.get("running") is True and d.get("version")=="2f4e3356" and re.fullmatch(r"1-[0-9a-f]{8}",instance)
+d=json.load(sys.stdin); m=d.get("maintenance",{}); instance=d.get("instanceId",""); release=sys.argv[1]
+ok=(d.get("running") is True and d.get("version")==release[:8] and re.fullmatch(r"1-[0-9a-f]{8}",instance)
+    and (release=="2f4e33560bcd23bfb5cc731f31816b2c2e2847e5" or d.get("releaseSha")==release)
     and m.get("active") is True and m.get("phase")=="counting_down"
     and m.get("durableConfirmed") is True and m.get("remainingMs",0)>=285000)
 if not ok: raise SystemExit(1)
 print(instance)
-')" || die 'physical countdown entry unavailable'
+' "$LEGACY_SHA")" || die 'physical countdown entry unavailable'
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
@@ -65,7 +74,7 @@ finally: os.close(fd)
 PY
 
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" \
+  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" \
   || die 'checkpoint or inspector cleanup refused; do not retry this operation'
 [ "$(timeout 3s docker inspect --format '{{.Id}} {{.Image}} {{.State.Running}}' "$CONTAINER")" = "$IDENTITY" ] \
   || die 'predecessor changed during checkpoint'

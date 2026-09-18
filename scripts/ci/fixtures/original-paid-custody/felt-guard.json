@@ -1,0 +1,24 @@
+{
+  "observed_at": "2026-09-18 12:39:50.635837+00",
+  "function": {
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "config": ["search_path=public, pg_temp"],
+    "body_md5": "f4fdf397306411eec6b3b234164bf645",
+    "signature": "fn_ca_tournament_felt_may_not_exceed_supply()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_felt_may_not_exceed_supply()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid;\n  v_was numeric;\n  v_now numeric;\n  v_delta numeric;\n  v_felt numeric;\n  v_supply numeric;\nBEGIN\n  -- What this row contributes to the felt. A vacated seat contributes nothing,\n  -- whatever its stack still says - that stale figure is the whole defect.\n  v_now := CASE WHEN NEW.left_at IS NULL THEN COALESCE(NEW.stack,0) ELSE 0 END;\n  v_was := CASE WHEN TG_OP = 'INSERT' THEN 0\n                WHEN OLD.left_at IS NULL THEN COALESCE(OLD.stack,0)\n                ELSE 0 END;\n  v_delta := v_now - v_was;\n\n  -- Only growth is judged. A seat exit, a losing bet and a no-op never refuse:\n  -- a guard that can refuse a seat exit strands a player mid-hand.\n  IF v_delta <= 0 THEN\n    RETURN NULL;\n  END IF;\n\n  SELECT tb.tournament_id INTO v_tournament_id\n    FROM public.tables tb WHERE tb.id = NEW.table_id;\n  IF v_tournament_id IS NULL THEN\n    RETURN NULL;                      -- a cash seat; supply is not the meter\n  END IF;\n\n  -- DEFERRED, so this is the committed end state of the whole transaction:\n  -- every seat of a settled hand, or the vacate and the re-seat of a move.\n  v_felt   := public.fn_ca_tournament_felt_total(v_tournament_id);\n  v_supply := public.fn_ca_tournament_chip_supply(v_tournament_id);\n\n  -- Tolerate history, refuse growth: only the write that CARRIES the felt over\n  -- the line is refused. An event already over stays playable.\n  IF v_felt > v_supply AND (v_felt - v_delta) <= v_supply THEN\n    RAISE EXCEPTION\n      'TOURNAMENT_FELT_WOULD_EXCEED_SUPPLY: seat % (table %, seat %) adds % chips, '\n      'leaving % on the felt of tournament % against % ever bought in',\n      NEW.id, NEW.table_id, NEW.seat_number, v_delta, v_felt,\n      v_tournament_id, v_supply\n      USING ERRCODE = '55000',\n            HINT = 'A vacated seat''s stack is a stale snapshot, not chips. '\n                   'Fund a seat from the felt the player is leaving, or record '\n                   'the creation in tournament_felt_supply_acknowledgements.';\n  END IF;\n\n  RETURN NULL;\nEND;\n$function$\n",
+    "definition_md5": "af7e8bee512e4fe9e7e383bdd73390fd"
+  },
+  "triggers": [
+    {
+      "name": "zzzzzz_tournament_felt_may_not_exceed_supply",
+      "type": 21,
+      "enabled": "O",
+      "deferred": true,
+      "function": "fn_ca_tournament_felt_may_not_exceed_supply()",
+      "relation": "table_seats",
+      "deferrable": true,
+      "definition": "CREATE CONSTRAINT TRIGGER zzzzzz_tournament_felt_may_not_exceed_supply AFTER INSERT OR UPDATE OF stack, left_at ON public.table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_ca_tournament_felt_may_not_exceed_supply()"
+    }
+  ]
+}

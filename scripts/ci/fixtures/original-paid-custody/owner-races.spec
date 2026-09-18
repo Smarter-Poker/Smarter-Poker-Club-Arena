@@ -17,6 +17,7 @@ setup { SET application_name='custody-owner-a'; SET statement_timeout='10s'; SET
 step "a_freeze_boundary" { INSERT INTO public.engine_maintenance_break(id,phase,announced_at,break_started_at,break_ends_at,reason,declared_by,updated_at,enforce_freeze,ownership_token) VALUES(true,'counting_down',clock_timestamp()+interval '35 seconds',clock_timestamp()+interval '36 seconds',clock_timestamp()+interval '5 minutes','native custody clock boundary','native',now(),true,gen_random_uuid()); DO $$ BEGIN IF public.fn_platform_frozen() OR public.fn_entry_purchases_frozen() THEN RAISE EXCEPTION 'NATIVE_BOUNDARY_ALREADY_FROZEN'; END IF; END $$; }
 step "a_begin" { BEGIN; }
 step "a_lease" { SELECT tournament_id FROM public.engine_tournament_leases WHERE tournament_id='b7200000-0000-4000-8000-000000000001' FOR KEY SHARE; }
+step "a_ack" { SELECT tournament_id FROM public.tournament_felt_supply_acknowledgements WHERE tournament_id='b7200000-0000-4000-8000-000000000001' FOR KEY SHARE; }
 step "a_lane" { DO $$ BEGIN IF NOT pg_try_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1:b7200000-0000-4000-8000-000000000001',0)) THEN RAISE EXCEPTION 'LEASE_LANE_INVERTED'; END IF; RAISE NOTICE 'CUSTODY_OWNER_ORDER_PROVEN'; END $$; }
 step "a_resume" { SELECT original_paid_fixture.attempt('fresh'); }
 step "a_old_seat" { SELECT id FROM public.table_seats WHERE id='b7400000-0000-4000-8000-000000000001' FOR UPDATE; }
@@ -26,6 +27,8 @@ step "a_rollback" { ROLLBACK; }
 session "b"
 setup { SET application_name='custody-owner-b'; SET statement_timeout='10s'; }
 step "b_busy" { SELECT original_paid_fixture.attempt('busy'); }
+step "b_ack_busy" { SELECT original_paid_fixture.attempt('busy'); }
+step "b_ack_wait" { DO $$ DECLARE n numeric; BEGIN SELECT chips INTO STRICT n FROM public.tournament_felt_supply_acknowledgements WHERE tournament_id='b7200000-0000-4000-8000-000000000001' FOR UPDATE; IF n<>2500 THEN RAISE EXCEPTION 'ACKNOWLEDGEMENT_CHANGED'; END IF; RAISE NOTICE 'CUSTODY_OWNER_ACK_PROVEN'; END $$; }
 step "b_frozen" { SELECT original_paid_fixture.attempt('frozen'); }
 step "b_changed" { SELECT original_paid_fixture.attempt('changed'); }
 step "b_fresh" { SELECT original_paid_fixture.attempt('fresh'); }
@@ -39,3 +42,5 @@ permutation "a_begin" "a_resume" "b_heartbeat" "b_claim" "observed_wait" "a_comm
 permutation "a_begin" "a_candidate" "b_changed" "observed_wait" "a_commit"
 permutation "a_begin" "a_candidate" "b_fresh" "observed_wait" "a_rollback"
 permutation "a_freeze_boundary" "a_begin" "a_old_seat" "b_frozen" "observed_wait" "freeze" "a_commit"
+permutation "a_begin" "a_ack" "b_ack_busy" "a_lane" "a_rollback"
+permutation "a_begin" "a_resume" "b_ack_wait" "observed_wait" "a_commit"

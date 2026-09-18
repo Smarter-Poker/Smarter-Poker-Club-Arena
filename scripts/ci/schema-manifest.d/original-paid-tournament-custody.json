@@ -1,13 +1,14 @@
 {
   "_owner": "original-paid-tournament-custody",
-  "_comment": "Installed once as provider migration20260918123204 on2026-09-18; independent12:32:22UTC catalog readback matches all five native20 function definitions, ACLs and receipt table/trigger postimages. SourceSHA25606921586317d3875cc9a194c5a32020c460828efab307096a53413719c21ba11. Business disposition is separate.",
+  "_comment": "Installed once as provider migration20260918123204 on2026-09-18; independent12:32:22UTC catalog readback matches all five native20 function definitions, ACLs and receipt table/trigger postimages. SourceSHA25606921586317d3875cc9a194c5a32020c460828efab307096a53413719c21ba11. Business disposition is separate. Successor eb65a6bb installed once as20260918124514;12:45:25UTC readback matches native02 RPC and deferred felt guard definitions/ACLs, with original assignment, admission, getter and full2500acknowledgment unchanged.",
   "tables": ["tournament_paid_stack_custody_receipts"],
   "functions": [
     "fn_ca_assign_tournament_player_seat_locked",
     "fn_ca_guard_mtt_admission_contract",
     "fn_ca_guard_original_paid_stack_receipt",
     "fn_ca_original_paid_stack_must_complete",
-    "fn_ca_resume_original_paid_tournament_entry"
+    "fn_ca_resume_original_paid_tournament_entry",
+    "fn_ca_tournament_felt_may_not_exceed_supply"
   ],
   "columns": {
     "tournament_paid_stack_custody_receipts": [

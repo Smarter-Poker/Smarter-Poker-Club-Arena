@@ -12,10 +12,11 @@ sys.dont_write_bytecode=True
 from satellite_qualifier_fixture import compose,module,sha,table_sql,exact_table_sql
 import mtt_activation_native as activation
 from mtt_activation_funding import HUMAN
-from original_paid_custody_native import lease_foundation, owner_races, installer_refusals, postimage, paid_purchase_prevention, private_rows, validate_complete
+from original_paid_custody_native import lease_foundation, owner_races, installer_refusals, postimage, paid_purchase_prevention, private_rows, validate_complete, acknowledged_install
 ROOT=Path(__file__).resolve().parents[2]
 FIX=Path('scripts/ci/fixtures/original-paid-custody')
 MIGRATION=Path('supabase/migrations/20260918093004_original_paid_tournament_stack_keeps_its_custody.sql')
+SUCCESSOR=Path('supabase/migrations/20260918123506_original_paid_custody_preserves_acknowledged_supply.sql')
 CALL="SELECT public.fn_ca_resume_original_paid_tournament_entry('b7c00000-0000-4000-8000-000000000001',(SELECT expected FROM original_paid_fixture.input));"
 T="'b7200000-0000-4000-8000-000000000001'"
 U="'b7100000-0000-4000-8000-000000000001'"
@@ -111,7 +112,10 @@ def refusal_cases(e,db):
  ('active-snapshot',"INSERT INTO hand_state_snapshots(table_id,hand_number,state_json,config_json,dealer_seat,players_json) VALUES('b7300000-0000-4000-8000-000000000001',9720002,'{}','{}',1,'[]')",None,'ORIGINAL_PAID_ACTIVE_CUSTODY_CHANGED'),
  ('reserved-permit',"INSERT INTO smarter_private.f06_hand_permits(permit_id,tournament_id,table_id,lifecycle,hand_number,custody_id,generation,state) VALUES(gen_random_uuid(),"+T+",'b7300000-0000-4000-8000-000000000001',1,9720002,gen_random_uuid(),'b7b00000-0000-4000-8000-000000000001','reserved')",None,'ORIGINAL_PAID_ACTIVE_CUSTODY_CHANGED'),
  ('active-park',"INSERT INTO smarter_private.f06_operations(break_id,tournament_id,source_table_id,lifecycle,boundary_id,origin_generation,state,revision,created_at) VALUES(gen_random_uuid(),"+T+",'b7300000-0000-4000-8000-000000000001',1,gen_random_uuid(),'b7b00000-0000-4000-8000-000000000001','park_requested',0,now())",None,'ORIGINAL_PAID_ACTIVE_CUSTODY_CHANGED'),
- ('platform-freeze',"INSERT INTO engine_maintenance_break(id,phase,announced_at,break_started_at,break_ends_at,reason,declared_by,updated_at,enforce_freeze,ownership_token) VALUES(true,'counting_down',now()-interval '2 minutes',now(),now()+interval '5 minutes','native custody freeze','native',now(),true,gen_random_uuid())",None,'ORIGINAL_PAID_PLATFORM_FROZEN'),
+  ('platform-freeze',"INSERT INTO engine_maintenance_break(id,phase,announced_at,break_started_at,break_ends_at,reason,declared_by,updated_at,enforce_freeze,ownership_token) VALUES(true,'counting_down',now()-interval '2 minutes',now(),now()+interval '5 minutes','native custody freeze','native',now(),true,gen_random_uuid())",None,'ORIGINAL_PAID_PLATFORM_FROZEN'),
+  ('changed-acknowledgement',"UPDATE tournament_felt_supply_acknowledgements SET reason='changed proof' WHERE tournament_id="+T,None,'ORIGINAL_PAID_EXPECTED_CHANGED'),
+  ('missing-acknowledgement',"DELETE FROM tournament_felt_supply_acknowledgements WHERE tournament_id="+T,None,'ORIGINAL_PAID_EXPECTED_CHANGED'),
+  ('changed-acknowledged-supply',"UPDATE tournament_felt_supply_acknowledgements SET chips=2501 WHERE tournament_id="+T,None,'ORIGINAL_PAID_EXPECTED_CHANGED'),
  ]
  before=e.snapshot(db,'refusals-before')
  for name,mutation,call,error in cases:
@@ -145,7 +149,7 @@ def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--evidence',type=Path,required=True);p.add_argument('--pg-bin',type=Path,required=True);a=p.parse_args()
  out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
  built=compose(ROOT);(out/'foundation.sql').write_text(built.pop('sql'));built.pop('entry_sql')
- paths=[MIGRATION,FIX/'current-authorities.json',FIX/'opening.sql',FIX/'cases.sql',FIX/'setup.sql',FIX/'races.spec',FIX/'snapshot-catalog.json',FIX/'snapshot-guard.json',FIX/'activation-guard.json',FIX/'lease-claim.json',FIX/'lease-dependencies.json',FIX/'paid-purchase-authority.json',FIX/'purchase-prevention.sql',FIX/'owner-races.spec',Path('scripts/ci/original_paid_custody_native.py'),Path('supabase/migrations/20260918071546_f06_original_preparation_cancellations_survive_maintenance_r.sql'),Path('scripts/ci/probes/original-paid-custody-authority.sql'),Path('scripts/ci/build-original-paid-custody.py'),Path(__file__).relative_to(ROOT),Path('.github/workflows/ci.yml'),Path('scripts/ci/classify-ci-changes.mjs'),Path('tests/unit/fixtureNativeCi.test.ts'),Path('scripts/qualification/cash-native-hosted.manifest.json'),Path('scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql'),Path('scripts/ci/probes/bounty-rebuy-generation-atomicity.sql'),Path('scripts/ci/test-mtt-unlimited.py'),Path('scripts/ci/mtt_isolation_results.py'),Path('scripts/ci/mtt_format_qualification.py'),Path('scripts/ci/mtt_historical_freebuy_proof.py')]
+ paths=[MIGRATION,SUCCESSOR,FIX/'felt-guard.json',FIX/'acknowledged-supply-catalog.json',FIX/'current-authorities.json',FIX/'opening.sql',FIX/'cases.sql',FIX/'setup.sql',FIX/'races.spec',FIX/'snapshot-catalog.json',FIX/'snapshot-guard.json',FIX/'activation-guard.json',FIX/'lease-claim.json',FIX/'lease-dependencies.json',FIX/'paid-purchase-authority.json',FIX/'purchase-prevention.sql',FIX/'owner-races.spec',Path('scripts/ci/original_paid_custody_native.py'),Path('supabase/migrations/20260918071546_f06_original_preparation_cancellations_survive_maintenance_r.sql'),Path('scripts/ci/probes/original-paid-custody-authority.sql'),Path('scripts/ci/build-original-paid-custody.py'),Path(__file__).relative_to(ROOT),Path('.github/workflows/ci.yml'),Path('scripts/ci/classify-ci-changes.mjs'),Path('tests/unit/fixtureNativeCi.test.ts'),Path('scripts/qualification/cash-native-hosted.manifest.json'),Path('scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql'),Path('scripts/ci/probes/bounty-rebuy-generation-atomicity.sql'),Path('scripts/ci/test-mtt-unlimited.py'),Path('scripts/ci/mtt_isolation_results.py'),Path('scripts/ci/mtt_format_qualification.py'),Path('scripts/ci/mtt_historical_freebuy_proof.py')]
  built['source_sha256'].update({str(p):sha(ROOT/p) for p in paths})
  native=module(ROOT/'scripts/ci/test-mtt-unlimited.py','custody_execution');e=native.Execution(ROOT,out,a.pg_bin.resolve(),out,600)
  e.report.update(source_sha256=built['source_sha256'],fixture_identity='real-financial-catalog-original-paid-custody')
@@ -191,6 +195,12 @@ def main():
   seed=(ROOT/'scripts/ci/probes/bounty-rebuy-generation-atomicity.sql').read_text().split('SET LOCAL session_replication_role=origin;')[0]
   seed+=(ROOT/FIX/'opening.sql').read_text();e.sql(db,seed,label='exact-scoring-shape')
   e.sql(db,file=ROOT/FIX/'setup.sql',label='independent-original-expectation')
+  acknowledged_install(e,db,FIX,SUCCESSOR,activation.refusal)
+  builder=module(ROOT/'scripts/ci/build-original-paid-custody.py','custody_builder')
+  _,corrected=builder.build_acknowledged()
+  complete_source=(ROOT/'scripts/ci/probes/original-paid-custody-authority.sql').read_text()
+  original=re.search(r'CREATE FUNCTION public\.fn_ca_resume_original_paid_tournament_entry\(.*?\$function\$;',complete_source,re.S)[0]
+  postimage(e,db,FIX,complete_source.replace(original,corrected.replace('CREATE OR REPLACE FUNCTION','CREATE FUNCTION',1)))
   private_before=private_rows(e,db,'all-cases-private-before')
   paid_purchase_prevention(e,db,FIX)
   original_refusal(e,db,rows)
@@ -210,7 +220,7 @@ def main():
   if private_rows(e,db,'all-cases-private-after')!=private_before:raise RuntimeError('cases changed private custody')
   e.report['private_custody_unchanged']=True
   validate_complete(e.report)
-  keys=['original_refusal','refusals','private_role_refusals','races','owner_races','activation','installer_refusals','postimage','successful_transfer','private_custody_unchanged','paid_purchase_prevention']
+  keys=['original_refusal','refusals','private_role_refusals','races','owner_races','activation','installer_refusals','postimage','successful_transfer','private_custody_unchanged','paid_purchase_prevention','acknowledged_supply']
   for key in keys:
    bad=copy.deepcopy(e.report);bad.pop(key)
    try:validate_complete(bad)

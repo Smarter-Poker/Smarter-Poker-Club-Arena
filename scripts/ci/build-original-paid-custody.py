@@ -9,6 +9,7 @@ ROOT=Path(__file__).resolve().parents[2]
 CAPTURE=Path('scripts/ci/fixtures/original-paid-custody/current-authorities.json')
 SOURCE=Path('scripts/ci/probes/original-paid-custody-authority.sql')
 MIGRATION=Path('supabase/migrations/20260918093004_original_paid_tournament_stack_keeps_its_custody.sql')
+SUCCESSOR=Path('supabase/migrations/20260918123506_original_paid_custody_preserves_acknowledged_supply.sql')
 
 def quoted(s): return "'"+s.replace("'","''")+"'"
 
@@ -68,6 +69,68 @@ def build(root=ROOT):
  body+='END $postimage$;\nCOMMIT;\n'
  return body,successor
 
+def build_acknowledged(root=ROOT):
+ old=re.search(r'CREATE FUNCTION public\.fn_ca_resume_original_paid_tournament_entry\(.*?\$function\$;', (root/SOURCE).read_text(),re.S)[0]
+ source=old.replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION',1)
+ changes={
+  'actual jsonb; others jsonb; others_after jsonb; supply numeric; live numeric;':
+  'actual jsonb; others jsonb; others_after jsonb; supply numeric; live numeric;\n acknowledged_supply numeric; acknowledgement jsonb;',
+  ' supply:=public.fn_ca_tournament_chip_supply(t);':''' -- Funded scoring supply is the unchanged assignment owner's raw roster cap.
+ -- A prior felt acknowledgement is separate evidence, never another purchase.
+ SELECT (count(*)*COALESCE(tour.starting_chips,0))
+       +(COALESCE(sum(p.rebuys),0)*COALESCE(tour.rebuy_chips,0))
+       +(count(*) FILTER (WHERE p.add_on)*COALESCE(tour.addon_chips,0))
+ INTO supply FROM public.tournament_players p WHERE p.tournament_id=t;
+ SELECT to_jsonb(a) INTO acknowledgement
+ FROM public.tournament_felt_supply_acknowledgements a WHERE a.tournament_id=t FOR UPDATE NOWAIT;
+ acknowledged_supply:=public.fn_ca_tournament_chip_supply(t);
+ IF acknowledged_supply IS NULL OR acknowledged_supply::text IN ('NaN','Infinity','-Infinity')
+ OR acknowledged_supply IS DISTINCT FROM supply+COALESCE((acknowledgement->>'chips')::numeric,0) THEN
+  RAISE EXCEPTION 'ORIGINAL_PAID_SUPPLY_PROOF_CHANGED' USING ERRCODE='55000'; END IF;''',
+  "'wallet',to_jsonb(wallet),'live_seats',others,'funded_supply',supply,'grant_chips',grant_chips,":
+  "'wallet',to_jsonb(wallet),'live_seats',others,'funded_supply',supply,'grant_chips',grant_chips,\n  'acknowledged_supply',acknowledged_supply,'supply_acknowledgement',acknowledgement,",
+  ' OR public.fn_ca_tournament_chip_supply(t) IS DISTINCT FROM supply':
+  ''' OR public.fn_ca_tournament_chip_supply(t) IS DISTINCT FROM acknowledged_supply
+ OR (SELECT to_jsonb(a) FROM public.tournament_felt_supply_acknowledgements a WHERE a.tournament_id=t) IS DISTINCT FROM acknowledgement''',
+ }
+ for before,after in changes.items():
+  if source.count(before)!=1:raise ValueError('exact acknowledged-supply predecessor differs')
+  source=source.replace(before,after)
+ capture=json.loads((root/CAPTURE.parent/'acknowledged-supply-catalog.json').read_text())['function']
+ if hashlib.md5(capture['definition'].encode()).hexdigest()!=capture['definition_md5'] or capture['definition_md5']!='c29dfa4a0ebef95fddeb8a0982ef07e1':raise ValueError('captured supply owner differs')
+ pins=[('fn_ca_resume_original_paid_tournament_entry(uuid,jsonb)','20d43d50e8301979dd7b99b72ad36710','{postgres=X/postgres}'),('fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)','0fe132756ddf22122c91aa0d7fd323cd','{postgres=X/postgres}'),('fn_ca_guard_mtt_admission_contract()','98363a25bad4495a4b32e7cd99354c37','{postgres=X/postgres}'),(capture['signature'],capture['definition_md5'],capture['acl'])]
+ felt=json.loads((root/CAPTURE.parent/'felt-guard.json').read_text())['function']
+ if hashlib.md5(felt['definition'].encode()).hexdigest()!=felt['definition_md5'] or felt['definition_md5']!='af7e8bee512e4fe9e7e383bdd73390fd':raise ValueError('captured deferred felt guard differs')
+ branch='  IF v_felt > v_supply AND (v_felt - v_delta) <= v_supply THEN'
+ corrected='''  IF v_felt > v_supply AND (v_felt - v_delta) <= v_supply
+     AND NOT EXISTS (
+       SELECT 1 FROM public.tournament_paid_stack_custody_receipts r
+       JOIN public.table_seats s ON s.id=NEW.id
+       WHERE r.transaction_id=pg_current_xact_id() AND r.state='seated'
+         AND r.tournament_id=v_tournament_id AND r.user_id=NEW.user_id
+         AND r.destination_table_id=NEW.table_id AND r.destination_seat_number=NEW.seat_number
+         AND r.assignment->>'seat_id'=NEW.id::text
+         AND r.assignment->>'occupancy_id'=NEW.occupancy_id::text
+         AND s.user_id=NEW.user_id AND s.table_id=NEW.table_id AND s.seat_number=NEW.seat_number
+         AND s.occupancy_id=NEW.occupancy_id AND s.left_at IS NULL AND s.stack=r.grant_chips
+         AND v_was=0 AND v_now=r.grant_chips AND v_delta=r.grant_chips
+         AND r.live_chips_before+r.grant_chips=v_felt
+         AND (r.expected->>'acknowledged_supply')::numeric=v_supply
+         AND r.expected->'supply_acknowledgement' IS NOT DISTINCT FROM
+           (SELECT to_jsonb(a) FROM public.tournament_felt_supply_acknowledgements a WHERE a.tournament_id=v_tournament_id)
+     ) THEN'''
+ if felt['definition'].count(branch)!=1:raise ValueError('exact deferred guard branch differs')
+ felt_successor=felt['definition'].replace(branch,corrected)
+ pins.append((felt['signature'],felt['definition_md5'],felt['acl']))
+ sql="-- Original paid custody preserves the distinct existing felt acknowledgement.\nBEGIN;\nSET LOCAL lock_timeout='3s';\nSET LOCAL statement_timeout='8s';\nDO $preimage$ BEGIN\n"
+ for sig,digest,acl in pins:
+  sql+="IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid="+quoted('public.'+sig)+"::regprocedure AND md5(pg_get_functiondef(oid))="+quoted(digest)+" AND pg_get_userbyid(proowner)='postgres' AND proacl::text="+quoted(acl)+") THEN RAISE EXCEPTION 'ORIGINAL_PAID_ACK_PREIMAGE_CHANGED: %',"+quoted(sig)+"; END IF;\n"
+ sql+="IF (SELECT count(*) FROM pg_trigger WHERE tgfoid='public.fn_ca_tournament_felt_may_not_exceed_supply()'::regprocedure)<>1 OR NOT EXISTS(SELECT 1 FROM pg_trigger t WHERE tgrelid='public.table_seats'::regclass AND tgname='zzzzzz_tournament_felt_may_not_exceed_supply' AND tgfoid='public.fn_ca_tournament_felt_may_not_exceed_supply()'::regprocedure AND tgenabled='O' AND tgtype=21 AND tgdeferrable AND tginitdeferred AND tgqual IS NULL AND length(tgargs)=0 AND (SELECT array_agg(a.attname::text ORDER BY a.attnum) FROM pg_attribute a WHERE a.attrelid=t.tgrelid AND a.attnum=ANY(t.tgattr))=ARRAY['stack','left_at']) THEN RAISE EXCEPTION 'ORIGINAL_PAID_ACK_PREIMAGE_CHANGED: deferred attachment'; END IF;\n"
+ sql+='END $preimage$;\n'+source+'\nREVOKE ALL ON FUNCTION public.fn_ca_resume_original_paid_tournament_entry(uuid,jsonb) FROM PUBLIC,anon,authenticated,service_role;\n'+felt_successor+';\nREVOKE ALL ON FUNCTION public.fn_ca_tournament_felt_may_not_exceed_supply() FROM PUBLIC;\n'
+ digest=hashlib.md5(source.split('$function$')[1].encode()).hexdigest()
+ sql+="DO $postimage$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_resume_original_paid_tournament_entry(uuid,jsonb)'::regprocedure AND md5(prosrc)="+quoted(digest)+" AND pg_get_userbyid(proowner)='postgres' AND proacl::text='{postgres=X/postgres}') OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_tournament_felt_may_not_exceed_supply()'::regprocedure AND md5(pg_get_functiondef(oid))="+quoted(hashlib.md5(felt_successor.encode()).hexdigest())+" AND pg_get_userbyid(proowner)='postgres' AND proacl::text="+quoted(felt['acl'])+") THEN RAISE EXCEPTION 'ORIGINAL_PAID_ACK_POSTIMAGE_CHANGED'; END IF; END $postimage$;\nCOMMIT;\n"
+ return sql,source
+
 if __name__=='__main__':
  parser=argparse.ArgumentParser();parser.add_argument('--check',action='store_true');args=parser.parse_args()
  migration,successor=build()
@@ -75,3 +138,8 @@ if __name__=='__main__':
   if (ROOT/MIGRATION).read_text()!=migration:raise ValueError('generated custody migration differs')
  else:(ROOT/MIGRATION).write_text(migration)
  print(json.dumps({'migration':str(MIGRATION),'sha256':hashlib.sha256(migration.encode()).hexdigest(),'assignment_source_md5':hashlib.md5(successor.split('$function$')[1].encode()).hexdigest(),'assignment_definition_md5':hashlib.md5(successor.encode()).hexdigest()}))
+ correction,authority=build_acknowledged()
+ if args.check:
+  if (ROOT/SUCCESSOR).read_text()!=correction:raise ValueError('generated acknowledged-supply migration differs')
+ else:(ROOT/SUCCESSOR).write_text(correction)
+ print(json.dumps({'migration':str(SUCCESSOR),'sha256':hashlib.sha256(correction.encode()).hexdigest(),'body_md5':hashlib.md5(authority.split('$function$')[1].encode()).hexdigest()}))

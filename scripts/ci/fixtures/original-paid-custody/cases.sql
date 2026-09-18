@@ -2,7 +2,7 @@ BEGIN;
 DO $$ DECLARE r jsonb; again jsonb; e jsonb; survivor jsonb; n integer; BEGIN
  SELECT expected INTO STRICT e FROM original_paid_fixture.input;
  SELECT to_jsonb(s) INTO survivor FROM public.table_seats s WHERE id='b7400000-0000-4000-8000-000000000002';
- IF public.fn_ca_tournament_chip_supply('b7200000-0000-4000-8000-000000000001')<>317500
+ IF public.fn_ca_tournament_chip_supply('b7200000-0000-4000-8000-000000000001')<>320000
  OR public.fn_ca_tournament_felt_total('b7200000-0000-4000-8000-000000000001')<>320000 THEN RAISE EXCEPTION 'native opening money differs'; END IF;
  r:=public.fn_ca_assign_tournament_player_seat_locked('b7200000-0000-4000-8000-000000000001','b7100000-0000-4000-8000-000000000001','b7300000-0000-4000-8000-000000000001',1);
  IF r->>'reason' IS DISTINCT FROM 'tournament_chip_conservation' THEN RAISE EXCEPTION 'ordinary guard changed: %',r; END IF;
@@ -10,7 +10,9 @@ DO $$ DECLARE r jsonb; again jsonb; e jsonb; survivor jsonb; n integer; BEGIN
  r:=public.fn_ca_resume_original_paid_tournament_entry('b7c00000-0000-4000-8000-000000000001',e);
  IF r->>'ok' IS DISTINCT FROM 'true' OR (r->>'stack')::numeric IS DISTINCT FROM 2500
  OR (r->>'scoring_excess')::numeric IS DISTINCT FROM 5000 THEN RAISE EXCEPTION 'custody transfer differs: %',r; END IF;
- IF public.fn_ca_tournament_chip_supply('b7200000-0000-4000-8000-000000000001')<>317500
+ IF public.fn_ca_tournament_chip_supply('b7200000-0000-4000-8000-000000000001')<>320000
+ OR (SELECT to_jsonb(a) FROM public.tournament_felt_supply_acknowledgements a WHERE a.tournament_id='b7200000-0000-4000-8000-000000000001') IS DISTINCT FROM e->'supply_acknowledgement'
+ OR NOT EXISTS(SELECT 1 FROM public.tournament_paid_stack_custody_receipts WHERE id='b7c00000-0000-4000-8000-000000000001' AND funded_supply=317500 AND scoring_excess=5000)
  OR public.fn_ca_tournament_felt_total('b7200000-0000-4000-8000-000000000001')<>322500
  OR (SELECT to_jsonb(s) FROM public.table_seats s WHERE id='b7400000-0000-4000-8000-000000000002') IS DISTINCT FROM survivor
  THEN RAISE EXCEPTION 'survivor or existing funding changed'; END IF;

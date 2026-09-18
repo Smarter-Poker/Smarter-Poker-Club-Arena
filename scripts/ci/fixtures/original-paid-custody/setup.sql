@@ -5,7 +5,8 @@ CREATE FUNCTION original_paid_fixture.expected_custody() RETURNS jsonb LANGUAGE 
   'candidate_id',c.id,'entitlement_id',e.id,'wallet_transaction_id',w.id,
   'candidate',to_jsonb(c),'original_seat',to_jsonb(oldseat),'player',to_jsonb(p),'entitlement',to_jsonb(e),
   'ledger',to_jsonb(j),'wallet',to_jsonb(w),'live_seats',jsonb_build_array(to_jsonb(s)),
-  'funded_supply',317500,'grant_chips',2500,'scoring_excess',5000)
+  'funded_supply',317500,'grant_chips',2500,'scoring_excess',5000,
+  'acknowledged_supply',320000,'supply_acknowledgement',(SELECT to_jsonb(a) FROM public.tournament_felt_supply_acknowledgements a WHERE a.tournament_id=t.id))
  FROM public.tournaments t JOIN public.tournament_players p ON p.tournament_id=t.id
  JOIN public.tournament_knockout_candidates c ON c.tournament_id=t.id AND c.eliminated_user_id=p.user_id
  JOIN public.table_seats oldseat ON oldseat.id=c.seat_id

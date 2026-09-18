@@ -1,4 +1,7 @@
 -- Synthetic historical opening only. The full real triggers govern every call.
+INSERT INTO public.tournament_felt_supply_acknowledgements(tournament_id,chips,incident_id,reason,recorded_at)
+ VALUES('b7200000-0000-4000-8000-000000000001',2500,'b7d00000-0000-4000-8000-000000000001',
+ 'Original already-on-felt excess, excluding the independently paid off-felt entry.', '2026-09-12 06:11:57.452219+00');
 UPDATE public.tournaments SET is_bounty=false,is_pko=false,is_mystery_bounty=false,
  starting_chips=2500,rebuy_chips=2500,rebuy_cost=1,bounty_amount=0,bounty_pool=0,
  buy_in_amount=0,buy_in_fee=0,current_level=100,late_reg_levels=0,late_reg_mins=0,

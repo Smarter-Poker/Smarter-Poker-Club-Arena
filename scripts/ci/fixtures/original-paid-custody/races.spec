@@ -34,7 +34,8 @@ step "final_state" {
  DO $$ BEGIN
  IF (SELECT count(*)=1 AND bool_and(state='seated' AND grant_chips=2500 AND scoring_excess=5000)
      FROM public.tournament_paid_stack_custody_receipts) IS DISTINCT FROM true
- OR public.fn_ca_tournament_chip_supply('b7200000-0000-4000-8000-000000000001') IS DISTINCT FROM 317500::numeric
+ OR public.fn_ca_tournament_chip_supply('b7200000-0000-4000-8000-000000000001') IS DISTINCT FROM 320000::numeric
+ OR (SELECT to_jsonb(a) FROM public.tournament_felt_supply_acknowledgements a WHERE a.tournament_id='b7200000-0000-4000-8000-000000000001') IS DISTINCT FROM (SELECT expected->'supply_acknowledgement' FROM original_paid_fixture.input)
  OR public.fn_ca_tournament_felt_total('b7200000-0000-4000-8000-000000000001') IS DISTINCT FROM 322500::numeric
  OR NOT EXISTS(SELECT 1 FROM public.table_seats s WHERE s.id='b7400000-0000-4000-8000-000000000002' AND s.stack=320000)
  THEN RAISE EXCEPTION 'CUSTODY_RACE_EFFECTS_DIFFER'; END IF;

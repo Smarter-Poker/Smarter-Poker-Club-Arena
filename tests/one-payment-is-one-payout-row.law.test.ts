@@ -72,10 +72,14 @@ function withoutCreditPrimitive(sql: string): string {
     const as = result.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
     if (!as) break;
     const tag = as[1];
-    const bodyStart = start + (as.index ?? 0);
-    const end = result.indexOf(`${tag};`, bodyStart + tag.length);
+    const bodyStart = start + (as.index ?? 0) + as[0].length;
+    const end = result.indexOf(tag, bodyStart);
     if (end < 0) break;
-    result = result.slice(0, start) + result.slice(end + tag.length + 1);
+    // PostgreSQL can emit the semicolon on the line after the closing tag.
+    // Do not search beyond that tag into a later caller's function body.
+    const terminator = result.slice(end + tag.length).match(/^\s*;/);
+    if (!terminator) break;
+    result = result.slice(0, start) + result.slice(end + tag.length + terminator[0].length);
     signature.lastIndex = 0;
     start = signature.exec(result)?.index ?? -1;
   }
@@ -153,6 +157,32 @@ function withoutSeparatedSatelliteDelivery(sql: string): string {
 }
 
 describe('one payment is one payout row', () => {
+  it.each(['$credit$;', '$credit$\n;'])(
+    'removes only the credit primitive when its terminator is %j',
+    (terminator) => {
+      const primitive =
+        'CREATE OR REPLACE FUNCTION public.fn_credit_and_log() RETURNS void ' +
+        'LANGUAGE plpgsql AS $credit$ BEGIN INSERT INTO public.tournament_payouts DEFAULT VALUES; END; ' +
+        terminator;
+      const unsafeCaller =
+        '\nDO $caller$ BEGIN PERFORM public.fn_credit_and_log(); ' +
+        'INSERT INTO public.tournament_payouts DEFAULT VALUES; END; $caller$;';
+      expect(withoutCreditPrimitive(primitive + unsafeCaller)).toBe(unsafeCaller);
+      expect(CREDIT_PATHS.test(withoutCreditPrimitive(primitive + unsafeCaller))).toBe(true);
+      expect(HAND_WRITES.test(withoutCreditPrimitive(primitive + unsafeCaller))).toBe(true);
+    }
+  );
+
+  it('does not remove an unterminated credit primitive or another function', () => {
+    const incomplete =
+      'CREATE OR REPLACE FUNCTION public.fn_credit_and_log() RETURNS void ' +
+      'LANGUAGE plpgsql AS $credit$ BEGIN NULL; END; $credit$';
+    expect(withoutCreditPrimitive(incomplete)).toBe(incomplete);
+    const unknown =
+      incomplete.replace('public.fn_credit_and_log()', 'public.unknown_credit()') + ';';
+    expect(withoutCreditPrimitive(unknown)).toBe(unknown);
+  });
+
   const cohortMigration = readFileSync(
     join(MIGRATIONS, '20260917201651_satellite_multi_qualifier_receipt_v3.sql'),
     'utf8'

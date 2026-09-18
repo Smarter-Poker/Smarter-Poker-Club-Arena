@@ -95,6 +95,8 @@ def main():
    e.report['races'].append({'case':mode,'actual_wait':True,'effects_proven':True});e.discard(case)
   for p,d in manifest['source_sha256'].items():
    if sha(root/p)!=d:raise RuntimeError('input changed: '+p)
+  _,definition,_=e.sql(db,"SELECT jsonb_build_object('signature',oid::regprocedure::text,'definition',pg_get_functiondef(oid),'definition_md5',md5(pg_get_functiondef(oid)),'body_md5',md5(prosrc),'owner',pg_get_userbyid(proowner),'acl',proacl::text,'security_definer',prosecdef,'config',proconfig) FROM pg_proc WHERE oid='public.fn_f06_assert_drained_manager_custody(uuid,uuid,uuid,jsonb,jsonb)'::regprocedure;",label='qualified-read-assert-postimage')
+  e.report['postimage']=json.loads(definition)
   e.report.update(status='passed',failure=None);e.discard(db)
  except BaseException as ex:e.report['failure']=repr(ex)
  finally:

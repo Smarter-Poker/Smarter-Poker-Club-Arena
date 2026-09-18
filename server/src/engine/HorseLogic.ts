@@ -969,6 +969,8 @@ export interface HorseGameStateV2 extends HorseGameState {
     contextStatus?: TournamentContextStatus;
     contextIssues?: string[];
     sourceAgeMs?: number | null;
+    /** Observational source/hand identity. Bound by the worker, excluded from RNG sampling. */
+    contextProvenance?: import('./HorseTournamentContextProvenance.js').HorseTournamentDecisionProvenance;
     tournamentId?: string | null;
     tournamentType?: string;
     tournamentStatus?: string;

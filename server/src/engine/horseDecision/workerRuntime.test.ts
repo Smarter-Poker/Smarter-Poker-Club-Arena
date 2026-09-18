@@ -1,3 +1,4 @@
+import { withPhase6Provenance } from '../../testing/horseRegression/merged/fixture.js';
 import { horsePlanBatchBindingFromRequest } from '../HorsePlanHandIdentity.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
@@ -589,6 +590,78 @@ function pineappleRequest(
 }
 
 describe('HorseDecisionWorkerRuntime', () => {
+  it('binds source provenance while preserving the real worker policy sampling stream', async () => {
+    const clean = rekey({ ...phase6TournamentRequest(), fence: 'table-a:12:2:9:4' });
+    const observed = rekey(withPhase6Provenance(clean));
+    expect(observed.decisionKey).not.toBe(clean.decisionKey);
+    expect(validatedHorsePolicySamplingKey(observed)).toBe(validatedHorsePolicySamplingKey(clean));
+    const a = harness(),
+      b = harness(),
+      tampered = harness();
+    a.runtime.receive(clean);
+    b.runtime.receive(observed);
+    tampered.runtime.receive({ ...observed, decisionKey: clean.decisionKey });
+    await Promise.all([a.runtime.drain(), b.runtime.drain(), tampered.runtime.drain()]);
+    expect(b.messages.at(-1)?.type).toBe('FAST_RESULT');
+    expect(b.decisionsAtRng).toEqual(a.decisionsAtRng);
+    expect(b.decisionsAtRng).toHaveLength(1);
+    expect(tampered.decisionsAtRng).toEqual([]);
+    expect(tampered.messages.at(-1)?.type).toBe('ERROR');
+    const changed = structuredClone(observed);
+    changed.gameState.tournament!.contextProvenance!.source!.generation++;
+    expect(validatedHorsePolicySamplingKey(rekey(changed))).toBe(
+      validatedHorsePolicySamplingKey(clean)
+    );
+    changed.gameState.tournament!.sourceAgeMs!++;
+    expect(validatedHorsePolicySamplingKey(rekey(changed))).not.toBe(
+      validatedHorsePolicySamplingKey(clean)
+    );
+  });
+
+  it.each([
+    'tournament',
+    'table',
+    'hand',
+    'actor',
+    'blinds',
+    'dealer',
+    'seats',
+    'age',
+    'generation',
+    'digest',
+    'status',
+    'local_status',
+  ])('refuses mismatched Phase 6 %s provenance before calling the policy', async (fault) => {
+    const r = withPhase6Provenance({ ...phase6TournamentRequest(), fence: 'table-a:12:2:9:4' });
+    const p = r.gameState.tournament!.contextProvenance!;
+    if (fault === 'tournament') p.source!.tournamentId = 'other';
+    if (fault === 'table') p.projection.tableId = 'table-b';
+    if (fault === 'hand') p.projection.handNumber++;
+    if (fault === 'actor') p.projection.actorId = 'another-horse';
+    if (fault === 'blinds') p.projection.bigBlind++;
+    if (fault === 'dealer') p.projection.dealerSeat = 9;
+    if (fault === 'seats') p.projection.dealtSeatIds.reverse();
+    if (fault === 'age') p.ageMs!++;
+    if (fault === 'generation') p.source!.generation = 0;
+    if (fault === 'digest') p.source!.contextDigest = 'unverified';
+    if (fault === 'status') p.status = 'warming';
+    if (fault === 'local_status') {
+      r.gameState.tournament!.contextStatus = 'stale';
+      r.gameState.tournament!.contextIssues = [
+        TOURNAMENT_CONTEXT_INCOMPLETE,
+        'tournament_context_stale',
+      ];
+    }
+    const h = harness();
+    h.runtime.receive(rekey(r));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: expect.stringMatching(/provenance/),
+    });
+  });
+
   it('accepts a complete Phase 6 tournament context and canonical M snapshot', async () => {
     const h = harness();
     h.runtime.receive(phase6TournamentRequest());

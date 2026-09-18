@@ -89,6 +89,8 @@ Paths in phase-specific implementation and test lists below are relative to `ser
 
 ## Phase 6 — authoritative context and attributable preflop computation
 
+September 18 owner assignment: execute the four ordered stages in [the Phase 6 build plan](horse-brain-phase6-build-plan-2026-09-18.md), beginning with 6A. That plan expands P6.1/P6.2 into implementation and acceptance gates; it does not mark later stages complete.
+
 **Existing connected owners.** `services/TournamentBrainContext.ts::refreshTournamentBrainContext/getTournamentBrainContext/peekTournamentBrainContext` owns cached tournament facts and refresh generation. `ServerTableEngineBase.ts` triggers lifecycle refresh; `ServerTableEngineTurns.ts::horseTournamentContext` combines the cached facts with actual current blinds, dealt players and dealer position. The cache already has 20-second freshness, 60-second stale cutoff, bounded entries and late-generation refusal. `HorseTournamentPreflop.ts::tournamentPreflopPolicy/interpolateTournamentDepth` derives M, canonical positions and eleven preflop branches. `HorseLogic.ts::preflop` consumes those results, including chart-return bypasses. `HorsePhase6Attribution.ts` already records the cell/depth/interpolation/input-source/reference proposal. `horseDecision/{responseValidation,client}.ts`, `HorseExecutionWitness.ts` and `horseDecisionJournal/review.ts` validate/carry it, including lifecycle qualification. Do not rebuild these completed repairs.
 
 ### P6.1 — finish the exact context-to-accepted-receipt join (S1/S2)

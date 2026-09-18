@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 
 const h = vi.hoisted(() => {
   type Result = {
@@ -72,6 +73,7 @@ vi.mock('./errorReporter.js', () => ({ reportError: h.reportError }));
 import {
   __clearTournamentBrainCache,
   getTournamentBrainContextSnapshot,
+  peekTournamentBrainContext,
   refreshTournamentBrainContext,
 } from './TournamentBrainContext.js';
 import { TOURNAMENT_CONTEXT_INCOMPLETE } from '../engine/HorseTournamentPreflop.js';
@@ -171,12 +173,211 @@ afterEach(() => {
 });
 
 describe('TournamentBrainContext lifecycle cache', () => {
+  it('records an absent source without starting an action-clock read', () => {
+    const snapshot = getTournamentBrainContextSnapshot('t-unstarted-source', NOW);
+    expect(snapshot.contextProvenance).toEqual({
+      version: 1,
+      readAtMs: NOW,
+      status: snapshot.status,
+      issues: snapshot.issues,
+      ageMs: null,
+      source: null,
+    });
+    expect(h.from).not.toHaveBeenCalled();
+  });
+
+  it('binds a successful source generation to the full read interval and exact context bytes', async () => {
+    successfulResponses();
+    let resolveTournament!: (value: { data: unknown; error: null }) => void;
+    h.responses.set(
+      'tournaments',
+      new Promise((resolve) => {
+        resolveTournament = resolve;
+      })
+    );
+    refreshTournamentBrainContext('t-source-interval');
+    await vi.advanceTimersByTimeAsync(1_000);
+    resolveTournament({ data: tournamentRow(), error: null });
+    await settleRefresh();
+
+    const snapshot = getTournamentBrainContextSnapshot('t-source-interval', NOW + 1_400);
+    expect(snapshot.contextProvenance).toMatchObject({
+      version: 1,
+      readAtMs: NOW + 1_400,
+      status: 'complete',
+      issues: [],
+      ageMs: 400,
+      source: {
+        version: 1,
+        tournamentId: 't-source-interval',
+        generation: 1,
+        readStartedAtMs: NOW,
+        readCompletedAtMs: NOW + 1_000,
+        contextDigest: createHash('sha256').update(JSON.stringify(snapshot.context)).digest('hex'),
+        contextStatus: 'complete',
+        contextIssues: [],
+      },
+    });
+    expect(snapshot.contextProvenance.source?.cacheId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    const calls = [...h.calls];
+    getTournamentBrainContextSnapshot('t-source-interval', NOW + 1_500);
+    expect(h.calls).toEqual(calls);
+  });
+
+  it('keeps the published context and successful source deeply immutable while copying read envelopes', async () => {
+    successfulResponses();
+    refreshTournamentBrainContext('t-source-immutable');
+    await settleRefresh();
+    const first = getTournamentBrainContextSnapshot('t-source-immutable', NOW);
+    const assertFrozen = (value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+      expect(Object.isFrozen(value)).toBe(true);
+      for (const child of Object.values(value)) assertFrozen(child);
+    };
+    assertFrozen(first.context);
+    assertFrozen(first.contextProvenance.source);
+    expect(() => {
+      first.context!.stacks[0] = 99;
+    }).toThrow(TypeError);
+    expect(() => {
+      first.context!.stackByUser['horse-1'] = 99;
+    }).toThrow(TypeError);
+    expect(() => {
+      first.context!.contextIssues.push('invented');
+    }).toThrow(TypeError);
+    expect(() => {
+      first.contextProvenance.source!.contextIssues.push('invented');
+    }).toThrow(TypeError);
+
+    first.issues.push('local-only');
+    first.contextProvenance.issues.push('other-local-only');
+    first.contextProvenance.readAtMs = NOW + 10;
+    const second = getTournamentBrainContextSnapshot('t-source-immutable', NOW + 1);
+    expect(second).not.toBe(first);
+    expect(second.contextProvenance).not.toBe(first.contextProvenance);
+    expect(second.issues).toEqual([]);
+    expect(second.contextProvenance.issues).toEqual([]);
+    expect(second.contextProvenance.readAtMs).toBe(NOW + 1);
+    expect(second.context).toBe(peekTournamentBrainContext('t-source-immutable'));
+    expect(second.contextProvenance.source).toBe(first.contextProvenance.source);
+    expect(second.context?.stackByUser['horse-1']).toBe(1500);
+  });
+
+  it('includes the later funding read in the successful source interval', async () => {
+    successfulResponses();
+    h.responses.set('tournaments', {
+      data: {
+        ...tournamentRow(),
+        buy_in_amount: 10,
+        starting_chips: 1000,
+        is_rebuy: true,
+        rebuy_cost: 10,
+        rebuy_chips: 1000,
+        rebuy_levels: 2,
+        max_rebuys: 2,
+      },
+      error: null,
+    });
+    h.responses.set('tournament_players', {
+      data: [{ user_id: 'horse-1', club_id: 'club-a', chips: 1000, status: 'playing' }],
+      error: null,
+    });
+    let resolveFunding!: (value: { data: unknown; error: null }) => void;
+    h.responses.set(
+      'club_members',
+      new Promise((resolve) => {
+        resolveFunding = resolve;
+      })
+    );
+    refreshTournamentBrainContext('t-source-funding-interval');
+    await settleRefresh();
+    expect(h.calls).toContain('club_members');
+    expect(
+      getTournamentBrainContextSnapshot('t-source-funding-interval').contextProvenance.source
+    ).toBeNull();
+    await vi.advanceTimersByTimeAsync(1_000);
+    resolveFunding({
+      data: [{ user_id: 'horse-1', club_id: 'club-a', chip_balance: 100 }],
+      error: null,
+    });
+    await settleRefresh();
+    const snapshot = getTournamentBrainContextSnapshot('t-source-funding-interval');
+    expect(snapshot.context?.rebuyAffordableByUser).toEqual({ 'horse-1': true });
+    expect(snapshot.contextProvenance.source).toMatchObject({
+      generation: 1,
+      readStartedAtMs: NOW,
+      readCompletedAtMs: NOW + 1000,
+    });
+  });
+
+  it('retains the last successful source generation through a failed refresh and advances only on publication', async () => {
+    successfulResponses();
+    refreshTournamentBrainContext('t-source-last-good');
+    await settleRefresh();
+    const first = getTournamentBrainContextSnapshot('t-source-last-good', NOW);
+    vi.setSystemTime(NOW + 20_001);
+    h.responses.set('tournaments', { data: null, error: { message: 'unavailable' } });
+    refreshTournamentBrainContext('t-source-last-good');
+    expect(getTournamentBrainContextSnapshot('t-source-last-good').contextProvenance.source).toBe(
+      first.contextProvenance.source
+    );
+    await settleRefresh();
+    const failed = getTournamentBrainContextSnapshot('t-source-last-good', NOW + 20_001);
+    expect(failed.context).toBe(first.context);
+    expect(failed.contextProvenance.source).toBe(first.contextProvenance.source);
+    expect(failed.contextProvenance.source?.generation).toBe(1);
+    expect(failed.contextProvenance.ageMs).toBe(20_001);
+
+    vi.setSystemTime(NOW + 40_002);
+    successfulResponses();
+    refreshTournamentBrainContext('t-source-last-good');
+    await settleRefresh();
+    const recovered = getTournamentBrainContextSnapshot('t-source-last-good', NOW + 40_002);
+    expect(recovered.contextProvenance.source?.cacheId).toBe(
+      first.contextProvenance.source?.cacheId
+    );
+    expect(recovered.contextProvenance.source?.generation).toBe(3);
+    expect(recovered.contextProvenance.source?.readStartedAtMs).toBe(NOW + 40_002);
+    expect(recovered.contextProvenance.source?.readCompletedAtMs).toBe(NOW + 40_002);
+  });
+
+  it('uses a new cache identity after bounded eviction even when the attempt number repeats', async () => {
+    successfulResponses();
+    refreshTournamentBrainContext('t-source-evicted');
+    await settleRefresh();
+    const before = getTournamentBrainContextSnapshot('t-source-evicted', NOW);
+    vi.setSystemTime(NOW + 1);
+    for (let i = 0; i < 499; i++) refreshTournamentBrainContext(`t-source-fill-${i}`);
+    await settleRefresh();
+    vi.setSystemTime(NOW + 2);
+    refreshTournamentBrainContext('t-source-trigger-eviction');
+    expect(getTournamentBrainContextSnapshot('t-source-evicted').context).toBeNull();
+    refreshTournamentBrainContext('t-source-evicted');
+    await settleRefresh();
+    const after = getTournamentBrainContextSnapshot('t-source-evicted');
+    expect(before.contextProvenance.source?.generation).toBe(1);
+    expect(after.contextProvenance.source?.generation).toBe(1);
+    expect(after.contextProvenance.source?.cacheId).not.toBe(
+      before.contextProvenance.source?.cacheId
+    );
+  });
+
   it('keeps an action-clock snapshot pure and explicitly labels an unstarted refresh', () => {
     expect(getTournamentBrainContextSnapshot('t-1')).toEqual({
       context: null,
       status: 'incomplete',
       issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_context_refresh_not_started'],
       ageMs: null,
+      contextProvenance: {
+        version: 1,
+        readAtMs: NOW,
+        status: 'incomplete',
+        issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_context_refresh_not_started'],
+        ageMs: null,
+        source: null,
+      },
     });
     expect(h.from).not.toHaveBeenCalled();
   });
@@ -363,6 +564,10 @@ describe('TournamentBrainContext lifecycle cache', () => {
       reloadsByUser: { 'horse-1': 0, 'horse-2': 0, 'recovery-pending': 1 },
     });
     expect(snapshot.context?.stackByUser).not.toHaveProperty('recovery-pending');
+    expect(snapshot.contextProvenance.source?.contextStatus).toBe('incomplete');
+    expect(snapshot.contextProvenance.source?.contextIssues).toEqual(
+      snapshot.context?.contextIssues
+    );
   });
 
   it('fails closed instead of inventing an ICM field when every nonterminal row is zero', async () => {
@@ -411,6 +616,14 @@ describe('TournamentBrainContext lifecycle cache', () => {
       status: 'incomplete',
       issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_context_refresh_failed'],
       ageMs: null,
+      contextProvenance: {
+        version: 1,
+        readAtMs: NOW,
+        status: 'incomplete',
+        issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_context_refresh_failed'],
+        ageMs: null,
+        source: null,
+      },
     });
     expect(h.reportError).toHaveBeenCalled();
   });
@@ -441,6 +654,10 @@ describe('TournamentBrainContext lifecycle cache', () => {
     resolveTournament({ data: { ...tournamentRow(), game_type: 'PLO6' }, error: null });
     await settleRefresh();
     expect(getTournamentBrainContextSnapshot('t-4', NOW + 61_001).context?.gameVariant).toBe('nlh');
+    expect(getTournamentBrainContextSnapshot('t-4', NOW + 61_001).contextProvenance.source).toBe(
+      fresh.contextProvenance.source
+    );
+    expect(fresh.contextProvenance.source?.generation).toBe(2);
   });
 
   it('uses a strict greater-than stale boundary at 60 seconds', async () => {
@@ -452,6 +669,12 @@ describe('TournamentBrainContext lifecycle cache', () => {
     const stale = getTournamentBrainContextSnapshot('t-5', NOW + 60_001);
     expect(stale.status).toBe('stale');
     expect(stale.issues).toContain('tournament_context_stale');
+    expect(stale.contextProvenance.status).toBe('stale');
+    expect(stale.contextProvenance.source?.contextStatus).toBe('complete');
+    expect(stale.contextProvenance.source?.readCompletedAtMs).toBe(NOW);
+    const earlierClock = getTournamentBrainContextSnapshot('t-5', NOW - 1);
+    expect(earlierClock.contextProvenance.ageMs).toBe(0);
+    expect(earlierClock.contextProvenance.source).toBe(stale.contextProvenance.source);
   });
 
   it('pages the complete roster instead of truncating a field at the first 1,000 rows', async () => {
@@ -722,6 +945,8 @@ describe('TournamentBrainContext lifecycle cache', () => {
     expect(snapshot.context?.stacks).toEqual([2_000, 1_000]);
     expect(snapshot.context?.rebuyAffordableByUser).toEqual({});
     expect(snapshot.context?.addOnAffordableByUser).toEqual({});
+    expect(snapshot.contextProvenance.source?.contextStatus).toBe('complete');
+    expect(snapshot.contextProvenance.source?.generation).toBe(2);
     expect(h.reportError).toHaveBeenCalledWith(
       expect.any(Error),
       'TournamentBrainContext.recovery_funding_unavailable'

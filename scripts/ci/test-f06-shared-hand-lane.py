@@ -159,6 +159,15 @@ try:
     continuation = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/no_start_continuation_qualification.py'))
     continuation['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('noStartContinuation', {}).get('passed') is True, 'No-start continuation did not complete')
+    spin = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/spin_prior_qualification.py'))
+    spin['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('spinPrior', {}).get('passed') is True, 'Prior-backed Spin disposition qualification did not complete')
+    completed = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/completed_mtt_qualification.py'))
+    completed['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('completedMtt', {}).get('passed') is True, 'Completed MTT boundary qualification did not complete')
+    interrupted = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/interrupted_custody_qualification.py'))
+    interrupted['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('interruptedCustody', {}).get('passed') is True, 'Original interrupted custody qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

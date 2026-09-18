@@ -10,7 +10,7 @@ import {
 } from '../../../engine/HorsePhase6Attribution.js';
 import { createHorseExecutionWitness } from '../../../engine/HorseExecutionWitness.js';
 import { horseDecisionReceiptIsValid } from '../../../engine/horseDecision/responseValidation.js';
-import { fixture, request } from './fixture.js';
+import { fixture, request, withPhase6Provenance } from './fixture.js';
 export function decision(f = fixture()) {
   seedFastRandom(901791);
   return HorseLogic.decide(f.hero, f.state, 'balanced', {}, f.opts);
@@ -43,6 +43,39 @@ const malformed = [
   ['reference_amount', (r: any) => (r.referenceProposal.amount = -1)],
 ] as const;
 describe('prepared Phase6 receipt validation and input ownership', () => {
+  it('copies source and current-hand provenance through the private accepted-action witness', () => {
+    const s = withPhase6Provenance(request());
+    seedFastRandom(901791);
+    const d = HorseLogic.decide(s.player, s.gameState, 'balanced', {}, fixture().opts);
+    const r = d.tournamentPreflopAttribution!;
+    expect(r.version).toBe('horse-phase6-attribution-v2');
+    expect(r.inputSource.atlasRevision).toBe('horse-tournament-preflop-v1');
+    expect(horsePhase6AttributionMatchesSnapshot(d, s)).toBe(true);
+    expect(Object.isFrozen(r.inputSource.tournamentContext!.source)).toBe(true);
+    expect(Object.isFrozen(s.gameState.tournament!.contextProvenance)).toBe(false);
+    const witness = createHorseExecutionWitness(s, d, {
+      requestId: s.requestId,
+      lane: 'fast',
+      computeMs: 1,
+      governorScale: 1,
+    });
+    expect(witness.phase6Attribution).toEqual(r);
+    s.gameState.tournament!.contextProvenance!.source!.generation++;
+    expect(witness.phase6Attribution!.inputSource.tournamentContext!.source!.generation).toBe(1);
+    expect(horsePhase6AttributionMatchesSnapshot(d, s)).toBe(false);
+    expect(horsePhase6AttributionMatchesSnapshot({ action: 'fold', thinkTime: 1 }, s)).toBe(false);
+    expect(
+      horsePhase6AttributionMatchesSnapshot(
+        { action: 'fold', thinkTime: 1, policyFallback: 'brain_exception' },
+        s
+      )
+    ).toBe(true);
+    const legacy = decision();
+    expect(legacy.tournamentPreflopAttribution!.version).toBe('horse-phase6-attribution-v1');
+    expect(horsePhase6AttributionMatchesSnapshot(legacy, request())).toBe(true);
+    expect(horsePhase6AttributionMatchesSnapshot(legacy, s)).toBe(false);
+  });
+
   it.each(malformed)('rejects malformed %s', (name, mutate) => {
     const d = structuredClone(decision()),
       r = d.tournamentPreflopAttribution!;

@@ -405,3 +405,124 @@ describe('new drafts only advertise supported tournament breaks', () => {
     expect(JSON.stringify(original)).toBe(before);
   });
 });
+
+function purchaseField(label: string) {
+  return screen.getByText(label, { selector: 'label' }).parentElement!.querySelector('input')!;
+}
+
+function selectFreeBuy() {
+  const option = screen.getByRole('option', {
+    name: 'Free Buy (First Entry Free)',
+  }) as HTMLOptionElement;
+  fireEvent.change(option.parentElement!, { target: { value: option.value } });
+}
+
+describe('creator controls describe the committed purchase and mystery contracts', () => {
+  it('offers only supported mystery settings in both one-off and recurring payloads', async () => {
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: { ok: true, schedule_id: 'synthetic-mystery-schedule' },
+      error: null,
+    } as never);
+    const { container } = mountDraft('mystery_bounty');
+    expect(screen.queryByText(/Min Multiplier/)).toBeNull();
+    expect(screen.queryByText(/Max Multiplier/)).toBeNull();
+    expect(screen.queryByText(/Each Head Is Sealed At Registration/)).toBeNull();
+    expect(screen.getByText(/Inventory Is Built From The Funded Mystery Pool/)).toHaveTextContent(
+      'After Registration And Purchases Close'
+    );
+    const jackpot = screen.getByRole('option', {
+      name: 'Jackpot (Top Heavy)',
+    }) as HTMLOptionElement;
+    fireEvent.change(jackpot.parentElement!, { target: { value: jackpot.value } });
+    const count = screen.getByRole('option', { name: 'At A Player Count' }) as HTMLOptionElement;
+    fireEvent.change(count.parentElement!, { target: { value: count.value } });
+    fireEvent.change(purchaseField('Players Left'), { target: { value: '27' } });
+    fireEvent.change(purchaseField('Percent Of Bounties In Chests'), { target: { value: '65' } });
+    const config = await submitDraft(container);
+    for (const document of [config, tournamentService.buildRpcConfig(config)]) {
+      expect(document).not.toHaveProperty('mysteryBountyMin');
+      expect(document).not.toHaveProperty('mysteryBountyMax');
+      expect(document).toMatchObject({
+        mysteryBountyProfile: 'jackpot',
+        mysteryBountyActivation: 'player_count',
+        mysteryBountyActivationValue: 27,
+        mysteryBountyPoolPercent: 65,
+      });
+    }
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Repeats Weekly' }));
+    fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith('fn_upsert_tournament_schedule', expect.any(Object))
+    );
+    const schedule = (
+      rpc.mock.calls.find(([name]) => name === 'fn_upsert_tournament_schedule')![1] as any
+    ).p_schedule;
+    expect(schedule.config).toMatchObject({
+      mysteryBountyProfile: 'jackpot',
+      mysteryBountyActivationValue: 27,
+      mysteryBountyPoolPercent: 65,
+    });
+    expect(schedule.config).not.toHaveProperty('mysteryBountyMin');
+    expect(schedule.config).not.toHaveProperty('mysteryBountyMax');
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the actual fixed Free Buy purchases and stack without promising disabled or custom prices', async () => {
+    const { container } = mountDraft();
+    selectFreeBuy();
+    chooseProfile('deep');
+    for (const name of ['Allow Rebuys (Same Seat)', 'Allow Re-Entry (New Seat)', 'Allow Add-Ons']) {
+      expect(screen.getByRole('checkbox', { name })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name })).toBeDisabled();
+    }
+    expect(screen.queryByText(/Select "MTT [(]Rebuy[)]" Format To Enable/)).toBeNull();
+    expect(purchaseField('Rebuy / Re-Entry Cost')).toHaveValue(1);
+    expect(purchaseField('Rebuy / Re-Entry Cost')).toBeDisabled();
+    expect(purchaseField('Rebuy / Re-Entry Chips')).toHaveValue(6000);
+    expect(purchaseField('Rebuy / Re-Entry Chips')).toBeDisabled();
+    expect(purchaseField('Add-On Cost')).toHaveValue(1);
+    expect(purchaseField('Add-On Cost')).toBeDisabled();
+    expect(purchaseField('Add-On Chips')).not.toBeDisabled();
+    fireEvent.change(purchaseField('Add-On Chips'), { target: { value: '12000' } });
+    expect(screen.getByText('From Seating Until The Add-On Window Closes')).toBeVisible();
+    expect(screen.queryByText('1 Minute After Rebuy Period')).toBeNull();
+    const raw = await submitDraft(container);
+    expect(raw.rebuyChips).toBeUndefined();
+    expect(raw.rebuyLevels).toBeUndefined();
+    expect(tournamentService.buildRpcConfig(raw)).toMatchObject({
+      buyIn: 0,
+      startingStack: 6000,
+      isRebuy: true,
+      isReentry: true,
+      rebuyCost: 1,
+      rebuyChips: 6000,
+      rebuyLevels: 4,
+      addOnAvailable: true,
+      addOnCost: 1,
+      addOnChips: 12000,
+      addOnFromStart: true,
+    });
+  });
+
+  it('preserves editable paid-event purchase prices and the after-rebuy add-on window', async () => {
+    const { container } = mountDraft('mtt_rebuy');
+    for (const [label, value] of [
+      ['Rebuy Cost', '7'],
+      ['Add-On Cost', '9'],
+    ] as const) {
+      expect(purchaseField(label)).not.toBeDisabled();
+      fireEvent.change(purchaseField(label), { target: { value } });
+    }
+    expect(screen.getByRole('checkbox', { name: 'Allow Add-Ons' })).not.toBeDisabled();
+    expect(screen.getByText('1 Minute After Rebuy Period')).toBeVisible();
+    const config = tournamentService.buildRpcConfig(await submitDraft(container));
+    expect(config).toMatchObject({
+      buyIn: 10,
+      rebuyCost: 7,
+      addOnCost: 9,
+      isRebuy: true,
+      isReentry: false,
+      addOnFromStart: false,
+    });
+  });
+});

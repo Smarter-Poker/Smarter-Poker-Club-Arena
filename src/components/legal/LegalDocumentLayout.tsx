@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import styles from './LegalDocumentLayout.module.css';
 import { mediaUrl } from '../../utils/mediaBase';
+import { resolveSeo } from '../../lib/seo';
 
 export interface LegalDocumentSection {
   id: string;
@@ -35,9 +36,21 @@ export default function LegalDocumentLayout({
 }: LegalDocumentLayoutProps) {
   const location = useLocation();
 
+  /*
+   * AEO phase 3 (2026-09-18): the tab title was built from `title`, which is
+   * the visible heading. The head that a crawler reads comes from
+   * resolveSeo, and once the public titles were prefixed with the product
+   * name the two disagreed, so the title changed the moment the page
+   * hydrated. Both now come from resolveSeo, which is the one place that
+   * decides what this route is called. The heading stays the bare document
+   * name, because on a page already headed "Poker Arena Legal Center" the
+   * prefix is noise.
+   */
   useEffect(() => {
-    document.title = `${title} | Smarter.Poker`;
-  }, [title]);
+    const seo = resolveSeo(location.pathname);
+    const name = seo.title || title;
+    document.title = name.includes('Smarter.Poker') ? name : `${name} | Smarter.Poker`;
+  }, [location.pathname, title]);
 
   return (
     <div className={styles.page}>

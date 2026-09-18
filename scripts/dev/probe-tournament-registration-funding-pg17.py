@@ -39,6 +39,7 @@ database = 'postgres'
 query_helper = repo / 'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/registration-query.mjs'
 passed = []
 started = False
+accounting_entries = False
 event = 'c3000000-0000-4000-8000-000000000001'
 club = 'c2000000-0000-4000-8000-000000000001'
 
@@ -66,7 +67,10 @@ with (root/'results.log').open('w') as log:
         return (json.dumps(sql) if node else sql) + '\n'
 
     def q(sql, expected_error=None):
-        result = subprocess.run(client_command(),input=encode(sql),capture_output=True,text=True,timeout=15,env=connection_env())
+        # A seekable input avoids a macOS Python pipe stall on the retained large SQL fixtures.
+        with tempfile.TemporaryFile(mode='w+',dir=root) as source:
+            source.write(encode(sql)); source.seek(0)
+            result = subprocess.run(client_command(),stdin=source,capture_output=True,text=True,timeout=15,env=connection_env())
         log.write(result.stdout+result.stderr)
         log.flush()
         if expected_error:
@@ -110,6 +114,9 @@ with (root/'results.log').open('w') as log:
             q('BEGIN;\n' + money_functions[0] + '\n' + source_postconditions[0] + '\nCOMMIT;')
             assert q("SELECT md5(prosrc) FROM pg_proc WHERE oid='atomic_deduct_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid)'::regprocedure") == '1835dbd974d8ba219cf37ab712a9ccbd'
             assert q("SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_tournament_club_for_user(uuid,uuid,uuid)'::regprocedure") == 'f80eff4c311820670f1b71d15c29452d'
+        if accounting_entries:
+            from tournament_accounting_provenance_cases import install
+            install(q)
 
     def state():
         return json.loads(q("""SELECT jsonb_build_object(
@@ -134,6 +141,9 @@ with (root/'results.log').open('w') as log:
                       prize=180*count,fee_escrow=20*count,
                       journal=count,wallet_receipts=count,entitlements=count,operations=count)
         assert observed==expected,(observed,expected)
+        if accounting_entries and count:
+            from tournament_accounting_provenance_cases import funded_assertions
+            funded_assertions(q,count)
 
     def check(name):
         passed.append(name)
@@ -186,6 +196,11 @@ with (root/'results.log').open('w') as log:
     def funded_heads_up():
         from tournament_heads_up_funding_cases import verify
         from tournament_heads_up_payout_cases import prepare, verify_launched
+        if '--with-heads-up-payout' in sys.argv:
+            from tournament_accounting_provenance_cases import prepare_payout,verify_payout
+            verify(q,fresh,overlap,call,check,prepare=prepare_payout,
+                   after_launch=lambda q,snapshot,variant,chips,check:verify_payout(q,snapshot,variant,chips,check,overlap))
+            return
         verify(q,fresh,overlap,call,check,prepare=prepare,
                after_launch=lambda q,snapshot,variant,chips,check: verify_launched(q,snapshot,variant,chips,check,overlap))
 
@@ -196,7 +211,24 @@ with (root/'results.log').open('w') as log:
         run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses= -c max_wal_size=64MB -c min_wal_size=32MB','-w','start'])
         started=True
 
-        if '--heads-up-payout-only' in sys.argv:
+        if '--accounting-horse-only' in sys.argv:
+            from tournament_accounting_provenance_cases import verify_horse
+            verify_horse(q,fresh,check)
+        elif '--accounting-acl-only' in sys.argv:
+            from tournament_accounting_provenance_cases import verify_acl
+            verify_acl(q,fresh,check)
+        elif '--accounting-prize-only' in sys.argv:
+            from tournament_heads_up_funding_cases import verify
+            from tournament_accounting_provenance_cases import prepare_payout,verify_payout
+            verify(q,fresh,overlap,call,check,prepare=prepare_payout,
+                   after_launch=lambda q,snapshot,variant,chips,check:verify_payout(q,snapshot,variant,chips,check,overlap))
+        elif '--accounting-identity-only' in sys.argv:
+            from tournament_accounting_provenance_cases import verify_identity_cases
+            verify_identity_cases(q,fresh,call,check)
+        elif '--accounting-provenance-only' in sys.argv:
+            from tournament_accounting_provenance_cases import verify
+            verify(q,fresh,overlap,call,check)
+        elif '--heads-up-payout-only' in sys.argv:
             funded_heads_up()
         elif '--heads-up-ladder-only' in sys.argv:
             from tournament_heads_up_funding_cases import verify
@@ -214,6 +246,7 @@ with (root/'results.log').open('w') as log:
         elif '--cross-club' in sys.argv:
             cross_club()
         else:
+            accounting_entries = '--with-heads-up-payout' in sys.argv
             fresh('single')
             response=json.loads(q(call(1,1)))
             assert response.get('ok') is True,response
@@ -252,10 +285,20 @@ with (root/'results.log').open('w') as log:
 
             cross_club()
             from tournament_purchase_funding_cases import verify
-            verify(q,fresh,overlap,call,check)
+            if accounting_entries:
+                from tournament_accounting_provenance_cases import install,funded_assertions
+                verify(q,fresh,overlap,call,check,prepare=install,after_funded=lambda q,kind:funded_assertions(q,2))
+            else:
+                verify(q,fresh,overlap,call,check)
+            accounting_entries = False
             from tournament_unregistration_funding_cases import verify
             verify(q,fresh,overlap,call,check)
             if '--with-heads-up-payout' in sys.argv:
+                from tournament_accounting_provenance_cases import verify_identity_cases,verify_acl
+                verify_identity_cases(q,fresh,call,check)
+                from tournament_accounting_provenance_cases import verify_horse
+                verify_horse(q,fresh,check)
+                verify_acl(q,fresh,check)
                 funded_heads_up()
             else:
                 from tournament_heads_up_funding_cases import verify
@@ -270,6 +313,11 @@ result = {'passed':passed,'production_database_used':False}
 if '--heads-up-payout-only' in sys.argv or '--with-heads-up-payout' in sys.argv:
     from tournament_heads_up_payout_cases import evidence
     result['funded_payout'] = evidence()
+    if '--with-heads-up-payout' in sys.argv:
+        from tournament_accounting_provenance_cases import runtime_catalog
+        result['funded_payout']['retained_baseline_catalog']=result['funded_payout'].pop('exercised_runtime_catalog')
+        result['funded_payout']['exercised_original_provenance_catalog']=runtime_catalog
+        result['funded_payout']['prospective_accounting_evidence']=True
 elif '--heads-up-ladder-only' in sys.argv:
     from tournament_heads_up_ladder_cases import evidence
     result['funded_ladder'] = evidence()

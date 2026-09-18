@@ -13,7 +13,9 @@ die() { echo "[legacy-engine-checkpoint] $*" >&2; exit 1; }
 [ "$#" = 1 ] || die 'expected owning run key'
 RUN_ID="$1"
 [[ "$RUN_ID" =~ ^[1-9][0-9]*(-[1-9][0-9]*)?$ ]] || die 'invalid run key'
-[ "$(readlink -e /proc/self/fd/9)" = "${ENGINE_LOCK_FILE:-/var/lock/club-arena-engine-up.lock}" ] \
+# /var/lock is a symlink to /run/lock on the engine host. Compare the held
+# descriptor's file identity, not a resolved path against its configured alias.
+[ "/proc/$$/fd/9" -ef "${ENGINE_LOCK_FILE:-/var/lock/club-arena-engine-up.lock}" ] \
   || die 'owning engine lock descriptor missing'
 flock -n 9 || die 'owning engine lock unavailable'
 mapfile -t REQUEST < "$REQUEST_ROOT/$RUN_ID.request"

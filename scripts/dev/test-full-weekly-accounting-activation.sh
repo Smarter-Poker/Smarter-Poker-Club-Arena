@@ -407,8 +407,15 @@ fi
 finish_fixture
 done
 
+# Original boundary capture is a separate prospective successor, never part of
+# the sealed installed 37-component migration or a replay of it.
+bash "$root/scripts/dev/test-union-pnl-inventory.sh"
+
 # Same managed-cron path, one short native launcher probe after all financial
 # clusters have stopped. Only harmless fixture receipts are executable.
 python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py" \
   --schedule-adoption "$pgbin" "$ACCOUNTING_FIXTURE_PARENT" \
   "$ACCOUNTING_TEST_OUTPUT_DIR/native-schedule-adoption"
+
+# Connected prospective basis qualification uses the same original money owners.
+PG_BIN="$pgbin" python3 "$root/scripts/dev/test-union-weekly-basis.py"

@@ -3,11 +3,11 @@ CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid';
 CREATE TABLE chip_ledger(id uuid DEFAULT gen_random_uuid(), performed_by uuid,from_type text,from_entity_id uuid,from_label text,to_type text,to_entity_id uuid,to_label text,amount numeric CHECK(amount>0),category text,club_id uuid,union_id uuid,table_id uuid,hand_id uuid,tournament_id uuid,description text,pre_from_balance numeric,post_from_balance numeric,pre_to_balance numeric,post_to_balance numeric,idempotency_key text UNIQUE,metadata jsonb,created_at timestamptz DEFAULT now());
 CREATE TABLE ca_ledger_write_failures(club_id uuid,user_id uuid,delta numeric,sqlstate text,message text);
-CREATE TABLE clubs(id uuid PRIMARY KEY,name text,union_id uuid,chip_treasury numeric DEFAULT 100,total_rake numeric DEFAULT 0,updated_at timestamptz);
+CREATE TABLE clubs(id uuid PRIMARY KEY,name text,union_id uuid,chip_treasury numeric DEFAULT 100,total_rake numeric DEFAULT 0,updated_at timestamptz,asset text NOT NULL DEFAULT 'chips');
 CREATE TABLE bbj_pools(id uuid PRIMARY KEY,club_id uuid,main_balance numeric DEFAULT 100,backup_balance numeric DEFAULT 10,promo_balance numeric DEFAULT 5);
 CREATE TABLE club_members(id uuid PRIMARY KEY,user_id uuid,club_id uuid,chip_balance numeric DEFAULT 100);
 CREATE TABLE tables(id uuid PRIMARY KEY,club_id uuid,min_buy_in numeric,max_buy_in numeric,is_private boolean DEFAULT true,union_id uuid,tournament_id uuid,is_template boolean DEFAULT false,current_players integer DEFAULT 0,updated_at timestamptz DEFAULT now());
-CREATE TABLE table_seats(table_id uuid,user_id uuid,seat_number int,stack numeric,is_sitting_out boolean,left_at timestamptz,id uuid DEFAULT gen_random_uuid(),joined_at timestamptz DEFAULT now(),club_id uuid,status text DEFAULT 'active',is_away boolean DEFAULT false,leave_pending boolean DEFAULT false,scheduled_leave_hands integer DEFAULT 0,sit_out_at timestamptz,UNIQUE(table_id,user_id),UNIQUE(table_id,seat_number));
+CREATE TABLE table_seats(table_id uuid,user_id uuid,seat_number int,stack numeric,is_sitting_out boolean,left_at timestamptz,id uuid DEFAULT gen_random_uuid(),joined_at timestamptz DEFAULT now(),club_id uuid,status text DEFAULT 'active',is_away boolean DEFAULT false,leave_pending boolean DEFAULT false,scheduled_leave_hands integer DEFAULT 0,sit_out_at timestamptz,occupancy_id uuid NOT NULL DEFAULT gen_random_uuid(),UNIQUE(table_id,user_id),UNIQUE(table_id,seat_number));
 CREATE TABLE chip_transactions(id uuid,club_id uuid,from_user_id uuid,to_user_id uuid,amount numeric,transaction_type text,notes text,balance_after numeric,created_at timestamptz);
 CREATE TABLE cash_baselines(user_id uuid,table_id uuid,amount numeric);
 CREATE TABLE engine_maintenance_break(

@@ -35,8 +35,15 @@ for (const width of [320, 390, 1280]) {
       await expect(secondary).toBeVisible();
       await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(0);
       await expect(wheel.locator('[data-wheel-selector]')).toHaveCount(1);
+      await expect
+        .poll(async () => (await wheel.boundingBox())?.width ?? 0)
+        .toBeGreaterThanOrEqual(width - 24);
       const upperBox = await secondary.boundingBox();
       const lowerBox = await wheel.boundingBox();
+      const controlsBox = await page
+        .getByRole('complementary', { name: 'Diamond Spins Controls' })
+        .boundingBox();
+      expect(controlsBox!.y).toBeGreaterThanOrEqual(lowerBox!.y + lowerBox!.height);
       // Both independent rotors share one centre and one uninterrupted aperture.
       expect(upperBox).toEqual(lowerBox);
       await expect(page.locator('[data-wheel-assembly="concentric"]')).toHaveCount(1);
@@ -54,6 +61,11 @@ for (const width of [320, 390, 1280]) {
       await expect(page.getByLabel('Diamonds To Spin')).toHaveValue(
         String(receipt.entry_value_diamonds)
       );
+      for (const amount of ['25', '100', '500', '1,000', '2,500']) {
+        const target = await page.getByRole('button', { name: amount, exact: true }).boundingBox();
+        expect(target!.width).toBeGreaterThanOrEqual(44);
+        expect(target!.height).toBeGreaterThanOrEqual(44);
+      }
       await page.screenshot({
         path: testInfo.outputPath(`wheel-idle-${width}.png`),
         fullPage: true,

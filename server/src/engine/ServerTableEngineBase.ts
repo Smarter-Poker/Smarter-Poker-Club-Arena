@@ -4597,6 +4597,42 @@ export abstract class ServerTableEngineBase {
     return this.loopPhase + '+' + Math.round(this.msSinceLoopPhase() / 1000) + 's';
   }
 
+  /**
+   * REGISTERED, AND NEVER STARTED ONCE (2026-09-18).
+   *
+   * `start()` stamps `start_load_table` as the first statement inside its try,
+   * so `not_started` means the dealing loop has not run at all: either start()
+   * was never called, or it was refused by one of the four guards above that
+   * line (terminal, already running, no current lease proof, process ownership
+   * lost). The engine is in GameServer's map either way, it answers /health,
+   * and it reports `dealable: 0` because it never loaded its seats.
+   *
+   * That last part is why this needed a name. Every stall filter in this
+   * engine requires `dealable >= 2`, so a table whose engine never started
+   * CANNOT be counted as stalled, however long it sits. It is not hidden by a
+   * threshold; it is outside the question being asked.
+   *
+   * MEASURED IN PRODUCTION, 2026-09-18 17:08Z. 64 tables were sampled from the
+   * 567 that the database showed with two or more seated, funded players in a
+   * RUNNING tournament that had dealt nothing for over thirty minutes:
+   *
+   *   54 of 64 were not in the engine at all - no engine, no liveness row
+   *   9 of the remaining 10 were `not_started`, aged 4,971s to 21,357s
+   *     (1.4 to 5.9 hours), every one reporting `dealable: 0`
+   *   1 was a genuine mid-hand freeze
+   *
+   * Platform-wide at that moment: 391 of 554 RUNNING tournaments had dealt no
+   * hand in thirty minutes, 239 of them for over six hours, and /health
+   * reported `status: ok`, `liveness: ok`, `stalled: 2`.
+   *
+   * This is read-only and decides nothing. It exists so the condition has a
+   * number an operator and an alert rule can both read, because until now it
+   * produced no signal of any kind.
+   */
+  hasNeverStarted(): boolean {
+    return this.loopPhase === 'not_started';
+  }
+
   /** Physical read continuations, separate from financial/canonical writers.
    * A deadline may reject its caller, but cannot release this ownership. */
   private readonly readContinuationTasks = new Set<Promise<void>>();

@@ -4190,6 +4190,20 @@ export class GameServer {
         undealable: tableLiveness.filter((t) => t.dealable <= 0).length,
         maxMsSinceProgress: tableLiveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0),
         dealableSeats: tableLiveness.reduce((sum, t) => sum + t.dealable, 0),
+        /* `stalled` above cannot see these: a tournament table whose engine was
+           registered and never started reports dealable 0, and every stall
+           filter requires 2+ dealable seats. See the long note beside the
+           matching Prometheus gauges. Identification only. */
+        tournamentTablesNotRunning: tableLiveness.filter((t) => t.isTournament && !t.running)
+          .length,
+        tournamentTablesNeverStarted: tableLiveness.filter(
+          (t) => t.isTournament && !t.running && t.neverStarted
+        ).length,
+        neverStartedOldestSeconds: Math.round(
+          tableLiveness
+            .filter((t) => t.isTournament && !t.running && t.neverStarted)
+            .reduce((max, t) => Math.max(max, t.msSinceLoopPhase), 0) / 1000
+        ),
       },
       ...(livenessQuery
         ? { tableLiveness: selectPublicTableLiveness(tableLiveness, livenessQuery) }
@@ -4326,6 +4340,37 @@ export class GameServer {
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000
     );
     const pausedCount = liveness.filter((t) => t.paused).length;
+    /**
+     * ── THE TABLES NOBODY WAS COUNTING (2026-09-18) ───────────────────────
+     *
+     * A tournament table's engine is registered before it starts. If its start
+     * chain fails, the engine stays in this map with `running === false` and
+     * `dealable: 0` - and both readers that could act on it stand down:
+     *
+     *   - the zombie reaper below skips a tournament-owned engine that is not
+     *     running, on purpose, because only its TournamentManager may replace
+     *     that slot (see the comment there);
+     *   - every stall filter requires `dealable >= 2`, and an engine that
+     *     never started never loaded a seat to count.
+     *
+     * So the condition produced NO number anywhere: not in poker_stalled_tables,
+     * not in deadStalledCount, not in the liveness verdict, not on /health.
+     *
+     * MEASURED 2026-09-18 17:08Z: 391 of 554 RUNNING tournaments had dealt no
+     * hand for over thirty minutes, 239 of them for over six hours, across 567
+     * tables the database showed with two or more seated funded players. Of 64
+     * sampled, 54 had no engine at all and 9 of the other 10 were `not_started`
+     * aged 1.4 to 5.9 hours. /health reported `stalled: 2`, `liveness: ok`.
+     *
+     * These three gauges decide NOTHING - they are not in the liveness verdict
+     * and they kill nothing. They exist so an alert rule can see the condition
+     * at all, which for at least ten days it could not.
+     */
+    const notRunning = liveness.filter((t) => t.isTournament && !t.running);
+    const neverStarted = notRunning.filter((t) => t.neverStarted);
+    const neverStartedOldestSeconds = Math.round(
+      neverStarted.reduce((max, t) => Math.max(max, t.msSinceLoopPhase), 0) / 1000
+    );
     /* One walk of the live engines for the two horse gauges below. Counted
        here rather than from `liveness` because the seat rows carry the flag
        and the liveness snapshot does not. */
@@ -4388,6 +4433,20 @@ export class GameServer {
       '# HELP poker_fleet_wide_zombie_refusals_total Sweeps that refused to condemn every table at once',
       '# TYPE poker_fleet_wide_zombie_refusals_total counter',
       `poker_fleet_wide_zombie_refusals_total ${this.fleetWideZombieRefusals}`,
+      /* See the note where these are computed. A tournament table whose engine
+         is registered but not running is invisible to every other gauge here:
+         the reaper defers to its manager and the stall filters need dealable
+         seats it never loaded. Identification only - neither figure kills
+         anything, and neither is in the liveness verdict. */
+      '# HELP poker_tournament_tables_not_running Tournament tables whose engine is registered but not running',
+      '# TYPE poker_tournament_tables_not_running gauge',
+      `poker_tournament_tables_not_running ${notRunning.length}`,
+      '# HELP poker_tournament_tables_never_started Tournament tables whose dealing loop has never run once',
+      '# TYPE poker_tournament_tables_never_started gauge',
+      `poker_tournament_tables_never_started ${neverStarted.length}`,
+      '# HELP poker_tournament_table_never_started_oldest_seconds Age of the oldest never-started tournament table engine',
+      '# TYPE poker_tournament_table_never_started_oldest_seconds gauge',
+      `poker_tournament_table_never_started_oldest_seconds ${neverStartedOldestSeconds}`,
       // The maintenance break, as numbers an alert rule can silence itself
       // with. `active` exists first and foremost so every fleet-level alarm
       // (deal rate, hands/min, fleet floor) can carry `unless
@@ -4833,6 +4892,13 @@ export class GameServer {
         // as ninety identical unexplained numbers. This is the missing half.
         loopPhase: engine.describeLoopPhase(),
         paused: engine.isPausedByDesign(),
+        // Registered, and never started once. See hasNeverStarted() on the
+        // engine base for why this could not be inferred from the fields
+        // above: such a table reports dealable 0, so it is outside every
+        // stall filter rather than merely under a threshold.
+        running: engine.isRunning(),
+        neverStarted: engine.hasNeverStarted(),
+        msSinceLoopPhase: engine.msSinceLoopPhase(),
         isTournament: engine.isTournament(),
       };
     });

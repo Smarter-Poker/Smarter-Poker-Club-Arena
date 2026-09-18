@@ -14,6 +14,17 @@ export interface PublicTableLiveness {
   msSinceProgress: number;
   loopPhase: string;
   paused: boolean;
+  /**
+   * Has this engine's dealing loop ever run? (2026-09-18)
+   *
+   * `paused` and `msSinceProgress` both describe a table that is DEALING or
+   * has dealt. Neither can describe one whose engine was registered and never
+   * started: it reports `dealable: 0` because it never loaded its seats, which
+   * puts it outside every stall filter rather than merely under a threshold.
+   * Measured 2026-09-18: 9 of 10 sampled dark tables that the engine did hold
+   * were in this state, aged 1.4 to 5.9 hours, and produced no signal at all.
+   */
+  running: boolean;
 }
 
 export function parsePublicTableLivenessQuery(
@@ -86,5 +97,6 @@ export function selectPublicTableLiveness(
     msSinceProgress: table.msSinceProgress,
     loopPhase: table.loopPhase.slice(0, 160),
     paused: table.paused,
+    running: table.running,
   }));
 }

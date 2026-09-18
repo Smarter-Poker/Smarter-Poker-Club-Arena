@@ -4211,6 +4211,7 @@ export abstract class ServerTableEngineBase {
         initialSeconds: bank.initialSeconds,
         baseSeconds: bank.baseSeconds,
         dbConsumedSeconds: bank.dbConsumedSeconds,
+        ...(bank.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
       });
     }
     this.parkedTimeBanks = {};
@@ -5411,6 +5412,8 @@ export abstract class ServerTableEngineBase {
         remainingSeconds: bank.remainingSeconds,
         usesRemaining: bank.usesRemaining,
         ...meta,
+        // TimeBankEngine owns the live entitlement; metadata is only its accounting mirror.
+        unlimitedActivations: bank.unlimitedActivations,
       };
     }
     return saved;

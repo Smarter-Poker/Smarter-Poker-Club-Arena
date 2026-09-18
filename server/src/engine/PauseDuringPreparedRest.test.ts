@@ -115,6 +115,7 @@ describe('a pause arriving during prepared-hand rest', () => {
           initialSeconds: 80,
           baseSeconds: 40,
           dbConsumedSeconds: 33,
+          unlimitedActivations: false,
         });
         const next = new ServerTableEngine(engine.tableId) as any;
         next.lifecycleCanMutate = () => true;
@@ -124,8 +125,10 @@ describe('a pause arriving during prepared-hand rest', () => {
         expect(next.timeBankEngine.getPlayerBank(engine.tableId, player.user_id)).toMatchObject({
           remainingSeconds: 7,
           usesRemaining: 1,
+          unlimitedActivations: false,
         });
         expect(next.timeBankMeta.get(player.user_id).dbConsumedSeconds).toBe(33);
+        expect(next.timeBankMeta.get(player.user_id).unlimitedActivations ?? false).toBe(false);
       }
     }
   );

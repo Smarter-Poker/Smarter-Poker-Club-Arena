@@ -219,6 +219,7 @@ export interface ParkedTimeBank {
   initialSeconds: number;
   baseSeconds: number;
   dbConsumedSeconds: number;
+  unlimitedActivations?: boolean;
 }
 
 export async function savePresenceAtPark(params: {
@@ -320,6 +321,8 @@ export async function loadTimeBanksFromPark(
         bank.dbConsumedSeconds,
       ].every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0) ||
       !Number.isSafeInteger(bank.usesRemaining) ||
+      (bank.unlimitedActivations !== undefined &&
+        typeof bank.unlimitedActivations !== 'boolean') ||
       bank.remainingSeconds > bank.initialSeconds ||
       bank.baseSeconds > bank.initialSeconds ||
       bank.dbConsumedSeconds > bank.initialSeconds - bank.baseSeconds

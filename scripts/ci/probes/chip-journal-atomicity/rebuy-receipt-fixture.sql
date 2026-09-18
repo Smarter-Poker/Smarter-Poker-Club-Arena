@@ -4,7 +4,7 @@ CREATE UNIQUE INDEX member_scope ON club_members(club_id,user_id);
 -- The shared base fixture owns table_seats.id and table_seats.club_id.
 CREATE TABLE transaction_idempotency_keys(key uuid PRIMARY KEY,user_id uuid NOT NULL,action text NOT NULL,amount numeric,created_at timestamptz DEFAULT now());
 CREATE TABLE table_pending_addons(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),table_id uuid,user_id uuid,amount numeric,kind text);
-CREATE TABLE wallet_transactions(user_id uuid,wallet_type text,type text,amount numeric,category text,description text,table_id uuid,balance_after numeric);
+-- The original cash funding fixture owns wallet_transactions and its receipt IDs.
 CREATE TABLE blacklists(id uuid,user_id uuid,club_id uuid,union_id uuid,expires_at timestamptz);
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('test.actor',true),'')::uuid $$;
 CREATE FUNCTION fn_caller_session_is_live() RETURNS boolean LANGUAGE sql AS $$ SELECT coalesce(current_setting('test.session_live',true),'true')<>'false' $$;

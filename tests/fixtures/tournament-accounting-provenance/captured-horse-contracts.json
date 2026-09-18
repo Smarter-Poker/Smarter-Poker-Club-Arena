@@ -1,0 +1,23 @@
+[
+  {
+    "signature": "fn_ca_capture_tournament_charge_entitlement()",
+    "definition_md5": "9ec1394628e0c6291963d5f76801a3d1",
+    "body_md5": "60d612df39b72866c8b654a46250ce14",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "signature": "fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb)",
+    "definition_md5": "6cfd4af7307ce31460fd62c5b3f38bef",
+    "body_md5": "dfca9d975b3f9b674c48ad6d592279b4",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}"
+  },
+  {
+    "signature": "log_wallet_transaction(uuid,text,numeric,text,text,text,uuid,uuid,uuid)",
+    "definition_md5": "8316c567cd3517cc391c11f7b7059c4b",
+    "body_md5": "3d8d2d68b7b7eb24defeb3b7ff32c8d0",
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}"
+  }
+]

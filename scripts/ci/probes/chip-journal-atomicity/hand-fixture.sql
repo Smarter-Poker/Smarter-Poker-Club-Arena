@@ -4,7 +4,7 @@ ALTER TABLE clubs ADD COLUMN IF NOT EXISTS asset text NOT NULL DEFAULT 'chips';
 ALTER TABLE tables ADD COLUMN IF NOT EXISTS tournament_id uuid;
 ALTER TABLE table_seats ADD COLUMN IF NOT EXISTS club_id uuid;
 ALTER TABLE tournaments ADD COLUMN starting_chips numeric, ADD COLUMN rebuy_chips numeric, ADD COLUMN addon_chips numeric;
-CREATE TABLE wallet_transactions(user_id uuid,category text,type text,related_entity_id uuid,created_at timestamptz);
+CREATE TABLE IF NOT EXISTS wallet_transactions(user_id uuid,category text,type text,related_entity_id uuid,created_at timestamptz);
 CREATE TABLE settlement_idempotency_keys(table_id uuid,hand_id uuid,status text,result jsonb,error text,
  attempt_count integer,first_attempt_at timestamptz,last_attempt_at timestamptz,completed_at timestamptz,UNIQUE(table_id,hand_id));
 CREATE TABLE ca_settlements(id uuid DEFAULT gen_random_uuid(),settlement_type text,external_ref text,state text,

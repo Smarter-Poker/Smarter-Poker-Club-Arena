@@ -1,0 +1,41 @@
+SET request.jwt.claims='{"role":"service_role","sub":"00000000-0000-0000-0000-000000000900"}';
+SELECT fixture.assert(fn_pnl_cash_hand_evidence(fixture.u(305),1000703)->>'status'='ready','Corrected reader validates the actual original outer seal');
+SELECT fixture.assert((SELECT evidence->>'status'='blocked' FROM union_pnl_cash_outcomes WHERE table_id=fixture.u(305) AND hand_number=1000703),'Previously captured blocked outcome is never rewritten or backfilled');
+SELECT fixture.commit_through_outer(1000704,true);
+SELECT fixture.assert((SELECT evidence->>'status'='ready' AND evidence->>'basis_certified'='true' FROM union_pnl_cash_outcomes WHERE table_id=fixture.u(305) AND hand_number=1000704),'Original deferred weekly capture now accepts the actual outer owner transaction');
+SELECT fixture.assert(fn_ca_process_hand_post_commit_obligations((SELECT hand_id FROM hand_atomic_commits WHERE table_id=fixture.u(305) AND hand_number=1000703))->>'ok'='true','Original predecessor obligations complete through their processor');
+SELECT fixture.assert(fn_ca_process_hand_post_commit_obligations((SELECT hand_id FROM hand_atomic_commits WHERE table_id=fixture.u(305) AND hand_number=1000704))->>'ok'='true','Original processor completes the accepted hand');
+SELECT fixture.assert((SELECT post_commit_completed_at IS NOT NULL FROM hand_atomic_commits WHERE table_id=fixture.u(305) AND hand_number=1000704),'Original processor persists actual completion on the accepted hand');
+SELECT fixture.assert(fn_pnl_cash_hand_evidence(fixture.u(305),1000704)->>'status'='ready','Actual original post-commit processor completion preserves certified monetary identity');
+SELECT fixture.commit_through_outer(1000705,false);
+SELECT fixture.assert((SELECT manifest_id IS NULL AND issues ? 'original_dealt_manifest_missing' FROM cash_hand_provenance_receipts WHERE table_id=fixture.u(305) AND hand_number=1000705) AND fn_pnl_cash_hand_evidence(fixture.u(305),1000705)->>'basis_certified'='false' AND fn_pnl_cash_hand_evidence(fixture.u(305),1000705)->>'reason'<>'live_atomic_receipt_conflicts_with_original','Real legacy outer call without original manifest remains unqualified');
+DO $$ DECLARE p cash_hand_provenance_receipts; a jsonb; broken jsonb; k text; BEGIN
+ SELECT * INTO p FROM cash_hand_provenance_receipts WHERE table_id=fixture.u(305) AND hand_number=1000704;
+ SELECT to_jsonb(x) INTO a FROM hand_atomic_commits x WHERE table_id=p.table_id AND hand_number=p.hand_number;
+ FOREACH k IN ARRAY ARRAY['table_id','hand_number','hand_id','payload_hash','stack_result','committed_at'] LOOP
+  broken:=jsonb_set(a,ARRAY[k],to_jsonb('tampered'::text));
+  PERFORM fixture.assert(NOT fn_cash_atomic_original_matches(p.atomic_receipt,broken,p.accepted_request),'Every immutable atomic monetary field remains protected: '||k);
+ END LOOP;
+ FOREACH k IN ARRAY ARRAY['post_commit_request_hash','post_commit_payload_hash'] LOOP
+  PERFORM fixture.assert(NOT fn_cash_atomic_original_matches(p.atomic_receipt,jsonb_set(a,ARRAY[k],to_jsonb('tampered'::text)),p.accepted_request),'Original seal hash tampering remains refused: '||k);
+ END LOOP;
+ broken:=jsonb_set(a,'{post_commit_payload,accepted_hand_facts,contributions}',jsonb_build_object(fixture.u(907),999));
+ PERFORM fixture.assert(NOT fn_cash_atomic_original_matches(p.atomic_receipt,broken,p.accepted_request),'Changed final payload is refused');
+ broken:=jsonb_set(broken,'{post_commit_payload_hash}',to_jsonb(encode(extensions.digest(convert_to((broken->'post_commit_payload')::text,'UTF8'),'sha256'),'hex')));
+ PERFORM fixture.assert(NOT fn_cash_atomic_original_matches(p.atomic_receipt,broken,p.accepted_request),'Rehashed final payload cannot contradict original accepted facts');
+ broken:=jsonb_set(a,'{post_commit_result,hand_id}',to_jsonb(fixture.u(99999)::text));
+ PERFORM fixture.assert(NOT fn_cash_atomic_original_matches(p.atomic_receipt,broken,p.accepted_request),'Completion cannot name another original hand');
+ broken:=jsonb_set(a,'{post_commit_completed_at}',to_jsonb(((a->>'post_commit_completed_at')::timestamptz+interval '1 second')::text));
+ PERFORM fixture.assert(NOT fn_cash_atomic_original_matches(a,broken,p.accepted_request),'An already-retained completion timestamp cannot change');
+ broken:=jsonb_set(a,'{post_commit_result,time_banks}',to_jsonb(999));
+ PERFORM fixture.assert(NOT fn_cash_atomic_original_matches(a,broken,p.accepted_request),'An already-retained completion result cannot change');
+ PERFORM fixture.assert(NOT has_function_privilege('authenticated','fn_cash_atomic_original_matches(jsonb,jsonb,jsonb)','EXECUTE') AND NOT has_function_privilege('service_role','fn_cash_atomic_original_matches(jsonb,jsonb,jsonb)','EXECUTE'),'New identity helper remains owner-only');
+END $$;
+BEGIN;
+UPDATE hand_atomic_commits SET payload_hash=repeat('a',64) WHERE table_id=fixture.u(305) AND hand_number=1000704;
+SELECT fixture.assert(fn_pnl_cash_hand_evidence(fixture.u(305),1000704)->>'reason'='live_atomic_receipt_conflicts_with_original','Actual reader refuses changed live monetary receipt');
+ROLLBACK;
+BEGIN;
+DELETE FROM hand_atomic_commits WHERE table_id=fixture.u(305) AND hand_number=1000704;
+SELECT fixture.assert(fn_pnl_cash_hand_evidence(fixture.u(305),1000704)->>'status'='ready','Original retained monetary proof survives normal hand-history pruning');
+ROLLBACK;

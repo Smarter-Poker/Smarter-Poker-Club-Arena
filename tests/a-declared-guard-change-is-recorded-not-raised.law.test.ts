@@ -27,11 +27,47 @@
  * docs/changelog/2026-09-10-a-declared-guard-change-is-recorded-not-raised.md
  */
 import { describe, it, expect } from 'vitest';
-import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
+import { createHash } from 'node:crypto';
+import {
+  migrationCorpus,
+  migrationsMentioning,
+  type MigrationFile,
+} from './helpers/migrationCorpus';
 
 /** The migration that introduced the declaration. Migrations before it are history. */
 const LAW = '20260910143032_a_declared_guard_change_is_recorded_not_raised.sql';
 const DECLARE = 'fn_ca_declare_guard_redefinition';
+
+/**
+ * An already-installed migration is immutable. This one omitted its declaration;
+ * its forward repair records only the exact installed history and live authority.
+ * Bind BOTH source files so this cannot pardon a new or modified guard change.
+ * Prospective redefinitions still require their own same-transaction declaration.
+ */
+const installedFundingDeclaration = {
+  original: '20260917230925_cash_funding_retains_original_participant_custody.sql',
+  originalSha256: 'febab308160e36d6adabe8a3cf7e33afe77d06cabfe799ea25e389d957f023a3',
+  successor: '20260918014359_declare_the_installed_original_club_funding_guard.sql',
+  successorSha256: 'a4f3438b9cfdd57052ea45a463dcced91c442041aa0746ccab442b278d9c5d71',
+  guard: 'fn_club_members_ledger_writer',
+};
+const sha256 = (sql: string): string => createHash('sha256').update(sql).digest('hex');
+const hasExactInstalledDeclaration = (
+  migration: MigrationFile,
+  guard: string,
+  corpus: MigrationFile[]
+): boolean => {
+  const repair = installedFundingDeclaration;
+  const successor = corpus.find((m) => m.name === repair.successor);
+  return (
+    migration.name === repair.original &&
+    guard === repair.guard &&
+    sha256(migration.sql) === repair.originalSha256 &&
+    successor !== undefined &&
+    successor.name > migration.name &&
+    sha256(successor.sql) === repair.successorSha256
+  );
+};
 
 /**
  * The watchlist is not hard-coded here. It is read from the newest migration
@@ -102,7 +138,9 @@ describe('a declared guard change is recorded, not raised', () => {
       for (const g of guards) {
         // history for THIS guard: it was not on the list when the migration ran
         if (m.name < (from.get(g) ?? LAW)) continue;
-        if (redefines(m.sql, g)) offenders.push(`${m.name} redefines ${g}`);
+        if (redefines(m.sql, g) && !hasExactInstalledDeclaration(m, g, migrationCorpus())) {
+          offenders.push(`${m.name} redefines ${g}`);
+        }
       }
     }
     expect(
@@ -115,6 +153,69 @@ describe('a declared guard change is recorded, not raised', () => {
         offenders.join('\n'),
       ].join('\n')
     ).toEqual([]);
+  });
+
+  it('an immutable installed omission has only its exact guarded forward declaration', () => {
+    const repair = installedFundingDeclaration;
+    const corpus = migrationCorpus();
+    const original = corpus.find((m) => m.name === repair.original)!;
+    const successor = corpus.find((m) => m.name === repair.successor)!;
+    expect(original).toBeDefined();
+    expect(successor).toBeDefined();
+    expect(hasExactInstalledDeclaration(original, repair.guard, corpus)).toBe(true);
+    expect(successor.sql).toContain(repair.originalSha256);
+    expect(successor.sql).toContain('supabase_migrations.schema_migrations');
+    expect(successor.sql).toContain('md5(pg_get_functiondef(p.oid))=v_expected');
+    expect(successor.sql).toContain(
+      "p.proacl::text='{postgres=X/postgres,service_role=X/postgres}'"
+    );
+    expect(successor.sql).toContain(`v_declared := public.${DECLARE}(`);
+    expect(successor.sql).toContain('v_declared IS DISTINCT FROM v_expected');
+    expect(successor.sql).not.toMatch(
+      /CREATE OR REPLACE FUNCTION|ALTER FUNCTION|UPDATE public|DELETE FROM/i
+    );
+  });
+
+  it('a missing or changed repair, changed source, or another guard remains undeclared', () => {
+    const repair = installedFundingDeclaration;
+    const corpus = migrationCorpus();
+    const original = corpus.find((m) => m.name === repair.original)!;
+    expect(
+      hasExactInstalledDeclaration(
+        original,
+        repair.guard,
+        corpus.filter((m) => m.name !== repair.successor)
+      )
+    ).toBe(false);
+    expect(
+      hasExactInstalledDeclaration(
+        { ...original, sql: original.sql + '\n-- changed' },
+        repair.guard,
+        corpus
+      )
+    ).toBe(false);
+    expect(
+      hasExactInstalledDeclaration(
+        { ...original, name: '20260919000000_new_change.sql' },
+        repair.guard,
+        corpus
+      )
+    ).toBe(false);
+    expect(hasExactInstalledDeclaration(original, 'fn_ca_guard_defs_watch', corpus)).toBe(false);
+    for (const mutate of [
+      (sql: string) =>
+        sql.replace(`v_declared := public.${DECLARE}(`, 'v_declared := public.unknown('),
+      (sql: string) => sql.replace(repair.originalSha256, '0'.repeat(64)),
+      (sql: string) => sql.replace('e7cae5f2fc19ef0d2c47e528764abd5a', '0'.repeat(32)),
+    ]) {
+      expect(
+        hasExactInstalledDeclaration(
+          original,
+          repair.guard,
+          corpus.map((m) => (m.name === repair.successor ? { ...m, sql: mutate(m.sql) } : m))
+        )
+      ).toBe(false);
+    }
   });
 
   it('a guard is watched from the migration that first named it, never before', () => {

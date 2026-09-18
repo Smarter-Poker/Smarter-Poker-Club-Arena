@@ -1,0 +1,57 @@
+[
+  {
+    "signature": "fn_ca_assert_tournament_chip_grant(uuid,uuid,uuid,numeric,text)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_assert_tournament_chip_grant(p_tournament_id uuid, p_user_id uuid, p_seat_id uuid, p_new_stack numeric, p_source text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_felt numeric;\n  v_own numeric;\n  v_supply numeric;\n  v_after numeric;\nBEGIN\n  IF p_tournament_id IS NULL OR p_new_stack IS NULL THEN\n    RAISE EXCEPTION 'tournament chip grant assertion needs a tournament and a stack'\n      USING ERRCODE='22023';\n  END IF;\n  IF p_new_stack::text IN ('NaN','Infinity','-Infinity') OR p_new_stack<0 THEN\n    RAISE EXCEPTION 'TOURNAMENT_CHIP_GRANT_INVALID: % proposed stack %',\n      COALESCE(p_source,'grant'),p_new_stack\n      USING ERRCODE='22023';\n  END IF;\n\n  v_supply:=public.fn_ca_tournament_chip_supply(p_tournament_id);\n  v_felt:=public.fn_ca_tournament_felt_total(p_tournament_id);\n  SELECT COALESCE(ts.stack,0) INTO v_own\n    FROM public.table_seats ts\n   WHERE ts.id=p_seat_id AND ts.left_at IS NULL;\n  v_after:=v_felt-COALESCE(v_own,0)+p_new_stack;\n\n  IF v_after>v_felt AND v_after>v_supply THEN\n    RAISE EXCEPTION\n      'TOURNAMENT_CHIP_GRANT_WOULD_MINT: % for player % would leave % chips on the felt in tournament % against % ever bought in (felt now %, this seat holds %) - Aborting So No Charge Is Made',\n      COALESCE(p_source,'grant'),p_user_id,v_after,p_tournament_id,v_supply,\n      v_felt,COALESCE(v_own,0)\n      USING ERRCODE='55000';\n  END IF;\nEND;\n$function$\n",
+    "md5": "c49fa16f6be47ed9ca2e72b2f2b9da07"
+  },
+  {
+    "signature": "fn_ca_lock_mtt_admission_contract()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_mtt_admission_contract()\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE v_abi text;\nBEGIN\n  SELECT abi INTO v_abi FROM public.ca_mtt_admission_contract WHERE singleton FOR SHARE;\n  IF NOT FOUND OR v_abi NOT IN ('legacy-capacity-v1','unlimited-mtt-v2') THEN\n    RAISE EXCEPTION 'MTT_ADMISSION_CONTRACT_MISSING_OR_UNKNOWN' USING ERRCODE='55000';\n  END IF;\n  RETURN v_abi;\nEND $function$\n",
+    "md5": "10644d522bb50245f76942ecce735cbc"
+  },
+  {
+    "signature": "fn_ca_recovery_fee_cents(bigint,numeric,integer)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_recovery_fee_cents(p_gross_cents bigint, p_ratio numeric, p_unit_cents integer DEFAULT 1)\n RETURNS bigint\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE\n    WHEN p_gross_cents IS NULL OR p_gross_cents <= 0 THEN 0\n    WHEN p_ratio IS NULL THEN NULL\n    WHEN p_ratio <= 0 THEN 0\n    ELSE LEAST(\n      public.fn_ca_unit_floor_cents(\n        trunc(p_gross_cents::numeric * p_ratio + 0.000001)::bigint, p_unit_cents),\n      public.fn_ca_unit_floor_cents(\n        trunc(p_gross_cents::numeric * 0.1 + 0.000001)::bigint, p_unit_cents))\n  END;\n$function$\n",
+    "md5": "3960a8bc558ead330e1e47e7a38e31c4"
+  },
+  {
+    "signature": "fn_ca_tournament_fee_ratio(numeric,numeric)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_fee_ratio(p_buy_in numeric, p_buy_in_fee numeric)\n RETURNS numeric\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE\n    WHEN COALESCE(p_buy_in,0) + COALESCE(p_buy_in_fee,0) > 0\n         AND COALESCE(p_buy_in_fee,0) > 0\n      THEN p_buy_in_fee / (p_buy_in + p_buy_in_fee)\n    ELSE 0.1\n  END;\n$function$\n",
+    "md5": "858c3f3cda609a0b427f294d1c9edf36"
+  },
+  {
+    "signature": "fn_ca_tournament_is_unlimited(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_is_unlimited(p_tournament_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE v_abi text;\nBEGIN\n v_abi:=public.fn_ca_lock_mtt_admission_contract();\n IF v_abi='legacy-capacity-v1' THEN RETURN false; END IF;\n RETURN public.fn_ca_tournament_recorded_format(p_tournament_id) IN ('mtt-v1','mtt-v2');\nEND $function$\n",
+    "md5": "fd66c28075f1d7c63b9d763632592471"
+  },
+  {
+    "signature": "fn_ca_tournament_unit_cents(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_unit_cents(p_tournament_id uuid)\n RETURNS integer\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE WHEN EXISTS (\n    SELECT 1 FROM public.tournaments t\n      JOIN public.clubs c ON c.id = t.club_id\n     WHERE t.id = p_tournament_id\n       AND c.asset = 'diamonds' AND c.is_platform IS TRUE AND c.union_id IS NULL\n  ) THEN 100 ELSE 1 END;\n$function$\n",
+    "md5": "426ba550ff84f4210906a0071538803b"
+  },
+  {
+    "signature": "fn_ca_unit_floor_cents(bigint,integer)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_unit_floor_cents(p_cents bigint, p_unit_cents integer DEFAULT 1)\n RETURNS bigint\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT CASE\n    WHEN p_cents IS NULL THEN NULL\n    WHEN p_cents <= 0 THEN 0\n    ELSE (trunc(p_cents::numeric\n                / (CASE WHEN p_unit_cents IS NOT NULL AND p_unit_cents >= 1\n                        THEN p_unit_cents::numeric ELSE 1 END))\n          * (CASE WHEN p_unit_cents IS NOT NULL AND p_unit_cents >= 1\n                  THEN p_unit_cents::numeric ELSE 1 END))::bigint\n  END;\n$function$\n",
+    "md5": "1aee5e7fa9aa60b575aeccd2793bd215"
+  },
+  {
+    "signature": "fn_poker_diamond_tournament(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_poker_diamond_tournament(p_tournament_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id = t.club_id\n     WHERE t.id = p_tournament_id AND c.asset = 'diamonds' AND c.is_platform IS TRUE\n       AND c.union_id IS NULL AND t.union_id IS NULL);\n$function$\n",
+    "md5": "c91028508fecc2d02e9003f2bdc2e38d"
+  },
+  {
+    "signature": "fn_tournament_late_registration_open(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_late_registration_open(p_tournament_id uuid)\n RETURNS boolean\n LANGUAGE sql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE((\n    SELECT t.status='RUNNING'\n       AND NOT COALESCE(t.prize_pool_finalized,false)\n       AND COALESCE(t.current_level,0)>=0\n       AND COALESCE(t.late_reg_levels,0)>=0\n       AND COALESCE(t.rebuy_levels,0)>=0\n       AND COALESCE(t.late_reg_mins,0)>=0\n       AND (\n         CASE\n           WHEN COALESCE(t.late_reg_levels,t.rebuy_levels,0)>0\n             THEN COALESCE(t.current_level,0)\n                    <COALESCE(t.late_reg_levels,t.rebuy_levels,0)\n           WHEN COALESCE(t.late_reg_mins,0)>0\n             THEN t.started_at IS NOT NULL\n              AND clock_timestamp()\n                    <t.started_at+make_interval(mins=>t.late_reg_mins)\n           ELSE false\n         END\n       )\n       AND (\n         public.fn_ca_tournament_is_unlimited(t.id)\n         OR t.max_players IS NULL OR t.max_players<=0 OR (\n           SELECT count(*) FROM public.tournament_players tp\n            WHERE tp.tournament_id=t.id\n         )<t.max_players\n       )\n      FROM public.tournaments t\n     WHERE t.id=p_tournament_id\n  ),false);\n$function$\n",
+    "md5": "0a189819d8064f393f5de5b12a2c51f4"
+  },
+  {
+    "signature": "fn_ca_tournament_chip_supply(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_chip_supply(p_tournament_id uuid)\n RETURNS numeric\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT COALESCE(r.entrants,0)*COALESCE(t.starting_chips,0)\n       + COALESCE(r.rebuys,0)\n         *COALESCE(NULLIF(t.rebuy_chips,0),t.starting_chips,0)\n       + COALESCE(r.addons,0)\n         *COALESCE(NULLIF(t.addon_chips,0),t.starting_chips,0)\n       + COALESCE(a.chips,0)\n    FROM public.tournaments t\n    LEFT JOIN LATERAL (\n      SELECT count(*) AS entrants,\n             COALESCE(sum(GREATEST(COALESCE(tp.rebuys,0),0)),0) AS rebuys,\n             count(*) FILTER (WHERE tp.add_on) AS addons\n        FROM public.tournament_players tp\n       WHERE tp.tournament_id=t.id\n    ) r ON true\n    LEFT JOIN public.tournament_felt_supply_acknowledgements a\n           ON a.tournament_id = t.id\n   WHERE t.id=p_tournament_id;\n$function$\n",
+    "md5": "c29dfa4a0ebef95fddeb8a0982ef07e1"
+  },
+  {
+    "signature": "fn_ca_tournament_felt_total(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_felt_total(p_tournament_id uuid)\n RETURNS numeric\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT COALESCE(sum(ts.stack),0)\n    FROM public.table_seats ts\n    JOIN public.tables tb ON tb.id=ts.table_id\n   WHERE tb.tournament_id=p_tournament_id\n     AND ts.left_at IS NULL;\n$function$\n",
+    "md5": "a2698ca8bafd2a3b76c7ac156d654276"
+  }
+]

@@ -11,7 +11,7 @@
  * automatically. The server enforces the same rule.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { supabase } from '../../lib/supabase';
@@ -49,13 +49,27 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
      the search box used to refetch /api/club-arena/shop-purchases through the
      World Hub. 300 ms is the same window the roster and hand searches use. */
   const debouncedQuery = useDebounce(query, 300);
+  /* Between a keystroke and the pause, the box holds a newer question than
+     the rows below it. Paging during that gap asks the server for an offset
+     into a list that is about to be replaced, so the pager is held until the
+     rows and the box agree again. */
+  const searching = query !== debouncedQuery;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  /* Only the newest request may write to this table. Two are in flight
+     whenever a pause fires while an earlier page or search is still on the
+     wire, and the older one is free to land second - which would seat rows
+     the admin never asked for underneath buttons that move money. A refund
+     is taken from the row the admin can see, so the rows have to be the
+     answer to the question they actually asked. */
+  const latestRequest = useRef(0);
 
   const load = useCallback(async () => {
     if (!open) return;
+    const request = ++latestRequest.current;
+    const superseded = () => request !== latestRequest.current;
     setLoading(true);
     setError(null);
     try {
@@ -70,15 +84,19 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
         (debouncedQuery.trim() ? `&q=${encodeURIComponent(debouncedQuery.trim())}` : '');
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({ success: false }));
+      if (superseded()) return;
       if (!data.success) throw new Error(data.error || 'Failed to load purchases');
       setRows(data.purchases || []);
       setTotal(data.total || 0);
     } catch (err: unknown) {
+      // A request nobody is waiting on does not get to raise an alarm or
+      // leave an error banner over rows that loaded perfectly well.
+      if (superseded()) return;
       const msg = err instanceof Error ? err.message : 'Failed to load purchases';
       setError(msg);
       toast.error(msg);
     } finally {
-      setLoading(false);
+      if (!superseded()) setLoading(false);
     }
   }, [clubId, offset, debouncedQuery, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -163,7 +181,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
       ) : rows.length === 0 ? (
         <div className={styles.emptyState}>
           <span className={styles.emptyText}>
-            {query.trim() ? 'No Purchases Match That Search.' : 'No Purchases Yet.'}
+            {debouncedQuery.trim() ? 'No Purchases Match That Search.' : 'No Purchases Yet.'}
           </span>
         </div>
       ) : (
@@ -235,7 +253,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
           <div className={styles.crossSell}>
             <button
               className={styles.inlineLink}
-              disabled={offset === 0 || loading}
+              disabled={offset === 0 || loading || searching}
               onClick={() => setOffset(Math.max(0, offset - PAGE))}
             >
               Previous
@@ -245,7 +263,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
             </span>
             <button
               className={styles.inlineLink}
-              disabled={offset + PAGE >= total || loading}
+              disabled={offset + PAGE >= total || loading || searching}
               onClick={() => setOffset(offset + PAGE)}
             >
               Next

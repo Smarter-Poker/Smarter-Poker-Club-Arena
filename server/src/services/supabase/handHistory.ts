@@ -23,6 +23,10 @@ export interface AtomicHandCommitInput {
     user_id: string;
     stack: number;
     stack_before: number;
+    seat_id?: string;
+    seat_joined_at?: string;
+    occupancy_id?: string;
+    funding_manifest_id?: string;
   }>;
   rake: number;
   bbj: number;

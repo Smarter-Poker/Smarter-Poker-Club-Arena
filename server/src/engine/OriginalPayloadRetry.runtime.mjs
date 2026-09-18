@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import ts from 'typescript';
 import { LifecycleDiagnostics } from '../services/LifecycleDiagnostics.ts';
 import { leavePendingTerminalReason } from '../observability/LeavePendingDiagnostic.ts';
+import { handStackBefore, requireHandSeatGeneration } from './handSeatGeneration.ts';
 const readCurrent = (file) => fs.readFileSync(resolve(process.cwd(), 'src', file), 'utf8');
 const base = readCurrent('engine/ServerTableEngineBase.ts'),
   settlement = readCurrent('engine/ServerTableEngineSettlement.ts');
@@ -76,7 +77,8 @@ function harness(sequence, { rootB = false, onSleep, onRpc } = {}) {
     assertDiamondAcceptedHand() {},
     selectRevealedShowdownResults: () => [],
     buildDailyMissionHandEvents: () => [],
-    requireHandSeatGeneration: (m, u) => m.get(u),
+    handStackBefore,
+    requireHandSeatGeneration,
     describeError: (e) => e?.message ?? String(e),
     reportError() {},
     raiseFinancialAlert: async (...args) => alerts.push(args),

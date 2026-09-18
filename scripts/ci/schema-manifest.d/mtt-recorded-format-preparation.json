@@ -1,0 +1,29 @@
+{
+  "_owner": "agent/codex/mtt-preparation-runner-20260917",
+  "_comment": "Installed preparation objects read back from the public catalog at 2026-09-17T21:38:55.807721+00:00. This inventory does not activate unlimited admission.",
+  "tables": ["ca_mtt_admission_contract"],
+  "functions": [
+    "fn_ca_fixed_tournament_waitlist_only",
+    "fn_ca_guard_mtt_admission_contract",
+    "fn_ca_guard_new_satellite_target",
+    "fn_ca_guard_tournament_format",
+    "fn_ca_guard_tournament_restart_source",
+    "fn_ca_is_new_mtt",
+    "fn_ca_legacy_tournament_format",
+    "fn_ca_lock_mtt_admission_contract",
+    "fn_ca_new_tournament_is_unlimited",
+    "fn_ca_normalize_new_mtt_capacity",
+    "fn_ca_proven_legacy_tournament_format",
+    "fn_ca_read_mtt_admission_contract",
+    "fn_ca_satellite_target_accepts_new_feeder",
+    "fn_ca_tournament_admission_snapshot",
+    "fn_ca_tournament_format_identity",
+    "fn_ca_tournament_is_unlimited",
+    "fn_ca_tournament_recorded_format",
+    "fn_ca_tournament_recorded_seat_first",
+    "fn_ensure_scheduled_mtt_satellite"
+  ],
+  "columns": {
+    "tournaments": ["format_contract", "restart_source_id"]
+  }
+}

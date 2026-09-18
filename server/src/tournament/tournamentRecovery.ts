@@ -13,7 +13,7 @@ import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
-import { resolvePayoutStructure } from './payoutStructure.js';
+import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import { fieldIsStillLive } from './recoveryFieldGuard.js';
 import { noHandWasEverDealt } from './recoveryRankEvidence.js';
 import {
@@ -31,6 +31,7 @@ function uuid(value: unknown): string | null {
 }
 
 interface RecoveryTournament {
+  format_contract?: unknown;
   id: string;
   name: string | null;
   status: string;
@@ -193,7 +194,7 @@ export async function recoverStuckCompletingTournaments(
     let query = supabase
       .from('tournaments')
       .select(
-        'id, name, status, payout_structure, variant, tournament_type, satellite_target_id, started_at'
+        'format_contract, id, name, status, payout_structure, variant, tournament_type, satellite_target_id, started_at'
       )
       .eq('status', 'COMPLETING');
     if (onlyTournamentId) query = query.eq('id', onlyTournamentId);
@@ -212,6 +213,8 @@ export async function recoverStuckCompletingTournaments(
       if (isMaintenanceFrozen()) continue;
       try {
         const tournament = candidate;
+        if (tournament.status !== 'COMPLETING')
+          throw new Error('Terminal recovery did not read COMPLETING authority');
         const isSatellite = satellite(tournament);
         const field = await readRecoveryField(tournament.id);
         if (!field.rows || field.rows.length < 1) {
@@ -305,7 +308,13 @@ export async function recoverStuckCompletingTournaments(
 
         let winnerId: string | null = null;
         if (!hasDeal) {
-          const structure = resolvePayoutStructure(tournament as never, rows.length);
+          // Historical COMPLETING rows may be intentionally unqualified for any
+          // new admission. This is only a live-field preflight; the existing
+          // terminal SQL transaction still owns the exact funded payout.
+          const structure =
+            tournament.status === 'COMPLETING' && tournament.format_contract === null
+              ? parsePayoutStructure(tournament.payout_structure)
+              : resolvePayoutStructure(tournament as never, rows.length);
           const livePlayers = rows.filter((row) => row.status === 'playing').length;
           if (fieldIsStillLive({ livePlayers, paidPlaces: structure?.length ?? 0 })) {
             reportError(

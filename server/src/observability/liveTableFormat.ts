@@ -1,3 +1,4 @@
+import { readPersistedTournamentFormatContract } from '../tournament/tournamentEntryCapacity.js';
 /**
  * Public, non-sensitive format labels for per-table liveness.
  *
@@ -9,36 +10,21 @@
 export type PublicLiveTableFormat = 'cash' | 'mtt' | 'spin' | 'sng';
 
 export interface PublicTournamentFormatRow {
+  format_contract?: unknown;
   tournament_type?: unknown;
   variant?: unknown;
   max_players?: unknown;
 }
 
 /**
- * Normalize the two format columns that coexist in historical data.
- *
- * Either SPIN marker wins. SNG markers and two-seat tournaments are Sit & Go;
- * the latter covers old heads-up rows whose type was left as MTT. Every other
- * tournament is the MTT lane, including multi-table satellites.
+ * Report the recorded format, never infer purchased terms from obsolete labels
+ * or a numeric field cap. Callers expose unknown observations as unknown.
  */
 export function publicTournamentTableFormat(
   row: PublicTournamentFormatRow
 ): Exclude<PublicLiveTableFormat, 'cash'> {
-  const tournamentType = String(row.tournament_type ?? '')
-    .trim()
-    .toUpperCase();
-  const variant = String(row.variant ?? '')
-    .trim()
-    .toLowerCase();
-  const maxPlayers = Number(row.max_players);
-
-  if (tournamentType === 'SPIN' || variant === 'spin') return 'spin';
-  if (
-    tournamentType === 'SNG' ||
-    variant === 'sng' ||
-    (Number.isFinite(maxPlayers) && maxPlayers > 0 && maxPlayers <= 2)
-  ) {
-    return 'sng';
-  }
+  const format = readPersistedTournamentFormatContract(row);
+  if (format === 'spin-v1') return 'spin';
+  if (format === 'sng-v1' || format === 'seat-first-satellite-v1') return 'sng';
   return 'mtt';
 }

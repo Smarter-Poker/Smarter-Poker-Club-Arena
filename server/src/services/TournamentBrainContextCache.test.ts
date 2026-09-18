@@ -9,6 +9,7 @@ const h = vi.hoisted(() => {
   const responses = new Map<string, Result | PromiseLike<Result>>();
   const rangeResponses = new Map<string, Result | PromiseLike<Result>>();
   const calls: string[] = [];
+  const admission = { abi: 'legacy-capacity-v1', cap: undefined as number | null | undefined };
   const reportError = vi.fn();
   const from = vi.fn((table: string) => {
     calls.push(table);
@@ -40,10 +41,32 @@ const h = vi.hoisted(() => {
     ): Promise<unknown> => result().then(resolve, reject);
     return chain;
   });
-  return { responses, rangeResponses, calls, reportError, from };
+  return { responses, rangeResponses, calls, reportError, from, admission };
 });
 
-vi.mock('./supabase.js', () => ({ supabase: { from: h.from } }));
+vi.mock('./supabase.js', () => ({
+  supabase: {
+    from: h.from,
+    rpc: vi.fn(async (name, args) => {
+      if (name !== 'fn_ca_tournament_admission_snapshot') throw new Error(`Unexpected RPC ${name}`);
+      const result = await h.responses.get('tournaments');
+      const row = result?.data as any;
+      return {
+        error: null,
+        data: {
+          ok: true,
+          admission_abi: h.admission.abi,
+          entries: args.p_tournament_ids.map((id: string) => ({
+            tournament_id: id,
+            format_contract: row.format_contract,
+            effective_max_players:
+              h.admission.cap === undefined ? row.max_players : h.admission.cap,
+          })),
+        },
+      };
+    }),
+  },
+}));
 vi.mock('./errorReporter.js', () => ({ reportError: h.reportError }));
 
 import {
@@ -58,6 +81,7 @@ const NOW = Date.parse('2026-09-09T18:00:00.000Z');
 
 function tournamentRow() {
   return {
+    format_contract: 'mtt-v1',
     tournament_type: 'MTT',
     status: 'RUNNING',
     game_type: 'NLH',
@@ -136,6 +160,8 @@ beforeEach(() => {
   h.responses.clear();
   h.rangeResponses.clear();
   h.calls.length = 0;
+  h.admission.abi = 'legacy-capacity-v1';
+  h.admission.cap = undefined;
   h.from.mockClear();
   h.reportError.mockClear();
 });
@@ -182,6 +208,27 @@ describe('TournamentBrainContext lifecycle cache', () => {
       bountyByUser: { 'horse-1': 1234, 'horse-2': 500 },
     });
   });
+
+  it.each([
+    ['legacy-capacity-v1', 3, false],
+    ['unlimited-mtt-v2', null, true],
+  ] as const)(
+    'uses the %s admission projection for a full recorded MTT',
+    async (abi, cap, open) => {
+      successfulResponses();
+      h.responses.set('tournaments', {
+        data: { ...tournamentRow(), max_players: 3 },
+        error: null,
+      });
+      h.admission.abi = abi;
+      h.admission.cap = cap;
+      refreshTournamentBrainContext('t-authoritative-capacity');
+      await settleRefresh();
+      const snapshot = getTournamentBrainContextSnapshot('t-authoritative-capacity');
+      expect(snapshot.status).toBe('complete');
+      expect(snapshot.context?.lateRegistrationOpen).toBe(open);
+    }
+  );
 
   it('does not count a zero-chip playing row as a live ICM stack while elimination status catches up', async () => {
     successfulResponses();

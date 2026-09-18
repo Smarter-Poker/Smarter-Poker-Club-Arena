@@ -38,6 +38,7 @@ describe('a Spin never breaks, whatever the row says', () => {
     // This is the exact shape of all 28,788 Spin rows on the platform.
     expect(
       mayTakeSynchronizedBreak({
+        format_contract: 'spin-v1',
         tournament_type: 'SPIN',
         variant: 'spin',
         synchronized_breaks: true,
@@ -46,37 +47,74 @@ describe('a Spin never breaks, whatever the row says', () => {
   });
 
   it('refuses an SNG on the same grounds', () => {
-    expect(mayTakeSynchronizedBreak({ tournament_type: 'SNG', synchronized_breaks: true })).toBe(
-      false
-    );
+    expect(
+      mayTakeSynchronizedBreak({
+        format_contract: 'sng-v1',
+        tournament_type: 'SNG',
+        synchronized_breaks: true,
+      })
+    ).toBe(false);
   });
 });
 
 describe('an MTT still decides for itself', () => {
   it('breaks by default', () => {
-    expect(mayTakeSynchronizedBreak({ tournament_type: 'MTT' })).toBe(true);
-    expect(mayTakeSynchronizedBreak({ tournament_type: 'MTT', synchronized_breaks: true })).toBe(
+    expect(mayTakeSynchronizedBreak({ format_contract: 'mtt-v1', tournament_type: 'MTT' })).toBe(
       true
     );
+    expect(
+      mayTakeSynchronizedBreak({
+        format_contract: 'mtt-v1',
+        tournament_type: 'MTT',
+        synchronized_breaks: true,
+      })
+    ).toBe(true);
   });
 
   it('honors an explicit opt-out (2026-08-22 parity)', () => {
-    expect(mayTakeSynchronizedBreak({ tournament_type: 'MTT', synchronized_breaks: false })).toBe(
-      false
-    );
+    expect(
+      mayTakeSynchronizedBreak({
+        format_contract: 'mtt-v1',
+        tournament_type: 'MTT',
+        synchronized_breaks: false,
+      })
+    ).toBe(false);
   });
 
   it('a null column is not an opt-out', () => {
-    expect(mayTakeSynchronizedBreak({ tournament_type: 'MTT', synchronized_breaks: null })).toBe(
-      true
-    );
+    expect(
+      mayTakeSynchronizedBreak({
+        format_contract: 'mtt-v1',
+        tournament_type: 'MTT',
+        synchronized_breaks: null,
+      })
+    ).toBe(true);
   });
 });
 
-describe('an unreadable row is treated as an ordinary MTT', () => {
-  it('because a missed break costs synchrony, and a wrong break costs the game', () => {
-    expect(mayTakeSynchronizedBreak(null)).toBe(true);
-    expect(mayTakeSynchronizedBreak(undefined)).toBe(true);
-    expect(mayTakeSynchronizedBreak({})).toBe(true);
+describe('an unreadable row cannot authorize a break', () => {
+  it('refuses missing rows and unknown recorded formats', () => {
+    expect(mayTakeSynchronizedBreak(null)).toBe(false);
+    expect(mayTakeSynchronizedBreak(undefined)).toBe(false);
+    expect(() => mayTakeSynchronizedBreak({})).toThrow('TOURNAMENT_FORMAT_CONTRACT_INVALID');
   });
+});
+
+it('preserves legacy satellite breaks while a new MTT ignores stale SNG spelling', () => {
+  expect(
+    mayTakeSynchronizedBreak({
+      format_contract: 'seat-first-satellite-v1',
+      tournament_type: 'SATELLITE',
+      variant: 'sng',
+      synchronized_breaks: true,
+    })
+  ).toBe(false);
+  expect(
+    mayTakeSynchronizedBreak({
+      format_contract: 'mtt-v2',
+      tournament_type: 'SATELLITE',
+      variant: 'sng',
+      synchronized_breaks: true,
+    })
+  ).toBe(true);
 });

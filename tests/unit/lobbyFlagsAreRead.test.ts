@@ -44,6 +44,7 @@ const tourn = (over: Partial<LobbyTournamentRow> = {}): LobbyTournamentRow =>
   ({
     id: 'g1',
     name: 'Nightly',
+    format_contract: 'mtt-v1',
     game_type: 'NLH',
     buy_in_amount: 10,
     buy_in_fee: 1,

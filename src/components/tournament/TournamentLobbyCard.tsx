@@ -2,6 +2,14 @@ import {
   tournamentEntryWindow,
   type TournamentEntryWindowRow,
 } from '../../utils/tournamentEntryWindow';
+import {
+  isKnownTournamentFormat,
+  isUnlimitedTournamentFormat,
+  getTournamentFormatKind,
+  isSeatFirstTournamentFormat,
+  isTournamentEntryUnavailable,
+  getTournamentEntryCapacity,
+} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY CARD — Tournament Registration Display
@@ -32,13 +40,14 @@ import {
 import { chipsCompact } from './details/types';
 
 interface Tournament extends TournamentEntryWindowRow {
+  format_contract?: unknown;
   id: string;
   name: string;
   type: 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'pko' | 'mystery';
   /** The TOTAL a player pays, whole chips. Never the prize half on its own. */
   buyIn: number;
   prizePool: number;
-  maxPlayers: number;
+  maxPlayers: number | null;
   registeredPlayers: number;
   startsAt?: string;
   status: 'registering' | 'running' | 'finished' | 'cancelled';
@@ -313,7 +322,12 @@ function TournamentLobbyCardInner({
   };
 
   const handleRegister = async () => {
-    if (!user?.id || registering) return;
+    if (
+      !user?.id ||
+      registering ||
+      isTournamentEntryUnavailable(tournament, tournament.registeredPlayers)
+    )
+      return;
     setRegistering(true);
 
     try {
@@ -434,20 +448,34 @@ function TournamentLobbyCardInner({
     );
   };
 
-  const hasMaxPlayers = tournament.maxPlayers > 0;
+  const formatKnown = isKnownTournamentFormat(tournament);
+  const entryCapacity = getTournamentEntryCapacity(tournament);
+  const hasMaxPlayers = entryCapacity !== null;
+  const unlimited = isUnlimitedTournamentFormat(tournament);
+  const entryDetailsKnown = formatKnown && (unlimited || hasMaxPlayers);
+  const formatKind = getTournamentFormatKind(tournament);
+  const displayType =
+    formatKind === 'spin'
+      ? 'spin'
+      : formatKind === 'sng'
+        ? tournament.type === 'satellite'
+          ? 'satellite'
+          : 'sng'
+        : ['spin', 'sng'].includes(tournament.type)
+          ? 'mtt'
+          : tournament.type;
   // current_players drifts UP (see the Entries note below), so the subtraction
   // can go negative. "-3 spots remaining" is not a thing.
   const spotsRemaining = hasMaxPlayers
-    ? Math.max(0, tournament.maxPlayers - tournament.registeredPlayers)
+    ? Math.max(0, (entryCapacity ?? 0) - tournament.registeredPlayers)
     : Infinity;
-  const isFull = hasMaxPlayers && tournament.registeredPlayers >= tournament.maxPlayers;
-  /* Seat-first: a Spin, or any game with two seats. Same rule as
-     isSeatFirstFormat on the server and isSeatFirstTournament in the lobby. */
-  const isSeatFirstCard =
-    tournament.type === 'spin' || (tournament.maxPlayers > 0 && tournament.maxPlayers <= 2);
-  const fillPct = hasMaxPlayers
-    ? Math.min(100, Math.max(0, (tournament.registeredPlayers / tournament.maxPlayers) * 100))
-    : 0;
+  const isFull = isTournamentEntryUnavailable(tournament, tournament.registeredPlayers);
+  /* Only a recorded fixed format can offer a physical seat-first purchase. */
+  const isSeatFirstCard = isSeatFirstTournamentFormat(tournament);
+  const fillPct =
+    entryCapacity !== null
+      ? Math.min(100, Math.max(0, (tournament.registeredPlayers / entryCapacity) * 100))
+      : 0;
 
   return (
     <div
@@ -466,7 +494,9 @@ function TournamentLobbyCardInner({
         {tournament.isNew && <span className={styles.newBadge}>NEW</span>}
         {tournament.isVipOnly && <span className={styles.vipBadge}>VIP</span>}
         {tournament.isAllInOrFold && <span className={styles.aofBadge}>AoF</span>}
-        <span className={styles.type}>{getTypeLabel(tournament.type)}</span>
+        <span className={styles.type}>
+          {formatKnown ? getTypeLabel(displayType) : 'Tournament'}
+        </span>
         <span className={styles.status} style={{ color: getStatusColor(tournament.status) }}>
           {getStatusLabel(tournament.status)}
         </span>
@@ -528,7 +558,7 @@ function TournamentLobbyCardInner({
           <span className={styles.infoLabel}>Entries</span>
           <span className={styles.infoValue}>
             {tournament.registeredPlayers.toLocaleString()}
-            {hasMaxPlayers ? `/${tournament.maxPlayers.toLocaleString()}` : ''}
+            {entryCapacity !== null ? `/${entryCapacity.toLocaleString()}` : ''}
           </span>
         </div>
         <div className={styles.infoItem}>
@@ -630,7 +660,8 @@ function TournamentLobbyCardInner({
         </>
       ) : (
         <span className={styles.spotsLabel}>
-          {tournament.registeredPlayers.toLocaleString()} Registered - Open Entry
+          {tournament.registeredPlayers.toLocaleString()} Registered
+          {unlimited ? ' - Open Entry' : ''}
         </span>
       )}
 
@@ -654,16 +685,17 @@ function TournamentLobbyCardInner({
             succeed - the same dead end lobbyEntries.isSeatFirstTournament was
             written to prevent on the main board, which this tab never learned.
 
-            Seats are the test, as everywhere else: two or fewer, or a Spin. */}
-        {tournament.status === 'registering' && isSeatFirstCard && (
+            The recorded fixed format owns this route, including funded legacy satellites. */}
+        {tournament.status === 'registering' && isSeatFirstCard && !regCheckFailed && (
           <button
             className={styles.registerBtn}
+            disabled={isFull}
             onClick={(e) => {
               e.stopPropagation();
-              navigate(`/tournaments/${tournament.id}?seat=1`);
+              if (!isFull) navigate(`/tournaments/${tournament.id}?seat=1`);
             }}
           >
-            Take A Seat ({money(tournament.buyIn)})
+            {isFull ? 'Entry Unavailable' : `Take A Seat (${money(tournament.buyIn)})`}
           </button>
         )}
         {tournament.status === 'registering' &&
@@ -690,9 +722,11 @@ function TournamentLobbyCardInner({
             >
               {registering
                 ? 'Registering...'
-                : isFull
-                  ? 'Tournament Full'
-                  : `Register (${money(tournament.buyIn)})`}
+                : !entryDetailsKnown
+                  ? 'Entry Status Unavailable'
+                  : isFull
+                    ? 'Tournament Full'
+                    : `Register (${money(tournament.buyIn)})`}
             </button>
           ))}
         {/* Dan 2026-08-25 (binding): "when I click on a tournament that's

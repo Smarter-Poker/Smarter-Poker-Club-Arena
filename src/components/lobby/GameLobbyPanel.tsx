@@ -412,6 +412,16 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
 
     const t = entry.raw as LobbyTournamentRow;
     const st = entry.status;
+    if (entry.kind === 'unknown') {
+      if (st === 'completed' || st === 'running') {
+        return {
+          label: st === 'completed' ? 'Results' : 'Watch',
+          kind: 'secondary' as const,
+          link: `/tournaments/${entry.id}`,
+        };
+      }
+      return { label: 'Entry Unavailable', kind: 'disabled' as const };
+    }
     // The lobby labels a filled seat-first game Running before the engine
     // starts it. Only the authoritative RUNNING row enables this exception.
     const hasStarted = String(t.status || '').toUpperCase() === 'RUNNING';
@@ -678,7 +688,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       <PlaqueSeats
         players={entry.players}
         capacity={entry.capacity}
-        bareCount={entry.kind === 'mtt'}
+        bareCount={entry.kind === 'mtt' || entry.kind === 'unknown'}
         gameTables={entry.game ? entry.game.tables : null}
       />
       {cta.link && !busy ? (

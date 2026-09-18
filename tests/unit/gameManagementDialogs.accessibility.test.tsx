@@ -77,6 +77,33 @@ describe('Table Management dialogs', () => {
     mocks.confirm.mockResolvedValue(true);
   });
 
+  it.each(['MTT', 'SATELLITE', 'XMTT'])(
+    'editing %s never offers or submits an obsolete entry cap',
+    (tournament_type) => {
+      const onSave = vi.fn();
+      render(
+        <EditGameDialog
+          game={{ ...game, kind: 'tournament', tournament_type, variant: 'sng', maxPlayers: 2 }}
+          busy={false}
+          onClose={vi.fn()}
+          onSave={onSave}
+        />
+      );
+      expect(screen.queryByLabelText('Maximum Players')).toBeNull();
+      fireEvent.change(screen.getByLabelText('Game Name'), { target: { value: 'Evening Event' } });
+      fireEvent.submit(screen.getByRole('dialog'));
+      expect(onSave).toHaveBeenCalledWith({ name: 'Evening Event' });
+    }
+  );
+
+  it('preserves the physical table seat control and update', () => {
+    const onSave = vi.fn();
+    render(<EditGameDialog game={game} busy={false} onClose={vi.fn()} onSave={onSave} />);
+    fireEvent.change(screen.getByLabelText('Maximum Players'), { target: { value: '6' } });
+    fireEvent.submit(screen.getByRole('dialog'));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ maxPlayers: 6 }));
+  });
+
   it('announces the editor as a named modal and restores its trigger focus', async () => {
     const user = userEvent.setup();
     render(<EditHarness />);

@@ -45,6 +45,7 @@ const CSS = read('src/components/lobby/LobbyTable.css');
 
 const tRow = (o: Partial<LobbyTournamentRow> = {}): LobbyTournamentRow =>
   ({
+    format_contract: 'mtt-v1',
     id: 't',
     name: 'Game',
     game_type: 'NLH',
@@ -142,7 +143,9 @@ describe('a missing field cap is not a heads-up', () => {
     );
   });
   it('a real small cap is still a heads-up', () => {
-    expect(classifyTournament(tRow({ variant: 'sng', max_players: 2 }))).toBe('sng');
+    expect(
+      classifyTournament(tRow({ format_contract: 'sng-v1', variant: 'sng', max_players: 2 }))
+    ).toBe('sng');
   });
 });
 
@@ -162,7 +165,13 @@ describe('the statuses the query fetches all have a branch', () => {
   });
   it('a seat-first game in STARTING_SOON still reads its seats', () => {
     const st = tournamentStatus(
-      tRow({ status: 'STARTING_SOON', variant: 'spin', max_players: 3, current_players: 2 })
+      tRow({
+        format_contract: 'spin-v1',
+        status: 'STARTING_SOON',
+        variant: 'spin',
+        max_players: 3,
+        current_players: 2,
+      })
     );
     expect(st.label).toBe('Filling');
   });

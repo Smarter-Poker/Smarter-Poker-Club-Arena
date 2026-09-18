@@ -1,4 +1,9 @@
 import { validateMttBlindStructure } from '../../server/src/domain/tournamentBlindContract';
+import {
+  isUnlimitedMtt,
+  normalizeTournamentMaxPlayers,
+  readPersistedTournamentFormatContract,
+} from '../../server/src/tournament/tournamentEntryCapacity';
 /**
  * ♠ CLUB ARENA — Tournament Service
  * SNGs and MTTs with blind levels and payout structures
@@ -19,6 +24,7 @@ import {
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR } from '../config/spinSpec';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { readTournamentFormat } from '../utils/tournamentPresentation';
 import { retryAsync } from '../utils/retryAsync';
 import { freeBuyConfig, isFreeBuyEvent } from '../utils/freeBuy';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -390,14 +396,13 @@ const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
   buy_in_must_not_be_negative: 'Buy-in cannot be negative.',
   buy_in_must_be_whole: 'Buy-in must be a whole number of chips, with no decimals.',
   bounty_must_be_whole: 'Bounty amount must be a whole number of chips, with no decimals.',
-  max_players_must_be_positive: 'Set a maximum number of players. Zero means nobody can register.',
+  max_players_must_be_positive: 'Choose the number of seats for this Sit And Go or Spin.',
   blind_structure_required: 'Choose a blind structure.',
   custom_level_breaks_not_supported:
     'Custom Level Breaks Are Not Supported. Remove Break Rows And Use The Synchronized Break Setting.',
   payout_structure_required: 'Choose a payout structure.',
   payouts_must_total_100: 'Payout percentages have to add up to 100%.',
-  more_paid_places_than_players:
-    'There are more paid places than players allowed to enter. Raise the field size or pay fewer places.',
+  more_paid_places_than_players: 'This Sit And Go or Spin has more paid places than seats.',
   bounty_amount_required: 'A bounty tournament needs a bounty amount.',
   bounty_exceeds_buy_in:
     'The bounty plus the 10% fee is more than the buy-in, so there would be nothing left for the prize pool.',
@@ -429,7 +434,8 @@ export interface TournamentConfig {
   /** Display only. The fee half of the split; recomputed server-side. */
   rake: number;
   startingStack: number;
-  maxPlayers: number;
+  /** Fixed SNG/Spin field size. MTTs and satellites use null for no entry limit. */
+  maxPlayers: number | null;
   minPlayers: number;
   blindStructure: BlindLevel[];
   payoutStructure: PayoutStructure[];
@@ -648,7 +654,7 @@ class TournamentService {
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, format_contract, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target'
       )
       .eq('club_id', resolvedId)
       // Lobby fix 2026-08-15: this query had NO status filter, so every
@@ -775,7 +781,7 @@ class TournamentService {
           const { data: xmttData, error: xmttErr } = await supabase
             .from('tournaments')
             .select(
-              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+              'id, name, club_id, union_id, game_type, variant, tournament_type, format_contract, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target'
             )
             .eq('union_id', unionClub.union_id)
             // 2026-08-19: dropped `.eq('is_xmtt', true)`. Under the union
@@ -831,7 +837,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, format_contract, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, blind_level_state, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target'
       )
       .eq('id', tournamentId)
       .maybeSingle();
@@ -856,7 +862,18 @@ class TournamentService {
    * refused in createTournament's validation).
    */
   buildRpcConfig(config: TournamentConfig): Record<string, unknown> {
-    if (config.type !== 'sng' && config.type !== 'spin' && config.maxPlayers > 2) {
+    if (
+      config.satelliteTarget?.tournamentId &&
+      (['bounty', 'progressive_bounty', 'mystery_bounty'].includes(config.type) ||
+        config.bountyConfig ||
+        config.spinConfig)
+    ) {
+      throw new Error('Satellites cannot combine ticket prizes with bounty or Spin payouts.');
+    }
+    if (config.satelliteTarget?.tournamentId && (config.type === 'sng' || config.type === 'spin')) {
+      config = { ...config, type: 'satellite' };
+    }
+    if (isUnlimitedMtt(config)) {
       validateMttBlindStructure(config.blindStructure, config.startingStack);
     }
     assertNoNewMttBreakRows(config.blindStructure, config.type);
@@ -869,7 +886,7 @@ class TournamentService {
       gameVariant: config.gameVariant || 'NLH',
       buyIn: config.buyIn,
       startingStack: config.startingStack,
-      maxPlayers: config.maxPlayers,
+      maxPlayers: normalizeTournamentMaxPlayers(config),
       minPlayers: config.minPlayers,
       blindStructure: config.blindStructure,
       payoutStructure: config.payoutStructure,
@@ -1041,7 +1058,7 @@ class TournamentService {
     // presets all contain break entries encoded as smallBlind:0/bigBlind:0, so
     // the old check threw "must not decrease" on EVERY tournament created with
     // a break-containing structure — a hard creation blocker.
-    if (config.type !== 'sng' && config.type !== 'spin' && config.maxPlayers > 2) {
+    if (isUnlimitedMtt(config)) {
       validateMttBlindStructure(config.blindStructure, config.startingStack);
     } else if (config.blindStructure && Array.isArray(config.blindStructure)) {
       const isBreakLevel = (l: any): boolean =>
@@ -1461,7 +1478,9 @@ class TournamentService {
       // start_time to now so the server discovery loop starts it immediately.
       const { data: freshTournament, error: freshErr } = await supabase
         .from('tournaments')
-        .select('current_players, max_players, variant')
+        .select(
+          'current_players, max_players, tournament_type, format_contract, variant, satellite_target_id, satellite_target'
+        )
         .eq('id', tournamentId)
         .maybeSingle();
       // ROUND 8 (2026-08-29): reported, not thrown - the player IS registered,
@@ -1472,10 +1491,23 @@ class TournamentService {
           tournamentId,
         });
       }
+      const freshFormat = freshTournament ? readTournamentFormat(freshTournament) : null;
+      if (!freshErr && freshTournament && freshFormat === null) {
+        // Registration is already committed. A missing projection must not
+        // turn that receipt into a false failure or permit a format guess.
+        reportError(
+          new Error('Tournament format is unavailable'),
+          'TournamentService.SNG_autostart_format_unavailable',
+          { tournamentId }
+        );
+      }
       if (
+        !freshErr &&
         freshTournament?.max_players &&
-        (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
-        (freshTournament.variant === 'sng' || freshTournament.variant === 'spin')
+        (freshFormat === 'sng-v1' ||
+          freshFormat === 'spin-v1' ||
+          freshFormat === 'seat-first-satellite-v1') &&
+        (freshTournament.current_players ?? 0) >= freshTournament.max_players
       ) {
         // DEFECT D7: this was an unchecked `.update()` wrapped in a try/catch.
         // A PostgREST call RESOLVES with `{ error }` instead of throwing, so the
@@ -2593,16 +2625,22 @@ class TournamentService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TOURNAMENT WAITLIST — For full-capacity tournaments with late registration
+  // FIXED-FIELD WAITLIST — MTTs and satellites register directly
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Join the waitlist for a tournament that is at capacity.
+   * Join a fixed-field game's waitlist. MTTs have no entry-cap waitlist.
    */
   async joinTournamentWaitlist(
     tournamentId: string,
     userId: string
   ): Promise<{ position: number }> {
+    const tournament = await this.getTournament(tournamentId, { throwOnError: true });
+    if (!tournament) throw new Error('Tournament Not Found');
+    const format = readPersistedTournamentFormatContract(tournament);
+    if (format === 'mtt-v1' || format === 'mtt-v2') {
+      throw new Error('Register Directly For This Tournament');
+    }
     // Check if already on waitlist
     const { data: existing, error: existingErr } = await supabase
       .from('tournament_waitlists')

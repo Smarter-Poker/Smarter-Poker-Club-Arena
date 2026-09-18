@@ -9,6 +9,7 @@ import {
 } from '../../src/components/lobby/lobbyEntries';
 
 const row = (overrides: Partial<LobbyTournamentRow> = {}): LobbyTournamentRow => ({
+  format_contract: 'mtt-v1',
   id: 'mtt-structure',
   name: 'Deep Stack Turbo Hyper Satellite',
   game_type: 'NLH',

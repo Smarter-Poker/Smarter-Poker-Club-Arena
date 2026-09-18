@@ -305,11 +305,11 @@
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c",
     "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "0c43c6d516c0f72aeb0e5c5ba7c35c70ad16dd3dbe239896bcd83b2b600b21af",
     "tests/fixtures/union-provider-preimages-20260917/money-registry-ddl-guard.sql": "fb4c7ab0022dcc6c404b31470aa73dc9986e32f8855a61304f2d8418e30f4c46",
-    "supabase/migrations/20260917233148_union_pnl_inventory_preserves_original_boundaries.sql": "5570f8735605fe24703e758008f0c1be449714b290fd8aae950871c7ced226bf",
+    "supabase/migrations/20260917233148_union_pnl_inventory_preserves_original_boundaries.sql": "9e737519d38dd98adb8c0589ca46a160fbbaf8e6da4a08a99f9bffdea621320e",
     "scripts/dev/test-union-pnl-inventory.sh": "2ab14cd9ab5448aaea610f32d813addfd9ab96f0d65490ef2533ba12e5068e3e",
     "tests/fixtures/union-pnl-inventory/seed.sql": "6d4bb2e904b0c1b0c1f48247a4ab00367b65ef7210d5ba1781d5dc04702c848e",
     "tests/fixtures/union-pnl-inventory/regression.sql": "37bfad02bbb518377b4d773a15b691690c4af00dc5390fabd2f588bc490f21d1",
-    "tests/fixtures/union-pnl-inventory/concurrency.py": "7a55eec929a05b52c76e4364bf04a70967b601ac0c1bb80903e3bbc76ab1e77b",
+    "tests/fixtures/union-pnl-inventory/concurrency.py": "eb0851c7e04ebb22c14550a72552995a50b23cec259c4656a8ef97b4cc2e0578",
     "tests/fixtures/union-pnl-inventory/README.md": "50bc5d114c3d58bbc94fd63631bde458c5e5b0c9463d83b9720a2ce77753ec5e",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08"
   },

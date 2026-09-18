@@ -50,6 +50,7 @@ migration=(root/'supabase/migrations/20260917233148_union_pnl_inventory_preserve
 admission=re.findall(r'^LOCK TABLE .+?;$',migration,re.M)
 assert len(admission)==2 and admission[0]=='LOCK TABLE public.table_seats IN SHARE ROW EXCLUSIVE MODE;'
 assert admission[1].endswith(' NOWAIT;')
+admission=re.findall(r'^(?:SET LOCAL lock_timeout|LOCK TABLE).+?;$',migration,re.M)
 writer=connection('inventory_install_fixed_writer')
 write(writer,"BEGIN; UPDATE table_seats SET stack=stack; SELECT 'seat-owned';")
 until(writer,'seat-owned')

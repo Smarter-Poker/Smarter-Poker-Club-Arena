@@ -23,7 +23,7 @@ import {
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import type { HorseJournalArchiveOptions } from './config.js';
+import { HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES, type HorseJournalArchiveOptions } from './config.js';
 import { isAbsolute, join } from 'node:path';
 import { horseJournalJson, validateHorseJournalRecord, type HorseJournalRecord } from './record.js';
 
@@ -244,7 +244,7 @@ class LegacyHorseJournalStore {
 }
 
 const DECODE_BYTES = 4 * 1024 * 1024;
-const CATALOG_BYTES = 2 * 1024 * 1024 * 1024;
+const CATALOG_PAGES = HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES / 4096;
 const SHA = /^[0-9a-f]{64}$/;
 const digest = (bytes: Uint8Array | string): string =>
   createHash('sha256').update(bytes).digest('hex');
@@ -447,11 +447,11 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
       if (this.archiveReadOnly) db.exec('PRAGMA query_only=ON;');
       else {
         db.exec(
-          'PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON; PRAGMA max_page_count=524288;'
+          `PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON; PRAGMA max_page_count=${CATALOG_PAGES};`
         );
         if (
           db.prepare('PRAGMA page_size').get()!.page_size !== 4096 ||
-          db.prepare('PRAGMA max_page_count').get()!.max_page_count !== 524288 ||
+          db.prepare('PRAGMA max_page_count').get()!.max_page_count !== CATALOG_PAGES ||
           db.prepare('PRAGMA journal_mode').get()!.journal_mode !== 'delete' ||
           db.prepare('PRAGMA synchronous').get()!.synchronous !== 3 ||
           db.prepare('PRAGMA fullfsync').get()!.fullfsync !== 1
@@ -888,7 +888,9 @@ export class HorseDecisionJournalStore extends LegacyHorseJournalStore {
           catalogBytes: Number(this.catalog.prepare('PRAGMA page_count').get()!.page_count) * 4096,
           maxBytes: Number(usage.max_bytes),
           maxSegments: Number(usage.max_segments),
-          maxCatalogBytes: CATALOG_BYTES,
+          // Source policy of this reader's release, not the connection-local
+          // pragma default of a read-only observer or another running writer.
+          maxCatalogBytes: HORSE_JOURNAL_ARCHIVE_CATALOG_BYTES,
         };
         this.catalog.exec('COMMIT');
       } catch (e) {

@@ -40,6 +40,7 @@ import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
 import {
+  readCommittedTournamentTerminalReceipt,
   requestTournamentTerminalReceipt,
   TerminalSettlementDisagreementError,
   TerminalSettlementOutcomeUnknownError,
@@ -3901,6 +3902,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     revision: string | null;
     closingReason?: 'stale' | 'expired' | 'cancelled';
   } | null = null;
+
+  protected override async adoptCommittedTerminalOutcome(): Promise<boolean> {
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return false;
+    try {
+      const receipt = await readCommittedTournamentTerminalReceipt(this.tournamentId);
+      if (!this.lifecycleIsCurrent(lifecycle) || !receipt) return false;
+      const cleaned =
+        receipt.settlementMode === 'final_table_deal'
+          ? await this.settleFinalTableDeal(receipt)
+          : await this.cleanupCommittedTournament(receipt);
+      if (!cleaned && this.running)
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return true;
+    } catch (error) {
+      reportError(error, 'Tournament.external_terminal_receipt_unproven');
+      return false;
+    }
+  }
 
   /**
    * Resume only the non-money tail of an already committed terminal receipt.

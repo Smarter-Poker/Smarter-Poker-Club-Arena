@@ -21,6 +21,8 @@ EXCLUDED = {'spin_draw_receipts', 'tournament_launch_receipts', 'hand_history',
             'accounting_tournament_fee_recognitions', 'accounting_tournament_recognized_sources'}
 
 
+RESTORATION_COLUMNS = {'entry_purchase_idempotency_receipts': ['claimed_at', 'completed_at', 'idempotency_key', 'key_domain', 'request', 'response'], 'club_wallets': ['chip_balance', 'club_id', 'created_at', 'id', 'insurance_balance', 'lifetime_bbj_contribution', 'lifetime_commission_paid', 'lifetime_rake_collected', 'period_bbj_contribution', 'period_commission_paid', 'period_rake_collected', 'period_started_at', 'updated_at'], 'union_wallets': ['bbj_wallet', 'chip_balance', 'created_at', 'id', 'insurance_wallet', 'promo_wallet', 'rake_wallet', 'spin_reserve_wallet', 'total_rake_collected', 'total_settlements', 'union_id', 'updated_at'], 'union_clubs': ['club_commission_rate', 'club_id', 'id', 'joined_at', 'rate_cash', 'rate_mtt', 'rate_satellite', 'rate_sng', 'rate_spin', 'union_id'], 'accounting_agreement_history': ['actor_id', 'after_terms', 'before_terms', 'club_id', 'entity_key', 'entity_type', 'event_type', 'id', 'observed_at', 'subject_user_id', 'transaction_id', 'union_id'], 'union_pnl_transaction_frames': ['book_start', 'observed_at', 'transaction_id'], 'union_pnl_inventory_events': ['after_row', 'before_row', 'event_id', 'observed_at', 'operation', 'row_id', 'source_name', 'transaction_id'], 'ca_op_claims': ['claimed_at', 'claimed_by', 'finalized_at', 'fn_name', 'op_id', 'result'], 'ca_mint_policy': ['id', 'note', 'per_operation_cap_chips', 'per_operation_cap_diamonds', 'rolling_24h_cap_chips', 'rolling_24h_cap_diamonds', 'updated_at', 'updated_by']}
+
 def require(ok, label):
     if not ok:
         raise ValueError('positive-fee entry evidence: ' + label)
@@ -129,6 +131,45 @@ def _decode(raw):
                     'unrecognized non-JSON stdout')
     require([x['stage'] for x in answer] == STAGES, 'exact stage sequence, once each')
     return {x['stage']: x for x in answer}
+
+
+
+def validate_restoration_inputs(value, q):
+    """Lossless bounded raw input witness; does not infer absent rows or outputs."""
+    fields(value, kind='genuine-entry-restoration-inputs-v1', complete=True, historical_evidence=False)
+    require(set(value) == {'kind','complete','historical_evidence','relations'}, 'restoration envelope fields')
+    relation = value['relations']
+    require(isinstance(relation, dict) and set(relation) == set(RESTORATION_COLUMNS), 'restoration relation inventory')
+    for name, expected_columns in RESTORATION_COLUMNS.items():
+        item = relation[name]
+        require(set(item) == {'columns','row_count','rows','rows_jsonb_text','rows_md5','complete'}, 'restoration relation fields')
+        fields(item, complete=True)
+        require(item['columns'] == expected_columns, 'complete captured columns ' + name)
+        require(type(item['row_count']) is int and 0 <= item['row_count'] <= 256 and
+                isinstance(item['rows'], list) and len(item['rows']) == item['row_count'], 'restoration count ' + name)
+        body = item['rows_jsonb_text']
+        require(isinstance(body,str) and len(body.encode()) <= 262144 and
+                hashlib.md5(body.encode()).hexdigest() == item['rows_md5'], 'restoration raw bytes ' + name)
+        require(_jsonb_text(item['rows']) == body, 'restoration full JSON value ' + name)
+        require(all(isinstance(r,dict) and sorted(r) == expected_columns for r in item['rows']),
+                'restoration whole rows ' + name)
+        serialized = [_jsonb_text(r) for r in item['rows']]
+        require(len(set(serialized)) == len(serialized), 'restoration duplicate rows ' + name)
+    require(len(_jsonb_text(relation).encode()) <= 1048576, 'restoration total byte cap')
+    history = relation['accounting_agreement_history']['rows']
+    for member in q['membership_history']:
+        require(sum(row == member for row in history) == 1, 'restoration original membership equality')
+    frames = {row['transaction_id']: row for row in relation['union_pnl_transaction_frames']['rows']}
+    require(len(frames) == relation['union_pnl_transaction_frames']['row_count'], 'unique restoration frame')
+    for flow in q['original_flows']:
+        require(flow['transaction_id'] in frames and
+                frames[flow['transaction_id']]['observed_at'] == flow['recognized_at'], 'original flow frame binding')
+    for row in relation['club_wallets']['rows']:
+        require(row['club_id'] == q['club'], 'restoration club wallet scope')
+    for row in relation['union_wallets']['rows']:
+        require(row['union_id'] == q['club'], 'restoration Union wallet scope')
+    for row in relation['union_clubs']['rows']:
+        require(row['club_id'] == row['union_id'] == q['club'], 'restoration Union membership scope')
 
 
 def validate_output(raw: bytes, execution: str, tournament: str):
@@ -296,6 +337,7 @@ def validate_output(raw: bytes, execution: str, tournament: str):
         require(before<=instant(f['recognized_at'])<=observed, 'original flow observation time')
         require(f['game_scope']=={'game_union_id':execution,'host_club_id':execution,'tournament_id':tournament,
                                  'is_private':False,'asset':'chips','unit_scale':2}, 'original flow scope')
+    validate_restoration_inputs(q['restoration_inputs'], q)
     # Independently connect emitted request receipts to the raw committed estate.
     receipts=q['request_receipts']
     require(set(receipts)=={'mint','bank1','bank2','bank3','create','seat1','seat2','seat3'}, 'fresh request receipt set')
@@ -333,7 +375,7 @@ def validate_output(raw: bytes, execution: str, tournament: str):
     return {'status':'entry_output_validated','execution':execution,'tournament':tournament,
             'stdout_sha256':hashlib.sha256(raw).hexdigest(),'stage_count':len(STAGES),'paid_entrants':3,
             'issued':'100.00','treasury':'97.00','reserve':'2.76','fee_liability':'0.24','fee_credit_each':'0.08',
-            'fee_sources':3,'original_entry_flows':3,'seat_replay_unchanged':True,'book_replay_unchanged':True,
+            'fee_sources':3,'original_entry_flows':3,'restoration_inputs_verified':True,'seat_replay_unchanged':True,'book_replay_unchanged':True,
             'replay_estate_digest_md5':digest,'process_exit_verified':False,'stderr_verified':False,
             'source_custody_verified':False,'backend_cleanup_verified':False,'allocation_disposal_verified':False,
             'full_financial_qualification':False,'mixed_history_qualification':False,'terminal_qualification':False,
@@ -447,6 +489,19 @@ def _control_records():
                          'game_scope':{'game_union_id':execution,'host_club_id':execution,'tournament_id':tournament,
                                        'is_private':False,'asset':'chips','unit_scale':2}}
                         for n,leg in enumerate([r for r in q['source_journals'] if r['category']=='tournament_buyin'],1)]
+    restoration = {}
+    for name, cols in RESTORATION_COLUMNS.items():
+        data = []
+        if name == 'accounting_agreement_history':
+            data = [{**dict.fromkeys(cols), **row} for row in q['membership_history']]
+            q['membership_history'] = data
+        if name == 'union_pnl_transaction_frames':
+            data = [{'transaction_id':str(n),'observed_at':at,'book_start':at} for n in range(1,4)]
+        body = _jsonb_text(data)
+        restoration[name] = {'columns':cols, 'rows':data, 'row_count':len(data), 'rows_jsonb_text':body,
+                             'rows_md5':hashlib.md5(body.encode()).hexdigest(), 'complete':True}
+    q['restoration_inputs'] = {'kind':'genuine-entry-restoration-inputs-v1', 'complete':True,
+                               'historical_evidence':False, 'relations':restoration}
     q['request_receipts']=receipts
     for name,receipt in receipts.items(): states[('creator' if name=='create' else name)+'_committed']['receipt']=receipt
     digest='1'*32
@@ -509,6 +564,14 @@ def run_negative_controls():
     edit('wrong Mint transaction',(lambda q,r:q['chip_transactions'][-1].__setitem__('amount',99)))
     edit('restart source',(lambda q,r:q['tournament_row'].__setitem__('restart_source_id',tournament)))
     edit('bank receipt names wrong transaction',(lambda q,r:q['request_receipts']['bank1'].__setitem__('transaction_id',tournament)))
+    edit('restoration missing',(lambda q,r:q.pop('restoration_inputs')))
+    edit('restoration relation omitted',(lambda q,r:q['restoration_inputs']['relations'].pop('entry_purchase_idempotency_receipts')))
+    edit('restoration wrong columns',(lambda q,r:q['restoration_inputs']['relations']['club_wallets']['columns'].pop()))
+    edit('restoration row count',(lambda q,r:q['restoration_inputs']['relations']['club_wallets'].__setitem__('row_count',1)))
+    edit('restoration body hash',(lambda q,r:q['restoration_inputs']['relations']['club_wallets'].__setitem__('rows_md5','0'*32)))
+    edit('restoration body disagreement',(lambda q,r:q['restoration_inputs']['relations']['accounting_agreement_history']['rows'][0].__setitem__('actor_id',OWNER)))
+    edit('restoration false completeness',(lambda q,r:q['restoration_inputs'].__setitem__('complete',False)))
+    edit('restoration historical claim',(lambda q,r:q['restoration_inputs'].__setitem__('historical_evidence',True)))
     valid=encode(original)
     negatives += [('duplicate JSON key',valid.replace(b'"stage":',b'"stage":"shadow", "stage":',1)),
                   ('nonfinite NaN',valid.replace(b'"fee_amount": 0.24',b'"fee_amount": NaN',1)),

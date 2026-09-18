@@ -345,7 +345,7 @@ class PositiveFeeEntryTests(unittest.TestCase):
 
     def test_independent_paid_entry_oracle_rejects_corrupted_original_evidence(self):
         root = Path(__file__).resolve().parents[2]
-        self.assertEqual(W.FEE.load_oracle(root).run_negative_controls(), 38)
+        self.assertEqual(W.FEE.load_oracle(root).run_negative_controls(), 46)
 
     def files(self):
         root = Path(__file__).resolve().parents[2]

@@ -8,12 +8,12 @@
       "sha256": "a9e1aee8289be8d4fffb89ad33a5b3d0ab11c4a2afb3b02d2d803439e667835d"
     },
     "scripts/qualification/spin-positive-fee-entry-oracle.py": {
-      "bytes": 40902,
-      "sha256": "4d45eb62b66b75681c0688e1c38b30a555ed66fa4080921b5f8ec4512f1081a4"
+      "bytes": 47098,
+      "sha256": "7cce48c16acfdb7b681569d5361b7fe8dd8bbfed3a5af49fed7c473846adb2b9"
     },
     "scripts/qualification/spin-mixed-positive-fee-entry.sql": {
-      "bytes": 49416,
-      "sha256": "2b291e44257b655cd92de11cbd4ca562dd583a9145b5b3bb350805a9065342cf"
+      "bytes": 51514,
+      "sha256": "ae7e95c5cc55ad0956c5bd1ea5d2c7d1fcfb6b696bbdc24bcdb72f1eddd7ef18"
     },
     "scripts/qualification/fixtures/spin-mixed-positive-fee/provider-supplement.sql": {
       "bytes": 512502,

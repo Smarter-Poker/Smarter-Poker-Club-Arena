@@ -1,8 +1,8 @@
 import { test, expect, vi, afterEach } from 'vitest';
-const io = vi.hoisted(() => ({ loadTable: vi.fn() }));
+const io = vi.hoisted(() => ({ loadTournamentBlinds: vi.fn() }));
 vi.mock('../services/supabase.js', async (importOriginal) => ({
   ...(await importOriginal<any>()),
-  loadTable: io.loadTable,
+  loadTournamentBlinds: io.loadTournamentBlinds,
 }));
 import { ServerTableEngine } from './ServerTableEngine.js';
 class Engine extends ServerTableEngine {
@@ -41,6 +41,9 @@ class Engine extends ServerTableEngine {
   changeLifecycle() {
     this.tableInfo!.lifecycle = 'breaking';
   }
+  changeTournament() {
+    this.tableInfo!.tournament_id = 'replacement';
+  }
   dropOwnerForReplacement() {
     (this.constructor as any).liveEngines.delete(this.tableId);
   }
@@ -55,14 +58,15 @@ function create() {
 afterEach(async () => {
   vi.useRealTimers();
   for (const e of engines.splice(0)) await e.stop();
-  io.loadTable.mockReset();
+  io.loadTournamentBlinds.mockReset();
 });
 const fresh = { small_blind: 20, big_blind: 40, ante: 5 };
 test('successful actual blind refresh applies metadata and emits only when changed', async () => {
   const e = create();
-  io.loadTable.mockResolvedValue(fresh);
+  io.loadTournamentBlinds.mockResolvedValue(fresh);
   await e.refresh();
   expect(e.meta()).toMatchObject(fresh);
+  expect(io.loadTournamentBlinds).toHaveBeenCalledWith((e as any).tableId, 'original');
   expect(e.events()).toHaveBeenCalledTimes(1);
   await e.refresh();
   expect(e.events()).toHaveBeenCalledTimes(1);
@@ -71,7 +75,7 @@ test('budget timeout does not release actual continuation; stop waits for delaye
   vi.useFakeTimers();
   const e = create();
   let resolve!: (v: any) => void;
-  io.loadTable.mockImplementation(() => new Promise((r) => (resolve = r)));
+  io.loadTournamentBlinds.mockImplementation(() => new Promise((r) => (resolve = r)));
   const timed = e.bounded(20);
   const rejected = expect(timed).rejects.toThrow('deal_step_timeout');
   await vi.advanceTimersByTimeAsync(21);
@@ -87,12 +91,12 @@ test('budget timeout does not release actual continuation; stop waits for delaye
   expect(e.meta()).toMatchObject({ small_blind: 10, big_blind: 20, ante: 0 });
   expect(e.events()).not.toHaveBeenCalled();
   await e.refresh();
-  expect(io.loadTable).toHaveBeenCalledTimes(1);
+  expect(io.loadTournamentBlinds).toHaveBeenCalledTimes(1);
 });
 test('delayed reply after metadata lifecycle replacement cannot alter replacement metadata', async () => {
   const e = create();
   let resolve!: (v: any) => void;
-  io.loadTable.mockImplementation(() => new Promise((r) => (resolve = r)));
+  io.loadTournamentBlinds.mockImplementation(() => new Promise((r) => (resolve = r)));
   const pending = e.refresh();
   e.replaceMetadata();
   resolve(fresh);
@@ -103,7 +107,7 @@ test('delayed reply after metadata lifecycle replacement cannot alter replacemen
 test('delayed original reply cannot emit or update after actual process-slot replacement', async () => {
   const e = create();
   let resolve!: (v: any) => void;
-  io.loadTable.mockImplementation(() => new Promise((r) => (resolve = r)));
+  io.loadTournamentBlinds.mockImplementation(() => new Promise((r) => (resolve = r)));
   const pending = e.refresh();
   e.dropOwnerForReplacement();
   const replacement = new Engine((e as any).tableId);
@@ -119,7 +123,7 @@ test('delayed original reply cannot emit or update after actual process-slot rep
 test('stop during retry backoff retains continuation and prevents another read', async () => {
   vi.useFakeTimers();
   const e = create();
-  io.loadTable.mockRejectedValue(Error('fetch failed'));
+  io.loadTournamentBlinds.mockRejectedValue(Error('fetch failed'));
   const pending = e.refresh();
   await vi.advanceTimersByTimeAsync(1);
   let stopped = false;
@@ -131,14 +135,14 @@ test('stop during retry backoff retains continuation and prevents another read',
   await vi.advanceTimersByTimeAsync(500);
   await pending;
   await stop;
-  expect(io.loadTable).toHaveBeenCalledTimes(1);
+  expect(io.loadTournamentBlinds).toHaveBeenCalledTimes(1);
   expect(e.events()).not.toHaveBeenCalled();
 });
 
 test('same metadata object with changed lifecycle discards a delayed reply', async () => {
   const e = create();
   let resolve!: (v: any) => void;
-  io.loadTable.mockImplementation(() => new Promise((r) => (resolve = r)));
+  io.loadTournamentBlinds.mockImplementation(() => new Promise((r) => (resolve = r)));
   const pending = e.refresh();
   e.changeLifecycle();
   resolve(fresh);
@@ -146,14 +150,37 @@ test('same metadata object with changed lifecycle discards a delayed reply', asy
   expect(e.meta()).toMatchObject({ lifecycle: 'breaking', big_blind: 20 });
   expect(e.events()).not.toHaveBeenCalled();
 });
+test('a reassigned tournament discards the prior event reply even on the same metadata object', async () => {
+  const e = create();
+  let resolve!: (v: any) => void;
+  io.loadTournamentBlinds.mockImplementation(() => new Promise((r) => (resolve = r)));
+  const pending = e.refresh();
+  e.changeTournament();
+  resolve(fresh);
+  await pending;
+  expect(e.meta()).toMatchObject({ tournament_id: 'replacement', big_blind: 20 });
+  expect(e.events()).not.toHaveBeenCalled();
+});
+test('a reassigned tournament stops retries for the prior event', async () => {
+  vi.useFakeTimers();
+  const e = create();
+  io.loadTournamentBlinds.mockRejectedValueOnce(Error('fetch failed')).mockResolvedValueOnce(fresh);
+  const pending = e.refresh();
+  await vi.advanceTimersByTimeAsync(1);
+  e.changeTournament();
+  await vi.advanceTimersByTimeAsync(501);
+  await pending;
+  expect(io.loadTournamentBlinds).toHaveBeenCalledTimes(1);
+  expect(e.events()).not.toHaveBeenCalled();
+});
 test('current owner preserves the existing transient retry and successful update', async () => {
   vi.useFakeTimers();
   const e = create();
-  io.loadTable.mockRejectedValueOnce(Error('fetch failed')).mockResolvedValueOnce(fresh);
+  io.loadTournamentBlinds.mockRejectedValueOnce(Error('fetch failed')).mockResolvedValueOnce(fresh);
   const pending = e.refresh();
   await vi.advanceTimersByTimeAsync(501);
   await pending;
-  expect(io.loadTable).toHaveBeenCalledTimes(2);
+  expect(io.loadTournamentBlinds).toHaveBeenCalledTimes(2);
   expect(e.meta()).toMatchObject(fresh);
   expect(e.events()).toHaveBeenCalledTimes(1);
 });

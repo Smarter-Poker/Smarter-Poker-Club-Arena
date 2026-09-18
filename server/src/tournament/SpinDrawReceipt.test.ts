@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { sliceMethod } from '../testHelpers/sourceWindow.js';
 import { SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import { continueBookedSpinBlinds, spinRuleManifest } from './SpinDrawReceipt.js';
+import { isPersistedSpin } from './tournamentEntryCapacity.js';
 
 const source = readFileSync(join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'), 'utf8');
 const method = sliceMethod(source, 'protected resolveBlindLevel(');
@@ -39,13 +40,19 @@ describe('the complete Spin rules survive a newer engine', () => {
 
   it('the production manager uses the stored overflow formula instead of newer local rules', () => {
     const futureLocalRule = vi.fn(() => ({ small: 123456, big: 246912 }));
-    const resolve = new Function('continueBookedSpinBlinds', 'spinBlindsForLevel', compiled)(
-      continueBookedSpinBlinds,
-      futureLocalRule
-    );
+    const resolve = new Function(
+      'continueBookedSpinBlinds',
+      'spinBlindsForLevel',
+      'isPersistedSpin',
+      compiled
+    )(continueBookedSpinBlinds, futureLocalRule, isPersistedSpin);
     const stored = spinRuleManifest(1, 300).tiers[0].blind_structure;
     const restarted = JSON.parse(JSON.stringify(stored));
-    const actual = resolve.call({ tournamentCache: { variant: 'spin' } }, restarted, 20);
+    const actual = resolve.call(
+      { tournamentCache: { variant: 'spin', format_contract: 'spin-v1' } },
+      restarted,
+      20
+    );
     const expected = spinBlindsForLevel(21);
     expect(actual).toMatchObject({
       level: 21,

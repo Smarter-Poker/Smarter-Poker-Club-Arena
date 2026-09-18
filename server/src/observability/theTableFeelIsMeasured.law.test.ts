@@ -190,19 +190,30 @@ describe('LAW 5 - every format is measured, not just cash (Dan 2026-09-05)', () 
     const row = (o: Record<string, unknown>) =>
       ({
         id: 't',
+        format_contract: 'mtt-v1',
+        effective_max_players: 200,
         tournament_type: null,
         variant: null,
         starting_stack: 1000,
         ...o,
       }) as never;
-    expect(deriveContext(row({ tournament_type: 'SPIN' }), 2, 3, 3000).format).toBe('spin');
-    expect(deriveContext(row({ variant: 'spin' }), 2, 3, 3000).format).toBe('spin');
+    expect(
+      deriveContext(row({ format_contract: 'spin-v1', tournament_type: 'SPIN' }), 2, 3, 3000).format
+    ).toBe('spin');
+    expect(
+      deriveContext(row({ format_contract: 'spin-v1', variant: 'spin' }), 2, 3, 3000).format
+    ).toBe('spin');
     // Heads-up is derived from seats at one table, not from a type string.
-    expect(seatsAtOneTable({ table_size: 2 })).toBe(2);
-    expect(seatsAtOneTable({})).toBe(9);
-    expect(deriveContext(row({ tournament_type: 'SNG', table_size: 2 }), 2, 2, 2000).format).toBe(
-      'hu_sng'
-    );
+    expect(seatsAtOneTable({ format_contract: 'sng-v1', table_size: 2 })).toBe(2);
+    expect(seatsAtOneTable({ format_contract: 'mtt-v1' })).toBe(9);
+    expect(
+      deriveContext(
+        row({ format_contract: 'sng-v1', tournament_type: 'SNG', table_size: 2 }),
+        2,
+        2,
+        2000
+      ).format
+    ).toBe('hu_sng');
     expect(
       deriveContext(row({ tournament_type: 'MTT', table_size: 9 }), 50, 200, 200000).format
     ).toBe('mtt');

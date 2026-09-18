@@ -204,6 +204,7 @@ function tournamentTransport() {
     id: T,
     status: 'RUNNING',
     tournament_type: 'mtt',
+    format_contract: 'mtt-v1',
     current_level: 0,
     blind_structure: [{ smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 }],
     level_started_at: '2026-09-11T12:45:30.000Z',

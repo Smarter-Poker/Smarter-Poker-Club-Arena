@@ -50,10 +50,17 @@ Validation of the final source:
   cases and 26 original-payload cases. Server TypeScript compilation passed.
   Before-source controls failed one snapshot-order law, five original-payload
   cases and eight startup cases; restored source passes.
-- Existing CI selectors: 448 cases; the required Accounting job invokes the
+- Final composed CI selectors: 487 cases; the required Accounting job invokes the
   native qualifier and retains its artifacts. Its joining Server Engine check
   remains unchanged. Cash's six directly reading source contracts pass after
   refreshing only the three modified workflow/selector inputs.
+
+The exact three-way runtime composition preserves journal continuation before
+admission, positive last-table no-start continuation, then canonical movement-only
+admission. The independent connected run passed 132 distinct cases and the server
+compiler. All production postimages match that evidence; normal formatting only
+changed test layout. Movement-only engines cannot enter journal crash recovery or
+become dealers through ordinary pause release. Its 13 result-validator cases pass.
 
 The fixture composes the independently captured installed no-start successor
 from provider version 20260918123246 and preserves its predecessor capture.

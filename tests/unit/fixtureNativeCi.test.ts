@@ -239,6 +239,40 @@ describe('required CI owns native fixture verification', () => {
   });
 
   it.each([
+    'scripts/ci/test-f06-accepted-elimination.py',
+    'scripts/ci/build-f06-elimination-migration.py',
+    'scripts/ci/probes/f06-accepted-elimination.sql',
+    'scripts/ci/probes/f06-accepted-elimination.spec',
+    'scripts/ci/fixtures/f06-accepted-elimination/current-authorities-20260918.json',
+    'tests/operations/f06-elimination-results.test.py',
+    'supabase/migrations/20260918082449_accepted_elimination_preserves_f06_source_custody.sql',
+  ])('enforces accepted elimination custody qualification for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+
+  it('runs the actual accepted elimination callers and retains failures', () => {
+    const steps = ci.jobs.accounting_postgres.steps;
+    const native = steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-f06-accepted-elimination.py')
+    );
+    expect(native).toHaveLength(1);
+    expect(native[0].id).toBe('f06_accepted_elimination');
+    expect(native[0].run).toContain('tests/operations/f06-elimination-results.test.py');
+    expect(native[0].run).toContain('--pg-bin "$PG_BIN"');
+    expect(native[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
+    expect(native[0].env.PG_ISOLATION_TESTER).toContain('isolationtester');
+    expect(native[0]['continue-on-error']).toBeUndefined();
+    expect(native[0].if).toBeUndefined();
+    const artifact = steps.find(
+      (step: { name?: string }) => step.name === 'Retain accepted elimination custody evidence'
+    );
+    expect(artifact.uses).toBe('actions/upload-artifact@v4');
+    expect(artifact.if).toContain('always()');
+    expect(artifact.if).toContain('steps.f06_accepted_elimination.outcome');
+    expect(artifact.with['if-no-files-found']).toBe('error');
+  });
+
+  it.each([
     'scripts/ci/test-f06-shared-hand-lane.py',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/successor_qualification.py',
@@ -455,9 +489,46 @@ describe('required CI owns native fixture verification', () => {
     }
   );
 
+  it('keeps the real public watermark qualification in the existing PKO gate', () => {
+    const step = ci.jobs['accounting_postgres'].steps.find(
+      (item: { name?: string }) =>
+        item.name === 'PKO heads follow exact accepted knockout dependencies'
+    );
+    expect(step.env.PG_ISOLATION_TESTER).toBe(
+      '${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester'
+    );
+    const runner = readFileSync(
+      join(root, 'scripts/dev/probe-causal-pko-predecessors-pg17.sh'),
+      'utf8'
+    );
+    const probe = readFileSync(
+      join(root, 'scripts/dev/fixtures/causal-pko-predecessors/full-native.py'),
+      'utf8'
+    );
+    expect(runner).toContain(
+      'python3 -B "$FIX/full-native.py" --root "$ROOT" --evidence "$TMP/full-financial" --pg-bin "$BIN"'
+    );
+    expect(runner.indexOf('python3 -B "$FIX/full-native.py"')).toBeLessThan(
+      runner.indexOf("echo 'PASS: causal PKO admission")
+    );
+    expect(probe).toContain('qualify_installation(e,root,db)');
+    expect(probe).toContain('if shared:qualify_races(e,root,native,scene)');
+    expect(probe).toContain('for shared in [False,True]:');
+    expect(probe).toContain('for repaired in [False,True]:');
+    expect(probe).toContain("raise RuntimeError('race verdict accepted missing/false evidence')");
+  });
+
   it.each([
     'scripts/dev/probe-causal-pko-predecessors-pg17.sh',
     'scripts/dev/fixtures/causal-pko-predecessors/qualification.sql',
+    ...[
+      'full-native.py',
+      'full-opening.sql',
+      'full-cases.sql',
+      'full-race.spec',
+      'watermark-commuting.sql',
+      'watermark-refusals.sql',
+    ].map((file) => `scripts/dev/fixtures/causal-pko-predecessors/${file}`),
     'scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh',
     'scripts/dev/probe-committed-payout-terms-pg17.py',
     'scripts/dev/probe-tournament-create-payout-depth-pg17.py',

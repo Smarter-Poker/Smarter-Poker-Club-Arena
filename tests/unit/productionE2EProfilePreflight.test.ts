@@ -458,7 +458,17 @@ describe('authenticated production account preflight', () => {
     expect(lobby).toContain("locator('.arena-game-card')");
     expect(lobby).toContain('.lt-row[data-kind="cash"]');
     expect(lobby).toContain("locator('.agc-action--primary')");
-    expect(lobby).toContain('test.setTimeout(75_000)');
+    // Every fresh lobby context can take the cold read, including the first
+    // shell case. A timeout inside only one test does not protect its siblings.
+    expect(lobby).toMatch(
+      /test\.describe\('Club lobby', \(\) => \{\s*(?:\/\*[\s\S]*?\*\/\s*)?test\.describe\.configure\(\{ timeout: 75_000 \}\);/
+    );
+    const settle = lobby.slice(
+      lobby.indexOf('async function lobbySettled'),
+      lobby.indexOf("test.describe('Club lobby'")
+    );
+    expect(settle).toContain("waitFor({ state: 'visible', timeout: 45000 });");
+    expect(settle).not.toContain('.catch(');
     expect(lobby).toContain(
       "import { prepareCashLobbyActions } from './support/cashLobbyOverlays'"
     );

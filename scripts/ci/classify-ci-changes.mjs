@@ -17,7 +17,7 @@ const mttPreparation =
 const mttActivation =
   /^(scripts\/ci\/(mtt_activation_native\.py$|mtt_activation_funding\.py$|mtt_activation_satellite\.py$|satellite_qualifier_fixture\.py$|mtt_break_authoring_native\.py$|fixtures\/(mtt-format-activation|satellite-qualifiers|mtt-break-authoring)\/|probes\/mtt-activation\/)|tests\/operations\/mtt-activation-results\.test\.py$)/;
 const f06HandAuthority =
-  /^scripts\/ci\/(?:test-f06-shared-hand-lane\.py$|probes\/f06-shared-hand-lane\/|(?:test-hand-submission|build-hand-submission-migration)\.py$|probes\/hand-submission-[a-z-]+\.(?:sql|spec)$|fixtures\/hand-submission\/)/;
+  /^(?:scripts\/ci\/(?:test-f06-shared-hand-lane\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration)\.py$|fixtures\/f06-accepted-elimination\/|probes\/f06-(?:shared-hand-lane\/|accepted-elimination\.(?:sql|spec)$)|(?:test-hand-submission|build-hand-submission-migration)\.py$|probes\/hand-submission-[a-z-]+\.(?:sql|spec)$|fixtures\/hand-submission\/)|tests\/operations\/f06-elimination-results\.test\.py$)/;
 const fixture =
   /^(operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 

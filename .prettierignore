@@ -167,6 +167,7 @@ tests/fixtures/weekly-union-continuation/RUNNER.md
 
 # Exact captured installed money-DDL authority; byte-bound by the native fixture.
 scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json
+scripts/ci/fixtures/f06-accepted-elimination/current-authorities-20260918.json
 
 # Exact captured original-funding authorities, byte-bound by activation proofs.
 scripts/ci/fixtures/mtt-format-activation/funding-authorities-20260918.json

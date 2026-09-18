@@ -9,16 +9,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 140250,
-      "sha256": "c51ff2d7076ab617483160922d3973c7a385193743ad2cb0df55f42d6d0ead5f"
+      "bytes": 141427,
+      "sha256": "94ec280b980b29ba5450cfea1eebf05449e97b8bdeb60b0c8de7861ce244fe4b"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 16488,
-      "sha256": "0a5231d0ae7296bc9688aa0ac0876798ed1735d77105ef3257d30ac5d2b70ae7"
+      "bytes": 16694,
+      "sha256": "943b980c8b9583a80e6eada4902dde27921dd7cc6ff2d72c5f4f71f66c21a35d"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -113,8 +113,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 69525,
-      "sha256": "bfc5ba6a0feb0a8e4be4844976de648f19a10ce14a7cab4970be59969534a735"
+      "bytes": 72921,
+      "sha256": "6875c136af6dc06ac44cf70b125f2ef3f8439b505097515415c92f26f5f9a181"
     }
   },
   "nativePgCron": {
@@ -144,6 +144,24 @@
         "bytes": 67917,
         "sha256": "34e81f4c7bdbfe4678ea8ff6b437a025e2a601bc43f46ceea07793b3f65c5a6f"
       }
+    },
+    "mainIntegration": {
+      "revision": "59759374f63503f046b00fc54d3e0c161b87a0f4",
+      "previousPins": {
+        ".github/workflows/ci.yml": {
+          "bytes": 140716,
+          "sha256": "f223211fc49a26cadaca69b275569d416b36565d612052ab2298d5dba3d97687"
+        },
+        "scripts/ci/classify-ci-changes.mjs": {
+          "bytes": 16557,
+          "sha256": "ee1fa3415e1831343f58c75c8134f0f4ab4c7451d398c37de70b08042159e5c9"
+        },
+        "tests/unit/fixtureNativeCi.test.ts": {
+          "bytes": 71313,
+          "sha256": "181f6a80a9c4e837bfabd226ffacb0d2d725b64791b15d25ca8bf4dc0cf28b67"
+        }
+      },
+      "reason": "Preserves accepted elimination, Spin fee, PKO and cash-week routes while adding the same retained-submission route; exact merged workflow and selector bytes."
     }
   }
 }

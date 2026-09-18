@@ -79,6 +79,59 @@ for (const clubMessage of [false, true]) {
   });
 }
 
+test('cash navigation finishes a late invitation before its short visibility assertion', async ({
+  page,
+}) => {
+  await page.setContent('<button>View Table</button><output id="declines">0</output>');
+  await prepareCashLobbyActions(page);
+  // Engine readiness uses API requests, so the invitation may arrive after
+  // lobby selection, without triggering the registered browser handler.
+  await page.evaluate(() => {
+    const prompt = document.createElement('div');
+    prompt.setAttribute('role', 'dialog');
+    prompt.setAttribute('aria-label', 'Diamond Spins');
+    prompt.style.cssText = 'position:fixed;inset:0;background:white';
+    prompt.innerHTML = '<button disabled>Not Now</button>';
+    const decline = prompt.querySelector('button')!;
+    decline.onclick = () => {
+      document.getElementById('declines')!.textContent = '1';
+      prompt.remove();
+    };
+    document.body.append(prompt);
+    // Longer than the unchanged 5s assertion plus the optional 2s greeting
+    // probe: the old deferred handler outlives the assertion and test body.
+    setTimeout(() => {
+      decline.disabled = false;
+    }, 9_000);
+  });
+  await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  await expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible();
+  await expect(page.locator('#declines')).toHaveText('1');
+  await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
+});
+
+test('cash navigation retires its handler and still refuses a missing View action', async ({
+  page,
+}) => {
+  await page.setContent('<output id="declines">0</output>');
+  await prepareCashLobbyActions(page);
+  await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  await page.evaluate(() => {
+    const prompt = document.createElement('div');
+    prompt.setAttribute('role', 'dialog');
+    prompt.setAttribute('aria-label', 'Diamond Spins');
+    prompt.innerHTML =
+      "<button onclick=\"document.getElementById('declines').textContent='1';this.parentElement.remove()\">Not Now</button>";
+    document.body.append(prompt);
+  });
+  await expect(
+    expect(page.getByRole('button', { name: 'View Table', exact: true })).toBeVisible({
+      timeout: 100,
+    })
+  ).rejects.toThrow('toBeVisible');
+  await expect(page.locator('#declines')).toHaveText('0');
+});
+
 const SHEETS = [
   'src/styles/globals.css',
   'src/pages/ClubHomePage.css',

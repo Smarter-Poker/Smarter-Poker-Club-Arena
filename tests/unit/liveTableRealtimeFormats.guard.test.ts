@@ -9,6 +9,21 @@ const spec = readFileSync(join(root, 'tests/e2e/production-live-table-realtime.s
 const server = readFileSync(join(root, 'server/src/GameServer.ts'), 'utf8');
 
 describe('the production realtime certificate covers every live-game lane', () => {
+  it('finishes late cash invitations after engine readiness and before the View assertion', () => {
+    const cash = spec.slice(spec.indexOf("test('an already-running table stays live"));
+    const readiness = cash.indexOf('await proveTableProgressedBeforeNavigation(');
+    const dismissal = cash.indexOf(
+      'await prepareCashLobbyActions(page, { retainInvitationHandler: false });'
+    );
+    const visibility = cash.indexOf(').toBeVisible();');
+    expect(readiness).toBeGreaterThan(-1);
+    expect(dismissal).toBeGreaterThan(readiness);
+    expect(visibility).toBeGreaterThan(dismissal);
+    expect(cash.slice(dismissal, visibility)).toContain(
+      'lost its visible read-only View/Watch Table or Game action'
+    );
+  });
+
   it('accepts the retained same-transport handoff before observation', () => {
     // Actual MTT and Spin requests in production run 35249791396. Both
     // handoffs preceded their presentation journal and causal observation.

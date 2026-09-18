@@ -1,3 +1,4 @@
+import { getTournamentEntryCapacity } from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Union Detail Page
@@ -1386,7 +1387,7 @@ export default function UnionDetailPage() {
                       <span>
                         {' '}
                         {t.current_players || 0}
-                        {t.max_players ? `/${t.max_players}` : ''}
+                        {getTournamentEntryCapacity(t) !== null ? `/${t.max_players}` : ''}
                       </span>
                       <span> {new Date(t.start_time).toLocaleDateString()}</span>
                     </div>

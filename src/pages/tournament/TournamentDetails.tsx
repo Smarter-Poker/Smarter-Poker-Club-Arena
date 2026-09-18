@@ -2,6 +2,10 @@ import {
   tournamentEntryWindow,
   type TournamentEntryWindowRow,
 } from '../../utils/tournamentEntryWindow';
+import {
+  isSeatFirstTournamentFormat,
+  isTournamentEntryUnavailable,
+} from '../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ARENA - Tournament Lobby (PLAY CHIPS ONLY)
@@ -1183,7 +1187,7 @@ export default function TournamentDetails({
    * player saw before. `isLate` only changes its heading.
    */
   const handleRegister = (isLate = false) => {
-    if (!tournament) return;
+    if (!tournament || isTournamentEntryUnavailable(tournament, tournament.current_players)) return;
     const t = tournament as unknown as {
       is_bounty?: boolean;
       bounty_amount?: number;
@@ -1403,10 +1407,8 @@ export default function TournamentDetails({
    */
   const seatIntentDoneRef = useRef(false);
   const isSeatFirstTournament = useMemo(() => {
-    const v = String(tournament?.variant ?? '').toLowerCase();
-    const seats = Number(tournament?.max_players ?? 0);
-    return v === 'spin' || (seats > 0 && seats <= 2);
-  }, [tournament?.variant, tournament?.max_players]);
+    return isSeatFirstTournamentFormat(tournament);
+  }, [tournament]);
 
   useEffect(() => {
     if (!snapshotReady || tournament?.id !== tournamentId || seatIntentDoneRef.current) return;
@@ -1827,7 +1829,10 @@ export default function TournamentDetails({
                       className="btn btn-register late-reg"
                       type="button"
                       onClick={() => handleRegister(true)}
-                      disabled={isRegisteringMtt}
+                      disabled={
+                        isRegisteringMtt ||
+                        isTournamentEntryUnavailable(tournament, tournament.current_players)
+                      }
                     >
                       Late Register ({lateRegCountdown})
                     </button>
@@ -1868,9 +1873,16 @@ export default function TournamentDetails({
                 className="btn btn-register"
                 type="button"
                 onClick={() => handleRegister(false)}
-                disabled={isRegisteringMtt}
+                disabled={
+                  isRegisteringMtt ||
+                  isTournamentEntryUnavailable(tournament, tournament.current_players)
+                }
               >
-                {isRegisteringMtt ? 'Processing...' : 'Register'}
+                {isTournamentEntryUnavailable(tournament, tournament.current_players)
+                  ? 'Entry Unavailable'
+                  : isRegisteringMtt
+                    ? 'Processing...'
+                    : 'Register'}
               </button>
             );
           })()}

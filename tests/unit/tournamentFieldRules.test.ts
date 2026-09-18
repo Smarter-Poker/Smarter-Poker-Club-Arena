@@ -1,42 +1,4 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  THE CREATE-TOURNAMENT MODAL COULD NOT CREATE MOST OF WHAT IT OFFERED
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Found in the game-creation audit, 2026-08-31. Both defects are refusals by
- * `fn_create_tournament`, read from the LIVE function rather than from a
- * migration file (three migrations define it and the live body differs from all
- * three):
- *
- *     v_max_players := COALESCE((p_config->>'maxPlayers')::int, 0);
- *     IF v_max_players <= 0 THEN RETURN 'max_players_must_be_positive';
- *     ...
- *     IF jsonb_array_length(v_payouts) > v_max_players
- *       THEN RETURN 'more_paid_places_than_players';
- *
- * The modal sent `maxPlayers: 0` for freezeout, rebuy, re-entry, bounty,
- * progressive bounty, mystery bounty, satellite AND XMTT — every format that is
- * not a Sit & Go or a Spin — under the comment "0 = unlimited". And its
- * "Heads Up (2)" option selected the `sng6` preset, which pays two places into
- * a two-seat field.
- *
- * THE SECOND RULE'S OPERATOR WAS ITSELF THE BUG (2026-08-31, second pass). It
- * read `>=`, which is not "more paid places than players" — it is "as many
- * paid places as players", a stricter and different claim, and it refused this
- * platform's own product. A Spin & Go is three seats paying three places at
- * 25x and above, and 21 such tournaments are sitting in `tournaments`,
- * completed and paid. `20260831200000_a_spin_pays_three_places_at_three_seats`
- * changes the RPC to `>`, matching `tournaments_creation_guard`, which has
- * enforced `>` on the table itself since the day before. The pins below encode
- * the corrected law: a ladder may pay every seat, and may never pay a place
- * nobody can reach.
- *
- * The live path could not be probed: `fn_create_tournament` opens with
- * `IF auth.uid() IS NULL THEN RETURN 'not_authenticated'`, so a service-role
- * probe proves only the auth gate. Per CLAUDE.md 11.5 rule 5 the logic is
- * asserted here, and the refusal was READ from the deployed function definition
- * rather than executed against production.
- */
+/** Fixed SNG/Spin limits remain separate from unlimited MTT entry counts. */
 
 import { describe, it, expect } from 'vitest';
 import { fieldCapFor, minPlayersFor, capPaidPlaces } from '../../src/lib/tournamentFieldRules';
@@ -48,8 +10,8 @@ const sng6 = PAYOUT_STRUCTURES.sng6 as Ladder;
 const sng9 = PAYOUT_STRUCTURES.sng9 as Ladder;
 const mtt50 = PAYOUT_STRUCTURES.mtt50 as Ladder;
 
-describe('the field cap the database will accept', () => {
-  it('never returns the zero that made every MTT uncreatable', () => {
+describe('fixed SNG and Spin field sizes', () => {
+  it('never returns a nonpositive fixed seat count', () => {
     for (const raw of ['0', 0, '', null, undefined, 'unlimited', NaN, -50, '1']) {
       expect(fieldCapFor(raw as never)).toBeGreaterThanOrEqual(2);
     }
@@ -75,9 +37,10 @@ describe('the minimum field', () => {
     expect(minPlayersFor(true, 3)).toBe(3);
   });
 
-  it('is a real threshold for an MTT, never above its own cap', () => {
+  it('ignores obsolete MTT entry caps when choosing the default start threshold', () => {
+    expect(minPlayersFor(false, null)).toBe(3);
     expect(minPlayersFor(false, 500)).toBe(3);
-    expect(minPlayersFor(false, 2)).toBe(2);
+    expect(minPlayersFor(false, 2)).toBe(3);
   });
 });
 
@@ -166,5 +129,19 @@ describe('paid places cannot exceed the field size', () => {
         2
       )
     ).toEqual([{ place: 1, percentage: 100 }]);
+  });
+});
+
+describe('unlimited MTT payout structures', () => {
+  it('does not trim or rescale the ladder using an artificial capacity', () => {
+    const ladder = [
+      { place: 1, percentage: 60 },
+      { place: 2, percentage: 40 },
+    ];
+    expect(capPaidPlaces(ladder, null)).toBe(ladder);
+    expect(ladder).toEqual([
+      { place: 1, percentage: 60 },
+      { place: 2, percentage: 40 },
+    ]);
   });
 });

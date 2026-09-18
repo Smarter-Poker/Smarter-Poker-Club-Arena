@@ -58,6 +58,8 @@ describe('club MTT setup presets reach the creation payload', () => {
       await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
       const config = mocks.create.mock.calls[0][1];
       const payload = tournamentService.buildRpcConfig(config);
+      expect(screen.queryByText('Max Players')).toBeNull();
+      expect(payload.maxPlayers).toBeNull();
       expect(payload.startingStack).toBe(bb * 20);
       const levels = payload.blindStructure as BlindLevel[];
       expect(levels[0]).toMatchObject({ smallBlind: 10, bigBlind: 20 });
@@ -69,7 +71,7 @@ describe('club MTT setup presets reach the creation payload', () => {
         buyIn: 10,
         rake: 1,
         payoutPercent: 10,
-        maxPlayers: 1_000_000,
+        maxPlayers: null,
       });
       expect(config.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
       expect(mocks.error).not.toHaveBeenCalled();
@@ -124,7 +126,7 @@ describe('MTT creation publishes a selected paid field', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     const [club, config] = mocks.create.mock.calls[0];
     expect(club).toBe('synthetic-club');
-    expect(config.maxPlayers).toBe(1_000_000);
+    expect(config.maxPlayers).toBeNull();
     expect(config.payoutPercent).toBe(depth);
     expect(config.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
     expect(JSON.stringify(config.payoutStructure).length).toBeLessThan(100);
@@ -142,6 +144,29 @@ describe('MTT creation publishes a selected paid field', () => {
     );
     expect(screen.queryByLabelText('Field Paid')).toBeNull();
   });
+
+  it.each(['sng', 'spin'] as const)(
+    'retains the real %s field in the mounted creator',
+    async (format) => {
+      const { container } = mountDraft(format);
+      if (format === 'sng') {
+        const option = screen.getByRole('option', { name: 'Heads Up (2)' });
+        fireEvent.change(option.parentElement!, { target: { value: '2' } });
+      } else {
+        expect(screen.getByDisplayValue('3 Players (Fixed)')).toBeDisabled();
+      }
+      const config = await submitDraft(container);
+      const expectedSeats = format === 'sng' ? 2 : 3;
+      expect(config.maxPlayers).toBe(expectedSeats);
+      expect(config.minPlayers).toBe(expectedSeats);
+      expect(config.rake).toBe(format === 'sng' ? 0.5 : 0);
+      expect(tournamentService.buildRpcConfig(config)).toMatchObject({
+        type: format,
+        maxPlayers: expectedSeats,
+        minPlayers: expectedSeats,
+      });
+    }
+  );
 });
 
 function mountDraft(

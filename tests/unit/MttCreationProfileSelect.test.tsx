@@ -95,7 +95,7 @@ describe('engine MTT setup presets reach actual creation', () => {
     expect(payload).toMatchObject({
       name: draft.name,
       buyIn: 20,
-      maxPlayers: 300,
+      maxPlayers: null,
       payoutPercent: 15,
     });
     expect(payload.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
@@ -177,7 +177,11 @@ describe('engine MTT setup presets reach actual creation', () => {
     });
     expect(rpc).toHaveBeenCalledWith(
       'fn_upsert_tournament_schedule',
-      expect.objectContaining({ p_schedule: expect.objectContaining({ config }) })
+      expect.objectContaining({
+        p_schedule: expect.objectContaining({
+          config: { ...config, maxPlayers: null, max_players: null },
+        }),
+      })
     );
     expect(describeStoredMttStructure(config.blindStructure, config.startingStack)).toMatchObject({
       startingDepthBB: 100,

@@ -1,4 +1,8 @@
 import { useTournamentHandForHand } from '../../../hooks/useTournamentHandForHand';
+import {
+  readTournamentFormat,
+  getTournamentEntryCapacity,
+} from '../../../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DETAIL / OVERVIEW TAB — everything about the event, on one screen
@@ -374,13 +378,16 @@ export default function DetailOverviewTab({
 
   /* ── The nine stat tiles. ── */
   const stats = useMemo<StatTile[]>(() => {
-    const maxPlayers = Number(tournament?.max_players) || 0;
+    const maxPlayers = tournament ? getTournamentEntryCapacity(tournament) : null;
     return [
       {
         key: 'remaining',
         label: 'Remaining',
         value: chips(field.alive),
-        sub: maxPlayers > 0 ? `of ${chips(maxPlayers)} max` : `of ${chips(field.entries)} entries`,
+        sub:
+          maxPlayers !== null
+            ? `of ${chips(maxPlayers)} max`
+            : `of ${chips(field.entries)} entries`,
         tone: 'accent',
       },
       {
@@ -417,18 +424,7 @@ export default function DetailOverviewTab({
       },
       { key: 'out', label: 'Eliminated', value: chips(field.eliminated) },
     ];
-  }, [
-    field,
-    tables,
-    level,
-    isRunning,
-    isCompleted,
-    clockPaused,
-    lateRegText,
-    prize,
-    tournament?.max_players,
-    tournament?.starting_chips,
-  ]);
+  }, [field, tables, level, isRunning, isCompleted, clockPaused, lateRegText, prize, tournament]);
 
   /* ── Rule tags. One wrapping row; these were six separate paragraphs. ── */
   const tags = useMemo(() => {
@@ -562,7 +558,7 @@ export default function DetailOverviewTab({
         value: activationStatusLine(mysteryBounty?.inventory ?? null),
       });
     }
-    if (t.variant === 'spin' || t.tournament_type === 'SPIN') {
+    if (readTournamentFormat(t) === 'spin-v1') {
       rows.push({
         key: 'spin',
         label: 'Spin Multiplier',

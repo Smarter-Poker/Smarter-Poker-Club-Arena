@@ -104,6 +104,7 @@ function tournRow(overrides: Partial<LobbyTournamentRow> = {}): LobbyTournamentR
     current_players: 2,
     max_players: 3,
     starting_chips: 300,
+    format_contract: 'spin-v1',
     variant: 'spin',
     ...overrides,
   } as LobbyTournamentRow;
@@ -386,7 +387,10 @@ describe('cash tables show what makes them different from each other (Dan 3, 4)'
 // ─────────────────────────────────────────────────────────────────────────────
 describe('spins say what they pay and how they play (Dan 5)', () => {
   const spin = (o: Partial<LobbyTournamentRow> = {}) =>
-    tournamentEntry(tournRow({ blind_structure: SPIN_BLINDS, ...o }), 'spin');
+    tournamentEntry(
+      tournRow({ format_contract: 'spin-v1', blind_structure: SPIN_BLINDS, ...o }),
+      'spin'
+    );
 
   it('advertises the ceiling of the ladder before the wheel turns', () => {
     expect(SPIN_MAX_MULTIPLIER).toBe(100);
@@ -414,7 +418,11 @@ describe('spins say what they pay and how they play (Dan 5)', () => {
   });
 
   it('says nothing about payout on a game that is not a spin', () => {
-    expect(spinPayoutLabel(tournamentEntry(tournRow({ variant: 'sng' }), 'sng'))).toBeNull();
+    expect(
+      spinPayoutLabel(
+        tournamentEntry(tournRow({ format_contract: 'sng-v1', variant: 'sng' }), 'sng')
+      )
+    ).toBeNull();
   });
 
   it('reads the level clock out of the SECONDS key a spin actually writes', () => {
@@ -456,6 +464,7 @@ describe('heads-up says how many seats are gone and how deep it starts (Dan 6)',
     tournamentEntry(
       tournRow({
         name: 'NLH Heads-Up 10',
+        format_contract: 'sng-v1',
         variant: 'sng',
         max_players: 2,
         starting_chips: 1500,
@@ -499,7 +508,13 @@ describe('an MTT keeps its bare enrolled count', () => {
     // Dan 2026-08-24: "THERE ARE NO LIMITATIONS ON THE AMOUNT OF PLAYERS THAT
     // CAN REGISTER, IT SHOULDN'T DEFAULT TO /500."
     const mtt = tournamentEntry(
-      tournRow({ name: 'Monday Grind', variant: 'mtt', max_players: 500, current_players: 21 }),
+      tournRow({
+        format_contract: 'mtt-v1',
+        name: 'Monday Grind',
+        variant: 'mtt',
+        max_players: 500,
+        current_players: 21,
+      }),
       'mtt'
     );
     expect(seatsTakenLabel(mtt)).toBe('21');
@@ -600,7 +615,14 @@ describe('a game the player is already in (Dan 7)', () => {
 
 describe('a seat-first game with every seat gone', () => {
   const seatFirst = (o: Partial<LobbyTournamentRow>, kind: 'spin' | 'sng') =>
-    tournamentEntry(tournRow({ blind_structure: SPIN_BLINDS, ...o }), kind);
+    tournamentEntry(
+      tournRow({
+        format_contract: kind === 'spin' ? 'spin-v1' : 'sng-v1',
+        blind_structure: SPIN_BLINDS,
+        ...o,
+      }),
+      kind
+    );
 
   it('says Running, not Starting (Dan: "IT NEEDS TO SAY RUNNING NOT STARTING")', () => {
     const full = seatFirst({ current_players: 3, max_players: 3 }, 'spin');
@@ -620,7 +642,12 @@ describe('a seat-first game with every seat gone', () => {
       true
     );
     expect(
-      seatFirstJoinable(tournamentEntry(tournRow({ variant: 'mtt', status: 'RUNNING' }), 'mtt'))
+      seatFirstJoinable(
+        tournamentEntry(
+          tournRow({ format_contract: 'mtt-v1', variant: 'mtt', status: 'RUNNING' }),
+          'mtt'
+        )
+      )
     ).toBe(true);
   });
 
@@ -664,7 +691,11 @@ describe('what a Spin pays, in chips (Dan 4)', () => {
   });
 
   it('says nothing at all on a game that is not a Spin', () => {
-    expect(spinPrizeLabel(tournamentEntry(tournRow({ variant: 'sng' }), 'sng'))).toBeNull();
+    expect(
+      spinPrizeLabel(
+        tournamentEntry(tournRow({ format_contract: 'sng-v1', variant: 'sng' }), 'sng')
+      )
+    ).toBeNull();
   });
 });
 

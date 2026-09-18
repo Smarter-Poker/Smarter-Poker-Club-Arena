@@ -168,7 +168,11 @@ beforeEach(() => {
         result = deferred();
         h.occupancyReads.push(result);
       }
-      if (h.authenticated && table === 'tournaments' && columns.startsWith('id, name, game_type')) {
+      if (
+        h.authenticated &&
+        table === 'tournaments' &&
+        columns.startsWith('format_contract, id, name, game_type')
+      ) {
         const read = deferred<QueryResult<TournamentFixture[]>>();
         result = read;
         h.tournamentReads.push(read);
@@ -421,6 +425,7 @@ const tournamentFixture = (
   name = 'Known Tournament',
   unionId: string | null = null
 ): TournamentFixture => ({
+  format_contract: 'mtt-v2',
   id,
   name,
   club_id: 'club-a',

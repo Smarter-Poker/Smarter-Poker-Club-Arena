@@ -113,7 +113,12 @@ describe('schedule authoring refusal reaches the real caller', () => {
       'fn_upsert_tournament_schedule',
       expect.objectContaining({
         p_schedule: expect.objectContaining({
-          config: { type: 'mtt', blindStructure: BLIND_STRUCTURES.regular },
+          config: {
+            type: 'mtt',
+            blindStructure: BLIND_STRUCTURES.regular,
+            maxPlayers: null,
+            max_players: null,
+          },
         }),
       })
     );

@@ -67,7 +67,7 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
     ['payout1', 10],
     ['payout3', 15],
     ['payout20', 20],
-  ] as const)('keeps %s provisional at every field capacity', (choice, percent) => {
+  ] as const)('keeps %s provisional regardless of a legacy field cap', (choice, percent) => {
     const legacy = vi.spyOn(payoutEngine, 'payoutsForChoice').mockImplementation(() => {
       throw new Error('The SNG capacity generator must not price a provisional MTT');
     });
@@ -79,7 +79,7 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
       });
       const payload = tournamentService.buildRpcConfig(buildTournamentConfig(input, 'nlh'));
       expect(payload.payoutPercent).toBe(percent);
-      expect(payload.maxPlayers).toBe(capacity);
+      expect(payload.maxPlayers).toBeNull();
       expect(payload.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
       expect(input.maxPlayersRange).toBe(capacity);
     }

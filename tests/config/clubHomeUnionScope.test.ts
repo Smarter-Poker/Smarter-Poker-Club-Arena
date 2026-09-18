@@ -75,10 +75,13 @@ describe('the client asks for the union too, on both queries', () => {
     expect(clubHome).toMatch(/applyClubScope\(tableQuery/);
   });
 
-  it('every tournament select carries variant, so nothing guesses from a name', () => {
-    const selects = clubHome.match(/'id, name, game_type[^']*'/g) ?? [];
+  it('every tournament select carries format and variant, so nothing guesses from a name', () => {
+    const selects = clubHome.match(/'format_contract, id, name, game_type[^']*'/g) ?? [];
     expect(selects.length).toBeGreaterThanOrEqual(1);
-    for (const sel of selects) expect(sel).toContain('variant');
+    for (const sel of selects) {
+      expect(sel).toContain('variant');
+      expect(sel).toContain('format_contract');
+    }
   });
 });
 
@@ -89,6 +92,7 @@ describe('a Spin is classified by what it is, not what it is called', () => {
       tournamentVariant({
         name: 'Spinnaker Special',
         variant: 'freezeout',
+        format_contract: 'mtt-v2',
         max_players: 200,
         start_time: '',
       })
@@ -97,6 +101,7 @@ describe('a Spin is classified by what it is, not what it is called', () => {
       tournamentVariant({
         name: 'Tuesday Lottery',
         variant: 'spin',
+        format_contract: 'spin-v1',
         max_players: 3,
         start_time: '',
       })
@@ -105,20 +110,28 @@ describe('a Spin is classified by what it is, not what it is called', () => {
       classifyTournament({
         name: 'Spinnaker Special',
         variant: 'freezeout',
+        format_contract: 'mtt-v2',
         max_players: 200,
       } as never)
     ).toBe('mtt');
     expect(
-      classifyTournament({ name: 'Tuesday Lottery', variant: 'spin', max_players: 3 } as never)
+      classifyTournament({
+        name: 'Tuesday Lottery',
+        variant: 'spin',
+        format_contract: 'spin-v1',
+        max_players: 3,
+      } as never)
     ).toBe('spin');
   });
 
-  it('still classifies when the column is absent, rather than emptying the tab', () => {
-    // Removing the heuristic would turn a wrong tab into an empty one.
+  it('keeps an unresolved format unknown instead of guessing from the name', () => {
+    // Unresolved rows remain visible in All; their name cannot authorize entry.
     expect(tournamentVariant({ name: '10 Chip Spin PLO4', max_players: 3, start_time: '' })).toBe(
-      'Spin-It'
+      'Unknown'
     );
-    expect(classifyTournament({ name: '10 Chip Spin PLO4', max_players: 3 } as never)).toBe('spin');
+    expect(classifyTournament({ name: '10 Chip Spin PLO4', max_players: 3 } as never)).toBe(
+      'unknown'
+    );
   });
 
   it('still puts a real Spin on the Spins tab and heads-up on its own', () => {
@@ -126,17 +139,25 @@ describe('a Spin is classified by what it is, not what it is called', () => {
       tournamentVariant({
         name: '10 Chip Spin PLO4',
         variant: 'spin',
+        format_contract: 'spin-v1',
         max_players: 3,
         start_time: '',
       })
     ).toBe('Spin-It');
     expect(
-      tournamentVariant({ name: 'NLH Heads-Up 10', variant: 'sng', max_players: 2, start_time: '' })
+      tournamentVariant({
+        name: 'NLH Heads-Up 10',
+        variant: 'sng',
+        format_contract: 'sng-v1',
+        max_players: 2,
+        start_time: '',
+      })
     ).toBe('SN');
     expect(
       tournamentVariant({
         name: 'Afternoon Bounty (NLH)',
         variant: 'freezeout',
+        format_contract: 'mtt-v2',
         max_players: 200,
         start_time: '',
       })

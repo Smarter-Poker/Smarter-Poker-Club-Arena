@@ -44,6 +44,7 @@ const MIN = 60 * 1000;
  * the LAST one — with 900 of a 20,000 guarantee paid in.
  */
 const lastLevel = (over: Partial<OverlayCandidate> = {}): OverlayCandidate => ({
+  format_contract: 'mtt-v1',
   id: 't1',
   name: 'Sunday $200 Deep Stack',
   status: 'RUNNING',
@@ -61,6 +62,12 @@ const lastLevel = (over: Partial<OverlayCandidate> = {}): OverlayCandidate => ({
 });
 
 describe('future events NEVER announce', () => {
+  it.each([null, 'seat-first-satellite-v1', 'spin-v1', 'sng-v1'])(
+    'does not sell MTT late entry for format %s',
+    (format_contract) => {
+      expect(overlayFor(lastLevel({ format_contract }), NOW)).toBeNull();
+    }
+  );
   it('says nothing about a registering event, however short and however soon', () => {
     expect(
       overlayFor(

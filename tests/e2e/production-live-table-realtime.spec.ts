@@ -895,6 +895,9 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       contentType: 'application/json',
     });
 
+    // The engine-progress wait above can outlast the optional invitation's
+    // arrival. Own its dismissal before the unchanged View visibility check.
+    await prepareCashLobbyActions(page, { retainInvitationHandler: false });
     const card = page.locator(
       `[data-testid="arena-lobby-game-card"][data-kind="cash"][data-id="${candidate.id}"]`
     );

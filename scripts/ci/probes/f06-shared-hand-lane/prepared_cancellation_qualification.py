@@ -10,21 +10,11 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     migration = root / 'supabase/migrations/20260918071546_f06_original_preparation_cancellations_survive_maintenance_r.sql'
     capture_path=root/'scripts/ci/probes/f06-shared-hand-lane/prepared-preimages.json'
     captured=json.loads(capture_path.read_text())
-    current_identity=next(row for row in captured['functions'] if 'definition' in row)
-    # Dependency shape copied from the installed generation authority. No
-    # disposition is invoked or requalified here; its immutable guard is real.
-    run('prepared-current-generation-receipt-shape', '''
-    CREATE TABLE smarter_private.f06_generation_aborts(
-      receipt_id uuid PRIMARY KEY,tournament_id uuid NOT NULL,generation uuid NOT NULL,
-      expected jsonb NOT NULL,outcome text NOT NULL DEFAULT 'aborted_unsettled' CHECK(outcome='aborted_unsettled'),
-      created_at timestamptz NOT NULL DEFAULT clock_timestamp(),UNIQUE(tournament_id,generation),UNIQUE(receipt_id,tournament_id,generation));
-    CREATE TABLE smarter_private.f06_generation_abort_hands(
-      permit_id uuid PRIMARY KEY,receipt_id uuid NOT NULL,tournament_id uuid NOT NULL,generation uuid NOT NULL,
-      table_id uuid NOT NULL,hand_number bigint NOT NULL,snapshot_id uuid NOT NULL,break_id uuid UNIQUE,expected jsonb NOT NULL,
-      UNIQUE(table_id,hand_number),FOREIGN KEY(receipt_id,tournament_id,generation)
-      REFERENCES smarter_private.f06_generation_aborts(receipt_id,tournament_id,generation));
-    ''')
-    run('prepared-current-immutable-authority',current_identity['definition'])
+    # The preceding maintained qualifier installs the actual generation
+    # authority and receipt constraints. Do not overwrite it with a fixture
+    # reconstruction; assert its captured identities before exercising pause.
+    require(results.get('generationAbort', {}).get('passed') is True,
+            'Prepared cancellation requires qualified generation authority')
     for row in captured['functions']:
       signature=row['signature']
       run('prepared-current-dependency-'+signature.split('(')[0].split('.')[-1],

@@ -1,6 +1,22 @@
 import { expect, type Page } from '@playwright/test';
 
-export async function prepareCashLobbyActions(page: Page): Promise<void> {
+export async function prepareCashLobbyActions(
+  page: Page,
+  { retainInvitationHandler = true }: { retainInvitationHandler?: boolean } = {}
+): Promise<void> {
+  const diamondPrompt = page.getByRole('dialog', { name: 'Diamond Spins', exact: true });
+  if (!retainInvitationHandler) {
+    // Readiness can await engine API evidence while an invitation appears.
+    // Finish its real action before the short navigation assertions start;
+    // otherwise their deadline can abandon the handler during dismissal.
+    await page.removeLocatorHandler(diamondPrompt);
+    if (await diamondPrompt.isVisible()) {
+      await diamondPrompt.getByRole('button', { name: 'Not Now', exact: true }).click();
+      await expect(diamondPrompt).toBeHidden({ timeout: 8_000 });
+    }
+    // The initial selection phase already handled the club greeting.
+    return;
+  }
   const close = page.getByRole('button', { name: 'Close Club Message' });
   // Finish this optional probe before registering an action handler. Its short,
   // caught timeout must not abandon a still-running Diamond dismissal.

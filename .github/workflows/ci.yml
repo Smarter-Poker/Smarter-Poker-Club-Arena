@@ -1332,9 +1332,18 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
       - name: Concurrent hands preserve shared F06 custody lanes
+        id: f06_hand_authority
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-f06-shared-hand-lane.py
+      - name: Retain F06 hand and generation disposition proof
+        if: always() && contains(fromJSON('["success", "failure", "cancelled"]'), steps.f06_hand_authority.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: f06-hand-authority-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/f06-shared-hand-lane/
+          if-no-files-found: error
+          retention-days: 7
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin

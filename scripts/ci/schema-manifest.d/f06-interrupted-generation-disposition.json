@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/codex/f06-generation-disposition-20260918",
+  "_comment": "Installed once as provider20260918072503 at2026-09-18T07:25:03Z. Actual07:25:19 readback confirms qualified source SHA2560b6fe78a7550f4a178eb7f796132c9224bf1f35cb8f6a9a8801708bafefbe4c7, all four function bodies/owners/ACLs/configuration, postgres-only private RLS tables and enabled immutable triggers. Public service-only RPC body46cc468944352da3c60dd076e3fe3b02. Zero receipts at readback; installation is not actuation. Original source reservation20260918064213; do not replay.",
+  "functions": ["fn_f06_abort_unsettled_generation"],
+  "tables": ["smarter_private.f06_generation_aborts", "smarter_private.f06_generation_abort_hands"]
+}

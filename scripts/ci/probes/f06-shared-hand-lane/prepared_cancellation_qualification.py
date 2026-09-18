@@ -13,8 +13,8 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     # The preceding maintained qualifier installs the actual generation
     # authority and receipt constraints. Do not overwrite it with a fixture
     # reconstruction; assert its captured identities before exercising pause.
-    require(results.get('generationAbort', {}).get('passed') is True,
-            'Prepared cancellation requires qualified generation authority')
+    require(results.get('mixedHuPriorAbort', {}).get('passed') is True,
+            'Prepared cancellation requires qualified mixed generation authority')
     for row in captured['functions']:
       signature=row['signature']
       run('prepared-current-dependency-'+signature.split('(')[0].split('.')[-1],

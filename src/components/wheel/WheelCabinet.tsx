@@ -6,7 +6,7 @@ import { wheelPrizeTitle } from './WheelExperience';
 import type { WheelSegment } from '../../services/DiamondWheelService';
 import styles from './WheelCabinet.module.css';
 
-/** A full-size wheel beside the approved control chassis, with no frame around the game. */
+/** A full-width wheel above the approved control chassis, with no frame around the game. */
 export function WheelCabinet({
   title,
   titleId,

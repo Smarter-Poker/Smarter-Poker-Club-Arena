@@ -3,9 +3,10 @@
 }
 .cabinet {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 350px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
-  max-width: 1500px;
+  width: 100%;
+  box-sizing: border-box;
   margin: auto;
   background: #000;
   color: #e4e7ec;
@@ -37,7 +38,8 @@
 }
 .controls {
   min-width: 0;
-  align-self: center;
+  width: min(100%, 600px);
+  margin: 0 auto;
 }
 .metrics {
   margin: 16px 0 0;
@@ -207,13 +209,8 @@
 }
 @container (max-width: 900px) {
   .cabinet {
-    grid-template-columns: minmax(0, 1fr);
     padding: 12px 0;
     gap: 10px;
-  }
-  .controls {
-    width: min(100%, 480px);
-    margin: auto;
   }
   .prizes ul {
     grid-template-columns: repeat(4, minmax(0, 1fr));

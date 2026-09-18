@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const backend = vi.hoisted(() => ({
   state: vi.fn(),
@@ -77,7 +77,7 @@ const state = {
 };
 describe('the selected wheel stake owns its availability quote', () => {
   it('measures the stage when loading finishes and follows later viewport changes', async () => {
-    let width = 878;
+    let width = 1248;
     let resize!: () => void;
     const disconnect = vi.fn();
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
@@ -97,7 +97,10 @@ describe('the selected wheel stake owns its availability quote', () => {
     await waitFor(() => expect(backend.state).toHaveBeenCalled());
     expect(screen.queryByLabelText('Wheel Width')).not.toBeInTheDocument();
     await act(async () => finish(state));
-    expect(await screen.findByLabelText('Wheel Width')).toHaveTextContent('878');
+    expect(await screen.findByLabelText('Wheel Width')).toHaveTextContent('1248');
+    const controls = screen.getByRole('complementary', { name: 'Diamond Spins Controls' });
+    expect(within(controls).getByRole('navigation', { name: 'Spin Entry' })).toBeInTheDocument();
+    expect(within(controls).getByLabelText('Diamonds To Spin')).toBeInTheDocument();
     act(() => {
       width = 288;
       resize();

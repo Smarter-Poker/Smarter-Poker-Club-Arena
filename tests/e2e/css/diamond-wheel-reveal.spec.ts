@@ -35,8 +35,15 @@ for (const width of [320, 390, 1280]) {
       await expect(secondary).toBeVisible();
       await expect(secondary.locator('[data-wheel-selector]')).toHaveCount(0);
       await expect(wheel.locator('[data-wheel-selector]')).toHaveCount(1);
+      await expect
+        .poll(async () => (await wheel.boundingBox())?.width ?? 0)
+        .toBeGreaterThanOrEqual(width - 24);
       const upperBox = await secondary.boundingBox();
       const lowerBox = await wheel.boundingBox();
+      const controlsBox = await page
+        .getByRole('complementary', { name: 'Diamond Spins Controls' })
+        .boundingBox();
+      expect(controlsBox!.y).toBeGreaterThanOrEqual(lowerBox!.y + lowerBox!.height);
       // Both independent rotors share one centre and one uninterrupted aperture.
       expect(upperBox).toEqual(lowerBox);
       await expect(page.locator('[data-wheel-assembly="concentric"]')).toHaveCount(1);

@@ -114,10 +114,10 @@ def seed(n):
     players = json.dumps([{'userId': f'00000000-0000-0000-0000-{i:012d}', 'stack': 100} for i in range(1, n+1)])
     sql(f"""TRUNCATE hand_history,hand_projection_outbox,ca_hand_player_idx,trace;
       INSERT INTO hand_history(id,created_at,players,table_id,hand_number,tournament_id)
-      VALUES('{H}','2026-09-13 04:00:00+00','{players}','{T}',1,NULL);
+      VALUES('{H}','{fixture_time['hand']}','{players}','{T}',1,NULL);
       INSERT INTO hand_projection_outbox VALUES('{H}','{T}',1);
-      UPDATE ca_hand_player_idx_state SET idx_floor='2026-09-13 03:00:00+00',idx_ceil='2026-09-13 03:00:00+00',backfill_complete=true,rows_indexed=0;
-      UPDATE ca_idx_every_seat_state SET cursor_at='2026-09-13 03:00:00+00',done=false,hands_seen=0,rows_added=0;""")
+      UPDATE ca_hand_player_idx_state SET idx_floor='{fixture_time['floor']}',idx_ceil='{fixture_time['floor']}',backfill_complete=true,rows_indexed=0;
+      UPDATE ca_idx_every_seat_state SET cursor_at='{fixture_time['floor']}',done=false,hands_seen=0,rows_added=0;""")
 
 def trace_order(statement):
     return json.loads(sql('BEGIN; '+statement+" SELECT coalesce(json_agg(user_id ORDER BY seq),'[]') FROM trace; ROLLBACK;").splitlines()[-1])
@@ -146,6 +146,13 @@ try:
     run([pg / 'pg_ctl', '-D', cluster / 'data', '-l', cluster / 'log', '-o',
          f"-k {sock} -p 55839 -c listen_addresses='' -c shared_buffers=16MB -c max_connections=8 -c deadlock_timeout=200ms", '-w', 'start'])
     started = True
+    # The real every-seat writer walks hourly windows up to now(). A fixed
+    # historical seed adds empty windows every day and eventually exhausts the
+    # private deadline. Keep the same relative boundaries and 60-minute calls.
+    fixture_time = json.loads(sql("""SELECT json_build_object(
+      'hand', now() - interval '1 hour',
+      'floor', now() - interval '2 hours',
+      'ceiling', now());"""))
     # Unordered DISTINCT must remain safe when PostgreSQL selects hash aggregation.
     # The first small-fixture attempt chose sorted aggregation and did not reproduce.
     # This private planner setting exercises the other legal execution plan.
@@ -195,6 +202,8 @@ try:
     check('actual baseline refresh and projector visit common keys in different orders', selected is not None)
     n=selected[0]
     seed(n)
+    check('seeded cursor bounds the hourly sweep to three windows',
+          sql("SELECT now() - cursor_at BETWEEN interval '2 hours' AND interval '3 hours' FROM ca_idx_every_seat_state;") == 't')
     gate=Session('index-gate')
     gate.execute('BEGIN; SELECT pg_advisory_xact_lock(91842,1),pg_advisory_xact_lock(91842,2);')
     a,b=Session('index-baseline-refresh'),Session('index-baseline-project')
@@ -246,7 +255,7 @@ try:
         a.close();b.close()
     seed(n)
     sql('BEGIN; '+refresh+' ROLLBACK;')
-    check('rollback retains original cursor and removes all index writes',sql("SELECT (SELECT count(*) FROM ca_hand_player_idx)=0 AND idx_ceil='2026-09-13 03:00:00+00'::timestamptz FROM ca_hand_player_idx_state;")=='t')
+    check('rollback retains original cursor and removes all index writes',sql(f"SELECT (SELECT count(*) FROM ca_hand_player_idx)=0 AND idx_ceil='{fixture_time['floor']}'::timestamptz FROM ca_hand_player_idx_state;")=='t')
     sql('BEGIN; '+project+' ROLLBACK;')
     check('rollback retains exact outbox and no partial index',sql('SELECT (SELECT count(*) FROM ca_hand_player_idx)=0 AND (SELECT count(*) FROM hand_projection_outbox)=1;')=='t')
     sql('CREATE TRIGGER fixture_legacy AFTER UPDATE ON hand_history FOR EACH ROW EXECUTE FUNCTION trg_ca_stats_live_from_hand();')
@@ -269,9 +278,9 @@ try:
     check('browser roles cannot execute either bulk writer',sql("SELECT NOT has_function_privilege('anon','ca_refresh_hand_player_index(integer)','EXECUTE') AND NOT has_function_privilege('authenticated','ca_index_every_seat(integer)','EXECUTE');")=='t')
     check('service role retains both bulk writer permissions',sql("SELECT has_function_privilege('service_role','ca_refresh_hand_player_index(integer)','EXECUTE') AND has_function_privilege('service_role','ca_index_every_seat(integer)','EXECUTE');")=='t')
     seed(n)
-    sql("UPDATE ca_hand_player_idx_state SET idx_floor='2026-09-13 05:00:00+00',idx_ceil='2026-09-13 05:00:00+00',backfill_complete=false;")
+    sql(f"UPDATE ca_hand_player_idx_state SET idx_floor='{fixture_time['ceiling']}',idx_ceil='{fixture_time['ceiling']}',backfill_complete=false;")
     sql(refresh)
-    check('backward fill retains every seat and its exact floor',sql("SELECT (SELECT count(*) FROM ca_hand_player_idx)="+str(n)+" AND idx_floor='2026-09-13 04:00:00+00'::timestamptz AND backfill_complete FROM ca_hand_player_idx_state;")=='t')
+    check('backward fill retains every seat and its exact floor',sql(f"SELECT (SELECT count(*) FROM ca_hand_player_idx)={n} AND idx_floor='{fixture_time['hand']}'::timestamptz AND backfill_complete FROM ca_hand_player_idx_state;")=='t')
     for statement,label in [(refresh,'refresh'),(project,'projector'),(every,'every-seat')]:
         seed(2)
         extra=json.dumps([{'userId':'00000000-0000-0000-0000-000000000001'}, {'userId':'3ebbefd2-c468-4853-8576-10104335b319'}, {'userId':'invalid'}, {'userId':None}, {}])
@@ -296,7 +305,7 @@ try:
     sql('REVOKE EXECUTE ON FUNCTION trg_ca_stats_live_from_hand() FROM authenticated;')
     sql(args.migration.read_text())
     check('final four function hashes match qualified candidates',all(sql("SELECT md5(pg_get_functiondef('"+r['signature']+"'::regprocedure));")==r['post_md5'] for r in candidates))
-    result={'checks':checks,'postgres':version,'platform':platform.platform(),'production_connections':0,
+    result={'checks':checks,'postgres':version,'platform':platform.platform(),'production_connections':0,'fixture_time':fixture_time,
             'scope':'Real captured index refresh/every-seat/projector bodies; private minimal index fixture, enable_sort=off and work_mem=32MB exercise legal hash aggregation. Diamond branch avoids unrelated financial aggregates; facts-one returns no rows. Not full-schema money, rollup-retention, Linux or production qualification.',
             'migration_sha256':hashlib.sha256(args.migration.read_bytes()).hexdigest(),
             'runner_sha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()}

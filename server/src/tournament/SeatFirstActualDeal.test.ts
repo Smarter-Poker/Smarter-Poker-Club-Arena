@@ -7,6 +7,7 @@ import { spinRuleManifest } from './SpinDrawReceipt.js';
 import { spinPostRevealMs, spinRevealToDealMs } from '../config/spinSpec.js';
 import { HEADS_UP_BLIND_STRUCTURE } from '../config/headsUpSpec.js';
 import { deadlineScheduler } from '../engine/DeadlineScheduler.js';
+import { TournamentRetirementCustody } from '../services/TournamentRetirementCustody.js';
 
 const { from, rpc, reportError } = vi.hoisted(() => ({
   from: vi.fn(),
@@ -209,6 +210,58 @@ function fixture(
   const rule_manifest = spinRuleManifest(1, stack);
   const tier = rule_manifest.tiers.find((candidate) => candidate.multiplier === 10)!;
   rpc.mockImplementation(async (name: string, args: any) => {
+    if (name === 'fn_f06_hand_number_state' || name === 'fn_f06_allocate_hand_number') {
+      expect(args).toEqual({
+        p_tournament_id: EVENT,
+        p_lease_generation: LEASE,
+        p_table_id: TABLE,
+      });
+      return {
+        error: null,
+        data:
+          name === 'fn_f06_hand_number_state'
+            ? {
+                ok: true,
+                table_id: TABLE,
+                lifecycle: '1',
+                can_reserve: true,
+                blocked_reason: null,
+                used_hand_number_max: '1000000',
+                next_hand_number_candidate: '1000001',
+                unresolved_permit: null,
+              }
+            : {
+                ok: true,
+                table_id: TABLE,
+                lifecycle: '1',
+                hand_number: '1000001',
+                hand_number_high_water: '1000000',
+              },
+      };
+    }
+    if (name === 'fn_f06_begin_hand') {
+      expect(args).toMatchObject({
+        p_tournament_id: EVENT,
+        p_lease_generation: LEASE,
+        p_table_id: TABLE,
+        p_lifecycle: '1',
+        p_hand_number: '1000001',
+      });
+      return {
+        error: null,
+        data: {
+          ok: true,
+          tournament_id: EVENT,
+          generation: LEASE,
+          table_id: TABLE,
+          lifecycle: '1',
+          hand_number: '1000001',
+          permit_id: args.p_permit_id,
+          custody_id: args.p_custody_id,
+          state: 'reserved',
+        },
+      };
+    }
     if (name === 'fn_begin_tournament_launch_atomic') {
       launchId = args.p_launch_id;
       admittedStart = args.p_started_at ?? admittedStart;
@@ -317,7 +370,8 @@ function fixture(
   // Hydration/persistence are external boundaries. The real dealing loop,
   // dealHand, HandController, hand event routing and deadline timer stay intact.
   engine.prepareNextHand = async () => seats;
-  engine.takePreparedHandNumber = () => 1;
+  // No prefetched number: exercise the manager-installed allocator and permit.
+  engine.takePreparedHandNumber = () => null;
   engine.refreshRakeConfig = async () => {};
   engine.fetchTimeBankExtras = async () => new Map([[seats[0].user_id, 20]]);
   engine.restoreSitOutsFromSeats = () => {};
@@ -336,9 +390,18 @@ function fixture(
     if (event.type === 'HAND_COMPLETE') return;
     return realEvent(event, players, generation);
   };
+  const ownedEngines = new Map([[TABLE, engine]]);
+  const ownedTables = new Set([TABLE]);
+  const gameServer = {
+    tableEngines: ownedEngines,
+    tournamentOwnedTables: ownedTables,
+    tournamentRetirementCustody: new TournamentRetirementCustody(),
+    ownsTournamentTableEngine: (tableId: string, incumbent: ServerTableEngine) =>
+      ownedTables.has(tableId) && ownedEngines.get(tableId) === incumbent,
+  };
   const manager = new TournamentManager(
     EVENT,
-    {} as any,
+    gameServer as any,
     LEASE,
     performance.now() + 120_000
   ) as any;
@@ -558,7 +621,7 @@ describe('actual manager launch reaches the first hand and action timer after th
       expect(f.manager.blindTimer).toBeNull();
       await f.manager.advanceBlindLevel(f.row.blind_structure);
       expect(f.manager.currentLevel).toBe(0);
-      expect(rpc).not.toHaveBeenCalled();
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual(['fn_f06_hand_number_state']);
       await vi.advanceTimersByTimeAsync(59_999);
       expectNoHand(f);
       expect(f.row.level_started_at).toBeNull();
@@ -566,7 +629,12 @@ describe('actual manager launch reaches the first hand and action timer after th
       await expectFirstHand(f, NOW + 60_000);
       expect(f.row.level_started_at).toBe(new Date(NOW + 60_000).toISOString());
       expect(f.manager.currentLevel).toBe(0);
-      expect(rpc).not.toHaveBeenCalled(); // resume does not mint a new launch receipt
+      expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+        'fn_f06_hand_number_state',
+        'fn_f06_allocate_hand_number',
+        'fn_f06_hand_number_state',
+        'fn_f06_begin_hand',
+      ]); // Resume proves hand authority without minting a new launch receipt.
     }
   );
 

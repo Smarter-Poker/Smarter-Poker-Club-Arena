@@ -4,6 +4,7 @@ SET LOCAL statement_timeout='15s'; SET LOCAL lock_timeout='1s';
 SET LOCAL timezone='UTC'; SET LOCAL search_path=public,pg_temp;
 SELECT set_config('spin_mixed_qualification.current_lane_mode', :'lane_mode', true) AS mode;
 SELECT set_config('spin_mixed_qualification.current_lane_body', :'lane_body', true) IS NOT NULL AS body_supplied;
+SELECT set_config('spin_mixed_qualification.stale_doctrine', :'stale_doctrine', true) IS NOT NULL AS stale_supplied;
 DO $isolation$
 DECLARE mode text:=current_setting('spin_mixed_qualification.current_lane_mode');
 BEGIN
@@ -14,8 +15,9 @@ BEGIN
  OR current_setting('port')<>'5432' OR current_setting('session_replication_role')<>'origin'
  OR current_database()<>'qual_spin_expiry_'||replace(current_setting('spin_mixed_qualification.execution_uuid')::uuid::text,'-','')
  OR mode NOT IN ('forward','rollback')
+ OR md5(current_setting('spin_mixed_qualification.stale_doctrine'))<>'8dd361600c8facb1cbb99b3df853e5b9'
  OR md5(current_setting('spin_mixed_qualification.current_lane_body')) IS DISTINCT FROM
-   (CASE mode WHEN 'forward' THEN '9d1ced3d628446de1db0c10a1d025df9' ELSE '228e29b7fa4c677a2d0c443668024c4c' END) THEN
+   (CASE mode WHEN 'forward' THEN '2ef348a0d4f6bacc4615748c9ce25ea8' ELSE '88d2276c59dd1646a986ee9a1b07749d' END) THEN
   RAISE EXCEPTION 'wrong current-lane private refusal boundary/source';
  END IF;
 END $isolation$;
@@ -34,6 +36,7 @@ BEGIN
    'sp_compact_hand_history(integer,integer,integer)']) s
     CROSS JOIN unnest(ARRAY['owner','acl']) k
   UNION ALL SELECT 'fn_complete_tournament_terminal(uuid,uuid,text)','config'
+  UNION ALL SELECT 'fn_ca_settlement_lane_doctrine()','stale_definition'
   UNION ALL SELECT 'fn_ca_serialize_legacy_settlement_receipt_statement()',k
     FROM unnest(ARRAY['owner','acl','config']) k WHERE mode='rollback'
  LOOP
@@ -42,7 +45,8 @@ BEGIN
     THEN 'current receipt lane handler authority differs'
     ELSE 'current receipt lane authority differs: '||sig END;
   BEGIN
-   IF kind='owner' THEN EXECUTE format('ALTER FUNCTION public.%s OWNER TO service_role',sig);
+   IF kind='stale_definition' THEN EXECUTE current_setting('spin_mixed_qualification.stale_doctrine');
+   ELSIF kind='owner' THEN EXECUTE format('ALTER FUNCTION public.%s OWNER TO service_role',sig);
    ELSIF kind='acl' THEN EXECUTE format('GRANT EXECUTE ON FUNCTION public.%s TO authenticated',sig);
    ELSE EXECUTE format('ALTER FUNCTION public.%s SET statement_timeout TO ''31s''',sig); END IF;
    EXECUTE 'SET LOCAL ROLE postgres';
@@ -68,7 +72,7 @@ BEGIN
   END IF;
   n:=n+1;
  END LOOP;
- IF n IS DISTINCT FROM (CASE mode WHEN 'forward' THEN 9 ELSE 12 END) THEN
+ IF n IS DISTINCT FROM (CASE mode WHEN 'forward' THEN 10 ELSE 13 END) THEN
   RAISE EXCEPTION 'current-lane refusal inventory incomplete'; END IF;
  PERFORM set_config('spin_mixed_qualification.current_lane_negative_count',n::text,true);
 END $refusals$;

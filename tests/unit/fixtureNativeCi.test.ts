@@ -519,6 +519,8 @@ const spinExpiryAccountingPaths = [
   'scripts/qualification/fixtures/spin-mixed-current/current-lane-state.sql',
   'scripts/qualification/fixtures/spin-mixed-current/current-lane-snapshot.sql',
   'scripts/qualification/fixtures/spin-mixed-current/current-lane-refusals.sql',
+  'scripts/qualification/fixtures/spin-mixed-current/doctrine-successor.json',
+  'scripts/qualification/fixtures/spin-mixed-current/doctrine-successor-restore.sql',
   'supabase/components/spin-mixed-basis-receipt-lane.sql',
   'supabase/components/spin-mixed-basis-receipt-lane.rollback.sql',
   'scripts/qualification/spin-receipt-lane.py',

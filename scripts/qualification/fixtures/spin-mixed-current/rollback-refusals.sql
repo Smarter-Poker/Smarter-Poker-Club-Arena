@@ -10,7 +10,7 @@ BEGIN
  OR current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999
  OR inet_server_addr() IS NOT NULL OR current_setting('listen_addresses')<>''
  OR current_database()<>'qual_spin_expiry_'||replace(current_setting('spin_mixed_qualification.execution_uuid')::uuid::text,'-','')
- OR md5(current_setting('spin_mixed_qualification.rollback_body'))<>'6745474610e2ef2693f151feeaf65bdb'
+ OR md5(current_setting('spin_mixed_qualification.rollback_body'))<>'456493c28cbc4ece2254ca2aaec0ebce'
  THEN RAISE EXCEPTION 'wrong private rollback fault boundary/source'; END IF;
 END $isolation$;
 CREATE FUNCTION pg_temp.rollback_control_catalog() RETURNS jsonb LANGUAGE sql AS $q$

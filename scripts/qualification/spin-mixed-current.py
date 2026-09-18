@@ -34,7 +34,8 @@ LEAVES = ('catalog-restore.sql', 'catalog-readback.sql', 'recognition-restore.sq
           'synthetic-input-check.sql', 'observer.sql', 'replay.sql',
           'wrapper-refusals.sql', 'narrow-refusal.sql', 'rollback-refusals.sql',
           'provenance.json', 'current-lane-state.sql', 'current-lane-snapshot.sql',
-          'current-lane-refusals.sql')
+          'current-lane-refusals.sql', 'doctrine-successor.json',
+          'doctrine-successor-restore.sql')
 INPUTS = (MODULE, PROGRAM, ASSERTIONS, SESSION, COMPONENT, ROLLBACK, LANE, LANE_ROLLBACK,
           'scripts/qualification/fixtures/spin-receipt-lane/boundary.sql',
           'scripts/qualification/fixtures/spin-receipt-lane/state.sql',
@@ -148,9 +149,13 @@ def lane_variables(source, mode):
     require(text.count('\nBEGIN;\n') == 1 and text.endswith('COMMIT;\n'),
             'current-lane transaction boundary differs')
     body = text.replace('\nBEGIN;\n', '\n', 1)[:-len('COMMIT;\n')]
-    require(hashlib.md5(body.encode()).hexdigest() == {'forward': '9d1ced3d628446de1db0c10a1d025df9', 'rollback': '228e29b7fa4c677a2d0c443668024c4c'}[mode],
+    require(hashlib.md5(body.encode()).hexdigest() == {'forward': '2ef348a0d4f6bacc4615748c9ce25ea8', 'rollback': '88d2276c59dd1646a986ee9a1b07749d'}[mode],
             'current-lane refusal source differs')
-    return (('lane_mode', mode), ('lane_body', body))
+    original = json.loads((source / BASE / 'authority.json').read_text())[0]['evidence']['functions']
+    stale, = [f['definition'] for f in original if f['signature'] == 'fn_ca_settlement_lane_doctrine()']
+    require(hashlib.md5(stale.encode()).hexdigest() == '8dd361600c8facb1cbb99b3df853e5b9',
+            'original doctrine refusal input differs')
+    return (('lane_mode', mode), ('lane_body', body), ('stale_doctrine', stale))
 
 
 def body_plan(PG, source, execution, ordinary, tournament, image):
@@ -167,6 +172,7 @@ def body_plan(PG, source, execution, ordinary, tournament, image):
         ('mixed_catalog_readback', 'postgres', BASE + 'catalog-readback.sql'),
         ('mixed_recognition_restore', 'postgres', BASE + 'recognition-restore.sql'),
         ('mixed_recognition_readback', 'postgres', BASE + 'recognition-readback.sql'),
+        ('mixed_doctrine_restore', 'postgres', BASE + 'doctrine-successor-restore.sql'),
         ('current_lane_before', 'postgres', BASE + 'current-lane-snapshot.sql'),
         ('current_lane_forward_refusals', 'fixture_bootstrap', BASE + 'current-lane-refusals.sql'),
         ('mixed_lane_install', 'postgres', LANE),
@@ -191,7 +197,7 @@ def body_plan(PG, source, execution, ordinary, tournament, image):
         require(rollback.splitlines().count('BEGIN;') == 1 and rollback.endswith('COMMIT;\n'),
                 'mixed rollback transaction boundary differs')
         body = rollback.replace('\nBEGIN;\n', '\n', 1)[:-len('COMMIT;\n')]
-        require(hashlib.md5(body.encode()).hexdigest() == '6745474610e2ef2693f151feeaf65bdb',
+        require(hashlib.md5(body.encode()).hexdigest() == '456493c28cbc4ece2254ca2aaec0ebce',
                 'mixed rollback refusal source differs')
         plan.append(('rollback_refusals', sql_argv(*common, 'fixture_bootstrap', BASE + 'rollback-refusals.sql',
                                                   variables=(('rollback_body', body),))))
@@ -381,12 +387,12 @@ def validate_lane_roundtrip(one):
     require(before['business'] == installed['business']
             and terminal['business'] == reversing['business'] == after['business'],
             'current-lane install or terminal/lane rollback changed business state')
-    for mode, count in (('forward', 9), ('rollback', 12)):
+    for mode, count in (('forward', 10), ('rollback', 13)):
         require(one('current_lane_' + mode + '_refusals') == {
             'current_lane_mode': mode, 'authority_refusals': count,
             'exact_state_restored': True}, 'current-lane drift refusal evidence differs')
     return {'original_current_authority_restored': True,
-            'business_state_preserved': True, 'forward_refusals': 9, 'rollback_refusals': 12}
+            'business_state_preserved': True, 'forward_refusals': 10, 'rollback_refusals': 13}
 
 
 def validate_outputs(source, work, execution, image):
@@ -395,6 +401,10 @@ def validate_outputs(source, work, execution, image):
         value, = assertions.load(work, name)
         return value
     require(one('mixed_input_observer') == INPUT_RESULT, 'declared mixed starting estate differs')
+    require(one('mixed_doctrine_restore') == {
+        'doctrine_successor_restored': True, 'full_md5': 'd6885832ceaa6c071d40bdc26a0b16fa',
+        'financial_rows_written': False, 'production_qualification': False},
+        'fresh doctrine exact native readback absent')
     before, negative = one('independent_before'), one('independent_after_negatives')
     require(before['state'] == negative['state'] and before['estate'] == negative['estate'],
             'refusal changed mixed starting estate')

@@ -33,7 +33,7 @@ _fee_spec = importlib.util.spec_from_file_location('spin_positive_fee_entry', RO
 FEE = importlib.util.module_from_spec(_fee_spec)
 _fee_spec.loader.exec_module(FEE)
 FEE_MANIFEST_SHA256 = '166c5fbf458154851b04c7470da8515d9ea561ab62d50ac8ef9ec8c8571b0458'
-MIXED_MANIFEST_SHA256 = 'd62521c6590b576242477324a4cba056d87b27e328bee8578be1fc44cc47e914'
+MIXED_MANIFEST_SHA256 = 'eac92b0f05a6b2e3773b68e47e6135696bb84a97d6515982a4211c28016be7ed'
 FIXTURE = ROOT / 'scripts/ci/probes/spin-expiry'
 ORIGIN_MANIFEST = 'bee0d56349f89b0324962455b770fde4b5c322970b2b7b5a11ad69536b3ff580'
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'

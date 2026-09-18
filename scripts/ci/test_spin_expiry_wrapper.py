@@ -406,11 +406,30 @@ class PositiveFeeEntryTests(unittest.TestCase):
 
 
 class MixedCurrentTests(unittest.TestCase):
+    def test_fresh_doctrine_is_restored_before_lane_and_terminal_installation(self):
+        M = W.MIXED
+        for image in M.IMAGES:
+            rows = M.body_plan(PG, W.ROOT, EXECUTION, ORDINARY, TOURNAMENT, image)
+            names = [name for name, _ in rows]
+            self.assertIn('mixed_doctrine_restore', names)
+            self.assertLess(names.index('mixed_catalog_readback'), names.index('mixed_doctrine_restore'))
+            self.assertLess(names.index('mixed_doctrine_restore'), names.index('current_lane_before'))
+            argv = dict(rows)['mixed_doctrine_restore']
+            self.assertEqual(argv[argv.index('-U') + 1], 'postgres')
+            self.assertEqual(argv[-1], str(W.ROOT / M.BASE / 'doctrine-successor-restore.sql'))
+
     def test_current_lane_variants_preserve_original_bodies_and_capture_pins(self):
         M = W.MIXED
         fields = ('signature', 'owner', 'acl', 'config', 'full_md5', 'volatility', 'security_definer')
         captured = json.loads((W.ROOT / M.BASE / 'authority.json').read_text())[0]['evidence']['functions']
         expected = {f['signature']: {k: f[k] for k in fields} for f in captured}
+        fresh = json.loads((W.ROOT / M.BASE / 'doctrine-successor.json').read_text())['function']
+        self.assertEqual(__import__('hashlib').md5(fresh['definition'].encode()).hexdigest(), fresh['full_md5'])
+        self.assertEqual(fresh['full_md5'], 'd6885832ceaa6c071d40bdc26a0b16fa')
+        self.assertIn(fresh['definition'].rstrip() + ';',
+                      (W.ROOT / M.BASE / 'doctrine-successor-restore.sql').read_text())
+        self.assertIn(fresh['definition'].rstrip() + ';', (W.ROOT / M.ROLLBACK).read_text())
+        expected[fresh['signature']] = {k: fresh[k] for k in fields}
         legacy = json.loads((W.ROOT / 'scripts/qualification/fixtures/spin-receipt-lane/authority.json').read_text())['functions']
         expected.update({f['identity']: {k: f['identity'] if k == 'signature' else f[k] for k in fields}
                          for f in legacy})
@@ -470,9 +489,9 @@ class MixedCurrentTests(unittest.TestCase):
                 'current_lane_before_terminal_rollback': terminal,
                 'current_lane_before_rollback': reversing, 'current_lane_after': after,
                 'current_lane_forward_refusals': {'current_lane_mode': 'forward',
-                    'authority_refusals': 9, 'exact_state_restored': True},
+                    'authority_refusals': 10, 'exact_state_restored': True},
                 'current_lane_rollback_refusals': {'current_lane_mode': 'rollback',
-                    'authority_refusals': 12, 'exact_state_restored': True}}
+                    'authority_refusals': 13, 'exact_state_restored': True}}
 
     def test_current_lane_roundtrip_requires_exact_authority_and_no_business_loss(self):
         M = W.MIXED

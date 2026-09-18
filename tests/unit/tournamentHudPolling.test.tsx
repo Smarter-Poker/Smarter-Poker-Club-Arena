@@ -27,7 +27,21 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act, screen } from '@testing-library/react';
+
+const presentation = vi.hoisted(() => ({ listeners: new Set<(event: any) => void>() }));
+vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: { id: 'viewer' } }) }));
+vi.mock('../../src/services/EngineStateClient', () => ({
+  engineChannelClient: { onStatusChange: () => () => {} },
+}));
+vi.mock('../../src/services/RealtimeChannelService', () => ({
+  realtimeChannelService: {
+    subscribeToTournament: (_id: string, callbacks: any) => {
+      presentation.listeners.add(callbacks.onEvent);
+      return () => presentation.listeners.delete(callbacks.onEvent);
+    },
+  },
+}));
 
 const POLL_MS = 45_000;
 const BACKOFF_MS = 300_000;
@@ -252,4 +266,27 @@ describe('TournamentHUD polling — behaviour, not source text', () => {
     await tick(POLL_MS * 3);
     expect(getTournament, 'no timer may outlive the component').toHaveBeenCalledTimes(2);
   });
+});
+
+it('shows actual manager hand-for-hand state in the mounted table HUD without replacing rebuy timing', async () => {
+  getTournament.mockResolvedValue(running({ late_reg_levels: 1, rebuy_cost: 1 }));
+  await mount();
+  expect(screen.getByText('Last Rebuy Level')).toBeTruthy();
+  act(() => {
+    for (const listener of presentation.listeners)
+      listener({
+        type: 'tournament_presentation',
+        payload: { handForHand: true },
+      });
+  });
+  expect(screen.getByText('Hand For Hand · Last Rebuy Level')).toBeTruthy();
+  act(() => {
+    for (const listener of presentation.listeners)
+      listener({
+        type: 'tournament_presentation',
+        payload: { handForHand: false },
+      });
+  });
+  expect(screen.queryByText(/Hand For Hand/)).toBeNull();
+  expect(screen.getByText('Last Rebuy Level')).toBeTruthy();
 });

@@ -247,3 +247,33 @@ describe('club subscriptions survive temporary reads without reviving retired in
     );
   });
 });
+
+describe('tournament presentation on the authenticated channel', () => {
+  const tournamentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const joinTournament = { type: 'JOIN_TOURNAMENT', tournamentId };
+  it('reads after subscribing and returns the current snapshot on every reconnect', () => {
+    let active: boolean | null = true;
+    const observe = vi.fn((id: string) => {
+      expect(id).toBe(tournamentId);
+      expect(channelHub.tournamentSubscriberCount(id)).toBe(1);
+      return active;
+    });
+    server = new ChannelWebSocketServer(observe);
+    const first = socket();
+    first.receive(joinTournament);
+    expect(first.sent.at(-1)).toMatchObject({
+      type: 'TOURNAMENT_EVENT',
+      tournamentId,
+      event: { type: 'tournament_presentation', payload: { handForHand: true } },
+    });
+    first.close();
+    active = false;
+    const replacement = socket();
+    replacement.receive(joinTournament);
+    expect(replacement.sent.at(-1).event.payload).toEqual({ handForHand: false });
+    active = null;
+    replacement.receive(joinTournament);
+    expect(replacement.sent.at(-1).event.payload).toEqual({ handForHand: null });
+    expect(observe).toHaveBeenCalledTimes(3);
+  });
+});

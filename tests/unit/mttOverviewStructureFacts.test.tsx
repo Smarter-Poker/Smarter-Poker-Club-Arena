@@ -23,6 +23,7 @@ vi.mock('../../src/services/EngineStateClient', () => ({
 }));
 vi.mock('../../src/services/RealtimeChannelService', () => ({
   realtimeChannelService: {
+    subscribeToTournament: () => () => {},
     subscribeToLobby: ({ onMaintenance }: { onMaintenance: (value: unknown) => void }) => {
       maintenance.lobby.add(onMaintenance);
       return () => maintenance.lobby.delete(onMaintenance);

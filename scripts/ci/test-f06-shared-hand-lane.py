@@ -171,6 +171,9 @@ try:
     interrupted = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/interrupted_custody_qualification.py'))
     interrupted['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('interruptedCustody', {}).get('passed') is True, 'Original interrupted custody qualification did not complete')
+    retained = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/retained_mtt_qualification.py'))
+    retained['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('retainedMtt', {}).get('passed') is True, 'Retained MTT qualification did not complete')
     results['passed'] = True
 finally:
     if (cluster / 'data/postmaster.pid').exists():

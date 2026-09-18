@@ -135,19 +135,19 @@
 
 .sc--family-shark .sc__head {
   aspect-ratio: 733 / 154;
-  background-image: url('/assets/club-buttons/console/shark-console-v1/top.png');
+  background-image: url('/assets/club-buttons/console/shark-console-v2/top.png');
 }
 
 /* Between the shark's rails: glass runs x 60-673 of 733. */
 .sc--family-shark .sc__body {
   padding: 0 9% 3cqw;
-  background-image: url('/assets/club-buttons/console/shark-console-v1/mid.png');
+  background-image: url('/assets/club-buttons/console/shark-console-v2/mid.png');
 }
 
 .sc--family-shark .sc__foot,
 .sc--family-shark.sc--plates .sc__foot {
   aspect-ratio: 733 / 172;
-  background-image: url('/assets/club-buttons/console/shark-console-v1/bottom-plate.png');
+  background-image: url('/assets/club-buttons/console/shark-console-v2/bottom-plate.png');
 }
 
 /* ── THE RIVETED FAMILY (Dan 2026-09-13) ────────────────────────────────
@@ -163,20 +163,20 @@
 
 .sc--family-riveted .sc__head {
   aspect-ratio: 729 / 209;
-  background-image: url('/assets/club-buttons/console/riveted-console-v1/top.png');
+  background-image: url('/assets/club-buttons/console/riveted-console-v2/top.png');
 }
 
 /* Between the riveted rails: glass runs x 70-660 of 729, and the head prints
    its title from x 88 - the body lines up with it. */
 .sc--family-riveted .sc__body {
   padding: 0 12% 3cqw;
-  background-image: url('/assets/club-buttons/console/riveted-console-v1/mid.png');
+  background-image: url('/assets/club-buttons/console/riveted-console-v2/mid.png');
 }
 
 .sc--family-riveted .sc__foot,
 .sc--family-riveted.sc--plates .sc__foot {
   aspect-ratio: 729 / 333;
-  background-image: url('/assets/club-buttons/console/riveted-console-v1/bottom.png');
+  background-image: url('/assets/club-buttons/console/riveted-console-v2/bottom.png');
 }
 
 /* ── Zones: absolute, centred, one line, fitted ───────────────────────── */

@@ -402,11 +402,37 @@ const EXPORTER_JOBS = {
 // were authored on 2026-09-04 alongside the metrics that had no producer, and
 // the whole batch was aspirational in the same way.
 //
-// Only repo-relative paths are checked. An http(s) runbook is somebody else's
-// server and CI has no business reaching for it during a build.
+// Only repo-relative paths are FETCHED here: an http(s) runbook is somebody
+// else's server and CI has no business reaching for it during a build. That
+// reasoning is still right, and it left a hole this check then papered over.
+//
+// 2026-09-18: 19 alerts across four rule files point at
+// https://monitor.smarter.poker/runbooks/..., every one of which answers
+// `404 DEPLOYMENT_NOT_FOUND` from Vercel, because *.smarter.poker is a
+// wildcard to Vercel and no record sends `monitor` to cron-01 where
+// infra/monitoring/Caddyfile expects to serve it. The summary line below said
+// "every runbook resolves" throughout, because http(s) targets were skipped
+// silently and then counted as checked. A line that says more than it looked
+// at is the 10.86 defect in its purest form.
+//
+// So: still no fetching during a build. But the host is now checked against
+// the hostnames this repository's own Caddyfiles serve, which costs nothing
+// and catches a target no one serves, and the summary now states exactly what
+// it did not verify. The live fetch belongs to
+// scripts/ci/check-alert-rules-match.mjs, which runs on the box, already has
+// the network, and already refuses to be silently green.
+const httpRunbooks = new Map(); // url -> alerts that name it
 {
   const ruleFiles = onDisk.filter((f) => loadedNames.includes(f));
   const dangling = new Map(); // path -> alerts that name it
+  const servedHosts = new Set();
+  for (const cf of ['Caddyfile', 'engine-01/Caddyfile']) {
+    const p = resolve(DIR, cf);
+    if (!existsSync(p)) continue;
+    for (const m of readFileSync(p, 'utf8').matchAll(/^([a-z0-9.-]+\.smarter\.poker)\s*\{/gm)) {
+      servedHosts.add(m[1]);
+    }
+  }
   for (const f of ruleFiles) {
     const lines = readFileSync(resolve(DIR, f), 'utf8').split('\n');
     let owner = '(unnamed)';
@@ -416,7 +442,24 @@ const EXPORTER_JOBS = {
       const rb = /^\s*runbook:\s*['"]?([^'"\s]+)/.exec(line);
       if (!rb) continue;
       const target = rb[1];
-      if (/^https?:\/\//.test(target)) continue;
+      if (/^https?:\/\//.test(target)) {
+        if (!httpRunbooks.has(target)) httpRunbooks.set(target, []);
+        httpRunbooks.get(target).push(`${f}:${owner}`);
+        let host = '';
+        try {
+          host = new URL(target).hostname;
+        } catch {
+          errors.push(`runbook ${target} is not a URL, and ${f}:${owner} points at it.`);
+          continue;
+        }
+        if (host.endsWith('.smarter.poker') && servedHosts.size && !servedHosts.has(host)) {
+          errors.push(
+            `runbook host ${host} is not served by any vhost in infra/monitoring (${[...servedHosts].join(', ')}), ` +
+              `and ${f}:${owner} points at it. Whoever this page wakes will follow that link.`
+          );
+        }
+        continue;
+      }
       if (existsSync(resolve(root, target))) continue;
       if (!dangling.has(target)) dangling.set(target, []);
       dangling.get(target).push(`${f}:${owner}`);
@@ -437,6 +480,17 @@ if (errors.length) {
   process.exit(1);
 }
 
+const httpCount = httpRunbooks.size;
+const httpAlerts = [...httpRunbooks.values()].reduce((n, a) => n + a.length, 0);
 console.log(
-  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; every metric they and the dashboards name has a producer; every runbook resolves; alerts route to a receiver that delivers`
+  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; every metric they and the dashboards name has a producer; every repo-relative runbook resolves; alerts route to a receiver that delivers`
 );
+if (httpCount) {
+  // NOT verified here, and saying so is the point. A build cannot answer
+  // whether somebody else's server is up; check-alert-rules-match.mjs asks
+  // that question on the box, and exits 2 rather than pass when it cannot.
+  console.log(
+    `NOTE: ${httpCount} runbook URL(s) on ${httpAlerts} rule(s) are http(s) and were NOT fetched by this build. ` +
+      `scripts/ci/check-alert-rules-match.mjs fetches them where it has the network.`
+  );
+}

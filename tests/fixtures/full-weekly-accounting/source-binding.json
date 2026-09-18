@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "0db450921db5e55622c83e1b70b9d3ce951d5351c16f5928b1ead0733717270f",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "16fe6fad30c597f76c5d7d7dcb3c0679e58de325ad0fef0495e07d3a48a51af6",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -374,7 +374,17 @@
     "tests/fixtures/union-weekly-basis/final-atomic-before.sql": "1701c060c8ddbc3c074326f7e3c6eda3d4f0ebeb16573f03ef28d5c57ebca7e4",
     "scripts/dev/qualify-installed-funding-guard-declaration.py": "24e797cfd439595df4da95aa0aeeac6d3e2d1d8fc071d78f8ea7f35679a22123",
     "supabase/migrations/20260918014359_declare_the_installed_original_club_funding_guard.sql": "a4f3438b9cfdd57052ea45a463dcced91c442041aa0746ccab442b278d9c5d71",
-    "tests/fixtures/installed-funding-guard-declaration/captured-contract.json": "f2bd3120a212a894c00815b96dc1e2e610912dec5edf30dbd2be0ad6e704fa54"
+    "tests/fixtures/installed-funding-guard-declaration/captured-contract.json": "f2bd3120a212a894c00815b96dc1e2e610912dec5edf30dbd2be0ad6e704fa54",
+    "tests/fixtures/spin-mixed-cutover/after.sql": "974ed60679be90e1de843e4fe1ab0ce63497aac9774081a8b48f2785d6c30f52",
+    "tests/fixtures/spin-mixed-cutover/build-candidate.py": "464fd067a55084049a1e87992fad3437a9ca585d0ebb0243e4f8414a4aa2f200",
+    "tests/fixtures/spin-mixed-cutover/captured-preimages.json": "5f45190f58aabfe2c8d873a2fb203403001a16dde111681151d564804e34cef6",
+    "tests/fixtures/spin-mixed-cutover/captured-scope-authority.json": "6b48e52bbd561ad73b974ce043a1919e33a52ff6610b9703a698643b9221818d",
+    "tests/fixtures/spin-mixed-cutover/concurrency.sql": "bf39ec7606f799b4542d5bcd45cce6f641a0b022c6b8b839d6a458cd8de4fcee",
+    "tests/fixtures/spin-mixed-cutover/proof-authority.sql": "56d0f2337776aec187ed5f4833f81652a500b0896277d636c3c3150580cea66a",
+    "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
+    "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
+    "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "5d3bf3f5e5eaa30bc1a81024dfb47dd20f5d32d7aeb5f22ef077684e51c59dc7"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -1256,5 +1266,11 @@
     ],
     "reason": "Protected main PR4820 handles both TournamentTimerService observer read errors and tightens its discarded-error allowance from two to zero. Preserve that stronger existing assertion; no financial function, native assertion or captured fixture changed. Historical bindings remain immutable.",
     "qualification": "Exact repository binding, existing ratchet and maintained full weekly accounting native path are requalified on this composition; production installation is unchanged."
+  },
+  "mixed_cutover_spin_successor": {
+    "scope": "Original mixed-cutover Spin proof within sole existing close, immutable batches unchanged",
+    "phase": "spin-mixed-cutover",
+    "validation": "Focused current full native runner; normal protected invocation retains existing sixteen phases and adds this directly triggered phase",
+    "native_status": "33 directly triggered original assertions and actual admission/concurrent first-close qualification; exact candidate catalog and tested-source binding exported"
   }
 }

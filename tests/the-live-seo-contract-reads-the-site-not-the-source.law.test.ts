@@ -12,7 +12,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   bodyWords,
+  headingCount,
   inspectHead,
+  markupOnly,
   ldTypes,
   parseSitemapLocs,
 } from '../scripts/ci/check-live-seo-contract.mjs';
@@ -78,5 +80,29 @@ describe('the live SEO contract checker', () => {
     expect(body).toContain('ref: ${{ needs.publication-gate.outputs.client_target_sha }}');
     expect(body).not.toContain('github.event.workflow_run.head_sha');
     expect(body).not.toContain('engine.smarter.poker');
+  });
+});
+
+describe('a quoted heading is not a heading (2026-09-18)', () => {
+  // index.html's last-resort boot UI is assigned as a string:
+  //   root.innerHTML = '<h1 ...>Loading Failed</h1>...'
+  // A raw regex counts three <h1> on every arena page when there is one,
+  // so this gate would have accepted a page whose only heading was quoted
+  // JavaScript. Same defect #4790 fixed for the prerender verifier.
+  const scriptOnly = `<script>root.innerHTML = '<h1 style="x">Loading Failed</h1>';</script>`;
+
+  it('counts real elements and ignores scripts, styles and comments', () => {
+    expect(headingCount(scriptOnly)).toBe(0);
+    expect(headingCount('<h1>Real</h1>')).toBe(1);
+    expect(headingCount(`<h1>Real</h1>${scriptOnly}`)).toBe(1);
+    expect(headingCount('<style>h1{color:red}</style>')).toBe(0);
+    expect(headingCount('<!-- <h1>commented</h1> -->')).toBe(0);
+    expect(headingCount('')).toBe(0);
+    expect(markupOnly(scriptOnly)).not.toContain('Loading Failed');
+  });
+
+  it('inspectHead reports no heading when the only one is inside a script', () => {
+    expect(inspectHead(scriptOnly).h1).toBe(false);
+    expect(inspectHead('<h1>Help Center</h1>').h1).toBe(true);
   });
 });

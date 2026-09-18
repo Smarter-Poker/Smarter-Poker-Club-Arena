@@ -295,7 +295,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "4d9dcd2258d59712b7df0aae12d8c3bfd45780b10d291094d5f4e7ec05beaa30",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "8eaf731253c4f6924ba5b9a5afcff2f8304d6f4aba3170b5118d1896ac33ea15",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -303,7 +303,7 @@
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-seat-move-authority.raw.txt": "2ca4ebcb887713e661a2661833726cc80ef151c04d1a9185e616b5495c774781",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-successor-provenance.json": "58289123ad4fee1e1f402b9dd7120ea267dab4cf792bbc608f59d6da1989b23d",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-table-share-authority.raw.txt": "b0c00a51b18cfc5843ac955bd5c2d7236d3e07eeea00ce05ff25f9f6c88e282c",
-    "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "0c43c6d516c0f72aeb0e5c5ba7c35c70ad16dd3dbe239896bcd83b2b600b21af",
+    "tests/fixtures/weekly-scheduler-timing/managed-cron-role-regression.py": "2b82c8f4defa9a94cb59765cab31c06e3bb997731096cf8ad964faeabd4435ef",
     "tests/fixtures/union-provider-preimages-20260917/money-registry-ddl-guard.sql": "fb4c7ab0022dcc6c404b31470aa73dc9986e32f8855a61304f2d8418e30f4c46",
     "supabase/migrations/20260917233148_union_pnl_inventory_preserves_original_boundaries.sql": "12de87bee4c2eb432a1182db19b3d3fca7b3a58de4fd7cd3980f444ffe2dcb25",
     "scripts/dev/test-union-pnl-inventory.sh": "2ab14cd9ab5448aaea610f32d813addfd9ab96f0d65490ef2533ba12e5068e3e",
@@ -311,7 +311,8 @@
     "tests/fixtures/union-pnl-inventory/regression.sql": "37bfad02bbb518377b4d773a15b691690c4af00dc5390fabd2f588bc490f21d1",
     "tests/fixtures/union-pnl-inventory/concurrency.py": "b373c839e0514d3fc9e66c40059867734c4797540853306734a3ab67c03165c8",
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
-    "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08"
+    "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
+    "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -1136,5 +1137,10 @@
     "scope": "Prospective original population and boundary observations only; no monetary basis or historical backfill certification",
     "triggered_by": "Existing full weekly accounting native runner after its existing clusters",
     "native_qualification": "Actual PostgreSQL17 producer/reader/rollback/ACL/immutability and two-session closed-book snapshot proof; STABLE negative control fails visibility"
+  },
+  "native_schedule_adoption_successor_20260917": {
+    "migration": "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql",
+    "scope": "Separately committed same-row native alter_job for exact captured canonical job272, with no new schedule or financial execution.",
+    "qualification": "Existing full weekly runner invokes focused native launcher qualification after its stopped financial clusters; actual provider runtime adoption remains separate."
   }
 }

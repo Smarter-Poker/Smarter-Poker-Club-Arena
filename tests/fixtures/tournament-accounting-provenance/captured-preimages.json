@@ -35,10 +35,7 @@
     "acl": "{postgres=X/postgres}"
   },
   {
-    "acl": [
-      "postgres=X/postgres",
-      "service_role=X/postgres"
-    ],
+    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
     "md5": "53e97347076b0a6de0a5f7f4abaf359d",
     "owner": "postgres",
     "signature": "log_wallet_transaction(uuid,text,numeric,text,text,text,uuid,uuid,uuid)",

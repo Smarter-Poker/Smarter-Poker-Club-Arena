@@ -2162,7 +2162,10 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
+    # to build/install; 20m killed the final financial-decision suite.
+    # Preserve every suite and its own deadlines, with room for cleanup.
+    timeout-minutes: 30
 
     steps:
       - name: Reserve disk for browser checks
@@ -2415,7 +2418,10 @@ jobs:
         # above and torn down in an always() step below; all three suites share
         # it. See the note on "Serve one build to every suite".
         run: |
-          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-games-playfield.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          # Software WebGL must not compete with the other three browser workers.
+          # Keep the full real-scene transitions; this invocation has no retries.
+          npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line --retries=0
 
       # Capture the failed fixture before a later suite can clear its output.
       # These tests use the local build and synthetic data, without a login.

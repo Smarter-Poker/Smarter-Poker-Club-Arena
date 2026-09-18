@@ -1,0 +1,9 @@
+[
+  "tournament_refund_tranches",
+  "transaction_id",
+  "xid8",
+  false,
+  null,
+  "pg_current_xact_id()",
+  ""
+]

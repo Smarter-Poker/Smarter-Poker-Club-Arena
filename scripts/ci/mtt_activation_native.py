@@ -11,10 +11,11 @@ from mtt_isolation_results import validate_case_result
 from mtt_unlimited_fixture import preparation_supplement_sql
 from satellite_qualifier_fixture import compose as financial_compose, function_sql
 from mtt_break_authoring_native import authoring_inputs, _assert_scope, _assert_capture, _preserved_catalog
+from mtt_activation_funding import install_funding, guard_refusals, funding_native, SUCCESSOR, ACTIVATION
 
 FIXTURE = "scripts/ci/fixtures/mtt-format-activation"
 GUARD = "supabase/migrations/20260917232232_mtt_activation_guard_preparation.sql"
-ACTIVATION = "supabase/migrations/20260917232311_mtt_activate_unlimited_admission.sql"
+PREVIOUS_ACTIVATION = "supabase/migrations/20260917232311_mtt_activate_unlimited_admission.sql"
 L03 = "supabase/migrations/20260917204152_mtt_authored_ladders_only_contain_playing_levels.sql"
 L04 = "supabase/migrations/20260917201651_satellite_multi_qualifier_receipt_v3.sql"
 MONEY_GUARD = "scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json"
@@ -29,8 +30,17 @@ def source_inputs(e):
     manifest = json.loads(path.read_text())
     if manifest.get("version") != 1 or manifest.get("mode") != "activation":
         raise ValueError("actual activation manifest required")
-    required = {GUARD, ACTIVATION, L03, L04, MONEY_GUARD, FIXTURE + "/prepared-authorities.json",
+    required = {GUARD, PREVIOUS_ACTIVATION, SUCCESSOR, ACTIVATION, L03, L04, MONEY_GUARD, FIXTURE + "/prepared-authorities.json",
                 FIXTURE + "/active-index.sql", "scripts/ci/mtt_activation_native.py"}
+    required.update({"scripts/ci/mtt_activation_funding.py",
+        "supabase/migrations/20260917233447_tournament_original_funding_and_obligation_receipts.sql",
+        "supabase/migrations/20260918002654_horse_tournament_entry_retains_original_funding.sql"})
+    required.update(FIXTURE + "/" + name for name in (
+        "funding-prepared-authorities.json", "funding-authorities-20260918.json",
+        "funding-frame-dependencies-20260918.json", "funding-frame-relations-20260918.json",
+        "funding-trigger-declarations-20260918.json", "funding-charge-predecessor.json",
+        "funding-tranche-column-20260918.json", "funding-captured-horse-preimages.json",
+        "funding-captured-horse-dependencies.json"))
     required.update(FIXTURE + "/" + name for name in ("current-dependencies-20260917.json", "transition.sql", "funded-hu-before.sql", "funded-hu-after.sql"))
     required.update("scripts/ci/probes/mtt-activation/" + case.replace("_", "-") + ".spec" for case in TRANSITION_CASES)
     if not required.issubset(manifest.get("files", {})):
@@ -225,6 +235,25 @@ def run_activation(e, driver):
             or [r for r in before_functions if r[1] != guard_name] != [r for r in after_functions if r[1] != guard_name]
             or len([r for r in after_functions if r[1] == guard_name]) != 1):
         raise RuntimeError("activation preparation changed authority beyond its existing guard")
+    install_funding(e, template)
+    # The installed old guard must reject the genuine newly installed producers.
+    # This is a captured source intersection, not a replay of an unchanged test.
+    refusal(e, template, "old-guard-refuses-new-funding", None,
+            (e.root / PREVIOUS_ACTIVATION).read_text(),
+            "MTT_ACTIVATION_AUTHORITY_DRIFT")
+    before_data = e.snapshot(template, "funding-guard-before-data")
+    before_catalog = catalog_snapshot(e, template, "funding-guard-before-catalog")
+    e.sql(template, file=e.root / SUCCESSOR, label="prepare-original-funding-activation-guard")
+    if before_data != e.snapshot(template, "funding-guard-after-data"):
+        raise RuntimeError("funding guard preparation rewrote business rows")
+    after_catalog = catalog_snapshot(e, template, "funding-guard-after-catalog")
+    before_functions = before_catalog.pop("functions")
+    after_functions = after_catalog.pop("functions")
+    if (before_catalog != after_catalog
+            or [r for r in before_functions if r[1] != guard_name] != [r for r in after_functions if r[1] != guard_name]
+            or len([r for r in after_functions if r[1] == guard_name]) != 1):
+        raise RuntimeError("funding preparation changed authority beyond the existing guard")
+    guard_refusals(e, template, refusal)
     refusal(e, template, "authority-drift", "ALTER FUNCTION public.fn_ca_is_new_mtt(jsonb) SET statement_timeout='1s';", transaction,
             "MTT_ACTIVATION_AUTHORITY_DRIFT: public.fn_ca_is_new_mtt(jsonb)")
     refusal(e, template, "acl-drift", "GRANT EXECUTE ON FUNCTION public.fn_ca_satellite_cohort_receipt(uuid,uuid[]) TO anon;", transaction,
@@ -267,6 +296,7 @@ def run_activation(e, driver):
     actual_satellite_races(e, template, catalog, binary)
     actual_transition_races(e, template, catalog, binary)
     funded_hu_continuity(e, template)
+    funding_native(e, template, catalog, activate)
     e.discard(template)
     for path, expected in e.report["source_sha256"].items():
         if digest(e.root / path) != expected:

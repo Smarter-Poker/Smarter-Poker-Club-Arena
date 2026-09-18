@@ -148,6 +148,17 @@ tests/fixtures/weekly-union-continuation/RUNNER.md
 
 # Exact captured installed money-DDL authority; byte-bound by the native fixture.
 scripts/ci/fixtures/satellite-qualifiers/current-money-ddl-guard-20260917.json
+
+# Exact captured original-funding authorities, byte-bound by activation proofs.
+scripts/ci/fixtures/mtt-format-activation/funding-authorities-20260918.json
+scripts/ci/fixtures/mtt-format-activation/funding-captured-horse-dependencies.json
+scripts/ci/fixtures/mtt-format-activation/funding-captured-horse-preimages.json
+scripts/ci/fixtures/mtt-format-activation/funding-charge-predecessor.json
+scripts/ci/fixtures/mtt-format-activation/funding-frame-dependencies-20260918.json
+scripts/ci/fixtures/mtt-format-activation/funding-frame-relations-20260918.json
+scripts/ci/fixtures/mtt-format-activation/funding-prepared-authorities.json
+scripts/ci/fixtures/mtt-format-activation/funding-tranche-column-20260918.json
+scripts/ci/fixtures/mtt-format-activation/funding-trigger-declarations-20260918.json
 tests/credit-admin-data.test.ts
 tests/super-agent-credit-routing.test.tsx
 tests/components/agent-cashout-scope.test.tsx

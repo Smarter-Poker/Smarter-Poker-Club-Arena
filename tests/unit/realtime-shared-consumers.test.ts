@@ -45,7 +45,7 @@ function emit(kind: Kind) {
   for (const fn of channel.events[kind]) fn(message);
 }
 beforeEach(() => {
-  channel.send.mockClear();
+  channel.send.mockReset();
   channel.resetSession.mockClear();
   Object.values(channel.events).forEach((s) => s.clear());
 });
@@ -120,4 +120,35 @@ describe('subscriptions belong to an authenticated account', () => {
       releaseCurrent();
     }
   );
+});
+
+it('a new presentation consumer is listening before its idempotent JOIN snapshot', () => {
+  const service = new RealtimeChannelService();
+  const first = vi.fn(),
+    second = vi.fn();
+  channel.send.mockImplementation((message) => {
+    if (message.type !== 'JOIN_TOURNAMENT') return;
+    for (const listener of channel.events.tournament)
+      listener({
+        tournamentId: 't1',
+        event: { type: 'tournament_presentation', payload: { handForHand: true } },
+      });
+  });
+  const releaseFirst = service.subscribeToTournament(
+    't1',
+    { onEvent: first },
+    { presentationSnapshot: true }
+  );
+  expect(first).toHaveBeenCalledOnce();
+  const releaseSecond = service.subscribeToTournament(
+    't1',
+    { onEvent: second },
+    { presentationSnapshot: true }
+  );
+  expect(second).toHaveBeenCalledOnce();
+  expect(first).toHaveBeenCalledTimes(2);
+  releaseFirst();
+  expect(channel.send).toHaveBeenCalledTimes(2);
+  releaseSecond();
+  expect(channel.send).toHaveBeenLastCalledWith({ type: 'LEAVE_TOURNAMENT', tournamentId: 't1' });
 });

@@ -226,6 +226,16 @@ def load_state() -> dict[str, Any]:
             die("release seal contains an invalid committed-run receipt")
         receipt.update(validate_release(receipt, f"committedRuns.{run_id}"))
     value["committedRuns"] = committed_runs
+    resolutions = value.get("orphanFinalizationResolutions", {})
+    if not isinstance(resolutions, dict):
+        die("release seal orphan finalization history is invalid")
+    for owner, resolution in resolutions.items():
+        if (not RUN_ID_RE.fullmatch(str(owner)) or not isinstance(resolution, dict)
+                or resolution.get("schema") != 1 or resolution.get("result") != "already-released"
+                or resolution.get("originalCommittedRun") != committed_runs.get(owner)
+                or not RUN_ID_RE.fullmatch(str(resolution.get("verifiedByRunId", "")))
+                or resolution.get("verifiedByRunId") == owner):
+            die("release seal orphan disposition does not preserve original authorship")
     finalization = value.get("finalization")
     if finalization is not None:
         if not isinstance(finalization, dict):
@@ -456,6 +466,8 @@ def cmd_prepare(args: argparse.Namespace) -> None:
 
     with SealLock():
         state = load_state()
+        if meta["runId"] in state.get("orphanFinalizationResolutions", {}):
+            die("retired orphan owner cannot prepare another cutover")
         if result_path(meta["runId"]).exists():
             die("this audited run already has an immutable terminal result")
         finalization = state.get("finalization")
@@ -919,6 +931,164 @@ def cmd_attest_terminal(args: argparse.Namespace) -> None:
         print(str(value["result"]))
 
 
+def native_unit(unit: str) -> dict[str, str]:
+    properties = ("LoadState", "ActiveState", "SubState", "Job", "UnitFileState")
+    if unit.endswith(".service"):
+        properties += ("MainPID", "ControlPID", "InvocationID", "ControlGroup")
+    raw = run(["systemctl", "show", unit, "--no-pager", "--all", "--property=" + ",".join(properties)])
+    value = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
+    if any(key not in value for key in properties):
+        die("orphan finalization native unit state is incomplete")
+    return value
+
+
+def require_engine_lock(descriptor: int) -> None:
+    """The inherited open description must already own the real mutation lock."""
+    lock = Path(os.environ.get("ENGINE_LOCK_FILE", "/var/lock/club-arena-engine-up.lock"))
+    try:
+        if not os.path.samestat(os.fstat(descriptor), lock.stat()):
+            die("orphan finalization descriptor is not the engine mutation lock")
+        with lock.open("a+") as independent:
+            try:
+                fcntl.flock(independent, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                pass
+            else:
+                die("orphan finalization engine mutation lock is not already held")
+        # A different holder would make this fail; the inherited open file
+        # description of the owning transaction can reassert without unlocking.
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        die(f"orphan finalization engine lock cannot be proved: {exc}")
+
+
+def durable_lines(path: Path) -> list[str]:
+    try:
+        info = path.lstat()
+        if not path.is_file() or path.is_symlink() or info.st_uid != 0 or info.st_mode & 0o022:
+            die("orphan finalization operation record is not root-owned immutable input")
+        return path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        die(f"orphan finalization operation record is unreadable: {exc}")
+
+
+def require_absent(path: Path) -> None:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        die(f"orphan finalization ownership evidence is unreadable: {exc}")
+    die(f"original finalization owner retains operation evidence: {path}")
+
+
+def prove_orphan_finalization(args: argparse.Namespace, state: dict[str, Any]) -> dict[str, Any]:
+    """Recover only missing *completion*, never claim a foreign cutover as ours."""
+    if args.result != "already-released" or state.get("pending") is not None:
+        die("orphan finalization requires already-released state without pending work")
+    require_engine_lock(args.recover_orphan_finalization_fd)
+    original = state["finalization"]
+    owner = original["runId"]
+    if owner == args.run_id or args.run_id in state["committedRuns"]:
+        die("orphan finalization cannot reassign cutover authorship")
+    request_root = Path(os.environ.get("ENGINE_RELEASE_REQUEST_ROOT", str(STATE_DIR / "engine-release-requests")))
+    pin_root = Path(os.environ.get("ENGINE_RELEASE_PIN_ROOT", str(STATE_DIR / "engine-release-generation-pins")))
+    intake_root = Path(os.environ.get("ENGINE_RELEASE_INTAKE_ROOT", str(STATE_DIR / "engine-intake-requests")))
+    lease_root = Path(os.environ.get("ENGINE_RELEASE_IMAGE_LEASE_ROOT", str(STATE_DIR / "engine-image-leases")))
+    control = Path(__file__).resolve().parent
+    request = durable_lines(request_root / f"{args.run_id}.request")
+    if (len(request) != 6 or request[0] != args.sha
+            or request[1] != f"https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/{args.run_id.split('-')[0]}"
+            or not request[2] or request[3] != str(control) or request[4] != args.control_sha
+            or not request[5].isdigit() or int(request[5]) <= int(time.time())):
+        die("orphan finalization current immutable request does not match")
+    if durable_lines(request_root / f"{args.run_id}.intent") != request:
+        die("orphan finalization current intent differs from its request")
+    if durable_lines(pin_root / f"{args.run_id}.generation") != [str(control), args.control_sha]:
+        die("orphan finalization current generation pin does not match")
+    if durable_lines(control / "control-sha") != [args.control_sha]:
+        die("orphan finalization executing control generation does not match")
+    current = native_unit(f"club-arena-engine-release-v1@{args.run_id}.service")
+    if (current["LoadState"] != "loaded" or current["ActiveState"] != "activating"
+            or current["SubState"] != "start" or not current["MainPID"].isdigit()
+            or int(current["MainPID"]) <= 0 or current["InvocationID"] != args.invocation_id
+            or os.environ.get("INVOCATION_ID") != args.invocation_id):
+        die("orphan finalization current native invocation does not match")
+    try:
+        groups = [line.split(":", 2)[2] for line in Path("/proc/self/cgroup").read_text().splitlines()]
+    except (OSError, IndexError) as exc:
+        die(f"orphan finalization process cgroup is unreadable: {exc}")
+    if not current["ControlGroup"] or current["ControlGroup"] not in groups:
+        die("orphan finalization caller is outside its native release invocation")
+
+    # This narrow recovery is for an owner which never had a resumable native
+    # operation. Retained or unreadable evidence is not proof of abandonment.
+    def absent_owner() -> dict[str, Any]:
+        for root, suffixes in ((request_root, ("request", "intent", "break-deadline")),
+                               (intake_root, ("request", "intent")),
+                               (pin_root, ("generation",)), (lease_root, ("lease",))):
+            for suffix in suffixes:
+                require_absent(root / f"{owner}.{suffix}")
+        require_absent(result_path(owner))
+        units = {}
+        for prefix, extension in (("release", "service"), ("intake", "service"), ("intake", "path")):
+            unit = f"club-arena-engine-{prefix}-v1@{owner}.{extension}"
+            value = native_unit(unit)
+            if (value["LoadState"] not in {"loaded", "not-found"}
+                    or value["ActiveState"] not in {"inactive", "failed"}
+                    or value["SubState"] not in {"dead", "failed"}
+                    or (extension == "service" and (value["MainPID"] != "0" or value["ControlPID"] != "0"))
+                    or value["Job"] not in {"", "0"}
+                    or value["UnitFileState"] not in {"", "disabled", "static"}):
+                die("original finalization owner is active, queued, enabled or unknown")
+            require_absent(Path("/etc/systemd/system/multi-user.target.wants") / unit)
+            units[unit] = value
+        return units
+
+    owner_units = absent_owner()
+    container_name = os.environ.get("CONTAINER", "club-arena-engine")
+    def runtime() -> dict[str, Any]:
+        value = docker_json("container", container_name)
+        image = docker_json("image", args.image_id)
+        require_alert_journal_mount(value, image)
+        env = (image.get("Config") or {}).get("Env") or []
+        sources = [v.split("=", 1)[1] for v in env if isinstance(v, str) and v.startswith("GIT_COMMIT_SHA=")]
+        if (value.get("Id") != args.container_id or value.get("Image") != args.image_id
+                or (value.get("State") or {}).get("Status") != "running"
+                or (value.get("State") or {}).get("StartedAt") != args.started_at
+                or ((value.get("Config") or {}).get("Labels") or {}).get("sp.release.sha") != args.sha
+                or image.get("Id") != args.image_id
+                or ((image.get("Config") or {}).get("Labels") or {}).get("org.opencontainers.image.revision") != args.sha
+                or sources != [args.sha]):
+            die("orphan finalization immutable running image or generation changed")
+        for url in ("http://127.0.0.1:8080/health", os.environ.get("ENGINE_URL", "https://engine.smarter.poker").rstrip("/") + "/health"):
+            try:
+                health = json.loads(run(["curl", "--fail", "--silent", "--show-error", "--max-time", "5", url + f"?nocache={time.time_ns()}"]))
+            except json.JSONDecodeError:
+                die("orphan finalization health is unreadable")
+            if (health.get("releaseSha") != args.sha or health.get("instanceId") != args.instance_id
+                    or health.get("liveness") != "ok" or health.get("running") is not True):
+                die("orphan finalization local/public runtime proof does not match")
+        return {"containerId": args.container_id, "startedAt": args.started_at, "instanceId": args.instance_id}
+
+    observed = runtime()
+    proof = run([str(control / "engine-release-database-proof.py"), "--env-file",
+                 os.environ.get("ENV_FILE", os.environ.get("REPO_DIR", "/opt/club-arena") + "/server/.env"),
+                 "--sha", args.sha, "--instance-id", args.instance_id, "--timeout-seconds", "15",
+                 "--poll-seconds", "3", "--max-heartbeat-age-seconds", "15"])
+    if (runtime() != observed or absent_owner() != owner_units or load_state() != state
+            or native_unit(f"club-arena-engine-release-v1@{args.run_id}.service") != current
+            or durable_lines(request_root / f"{args.run_id}.request") != request
+            or int(request[5]) <= int(time.time())):
+        die("orphan finalization evidence changed before compare-and-swap")
+    return {"schema": 1, "originalFinalization": original,
+            "originalCommittedRun": state["committedRuns"][owner],
+            "generation": state["generation"], "verifiedByRunId": args.run_id,
+            "controlSha": args.control_sha, "invocationId": args.invocation_id,
+            "runtime": observed, "databaseProof": proof, "originalOwnerUnits": owner_units,
+            "observedAt": int(time.time()), "result": "already-released"}
+
+
 def cmd_record_result(args: argparse.Namespace) -> None:
     run_id = str(args.run_id)
     if not RUN_ID_RE.fullmatch(run_id):
@@ -942,6 +1112,8 @@ def cmd_record_result(args: argparse.Namespace) -> None:
     with SealLock():
         state = load_state()
         desired = state["desired"]
+        if run_id in state.get("orphanFinalizationResolutions", {}):
+            die("retired orphan owner cannot claim a later invocation as its result")
         if desired["sha"] != target_sha or desired["imageId"] != image_id:
             die("durable seal does not identify the result release")
         committed = state.get("committedRuns", {}).get(run_id)
@@ -965,12 +1137,35 @@ def cmd_record_result(args: argparse.Namespace) -> None:
             and finalization.get("sha") == target_sha
             and finalization.get("imageId") == image_id
         )
+        orphan_resolution = None
         if isinstance(finalization, dict) and not exact_finalization:
-            die("another committed run owns durable result finalization")
+            if args.recover_orphan_finalization_fd is None:
+                die("another committed run owns durable result finalization")
+            fresh_resolution = prove_orphan_finalization(args, state)
+            resolution_path = RESULT_DIR / f"{run_id}.{invocation_id}.orphan-finalization.json"
+            try:
+                orphan_resolution = json.loads(resolution_path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                orphan_resolution = fresh_resolution
+                write_json_atomic(resolution_path, orphan_resolution)
+            except (OSError, json.JSONDecodeError) as exc:
+                die(f"orphan finalization resolution is unreadable: {exc}")
+            # Retain the first durable witness across interruption. Fresh proof
+            # above still must pass on every replay before the seal can clear.
+            identity = ("schema", "originalFinalization", "originalCommittedRun", "generation",
+                        "verifiedByRunId", "controlSha", "invocationId", "runtime", "originalOwnerUnits", "result")
+            if (not isinstance(orphan_resolution, dict)
+                    or any(orphan_resolution.get(k) != fresh_resolution[k] for k in identity)
+                    or not isinstance(orphan_resolution.get("observedAt"), int)
+                    or not isinstance(orphan_resolution.get("databaseProof"), str)
+                    or not orphan_resolution["databaseProof"]):
+                die("orphan finalization resolution belongs to different release bytes")
         if args.result == "sealed" and not path.exists() and not exact_finalization:
             die("sealed result has no exclusive durable finalization owner")
         if path.exists():
             value = load_result(run_id)
+            if orphan_resolution is not None and value["result"] != "already-released":
+                die("orphan finalization cannot upgrade current receipt cutover authorship")
             expected = {
                 "sha": target_sha,
                 "imageId": image_id,
@@ -1025,7 +1220,17 @@ def cmd_record_result(args: argparse.Namespace) -> None:
                 "startedAt": started_at,
             },
         )
-        if exact_finalization:
+        if orphan_resolution is not None:
+            # The truthful current receipt and its audit are durable first.
+            # A crash before this seal replacement simply repeats fresh proof;
+            # it never creates success for the missing original invocation.
+            audit_once("orphan_finalization_retired", state,
+                       f"orphan_finalization_retired:{run_id}:{invocation_id}",
+                       resolution=orphan_resolution)
+            if load_state() != state:
+                die("orphan finalization seal changed before retirement")
+            state.setdefault("orphanFinalizationResolutions", {})[finalization["runId"]] = orphan_resolution
+        if exact_finalization or orphan_resolution is not None:
             state["finalization"] = None
             state["updatedAt"] = int(time.time())
             write_state(state)
@@ -1077,6 +1282,8 @@ def cmd_commit(args: argparse.Namespace) -> None:
     with SealLock():
         state = load_state()
         pending = state.get("pending")
+        if meta["runId"] in state.get("orphanFinalizationResolutions", {}):
+            die("retired orphan owner cannot recreate committed finalization")
         # A lost SSH response or an audit-append failure can make the caller
         # uncertain after the fsynced state replacement succeeded. The same
         # audited run may safely retry/attest that exact durable receipt; it may
@@ -1254,6 +1461,7 @@ def parser() -> argparse.ArgumentParser:
     record_result.add_argument("--run-id", required=True)
     record_result.add_argument("--control-sha", required=True)
     record_result.add_argument("--invocation-id", required=True)
+    record_result.add_argument("--recover-orphan-finalization-fd", type=int)
     record_result.set_defaults(handler=cmd_record_result)
 
     attest_result = commands.add_parser("attest-result")

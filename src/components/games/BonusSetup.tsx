@@ -54,7 +54,7 @@ export default function BonusSetup({
           <button
             type="button"
             disabled={disabled}
-            onClick={() => navigate(`/clubs/${clubId}/diamond-games`)}
+            onClick={() => navigate(`/clubs/${clubId}/wheel`)}
           >
             Spin The Wheel
           </button>

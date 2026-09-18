@@ -131,6 +131,16 @@ it('executes the actual bounded recovery request without duplicate pauses', () =
   expect(result.stderr).toContain('Ran 8 tests');
 });
 
+it('recovers only genuinely orphaned finalization through the current completion event', () => {
+  const result = spawnSync(
+    'python3',
+    [resolve(ROOT, 'tests/operations/engine-orphan-finalization.py')],
+    { encoding: 'utf8' }
+  );
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.stderr).toContain('Ran 11 tests');
+});
+
 describe('the durable engine release seal', () => {
   let sandbox = '';
   let bin = '';

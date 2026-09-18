@@ -32,7 +32,7 @@ vi.mock('../../src/components/games/FloorFeed', () => ({ default: () => null }))
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
 vi.mock('../../src/components/wheel/WheelExperience', () => ({
   wheelPrizeTitle: () => '',
-  WheelExperience: () => null,
+  WheelExperience: ({ size }: { size: number }) => <output aria-label="Wheel Width">{size}</output>,
 }));
 vi.mock('../../src/components/console/SpadeConsole', () => ({
   SpadeConsole: ({ children, plates }: any) => (
@@ -55,6 +55,8 @@ import DiamondWheelPage from '../../src/pages/DiamondWheelPage';
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   localStorage.clear();
 });
 const state = {
@@ -74,6 +76,37 @@ const state = {
   },
 };
 describe('the selected wheel stake owns its availability quote', () => {
+  it('measures the stage when loading finishes and follows later viewport changes', async () => {
+    let width = 878;
+    let resize!: () => void;
+    const disconnect = vi.fn();
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect = disconnect;
+      }
+    );
+    let finish!: (value: typeof state) => void;
+    backend.state.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const view = render(<DiamondWheelPage />);
+    await waitFor(() => expect(backend.state).toHaveBeenCalled());
+    expect(screen.queryByLabelText('Wheel Width')).not.toBeInTheDocument();
+    await act(async () => finish(state));
+    expect(await screen.findByLabelText('Wheel Width')).toHaveTextContent('878');
+    act(() => {
+      width = 288;
+      resize();
+    });
+    expect(screen.getByLabelText('Wheel Width')).toHaveTextContent('288');
+    view.unmount();
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
   it.each(['plinko', 'crash', 'crossing', 'mines'])(
     'opens an existing %s award on its declared game route without a new spin',
     async (game) => {

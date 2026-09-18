@@ -185,6 +185,20 @@ afterEach(() => {
 });
 
 describe('Crash settles one displayed round once', () => {
+  it('sends both unfunded entry controls directly to the wheel without starting a game', async () => {
+    backend.awardState.mockResolvedValue({ enabled: true, award: null, gameState: null });
+    render(<DiamondCrashPage />);
+    await act(async () => {});
+    const controls = screen.getAllByRole('button', { name: 'Spin The Wheel' });
+    expect(controls).toHaveLength(2);
+    for (const control of controls) fireEvent.click(control);
+    expect(backend.navigate.mock.calls).toEqual([
+      ['/clubs/00000000-0000-0000-0000-000000000003/wheel'],
+      ['/clubs/00000000-0000-0000-0000-000000000003/wheel'],
+    ]);
+    expect(backend.start).not.toHaveBeenCalled();
+  });
+
   it('binds the visible hundredth to the click and freezes it while confirmation is pending', async () => {
     backend.crashSettle.mockResolvedValueOnce(open);
     await mountOpen();

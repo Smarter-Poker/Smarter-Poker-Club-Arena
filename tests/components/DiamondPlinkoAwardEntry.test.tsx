@@ -96,7 +96,7 @@ describe('Plinko starts only its earned funding', () => {
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Spin The Wheel' }));
     expect(backend.navigate).toHaveBeenCalledWith(
-      '/clubs/00000000-0000-0000-0000-000000000003/diamond-games'
+      '/clubs/00000000-0000-0000-0000-000000000003/wheel'
     );
     expect(backend.start).not.toHaveBeenCalled();
   });

@@ -1,0 +1,23 @@
+-- Rollback for 20260918080939_a_fee_whose_producer_died_can_still_be_attributed.sql
+-- and 20260918082420_the_capture_authority_is_named_for_what_it_does.sql
+--
+-- This removes the authority. It deliberately removes NOTHING else, and the
+-- distinction matters more here than in most rollbacks.
+--
+-- By the time you read this the authority has already captured 2,303 fee
+-- records worth 4,384.33 chips across 607 tournaments, and those tournaments
+-- have settled: winners paid, rake recognised to the clubs and agents that
+-- earned it. Those are completed financial events. The batch and source rows
+-- behind them are protected by accounting_tournament_fee_batches_immutable and
+-- accounting_tournament_fee_sources_immutable, which refuse UPDATE and DELETE,
+-- and they are correct: each one was built from the charge evidence its own
+-- producer wrote down, and each was checked against the plan's acceptance test
+-- before it was committed. Removing them would unpay a winner.
+--
+-- ca_stranded_fee_reconciliations is likewise kept. It is the only record of
+-- which fees were captured this way, and a rollback that erased its own audit
+-- trail would leave nobody able to answer what happened on 2026-09-18.
+--
+-- So this drops the ability to do it again, and leaves what was done.
+
+DROP FUNCTION IF EXISTS public.fn_ca_capture_tournament_fee_from_recorded_evidence(uuid);

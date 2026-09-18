@@ -9,8 +9,18 @@ export async function prepareCashLobbyActions(page: Page): Promise<void> {
     .then(() => true)
     .catch(() => false);
 
-  // The offer can arrive after the lobby loads. Register before the real club
-  // message click and subsequent cash actions, whose failures must propagate.
+  await registerDiamondInvitationDismissal(page);
+
+  if (clubMessageVisible) {
+    await close.click();
+    await expect(close, 'the club message blocked the live-table selector').toBeHidden({
+      timeout: 8_000,
+    });
+  }
+}
+
+/** The optional offer may cover either the club greeting or a later cash action. */
+export async function registerDiamondInvitationDismissal(page: Page): Promise<void> {
   const diamondPrompt = page.getByRole('dialog', { name: 'Diamond Spins', exact: true });
   await page.addLocatorHandler(
     diamondPrompt,
@@ -20,11 +30,4 @@ export async function prepareCashLobbyActions(page: Page): Promise<void> {
     },
     { times: 1 }
   );
-
-  if (clubMessageVisible) {
-    await close.click();
-    await expect(close, 'the club message blocked the live-table selector').toBeHidden({
-      timeout: 8_000,
-    });
-  }
 }

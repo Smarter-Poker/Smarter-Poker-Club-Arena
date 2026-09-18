@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -47,6 +48,21 @@ describe('cashier Phase 1 critical integrity contracts', () => {
 });
 
 describe('cashier Phase 5 production certification contracts', () => {
+  it('pins the protected wallet-send definition with its agreement lock', () => {
+    const successor = source('supabase/accounting/credit-reduction-v1/lock-order-successor.sql');
+    const definition = successor.match(
+      /CREATE OR REPLACE FUNCTION public\.fn_agent_wallet_send\([^\n]+\n[\s\S]+?\n\$function\$;/
+    )?.[0];
+    expect(definition).toBeDefined();
+    const catalogueDefinition = definition!.slice(0, -1) + '\n';
+    const hash = createHash('md5').update(catalogueDefinition).digest('hex');
+    const contract = source('scripts/verification-harness/cashier-release-contract.sql');
+    const sendContract = contract.match(
+      /'signature', 'public\.fn_agent_wallet_send\([^']+'[\s\S]+?\n {4}\)/
+    )?.[0];
+    expect(sendContract).toContain(`'hash', '${hash}'`);
+  });
+
   it('runs an exact live database contract canary after every successful publish', () => {
     const workflow = source('.github/workflows/post-deploy-e2e.yml');
     const canary = source('scripts/verification-harness/cashier-release-contract.sql');

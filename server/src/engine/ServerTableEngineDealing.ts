@@ -1777,8 +1777,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   // DEAL HAND — Complete hand lifecycle
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  // A reserved/unknown permit belongs to its original preparation until that
+  // continuation exits. Recovery must not mistake an ordinary awaited read for
+  // failed admission and retire the table before its controller can start.
+  private f06HandPreparation: object | null = null;
+
+  getF06RecoverablePermit(): ReturnType<ServerTableEngineDealing['getF06RetainedPermit']> {
+    return this.f06HandPreparation ? null : this.getF06RetainedPermit();
+  }
+
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
     const releaseSeatBoundary = await this.acquireSeatBoundary();
+    const preparation = {};
+    this.f06HandPreparation = preparation;
     const completedHandNumber = this.handCount;
     let handStarted = false;
     try {
@@ -3200,6 +3211,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // Keep parked banks bound to the last real hand, including every pause
       // that can arrive during asynchronous hand preparation.
       if (!handStarted) this.handCount = completedHandNumber;
+      if (this.f06HandPreparation === preparation) this.f06HandPreparation = null;
       releaseSeatBoundary();
     }
   }

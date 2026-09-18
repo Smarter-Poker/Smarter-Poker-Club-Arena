@@ -321,6 +321,10 @@ export class HorseDecisionJournalPublisher {
       this.recoveryPending = false;
       this.count('retry_recovered');
     }
+    // The finite budget belongs to unacknowledged work, not the publisher's
+    // lifetime. Only this complete, identity-checked durable ACK proves progress;
+    // READY, retired-worker messages and malformed receipts cannot renew it.
+    this.retries = 0;
     this.inFlight = 0;
     this.lastProgress = this.now();
     this.dispatch();

@@ -56,7 +56,11 @@ function fixture() {
     seat_joined_at: '2026-09-17T22:00:00.123456+00:00',
   }));
   engine.seatedPlayers = seats;
-  engine.preparedHandNumberValue = { n: 1000010, at: Date.now() };
+  engine.preparedHandNumberValue = {
+    n: 1000010,
+    at: Date.now(),
+    epoch: engine.f06AllocationEpoch,
+  };
   engine.allocateGlobalHandNumber = vi.fn().mockResolvedValue(1000011);
   engine.getEngineLeaseAuthority = () => ({ verified: true, generation, scope: 'cash' });
   engine.hasCurrentEngineLeaseAuthority = vi.fn(() => true);
